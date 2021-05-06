@@ -1,0 +1,51 @@
+appdata.sqlite3
+*.log
+
+__pycache__/
+.pytest_cache
+.coverage
+.vscode/
+
+# pyinstaller
+build/
+dist/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Emacs temp files
+*~
+\#*\#
+*.elc
+auto-save-list
+tramp
+.\#*
+.projectile
+TAGS
+
+# Vim temp files
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-v][a-z]
+[._]sw[a-p]
+*~
+tags
+
+# dotenv environment variables file
+.env
+.env.test
