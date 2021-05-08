@@ -1,7 +1,6 @@
 from pathlib import Path
 import sys
 import os
-import platform
 import logging as _logging
 import logging.config
 import yaml
@@ -9,12 +8,7 @@ import yaml
 from PyQt5.QtWidgets import QApplication  # type: ignore
 
 from .app.types import AppData  # type: ignore
-
-from .layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: ignore
-
-WINDOWS = (platform.system() == "Windows")
-LINUX = (platform.system() == "Linux")
-MAC = (platform.system() == "Darwin")
+from .app.windows import AppWindows  # type: ignore
 
 logger = _logging.getLogger(__name__)
 
@@ -46,10 +40,8 @@ def main():
 
     app = QApplication(sys.argv)
 
-    view = SuttaSearchWindow(app_data)
-    view.show()
-
-    SuttaSearchCtrl(view=view)
+    app_windows = AppWindows(app_data)
+    app_windows._new_sutta_search_window()
 
     logger.info("Exiting.")
     sys.exit(app.exec_())

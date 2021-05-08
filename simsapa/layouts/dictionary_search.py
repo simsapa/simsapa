@@ -1,34 +1,36 @@
 from functools import partial
 from typing import List
+from markdown import markdown
+from sqlalchemy.orm import joinedload  # type: ignore
 
 from PyQt5.QtWidgets import (QLabel, QMainWindow)  # type: ignore
 
-from ..app.db_models import RootText as DbSutta  # type: ignore
-from ..app.types import (AppData, Sutta)  # type: ignore
-from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow  # type: ignore
+from ..app.db_models import DictWord as DbDictWord  # type: ignore
+from ..app.types import (AppData, DictWord)  # type: ignore
+from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
 
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
+class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
         self._app_data: AppData = app_data
-        self._results: List[Sutta] = []
-        self._history: List[Sutta] = []
+        self._results: List[DictWord] = []
+        self._history: List[DictWord] = []
 
         self._ui_setup()
 
         self.statusbar.showMessage("Ready", 3000)
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Sutta title")
+        self.status_msg = QLabel("Word title")
         self.statusbar.addPermanentWidget(self.status_msg)
 
         self.search_input.setFocus()
 
 
-class SuttaSearchCtrl:
+class DictionarySearchCtrl:
     def __init__(self, view):
         self._view = view
         self._connect_signals()
@@ -36,8 +38,8 @@ class SuttaSearchCtrl:
     def _handle_query(self):
         query = self._view.search_input.text()
         if len(query) > 3:
-            self._view._results = self._sutta_search_query(query)
-            titles = list(map(lambda s: s.title, self._view._results))
+            self._view._results = self._word_search_query(query)
+            titles = list(map(lambda s: s.word, self._view._results))
             self._view.results_list.clear()
             self._view.results_list.addItems(titles)
 
@@ -46,19 +48,24 @@ class SuttaSearchCtrl:
 
     def _handle_result_select(self):
         selected_idx = self._view.results_list.currentRow()
-        sutta: Sutta = self._view._results[selected_idx]
-        self._show_sutta(sutta)
+        word: DictWord = self._view._results[selected_idx]
+        self._show_word(word)
 
-        self._view._history.insert(0, sutta)
-        self._view.history_list.insertItem(0, sutta.title)
+        self._view._history.insert(0, word)
+        self._view.history_list.insertItem(0, word.word)
 
     def _handle_history_select(self):
         selected_idx = self._view.history_list.currentRow()
-        sutta: Sutta = self._view._history[selected_idx]
-        self._show_sutta(sutta)
+        word: DictWord = self._view._history[selected_idx]
+        self._show_word(word)
 
-    def _show_sutta(self, sutta: Sutta):
-        self._view.status_msg.setText(sutta.title)
+    def _show_word(self, word: DictWord):
+        self._view.status_msg.setText(word.word)
+
+        def md_to_html(meaning):
+            return markdown(meaning.definition_md)
+
+        content_html = "".join(list(map(md_to_html, word.meanings)))
 
         html = """
 <!doctype html>
@@ -71,15 +78,16 @@ class SuttaSearchCtrl:
   %s
   </body>
 </html>
-""" % ('', sutta.content_html)
+""" % ('', content_html)
 
         self._set_content_html(html)
 
-    def _sutta_search_query(self, query: str):
+    def _word_search_query(self, query: str):
         results = self._view._app_data.db_session \
-                               .query(DbSutta) \
-                               .filter(DbSutta.content_html.like(f"%{query}%")) \
-                               .all()
+                                      .query(DbDictWord) \
+                                      .options(joinedload(DbDictWord.meanings)) \
+                                      .filter(DbDictWord.word.like(f"%{query}%")) \
+                                      .all()
         return results
 
     def _connect_signals(self):

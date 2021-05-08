@@ -1,8 +1,6 @@
 import os.path
-# from enum import Enum
 from sqlalchemy import create_engine  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
-# from typing import Any, Dict, Optional, Tuple
 
 
 class AppData:
