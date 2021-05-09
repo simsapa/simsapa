@@ -118,7 +118,9 @@
     <property name="title">
      <string>&amp;File</string>
     </property>
-    <addaction name="action_Close"/>
+    <addaction name="action_Open"/>
+    <addaction name="action_Close_Window"/>
+    <addaction name="separator"/>
     <addaction name="action_Quit"/>
    </widget>
    <widget class="QMenu" name="menu_Edit">
@@ -134,6 +136,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Dictionary_Search"/>
+    <addaction name="action_Document_Reader"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -217,9 +220,28 @@
     <string>&amp;Website</string>
    </property>
   </action>
-  <action name="action_Close">
+  <action name="action_Close_Window">
    <property name="text">
-    <string>&amp;Close</string>
+    <string>&amp;Close Window</string>
+   </property>
+  </action>
+  <action name="action_Open">
+   <property name="text">
+    <string>&amp;Open...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="action_Document_Reader">
+   <property name="text">
+    <string>D&amp;ocument Reader</string>
+   </property>
+   <property name="toolTip">
+    <string>Document Reader</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
    </property>
   </action>
  </widget>

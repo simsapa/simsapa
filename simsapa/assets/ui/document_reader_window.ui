@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DocumentReaderWindow</class>
+ <widget class="QMainWindow" name="DocumentReaderWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>856</width>
+    <height>581</height>
+   </rect>
+  </property>
+  <property name="baseSize">
+   <size>
+    <width>800</width>
+    <height>600</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>Document Reader - Simsapa</string>
+  </property>
+  <widget class="QWidget" name="central_widget">
+   <layout class="QHBoxLayout" name="horizontalLayout_2">
+    <item>
+     <layout class="QVBoxLayout" name="main_layout">
+      <item>
+       <widget class="QSplitter" name="splitter">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <widget class="QWidget" name="verticalLayoutWidget_2">
+         <layout class="QVBoxLayout" name="sidebar_layout">
+          <item>
+           <widget class="QTabWidget" name="sidebar_tabs">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="currentIndex">
+             <number>0</number>
+            </property>
+            <widget class="QWidget" name="thumbs_tab">
+             <attribute name="title">
+              <string>Thumbnails</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_2">
+              <item>
+               <widget class="QWidget" name="thumbs_view" native="true"/>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="annotations_tab">
+             <attribute name="title">
+              <string>Annotations</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_3">
+              <item>
+               <widget class="QWidget" name="annotations_view" native="true"/>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="bookmarks_tab">
+             <attribute name="title">
+              <string>Bookmarks</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_4">
+              <item>
+               <widget class="QListWidget" name="bookmarks_list"/>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="contents_tab">
+             <attribute name="title">
+              <string>Contents</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <widget class="QListView" name="contents_list"/>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="verticalLayoutWidget_3">
+         <layout class="QVBoxLayout" name="content_layout">
+          <item>
+           <layout class="QHBoxLayout" name="page_number_layout">
+            <item>
+             <widget class="QLabel" name="label">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="current_page_input">
+              <property name="minimumSize">
+               <size>
+                <width>80</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>80</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>999999</number>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="page_current_of_total">
+              <property name="minimumSize">
+               <size>
+                <width>80</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>_ of _</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_4">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QScrollArea" name="scrollArea">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>400</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <widget class="QWidget" name="scrollAreaWidgetContents">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>0</y>
+               <width>398</width>
+               <height>444</height>
+              </rect>
+             </property>
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout">
+              <item>
+               <widget class="QLabel" name="content_page">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="text">
+                 <string/>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="verticalLayoutWidget">
+         <layout class="QVBoxLayout" name="lookup_layout">
+          <item>
+           <widget class="QLabel" name="label_2">
+            <property name="text">
+             <string>Lookup</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTextBrowser" name="lookup_html"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>History</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QListWidget" name="history_list"/>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>856</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menu_File">
+    <property name="title">
+     <string>&amp;File</string>
+    </property>
+    <addaction name="action_Open"/>
+    <addaction name="action_Close_Window"/>
+    <addaction name="separator"/>
+    <addaction name="action_Quit"/>
+   </widget>
+   <widget class="QMenu" name="menu_Edit">
+    <property name="title">
+     <string>&amp;Edit</string>
+    </property>
+    <addaction name="action_Copy"/>
+    <addaction name="action_Paste"/>
+   </widget>
+   <widget class="QMenu" name="menuWindows">
+    <property name="title">
+     <string>Windows</string>
+    </property>
+    <addaction name="action_Sutta_Search"/>
+    <addaction name="action_Dictionary_Search"/>
+    <addaction name="action_Document_Reader"/>
+   </widget>
+   <widget class="QMenu" name="menu_Help">
+    <property name="title">
+     <string>&amp;Help</string>
+    </property>
+    <addaction name="action_Website"/>
+    <addaction name="action_About"/>
+   </widget>
+   <widget class="QMenu" name="menuGo">
+    <property name="title">
+     <string>Go</string>
+    </property>
+    <addaction name="action_Previous_Page"/>
+    <addaction name="action_Next_Page"/>
+    <addaction name="separator"/>
+    <addaction name="action_Beginning"/>
+    <addaction name="action_End"/>
+    <addaction name="separator"/>
+    <addaction name="action_Go_to_Page"/>
+   </widget>
+   <addaction name="menu_File"/>
+   <addaction name="menu_Edit"/>
+   <addaction name="menuWindows"/>
+   <addaction name="menuGo"/>
+   <addaction name="menu_Help"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="windows_toolbar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="action_Sutta_Search"/>
+   <addaction name="action_Dictionary_Search"/>
+  </widget>
+  <widget class="QToolBar" name="doc_toolbar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="action_Beginning"/>
+   <addaction name="action_Previous_Page"/>
+   <addaction name="action_Go_to_Page"/>
+   <addaction name="action_Next_Page"/>
+   <addaction name="action_End"/>
+  </widget>
+  <action name="action_Copy">
+   <property name="text">
+    <string>&amp;Copy</string>
+   </property>
+  </action>
+  <action name="action_Paste">
+   <property name="text">
+    <string>&amp;Paste</string>
+   </property>
+  </action>
+  <action name="action_Quit">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/close</normaloff>:/close</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Quit</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+  </action>
+  <action name="action_Sutta_Search">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Sutta Search</string>
+   </property>
+   <property name="shortcut">
+    <string>F5</string>
+   </property>
+  </action>
+  <action name="action_Dictionary_Search">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/dictionary</normaloff>:/dictionary</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Dictionary Search</string>
+   </property>
+   <property name="shortcut">
+    <string>F6</string>
+   </property>
+  </action>
+  <action name="action_About">
+   <property name="text">
+    <string>&amp;About</string>
+   </property>
+  </action>
+  <action name="action_Website">
+   <property name="text">
+    <string>&amp;Website</string>
+   </property>
+  </action>
+  <action name="action_Close_Window">
+   <property name="text">
+    <string>&amp;Close Window</string>
+   </property>
+  </action>
+  <action name="action_Document_Reader">
+   <property name="text">
+    <string>D&amp;ocument Reader</string>
+   </property>
+   <property name="toolTip">
+    <string>Document Reader</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
+   </property>
+  </action>
+  <action name="action_Open">
+   <property name="text">
+    <string>&amp;Open...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="action_Next_Page">
+   <property name="text">
+    <string>&amp;Next Page</string>
+   </property>
+  </action>
+  <action name="action_Previous_Page">
+   <property name="text">
+    <string>&amp;Previous Page</string>
+   </property>
+  </action>
+  <action name="action_Go_to_Page">
+   <property name="text">
+    <string>&amp;Go to Page...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+G</string>
+   </property>
+  </action>
+  <action name="action_Beginning">
+   <property name="text">
+    <string>&amp;Beginning</string>
+   </property>
+  </action>
+  <action name="action_End">
+   <property name="text">
+    <string>&amp;End</string>
+   </property>
+  </action>
+ </widget>
+ <resources>
+  <include location="../icons.qrc"/>
+ </resources>
+ <connections/>
+ <slots>
+  <slot>_handle_query()</slot>
+ </slots>
+</ui>

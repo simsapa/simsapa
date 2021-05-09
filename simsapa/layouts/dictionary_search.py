@@ -91,7 +91,7 @@ class DictionarySearchCtrl:
         return results
 
     def _connect_signals(self):
-        self._view.action_Close \
+        self._view.action_Close_Window \
             .triggered.connect(partial(self._view.close))
 
         self._view.search_button.clicked.connect(partial(self._handle_query))

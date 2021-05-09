@@ -59,7 +59,7 @@ def main():
 
     # Create first window
 
-    app_windows = AppWindows(app_data)
+    app_windows = AppWindows(app, app_data)
     app_windows._new_sutta_search_window()
 
     logger.info("Exiting.")
