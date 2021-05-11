@@ -162,7 +162,7 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         self._app_data.user_db_session.commit()
         self.model.layoutChanged.emit()
 
-    def _remove_card_dialog(self):
+    def remove_card_dialog(self):
         card = self.get_selected_card()
         if not card:
             return
@@ -183,7 +183,7 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
             .triggered.connect(partial(self.add_card))
 
         self.action_Remove \
-            .triggered.connect(partial(self._remove_card_dialog))
+            .triggered.connect(partial(self.remove_card_dialog))
 
         self.search_button.clicked.connect(partial(self._handle_query))
         self.search_input.textChanged.connect(partial(self._handle_query))
