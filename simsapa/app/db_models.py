@@ -30,8 +30,8 @@ class Card(Base):
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("documents.id"))
     doc_page_number = Column(Integer)
-    question = Column(String)
-    answer = Column(String)
+    front = Column(String)
+    back = Column(String)
     anki_synced_at = Column(DateTime)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
@@ -55,8 +55,8 @@ CREATE TABLE `cards` (
   `id`              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `document_id`     INTEGER REFERENCES `documents` (`id`) ON DELETE NO ACTION ON UPDATE CASCADE,
   `doc_page_number` INTEGER,
-  `question`        TEXT,
-  `answer`          TEXT,
+  `front`           TEXT,
+  `back`            TEXT,
   `anki_synced_at`  TEXT,
   `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TEXT

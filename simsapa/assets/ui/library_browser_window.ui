@@ -166,6 +166,7 @@
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
+    <addaction name="action_Cards"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -320,6 +321,17 @@
    </property>
    <property name="shortcut">
     <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Cards">
+   <property name="text">
+    <string>&amp;Cards</string>
+   </property>
+   <property name="toolTip">
+    <string>Cards</string>
+   </property>
+   <property name="shortcut">
+    <string>F9</string>
    </property>
   </action>
  </widget>

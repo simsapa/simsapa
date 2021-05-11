@@ -4,12 +4,12 @@ from typing import List
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)  # type: ignore
 
 from .types import AppData  # type: ignore
-from .db_models import Document
 
 from ..layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: ignore
 from ..layouts.dictionary_search import DictionarySearchWindow, DictionarySearchCtrl  # type: ignore
 from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
 from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
+from ..layouts.cards_browser import CardsBrowserWindow  # type: ignore
 
 
 class AppWindows:
@@ -34,6 +34,12 @@ class AppWindows:
 
     def _new_library_browser_window(self):
         view = LibraryBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
+
+    def _new_cards_browser_window(self):
+        view = CardsBrowserWindow(self._app_data)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
@@ -95,5 +101,5 @@ class AppWindows:
             .triggered.connect(partial(self._new_document_reader_window))
         view.action_Library \
             .triggered.connect(partial(self._new_library_browser_window))
-
-
+        view.action_Cards \
+            .triggered.connect(partial(self._new_cards_browser_window))

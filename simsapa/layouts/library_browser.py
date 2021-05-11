@@ -94,8 +94,6 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
 
         # Remove from database
 
-        # delete record with cascade
-        # https://stackoverflow.com/questions/19243964/sqlalchemy-delete-doesnt-cascade
         db_item = self._app_data.user_db_session \
                                 .query(Document) \
                                 .filter(Document.id == doc_id) \
