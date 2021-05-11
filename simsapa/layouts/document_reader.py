@@ -3,7 +3,7 @@ from typing import List
 import logging as _logging
 
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QLabel, QMainWindow)  # type: ignore
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog)  # type: ignore
 import fitz  # type: ignore
 
 from ..app.types import AppData  # type: ignore
@@ -33,6 +33,16 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self._zoom = 1.5
         self._matrix = fitz.Matrix(self._zoom, self._zoom)
 
+    def open_file_dialog(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Open File...",
+            "",
+            "PDF or Epub Files (*.pdf *.epub)")
+
+        if len(file_path) != 0:
+            self.open_doc(file_path)
+
     def open_doc(self, path):
         self._doc = fitz.open(path)
         self.doc_go_to_page(1)
@@ -58,25 +68,31 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
     def _previous_page(self):
         if self._doc and self._current_idx > 0:
             self._current_idx += -1
-            self.current_page_input.setValue(self._current_idx + 1)
+            self._upd_current_page_input(self._current_idx + 1)
 
     def _next_page(self):
         if self._doc and self._current_idx < len(self._doc) - 1:
             self._current_idx += 1
-            self.current_page_input.setValue(self._current_idx + 1)
+            self._upd_current_page_input(self._current_idx + 1)
 
     def _beginning(self):
         if self._doc and self._current_idx != 0:
             self._current_idx = 0
-            self.current_page_input.setValue(self._current_idx + 1)
+            self._upd_current_page_input(self._current_idx + 1)
 
     def _end(self):
         if self._doc and self._current_idx != len(self._doc):
             self._current_idx = len(self._doc) - 1
-            self.current_page_input.setValue(self._current_idx + 1)
+            self._upd_current_page_input(self._current_idx + 1)
+
+    def _upd_current_page_input(self, n):
+        self.current_page_input.setValue(n)
+        self.current_page_input.clearFocus()
 
     def _go_to_page_dialog(self):
-        pass
+        n, ok = QInputDialog.getInt(self, "Go to Page...", "Page:", 1, 1, len(self._doc), 1)
+        if ok:
+            self._upd_current_page_input(n)
 
     def _go_to_page_input(self):
         n = self.current_page_input.value()

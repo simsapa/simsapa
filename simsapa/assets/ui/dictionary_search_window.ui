@@ -130,13 +130,14 @@
     <addaction name="action_Copy"/>
     <addaction name="action_Paste"/>
    </widget>
-   <widget class="QMenu" name="menuWindows">
+   <widget class="QMenu" name="menu_Windows">
     <property name="title">
-     <string>Windows</string>
+     <string>&amp;Windows</string>
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Document_Reader"/>
+    <addaction name="action_Library"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -147,7 +148,7 @@
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
-   <addaction name="menuWindows"/>
+   <addaction name="menu_Windows"/>
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -242,6 +243,14 @@
    </property>
    <property name="shortcut">
     <string>F7</string>
+   </property>
+  </action>
+  <action name="action_Library">
+   <property name="text">
+    <string>&amp;Library</string>
+   </property>
+   <property name="shortcut">
+    <string>F8</string>
    </property>
   </action>
  </widget>

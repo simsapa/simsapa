@@ -1,12 +1,70 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, DateTime, LargeBinary  # type: ignore
 
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship, backref  # type: ignore
 
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.declarative import declarative_base  # type: ignore
 
 
 Base = declarative_base()
 
+
+# === User Data ===
+
+class Document(Base):
+    __tablename__ = "documents"
+    id = Column(Integer, primary_key=True)
+    filepath = Column(String, nullable=False, unique=True)
+    title = Column(String)
+    author = Column(String)
+    cover_data = Column(LargeBinary)
+    cover_width = Column(Integer)
+    cover_height = Column(Integer)
+    cover_stride = Column(Integer)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+    cards = relationship("Card", backref=backref("card"))
+
+
+class Card(Base):
+    __tablename__ = "cards"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"))
+    doc_page_number = Column(Integer)
+    question = Column(String)
+    answer = Column(String)
+    anki_synced_at = Column(DateTime)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+USERDATA_CREATE_SCHEMA_SQL = """
+CREATE TABLE `documents` (
+  `id`           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  `filepath`     TEXT NOT NULL UNIQUE,
+  `title`        VARCHAR,
+  `author`       VARCHAR,
+  `cover_data`   BLOB,
+  `cover_width`  INTEGER,
+  `cover_height` INTEGER,
+  `cover_stride` INTEGER,
+  `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TEXT
+);
+
+CREATE TABLE `cards` (
+  `id`              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  `document_id`     INTEGER REFERENCES `documents` (`id`) ON DELETE NO ACTION ON UPDATE CASCADE,
+  `doc_page_number` INTEGER,
+  `question`        TEXT,
+  `answer`          TEXT,
+  `anki_synced_at`  TEXT,
+  `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      TEXT
+);
+"""
+
+
+# === App Data ===
 
 class Author(Base):
     __tablename__ = "authors"

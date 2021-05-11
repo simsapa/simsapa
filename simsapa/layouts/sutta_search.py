@@ -76,7 +76,7 @@ class SuttaSearchCtrl:
         self._set_content_html(html)
 
     def _sutta_search_query(self, query: str):
-        results = self._view._app_data.db_session \
+        results = self._view._app_data.app_db_session \
                                .query(DbSutta) \
                                .filter(DbSutta.content_html.like(f"%{query}%")) \
                                .all()

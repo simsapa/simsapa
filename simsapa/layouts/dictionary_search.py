@@ -83,7 +83,7 @@ class DictionarySearchCtrl:
         self._set_content_html(html)
 
     def _word_search_query(self, query: str):
-        results = self._view._app_data.db_session \
+        results = self._view._app_data.app_db_session \
                                       .query(DbDictWord) \
                                       .options(joinedload(DbDictWord.meanings)) \
                                       .filter(DbDictWord.word.like(f"%{query}%")) \

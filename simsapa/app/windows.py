@@ -4,10 +4,12 @@ from typing import List
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)  # type: ignore
 
 from .types import AppData  # type: ignore
+from .db_models import Document
 
 from ..layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: ignore
 from ..layouts.dictionary_search import DictionarySearchWindow, DictionarySearchCtrl  # type: ignore
 from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
+from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
 
 
 class AppWindows:
@@ -30,6 +32,12 @@ class AppWindows:
         DictionarySearchCtrl(view)
         self._windows.append(view)
 
+    def _new_library_browser_window(self):
+        view = LibraryBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
+
     def _new_document_reader_window(self, file_path=None):
         view = DocumentReaderWindow(self._app_data)
         self._connect_signals(view)
@@ -41,15 +49,23 @@ class AppWindows:
 
         self._windows.append(view)
 
-    def _open_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            None,
-            "Open File...",
-            "",
-            "PDF or Epub Files (*.pdf *.epub)")
+    def _open_selected_document(self, view: QMainWindow):
+        doc = view.get_selected_document()
+        if doc:
+            self._new_document_reader_window(doc.filepath)
 
-        if len(file_path) != 0:
-            self._new_document_reader_window(file_path)
+    def _open_file_dialog(self, view: QMainWindow):
+        try:
+            view.open_file_dialog()
+        except AttributeError:
+            file_path, _ = QFileDialog.getOpenFileName(
+                None,
+                "Open File...",
+                "",
+                "PDF or Epub Files (*.pdf *.epub)")
+
+            if len(file_path) != 0:
+                self._new_document_reader_window(file_path)
 
     def _close_all_windows(self):
         for w in self._windows:
@@ -61,7 +77,14 @@ class AppWindows:
 
     def _connect_signals(self, view: QMainWindow):
         view.action_Open \
-            .triggered.connect(partial(self._open_file))
+            .triggered.connect(partial(self._open_file_dialog, view))
+
+        try:
+            view.action_Open_Selected \
+                .triggered.connect(partial(self._open_selected_document, view))
+        except Exception:
+            pass
+
         view.action_Quit \
             .triggered.connect(partial(self._quit_app))
         view.action_Sutta_Search \
@@ -70,5 +93,7 @@ class AppWindows:
             .triggered.connect(partial(self._new_dictionary_search_window))
         view.action_Document_Reader \
             .triggered.connect(partial(self._new_document_reader_window))
+        view.action_Library \
+            .triggered.connect(partial(self._new_library_browser_window))
 
 

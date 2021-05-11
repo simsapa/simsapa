@@ -1,4 +1,3 @@
-from pathlib import Path
 import sys
 import os
 import logging as _logging
@@ -24,26 +23,12 @@ def main():
 
     logger.info("main()")
 
-    paths = [
-        Path.cwd().joinpath("appdata.sqlite3"),
-        Path.home().joinpath(".config/simsapa/assets/appdata.sqlite3"),
-    ]
-
-    db_path = None
-
-    for p in paths:
-        if p.is_file():
-            db_path = p
-
-    if db_path is None:
-        print("ERROR: Cannot find appdata.sqlite3")
-        exit(1)
-
-    app_data = AppData(db_path)
+    app_data = AppData()
 
     app = QApplication(sys.argv)
 
-    # Create systray
+    # === Create systray ===
+
     app.setQuitOnLastWindowClosed(False)
 
     tray = QSystemTrayIcon(QIcon(":bookmark"))
@@ -57,10 +42,11 @@ def main():
 
     tray.setContextMenu(menu)
 
-    # Create first window
+    # === Create first window ===
 
     app_windows = AppWindows(app, app_data)
     app_windows._new_sutta_search_window()
 
-    logger.info("Exiting.")
-    sys.exit(app.exec_())
+    status = app.exec_()
+    logger.info(f"Exiting with status {status}.")
+    sys.exit(status)
