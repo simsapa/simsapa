@@ -22,17 +22,17 @@ class Document(Base):
     cover_stride = Column(Integer)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
-    cards = relationship("Card", backref=backref("card"))
+    notes = relationship("Note", backref=backref("note"))
 
 
-class Card(Base):
-    __tablename__ = "cards"
+class Note(Base):
+    __tablename__ = "notes"
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("documents.id"))
     doc_page_number = Column(Integer)
     front = Column(String)
     back = Column(String)
-    anki_card_id = Column(Integer)
+    anki_note_id = Column(Integer)
     anki_synced_at = Column(DateTime)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
@@ -52,13 +52,13 @@ CREATE TABLE `documents` (
   `updated_at`      TEXT
 );
 
-CREATE TABLE `cards` (
+CREATE TABLE `notes` (
   `id`              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `document_id`     INTEGER REFERENCES `documents` (`id`) ON DELETE NO ACTION ON UPDATE CASCADE,
   `doc_page_number` INTEGER,
   `front`           TEXT,
   `back`            TEXT,
-  `anki_card_id`    INTEGER,
+  `anki_note_id`    INTEGER,
   `anki_synced_at`  TEXT,
   `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TEXT

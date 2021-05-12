@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog,
                              QMessageBox)  # type: ignore
 import fitz  # type: ignore
 
-from ..app.db_models import Document, Card  # type: ignore
+from ..app.db_models import Document, Note  # type: ignore
 
 from ..app.types import AppData  # type: ignore
 from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow  # type: ignore
@@ -17,19 +17,19 @@ from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow  # typ
 logger = _logging.getLogger(__name__)
 
 
-class CardListModel(QAbstractListModel):
-    def __init__(self, *args, cards=None, **kwargs):
-        super(CardListModel, self).__init__(*args, **kwargs)
-        self.cards = cards or []
+class NoteListModel(QAbstractListModel):
+    def __init__(self, *args, notes=None, **kwargs):
+        super(NoteListModel, self).__init__(*args, **kwargs)
+        self.notes = notes or []
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
-            text = self.cards[index.row()].front + " " + self.cards[index.row()].back
+            text = self.notes[index.row()].front + " " + self.notes[index.row()].back
             return text
 
     def rowCount(self, index):
-        if self.cards:
-            return len(self.cards)
+        if self.notes:
+            return len(self.notes)
         else:
             return 0
 
@@ -42,9 +42,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self._app_data: AppData = app_data
         self._current_idx: int = 0
 
-        self.model = CardListModel()
-        self.cards_list.setModel(self.model)
-        self.sel_model = self.cards_list.selectionModel()
+        self.model = NoteListModel()
+        self.notes_list.setModel(self.model)
+        self.sel_model = self.notes_list.selectionModel()
 
         self._ui_setup()
 
@@ -53,7 +53,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
     def _ui_setup(self):
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
-        self._show_card_clear()
+        self._show_note_clear()
 
         self._doc = None
         self.db_doc = None
@@ -77,11 +77,11 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
                                 .filter(Document.filepath == path) \
                                 .first()
 
-        cards = self._get_cards_for_this_page()
-        if cards:
-            self.model.cards = cards
+        notes = self._get_notes_for_this_page()
+        if notes:
+            self.model.notes = notes
         else:
-            self.model.cards = []
+            self.model.notes = []
 
         self.model.layoutChanged.emit()
 
@@ -107,9 +107,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.content_page.setPixmap(QPixmap.fromImage(img))
 
         if self.db_doc:
-            self.cards_list.clearSelection()
-            self._show_card_clear()
-            self.model.cards = self._get_cards_for_this_page()
+            self.notes_list.clearSelection()
+            self._show_note_clear()
+            self.model.notes = self._get_notes_for_this_page()
             self.model.layoutChanged.emit()
 
     def _previous_page(self):
@@ -145,62 +145,62 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         n = self.current_page_input.value()
         self.doc_go_to_page(n)
 
-    def _get_cards_for_this_page(self) -> List[Card]:
+    def _get_notes_for_this_page(self) -> List[Note]:
         if self.db_doc is None:
             return
 
-        cards = self._app_data.user_db_session \
-                             .query(Card) \
-                             .filter(Card.document_id == self.db_doc.id, Card.doc_page_number == self._current_idx + 1) \
+        notes = self._app_data.user_db_session \
+                             .query(Note) \
+                             .filter(Note.document_id == self.db_doc.id, Note.doc_page_number == self._current_idx + 1) \
                              .all()
 
-        return cards
+        return notes
 
-    def get_selected_card(self) -> Optional[Card]:
-        a = self.cards_list.selectedIndexes()
+    def get_selected_note(self) -> Optional[Note]:
+        a = self.notes_list.selectedIndexes()
         if not a:
             return None
 
         item = a[0]
-        return self.model.cards[item.row()]
+        return self.model.notes[item.row()]
 
-    def remove_selected_card(self):
-        a = self.cards_list.selectedIndexes()
+    def remove_selected_note(self):
+        a = self.notes_list.selectedIndexes()
         if not a:
             return None
 
         # Remove from model
         item = a[0]
-        card_id = self.model.cards[item.row()].id
+        note_id = self.model.notes[item.row()].id
 
-        del self.model.cards[item.row()]
+        del self.model.notes[item.row()]
         self.model.layoutChanged.emit()
-        self.cards_list.clearSelection()
-        self._show_card_clear()
+        self.notes_list.clearSelection()
+        self._show_note_clear()
 
         # Remove from database
 
         db_item = self._app_data.user_db_session \
-                                .query(Card) \
-                                .filter(Card.id == card_id) \
+                                .query(Note) \
+                                .filter(Note.id == note_id) \
                                 .first()
         self._app_data.user_db_session.delete(db_item)
         self._app_data.user_db_session.commit()
 
-    def _handle_card_select(self):
-        card = self.get_selected_card()
-        if card:
-            self._show_card(card)
+    def _handle_note_select(self):
+        note = self.get_selected_note()
+        if note:
+            self._show_note(note)
 
-    def _show_card_clear(self):
+    def _show_note_clear(self):
         self.front_input.clear()
         self.back_input.clear()
 
-    def _show_card(self, card: Card):
-        self.front_input.setPlainText(card.front)
-        self.back_input.setPlainText(card.back)
+    def _show_note(self, note: Note):
+        self.front_input.setPlainText(note.front)
+        self.back_input.setPlainText(note.back)
 
-    def add_card(self):
+    def add_note(self):
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -211,15 +211,15 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         # Insert database record
 
-        logger.info(f"Adding new card")
+        logger.info(f"Adding new note")
 
         if self.db_doc is None:
-            db_card = Card(
+            db_note = Note(
                 front=front,
                 back=back
             )
         else:
-            db_card = Card(
+            db_note = Note(
                 front=front,
                 back=back,
                 document_id=self.db_doc.id,
@@ -227,52 +227,52 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             )
 
         try:
-            self._app_data.user_db_session.add(db_card)
+            self._app_data.user_db_session.add(db_note)
             self._app_data.user_db_session.commit()
 
             # Add to model
-            if self.model.cards:
-                self.model.cards.append(db_card)
+            if self.model.notes:
+                self.model.notes.append(db_note)
             else:
-                self.model.cards = [db_card]
+                self.model.notes = [db_note]
 
         except Exception as e:
             logger.error(e)
 
         self.model.layoutChanged.emit()
 
-    def update_selected_card_front(self):
-        card = self.get_selected_card()
-        if card is None:
+    def update_selected_note_front(self):
+        note = self.get_selected_note()
+        if note is None:
             return
 
-        card.front = self.front_input.toPlainText()
+        note.front = self.front_input.toPlainText()
 
         self._app_data.user_db_session.commit()
         self.model.layoutChanged.emit()
 
-    def update_selected_card_back(self):
-        card = self.get_selected_card()
-        if card is None:
+    def update_selected_note_back(self):
+        note = self.get_selected_note()
+        if note is None:
             return
 
-        card.back = self.back_input.toPlainText()
+        note.back = self.back_input.toPlainText()
 
         self._app_data.user_db_session.commit()
         self.model.layoutChanged.emit()
 
-    def remove_card_dialog(self):
-        card = self.get_selected_card()
-        if not card:
+    def remove_note_dialog(self):
+        note = self.get_selected_note()
+        if not note:
             return
 
         reply = QMessageBox.question(self,
-                                     'Remove Card...',
+                                     'Remove Note...',
                                      'Remove this item?',
                                      QMessageBox.Yes | QMessageBox.No,
                                      QMessageBox.No)
         if reply == QMessageBox.Yes:
-            self.remove_selected_card()
+            self.remove_selected_note()
 
 class DocumentReaderCtrl:
     def __init__(self, view):
@@ -299,16 +299,16 @@ class DocumentReaderCtrl:
         self._view.current_page_input \
             .valueChanged.connect(partial(self._view._go_to_page_input))
 
-        self._view.sel_model.selectionChanged.connect(partial(self._view._handle_card_select))
+        self._view.sel_model.selectionChanged.connect(partial(self._view._handle_note_select))
 
-        self._view.add_card_button \
-                  .clicked.connect(partial(self._view.add_card))
+        self._view.add_note_button \
+                  .clicked.connect(partial(self._view.add_note))
 
-        self._view.remove_card_button \
-                  .clicked.connect(partial(self._view.remove_card_dialog))
+        self._view.remove_note_button \
+                  .clicked.connect(partial(self._view.remove_note_dialog))
 
         self._view.front_input \
-                  .textChanged.connect(partial(self._view.update_selected_card_front))
+                  .textChanged.connect(partial(self._view.update_selected_note_front))
 
         self._view.back_input \
-                  .textChanged.connect(partial(self._view.update_selected_card_back))
+                  .textChanged.connect(partial(self._view.update_selected_note_back))

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>CardsBrowserWindow</class>
- <widget class="QMainWindow" name="CardsBrowserWindow">
+ <class>NotesBrowserWindow</class>
+ <widget class="QMainWindow" name="NotesBrowserWindow">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -127,7 +127,7 @@
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
-         <widget class="QListView" name="cards_list"/>
+         <widget class="QListView" name="notes_list"/>
         </item>
        </layout>
       </item>
@@ -168,7 +168,7 @@
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
-    <addaction name="action_Cards"/>
+    <addaction name="action_Notes"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -177,16 +177,16 @@
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
-   <widget class="QMenu" name="menu_Cards">
+   <widget class="QMenu" name="menu_Notes">
     <property name="title">
-     <string>&amp;Cards</string>
+     <string>&amp;Notes</string>
     </property>
     <addaction name="action_Sync_to_Anki"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_Windows"/>
-   <addaction name="menu_Cards"/>
+   <addaction name="menu_Notes"/>
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -315,12 +315,12 @@
     <string>&amp;Sync to Anki</string>
    </property>
   </action>
-  <action name="action_Cards">
+  <action name="action_Notes">
    <property name="text">
-    <string>&amp;Cards</string>
+    <string>&amp;Notes</string>
    </property>
    <property name="toolTip">
-    <string>Cards</string>
+    <string>Notes</string>
    </property>
    <property name="shortcut">
     <string>F9</string>

@@ -13,39 +13,39 @@ from sqlalchemy.sql import func  # type: ignore
 
 from simsapa.assets import icons_rc
 
-from ..app.db_models import Card  # type: ignore
+from ..app.db_models import Note  # type: ignore
 from ..app.types import AppData  # type: ignore
-from ..assets.ui.cards_browser_window_ui import \
-    Ui_CardsBrowserWindow  # type: ignore
+from ..assets.ui.notes_browser_window_ui import \
+    Ui_NotesBrowserWindow  # type: ignore
 
 logger = _logging.getLogger(__name__)
 
 
-class CardListModel(QAbstractListModel):
-    def __init__(self, *args, cards=None, **kwargs):
-        super(CardListModel, self).__init__(*args, **kwargs)
-        self.cards = cards or []
+class NoteListModel(QAbstractListModel):
+    def __init__(self, *args, notes=None, **kwargs):
+        super(NoteListModel, self).__init__(*args, **kwargs)
+        self.notes = notes or []
 
     def data(self, index, role):
         if role == Qt.DisplayRole:
-            text = self.cards[index.row()].front + " " + self.cards[index.row()].back
+            text = self.notes[index.row()].front + " " + self.notes[index.row()].back
             return text
 
     def rowCount(self, index):
-        return len(self.cards)
+        return len(self.notes)
 
 
-class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
+class NotesBrowserWindow(QMainWindow, Ui_NotesBrowserWindow):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
         self._app_data: AppData = app_data
 
-        self.model = CardListModel(cards=self._get_all_cards())
+        self.model = NoteListModel(notes=self._get_all_notes())
 
-        self.cards_list.setModel(self.model)
-        self.sel_model = self.cards_list.selectionModel()
+        self.notes_list.setModel(self.model)
+        self.sel_model = self.notes_list.selectionModel()
 
         self._ui_setup()
         self._connect_signals()
@@ -57,63 +57,63 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         self.statusbar.addPermanentWidget(self.status_msg)
 
         self.front_input.setFocus()
-        self._show_card_clear()
+        self._show_note_clear()
 
-    def _get_all_cards(self) -> List[Card]:
-        return self._app_data.user_db_session.query(Card).all()
+    def _get_all_notes(self) -> List[Note]:
+        return self._app_data.user_db_session.query(Note).all()
 
     def _handle_query(self):
         pass
 
-    def get_selected_card(self) -> Optional[Card]:
-        a = self.cards_list.selectedIndexes()
+    def get_selected_note(self) -> Optional[Note]:
+        a = self.notes_list.selectedIndexes()
         if not a:
             return None
 
         item = a[0]
-        return self.model.cards[item.row()]
+        return self.model.notes[item.row()]
 
-    def remove_selected_card(self):
-        a = self.cards_list.selectedIndexes()
+    def remove_selected_note(self):
+        a = self.notes_list.selectedIndexes()
         if not a:
             return None
 
         # Remove from model
         item = a[0]
-        card_id = self.model.cards[item.row()].id
+        note_id = self.model.notes[item.row()].id
 
-        del self.model.cards[item.row()]
+        del self.model.notes[item.row()]
         self.model.layoutChanged.emit()
-        self.cards_list.clearSelection()
-        self._show_card_clear()
+        self.notes_list.clearSelection()
+        self._show_note_clear()
 
         # Remove from database
 
         db_item = self._app_data.user_db_session \
-                                .query(Card) \
-                                .filter(Card.id == card_id) \
+                                .query(Note) \
+                                .filter(Note.id == note_id) \
                                 .first()
         self._app_data.user_db_session.delete(db_item)
         self._app_data.user_db_session.commit()
 
-    def _handle_card_select(self):
-        card = self.get_selected_card()
-        if card:
-            self._show_card(card)
+    def _handle_note_select(self):
+        note = self.get_selected_note()
+        if note:
+            self._show_note(note)
 
-    def _show_card_clear(self):
+    def _show_note_clear(self):
         self.status_msg.clear()
         self.front_input.clear()
         self.back_input.clear()
 
-    def _show_card(self, card: Card):
-        self.front_input.setPlainText(card.front)
-        self.back_input.setPlainText(card.back)
+    def _show_note(self, note: Note):
+        self.front_input.setPlainText(note.front)
+        self.back_input.setPlainText(note.back)
 
-    def _cards_search_query(self, query: str):
+    def _notes_search_query(self, query: str):
         return []
 
-    def add_card(self):
+    def add_note(self):
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -124,57 +124,57 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
 
         # Insert database record
 
-        logger.info(f"Adding new card")
+        logger.info(f"Adding new note")
 
-        db_card = Card(
+        db_note = Note(
             front=front,
             back=back,
         )
 
         try:
-            self._app_data.user_db_session.add(db_card)
+            self._app_data.user_db_session.add(db_note)
             self._app_data.user_db_session.commit()
 
             # Add to model
-            self.model.cards.append(db_card)
+            self.model.notes.append(db_note)
 
         except Exception as e:
             logger.error(e)
 
         self.model.layoutChanged.emit()
 
-    def update_selected_card_front(self):
-        card = self.get_selected_card()
-        if card is None:
+    def update_selected_note_front(self):
+        note = self.get_selected_note()
+        if note is None:
             return
 
-        card.front = self.front_input.toPlainText()
+        note.front = self.front_input.toPlainText()
 
         self._app_data.user_db_session.commit()
         self.model.layoutChanged.emit()
 
-    def update_selected_card_back(self):
-        card = self.get_selected_card()
-        if card is None:
+    def update_selected_note_back(self):
+        note = self.get_selected_note()
+        if note is None:
             return
 
-        card.back = self.back_input.toPlainText()
+        note.back = self.back_input.toPlainText()
 
         self._app_data.user_db_session.commit()
         self.model.layoutChanged.emit()
 
-    def remove_card_dialog(self):
-        card = self.get_selected_card()
-        if not card:
+    def remove_note_dialog(self):
+        note = self.get_selected_note()
+        if not note:
             return
 
         reply = QMessageBox.question(self,
-                                     'Remove Card...',
+                                     'Remove Note...',
                                      'Remove this item?',
                                      QMessageBox.Yes | QMessageBox.No,
                                      QMessageBox.No)
         if reply == QMessageBox.Yes:
-            self.remove_selected_card()
+            self.remove_selected_note()
 
     def sync_to_anki(self):
         if not test_anki_live_or_notify():
@@ -184,18 +184,18 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         if 'Simsapa' not in res:
             anki_invoke('createDeck', deck='Simsapa')
 
-        for card in self.model.cards:
+        for note in self.model.notes:
 
-            if card.anki_card_id:
+            if note.anki_note_id:
                 logger.info("Updating Anki note...")
 
                 anki_invoke(
                     'updateNoteFields',
                     note={
-                        'id': card.anki_card_id,
+                        'id': note.anki_note_id,
                         'fields': {
-                            'Front': card.front,
-                            'Back': card.back,
+                            'Front': note.front,
+                            'Back': note.back,
                         },
                     }
                 )
@@ -209,8 +209,8 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
                         'deckName': 'Simsapa',
                         'modelName': 'Basic',
                         'fields': {
-                            'Front': card.front,
-                            'Back': card.back,
+                            'Front': note.front,
+                            'Back': note.back,
                         },
                         'options': {
                             'allowDuplicate': True,
@@ -223,7 +223,7 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
                     }
                 )
 
-                card.anki_card_id = res
+                note.anki_note_id = res
                 self._app_data.user_db_session.commit()
 
     def _connect_signals(self):
@@ -231,10 +231,10 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
             .triggered.connect(partial(self.close))
 
         self.action_Add \
-            .triggered.connect(partial(self.add_card))
+            .triggered.connect(partial(self.add_note))
 
         self.action_Remove \
-            .triggered.connect(partial(self.remove_card_dialog))
+            .triggered.connect(partial(self.remove_note_dialog))
 
         self.action_Sync_to_Anki \
             .triggered.connect(partial(self.sync_to_anki))
@@ -242,10 +242,10 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         self.search_button.clicked.connect(partial(self._handle_query))
         self.search_input.textChanged.connect(partial(self._handle_query))
 
-        self.front_input.textChanged.connect(partial(self.update_selected_card_front))
-        self.back_input.textChanged.connect(partial(self.update_selected_card_back))
+        self.front_input.textChanged.connect(partial(self.update_selected_note_front))
+        self.back_input.textChanged.connect(partial(self.update_selected_note_back))
 
-        self.sel_model.selectionChanged.connect(partial(self._handle_card_select))
+        self.sel_model.selectionChanged.connect(partial(self._handle_note_select))
 
 def test_anki_live_or_notify() -> bool:
     if not is_anki_live():

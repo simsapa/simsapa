@@ -9,7 +9,7 @@ from ..layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: i
 from ..layouts.dictionary_search import DictionarySearchWindow, DictionarySearchCtrl  # type: ignore
 from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
 from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
-from ..layouts.cards_browser import CardsBrowserWindow  # type: ignore
+from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
 
 
 class AppWindows:
@@ -38,8 +38,8 @@ class AppWindows:
         view.show()
         self._windows.append(view)
 
-    def _new_cards_browser_window(self):
-        view = CardsBrowserWindow(self._app_data)
+    def _new_notes_browser_window(self):
+        view = NotesBrowserWindow(self._app_data)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
@@ -101,5 +101,5 @@ class AppWindows:
             .triggered.connect(partial(self._new_document_reader_window))
         view.action_Library \
             .triggered.connect(partial(self._new_library_browser_window))
-        view.action_Cards \
-            .triggered.connect(partial(self._new_cards_browser_window))
+        view.action_Notes \
+            .triggered.connect(partial(self._new_notes_browser_window))
