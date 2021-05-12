@@ -1,22 +1,17 @@
 import logging as _logging
-import os.path
 import requests
 from functools import partial
 from typing import List, Optional
 
-import fitz  # type: ignore
 from PyQt5.QtCore import QAbstractListModel, Qt
-from PyQt5.QtGui import QIcon, QImage, QPixmap
-from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,  # type: ignore
-                             QMessageBox)
+from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)  # type: ignore
 from sqlalchemy.sql import func  # type: ignore
 
 from simsapa.assets import icons_rc
 
 from ..app.db_models import Note  # type: ignore
 from ..app.types import AppData  # type: ignore
-from ..assets.ui.notes_browser_window_ui import \
-    Ui_NotesBrowserWindow  # type: ignore
+from ..assets.ui.notes_browser_window_ui import Ui_NotesBrowserWindow  # type: ignore
 
 logger = _logging.getLogger(__name__)
 
@@ -124,11 +119,12 @@ class NotesBrowserWindow(QMainWindow, Ui_NotesBrowserWindow):
 
         # Insert database record
 
-        logger.info(f"Adding new note")
+        logger.info("Adding new note")
 
         db_note = Note(
             front=front,
             back=back,
+            created_at=func.now(),
         )
 
         try:
@@ -176,8 +172,17 @@ class NotesBrowserWindow(QMainWindow, Ui_NotesBrowserWindow):
         if reply == QMessageBox.Yes:
             self.remove_selected_note()
 
+    def test_anki_live_or_notify(self) -> bool:
+        if not is_anki_live():
+            QMessageBox.information(self,
+                                    "Anki is not connected",
+                                    "Anki must be running with the AnkiConnect plugin.",
+                                    QMessageBox.Ok)
+            return False
+        return True
+
     def sync_to_anki(self):
-        if not test_anki_live_or_notify():
+        if not self.test_anki_live_or_notify():
             return
 
         res = anki_invoke('deckNames')
@@ -247,14 +252,6 @@ class NotesBrowserWindow(QMainWindow, Ui_NotesBrowserWindow):
 
         self.sel_model.selectionChanged.connect(partial(self._handle_note_select))
 
-def test_anki_live_or_notify() -> bool:
-    if not is_anki_live():
-        QMessageBox.information(None,
-                                "Anki is not connected",
-                                "Anki must be running with the AnkiConnect plugin.",
-                                QMessageBox.Ok)
-        return False
-    return True
 
 def is_anki_live() -> bool:
     try:
@@ -264,8 +261,10 @@ def is_anki_live() -> bool:
 
     return res.status_code == 200
 
+
 def anki_request(action, **params):
     return {'action': action, 'params': params, 'version': 6}
+
 
 def anki_invoke(action, **params):
     res = requests.get(url='http://localhost:8765', json=anki_request(action, **params))

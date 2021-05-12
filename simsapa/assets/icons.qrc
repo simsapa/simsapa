@@ -4,5 +4,6 @@
     <file alias="close">icons/32x32/fa_times-circle.png</file>
     <file alias="book">icons/32x32/bxs_book_bookmark.png</file>
     <file alias="dictionary">icons/32x32/bxs_book_content.png</file>
+    <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
   </qresource>
 </RCC>

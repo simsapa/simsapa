@@ -7,8 +7,9 @@ import yaml
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)  # type: ignore
 
-from .app.types import AppData  # type: ignore
+from .app.types import AppData, create_app_dirs, APP_DB_PATH  # type: ignore
 from .app.windows import AppWindows  # type: ignore
+from .layouts.download_appdata import DownloadAppdataWindow
 
 from simsapa.assets import icons_rc
 
@@ -23,9 +24,19 @@ def main():
 
     logger.info("main()")
 
-    app_data = AppData()
+    create_app_dirs()
+
+    if not APP_DB_PATH.exists():
+        dl_app = QApplication(sys.argv)
+        w = DownloadAppdataWindow()
+        w.show()
+        status = dl_app.exec_()
+        logger.info(f"Exiting with status {status}.")
+        sys.exit(status)
 
     app = QApplication(sys.argv)
+
+    app_data = AppData()
 
     # === Create systray ===
 
