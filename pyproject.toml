@@ -13,6 +13,7 @@ Markdown = "^3.3.4"
 PyYAML = "^5.4.1"
 PyMuPDF = "^1.18.13"
 SQLAlchemy-Utils = "^0.37.2"
+requests = "^2.25.1"
 
 [tool.poetry.dev-dependencies]
 

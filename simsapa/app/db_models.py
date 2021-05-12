@@ -32,6 +32,7 @@ class Card(Base):
     doc_page_number = Column(Integer)
     front = Column(String)
     back = Column(String)
+    anki_card_id = Column(Integer)
     anki_synced_at = Column(DateTime)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
@@ -57,6 +58,7 @@ CREATE TABLE `cards` (
   `doc_page_number` INTEGER,
   `front`           TEXT,
   `back`            TEXT,
+  `anki_card_id`    INTEGER,
   `anki_synced_at`  TEXT,
   `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TEXT

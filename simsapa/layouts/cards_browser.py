@@ -1,14 +1,15 @@
 import logging as _logging
 import os.path
+import requests
 from functools import partial
 from typing import List, Optional
-from sqlalchemy.sql import func  # type: ignore
 
 import fitz  # type: ignore
 from PyQt5.QtCore import QAbstractListModel, Qt
 from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,  # type: ignore
                              QMessageBox)
+from sqlalchemy.sql import func  # type: ignore
 
 from simsapa.assets import icons_rc
 
@@ -175,6 +176,56 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         if reply == QMessageBox.Yes:
             self.remove_selected_card()
 
+    def sync_to_anki(self):
+        if not test_anki_live_or_notify():
+            return
+
+        res = anki_invoke('deckNames')
+        if 'Simsapa' not in res:
+            anki_invoke('createDeck', deck='Simsapa')
+
+        for card in self.model.cards:
+
+            if card.anki_card_id:
+                logger.info("Updating Anki note...")
+
+                anki_invoke(
+                    'updateNoteFields',
+                    note={
+                        'id': card.anki_card_id,
+                        'fields': {
+                            'Front': card.front,
+                            'Back': card.back,
+                        },
+                    }
+                )
+
+            else:
+                logger.info("Creating Anki note...")
+
+                res = anki_invoke(
+                    'addNote',
+                    note={
+                        'deckName': 'Simsapa',
+                        'modelName': 'Basic',
+                        'fields': {
+                            'Front': card.front,
+                            'Back': card.back,
+                        },
+                        'options': {
+                            'allowDuplicate': True,
+                            'duplicateScope': 'deck',
+                            'duplicateScopeOptions': {
+                                'deckName': 'Simsapa',
+                                'checkChildren': False
+                            }
+                        },
+                    }
+                )
+
+                card.anki_card_id = res
+                self._app_data.user_db_session.commit()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -185,6 +236,9 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         self.action_Remove \
             .triggered.connect(partial(self.remove_card_dialog))
 
+        self.action_Sync_to_Anki \
+            .triggered.connect(partial(self.sync_to_anki))
+
         self.search_button.clicked.connect(partial(self._handle_query))
         self.search_input.textChanged.connect(partial(self._handle_query))
 
@@ -192,3 +246,41 @@ class CardsBrowserWindow(QMainWindow, Ui_CardsBrowserWindow):
         self.back_input.textChanged.connect(partial(self.update_selected_card_back))
 
         self.sel_model.selectionChanged.connect(partial(self._handle_card_select))
+
+def test_anki_live_or_notify() -> bool:
+    if not is_anki_live():
+        QMessageBox.information(None,
+                                "Anki is not connected",
+                                "Anki must be running with the AnkiConnect plugin.",
+                                QMessageBox.Ok)
+        return False
+    return True
+
+def is_anki_live() -> bool:
+    try:
+        res = requests.get('http://localhost:8765')
+    except Exception:
+        return False
+
+    return res.status_code == 200
+
+def anki_request(action, **params):
+    return {'action': action, 'params': params, 'version': 6}
+
+def anki_invoke(action, **params):
+    res = requests.get(url='http://localhost:8765', json=anki_request(action, **params))
+    response = res.json()
+
+    if len(response) != 2:
+        raise Exception('response has an unexpected number of fields')
+
+    if 'error' not in response:
+        raise Exception('response is missing required error field')
+
+    if 'result' not in response:
+        raise Exception('response is missing required result field')
+
+    if response['error'] is not None:
+        raise Exception(response['error'])
+
+    return response['result']
