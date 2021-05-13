@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.2"
+version = "0.1.3"
 description = "Simsapa Dhamma Reader"
 authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-PyQt5 = "^5.15.4"
+PyQt5 = "==5.15.0"
 SQLAlchemy = "^1.4.6"
 Markdown = "^3.3.4"
 PyYAML = "^5.4.1"
