@@ -7,8 +7,8 @@ from PyQt5.QtCore import QAbstractListModel, Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog,
                              QMessageBox)  # type: ignore
-import fitz  # type: ignore
 
+from ..app.file_doc import FileDoc  # type: ignore
 from ..app.db_models import Document, Note  # type: ignore
 
 from ..app.types import AppData  # type: ignore
@@ -40,7 +40,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.setupUi(self)
 
         self._app_data: AppData = app_data
-        self._current_idx: int = 0
 
         self.model = NoteListModel()
         self.notes_list.setModel(self.model)
@@ -55,11 +54,8 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.statusbar.addPermanentWidget(self.status_msg)
         self._show_note_clear()
 
-        self._doc = None
+        self.file_doc = None
         self.db_doc = None
-
-        self._zoom = 1.5
-        self._matrix = fitz.Matrix(self._zoom, self._zoom)
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -85,26 +81,32 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         self.model.layoutChanged.emit()
 
-        self._doc = fitz.open(path)
+        self.file_doc = FileDoc(path)
         self.doc_go_to_page(1)
 
     def doc_show_current(self):
-        self.doc_go_to_page(self._current_idx + 1)
+        self.doc_go_to_page(self.file_doc.current_page_number())
 
     def doc_go_to_page(self, page: int):
-        logger.info(f"doc_go_to_page({page})")
-
-        if self._doc is None or page < 1 or page > len(self._doc):
+        if not self.file_doc:
             return
 
-        self.page_current_of_total.setText(f"{page} of {len(self._doc)}")
+        logger.info(f"doc_go_to_page({page})")
 
-        self._current_idx = page - 1
+        page_count = self.file_doc.number_of_pages()
 
-        pix = self._doc[self._current_idx].get_pixmap(matrix=self._matrix, alpha=False)
+        if self.file_doc is None or page < 1 or page > page_count:
+            return
 
-        img = QImage(pix.tobytes("ppm"), pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
-        self.content_page.setPixmap(QPixmap.fromImage(img))
+        self.page_current_of_total.setText(f"{page} of {page_count}")
+
+        if self.file_doc:
+            self.file_doc.set_page_number(page)
+
+            page_img = self.file_doc.current_page_image()
+            if page_img:
+                img = QImage(page_img.image_bytes, page_img.width, page_img.height, page_img.stride, QImage.Format.Format_RGB888)
+                self.content_page.setPixmap(QPixmap.fromImage(img))
 
         if self.db_doc:
             self.notes_list.clearSelection()
@@ -113,31 +115,33 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             self.model.layoutChanged.emit()
 
     def _previous_page(self):
-        if self._doc and self._current_idx > 0:
-            self._current_idx += -1
-            self._upd_current_page_input(self._current_idx + 1)
+        page_nr = self.file_doc.current_page_number() - 1
+        if self.file_doc and page_nr > 0:
+            self.file_doc.set_page_number(page_nr)
+            self._upd_current_page_input(page_nr)
 
     def _next_page(self):
-        if self._doc and self._current_idx < len(self._doc) - 1:
-            self._current_idx += 1
-            self._upd_current_page_input(self._current_idx + 1)
+        page_nr = self.file_doc.current_page_number() + 1
+        if self.file_doc and page_nr <= self.file_doc.number_of_pages():
+            self.file_doc.set_page_number(page_nr)
+            self._upd_current_page_input(page_nr)
 
     def _beginning(self):
-        if self._doc and self._current_idx != 0:
-            self._current_idx = 0
-            self._upd_current_page_input(self._current_idx + 1)
+        if self.file_doc and self.file_doc.current_page_number() != 1:
+            self.file_doc.set_page_number(1)
+            self._upd_current_page_input(1)
 
     def _end(self):
-        if self._doc and self._current_idx != len(self._doc):
-            self._current_idx = len(self._doc) - 1
-            self._upd_current_page_input(self._current_idx + 1)
+        if self.file_doc and self.file_doc.current_page_number() != self.file_doc.number_of_pages():
+            self.file_doc.set_page_number(self.file_doc.number_of_pages())
+            self._upd_current_page_input(self.file_doc.number_of_pages())
 
     def _upd_current_page_input(self, n):
         self.current_page_input.setValue(n)
         self.current_page_input.clearFocus()
 
     def _go_to_page_dialog(self):
-        n, ok = QInputDialog.getInt(self, "Go to Page...", "Page:", 1, 1, len(self._doc), 1)
+        n, ok = QInputDialog.getInt(self, "Go to Page...", "Page:", 1, 1, self.file_doc.number_of_pages(), 1)
         if ok:
             self._upd_current_page_input(n)
 
@@ -146,12 +150,14 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.doc_go_to_page(n)
 
     def _get_notes_for_this_page(self) -> List[Note]:
-        if self.db_doc is None:
+        if self.db_doc is None or self.file_doc is None:
             return
 
         notes = self._app_data.user_db_session \
                              .query(Note) \
-                             .filter(Note.document_id == self.db_doc.id, Note.doc_page_number == self._current_idx + 1) \
+                             .filter(
+                                 Note.document_id == self.db_doc.id,
+                                 Note.doc_page_number == self.file_doc.current_page_number()) \
                              .all()
 
         return notes
@@ -223,7 +229,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
                 front=front,
                 back=back,
                 document_id=self.db_doc.id,
-                doc_page_number=self._current_idx + 1,
+                doc_page_number=self.file_doc.current_page_number(),
             )
 
         try:

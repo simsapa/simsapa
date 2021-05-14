@@ -4,18 +4,16 @@ from functools import partial
 from typing import List, Optional
 from sqlalchemy.sql import func  # type: ignore
 
-import fitz  # type: ignore
-from PyQt5.QtCore import QAbstractListModel, Qt
-from PyQt5.QtGui import QIcon, QImage, QPixmap
+from PyQt5.QtCore import QAbstractListModel, Qt  # type: ignore
+from PyQt5.QtGui import QIcon, QImage, QPixmap  # type: ignore
 from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,  # type: ignore
                              QMessageBox)
-
 from simsapa.assets import icons_rc
 
+from ..app.file_doc import FileDoc  # type: ignore
 from ..app.db_models import Document  # type: ignore
 from ..app.types import AppData  # type: ignore
-from ..assets.ui.library_browser_window_ui import \
-    Ui_LibraryBrowserWindow  # type: ignore
+from ..assets.ui.library_browser_window_ui import Ui_LibraryBrowserWindow  # type: ignore
 
 logger = _logging.getLogger(__name__)
 
@@ -117,8 +115,15 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self.doc_title.setText(doc.title)
         self.doc_author.setText(doc.author)
 
-        img = QImage(doc.cover_data, doc.cover_width, doc.cover_height, doc.cover_stride, QImage.Format.Format_RGB888)
-        self.doc_cover.setPixmap(QPixmap.fromImage(img))
+        if doc.cover_data:
+            img = QImage(
+                doc.cover_data,
+                doc.cover_width,
+                doc.cover_height,
+                doc.cover_stride,
+                QImage.Format.Format_RGB888
+            )
+            self.doc_cover.setPixmap(QPixmap.fromImage(img))
 
     def _documents_search_query(self, query: str):
         results = self._app_data.user_db_session \
@@ -132,19 +137,13 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
             logger.error(f"File doesn't exist: {filepath}")
             return
 
-        # Get properties with pymupdf
-        file_doc = fitz.open(filepath)
+        file_doc = FileDoc(filepath)
 
-        title = file_doc.metadata['title']
-        if len(title) == 0:
-            title = "Unknown"
+        title = file_doc.title or "Unknown"
 
-        author = file_doc.metadata['author']
-        if len(author) == 0:
-            author = "Unknown"
+        author = file_doc.author or "Unknown"
 
-        pix = file_doc[0].get_pixmap(matrix=fitz.Matrix(0.7, 0.7), alpha=False)
-        cover_data = pix.tobytes("ppm")
+        page_image = file_doc.page_image(0, 0.7)
 
         # Insert or update database record
 
@@ -155,16 +154,24 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         if item is None:
             logger.info(f"Add new: {filepath}")
 
-            db_doc = Document(
-                filepath=filepath,
-                title=title,
-                author=author,
-                cover_data=cover_data,
-                cover_width=pix.width,
-                cover_height=pix.height,
-                cover_stride=pix.stride,
-                created_at=func.now(),
-            )
+            if page_image:
+                db_doc = Document(
+                    filepath=filepath,
+                    title=title,
+                    author=author,
+                    cover_data=page_image.image_bytes,
+                    cover_width=page_image.width,
+                    cover_height=page_image.height,
+                    cover_stride=page_image.stride,
+                    created_at=func.now(),
+                )
+            else:
+                db_doc = Document(
+                    filepath=filepath,
+                    title=title,
+                    author=author,
+                    created_at=func.now(),
+                )
 
             try:
                 self._app_data.user_db_session.add(db_doc)
@@ -179,16 +186,24 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         else:
             logger.info(f"Update: {item.filepath}")
 
-            values = {
-                'filepath': filepath,
-                'title': title,
-                'author': author,
-                'cover_data': cover_data,
-                'cover_width': pix.width,
-                'cover_height': pix.height,
-                'cover_stride': pix.stride,
-                'updated_at': func.now(),
-            }
+            if page_image:
+                values = {
+                    'filepath': filepath,
+                    'title': title,
+                    'author': author,
+                    'cover_data': page_image.image_bytes,
+                    'cover_width': page_image.width,
+                    'cover_height': page_image.height,
+                    'cover_stride': page_image.stride,
+                    'updated_at': func.now(),
+                }
+            else:
+                values = {
+                    'filepath': filepath,
+                    'title': title,
+                    'author': author,
+                    'updated_at': func.now(),
+                }
 
             try:
                 self._app_data.user_db_session \
