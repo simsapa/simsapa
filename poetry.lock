@@ -203,7 +203,7 @@ brotli = ["brotlipy (>=0.6.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "481f21769d8936145809d7a353ed435596538281a7b39afc97e051271a5ceb85"
+content-hash = "b0f9dcea09d2d9a0b5bb9aba73587f990ffaaf842e6c5d7a1b55333ccdbb17c0"
 
 [metadata.files]
 appdirs = [
