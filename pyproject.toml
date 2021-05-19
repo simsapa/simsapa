@@ -22,6 +22,9 @@ PyMuPDF = [
   { version =  "^1.18.13", platform = "win32" },
   { version =  "^1.18.13", platform = "darwin" },
 ]
+pandas = "^1.2.4"
+openpyxl = "^3.0.7"
+semver = "^2.13.0"
 
 [tool.poetry.dev-dependencies]
 

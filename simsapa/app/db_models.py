@@ -38,6 +38,23 @@ class Note(Base):
     updated_at = Column(DateTime)
 
 
+class DictionarySource(Base):
+    __tablename__ = "dictionary_sources"
+    id = Column(Integer, primary_key=True)
+    # dictionary_id = Column(Integer, ForeignKey("dictionary.id"))
+    title = Column(String)
+    creator = Column(String)
+    description = Column(String)
+    contact_email = Column(String)
+    version = Column(String)
+    has_update = Column(Boolean)
+    data_zip_url = Column(String)
+    info_json_url = Column(String)
+    url_synced_at = Column(DateTime)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
 USERDATA_CREATE_SCHEMA_SQL = """
 CREATE TABLE `documents` (
   `id`           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -48,8 +65,8 @@ CREATE TABLE `documents` (
   `cover_width`  INTEGER,
   `cover_height` INTEGER,
   `cover_stride` INTEGER,
-  `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`      TEXT
+  `created_at`   TEXT DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`   TEXT
 );
 
 CREATE TABLE `notes` (
@@ -62,6 +79,22 @@ CREATE TABLE `notes` (
   `anki_synced_at`  TEXT,
   `created_at`      TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TEXT
+);
+
+CREATE TABLE `dictionary_sources` (
+  `id`            INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  -- `dictionary_id` INTEGER REFERENCES `dictionaries` (`id`) ON DELETE NO ACTION ON UPDATE CASCADE,
+  `title`         TEXT,
+  `creator`       TEXT,
+  `description`   TEXT,
+  `contact_email` TEXT,
+  `version`       TEXT,
+  `data_zip_url`  TEXT,
+  `info_json_url` TEXT,
+  `url_synced_at` TEXT,
+  `has_update`    TINYINT(1),
+  `created_at`    TEXT DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`    TEXT
 );
 """
 
@@ -129,5 +162,3 @@ class Meaning(Base):
     root_groups = Column(String)
     root_sign = Column(String)
     root_numbered_group = Column(String)
-
-

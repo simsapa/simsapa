@@ -135,6 +135,8 @@ class Ui_NotesBrowserWindow(object):
         self.action_Sync_to_Anki.setObjectName("action_Sync_to_Anki")
         self.action_Notes = QtWidgets.QAction(NotesBrowserWindow)
         self.action_Notes.setObjectName("action_Notes")
+        self.action_Dictionaries_Manager = QtWidgets.QAction(NotesBrowserWindow)
+        self.action_Dictionaries_Manager.setObjectName("action_Dictionaries_Manager")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -143,6 +145,7 @@ class Ui_NotesBrowserWindow(object):
         self.menu_Edit.addAction(self.action_Paste)
         self.menu_Windows.addAction(self.action_Sutta_Search)
         self.menu_Windows.addAction(self.action_Dictionary_Search)
+        self.menu_Windows.addAction(self.action_Dictionaries_Manager)
         self.menu_Windows.addAction(self.action_Document_Reader)
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Notes)
@@ -199,4 +202,6 @@ class Ui_NotesBrowserWindow(object):
         self.action_Notes.setText(_translate("NotesBrowserWindow", "&Notes"))
         self.action_Notes.setToolTip(_translate("NotesBrowserWindow", "Notes"))
         self.action_Notes.setShortcut(_translate("NotesBrowserWindow", "F9"))
+        self.action_Dictionaries_Manager.setText(_translate("NotesBrowserWindow", "Dictionaries &Manager"))
+        self.action_Dictionaries_Manager.setShortcut(_translate("NotesBrowserWindow", "F10"))
 from simsapa.assets import icons_rc

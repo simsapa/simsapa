@@ -166,6 +166,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Dictionary_Search"/>
+    <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
     <addaction name="action_Notes"/>
@@ -324,6 +325,14 @@
    </property>
    <property name="shortcut">
     <string>F9</string>
+   </property>
+  </action>
+  <action name="action_Dictionaries_Manager">
+   <property name="text">
+    <string>Dictionaries &amp;Manager</string>
+   </property>
+   <property name="shortcut">
+    <string>F10</string>
    </property>
   </action>
  </widget>

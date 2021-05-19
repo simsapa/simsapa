@@ -7,7 +7,7 @@ from PyQt5.QtCore import QAbstractListModel, Qt
 from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)  # type: ignore
 from sqlalchemy.sql import func  # type: ignore
 
-from simsapa.assets import icons_rc
+from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.db_models import Note  # type: ignore
 from ..app.types import AppData  # type: ignore

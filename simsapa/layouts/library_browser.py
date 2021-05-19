@@ -8,7 +8,7 @@ from PyQt5.QtCore import QAbstractListModel, Qt  # type: ignore
 from PyQt5.QtGui import QIcon, QImage, QPixmap  # type: ignore
 from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,  # type: ignore
                              QMessageBox)
-from simsapa.assets import icons_rc
+from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.file_doc import FileDoc  # type: ignore
 from ..app.db_models import Document  # type: ignore

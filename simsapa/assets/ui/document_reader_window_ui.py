@@ -253,6 +253,8 @@ class Ui_DocumentReaderWindow(object):
         self.action_Library.setObjectName("action_Library")
         self.action_Notes = QtWidgets.QAction(DocumentReaderWindow)
         self.action_Notes.setObjectName("action_Notes")
+        self.action_Dictionaries_Manager = QtWidgets.QAction(DocumentReaderWindow)
+        self.action_Dictionaries_Manager.setObjectName("action_Dictionaries_Manager")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -261,6 +263,7 @@ class Ui_DocumentReaderWindow(object):
         self.menu_Edit.addAction(self.action_Paste)
         self.menu_Windows.addAction(self.action_Sutta_Search)
         self.menu_Windows.addAction(self.action_Dictionary_Search)
+        self.menu_Windows.addAction(self.action_Dictionaries_Manager)
         self.menu_Windows.addAction(self.action_Document_Reader)
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Notes)
@@ -341,4 +344,6 @@ class Ui_DocumentReaderWindow(object):
         self.action_Notes.setText(_translate("DocumentReaderWindow", "&Notes"))
         self.action_Notes.setToolTip(_translate("DocumentReaderWindow", "Notes"))
         self.action_Notes.setShortcut(_translate("DocumentReaderWindow", "F9"))
+        self.action_Dictionaries_Manager.setText(_translate("DocumentReaderWindow", "Dictionaries &Manager"))
+        self.action_Dictionaries_Manager.setShortcut(_translate("DocumentReaderWindow", "F10"))
 from simsapa.assets import icons_rc

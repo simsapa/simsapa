@@ -11,7 +11,7 @@ from .app.types import AppData, create_app_dirs, APP_DB_PATH  # type: ignore
 from .app.windows import AppWindows  # type: ignore
 from .layouts.download_appdata import DownloadAppdataWindow
 
-from simsapa.assets import icons_rc
+from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>LibraryBrowserWindow</class>
- <widget class="QMainWindow" name="LibraryBrowserWindow">
+ <class>DictionariesManagerWindow</class>
+ <widget class="QMainWindow" name="DictionariesManagerWindow">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -17,45 +17,12 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>Library - Simsapa</string>
+   <string>Dictionaries Manager - Simsapa</string>
   </property>
   <widget class="QWidget" name="central_widget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <item>
      <layout class="QVBoxLayout" name="main_layout">
-      <item>
-       <layout class="QHBoxLayout" name="searchbar_layout">
-        <property name="sizeConstraint">
-         <enum>QLayout::SetMinimumSize</enum>
-        </property>
-        <item>
-         <widget class="QLineEdit" name="search_input">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>35</height>
-           </size>
-          </property>
-          <property name="clearButtonEnabled">
-           <bool>true</bool>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="search_button">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>40</height>
-           </size>
-          </property>
-          <property name="text">
-           <string>Search</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
       <item>
        <widget class="QSplitter" name="splitter">
         <property name="sizePolicy">
@@ -68,21 +35,32 @@
          <enum>Qt::Horizontal</enum>
         </property>
         <widget class="QWidget" name="verticalLayoutWidget_2">
-         <layout class="QVBoxLayout" name="documents_layout">
+         <layout class="QVBoxLayout" name="dictionary_sources_layout">
           <item>
-           <widget class="QListView" name="documents_list"/>
+           <widget class="QListView" name="dictionary_sources_list">
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>
         <widget class="QWidget" name="verticalLayoutWidget_3">
          <layout class="QVBoxLayout" name="info_layout">
           <item>
-           <widget class="QLabel" name="doc_cover">
+           <widget class="QLabel" name="dict_cover">
             <property name="minimumSize">
              <size>
               <width>100</width>
               <height>0</height>
              </size>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
             </property>
             <property name="text">
              <string>Cover</string>
@@ -93,7 +71,12 @@
            </widget>
           </item>
           <item>
-           <widget class="QLabel" name="doc_title">
+           <widget class="QLabel" name="dict_title">
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
+            </property>
             <property name="text">
              <string>Title</string>
             </property>
@@ -103,12 +86,83 @@
            </widget>
           </item>
           <item>
-           <widget class="QLabel" name="doc_author">
+           <widget class="QLabel" name="dict_creator">
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
+            </property>
             <property name="text">
-             <string>Author</string>
+             <string>Creator</string>
             </property>
             <property name="alignment">
              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="dict_version">
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Version</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="dict_description">
+            <property name="font">
+             <font>
+              <pointsize>9</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Description</string>
+            </property>
+            <property name="margin">
+             <number>10</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="dict_message">
+            <property name="font">
+             <font>
+              <pointsize>9</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Message</string>
+            </property>
+            <property name="margin">
+             <number>10</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="dict_update_button">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>100</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>11</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Update</string>
             </property>
            </widget>
           </item>
@@ -214,8 +268,11 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="action_Open_Selected"/>
-   <addaction name="action_Add"/>
+   <addaction name="action_Add_from_URL"/>
+   <addaction name="action_Import_from_File"/>
+   <addaction name="action_Check_Updates"/>
+   <addaction name="action_Sync_to_Anki"/>
+   <addaction name="action_Export"/>
    <addaction name="action_Remove"/>
   </widget>
   <action name="action_Copy">
@@ -335,12 +392,37 @@
     <string>F9</string>
    </property>
   </action>
+  <action name="action_Sync_to_Anki">
+   <property name="text">
+    <string>&amp;Sync to Anki</string>
+   </property>
+  </action>
+  <action name="action_Export">
+   <property name="text">
+    <string>&amp;Export...</string>
+   </property>
+  </action>
+  <action name="action_Import_from_File">
+   <property name="text">
+    <string>&amp;Import from File...</string>
+   </property>
+  </action>
+  <action name="action_Add_from_URL">
+   <property name="text">
+    <string>&amp;Add from URL...</string>
+   </property>
+  </action>
   <action name="action_Dictionaries_Manager">
    <property name="text">
     <string>Dictionaries &amp;Manager</string>
    </property>
    <property name="shortcut">
     <string>F10</string>
+   </property>
+  </action>
+  <action name="action_Check_Updates">
+   <property name="text">
+    <string>&amp;Check Updates</string>
    </property>
   </action>
  </widget>

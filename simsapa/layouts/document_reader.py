@@ -1,6 +1,5 @@
 from functools import partial
 from typing import List, Optional
-from sqlalchemy.sql import func  # type: ignore
 import logging as _logging
 
 from PyQt5.QtCore import QAbstractListModel, Qt
@@ -105,7 +104,11 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
             page_img = self.file_doc.current_page_image()
             if page_img:
-                img = QImage(page_img.image_bytes, page_img.width, page_img.height, page_img.stride, QImage.Format.Format_RGB888)
+                img = QImage(page_img.image_bytes,
+                             page_img.width,
+                             page_img.height,
+                             page_img.stride,
+                             QImage.Format.Format_RGB888)
                 self.content_page.setPixmap(QPixmap.fromImage(img))
 
         if self.db_doc:
@@ -154,11 +157,11 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             return
 
         notes = self._app_data.user_db_session \
-                             .query(Note) \
-                             .filter(
-                                 Note.document_id == self.db_doc.id,
-                                 Note.doc_page_number == self.file_doc.current_page_number()) \
-                             .all()
+                              .query(Note) \
+                              .filter(
+                                  Note.document_id == self.db_doc.id,
+                                  Note.doc_page_number == self.file_doc.current_page_number()) \
+                              .all()
 
         return notes
 
@@ -217,7 +220,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         # Insert database record
 
-        logger.info(f"Adding new note")
+        logger.info("Adding new note")
 
         if self.db_doc is None:
             db_note = Note(
@@ -279,6 +282,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
                                      QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.remove_selected_note()
+
 
 class DocumentReaderCtrl:
     def __init__(self, view):

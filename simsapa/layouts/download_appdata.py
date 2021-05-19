@@ -1,21 +1,20 @@
 import os
 from functools import partial
-import requests
 import tarfile
-from pathlib import Path
 import logging as _logging
-from typing import Optional
 
 from PyQt5.QtCore import Qt  # type: ignore
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QMessageBox)  # type: ignore
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)  # type: ignore
 from PyQt5.QtGui import QMovie  # type: ignore
 
 from ..app.types import ASSETS_DIR, APP_DB_PATH
+from ..app.helpers import download_file
 
-from simsapa.assets import icons_rc
+from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)
+
 
 class DownloadAppdataWindow(QMainWindow):
     def __init__(self) -> None:
@@ -97,6 +96,7 @@ class DownloadWorker(QObject):
         download_extract_appdata()
         self.finished.emit()
 
+
 def download_extract_appdata() -> bool:
     tar_file_path = download_file(
         'https://ssp.a-buddha-ujja.hu/appdata/appdata.tar.bz2',
@@ -111,15 +111,3 @@ def download_extract_appdata() -> bool:
 
     if not APP_DB_PATH.exists():
         logger.error(f"File not found: {APP_DB_PATH}")
-
-def download_file(url: str, folder_path: Path) -> Path:
-    file_name = url.split('/')[-1]
-    file_path = folder_path.joinpath(file_name)
-
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(file_path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-    return file_path
