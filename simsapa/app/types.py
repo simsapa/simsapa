@@ -86,7 +86,7 @@ class Sutta:
 
 def create_app_dirs():
     if not SIMSAPA_DIR.exists():
-        os.mkdir(SIMSAPA_DIR)
+        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
 
     if not ASSETS_DIR.exists():
-        os.mkdir(ASSETS_DIR)
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
