@@ -8,9 +8,9 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)  # type: ignore
 from PyQt5.QtGui import QMovie  # type: ignore
 
-from ..app.types import ASSETS_DIR, APP_DB_PATH
 from ..app.helpers import download_file
 
+from simsapa import ASSETS_DIR, APP_DB_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)

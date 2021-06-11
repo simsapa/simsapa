@@ -7,17 +7,20 @@ from functools import partial
 from typing import List, Optional
 from pathlib import Path
 from zipfile import ZipFile
-# import pandas
+import pandas
+from pyglossary import Glossary
 from sqlalchemy.sql import func  # type: ignore
 
 from PyQt5.QtCore import QAbstractListModel, Qt  # type: ignore
 from PyQt5.QtGui import QFont, QIcon  # type: ignore
 from PyQt5.QtWidgets import (QLabel, QMainWindow,  # type: ignore
-                             QMessageBox, QInputDialog, QLineEdit)
+                             QMessageBox, QInputDialog, QFileDialog, QLineEdit)
+
+from simsapa import ASSETS_DIR
 from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.db_models import DictionarySource  # type: ignore
-from ..app.types import AppData, ASSETS_DIR  # type: ignore
+from ..app.types import AppData, DictWord  # type: ignore
 from ..app.helpers import download_file  # type: ignore
 from ..assets.ui.dictionaries_manager_window_ui import Ui_DictionariesManagerWindow  # type: ignore
 
@@ -132,6 +135,84 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
             self.dict_message.clear()
             self.dict_update_button.hide()
 
+    def add_words_from_xlsx(self, xlsx_path: Path):
+        xlsx_data_df = pandas.read_excel(xlsx_path, sheet_name='Words')
+        words_data = xlsx_data_df.to_dict(orient='records')
+
+        def to_word(data) -> DictWord:
+            word = DictWord(data['word'])
+            word.definition_md = data['definition_md']
+            return word
+
+        words: List[DictWord] = list(map(to_word, words_data))
+
+        print(len(words))
+
+    def add_words_from_stardict(self, ifo_path: Path):
+        logger.info(f'add_words_from_stardict(): {ifo_path}')
+        Glossary.init()
+        glos = Glossary()
+        if not glos.read(ifo_path, format='Stardict', direct=True, progressbar=False):
+            logger.error('Reading StarDict failed')
+
+        words: List[DictWord] = []
+
+        n = 0
+        max_words = 100  # FIXME don't stop importing
+
+        # TODO create dictionary for manager from Startdict info
+
+        for entry in glos:
+            if n >= max_words:
+                break
+            n += 1
+
+            # handle entry.defiFormat
+            # m is plaintext
+            # h is html
+
+            logger.info(entry.s_word)
+            word = DictWord(entry.s_word)
+            word.definition_md = entry.defi
+            words.append(word)
+
+        print(len(words))
+
+    def process_file(self, p: Path):
+        # MS Excel Spreadsheet
+        if p.suffix == '.xlsx':
+            self.add_words_from_xlsx(p)
+
+        # Stardict format
+        if p.suffix == '.ifo':
+            self.add_words_from_stardict(p)
+
+    def add_words_from_data_zip(self, zip_path: Path, extract_dir: Path):
+        try:
+            with ZipFile(zip_path, 'r') as z:
+                z.extractall(extract_dir)
+        except Exception as e:
+            logger.error(e)
+            return
+
+        for p in extract_dir.glob("*"):
+            if p.is_dir():
+                for pp in p.glob("*"):
+                    self.process_file(pp)
+            else:
+                self.process_file(p)
+
+    def add_from_file(self, zip_path: Path):
+        temp_dir: Path = ASSETS_DIR.joinpath('temp')
+        if not temp_dir.exists():
+            os.mkdir(temp_dir)
+
+        self.add_words_from_data_zip(zip_path, temp_dir)
+
+        shutil.rmtree(temp_dir)
+
+        # TODO add dictionary entry to manager
+
     def add_from_url(self, json_url):
         temp_dir: Path = ASSETS_DIR.joinpath('temp')
         if not temp_dir.exists():
@@ -143,15 +224,7 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
 
         zip_path = download_file(remote_info['data_zip_url'], temp_dir)
 
-        with ZipFile(zip_path, 'r') as z:
-            z.extractall(temp_dir)
-
-        # xlsx_path = temp_dir.joinpath('data.xlsx')
-
-        # xlsx_data_df = pandas.read_excel(xlsx_path, sheet_name='Words')
-        # xlsx_json = xlsx_data_df.to_json()
-
-        # TODO: add words to database
+        self.add_words_from_data_zip(zip_path, temp_dir)
 
         # Remove downloaded files
         shutil.rmtree(temp_dir)
@@ -223,6 +296,16 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         if ok:
             self.add_from_url(url)
 
+    def _add_from_file_dialog(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Open File...",
+            "",
+            "Zip Files (*.zip)")
+
+        if len(file_path) != 0:
+            self.add_from_file(file_path)
+
     def _remove_dictionary_source_dialog(self):
         dict_source = self.get_selected_dictionary_source()
         if not dict_source:
@@ -263,6 +346,9 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
 
         self.action_Add_from_URL \
             .triggered.connect(partial(self._add_from_url_dialog))
+
+        self.action_Import_from_File \
+            .triggered.connect(partial(self._add_from_file_dialog))
 
         self.action_Check_Updates \
             .triggered.connect(partial(self._check_updates))

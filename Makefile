@@ -12,3 +12,5 @@ ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/library_browser_window_ui.py simsapa/assets/ui/library_browser_window.ui && \
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/notes_browser_window_ui.py simsapa/assets/ui/notes_browser_window.ui
 
+tests:
+	python ./tests/test_basic.py -v

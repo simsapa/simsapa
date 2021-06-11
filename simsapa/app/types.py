@@ -1,21 +1,14 @@
-from pathlib import Path
 import os
 import os.path
-import appdirs  # type: ignore
 import logging as _logging
 
 from sqlalchemy import create_engine, text  # type: ignore
 from sqlalchemy_utils import database_exists, create_database  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
-import simsapa.app.db_models as db_models
+from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR, SIMSAPA_MIGRATIONS_DIR
 
 logger = _logging.getLogger(__name__)
-
-SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
-ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
-APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
-USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
 
 class AppData:
@@ -27,26 +20,45 @@ class AppData:
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
 
-        self.app_db_conn, self.app_db_session = self._connect_to_db(app_db_path)
-        self.user_db_conn, self.user_db_session = self._connect_to_db(user_db_path)
+        self.db_conn, self.db_session = self._connect_to_db(app_db_path, user_db_path)
 
-    def _connect_to_db(self, db_path):
-        if os.path.isfile(db_path):
-            try:
-                engine = create_engine(f"sqlite+pysqlite:///{db_path}", echo=False, future=True)
-                db_conn = engine.connect()
-                Session = sessionmaker(engine)
-                Session.configure(bind=engine)
-                db_session = Session()
-            except Exception as e:
-                logger.error(f"Can't connect to database: {db_path}")
-                print(e)
-                exit(1)
-        else:
-            logger.error(f"Database file doesn't exist: {db_path}")
+    def _connect_to_db(self, app_db_path, user_db_path):
+        if not os.path.isfile(app_db_path):
+            logger.error(f"Database file doesn't exist: {app_db_path}")
+            exit(1)
+
+        if not os.path.isfile(user_db_path):
+            logger.error(f"Database file doesn't exist: {user_db_path}")
+            exit(1)
+
+        try:
+            # Create an in-memory database
+            engine = create_engine("sqlite+pysqlite://", echo=False)
+
+            db_conn = engine.connect()
+
+            # Attach appdata and userdata
+            db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
+            db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+
+            Session = sessionmaker(engine)
+            Session.configure(bind=engine)
+            db_session = Session()
+        except Exception as e:
+            logger.error("Can't connect to database.")
+            print(e)
             exit(1)
 
         return (db_conn, db_session)
+
+    def create_schema_sql() -> str:
+        try:
+            with open(SIMSAPA_MIGRATIONS_DIR.joinpath('create_schema.sql'), 'r') as f:
+                data = f.read()
+        except Exception as e:
+            logger.error(e)
+            return ""
+        return data
 
     def _find_app_data_or_exit(self):
         if not APP_DB_PATH.exists():
@@ -59,13 +71,14 @@ class AppData:
         if not USER_DB_PATH.exists():
             logger.info("Cannot find userdata.sqlite3, creating it")
 
-            engine = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}",
-                                   echo=False, future=True)
+            engine = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}", echo=False)
+
             if not database_exists(engine.url):
                 create_database(engine.url)
 
             with engine.connect() as db_conn:
-                for s in db_models.USERDATA_CREATE_SCHEMA_SQL.split(';'):
+                sql = self.create_schema_sql()
+                for s in sql.split(';'):
                     db_conn.execute(text(s))
 
         return USER_DB_PATH
