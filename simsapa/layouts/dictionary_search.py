@@ -5,8 +5,9 @@ from sqlalchemy.orm import joinedload  # type: ignore
 
 from PyQt5.QtWidgets import (QLabel, QMainWindow)  # type: ignore
 
-from ..app.db_models import DictWord as DbDictWord  # type: ignore
-from ..app.types import (AppData, DictWord)  # type: ignore
+from ..app.db import appdata_models as Am
+from ..app.db import userdata_models as Um
+from ..app.types import AppData, UDictWord  # type: ignore
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
 
 
@@ -16,8 +17,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self.setupUi(self)
 
         self._app_data: AppData = app_data
-        self._results: List[DictWord] = []
-        self._history: List[DictWord] = []
+        self._results: List[UDictWord] = []
+        self._history: List[UDictWord] = []
 
         self._ui_setup()
 
@@ -48,7 +49,7 @@ class DictionarySearchCtrl:
 
     def _handle_result_select(self):
         selected_idx = self._view.results_list.currentRow()
-        word: DictWord = self._view._results[selected_idx]
+        word: UDictWord = self._view._results[selected_idx]
         self._show_word(word)
 
         self._view._history.insert(0, word)
@@ -56,16 +57,23 @@ class DictionarySearchCtrl:
 
     def _handle_history_select(self):
         selected_idx = self._view.history_list.currentRow()
-        word: DictWord = self._view._history[selected_idx]
+        word: UDictWord = self._view._history[selected_idx]
         self._show_word(word)
 
-    def _show_word(self, word: DictWord):
+    def _show_word(self, word: UDictWord):
         self._view.status_msg.setText(word.word)
 
-        def md_to_html(meaning):
-            return markdown(meaning.definition_md)
+        def example_format(example):
+            return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
 
-        content_html = "".join(list(map(md_to_html, word.meanings)))
+        examples = "".join(list(map(example_format, word.examples)))
+
+        if word.definition_html is not None and word.definition_html != '':
+            content = word.definition_html
+        elif word.definition_plain is not None and word.definition_plain != '':
+            content = markdown(word.definition_plain)
+        else:
+            content = '<p>No content.</p>'
 
         html = """
 <!doctype html>
@@ -75,19 +83,31 @@ class DictionarySearchCtrl:
     <style>%s</style>
   </head>
   <body>
-  %s
+    <div> %s </div>
+    <div> %s </div>
   </body>
 </html>
-""" % ('', content_html)
+""" % ('', content, examples)
 
         self._set_content_html(html)
 
-    def _word_search_query(self, query: str):
-        results = self._view._app_data.app_db_session \
-                                      .query(DbDictWord) \
-                                      .options(joinedload(DbDictWord.meanings)) \
-                                      .filter(DbDictWord.word.like(f"%{query}%")) \
-                                      .all()
+    def _word_search_query(self, query: str) -> List[UDictWord]:
+        results: List[UDictWord] = []
+
+        res = self._view._app_data.db_session \
+                                  .query(Am.DictWord) \
+                                  .options(joinedload(Am.DictWord.examples)) \
+                                  .filter(Am.DictWord.word.like(f"%{query}%")) \
+                                  .all()
+        results.extend(res)
+
+        res = self._view._app_data.db_session \
+                                  .query(Um.DictWord) \
+                                  .options(joinedload(Um.DictWord.examples)) \
+                                  .filter(Um.DictWord.word.like(f"%{query}%")) \
+                                  .all()
+        results.extend(res)
+
         return results
 
     def _connect_signals(self):

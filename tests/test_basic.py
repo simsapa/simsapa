@@ -6,14 +6,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload  # type: ignore
 
 from simsapa.app.types import AppData
-from simsapa.app.db import appdata_models as am
-from simsapa.app.db import userdata_models as um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 import unittest
 
 
 def get_app_data():
-    tests_data_dir = Path(os.path.dirname(__file__)).absolute().joinpath('data')
+    tests_data_dir = Path(os.path.dirname(__file__)).absolute().joinpath('data/assets')
     app_db_path = tests_data_dir.joinpath('appdata.sqlite3')
     user_db_path = tests_data_dir.joinpath('userdata.sqlite3')
 
@@ -27,13 +27,13 @@ class BasicDatabaseTestSuite(unittest.TestCase):
 
     def test_count_appdata_suttas(self):
         app_data = get_app_data()
-        count = app_data.db_session.query(func.count(am.Sutta.id)).scalar()
+        count = app_data.db_session.query(func.count(Am.Sutta.id)).scalar()
 
         self.assertEqual(count, 4)
 
     def test_count_userdata_dict_words(self):
         app_data = get_app_data()
-        count = app_data.db_session.query(func.count(um.DictWord.id)).scalar()
+        count = app_data.db_session.query(func.count(Um.DictWord.id)).scalar()
 
         self.assertEqual(count, 1)
 
@@ -41,8 +41,8 @@ class BasicDatabaseTestSuite(unittest.TestCase):
         app_data = get_app_data()
 
         results = app_data.db_session \
-                          .query(am.DictWord) \
-                          .options(joinedload(am.DictWord.examples)) \
+                          .query(Am.DictWord) \
+                          .options(joinedload(Am.DictWord.examples)) \
                           .all()
 
         text = results[0].examples[0].text_html
@@ -53,17 +53,17 @@ class BasicDatabaseTestSuite(unittest.TestCase):
         app_data = get_app_data()
 
         results = app_data.db_session \
-                          .query(um.MemoAssociation.memo_id) \
+                          .query(Um.MemoAssociation.memo_id) \
                           .filter(
-                              um.MemoAssociation.associated_table == 'appdata.suttas',
-                              um.MemoAssociation.associated_id == 1) \
+                              Um.MemoAssociation.associated_table == 'appdata.suttas',
+                              Um.MemoAssociation.associated_id == 1) \
                           .all()
 
         memo_ids = list(map(lambda x: x[0], results))
 
         memos_data = app_data.db_session \
-                             .query(um.Memo) \
-                             .filter(um.Memo.id.in_(memo_ids)) \
+                             .query(Um.Memo) \
+                             .filter(Um.Memo.id.in_(memo_ids)) \
                              .all()
 
         def get_front(x):
@@ -82,8 +82,8 @@ class PitakaGroupsTestSuite(unittest.TestCase):
         app_data = get_app_data()
 
         count = app_data.db_session \
-                        .query(am.Sutta) \
-                        .filter(am.Sutta.group_path.like('/sutta-pitaka/digha-nikaya/%')) \
+                        .query(Am.Sutta) \
+                        .filter(Am.Sutta.group_path.like('/sutta-pitaka/digha-nikaya/%')) \
                         .count()
 
         self.assertEqual(count, 2)

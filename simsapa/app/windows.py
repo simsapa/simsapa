@@ -7,10 +7,10 @@ from .types import AppData  # type: ignore
 
 from ..layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: ignore
 from ..layouts.dictionary_search import DictionarySearchWindow, DictionarySearchCtrl  # type: ignore
-from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
-from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
-from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
-from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
+# from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
+# from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
+# from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
+# from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
 
 
 class AppWindows:
@@ -33,34 +33,34 @@ class AppWindows:
         DictionarySearchCtrl(view)
         self._windows.append(view)
 
-    def _new_dictionaries_manager_window(self):
-        view = DictionariesManagerWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        self._windows.append(view)
-
-    def _new_library_browser_window(self):
-        view = LibraryBrowserWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        self._windows.append(view)
-
-    def _new_notes_browser_window(self):
-        view = NotesBrowserWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        self._windows.append(view)
-
-    def _new_document_reader_window(self, file_path=None):
-        view = DocumentReaderWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        DocumentReaderCtrl(view)
-
-        if file_path is not None and file_path is not False and len(file_path) > 0:
-            view.open_doc(file_path)
-
-        self._windows.append(view)
+#    def _new_dictionaries_manager_window(self):
+#        view = DictionariesManagerWindow(self._app_data)
+#        self._connect_signals(view)
+#        view.show()
+#        self._windows.append(view)
+#
+#    def _new_library_browser_window(self):
+#        view = LibraryBrowserWindow(self._app_data)
+#        self._connect_signals(view)
+#        view.show()
+#        self._windows.append(view)
+#
+#    def _new_notes_browser_window(self):
+#        view = NotesBrowserWindow(self._app_data)
+#        self._connect_signals(view)
+#        view.show()
+#        self._windows.append(view)
+#
+#    def _new_document_reader_window(self, file_path=None):
+#        view = DocumentReaderWindow(self._app_data)
+#        self._connect_signals(view)
+#        view.show()
+#        DocumentReaderCtrl(view)
+#
+#        if file_path is not None and file_path is not False and len(file_path) > 0:
+#            view.open_doc(file_path)
+#
+#        self._windows.append(view)
 
     def _open_selected_document(self, view: QMainWindow):
         doc = view.get_selected_document()
@@ -104,11 +104,11 @@ class AppWindows:
             .triggered.connect(partial(self._new_sutta_search_window))
         view.action_Dictionary_Search \
             .triggered.connect(partial(self._new_dictionary_search_window))
-        view.action_Dictionaries_Manager \
-            .triggered.connect(partial(self._new_dictionaries_manager_window))
-        view.action_Document_Reader \
-            .triggered.connect(partial(self._new_document_reader_window))
-        view.action_Library \
-            .triggered.connect(partial(self._new_library_browser_window))
-        view.action_Notes \
-            .triggered.connect(partial(self._new_notes_browser_window))
+        # view.action_Dictionaries_Manager \
+        #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+        # view.action_Document_Reader \
+        #     .triggered.connect(partial(self._new_document_reader_window))
+        # view.action_Library \
+        #     .triggered.connect(partial(self._new_library_browser_window))
+        # view.action_Notes \
+        #     .triggered.connect(partial(self._new_notes_browser_window))

@@ -2,17 +2,31 @@ import os
 import os.path
 import logging as _logging
 
+from typing import Union
+
 from sqlalchemy import create_engine, text  # type: ignore
 from sqlalchemy_utils import database_exists, create_database  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
+
+from PyQt5.QtGui import QClipboard
+
+from .db import appdata_models as Am
+from .db import userdata_models as Um
 
 from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR, SIMSAPA_MIGRATIONS_DIR
 
 logger = _logging.getLogger(__name__)
 
+USutta = Union[Am.Sutta, Um.Sutta]
+UDictWord = Union[Am.DictWord, Um.DictWord]
+UDeck = Union[Am.Deck, Um.Deck]
+UMemo = Union[Am.Memo, Um.Memo]
+
 
 class AppData:
-    def __init__(self, app_db_path=None, user_db_path=None):
+    def __init__(self, app_db_path=None, user_db_path=None, clipboard=None):
+
+        self.clipboard: QClipboard = clipboard
 
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
@@ -51,6 +65,16 @@ class AppData:
 
         return (db_conn, db_session)
 
+    def clipboard_setText(self, text):
+        if self.clipboard is not None:
+            self.clipboard.clear()
+            self.clipboard.setText(text)
+
+    def clipboard_getText(self) -> str:
+        if self.clipboard is not None:
+            self.clipboard.clear()
+            return self.clipboard.text()
+
     def create_schema_sql() -> str:
         try:
             with open(SIMSAPA_MIGRATIONS_DIR.joinpath('create_schema.sql'), 'r') as f:
@@ -82,19 +106,6 @@ class AppData:
                     db_conn.execute(text(s))
 
         return USER_DB_PATH
-
-
-class DictWord:
-    def __init__(self, word: str):
-        self.word = word
-        self.definition_md = ''
-
-
-class Sutta:
-    def __init__(self, uid: str, title: str, content_html: str):
-        self.uid = uid
-        self.title = title
-        self.content_html = content_html
 
 
 def create_app_dirs():

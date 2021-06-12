@@ -1,6 +1,6 @@
 appdata.sqlite3
 *.log
-tests/data/*.sqlite3
+tests/data/assets/*.sqlite3
 
 __pycache__/
 .pytest_cache

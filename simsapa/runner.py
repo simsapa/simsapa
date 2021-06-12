@@ -36,7 +36,7 @@ def main():
 
     app = QApplication(sys.argv)
 
-    app_data = AppData()
+    app_data = AppData(clipboard=app.clipboard())
 
     # === Create systray ===
 
