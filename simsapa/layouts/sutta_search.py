@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser)  # type: ignore
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem)  # type: ignore
 
 from sqlalchemy import or_
 from sqlalchemy.sql import func  # type: ignore
@@ -16,6 +16,7 @@ from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta  # type: ignore
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow  # type: ignore
 from .memo_dialog import MemoDialog
+from .sutta_search_item import SuttaSearchItemWidget
 
 logger = _logging.getLogger(__name__)
 
@@ -49,9 +50,21 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         query = self.search_input.text()
         if len(query) > 3:
             self._results = self._sutta_search_query(query)
-            titles = list(map(lambda s: s.title, self._results))
+
             self.results_list.clear()
-            self.results_list.addItems(titles)
+
+            for x in self._results:
+                w = SuttaSearchItemWidget()
+                w.setTitle(x.title)
+
+                if x.content_html:
+                    w.setSnippet(x.content_html[0:200])
+
+                item = QListWidgetItem(self.results_list)
+                item.setSizeHint(w.sizeHint())
+
+                self.results_list.addItem(item)
+                self.results_list.setItemWidget(item, w)
 
     def _set_content_html(self, html):
         self.content_html.setText(html)
