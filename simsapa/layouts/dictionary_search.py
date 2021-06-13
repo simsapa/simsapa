@@ -22,6 +22,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 
         self._ui_setup()
 
+        self._connect_signals()
+
         self.statusbar.showMessage("Ready", 3000)
 
     def _ui_setup(self):
@@ -30,38 +32,32 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 
         self.search_input.setFocus()
 
-
-class DictionarySearchCtrl:
-    def __init__(self, view):
-        self._view = view
-        self._connect_signals()
-
     def _handle_query(self):
-        query = self._view.search_input.text()
+        query = self.search_input.text()
         if len(query) > 3:
-            self._view._results = self._word_search_query(query)
-            titles = list(map(lambda s: s.word, self._view._results))
-            self._view.results_list.clear()
-            self._view.results_list.addItems(titles)
+            self._results = self._word_search_query(query)
+            titles = list(map(lambda s: s.word, self._results))
+            self.results_list.clear()
+            self.results_list.addItems(titles)
 
     def _set_content_html(self, html):
-        self._view.content_html.setText(html)
+        self.content_html.setText(html)
 
     def _handle_result_select(self):
-        selected_idx = self._view.results_list.currentRow()
-        word: UDictWord = self._view._results[selected_idx]
+        selected_idx = self.results_list.currentRow()
+        word: UDictWord = self._results[selected_idx]
         self._show_word(word)
 
-        self._view._history.insert(0, word)
-        self._view.history_list.insertItem(0, word.word)
+        self._history.insert(0, word)
+        self.history_list.insertItem(0, word.word)
 
     def _handle_history_select(self):
-        selected_idx = self._view.history_list.currentRow()
-        word: UDictWord = self._view._history[selected_idx]
+        selected_idx = self.history_list.currentRow()
+        word: UDictWord = self._history[selected_idx]
         self._show_word(word)
 
     def _show_word(self, word: UDictWord):
-        self._view.status_msg.setText(word.word)
+        self.status_msg.setText(word.word)
 
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
@@ -94,14 +90,14 @@ class DictionarySearchCtrl:
     def _word_search_query(self, query: str) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        res = self._view._app_data.db_session \
+        res = self._app_data.db_session \
                                   .query(Am.DictWord) \
                                   .options(joinedload(Am.DictWord.examples)) \
                                   .filter(Am.DictWord.word.like(f"%{query}%")) \
                                   .all()
         results.extend(res)
 
-        res = self._view._app_data.db_session \
+        res = self._app_data.db_session \
                                   .query(Um.DictWord) \
                                   .options(joinedload(Um.DictWord.examples)) \
                                   .filter(Um.DictWord.word.like(f"%{query}%")) \
@@ -111,11 +107,11 @@ class DictionarySearchCtrl:
         return results
 
     def _connect_signals(self):
-        self._view.action_Close_Window \
-            .triggered.connect(partial(self._view.close))
+        self.action_Close_Window \
+            .triggered.connect(partial(self.close))
 
-        self._view.search_button.clicked.connect(partial(self._handle_query))
-        self._view.search_input.textChanged.connect(partial(self._handle_query))
-        # self._view.search_input.returnPressed.connect(partial(self._update_result))
-        self._view.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
-        self._view.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))
+        self.search_button.clicked.connect(partial(self._handle_query))
+        self.search_input.textChanged.connect(partial(self._handle_query))
+        # self.search_input.returnPressed.connect(partial(self._update_result))
+        self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
+        self.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))

@@ -191,8 +191,6 @@ class Memo(Base):
 
     id = Column(Integer, primary_key=True)
     deck_id = Column(Integer, ForeignKey("decks.id"))
-    doc_page_number = Column(Integer)
-    location = Column(String)
 
     fields_json = Column(String)
 
@@ -224,14 +222,15 @@ class MemoAssociation(Base):
     associated_table = Column(String)
     associated_id = Column(Integer)
 
+    page_number = Column(Integer)
+    location = Column(String)
+
 
 class Annotation(Base):
     __tablename__ = "annotations"
 
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("documents.id"), primary_key=True)
-    doc_page_number = Column(Integer)
-    location = Column(Integer)
     ann_type = Column(String)
     text = Column(String)
 
@@ -246,6 +245,9 @@ class AnnotationAssociation(Base):
     annotation_id = Column(Integer, ForeignKey("annotations.id"), primary_key=True)
     associated_table = Column(String)
     associated_id = Column(Integer)
+
+    page_number = Column(Integer)
+    location = Column(Integer)
 
 
 class AppSetting(Base):

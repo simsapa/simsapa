@@ -21,6 +21,7 @@ USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
+UDocument = Union[Am.Document, Um.Document]
 
 
 class AppData:

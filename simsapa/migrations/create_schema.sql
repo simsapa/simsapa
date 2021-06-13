@@ -133,8 +133,6 @@ CREATE TABLE `decks` (
 CREATE TABLE `memos` (
   `id`              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `deck_id`         INTEGER REFERENCES `decks` (`id`) ON DELETE NO ACTION ON UPDATE CASCADE,
-  `doc_page_number` INTEGER,
-  `location`        TEXT,
   ----------------  Content
   `fields_json`     TEXT, -- Front, Back
   ----------------  Anki
@@ -161,13 +159,13 @@ CREATE TABLE `memo_associations` (
   `id`                INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `memo_id`           INTEGER REFERENCES `memos` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   `associated_table`  VARCHAR NOT NULL,
-  `associated_id`     INTEGER NOT NULL
+  `associated_id`     INTEGER NOT NULL,
+  `page_number`       INTEGER,
+  `location`          TEXT
 );
 
 CREATE TABLE `annotations` (
   `id`               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  `page_number`  INTEGER,
-  `location`         TEXT,
   `ann_type`         TEXT,
   `text`             TEXT,
   -----------------  Timestamps
@@ -179,7 +177,9 @@ CREATE TABLE `annotation_associations` (
   `id`                INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `annotation_id`     INTEGER REFERENCES `annotations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   `associated_table`  VARCHAR NOT NULL,
-  `associated_id`     INTEGER NOT NULL
+  `associated_id`     INTEGER NOT NULL,
+  `page_number`       INTEGER,
+  `location`          TEXT
 );
 
 CREATE TABLE `app_settings` (
