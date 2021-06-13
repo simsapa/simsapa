@@ -1,13 +1,22 @@
 all:
 	@echo "No default target."
 
-create_and_seed_test_db:
+bootstrap_test_db: db_create_and_seed db_reindex_fts
+
+db_create_and_seed:
 	cd assets && \
 	rm -f appdata.sqlite3 userdata.sqlite3 && \
 	sqlite3 appdata.sqlite3 < ../../../simsapa/migrations/create_schema.sql && \
 	sqlite3 userdata.sqlite3 < ../../../simsapa/migrations/create_schema.sql && \
+	sqlite3 appdata.sqlite3 < ../../../simsapa/migrations/fts_indexes.sql && \
+	sqlite3 userdata.sqlite3 < ../../../simsapa/migrations/fts_indexes.sql && \
 	sqlite3 appdata.sqlite3 < ../seed_data/appdata-populate.sql && \
 	sqlite3 userdata.sqlite3 < ../seed_data/userdata-populate.sql
+
+db_reindex_fts:
+	cd assets && \
+	sqlite3 appdata.sqlite3 < ../../../simsapa/migrations/reindex_fts.sql && \
+	sqlite3 userdata.sqlite3 < ../../../simsapa/migrations/reindex_fts.sql
 
 export_from_db:
 	cd assets && \

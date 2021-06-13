@@ -74,6 +74,23 @@ class BasicDatabaseTestSuite(unittest.TestCase):
 
         self.assertEqual(memos_front, 'Who is criticizing the Buddha? Who is praising the Buddha?')
 
+    def test_fts_sutta_search(self):
+        app_data = get_app_data()
+
+        query = "evaṃ me sutaṃ"
+        res = app_data.db_session.execute(f"""
+SELECT
+    suttas.id,
+    suttas.title,
+    snippet(fts_suttas, 0, '<b class="highlight">', '</b>', ' ... ', 64) AS content_snippet,
+    suttas.content_html
+FROM fts_suttas
+INNER JOIN suttas ON suttas.id = fts_suttas.rowid
+WHERE fts_suttas MATCH '{query}'
+ORDER BY rank;""").all()
+
+        self.assertIs(True, '<b class="highlight">Evaṃ</b>' in res[0].content_snippet)
+
 
 class PitakaGroupsTestSuite(unittest.TestCase):
     """Sutta groups test cases."""
