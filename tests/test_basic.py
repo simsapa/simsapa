@@ -83,7 +83,7 @@ class PitakaGroupsTestSuite(unittest.TestCase):
 
         count = app_data.db_session \
                         .query(Am.Sutta) \
-                        .filter(Am.Sutta.group_path.like('/sutta-pitaka/digha-nikaya/%')) \
+                        .filter(Am.Sutta.group_path.like('/sutta pitaka/digha nikaya/%')) \
                         .count()
 
         self.assertEqual(count, 2)

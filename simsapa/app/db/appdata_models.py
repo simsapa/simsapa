@@ -217,7 +217,7 @@ class Tag(Base):
 class MemoAssociation(Base):
     __tablename__ = "memo_associations"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     memo_id = Column(Integer, ForeignKey("memos.id"), primary_key=True)
     associated_table = Column(String)
     associated_id = Column(Integer)
