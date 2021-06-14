@@ -58,7 +58,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
                 w.setTitle(x.title)
 
                 if x.content_html:
-                    w.setSnippet(x.content_html[0:200])
+                    w.setSnippet(x.content_html[0:400].strip())
 
                 item = QListWidgetItem(self.results_list)
                 item.setSizeHint(w.sizeHint())
