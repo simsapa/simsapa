@@ -1,5 +1,6 @@
 import sys
 import os
+import traceback
 import logging as _logging
 import logging.config
 import yaml
@@ -10,18 +11,29 @@ from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)  # t
 from .app.types import AppData, create_app_dirs, APP_DB_PATH  # type: ignore
 from .app.windows import AppWindows  # type: ignore
 from .layouts.download_appdata import DownloadAppdataWindow
+from .layouts.error_message import ErrorMessageWindow
 
 from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)
 
+if os.path.exists("logging.yaml"):
+    with open("logging.yaml", 'r') as f:
+        config = yaml.safe_load(f.read())
+        _logging.config.dictConfig(config)
+
+
+def excepthook(exc_type, exc_value, exc_tb):
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logger.error("Error:\n", tb)
+    w = ErrorMessageWindow(user_message=None, debug_info=tb)
+    w.show()
+
+
+sys.excepthook = excepthook
+
 
 def main():
-    if os.path.exists("logging.yaml"):
-        with open("logging.yaml", 'r') as f:
-            config = yaml.safe_load(f.read())
-            _logging.config.dictConfig(config)
-
     logger.info("main()")
 
     create_app_dirs()
@@ -31,7 +43,7 @@ def main():
         w = DownloadAppdataWindow()
         w.show()
         status = dl_app.exec_()
-        logger.info(f"Exiting with status {status}.")
+        logger.info(f"main() Exiting with status {status}.")
         sys.exit(status)
 
     app = QApplication(sys.argv)
@@ -59,5 +71,5 @@ def main():
     app_windows._new_sutta_search_window()
 
     status = app.exec_()
-    logger.info(f"Exiting with status {status}.")
+    logger.info(f"main() Exiting with status {status}.")
     sys.exit(status)

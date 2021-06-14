@@ -145,6 +145,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "pyperclip"
+version = "1.8.2"
+description = "A cross-platform clipboard module for Python. (Only handles plain text for now.)"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pyqt5"
 version = "5.15.0"
 description = "Python bindings for the Qt cross platform application toolkit"
@@ -309,7 +317,7 @@ brotli = ["brotlipy (>=0.6.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e4edcf35fe69c81614c289a7fceead1604385275f5a4f9bc4b1fe9f1dbd91ef7"
+content-hash = "ae3a1713d9ab89042f96b803bb175e0706e6511589dbadd1fddc3b81a8b6e9f3"
 
 [metadata.files]
 appdirs = [
@@ -515,6 +523,9 @@ pymupdf = [
 ]
 pypdf2 = [
     {file = "PyPDF2-1.26.0.tar.gz", hash = "sha256:e28f902f2f0a1603ea95ebe21dff311ef09be3d0f0ef29a3e44a932729564385"},
+]
+pyperclip = [
+    {file = "pyperclip-1.8.2.tar.gz", hash = "sha256:105254a8b04934f0bc84e9c24eb360a591aaf6535c9def5f29d92af107a9bf57"},
 ]
 pyqt5 = [
     {file = "PyQt5-5.15.0-5.15.0-cp35.cp36.cp37.cp38-abi3-macosx_10_6_intel.whl", hash = "sha256:14be35c0c1bcc804791a096d2ef9950f12c6fd34dd11dbe61b8c769fefcdf98c"},
