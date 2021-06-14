@@ -221,7 +221,7 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
-    <addaction name="action_Notes"/>
+    <addaction name="action_Memos"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -381,12 +381,12 @@
     <string>F8</string>
    </property>
   </action>
-  <action name="action_Notes">
+  <action name="action_Memos">
    <property name="text">
-    <string>&amp;Notes</string>
+    <string>&amp;Memos</string>
    </property>
    <property name="toolTip">
-    <string>Notes</string>
+    <string>Memos</string>
    </property>
    <property name="shortcut">
     <string>F9</string>

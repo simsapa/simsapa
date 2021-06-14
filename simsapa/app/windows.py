@@ -10,7 +10,7 @@ from ..layouts.dictionary_search import DictionarySearchWindow  # type: ignore
 # from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
 from ..layouts.document_reader import DocumentReaderWindow  # type: ignore
 from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
-# from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
+from ..layouts.memos_browser import MemosBrowserWindow  # type: ignore
 
 
 class AppWindows:
@@ -43,11 +43,11 @@ class AppWindows:
         view.show()
         self._windows.append(view)
 
-#    def _new_notes_browser_window(self):
-#        view = NotesBrowserWindow(self._app_data)
-#        self._connect_signals(view)
-#        view.show()
-#        self._windows.append(view)
+    def _new_memos_browser_window(self):
+        view = MemosBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
 
     def _new_document_reader_window(self, file_path=None):
         view = DocumentReaderWindow(self._app_data)
@@ -107,5 +107,5 @@ class AppWindows:
             .triggered.connect(partial(self._new_document_reader_window))
         view.action_Library \
             .triggered.connect(partial(self._new_library_browser_window))
-        # view.action_Notes \
-        #     .triggered.connect(partial(self._new_notes_browser_window))
+        view.action_Memos \
+            .triggered.connect(partial(self._new_memos_browser_window))
