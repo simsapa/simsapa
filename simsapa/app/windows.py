@@ -9,7 +9,7 @@ from ..layouts.sutta_search import SuttaSearchWindow  # type: ignore
 from ..layouts.dictionary_search import DictionarySearchWindow  # type: ignore
 # from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
 from ..layouts.document_reader import DocumentReaderWindow  # type: ignore
-# from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
+from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
 # from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
 
 
@@ -36,13 +36,13 @@ class AppWindows:
 #        self._connect_signals(view)
 #        view.show()
 #        self._windows.append(view)
-#
-#    def _new_library_browser_window(self):
-#        view = LibraryBrowserWindow(self._app_data)
-#        self._connect_signals(view)
-#        view.show()
-#        self._windows.append(view)
-#
+
+    def _new_library_browser_window(self):
+        view = LibraryBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
+
 #    def _new_notes_browser_window(self):
 #        view = NotesBrowserWindow(self._app_data)
 #        self._connect_signals(view)
@@ -105,7 +105,7 @@ class AppWindows:
         #     .triggered.connect(partial(self._new_dictionaries_manager_window))
         view.action_Document_Reader \
             .triggered.connect(partial(self._new_document_reader_window))
-        # view.action_Library \
-        #     .triggered.connect(partial(self._new_library_browser_window))
+        view.action_Library \
+            .triggered.connect(partial(self._new_library_browser_window))
         # view.action_Notes \
         #     .triggered.connect(partial(self._new_notes_browser_window))

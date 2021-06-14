@@ -168,27 +168,61 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         if self.db_doc is None or self.file_doc is None:
             return
 
-        results = []
+        am_assoc = []
+        um_assoc = []
+
+        doc_schema = self.db_doc.metadata.schema
+
+        if doc_schema == 'appdata':
+
+            res = self._app_data.db_session \
+                                .query(Am.MemoAssociation) \
+                                .filter(
+                                    Am.MemoAssociation.associated_table == 'appdata.documents',
+                                    Am.MemoAssociation.associated_id == self.db_doc.id,
+                                    Am.MemoAssociation.page_number == self.file_doc.current_page_number()) \
+                                .all()
+            am_assoc.extend(res)
+
+            res = self._app_data.db_session \
+                                .query(Um.MemoAssociation) \
+                                .filter(
+                                    Um.MemoAssociation.associated_table == 'appdata.documents',
+                                    Um.MemoAssociation.associated_id == self.db_doc.id,
+                                    Um.MemoAssociation.page_number == self.file_doc.current_page_number()) \
+                                .all()
+            um_assoc.extend(res)
+
+        else:
+
+            res = self._app_data.db_session \
+                                .query(Um.MemoAssociation) \
+                                .filter(
+                                    Um.MemoAssociation.associated_table == 'userdata.documents',
+                                    Um.MemoAssociation.associated_id == self.db_doc.id,
+                                    Um.MemoAssociation.page_number == self.file_doc.current_page_number()) \
+                                .all()
+            um_assoc.extend(res)
+
+        memos: List[UMemo] = []
+
+        ids = list(map(lambda x: x.memo_id, am_assoc))
 
         res = self._app_data.db_session \
                             .query(Am.Memo) \
-                            .filter(
-                                Am.Memo.associated_table == 'appdata.documents',
-                                Am.Memo.associated_id == self.db_doc.id,
-                                Am.Memo.page_number == self.file_doc.current_page_number()) \
+                            .filter(Am.Memo.id.in_(ids)) \
                             .all()
-        results.extend(res)
+        memos.extend(res)
+
+        ids = list(map(lambda x: x.memo_id, um_assoc))
 
         res = self._app_data.db_session \
                             .query(Um.Memo) \
-                            .filter(
-                                Um.Memo.associated_table == 'appdata.documents',
-                                Um.Memo.associated_id == self.db_doc.id,
-                                Um.Memo.page_number == self.file_doc.current_page_number()) \
+                            .filter(Um.Memo.id.in_(ids)) \
                             .all()
-        results.extend(res)
+        memos.extend(res)
 
-        return results
+        return memos
 
     def get_selected_memo(self) -> Optional[UMemo]:
         a = self.memos_list.selectedIndexes()
@@ -207,7 +241,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         item = a[0]
         memo = self.model.memos[item.row()]
         memo_id = memo.id
-        memo_schema = memo.metadata.schema
+        schema = memo.metadata.schema
 
         del self.model.memos[item.row()]
         self.model.layoutChanged.emit()
@@ -216,7 +250,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         # Remove from database
 
-        if memo_schema == 'appdata':
+        if schema == 'appdata':
             db_item = self._app_data.db_session \
                                     .query(Am.Memo) \
                                     .filter(Am.Memo.id == memo_id) \
@@ -284,7 +318,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
                 memo_assoc = Um.MemoAssociation(
                     memo_id=memo.id,
-                    associated_table='userdata.docuemnts',
+                    associated_table='userdata.documents',
                     associated_id=self.db_doc.id,
                     page_number=self.file_doc.current_page_number(),
                 )
