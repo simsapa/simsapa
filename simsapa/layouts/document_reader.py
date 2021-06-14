@@ -125,16 +125,18 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             self.model.layoutChanged.emit()
 
     def _previous_page(self):
-        page_nr = self.file_doc.current_page_number() - 1
-        if self.file_doc and page_nr > 0:
-            self.file_doc.set_page_number(page_nr)
-            self._upd_current_page_input(page_nr)
+        if self.file_doc:
+            page_nr = self.file_doc.current_page_number() - 1
+            if page_nr > 0:
+                self.file_doc.set_page_number(page_nr)
+                self._upd_current_page_input(page_nr)
 
     def _next_page(self):
-        page_nr = self.file_doc.current_page_number() + 1
-        if self.file_doc and page_nr <= self.file_doc.number_of_pages():
-            self.file_doc.set_page_number(page_nr)
-            self._upd_current_page_input(page_nr)
+        if self.file_doc:
+            page_nr = self.file_doc.current_page_number() + 1
+            if page_nr <= self.file_doc.number_of_pages():
+                self.file_doc.set_page_number(page_nr)
+                self._upd_current_page_input(page_nr)
 
     def _beginning(self):
         if self.file_doc and self.file_doc.current_page_number() != 1:
@@ -151,6 +153,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.current_page_input.clearFocus()
 
     def _go_to_page_dialog(self):
+        if not self.file_doc:
+            return
+
         n, ok = QInputDialog.getInt(self, "Go to Page...", "Page:", 1, 1, self.file_doc.number_of_pages(), 1)
         if ok:
             self._upd_current_page_input(n)
