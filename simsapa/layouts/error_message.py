@@ -29,13 +29,14 @@ class ErrorMessageWindow(QMainWindow):
         if user_message:
             self._msg.setText(user_message)
         else:
-            self._msg.setText("The application encountered and error.")
+            self._msg.setText("<p>The application encountered and error.</p>")
 
         self._msg.setAlignment(Qt.AlignCenter)
 
         self._layout.addWidget(self._msg)
 
         if debug_info:
+            debug_info = f"```\n{debug_info}\n```"
             self._info_help = QLabel()
             self._info_help.setText("""
 <p>

@@ -3,6 +3,8 @@ import epub_meta
 from PyPDF2 import PdfFileReader
 from typing import Optional
 
+from PyQt5.QtCore import QRect
+
 try:
     import fitz  # type: ignore
     has_fitz = True
@@ -24,10 +26,9 @@ class PageImage():
 
         self.zoom = zoom or file_doc._zoom
         self.pixmap = file_doc.file_doc[page_idx] \
-                          .get_pixmap(
-                              matrix=fitz.Matrix(self.zoom, self.zoom),
-                              alpha=False
-                          )
+                              .get_pixmap(
+                                  matrix=fitz.Matrix(self.zoom, self.zoom),
+                                  alpha=False)
 
         self.image_bytes = self.pixmap.tobytes("ppm")
 
@@ -48,6 +49,7 @@ class FileDoc():
         self.file_ext = ext.lower()
         self.title = ""
         self.author = ""
+        self.select_annot_id = None
 
         self._current_idx: int = 0
         self._zoom = 1.5
@@ -72,11 +74,75 @@ class FileDoc():
         if page > 0:
             self._current_idx = page - 1
 
+    def select_highlight_text(self, page_image: PageImage, select_rect: QRect) -> Optional[str]:
+        if not self.file_doc:
+            return None
+
+        page = self.current_page()
+        page_rect: fitz.Rect = page.rect
+
+        if self.select_annot_id:
+            for a in page.annots():
+                if a.info['id'] == self.select_annot_id:
+                    page.delete_annot(a)
+
+        # transform image_rect pixel coords to page_rect coords
+
+        w_scale = page_rect.width / page_image.width
+        h_scale = page_rect.height / page_image.height
+        c = select_rect.getCoords()
+
+        rect = fitz.Rect(w_scale * c[0], h_scale * c[1], w_scale * c[2], h_scale * c[3])
+
+        text = page.get_textbox(rect)
+
+        # add highlight
+
+        # NOTE: This method has problems with marking italic text.
+        # It was presented in mark-lines2.py
+
+        # rl = page.search_for(text)
+        # if not rl:
+        #     logger.info("Highlight location not found.")
+        #     return text
+
+        # start = rl[0].tl  # top-left of first rectangle
+        # stop = rl[-1].br  # bottom-right of last rectangle
+        # clip = fitz.Rect()  # build clip as union of the hit rectangles
+        # for r in rl:
+        #     clip |= r
+
+        # page.add_highlight_annot(
+        #     start=start,
+        #     stop=stop,
+        #     clip=clip,
+        # )
+
+        # using quads option
+        quads = page.search_for(text, quads=True)
+
+        if quads:
+            # keep those text matches which are inside the selection area
+            quads = list(filter(lambda q: rect.intersects(q.rect), quads))
+        else:
+            # logger.info("Highlight location not found.")
+            return text
+
+        annot = page.add_highlight_annot(quads=quads)
+        if annot:
+            self.select_annot_id = annot.info['id']
+
+        return text
+
     def current_page_number(self) -> int:
         return self._current_idx + 1
 
     def current_page_idx(self) -> int:
         return self._current_idx
+
+    def current_page(self):
+        if self.file_doc:
+            return self.file_doc[self._current_idx]
 
     def current_page_image(self) -> Optional[PageImage]:
         return self.page_image(self._current_idx)
@@ -104,5 +170,3 @@ class FileDoc():
             info = epub_meta.get_epub_metadata(self.filepath, read_cover_image=False, read_toc=False)
             self.title = info['title']
             self.author = info['authors'][0]
-
-
