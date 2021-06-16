@@ -86,11 +86,19 @@ class FileDoc():
                 if a.info['id'] == self.select_annot_id:
                     page.delete_annot(a)
 
+        s = select_rect.getCoords()
+
+        # increase the selection area for better results
+        c = [0, 0, 0, 0]
+        c[0] = s[0] - 5
+        c[1] = s[1] - 10
+        c[2] = s[2] + 3
+        c[3] = s[3] + 10
+
         # transform image_rect pixel coords to page_rect coords
 
         w_scale = page_rect.width / page_image.width
         h_scale = page_rect.height / page_image.height
-        c = select_rect.getCoords()
 
         rect = fitz.Rect(w_scale * c[0], h_scale * c[1], w_scale * c[2], h_scale * c[3])
 
