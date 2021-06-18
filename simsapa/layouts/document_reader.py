@@ -114,9 +114,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.page_current_of_total.setText(f"{page} of {page_count}")
 
         if self.file_doc:
-            self.file_doc.set_page_number(page)
+            self.file_doc.go_to_page(page)
 
-            page_img = self.file_doc.current_page_image()
+            page_img = self.file_doc.current_page_image
             self.content_page_image = page_img
 
             if page_img:
@@ -148,7 +148,8 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.select_end_point = QPoint(event.pos())
         self.select_rectangle = QRect(self.select_start_point, self.select_end_point).normalized()
         if self.file_doc and self.select_rectangle:
-            self.selected_text = self.file_doc.select_highlight_text(self.content_page_image, self.select_rectangle)
+            self.selected_text = self.file_doc.get_selection_text(self.select_rectangle)
+            self.file_doc.paint_selection_on_current(self.select_rectangle)
             self.doc_show_current()
 
     def _select_release(self, event):
@@ -160,7 +161,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             return
         page_nr = self.file_doc.current_page_number() - 1
         if page_nr > 0:
-            self.file_doc.set_page_number(page_nr)
+            self.file_doc.go_to_page(page_nr)
             self._upd_current_page_input(page_nr)
 
     def _next_page(self):
@@ -168,17 +169,17 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             return
         page_nr = self.file_doc.current_page_number() + 1
         if page_nr <= self.file_doc.number_of_pages():
-            self.file_doc.set_page_number(page_nr)
+            self.file_doc.go_to_page(page_nr)
             self._upd_current_page_input(page_nr)
 
     def _beginning(self):
         if self.file_doc and self.file_doc.current_page_number() != 1:
-            self.file_doc.set_page_number(1)
+            self.file_doc.go_to_page(1)
             self._upd_current_page_input(1)
 
     def _end(self):
         if self.file_doc and self.file_doc.current_page_number() != self.file_doc.number_of_pages():
-            self.file_doc.set_page_number(self.file_doc.number_of_pages())
+            self.file_doc.go_to_page(self.file_doc.number_of_pages())
             self._upd_current_page_input(self.file_doc.number_of_pages())
 
     def _upd_current_page_input(self, n):
