@@ -55,11 +55,6 @@ class FileDoc():
         self.author = ""
         self.select_annot_id = None
 
-        self._current_idx: int = 0
-        self._zoom = None
-        self._matrix = None
-        self.set_zoom(1.5)
-
         if has_fitz:
             self.file_doc = fitz.open(filepath)
         elif self.file_ext == ".pdf":
@@ -67,7 +62,12 @@ class FileDoc():
         else:
             self.file_doc = None
 
-        self.current_page_image = self.current_unchanged_page_image()
+        self._current_idx: int = 0
+        self._zoom = None
+        self._matrix = None
+
+        self.current_page_image = None
+        self.set_zoom(1.5)
 
         self._parse_metadata()
 
@@ -75,6 +75,7 @@ class FileDoc():
         self._zoom = x
         if has_fitz:
             self._matrix = fitz.Matrix(self._zoom, self._zoom)
+            self.current_page_image = self.current_unchanged_page_image()
 
     def number_of_pages(self) -> int:
         if has_fitz and self.file_doc:
