@@ -197,6 +197,14 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         n = self.current_page_input.value()
         self.doc_go_to_page(n)
 
+    def _zoom_out(self):
+        self.file_doc.set_zoom(self.file_doc._zoom - 0.1)
+        self.doc_show_current()
+
+    def _zoom_in(self):
+        self.file_doc.set_zoom(self.file_doc._zoom + 0.1)
+        self.doc_show_current()
+
     def _get_memos_for_this_page(self) -> List[UMemo]:
         if self.db_doc is None or self.file_doc is None:
             return
@@ -417,6 +425,11 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         self.action_Go_to_Page \
             .triggered.connect(partial(self._go_to_page_dialog))
+
+        self.action_Zoom_Out \
+            .triggered.connect(partial(self._zoom_out))
+        self.action_Zoom_In \
+            .triggered.connect(partial(self._zoom_in))
 
         self.current_page_input \
             .valueChanged.connect(partial(self._go_to_page_input))

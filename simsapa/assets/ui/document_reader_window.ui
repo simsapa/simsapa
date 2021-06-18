@@ -394,6 +394,8 @@
    <addaction name="action_Go_to_Page"/>
    <addaction name="action_Next_Page"/>
    <addaction name="action_End"/>
+   <addaction name="action_Zoom_Out"/>
+   <addaction name="action_Zoom_In"/>
   </widget>
   <action name="action_Copy">
    <property name="text">
@@ -540,6 +542,22 @@
    </property>
    <property name="shortcut">
     <string>F10</string>
+   </property>
+  </action>
+  <action name="action_Zoom_Out">
+   <property name="text">
+    <string>Zoom Out</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
+   </property>
+  </action>
+  <action name="action_Zoom_In">
+   <property name="text">
+    <string>Zoom In</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl++</string>
    </property>
   </action>
  </widget>

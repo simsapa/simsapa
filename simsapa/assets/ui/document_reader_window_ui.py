@@ -258,6 +258,10 @@ class Ui_DocumentReaderWindow(object):
         self.action_Memos.setObjectName("action_Memos")
         self.action_Dictionaries_Manager = QtWidgets.QAction(DocumentReaderWindow)
         self.action_Dictionaries_Manager.setObjectName("action_Dictionaries_Manager")
+        self.action_Zoom_Out = QtWidgets.QAction(DocumentReaderWindow)
+        self.action_Zoom_Out.setObjectName("action_Zoom_Out")
+        self.action_Zoom_In = QtWidgets.QAction(DocumentReaderWindow)
+        self.action_Zoom_In.setObjectName("action_Zoom_In")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -291,6 +295,8 @@ class Ui_DocumentReaderWindow(object):
         self.doc_toolbar.addAction(self.action_Go_to_Page)
         self.doc_toolbar.addAction(self.action_Next_Page)
         self.doc_toolbar.addAction(self.action_End)
+        self.doc_toolbar.addAction(self.action_Zoom_Out)
+        self.doc_toolbar.addAction(self.action_Zoom_In)
 
         self.retranslateUi(DocumentReaderWindow)
         self.sidebar_tabs.setCurrentIndex(0)
@@ -350,4 +356,8 @@ class Ui_DocumentReaderWindow(object):
         self.action_Memos.setShortcut(_translate("DocumentReaderWindow", "F9"))
         self.action_Dictionaries_Manager.setText(_translate("DocumentReaderWindow", "Dictionaries &Manager"))
         self.action_Dictionaries_Manager.setShortcut(_translate("DocumentReaderWindow", "F10"))
+        self.action_Zoom_Out.setText(_translate("DocumentReaderWindow", "Zoom Out"))
+        self.action_Zoom_Out.setShortcut(_translate("DocumentReaderWindow", "Ctrl+-"))
+        self.action_Zoom_In.setText(_translate("DocumentReaderWindow", "Zoom In"))
+        self.action_Zoom_In.setShortcut(_translate("DocumentReaderWindow", "Ctrl++"))
 from simsapa.assets import icons_rc
