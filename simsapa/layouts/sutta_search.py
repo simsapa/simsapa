@@ -1,16 +1,27 @@
 import logging as _logging
 import json
+from pathlib import Path
 
 from functools import partial
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem)  # type: ignore
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 from sqlalchemy.sql import func  # type: ignore
 
+import networkx as nx
+import bokeh
+from bokeh.models import (Plot, Circle, MultiLine, Range1d, ColumnDataSource,
+                          LabelSet, PanTool, WheelZoomTool, TapTool, ResetTool,
+                          NodesAndLinkedEdges, EdgesAndLinkedNodes)
+from bokeh.palettes import Spectral4
+from bokeh.plotting import from_networkx
+
+from simsapa import ASSETS_DIR
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta  # type: ignore
@@ -42,6 +53,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
     def _ui_setup(self):
         self.status_msg = QLabel("Sutta title")
         self.statusbar.addPermanentWidget(self.status_msg)
+
+        self.content_graph = QWebEngineView()
+        self.content_graph.setHtml('')
+        self.content_graph.show()
+        self.results_layout.addWidget(self.content_graph)
 
         self.search_input.setFocus()
 
@@ -107,6 +123,81 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         sutta: USutta = self._history[selected_idx]
         self._show_sutta(sutta)
 
+    def _show_sutta_by_uid(self, uid: str):
+        print('Show Sutta: ' + uid)
+
+    def _generate_network_bokeh(self, sutta: USutta) -> Path:
+        G = nx.Graph()
+
+        nodes = [
+            (1, {'sutta_ref': 'DN 1', 'uid': 'dn-1'}),
+            (2, {'sutta_ref': 'DN 2', 'uid': 'dn-2'}),
+            (3, {'sutta_ref': 'MN 1', 'uid': 'mn-1'}),
+            (4, {'sutta_ref': 'MN 2', 'uid': 'mn-2'}),
+        ]
+        G.add_nodes_from(nodes)
+
+        edges = [
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (3, 4),
+        ]
+        G.add_edges_from(edges)
+
+        plot = Plot(
+            plot_width=700,
+            plot_height=400,
+            x_range=Range1d(-1.1, 1.1),
+            y_range=Range1d(-1.1, 1.1),
+        )
+
+        wheel_zoom = WheelZoomTool()
+        plot.add_tools(
+            PanTool(),
+            TapTool(),
+            wheel_zoom,
+            ResetTool()
+        )
+        plot.toolbar.active_scroll = wheel_zoom
+
+        network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0))
+
+        network_graph.node_renderer.glyph = Circle(size=15, fill_color=Spectral4[0])
+        network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=Spectral4[2])
+
+        network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
+        network_graph.edge_renderer.selection_glyph = MultiLine(line_color=Spectral4[2], line_width=2)
+
+        network_graph.selection_policy = NodesAndLinkedEdges()
+        network_graph.inspection_policy = EdgesAndLinkedNodes()
+
+        plot.renderers.append(network_graph)
+
+        x, y = zip(*network_graph.layout_provider.graph_layout.values())
+        source = ColumnDataSource({
+            'x': x,
+            'y': y,
+            'label': [nodes[i][1]['sutta_ref'] for i in range(len(x))]
+        })
+        labels = LabelSet(
+            x='x',
+            y='y',
+            text='label',
+            source=source,
+            background_fill_color='white',
+            text_font_size='15px',
+            background_fill_alpha=.7)
+
+        plot.renderers.append(labels)
+
+        path = ASSETS_DIR.joinpath('graph.html')
+
+        bokeh.io.output_file(filename=str(path), title='Connections', mode='absolute')
+        bokeh.io.save(plot)
+
+        return path
+
     def _show_sutta(self, sutta: USutta):
         self._current_sutta = sutta
         self.status_msg.setText(sutta.title)
@@ -118,7 +209,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         else:
             content = 'No content.'
 
-        html = """
+        content_html = """
 <!doctype html>
 <html>
 <head>
@@ -134,7 +225,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 </html>
 """ % ('', content)
 
-        self._set_content_html(html)
+        # show the network graph in a browser
+        graph_path = self._generate_network_bokeh(sutta)
+        self.content_graph.load(QUrl('file://' + str(graph_path.absolute())))
+
+        # show the sutta content
+        self._set_content_html(content_html)
 
     def _sutta_search_query(self, query: str) -> List[USutta]:
         results: List[USutta] = []
