@@ -4,12 +4,15 @@ import traceback
 import logging as _logging
 import logging.config
 import yaml
+import threading
 
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)  # type: ignore
 
-from .app.types import AppData, create_app_dirs, APP_DB_PATH  # type: ignore
+from simsapa import APP_DB_PATH
+from .app.types import AppData, create_app_dirs  # type: ignore
 from .app.windows import AppWindows  # type: ignore
+from .app.api import start_server
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 
@@ -20,7 +23,7 @@ logger = _logging.getLogger(__name__)
 if os.path.exists("logging.yaml"):
     with open("logging.yaml", 'r') as f:
         config = yaml.safe_load(f.read())
-        _logging.config.dictConfig(config)
+        _logging.config.dictConfig(config)  # type: ignore
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -48,7 +51,13 @@ def main():
 
     app = QApplication(sys.argv)
 
-    app_data = AppData(clipboard=app.clipboard())
+    app_data = AppData(app_clipboard=app.clipboard())
+
+    daemon = threading.Thread(name='daemon_server',
+                              target=start_server,
+                              args=(8000,))
+    daemon.setDaemon(True)
+    daemon.start()
 
     # === Create systray ===
 

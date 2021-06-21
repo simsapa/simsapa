@@ -25,9 +25,9 @@ UDocument = Union[Am.Document, Um.Document]
 
 
 class AppData:
-    def __init__(self, app_db_path=None, user_db_path=None, clipboard=None):
+    def __init__(self,  app_clipboard: QClipboard, app_db_path=None, user_db_path=None):
 
-        self.clipboard: QClipboard = clipboard
+        self.clipboard: QClipboard = app_clipboard
 
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()

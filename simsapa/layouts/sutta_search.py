@@ -1,12 +1,13 @@
 import logging as _logging
 import json
 from pathlib import Path
+import queue
 
 from functools import partial
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette
+from PyQt5.QtCore import Qt, QUrl, QTimer
+from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem)  # type: ignore
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
@@ -14,14 +15,18 @@ from sqlalchemy import or_
 from sqlalchemy.sql import func  # type: ignore
 
 import networkx as nx
-import bokeh
-from bokeh.models import (Plot, Circle, MultiLine, Range1d, ColumnDataSource,
+from bokeh.io import output_file, save, curdoc
+from bokeh.document import Document
+from bokeh.models import (Button, Plot, Circle, MultiLine, Range1d, ColumnDataSource,
                           LabelSet, PanTool, WheelZoomTool, TapTool, ResetTool,
                           NodesAndLinkedEdges, EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral4
 from bokeh.plotting import from_networkx
+from bokeh.layouts import column
+from bokeh.models import CustomJS
+from bokeh import events
 
-from simsapa import ASSETS_DIR
+from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta  # type: ignore
@@ -48,7 +53,37 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self._connect_signals()
         self._setup_content_html_context_menu()
 
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+
+        self.graph_path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(300)
+
         self.statusbar.showMessage("Ready", 3000)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        if self.graph_path.exists():
+            self.graph_path.unlink()
+
+        event.accept()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                data = json.loads(s)
+                if data['action'] == 'show_sutta_by_uid':
+                    self._show_sutta_by_uid(data['arg'])
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
 
     def _ui_setup(self):
         self.status_msg = QLabel("Sutta title")
@@ -123,17 +158,14 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         sutta: USutta = self._history[selected_idx]
         self._show_sutta(sutta)
 
-    def _show_sutta_by_uid(self, uid: str):
-        print('Show Sutta: ' + uid)
-
-    def _generate_network_bokeh(self, sutta: USutta) -> Path:
+    def _generate_network_bokeh(self, sutta: USutta):
         G = nx.Graph()
 
         nodes = [
-            (1, {'sutta_ref': 'DN 1', 'uid': 'dn-1'}),
-            (2, {'sutta_ref': 'DN 2', 'uid': 'dn-2'}),
-            (3, {'sutta_ref': 'MN 1', 'uid': 'mn-1'}),
-            (4, {'sutta_ref': 'MN 2', 'uid': 'mn-2'}),
+            (1, {'sutta_ref': 'DN 1', 'uid': 'dn1'}),
+            (2, {'sutta_ref': 'DN 2', 'uid': 'dn2'}),
+            (3, {'sutta_ref': 'MN 1', 'uid': 'mn1'}),
+            (4, {'sutta_ref': 'MN 2', 'uid': 'mn2'}),
         ]
         G.add_nodes_from(nodes)
 
@@ -178,12 +210,14 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         source = ColumnDataSource({
             'x': x,
             'y': y,
-            'label': [nodes[i][1]['sutta_ref'] for i in range(len(x))]
+            'sutta_ref': [nodes[i][1]['sutta_ref'] for i in range(len(x))],
+            'uid': [nodes[i][1]['uid'] for i in range(len(x))],
         })
+
         labels = LabelSet(
             x='x',
             y='y',
-            text='label',
+            text='sutta_ref',
             source=source,
             background_fill_color='white',
             text_font_size='15px',
@@ -191,12 +225,68 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 
         plot.renderers.append(labels)
 
-        path = ASSETS_DIR.joinpath('graph.html')
+        network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code="""
+window.selected_uids = [];
+var inds = cb_obj.indices;
+var d1 = source.data;
+for (var i=0; i<inds.length; i++) {
+  var x = d1['uid'][inds[i]];
+  window.selected_uids.push(x);
+}
+"""))
 
-        bokeh.io.output_file(filename=str(path), title='Connections', mode='absolute')
-        bokeh.io.save(plot)
+        button = Button(label='Open Sutta')
 
-        return path
+        url = f'http://localhost:8000/queues/{self.queue_id}'
+        js_code = """
+if (typeof window.selected_uids === 'undefined') {
+    window.selected_uids = [];
+}
+if (window.selected_uids.length > 0) {
+    const params = {
+        action: 'show_sutta_by_uid',
+        arg: window.selected_uids[0],
+    };
+    const options = {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params),
+    };
+    fetch('%s', options);
+}
+""" % (url,)
+
+        button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
+
+        layout = column(button, plot)
+
+        doc: Document = curdoc()
+        doc.clear()
+        doc.add_root(layout)
+
+        output_file(filename=str(self.graph_path), mode='absolute')
+        save(doc)
+
+    def _show_sutta_by_uid(self, uid: str):
+        results: List[USutta] = []
+
+        res = self._app_data.db_session \
+            .query(Am.Sutta) \
+            .filter(Am.Sutta.uid == uid) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Um.Sutta) \
+            .filter(Um.Sutta.uid == uid) \
+            .all()
+        results.extend(res)
+
+        if len(results) > 0:
+            self._show_sutta(results[0])
 
     def _show_sutta(self, sutta: USutta):
         self._current_sutta = sutta
@@ -226,8 +316,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 """ % ('', content)
 
         # show the network graph in a browser
-        graph_path = self._generate_network_bokeh(sutta)
-        self.content_graph.load(QUrl('file://' + str(graph_path.absolute())))
+        self._generate_network_bokeh(sutta)
+        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
         # show the sutta content
         self._set_content_html(content_html)
