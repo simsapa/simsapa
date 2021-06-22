@@ -193,7 +193,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         )
         plot.toolbar.active_scroll = wheel_zoom
 
-        network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0))
+        network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
 
         network_graph.node_renderer.glyph = Circle(size=15, fill_color=Spectral4[0])
         network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=Spectral4[2])
