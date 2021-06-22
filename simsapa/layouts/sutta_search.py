@@ -56,7 +56,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
 
-        self.graph_path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -197,6 +197,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 
         network_graph.node_renderer.glyph = Circle(size=15, fill_color=Spectral4[0])
         network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=Spectral4[2])
+        network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color=Spectral4[1])
 
         network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
         network_graph.edge_renderer.selection_glyph = MultiLine(line_color=Spectral4[2], line_width=2)
@@ -224,6 +225,14 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
             background_fill_alpha=.7)
 
         plot.renderers.append(labels)
+
+        selected = []
+
+        for idx, n in enumerate(nodes):
+            if n[1]['uid'] == sutta.uid:
+                selected.append(idx)
+
+        network_graph.node_renderer.data_source.selected.indices = selected
 
         network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code="""
 window.selected_uids = [];
