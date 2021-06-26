@@ -13,4 +13,4 @@ ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/memos_browser_window_ui.py simsapa/assets/ui/memos_browser_window.ui
 
 tests:
-	python ./tests/test_basic.py -v
+	python -m unittest -v

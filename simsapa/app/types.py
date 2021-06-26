@@ -1,10 +1,11 @@
 import os
 import os.path
 import logging as _logging
-
-from typing import Union
+from pathlib import Path
+from typing import Optional, Union
 
 from sqlalchemy import create_engine, text  # type: ignore
+from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
@@ -25,9 +26,12 @@ UDocument = Union[Am.Document, Um.Document]
 
 
 class AppData:
-    def __init__(self,  app_clipboard: QClipboard, app_db_path=None, user_db_path=None):
+    def __init__(self,
+                 app_clipboard: Optional[QClipboard] = None,
+                 app_db_path: Optional[Path] = None,
+                 user_db_path: Optional[Path] = None):
 
-        self.clipboard: QClipboard = app_clipboard
+        self.clipboard: Optional[QClipboard] = app_clipboard
 
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
@@ -71,12 +75,14 @@ class AppData:
             self.clipboard.clear()
             self.clipboard.setText(text)
 
-    def clipboard_getText(self) -> str:
+    def clipboard_getText(self) -> Optional[str]:
         if self.clipboard is not None:
             self.clipboard.clear()
             return self.clipboard.text()
+        else:
+            return None
 
-    def create_schema_sql() -> str:
+    def create_schema_sql(self) -> str:
         try:
             with open(SIMSAPA_MIGRATIONS_DIR.joinpath('create_schema.sql'), 'r') as f:
                 data = f.read()
@@ -96,15 +102,21 @@ class AppData:
         if not USER_DB_PATH.exists():
             logger.info("Cannot find userdata.sqlite3, creating it")
 
-            engine = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}", echo=False)
+            e = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}", echo=False)
 
-            if not database_exists(engine.url):
-                create_database(engine.url)
+            if e is Engine:
+                engine: Engine = e
 
-            with engine.connect() as db_conn:
-                sql = self.create_schema_sql()
-                for s in sql.split(';'):
-                    db_conn.execute(text(s))
+                if not database_exists(engine.url):
+                    create_database(engine.url)
+
+                with engine.connect() as db_conn:
+                    sql = self.create_schema_sql()
+                    for s in sql.split(';'):
+                        db_conn.execute(text(s))
+
+            else:
+                logger.error("Can't create db engine.")
 
         return USER_DB_PATH
 

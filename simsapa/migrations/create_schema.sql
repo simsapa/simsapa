@@ -5,6 +5,9 @@ CREATE TABLE `schema_version` (
 
 INSERT INTO `schema_version` (`version`) VALUES (1);
 
+-- --- Authors --------------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
+
 CREATE TABLE `authors` (
   `id`           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `uid`          VARCHAR NOT NULL UNIQUE, -- sujato
@@ -14,6 +17,9 @@ CREATE TABLE `authors` (
   `created_at`   TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`   TEXT
 );
+
+-- --- Suttas ---------------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `suttas` (
   `id`               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +53,9 @@ CREATE TABLE `sutta_authors` (
   `author_id`  INTEGER NOT NULL REFERENCES `authors` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   PRIMARY KEY (`sutta_id`, `author_id`)
 );
+
+-- --- Dictionaries, DictWords, Examples ------------------------------
+-- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `dictionaries` (
   `id`             INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +116,9 @@ CREATE TABLE `examples` (
   `updated_at`        TEXT
 );
 
+-- --- Documents ------------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
+
 CREATE TABLE `documents` (
   `id`            INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `filepath`      TEXT NOT NULL UNIQUE,
@@ -121,6 +133,9 @@ CREATE TABLE `documents` (
   `created_at`    TEXT DEFAULT CURRENT_TIMESTAMP,
   `updated_at`    TEXT
 );
+
+-- --- Memos, Decks ---------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `decks` (
   `id`          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -144,17 +159,6 @@ CREATE TABLE `memos` (
   `updated_at`      TEXT
 );
 
-CREATE TABLE `tags` (
-  `id`   INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  `name` VARCHAR
-);
-
-CREATE TABLE `memo_tags` (
-  `memo_id`  INTEGER NOT NULL REFERENCES `memos` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  `tag_id`   INTEGER NOT NULL REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  PRIMARY KEY (`memo_id`, `tag_id`)
-);
-
 CREATE TABLE `memo_associations` (
   `id`                INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `memo_id`           INTEGER REFERENCES `memos` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -163,6 +167,9 @@ CREATE TABLE `memo_associations` (
   `page_number`       INTEGER,
   `location`          TEXT
 );
+
+-- --- Annotations ----------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `annotations` (
   `id`               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -181,6 +188,41 @@ CREATE TABLE `annotation_associations` (
   `page_number`       INTEGER,
   `location`          TEXT
 );
+
+-- --- Tags -----------------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
+
+CREATE TABLE `tags` (
+  `id`   INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  `name` VARCHAR
+);
+
+CREATE TABLE `document_tags` (
+  `document_id`  INTEGER NOT NULL REFERENCES `documents` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  `tag_id`   INTEGER NOT NULL REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY (`document_id`, `tag_id`)
+);
+
+CREATE TABLE `memo_tags` (
+  `memo_id`  INTEGER NOT NULL REFERENCES `memos` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  `tag_id`   INTEGER NOT NULL REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY (`memo_id`, `tag_id`)
+);
+
+-- --- Links ----------------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
+
+CREATE TABLE `links` (
+  `id`          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  `label`       VARCHAR,
+  `from_table`  VARCHAR NOT NULL,
+  `from_id`     INTEGER NOT NULL,
+  `to_table`    VARCHAR NOT NULL,
+  `to_id`       INTEGER NOT NULL
+);
+
+-- --- Application ----------------------------------------------------
+-- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `app_settings` (
   `id`          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

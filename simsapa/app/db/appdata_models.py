@@ -30,6 +30,20 @@ assoc_sutta_authors = Table(
     Column('author_id', Integer, ForeignKey("authors.id")),
 )
 
+assoc_document_tags = Table(
+    'document_tags',
+    Base.metadata,
+    Column('document_id', Integer, ForeignKey("documents.id")),
+    Column('tag_id', Integer, ForeignKey("tags.id")),
+)
+
+assoc_memo_tags = Table(
+    'memo_tags',
+    Base.metadata,
+    Column('memo_id', Integer, ForeignKey("memos.id")),
+    Column('tag_id', Integer, ForeignKey("tags.id")),
+)
+
 
 class Author(Base):
     __tablename__ = "authors"
@@ -165,6 +179,8 @@ class Document(Base):
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
 
+    tags = relationship("Tag", secondary=assoc_document_tags, back_populates="documents")
+
 
 class Deck(Base):
     __tablename__ = "decks"
@@ -176,14 +192,6 @@ class Deck(Base):
     updated_at = Column(DateTime)
 
     memos = relationship("Memo", back_populates="deck")
-
-
-assoc_memo_tags = Table(
-    'memo_tags',
-    Base.metadata,
-    Column('memo_id', Integer, ForeignKey("memos.id")),
-    Column('tag_id', Integer, ForeignKey("tags.id")),
-)
 
 
 class Memo(Base):
@@ -205,15 +213,6 @@ class Memo(Base):
     tags = relationship("Tag", secondary=assoc_memo_tags, back_populates="memos")
 
 
-class Tag(Base):
-    __tablename__ = "tags"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-
-    memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
-
-
 class MemoAssociation(Base):
     __tablename__ = "memo_associations"
 
@@ -230,7 +229,6 @@ class Annotation(Base):
     __tablename__ = "annotations"
 
     id = Column(Integer, primary_key=True)
-    document_id = Column(Integer, ForeignKey("documents.id"), primary_key=True)
     ann_type = Column(String)
     text = Column(String)
 
@@ -248,6 +246,27 @@ class AnnotationAssociation(Base):
 
     page_number = Column(Integer)
     location = Column(Integer)
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+
+    documents = relationship("Document", secondary=assoc_document_tags, back_populates="tags")
+    memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
+
+
+class Link(Base):
+    __tablename__ = "links"
+
+    id = Column(Integer, primary_key=True)
+    label = Column(String)
+    from_table = Column(String)
+    from_id = Column(Integer)
+    to_table = Column(String)
+    to_id = Column(Integer)
 
 
 class AppSetting(Base):

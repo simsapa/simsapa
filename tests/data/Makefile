@@ -4,8 +4,9 @@ all:
 bootstrap_test_db: db_create_and_seed db_reindex_fts
 
 db_create_and_seed:
+	rm -rf assets && mkdir assets && \
 	cd assets && \
-	rm -f appdata.sqlite3 userdata.sqlite3 && \
+	cp -r ../seed_data/docs ./ && \
 	sqlite3 appdata.sqlite3 < ../../../simsapa/migrations/create_schema.sql && \
 	sqlite3 userdata.sqlite3 < ../../../simsapa/migrations/create_schema.sql && \
 	sqlite3 appdata.sqlite3 < ../../../simsapa/migrations/fts_indexes.sql && \
