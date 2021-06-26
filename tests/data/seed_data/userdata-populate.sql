@@ -16,3 +16,8 @@ INSERT INTO tags VALUES(1,'Suppiya');
 INSERT INTO tags VALUES(2,'classic');
 INSERT INTO document_tags VALUES(1,2);
 INSERT INTO memo_tags VALUES(1,1);
+INSERT INTO links VALUES(1,'insight','appdata.suttas',1,'appdata.suttas',2);
+INSERT INTO links VALUES(2,'views','appdata.suttas',1,'appdata.suttas',3);
+INSERT INTO links VALUES(3,NULL,'appdata.suttas',1,'appdata.suttas',4);
+INSERT INTO links VALUES(4,'liberation','appdata.suttas',3,'appdata.suttas',4);
+INSERT INTO links VALUES(5,NULL,'userdata.documents',1,'appdata.suttas',1);
