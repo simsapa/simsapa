@@ -158,23 +158,95 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         sutta: USutta = self._history[selected_idx]
         self._show_sutta(sutta)
 
+    def _get_nodes_and_edges(self, sutta: USutta, distance: int = 1):
+        links = []
+
+        # TODO: Assuming all links are in userdata, made between
+        # 'appdata.suttas' records
+
+        r = self._app_data.db_session \
+            .query(Um.Link.to_id) \
+            .filter(Um.Link.from_table == "appdata.suttas") \
+            .filter(Um.Link.from_id == sutta.id) \
+            .all()
+
+        links.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Um.Link.from_id) \
+            .filter(Um.Link.to_table == "appdata.suttas") \
+            .filter(Um.Link.to_id == sutta.id) \
+            .all()
+
+        links.extend(r)
+
+        # IDs without the current sutta ID
+        ids = filter(lambda x: x != sutta.id, map(lambda x: x[0], links))
+        # set() will contain unique items
+        sutta_ids = list(set(ids))
+
+        suttas = self._app_data.db_session \
+            .query(Am.Sutta) \
+            .filter(Am.Sutta.id.in_(sutta_ids)) \
+            .all()
+
+        def to_node(x: USutta):
+            return (
+                x.id,
+                {
+                    'uid': x.uid,
+                    'sutta_ref': x.sutta_ref,
+                    'title': x.title,
+                },
+            )
+
+        nodes = list(map(to_node, suttas))
+
+        def to_edge(x: USutta):
+            if sutta.id < x.id:
+                return (sutta.id, x.id)
+            else:
+                return (x.id, sutta.id)
+
+        edges = list(map(to_edge, suttas))
+
+        # Collect links from other nodes
+
+        if distance > 1:
+            for i in suttas:
+                (n, e) = self._get_nodes_and_edges(i, distance - 1)
+                nodes.extend(n)
+                edges.extend(e)
+
+        # Append the current sutta as a node
+
+        nodes.append(to_node(sutta))
+
+        listed = []
+        unique_edges = []
+        for i in edges:
+            e = str(i[0]) + ',' + str(i[1])
+            if e not in listed:
+                listed.append(e)
+                unique_edges.append(i)
+
+        nodes.sort(key=lambda x: x[1]['uid'])
+
+        listed = []
+        unique_nodes = []
+        for i in nodes:
+            e = i[1]['uid']
+            if e not in listed:
+                listed.append(e)
+                unique_nodes.append(i)
+
+        return (unique_nodes, unique_edges)
+
     def _generate_network_bokeh(self, sutta: USutta):
+        (nodes, edges) = self._get_nodes_and_edges(sutta, 3)
+
         G = nx.Graph()
-
-        nodes = [
-            (1, {'sutta_ref': 'DN 1', 'uid': 'dn1'}),
-            (2, {'sutta_ref': 'DN 2', 'uid': 'dn2'}),
-            (3, {'sutta_ref': 'MN 1', 'uid': 'mn1'}),
-            (4, {'sutta_ref': 'MN 2', 'uid': 'mn2'}),
-        ]
         G.add_nodes_from(nodes)
-
-        edges = [
-            (1, 2),
-            (1, 3),
-            (1, 4),
-            (3, 4),
-        ]
         G.add_edges_from(edges)
 
         plot = Plot(
