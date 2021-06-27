@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem)  # type: ignore
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem, QVBoxLayout, QHBoxLayout, QPushButton)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -91,11 +91,46 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.status_msg = QLabel("Sutta title")
         self.statusbar.addPermanentWidget(self.status_msg)
 
+        self._setup_pali_buttons()
+        self._setup_content_graph()
+
+        self.search_input.setFocus()
+
+    def _setup_content_graph(self):
         self.content_graph = QWebEngineView()
         self.content_graph.setHtml('')
         self.content_graph.show()
         self.results_layout.addWidget(self.content_graph)
 
+    def _setup_pali_buttons(self):
+        self.pali_buttons_layout = QVBoxLayout()
+        self.searchbar_layout.addLayout(self.pali_buttons_layout)
+
+        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
+        uppercase = "Ā Ī Ū Ṃ Ṁ Ṅ Ñ Ṭ Ḍ Ṇ Ḷ".split(' ')
+
+        lowercase_row = QHBoxLayout()
+
+        for i in lowercase:
+            btn = QPushButton(i)
+            btn.setFixedSize(30, 30)
+            btn.clicked.connect(partial(self._append_to_query, i))
+            lowercase_row.addWidget(btn)
+
+        uppercase_row = QHBoxLayout()
+
+        for i in uppercase:
+            btn = QPushButton(i)
+            btn.setFixedSize(30, 30)
+            btn.clicked.connect(partial(self._append_to_query, i))
+            uppercase_row.addWidget(btn)
+
+        self.pali_buttons_layout.addLayout(lowercase_row)
+        self.pali_buttons_layout.addLayout(uppercase_row)
+
+    def _append_to_query(self, s: str):
+        a = self.search_input.text()
+        self.search_input.setText(a + s)
         self.search_input.setFocus()
 
     def _handle_query(self):

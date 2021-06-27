@@ -47,7 +47,7 @@ class ErrorMessageWindow(QMainWindow):
   Or send an email to <a href="mailto:profound.labs@gmail.com">profound.labs@gmail.com</a>
 </p>
 <p>
-  Copy the error mesage in your bug report:
+  Please copy the error mesage in your bug report:
 </p>""")
 
             self._info_help.setAlignment(Qt.AlignCenter)
