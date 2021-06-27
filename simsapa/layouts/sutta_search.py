@@ -8,7 +8,9 @@ from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser, QListWidgetItem, QVBoxLayout, QHBoxLayout, QPushButton)
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser,
+                             QListWidgetItem, QVBoxLayout, QHBoxLayout,
+                             QPushButton)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -184,11 +186,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
-        sutta: USutta = self._results[selected_idx]
-        self._show_sutta(sutta)
+        if selected_idx < len(self._results):
+            sutta: USutta = self._results[selected_idx]
+            self._show_sutta(sutta)
 
-        self._history.insert(0, sutta)
-        self.history_list.insertItem(0, sutta.title)
+            self._history.insert(0, sutta)
+            self.history_list.insertItem(0, sutta.title)
 
     def _handle_history_select(self):
         selected_idx = self.history_list.currentRow()
