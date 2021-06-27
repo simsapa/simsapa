@@ -45,11 +45,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
-        word: UDictWord = self._results[selected_idx]
-        self._show_word(word)
+        if selected_idx < len(self._results):
+            word: UDictWord = self._results[selected_idx]
+            self._show_word(word)
 
-        self._history.insert(0, word)
-        self.history_list.insertItem(0, word.word)
+            self._history.insert(0, word)
+            self.history_list.insertItem(0, word.word)
 
     def _handle_history_select(self):
         selected_idx = self.history_list.currentRow()
