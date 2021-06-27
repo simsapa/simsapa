@@ -63,7 +63,7 @@ def main():
 
     app.setQuitOnLastWindowClosed(False)
 
-    tray = QSystemTrayIcon(QIcon(":bookmark"))
+    tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
     tray.setVisible(True)
 
     menu = QMenu()

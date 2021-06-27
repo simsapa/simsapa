@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="24"
+   height="24"
+   viewBox="0 0 24 24"
+   version="1.1"
+   id="svg1050"
+   sodipodi:docname="simsapa_tray.svg"
+   inkscape:version="1.0.1 (3bc2e813f5, 2020-09-07)">
+  <metadata
+     id="metadata1056">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs
+     id="defs1054" />
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1920"
+     inkscape:window-height="1043"
+     id="namedview1052"
+     showgrid="false"
+     inkscape:zoom="9.4166667"
+     inkscape:cx="0.22196938"
+     inkscape:cy="0.86557371"
+     inkscape:window-x="0"
+     inkscape:window-y="37"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer2"
+     inkscape:snap-page="true"
+     showguides="true"
+     inkscape:guide-bbox="true"
+     inkscape:snap-bbox="true"
+     inkscape:snap-bbox-midpoints="true"
+     inkscape:snap-object-midpoints="true">
+    <sodipodi:guide
+       position="12,12"
+       orientation="1,0"
+       id="guide1080" />
+    <sodipodi:guide
+       position="12,12"
+       orientation="0,-1"
+       id="guide1082" />
+    <sodipodi:guide
+       position="3.0036394,12"
+       orientation="1,0"
+       id="guide1085" />
+  </sodipodi:namedview>
+  <g
+     inkscape:groupmode="layer"
+     id="layer1"
+     inkscape:label="bg"
+     style="display:none"
+     sodipodi:insensitive="true">
+    <rect
+       style="fill:#000010;stroke:none;stroke-width:1.23213"
+       id="rect1078"
+       width="24"
+       height="24"
+       x="0"
+       y="0" />
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="logo"
+     style="display:inline">
+    <circle
+       style="fill:#fcfcfc;stroke:#000000;stroke-width:0.5;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="path1087"
+       cx="12"
+       cy="12"
+       r="10.02137" />
+    <g
+       aria-label="s"
+       id="text1092"
+       style="font-style:normal;font-variant:normal;font-weight:300;font-stretch:normal;font-size:21.3333px;line-height:1.25;font-family:Spectral;-inkscape-font-specification:'Spectral, Light';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px"
+       transform="matrix(1.4164097,0,0,1.4164097,-11.281988,1.8018395)">
+      <path
+         d="m 16.26666,12.213333 q -0.895999,0 -1.578664,-0.170666 -0.661333,-0.170667 -1.343998,-0.512 V 9.2053377 h 0.277333 l 0.533332,1.0879983 q 0.554666,1.258665 2.154664,1.258665 1.94133,0 1.94133,-1.685331 0,-0.8746652 -0.575999,-1.3013312 -0.554666,-0.426666 -1.706664,-0.9173319 -1.194665,-0.4906659 -1.791997,-1.0879983 -0.576,-0.5973324 -0.576,-1.6853307 0,-1.1093316 0.895999,-1.8986636 0.895999,-0.7893321 1.983997,-0.7893321 0.810665,0 1.450664,0.1919997 0.639999,0.1919997 1.215998,0.4906659 V 5.1306775 H 18.869322 L 18.33599,4.0853458 Q 18.037324,3.4240135 17.546658,3.1466807 17.077325,2.8693478 16.52266,2.8693478 q -1.642665,0 -1.642665,1.5359975 0,0.7253322 0.490666,1.1519982 0.512,0.4053327 1.535998,0.853332 1.109331,0.4693326 1.855997,1.0453317 0.767999,0.5546658 0.767999,1.9413302 0,1.2799976 -1.023999,2.0479966 -1.002665,0.767999 -2.239996,0.767999 z"
+         id="path1094" />
+    </g>
+  </g>
+</svg>
