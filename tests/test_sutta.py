@@ -3,6 +3,8 @@ from sqlalchemy import func
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+from simsapa.app.helpers import sutta_nodes_and_edges
+
 from .support.helpers import get_app_data
 
 import unittest
@@ -64,3 +66,18 @@ ORDER BY rank;""").all()
         text = annotations_data[0].text
 
         self.assertEqual(text, "ekaṃ samayaṃ bhagavā antarā ca rājagahaṃ antarā ca nāḷandaṃ")
+
+    def test_sutta_graph_is_the_same(self):
+        app_data = get_app_data()
+
+        dn1 = app_data.db_session.query(Am.Sutta).filter(Am.Sutta.uid == 'dn1').first()
+
+        mn1 = app_data.db_session.query(Am.Sutta).filter(Am.Sutta.uid == 'mn1').first()
+
+        (nodes, edges) = sutta_nodes_and_edges(app_data, dn1, 3)
+        dn1_result = f"{nodes}\n{edges}"
+
+        (nodes, edges) = sutta_nodes_and_edges(app_data, mn1, 3)
+        mn1_result = f"{nodes}\n{edges}"
+
+        self.assertEqual(dn1_result, mn1_result)
