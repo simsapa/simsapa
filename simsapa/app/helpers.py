@@ -29,6 +29,7 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
     r = app_data.db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == "appdata.suttas") \
+        .filter(Um.Link.to_table == "appdata.suttas") \
         .filter(Um.Link.from_id == sutta.id) \
         .all()
 
@@ -36,6 +37,7 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
 
     r = app_data.db_session \
         .query(Um.Link.from_id) \
+        .filter(Um.Link.from_table == "appdata.suttas") \
         .filter(Um.Link.to_table == "appdata.suttas") \
         .filter(Um.Link.to_id == sutta.id) \
         .all()
