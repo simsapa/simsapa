@@ -3,7 +3,8 @@ from typing import List
 from markdown import markdown
 from sqlalchemy.orm import joinedload  # type: ignore
 
-from PyQt5.QtWidgets import (QLabel, QMainWindow)  # type: ignore
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QVBoxLayout, QHBoxLayout,
+                             QPushButton)
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -30,6 +31,39 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self.status_msg = QLabel("Word title")
         self.statusbar.addPermanentWidget(self.status_msg)
 
+        self._setup_pali_buttons()
+
+        self.search_input.setFocus()
+
+    def _setup_pali_buttons(self):
+        self.pali_buttons_layout = QVBoxLayout()
+        self.searchbar_layout.addLayout(self.pali_buttons_layout)
+
+        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
+        uppercase = "Ā Ī Ū Ṃ Ṁ Ṅ Ñ Ṭ Ḍ Ṇ Ḷ".split(' ')
+
+        lowercase_row = QHBoxLayout()
+
+        for i in lowercase:
+            btn = QPushButton(i)
+            btn.setFixedSize(30, 30)
+            btn.clicked.connect(partial(self._append_to_query, i))
+            lowercase_row.addWidget(btn)
+
+        uppercase_row = QHBoxLayout()
+
+        for i in uppercase:
+            btn = QPushButton(i)
+            btn.setFixedSize(30, 30)
+            btn.clicked.connect(partial(self._append_to_query, i))
+            uppercase_row.addWidget(btn)
+
+        self.pali_buttons_layout.addLayout(lowercase_row)
+        self.pali_buttons_layout.addLayout(uppercase_row)
+
+    def _append_to_query(self, s: str):
+        a = self.search_input.text()
+        self.search_input.setText(a + s)
         self.search_input.setFocus()
 
     def _handle_query(self):
@@ -92,17 +126,17 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         results: List[UDictWord] = []
 
         res = self._app_data.db_session \
-                                  .query(Am.DictWord) \
-                                  .options(joinedload(Am.DictWord.examples)) \
-                                  .filter(Am.DictWord.word.like(f"%{query}%")) \
-                                  .all()
+            .query(Am.DictWord) \
+            .options(joinedload(Am.DictWord.examples)) \
+            .filter(Am.DictWord.word.like(f"%{query}%")) \
+            .all()
         results.extend(res)
 
         res = self._app_data.db_session \
-                                  .query(Um.DictWord) \
-                                  .options(joinedload(Um.DictWord.examples)) \
-                                  .filter(Um.DictWord.word.like(f"%{query}%")) \
-                                  .all()
+            .query(Um.DictWord) \
+            .options(joinedload(Um.DictWord.examples)) \
+            .filter(Um.DictWord.word.like(f"%{query}%")) \
+            .all()
         results.extend(res)
 
         return results
