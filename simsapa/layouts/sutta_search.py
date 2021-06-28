@@ -7,10 +7,10 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QKeySequence, QTextCursor, QTextCharFormat, QPalette, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QTextBrowser,
-                             QListWidgetItem, QVBoxLayout, QHBoxLayout,
-                             QPushButton)
+from PyQt5.QtGui import QKeySequence, QCloseEvent
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
+                             QVBoxLayout, QHBoxLayout, QPushButton,
+                             QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -81,12 +81,21 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.statusbar.addPermanentWidget(self.status_msg)
 
         self._setup_pali_buttons()
+        self._setup_content_html()
         self._setup_content_graph()
 
         self.search_input.setFocus()
 
+    def _setup_content_html(self):
+        self.content_html = QWebEngineView()
+        self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.content_html.setHtml('')
+        self.content_html.show()
+        self.content_layout.addWidget(self.content_html)
+
     def _setup_content_graph(self):
         self.content_graph = QWebEngineView()
+        self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_graph.setHtml('')
         self.content_graph.show()
         self.results_layout.addWidget(self.content_graph)
@@ -144,32 +153,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
                 self.results_list.setItemWidget(item, w)
 
     def _set_content_html(self, html):
-        self.content_html.setText(html)
+        self.content_html.setHtml(html)
         self._highlight_query()
 
     def _highlight_query(self):
-        find_text = self.search_input.text()
-
-        # get default selection format from view's palette
-        palette = self.palette()
-        text_format = QTextCharFormat()
-        text_format.setBackground(palette.brush(QPalette.Normal, QPalette.Highlight))
-        text_format.setForeground(palette.brush(QPalette.Normal, QPalette.HighlightedText))
-
-        # find all occurrences of the text
-        doc = self.content_html.document()
-        cur = QTextCursor()
-        selections = []
-        while True:
-            cur = doc.find(find_text, cur)
-            if cur.isNull():
-                break
-            sel = QTextBrowser.ExtraSelection()
-            sel.cursor = cur
-            sel.format = text_format
-            selections.append(sel)
-
-        doc = self.content_html.setExtraSelections(selections)
+        query = self.search_input.text()
+        self.content_html.findText(query)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -288,7 +277,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         return results
 
     def _handle_copy(self):
-        text = self.content_html.textCursor().selectedText()
+        text = self.content_html.selectedText()
         # U+2029 Paragraph Separator to blank line
         text = text.replace('\u2029', "\n\n")
         self._app_data.clipboard_setText(text)
@@ -297,7 +286,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.memo_fields = values
 
     def _handle_create_memo(self):
-        text = self.content_html.textCursor().selectedText()
+        text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
 
@@ -331,9 +320,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         except Exception as e:
             logger.error(e)
 
-    def _handle_select_all(self):
-        self.content_html.selectAll()
-
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu)
 
@@ -345,14 +331,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         memoAction.setShortcut(QKeySequence("Ctrl+M"))
         memoAction.triggered.connect(partial(self._handle_create_memo))
 
-        selectAllAction = QAction("Select All", self.content_html)
-        selectAllAction.setShortcut(QKeySequence("Ctrl+A"))
-        selectAllAction.triggered.connect(partial(self._handle_select_all))
-
         self.content_html.addActions([
             copyAction,
             memoAction,
-            selectAllAction,
         ])
 
     def _connect_signals(self):
