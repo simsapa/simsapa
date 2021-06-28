@@ -1,6 +1,5 @@
 import re
 import cgi
-from urllib import parse
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 

@@ -39,6 +39,9 @@ class AppData:
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
 
+        self.sutta_to_open: Optional[USutta] = None
+        self.dict_word_to_open: Optional[UDictWord] = None
+
         self.db_conn, self.db_session = self._connect_to_db(app_db_path, user_db_path)
 
     def _connect_to_db(self, app_db_path, user_db_path):

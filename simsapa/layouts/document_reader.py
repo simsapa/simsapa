@@ -1,20 +1,26 @@
 from functools import partial
 from typing import List, Optional
 import logging as _logging
+from pathlib import Path
+import queue
 import json
 
-from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel, QPoint, QRect
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel, QPoint, QRect, QUrl, QTimer
+from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog,
-                             QMessageBox)  # type: ignore
+                             QMessageBox, QAction)  # type: ignore
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy.sql import func  # type: ignore
+
+from simsapa import ASSETS_DIR, APP_QUEUES
 
 from ..app.file_doc import FileDoc, PageImage  # type: ignore
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import (AppData, UMemo)  # type: ignore
+from ..app.types import (AppData, UMemo, USutta)  # type: ignore
+from ..app.graph import generate_graph, document_page_nodes_and_edges
 from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow  # type: ignore
 
 logger = _logging.getLogger(__name__)
@@ -53,15 +59,45 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
 
         self._connect_signals()
 
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+
+        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(300)
+
         self.statusbar.showMessage("Ready", 3000)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        if self.graph_path.exists():
+            self.graph_path.unlink()
+
+        event.accept()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                data = json.loads(s)
+                if data['action'] == 'show_sutta':
+                    self._show_sutta_from_message(data['arg'])
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
 
     def _ui_setup(self):
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
         self._show_memo_clear()
 
-        self.file_doc = None
-        self.db_doc = None
+        self.file_doc: Optional[FileDoc] = None
+        self.db_doc: Optional[Um.Document] = None
         self.content_page_image: Optional[PageImage] = None
 
         self.selecting = False
@@ -69,6 +105,14 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.select_start_point: Optional[QPoint] = None
         self.select_end_point: Optional[QPoint] = None
         self.select_rectangle: Optional[QRect] = None
+
+        self._setup_content_graph()
+
+    def _setup_content_graph(self):
+        self.content_graph = QWebEngineView()
+        self.content_graph.setHtml('')
+        self.content_graph.show()
+        self.memos_layout.addWidget(self.content_graph)
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -136,6 +180,44 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             self._show_memo_clear()
             self.model.memos = self._get_memos_for_this_page()
             self.model.layoutChanged.emit()
+
+            # show the network graph in a browser
+            self._generate_network_bokeh(self.db_doc, page)
+            self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+
+    def _show_sutta_from_message(self, info):
+        sutta: Optional[USutta] = None
+
+        if info['table'] == 'appdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id == info['id']) \
+                .first()
+
+        elif info['table'] == 'userdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id == info['id']) \
+                .first()
+
+        self._app_data.sutta_to_open = sutta
+        self.action_Sutta_Search.activate(QAction.Trigger)
+
+    def _generate_network_bokeh(self, db_doc: Um.Document, page_number: int):
+        if self.file_doc is None or self.db_doc is None:
+            return
+
+        (nodes, edges) = document_page_nodes_and_edges(
+            app_data=self._app_data,
+            db_doc=self.db_doc,
+            page_number=self.file_doc._current_idx + 1,
+            distance=3
+        )
+
+        # central node was appended last
+        selected = [len(nodes) - 1]
+
+        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path)
 
     def _select_start(self, event):
         if event.button() == Qt.LeftButton:

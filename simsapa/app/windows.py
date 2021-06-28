@@ -23,6 +23,9 @@ class AppWindows:
         view = SuttaSearchWindow(self._app_data)
         self._connect_signals(view)
         view.show()
+        if self._app_data.sutta_to_open:
+            view._show_sutta(self._app_data.sutta_to_open)
+            self._app_data.sutta_to_open = None
         self._windows.append(view)
 
     def _new_dictionary_search_window(self):

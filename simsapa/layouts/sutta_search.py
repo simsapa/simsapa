@@ -16,27 +16,14 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from sqlalchemy import or_
 from sqlalchemy.sql import func  # type: ignore
 
-import networkx as nx
-from bokeh.io import output_file, save, curdoc
-from bokeh.document import Document
-from bokeh.models import (Button, Plot, Circle, MultiLine, Range1d, ColumnDataSource,
-                          LabelSet, PanTool, WheelZoomTool, TapTool, ResetTool,
-                          NodesAndLinkedEdges, EdgesAndLinkedNodes)
-from bokeh.palettes import Spectral4
-from bokeh.plotting import from_networkx
-from bokeh.layouts import column
-from bokeh.models import CustomJS
-from bokeh import events
-
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta  # type: ignore
+from ..app.graph import generate_graph, sutta_nodes_and_edges, sutta_graph_id
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow  # type: ignore
 from .memo_dialog import MemoDialog
 from .sutta_search_item import SuttaSearchItemWidget
-
-from ..app.helpers import sutta_nodes_and_edges
 
 logger = _logging.getLogger(__name__)
 
@@ -82,8 +69,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
                 data = json.loads(s)
-                if data['action'] == 'show_sutta_by_uid':
-                    self._show_sutta_by_uid(data['arg'])
+                if data['action'] == 'show_sutta':
+                    self._show_sutta_from_message(data['arg'])
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -201,111 +188,31 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
     def _generate_network_bokeh(self, sutta: USutta):
         (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
 
-        G = nx.Graph()
-        G.add_nodes_from(nodes)
-        G.add_edges_from(edges)
-
-        plot = Plot(
-            plot_width=700,
-            plot_height=400,
-            x_range=Range1d(-1.1, 1.1),
-            y_range=Range1d(-1.1, 1.1),
-        )
-
-        wheel_zoom = WheelZoomTool()
-        plot.add_tools(
-            PanTool(),
-            TapTool(),
-            wheel_zoom,
-            ResetTool()
-        )
-        plot.toolbar.active_scroll = wheel_zoom
-
-        network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
-
-        network_graph.node_renderer.glyph = Circle(size=15, fill_color=Spectral4[0])
-        network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=Spectral4[2])
-        network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color=Spectral4[1])
-
-        network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
-        network_graph.edge_renderer.selection_glyph = MultiLine(line_color=Spectral4[2], line_width=2)
-
-        network_graph.selection_policy = NodesAndLinkedEdges()
-        network_graph.inspection_policy = EdgesAndLinkedNodes()
-
-        plot.renderers.append(network_graph)
-
-        x, y = zip(*network_graph.layout_provider.graph_layout.values())
-        source = ColumnDataSource({
-            'x': x,
-            'y': y,
-            'sutta_ref': [nodes[i][1]['sutta_ref'] for i in range(len(x))],
-            'uid': [nodes[i][1]['uid'] for i in range(len(x))],
-        })
-
-        labels = LabelSet(
-            x='x',
-            y='y',
-            text='sutta_ref',
-            source=source,
-            background_fill_color='white',
-            text_font_size='15px',
-            background_fill_alpha=.7)
-
-        plot.renderers.append(labels)
-
         selected = []
 
         for idx, n in enumerate(nodes):
-            if n[1]['uid'] == sutta.uid:
+            if n[0] == sutta_graph_id(sutta):
                 selected.append(idx)
 
-        network_graph.node_renderer.data_source.selected.indices = selected
+        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path)
 
-        network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code="""
-window.selected_uids = [];
-var inds = cb_obj.indices;
-var d1 = source.data;
-for (var i=0; i<inds.length; i++) {
-  var x = d1['uid'][inds[i]];
-  window.selected_uids.push(x);
-}
-"""))
+    def _show_sutta_from_message(self, info):
+        sutta: Optional[USutta] = None
 
-        button = Button(label='Open Sutta')
+        if info['table'] == 'appdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id == info['id']) \
+                .first()
 
-        url = f'http://localhost:8000/queues/{self.queue_id}'
-        js_code = """
-if (typeof window.selected_uids === 'undefined') {
-    window.selected_uids = [];
-}
-if (window.selected_uids.length > 0) {
-    const params = {
-        action: 'show_sutta_by_uid',
-        arg: window.selected_uids[0],
-    };
-    const options = {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(params),
-    };
-    fetch('%s', options);
-}
-""" % (url,)
+        elif info['table'] == 'userdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id == info['id']) \
+                .first()
 
-        button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
-
-        layout = column(button, plot)
-
-        doc: Document = curdoc()
-        doc.clear()
-        doc.add_root(layout)
-
-        output_file(filename=str(self.graph_path), mode='absolute')
-        save(doc)
+        if sutta:
+            self._show_sutta(sutta)
 
     def _show_sutta_by_uid(self, uid: str):
         results: List[USutta] = []

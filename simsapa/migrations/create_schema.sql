@@ -213,12 +213,14 @@ CREATE TABLE `memo_tags` (
 -- ////////////////////////////////////////////////////////////////////
 
 CREATE TABLE `links` (
-  `id`          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  `label`       VARCHAR,
-  `from_table`  VARCHAR NOT NULL,
-  `from_id`     INTEGER NOT NULL,
-  `to_table`    VARCHAR NOT NULL,
-  `to_id`       INTEGER NOT NULL
+  `id`                INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  `label`             VARCHAR,
+  `from_table`        VARCHAR NOT NULL,
+  `from_id`           INTEGER NOT NULL,
+  `from_page_number`  INTEGER,
+  `to_table`          VARCHAR NOT NULL,
+  `to_id`             INTEGER NOT NULL,
+  `to_page_number`    INTEGER
 );
 
 -- --- Application ----------------------------------------------------

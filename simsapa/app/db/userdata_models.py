@@ -265,8 +265,10 @@ class Link(Base):
     label = Column(String)
     from_table = Column(String)
     from_id = Column(Integer)
+    from_page_number = Column(Integer)
     to_table = Column(String)
     to_id = Column(Integer)
+    to_page_number = Column(Integer)
 
 
 class AppSetting(Base):
