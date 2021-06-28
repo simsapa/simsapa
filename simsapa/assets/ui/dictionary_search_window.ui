@@ -65,13 +65,25 @@
          <layout class="QVBoxLayout" name="content_layout">
           <item>
            <widget class="QLabel" name="content_title">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>500</width>
+              <height>0</height>
+             </size>
+            </property>
             <property name="text">
              <string>Title</string>
             </property>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+            </property>
            </widget>
-          </item>
-          <item>
-           <widget class="QTextBrowser" name="content_html"/>
           </item>
          </layout>
         </widget>
@@ -79,6 +91,18 @@
          <layout class="QVBoxLayout" name="results_layout">
           <item>
            <widget class="QLabel" name="label_2">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>500</width>
+              <height>0</height>
+             </size>
+            </property>
             <property name="text">
              <string>Results</string>
             </property>

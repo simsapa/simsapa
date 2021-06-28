@@ -3,8 +3,11 @@ from typing import List
 from markdown import markdown
 from sqlalchemy.orm import joinedload  # type: ignore
 
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QVBoxLayout, QHBoxLayout,
-                             QPushButton)
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QVBoxLayout, QHBoxLayout,
+                             QPushButton, QSizePolicy)
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -24,6 +27,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self._ui_setup()
 
         self._connect_signals()
+        self._setup_content_html_context_menu()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -32,8 +36,16 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self.statusbar.addPermanentWidget(self.status_msg)
 
         self._setup_pali_buttons()
+        self._setup_content_html()
 
         self.search_input.setFocus()
+
+    def _setup_content_html(self):
+        self.content_html = QWebEngineView()
+        self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.content_html.setHtml('')
+        self.content_html.show()
+        self.content_layout.addWidget(self.content_html)
 
     def _setup_pali_buttons(self):
         self.pali_buttons_layout = QVBoxLayout()
@@ -67,6 +79,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self.search_input.setFocus()
 
     def _handle_query(self):
+        self._highlight_query()
         query = self.search_input.text()
         if len(query) > 3:
             self._results = self._word_search_query(query)
@@ -75,7 +88,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
             self.results_list.addItems(titles)
 
     def _set_content_html(self, html):
-        self.content_html.setText(html)
+        self.content_html.setHtml(html)
+        self._highlight_query()
+
+    def _highlight_query(self):
+        query = self.search_input.text()
+        self.content_html.findText(query)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -140,6 +158,23 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         results.extend(res)
 
         return results
+
+    def _handle_copy(self):
+        text = self.content_html.selectedText()
+        # U+2029 Paragraph Separator to blank line
+        text = text.replace('\u2029', "\n\n")
+        self._app_data.clipboard_setText(text)
+
+    def _setup_content_html_context_menu(self):
+        self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu)
+
+        copyAction = QAction("Copy", self.content_html)
+        copyAction.setShortcut(QKeySequence("Ctrl+C"))
+        copyAction.triggered.connect(partial(self._handle_copy))
+
+        self.content_html.addActions([
+            copyAction,
+        ])
 
     def _connect_signals(self):
         self.action_Close_Window \
