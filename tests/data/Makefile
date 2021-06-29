@@ -21,5 +21,5 @@ db_reindex_fts:
 
 export_from_db:
 	cd assets && \
-	sqlite3 appdata.sqlite3 .dump | grep -E '^INSERT INTO' | grep -vE 'schema_version|sqlite_sequence' > ../seed_data/appdata-populate.sql && \
-	sqlite3 userdata.sqlite3 .dump | grep -E '^INSERT INTO' | grep -vE 'schema_version|sqlite_sequence' > ../seed_data/userdata-populate.sql
+	sqlite3 appdata.sqlite3 .dump | grep -E '^INSERT INTO' | grep -vE 'schema_version|fts_suttas|sqlite_sequence' > ../seed_data/appdata-populate.sql && \
+	sqlite3 userdata.sqlite3 .dump | grep -E '^INSERT INTO' | grep -vE 'schema_version|fts_suttas|sqlite_sequence' > ../seed_data/userdata-populate.sql
