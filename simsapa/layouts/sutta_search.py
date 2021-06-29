@@ -137,6 +137,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         if len(query) >= min_length:
             self._results = self._sutta_search_query(query)
 
+            hits = len(self._results)
+            if hits > 0:
+                self.rightside_tabs.setTabText(0, f"Results ({hits})")
+            else:
+                self.rightside_tabs.setTabText(0, "Results")
+
             self.results_list.clear()
 
             for x in self._results:
@@ -176,6 +182,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 
     def _generate_network_bokeh(self, sutta: USutta):
         (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
+
+        hits = len(nodes) - 1
+        if hits > 0:
+            self.rightside_tabs.setTabText(1, f"Links ({hits})")
+        else:
+            self.rightside_tabs.setTabText(1, "Links")
 
         selected = []
 

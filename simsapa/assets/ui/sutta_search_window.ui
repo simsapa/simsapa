@@ -81,7 +81,7 @@
         <widget class="QWidget" name="verticalLayoutWidget_3">
          <layout class="QVBoxLayout" name="tabs_layout">
           <item>
-           <widget class="QTabWidget" name="tabWidget">
+           <widget class="QTabWidget" name="rightside_tabs">
             <property name="minimumSize">
              <size>
               <width>500</width>

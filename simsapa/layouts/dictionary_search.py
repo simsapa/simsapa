@@ -86,6 +86,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         if len(query) >= min_length:
             self._results = self._word_search_query(query)
 
+            hits = len(self._results)
+            if hits > 0:
+                self.rightside_tabs.setTabText(0, f"Results ({hits})")
+            else:
+                self.rightside_tabs.setTabText(0, "Results")
+
             self.results_list.clear()
 
             for x in self._results:
