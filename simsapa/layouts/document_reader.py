@@ -112,7 +112,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.content_graph = QWebEngineView()
         self.content_graph.setHtml('')
         self.content_graph.show()
-        self.memos_layout.addWidget(self.content_graph)
+        self.links_layout.addWidget(self.content_graph)
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -179,6 +179,13 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             self.memos_list.clearSelection()
             self._show_memo_clear()
             self.model.memos = self._get_memos_for_this_page()
+
+            hits = len(self.model.memos)
+            if hits > 0:
+                self.rightside_tabs.setTabText(0, f"Memos ({hits})")
+            else:
+                self.rightside_tabs.setTabText(0, "Memos")
+
             self.model.layoutChanged.emit()
 
             # show the network graph in a browser
@@ -213,6 +220,12 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             page_number=self.file_doc._current_idx + 1,
             distance=3
         )
+
+        hits = len(nodes) - 1
+        if hits > 0:
+            self.rightside_tabs.setTabText(1, f"Links ({hits})")
+        else:
+            self.rightside_tabs.setTabText(1, "Links")
 
         # central node was appended last
         selected = [len(nodes) - 1]
