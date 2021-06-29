@@ -23,7 +23,7 @@ from ..app.types import AppData, USutta  # type: ignore
 from ..app.graph import generate_graph, sutta_nodes_and_edges, sutta_graph_id
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow  # type: ignore
 from .memo_dialog import MemoDialog
-from .sutta_search_item import SuttaSearchItemWidget
+from .search_item import SearchItemWidget
 
 logger = _logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
             self.results_list.clear()
 
             for x in self._results:
-                w = SuttaSearchItemWidget()
+                w = SearchItemWidget()
                 w.setTitle(x.title)
 
                 if x.content_html:

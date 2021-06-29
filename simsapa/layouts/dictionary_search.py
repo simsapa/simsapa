@@ -5,14 +5,16 @@ from sqlalchemy.orm import joinedload  # type: ignore
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QVBoxLayout, QHBoxLayout,
-                             QPushButton, QSizePolicy)
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
+                             QVBoxLayout, QHBoxLayout, QPushButton,
+                             QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, UDictWord  # type: ignore
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
+from .search_item import SearchItemWidget
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
@@ -83,9 +85,21 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         query = self.search_input.text()
         if len(query) >= min_length:
             self._results = self._word_search_query(query)
-            titles = list(map(lambda s: s.word, self._results))
+
             self.results_list.clear()
-            self.results_list.addItems(titles)
+
+            for x in self._results:
+                w = SearchItemWidget()
+                w.setTitle(x.word)
+
+                if x.definition_html:
+                    w.setSnippet(x.definition_html[0:400].strip())
+
+                item = QListWidgetItem(self.results_list)
+                item.setSizeHint(w.sizeHint())
+
+                self.results_list.addItem(item)
+                self.results_list.setItemWidget(item, w)
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)

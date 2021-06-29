@@ -3,9 +3,9 @@ import re
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 
-class SuttaSearchItemWidget(QWidget):
+class SearchItemWidget(QWidget):
     def __init__(self, parent=None):
-        super(SuttaSearchItemWidget, self).__init__(parent)
+        super(SearchItemWidget, self).__init__(parent)
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
