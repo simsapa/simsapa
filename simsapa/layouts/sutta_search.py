@@ -98,7 +98,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_graph.setHtml('')
         self.content_graph.show()
-        self.results_layout.addWidget(self.content_graph)
+        self.links_layout.addWidget(self.content_graph)
 
     def _setup_pali_buttons(self):
         self.pali_buttons_layout = QVBoxLayout()
