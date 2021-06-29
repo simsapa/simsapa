@@ -1,18 +1,23 @@
 from functools import partial
-from typing import List
+from typing import List, Optional
 from markdown import markdown
 from sqlalchemy.orm import joinedload  # type: ignore
+from pathlib import Path
+import json
+import queue
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtCore import Qt, QUrl, QTimer
+from PyQt5.QtGui import QKeySequence, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
+from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, UDictWord  # type: ignore
+from ..app.types import AppData, USutta, UDictWord  # type: ignore
+from ..app.graph import generate_graph, dict_word_nodes_and_edges
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
 from .search_item import SearchItemWidget
 
@@ -31,7 +36,37 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self._connect_signals()
         self._setup_content_html_context_menu()
 
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+
+        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(300)
+
         self.statusbar.showMessage("Ready", 3000)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        if self.graph_path.exists():
+            self.graph_path.unlink()
+
+        event.accept()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                data = json.loads(s)
+                if data['action'] == 'show_sutta':
+                    self._show_sutta_from_message(data['arg'])
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
 
     def _ui_setup(self):
         self.status_msg = QLabel("Word title")
@@ -39,6 +74,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 
         self._setup_pali_buttons()
         self._setup_content_html()
+        self._setup_content_graph()
 
         self.search_input.setFocus()
 
@@ -48,6 +84,13 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self.content_html.setHtml('')
         self.content_html.show()
         self.content_layout.addWidget(self.content_html)
+
+    def _setup_content_graph(self):
+        self.content_graph = QWebEngineView()
+        self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.content_graph.setHtml('')
+        self.content_graph.show()
+        self.links_layout.addWidget(self.content_graph)
 
     def _setup_pali_buttons(self):
         self.pali_buttons_layout = QVBoxLayout()
@@ -158,6 +201,11 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 </html>
 """ % ('', content, examples)
 
+        # show the network graph in a browser
+        self._generate_network_bokeh(word)
+        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+
+        # show the word content
         self._set_content_html(html)
 
     def _word_search_query(self, query: str) -> List[UDictWord]:
@@ -178,6 +226,38 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         results.extend(res)
 
         return results
+
+    def _show_sutta_from_message(self, info):
+        sutta: Optional[USutta] = None
+
+        if info['table'] == 'appdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id == info['id']) \
+                .first()
+
+        elif info['table'] == 'userdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id == info['id']) \
+                .first()
+
+        self._app_data.sutta_to_open = sutta
+        self.action_Sutta_Search.activate(QAction.Trigger)
+
+    def _generate_network_bokeh(self, dict_word: UDictWord):
+        (nodes, edges) = dict_word_nodes_and_edges(app_data=self._app_data, dict_word=dict_word, distance=3)
+
+        hits = len(nodes) - 1
+        if hits > 0:
+            self.rightside_tabs.setTabText(1, f"Links ({hits})")
+        else:
+            self.rightside_tabs.setTabText(1, "Links")
+
+        # central node was appended last
+        selected = [len(nodes) - 1]
+
+        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path)
 
     def _handle_copy(self):
         text = self.content_html.selectedText()

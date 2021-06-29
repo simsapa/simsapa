@@ -16,7 +16,7 @@ from bokeh import events
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from .types import AppData, USutta
+from .types import AppData, UDictWord, USutta
 
 
 class NodeData(TypedDict):
@@ -36,6 +36,11 @@ def sutta_graph_id(x: USutta) -> str:
     return f"appdata.suttas.{x.id}"
 
 
+def dict_word_graph_id(x: UDictWord) -> str:
+    schema = x.metadata.schema
+    return f"{schema}.dict_words.{x.id}"
+
+
 def document_graph_id(x: Um.Document, page_number: int) -> str:
     return f"userdata.documents.{x.id}.{page_number}"
 
@@ -48,6 +53,20 @@ def sutta_to_node(x: USutta) -> GraphNode:
             'title': x.title,
             'description': '',
             'table': 'appdata.suttas',
+            'id': x.id,
+        },
+    )
+
+
+def dict_word_to_node(x: UDictWord) -> GraphNode:
+    schema = x.metadata.schema
+    return (
+        dict_word_graph_id(x),
+        {
+            'label': x.word,
+            'title': x.word,
+            'description': '',
+            'table': f'{schema}.dict_words',
             'id': x.id,
         },
     )
@@ -151,6 +170,62 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
     # Append the current sutta as a node
 
     nodes.append(sutta_to_node(sutta))
+
+    return (unique_nodes(nodes), unique_edges(edges))
+
+
+def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance: int = 1):
+    schema = dict_word.metadata.schema
+
+    links = []
+
+    r = app_data.db_session \
+        .query(Um.Link.to_id) \
+        .filter(Um.Link.from_table == f"{schema}.dict_words") \
+        .filter(Um.Link.to_table == "appdata.suttas") \
+        .filter(Um.Link.from_id == dict_word.id) \
+        .all()
+
+    links.extend(r)
+
+    r = app_data.db_session \
+        .query(Um.Link.from_id) \
+        .filter(Um.Link.from_table == f"{schema}.dict_words") \
+        .filter(Um.Link.to_table == "appdata.suttas") \
+        .filter(Um.Link.to_id == dict_word.id) \
+        .all()
+
+    links.extend(r)
+
+    ids = map(lambda x: x[0], links)
+    # set() will contain unique items
+    sutta_ids = list(set(ids))
+
+    suttas = app_data.db_session \
+        .query(Am.Sutta) \
+        .filter(Am.Sutta.id.in_(sutta_ids)) \
+        .all()
+
+    nodes = list(map(sutta_to_node, suttas))
+
+    def to_edge(x: USutta):
+        from_id = dict_word_graph_id(dict_word)
+        to_id = sutta_graph_id(x)
+        return (to_id, from_id)
+
+    edges = list(map(to_edge, suttas))
+
+    # Collect links from other nodes
+
+    if distance > 1:
+        for i in suttas:
+            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            nodes.extend(n)
+            edges.extend(e)
+
+    # Append the current doument as a node
+
+    nodes.append(dict_word_to_node(dict_word))
 
     return (unique_nodes(nodes), unique_edges(edges))
 
