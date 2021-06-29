@@ -4,7 +4,7 @@ from pathlib import Path
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
 from bokeh.document import Document
-from bokeh.models import (Button, Circle, MultiLine, Range1d, ColumnDataSource,
+from bokeh.models import (Div, Button, Circle, MultiLine, Range1d, ColumnDataSource,
                           LabelSet, HoverTool, NodesAndLinkedEdges,
                           EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral4
@@ -287,27 +287,33 @@ var inds = cb_obj.indices;
 
 var body = document.getElementsByTagName('body')[0];
 
-var desc_div = document.getElementById('selected_desc');
+var desc_div = document.getElementById('selected_descriptions');
+
 if (desc_div == null || typeof desc_div == 'undefined') {
     desc_div = document.createElement('div');
-    desc_div.setAttribute('id', 'selected_desc');
+    desc_div.setAttribute('id', 'selected_descriptions');
     body.appendChild(desc_div);
 }
 
-// Expecting exactly one selected item, selected with the Tap tool.
+desc_div.innerHTML = '';
+var desc_div_content = '';
 
-if (inds.length == 1) {
-    var idx = inds[0];
-    var data = source.data;
+var data = source.data;
+
+for (var i=0; i<inds.length; i++) {
+    var idx = inds[i];
 
     var table = data['table'][idx];
     var id = data['id'][idx];
-    window.selected_info.push({ table: table, id: id });
-
     var title = data['title'][idx];
     var desc_content = data['description'][idx];
-    desc_div.innerHTML = "<h1>" + title + "</h1><div>" + desc_content + "</div>";
+
+    window.selected_info.push({ table: table, id: id });
+
+    desc_div_content += '<h1 class="title">' + title + '</h1><div class="description">' + desc_content + '</div>';
 }
+
+desc_div.innerHTML = desc_div_content;
 """))
 
     button = Button(label='Open Sutta')
@@ -336,7 +342,30 @@ if (window.selected_info.length > 0) {
 
     button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
 
-    layout = column(button, plot)
+    text = """
+<style>
+    #selected_descriptions {
+        font-family: Helvetica, Arial, sans-serif;
+        padding: 0 30px;
+    }
+
+    h1.title {
+        font-style: normal;
+        font-weight: normal;
+        font-size: 20px;
+        line-height: 25px;
+        letter-spacing: 0.5px;
+        color: #1a1a1a;
+    }
+
+    .description {
+        font-size: 16px;
+        line-height: 20px;
+    }
+</style>"""
+
+    header = Div(text=text)
+    layout = column(header, button, plot)
 
     doc: Document = curdoc()
     doc.clear()
