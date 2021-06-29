@@ -260,11 +260,10 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
         ('Title', '@title')
     ]
 
-    cr = plot.circle(x='x', y='y', source=source,
-                     size=25,
-                     fill_color="grey", hover_fill_color=Spectral4[2],
-                     fill_alpha=0.05, hover_alpha=0.8,
-                     line_color=None, hover_line_color="white")
+    cr = plot.circle(x='x', y='y', source=source, size=25,
+                     fill_color=None, line_color=None,
+                     hover_fill_color=Spectral4[2],
+                     hover_alpha=0.8, hover_line_color="white")
 
     plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))
 
