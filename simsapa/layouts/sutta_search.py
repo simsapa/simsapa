@@ -131,10 +131,10 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.search_input.setText(a + s)
         self.search_input.setFocus()
 
-    def _handle_query(self):
+    def _handle_query(self, min_length=4):
         self._highlight_query()
         query = self.search_input.text()
-        if len(query) > 3:
+        if len(query) >= min_length:
             self._results = self._sutta_search_query(query)
 
             self.results_list.clear()
@@ -340,8 +340,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
 
-        self.search_button.clicked.connect(partial(self._handle_query))
-        self.search_input.textChanged.connect(partial(self._handle_query))
+        self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
+        self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
         # self.search_input.returnPressed.connect(partial(self._update_result))
         self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
         self.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))
