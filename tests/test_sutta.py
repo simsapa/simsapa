@@ -3,7 +3,7 @@ from sqlalchemy import func
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.helpers import sutta_nodes_and_edges
+from simsapa.app.graph import sutta_nodes_and_edges
 
 from .support.helpers import get_app_data
 
@@ -17,7 +17,7 @@ class SuttaTestSuite(unittest.TestCase):
         app_data = get_app_data()
         count = app_data.db_session.query(func.count(Am.Sutta.id)).scalar()
 
-        self.assertEqual(count, 4)
+        self.assertEqual(count, 7)
 
     def test_pitaka_group(self):
         app_data = get_app_data()
@@ -27,7 +27,7 @@ class SuttaTestSuite(unittest.TestCase):
                         .filter(Am.Sutta.group_path.like('/sutta pitaka/digha nikaya/%')) \
                         .count()
 
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 3)
 
     def test_fts_sutta_search(self):
         app_data = get_app_data()
