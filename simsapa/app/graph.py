@@ -4,11 +4,11 @@ from pathlib import Path
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
 from bokeh.document import Document
-from bokeh.models import (Button, Plot, Circle, MultiLine, Range1d, ColumnDataSource,
-                          LabelSet, PanTool, WheelZoomTool, TapTool, ResetTool,
-                          NodesAndLinkedEdges, EdgesAndLinkedNodes)
+from bokeh.models import (Button, Circle, MultiLine, Range1d, ColumnDataSource,
+                          LabelSet, HoverTool, NodesAndLinkedEdges,
+                          EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral4
-from bokeh.plotting import from_networkx
+from bokeh.plotting import figure, from_networkx
 from bokeh.layouts import column
 from bokeh.models import CustomJS
 from bokeh import events
@@ -21,7 +21,7 @@ from .types import AppData, USutta
 
 class NodeData(TypedDict):
     label: str
-    hover: str
+    title: str
     description: str
     table: str
     id: int
@@ -45,7 +45,7 @@ def sutta_to_node(x: USutta) -> GraphNode:
         sutta_graph_id(x),
         {
             'label': x.sutta_ref,
-            'hover': x.title,
+            'title': x.title,
             'description': '',
             'table': 'appdata.suttas',
             'id': x.id,
@@ -58,7 +58,7 @@ def document_to_node(x: Am.Document, page_number: int) -> GraphNode:
         document_graph_id(x, page_number),
         {
             'label': 'p.' + str(page_number),
-            'hover': x.title,
+            'title': x.title,
             'description': '',
             'table': 'userdata.documents',
             'id': x.id,
@@ -205,21 +205,31 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
 
-    plot = Plot(
+    plot = figure(
+        title=None,
         plot_width=700,
         plot_height=400,
         x_range=Range1d(-1.1, 1.1),
         y_range=Range1d(-1.1, 1.1),
+        tools="pan,tap,wheel_zoom,reset",
+        active_scroll="wheel_zoom",
     )
 
-    wheel_zoom = WheelZoomTool()
-    plot.add_tools(
-        PanTool(),
-        TapTool(),
-        wheel_zoom,
-        ResetTool()
-    )
-    plot.toolbar.active_scroll = wheel_zoom
+    plot.xgrid.grid_line_color = None
+    plot.ygrid.grid_line_color = None
+    plot.xaxis.axis_line_color = None
+    plot.yaxis.axis_line_color = None
+
+    plot.xaxis.axis_label_text_color = None
+    plot.yaxis.axis_label_text_color = None
+
+    plot.xaxis.major_label_text_color = None
+    plot.yaxis.major_label_text_color = None
+
+    plot.xaxis.major_tick_line_color = None
+    plot.yaxis.major_tick_line_color = None
+    plot.xaxis.minor_tick_line_color = None
+    plot.yaxis.minor_tick_line_color = None
 
     network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
 
@@ -240,9 +250,23 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
         'x': x,
         'y': y,
         'label': [nodes[i][1]['label'] for i in range(len(x))],
+        'title': [nodes[i][1]['title'] for i in range(len(x))],
+        'description': [nodes[i][1]['description'] for i in range(len(x))],
         'table': [nodes[i][1]['table'] for i in range(len(x))],
         'id': [nodes[i][1]['id'] for i in range(len(x))],
     })
+
+    tooltips = [
+        ('Title', '@title')
+    ]
+
+    cr = plot.circle(x='x', y='y', source=source,
+                     size=25,
+                     fill_color="grey", hover_fill_color=Spectral4[2],
+                     fill_alpha=0.05, hover_alpha=0.8,
+                     line_color=None, hover_line_color="white")
+
+    plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))
 
     labels = LabelSet(
         x='x',
@@ -259,12 +283,31 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code="""
 window.selected_info = [];
+
 var inds = cb_obj.indices;
-var data = source.data;
-for (var i=0; i<inds.length; i++) {
-  var table = data['table'][inds[i]];
-  var id = data['id'][inds[i]];
-  window.selected_info.push({ table: table, id: id });
+
+var body = document.getElementsByTagName('body')[0];
+
+var desc_div = document.getElementById('selected_desc');
+if (desc_div == null || typeof desc_div == 'undefined') {
+    desc_div = document.createElement('div');
+    desc_div.setAttribute('id', 'selected_desc');
+    body.appendChild(desc_div);
+}
+
+// Expecting exactly one selected item, selected with the Tap tool.
+
+if (inds.length == 1) {
+    var idx = inds[0];
+    var data = source.data;
+
+    var table = data['table'][idx];
+    var id = data['id'][idx];
+    window.selected_info.push({ table: table, id: id });
+
+    var title = data['title'][idx];
+    var desc_content = data['description'][idx];
+    desc_div.innerHTML = "<h1>" + title + "</h1><div>" + desc_content + "</div>";
 }
 """))
 
