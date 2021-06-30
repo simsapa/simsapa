@@ -20,9 +20,10 @@ from ..app.types import AppData, USutta, UDictWord  # type: ignore
 from ..app.graph import generate_graph, dict_word_nodes_and_edges
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
 from .search_item import SearchItemWidget
+from .memo_sidebar import HasMemoSidebar
 
 
-class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
+class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
@@ -31,10 +32,14 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self._results: List[UDictWord] = []
         self._history: List[UDictWord] = []
 
-        self._ui_setup()
+        self._current_word: Optional[UDictWord] = None
 
+        self._ui_setup()
         self._connect_signals()
         self._setup_content_html_context_menu()
+
+        self.init_memo_sidebar()
+        self.connect_memo_sidebar_signals()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -71,6 +76,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
     def _ui_setup(self):
         self.status_msg = QLabel("Word title")
         self.statusbar.addPermanentWidget(self.status_msg)
+
+        self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
         self._setup_content_html()
@@ -173,7 +180,11 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self._show_word(word)
 
     def _show_word(self, word: UDictWord):
+        self._current_word = word
         self.status_msg.setText(word.word)
+
+        self.update_memos_list_for_dict_word(word)
+        self.show_network_graph(word)
 
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
@@ -201,12 +212,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
 </html>
 """ % ('', content, examples)
 
-        # show the network graph in a browser
-        self._generate_network_bokeh(word)
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
-
         # show the word content
         self._set_content_html(html)
+
+    def show_network_graph(self, word: UDictWord):
+        self.generate_graph_for_dict_word(word)
+        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _word_search_query(self, query: str) -> List[UDictWord]:
         results: List[UDictWord] = []
@@ -245,7 +256,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.Trigger)
 
-    def _generate_network_bokeh(self, dict_word: UDictWord):
+    def generate_graph_for_dict_word(self, dict_word: UDictWord):
         (nodes, edges) = dict_word_nodes_and_edges(app_data=self._app_data, dict_word=dict_word, distance=3)
 
         hits = len(nodes) - 1
@@ -285,3 +296,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow):
         # self.search_input.returnPressed.connect(partial(self._update_result))
         self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
         self.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))
+
+        self.add_memo_button \
+            .clicked.connect(partial(self.add_memo_for_dict_word))

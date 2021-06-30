@@ -24,11 +24,12 @@ from ..app.graph import generate_graph, sutta_nodes_and_edges, sutta_graph_id
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow  # type: ignore
 from .memo_dialog import MemoDialog
 from .search_item import SearchItemWidget
+from .memo_sidebar import HasMemoSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
+class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
@@ -40,9 +41,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self._current_sutta: Optional[USutta] = None
 
         self._ui_setup()
-
         self._connect_signals()
         self._setup_content_html_context_menu()
+
+        self.init_memo_sidebar()
+        self.connect_memo_sidebar_signals()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -79,6 +82,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
     def _ui_setup(self):
         self.status_msg = QLabel("Sutta title")
         self.statusbar.addPermanentWidget(self.status_msg)
+
+        self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
         self._setup_content_html()
@@ -180,7 +185,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         sutta: USutta = self._history[selected_idx]
         self._show_sutta(sutta)
 
-    def _generate_network_bokeh(self, sutta: USutta):
+    def generate_graph_for_sutta(self, sutta: USutta):
         (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
 
         hits = len(nodes) - 1
@@ -237,6 +242,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         self._current_sutta = sutta
         self.status_msg.setText(sutta.title)
 
+        self.update_memos_list_for_sutta(sutta)
+        self.show_network_graph(sutta)
+
         if sutta.content_html is not None and sutta.content_html != '':
             content = sutta.content_html
         elif sutta.content_plain is not None and sutta.content_plain != '':
@@ -260,12 +268,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
 </html>
 """ % ('', content)
 
-        # show the network graph in a browser
-        self._generate_network_bokeh(sutta)
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
-
         # show the sutta content
         self._set_content_html(content_html)
+
+    def show_network_graph(self, sutta: USutta):
+        self.generate_graph_for_sutta(sutta)
+        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _sutta_search_query(self, query: str) -> List[USutta]:
         results: List[USutta] = []
@@ -294,23 +302,23 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         text = text.replace('\u2029', "\n\n")
         self._app_data.clipboard_setText(text)
 
-    def _set_memo_fields(self, values):
-        self.memo_fields = values
+    def _set_memo_dialog_fields(self, values):
+        self.memo_dialog_fields = values
 
     def _handle_create_memo(self):
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
 
-        self.memo_fields = {}
+        self.memo_dialog_fields = {}
 
         d = MemoDialog(text)
-        d.accepted.connect(self._set_memo_fields)
+        d.accepted.connect(self._set_memo_dialog_fields)
         d.exec_()
 
         memo = Um.Memo(
             deck_id=deck.id,
-            fields_json=json.dumps(self.memo_fields),
+            fields_json=json.dumps(self.memo_dialog_fields),
             created_at=func.now(),
         )
 
@@ -357,3 +365,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow):
         # self.search_input.returnPressed.connect(partial(self._update_result))
         self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
         self.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))
+
+        self.add_memo_button \
+            .clicked.connect(partial(self.add_memo_for_sutta))

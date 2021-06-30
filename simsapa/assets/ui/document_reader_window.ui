@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>856</width>
-    <height>581</height>
+    <width>1068</width>
+    <height>612</height>
    </rect>
   </property>
   <property name="baseSize">
@@ -25,6 +25,12 @@
      <layout class="QVBoxLayout" name="main_layout">
       <item>
        <widget class="QSplitter" name="splitter">
+        <property name="minimumSize">
+         <size>
+          <width>400</width>
+          <height>0</height>
+         </size>
+        </property>
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
         </property>
@@ -41,6 +47,16 @@
             <property name="currentIndex">
              <number>0</number>
             </property>
+            <widget class="QWidget" name="contents_tab">
+             <attribute name="title">
+              <string>Contents</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <widget class="QListView" name="contents_list"/>
+              </item>
+             </layout>
+            </widget>
             <widget class="QWidget" name="thumbs_tab">
              <attribute name="title">
               <string>Thumbnails</string>
@@ -71,16 +87,6 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="contents_tab">
-             <attribute name="title">
-              <string>Contents</string>
-             </attribute>
-             <layout class="QVBoxLayout" name="verticalLayout_5">
-              <item>
-               <widget class="QListView" name="contents_list"/>
-              </item>
-             </layout>
-            </widget>
            </widget>
           </item>
          </layout>
@@ -90,17 +96,17 @@
           <item>
            <layout class="QHBoxLayout" name="page_number_layout">
             <item>
-             <widget class="QLabel" name="label">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
+             <spacer name="horizontalSpacer_2">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="text">
-               <string/>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
               </property>
-             </widget>
+             </spacer>
             </item>
             <item>
              <widget class="QSpinBox" name="current_page_input">
@@ -144,20 +150,17 @@
              </widget>
             </item>
             <item>
-             <widget class="QLabel" name="label_4">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="text">
-               <string/>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
               </property>
-              <property name="alignment">
-               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-              </property>
-             </widget>
+             </spacer>
             </item>
            </layout>
           </item>
@@ -184,7 +187,7 @@
                <x>0</x>
                <y>0</y>
                <width>398</width>
-               <height>444</height>
+               <height>475</height>
               </rect>
              </property>
              <property name="sizePolicy">
@@ -217,9 +220,25 @@
          <layout class="QVBoxLayout" name="tabs_layout">
           <item>
            <widget class="QTabWidget" name="rightside_tabs">
+            <property name="minimumSize">
+             <size>
+              <width>400</width>
+              <height>0</height>
+             </size>
+            </property>
             <property name="currentIndex">
              <number>0</number>
             </property>
+            <widget class="QWidget" name="links_tab">
+             <attribute name="title">
+              <string>Links</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <layout class="QVBoxLayout" name="links_layout"/>
+              </item>
+             </layout>
+            </widget>
             <widget class="QWidget" name="memos_tab">
              <attribute name="title">
               <string>Memos</string>
@@ -312,16 +331,6 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="links_tab">
-             <attribute name="title">
-              <string>Links</string>
-             </attribute>
-             <layout class="QVBoxLayout" name="verticalLayout_6">
-              <item>
-               <layout class="QVBoxLayout" name="links_layout"/>
-              </item>
-             </layout>
-            </widget>
            </widget>
           </item>
          </layout>
@@ -337,7 +346,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>856</width>
+     <width>1068</width>
      <height>20</height>
     </rect>
    </property>
