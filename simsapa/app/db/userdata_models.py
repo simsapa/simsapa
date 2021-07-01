@@ -118,7 +118,7 @@ class DictWord(Base):
 
     id = Column(Integer, primary_key=True)
     dictionary_id = Column(Integer, ForeignKey("dictionaries.id"))
-    url_id = Column(String)
+    url_id = Column(String, unique=True)
     word = Column(String)
     word_nom_sg = Column(String)
     inflections = Column(String)

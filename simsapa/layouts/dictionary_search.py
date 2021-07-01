@@ -1,7 +1,7 @@
 from functools import partial
 from typing import List, Optional
 from markdown import markdown
-from sqlalchemy.orm import joinedload  # type: ignore
+from sqlalchemy.orm import joinedload
 from pathlib import Path
 import json
 import queue
@@ -16,9 +16,9 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, UDictWord  # type: ignore
+from ..app.types import AppData, USutta, UDictWord
 from ..app.graph import generate_graph, dict_word_nodes_and_edges
-from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow  # type: ignore
+from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .search_item import SearchItemWidget
 from .memo_sidebar import HasMemoSidebar
 
@@ -68,6 +68,16 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoSide
                 data = json.loads(s)
                 if data['action'] == 'show_sutta':
                     self._show_sutta_from_message(data['arg'])
+
+                elif data['action'] == 'show_sutta_by_uid':
+                    info = data['arg']
+                    if 'uid' in info.keys():
+                        self._show_sutta_by_uid(info['uid'])
+
+                elif data['action'] == 'show_word_by_url_id':
+                    info = data['arg']
+                    if 'url_id' in info.keys():
+                        self._show_word_by_url_id(info['url_id'])
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -198,19 +208,65 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoSide
         else:
             content = '<p>No content.</p>'
 
+        css = "pre { white-space: pre-wrap; }"
+
+        url = f'http://localhost:8000/queues/{self.queue_id}'
+
+        js = """
+document.addEventListener('DOMContentLoaded', function() {
+    links = document.getElementsByTagName('a');
+    for (var i=0; i<links.length; i++) {
+        links[i].onclick = function(e) {
+            url = e.target.href;
+            if (!url.startsWith('sutta:') && !url.startsWith('word:')) {
+                return;
+            }
+
+            e.preventDefault();
+
+            var params = {};
+
+            if (url.startsWith('sutta:')) {
+                s = url.replace('sutta:', '');
+                params = {
+                    action: 'show_sutta_by_uid',
+                    arg: {'uid': s},
+                };
+            } else if (url.startsWith('word:')) {
+                s = url.replace('word:', '');
+                params = {
+                    action: 'show_word_by_url_id',
+                    arg: {'url_id': s},
+                };
+            }
+            const options = {
+                method: 'POST',
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(params),
+            };
+            fetch('%s', options);
+        }
+    }
+});
+""" % (url,)
+
         html = """
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
     <style>%s</style>
+    <script>%s</script>
   </head>
   <body>
     <div> %s </div>
     <div> %s </div>
   </body>
 </html>
-""" % ('', content, examples)
+""" % (css, js, content, examples)
 
         # show the word content
         self._set_content_html(html)
@@ -255,6 +311,43 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoSide
 
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.Trigger)
+
+    def _show_sutta_by_uid(self, uid: str):
+        results: List[USutta] = []
+
+        res = self._app_data.db_session \
+            .query(Am.Sutta) \
+            .filter(Am.Sutta.uid == uid) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Um.Sutta) \
+            .filter(Um.Sutta.uid == uid) \
+            .all()
+        results.extend(res)
+
+        if len(results) > 0:
+            self._app_data.sutta_to_open = results[0]
+            self.action_Sutta_Search.activate(QAction.Trigger)
+
+    def _show_word_by_url_id(self, url_id: str):
+        results: List[UDictWord] = []
+
+        res = self._app_data.db_session \
+            .query(Am.DictWord) \
+            .filter(Am.DictWord.url_id == url_id) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.url_id == url_id) \
+            .all()
+        results.extend(res)
+
+        if len(results) > 0:
+            self._show_word(results[0])
 
     def generate_graph_for_dict_word(self, dict_word: UDictWord):
         (nodes, edges) = dict_word_nodes_and_edges(app_data=self._app_data, dict_word=dict_word, distance=3)

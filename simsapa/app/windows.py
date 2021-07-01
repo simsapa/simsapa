@@ -32,6 +32,9 @@ class AppWindows:
         view = DictionarySearchWindow(self._app_data)
         self._connect_signals(view)
         view.show()
+        if self._app_data.dict_word_to_open:
+            view._show_word(self._app_data.dict_word_to_open)
+            self._app_data.dict_word_to_open = None
         self._windows.append(view)
 
 #    def _new_dictionaries_manager_window(self):

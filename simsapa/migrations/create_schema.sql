@@ -78,7 +78,7 @@ CREATE TABLE `dictionaries` (
 CREATE TABLE `dict_words` (
   `id`               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   `dictionary_id`    INTEGER NOT NULL REFERENCES `dictionaries` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  `url_id`           VARCHAR NOT NULL,
+  `url_id`           VARCHAR NOT NULL UNIQUE,
   `word`             VARCHAR NOT NULL,
   `word_nom_sg`      VARCHAR,
   `inflections`      VARCHAR,
