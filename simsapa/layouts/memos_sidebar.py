@@ -37,6 +37,7 @@ class MemoPlainListModel(QAbstractListModel):
 
 class HasMemosSidebar:
     def init_memos_sidebar(self):
+        self.features.append('memos_sidebar')
 
         self.model = MemoPlainListModel()
         self.memos_list.setModel(self.model)

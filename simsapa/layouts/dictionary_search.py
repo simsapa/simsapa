@@ -19,16 +19,20 @@ from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .search_item import SearchItemWidget
+from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .html_content import html_page
 
 
-class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSidebar, HasMemosSidebar):
+class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
+                             HasLinksSidebar, HasMemosSidebar):
+
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
+        self.features = []
         self._app_data: AppData = app_data
         self._results: List[UDictWord] = []
         self._history: List[UDictWord] = []
@@ -49,6 +53,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSid
         self._connect_signals()
         self._setup_content_html_context_menu()
 
+        self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
@@ -301,9 +306,13 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSid
         copyAction.setShortcut(QKeySequence("Ctrl+C"))
         copyAction.triggered.connect(partial(self._handle_copy))
 
-        self.content_html.addActions([
-            copyAction,
-        ])
+        self.content_html.addAction(copyAction)
+
+        memoAction = QAction("Create Memo", self.content_html)
+        memoAction.setShortcut(QKeySequence("Ctrl+M"))
+        memoAction.triggered.connect(partial(self.handle_create_memo_for_dict_word))
+
+        self.content_html.addAction(memoAction)
 
     def _connect_signals(self):
         self.action_Close_Window \

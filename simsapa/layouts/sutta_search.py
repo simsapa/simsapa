@@ -14,15 +14,14 @@ from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
-from sqlalchemy.sql import func
 
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
-from .memo_dialog import MemoDialog
 from .search_item import SearchItemWidget
+from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .html_content import html_page
@@ -30,11 +29,14 @@ from .html_content import html_page
 logger = _logging.getLogger(__name__)
 
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasMemosSidebar):
+class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
+                        HasLinksSidebar, HasMemosSidebar):
+
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
+        self.features = []
         self._app_data: AppData = app_data
         self._results: List[USutta] = []
         self._history: List[USutta] = []
@@ -53,10 +55,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
 
         self._ui_setup()
         self._connect_signals()
-        self._setup_content_html_context_menu()
 
+        self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
+
+        self._setup_content_html_context_menu()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -295,44 +299,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
         text = text.replace('\u2029', "\n\n")
         self._app_data.clipboard_setText(text)
 
-    def _set_memo_dialog_fields(self, values):
-        self.memo_dialog_fields = values
-
-    def _handle_create_memo(self):
-        text = self.content_html.selectedText()
-
-        deck = self._app_data.db_session.query(Um.Deck).first()
-
-        self.memo_dialog_fields = {}
-
-        d = MemoDialog(text)
-        d.accepted.connect(self._set_memo_dialog_fields)
-        d.exec_()
-
-        memo = Um.Memo(
-            deck_id=deck.id,
-            fields_json=json.dumps(self.memo_dialog_fields),
-            created_at=func.now(),
-        )
-
-        try:
-            self._app_data.db_session.add(memo)
-            self._app_data.db_session.commit()
-
-            if self._current_sutta is not None:
-
-                memo_assoc = Um.MemoAssociation(
-                    memo_id=memo.id,
-                    associated_table='userdata.suttas',
-                    associated_id=self._current_sutta.id,
-                )
-
-                self._app_data.db_session.add(memo_assoc)
-                self._app_data.db_session.commit()
-
-        except Exception as e:
-            logger.error(e)
-
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu)
 
@@ -340,14 +306,13 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
         copyAction.setShortcut(QKeySequence("Ctrl+C"))
         copyAction.triggered.connect(partial(self._handle_copy))
 
+        self.content_html.addAction(copyAction)
+
         memoAction = QAction("Create Memo", self.content_html)
         memoAction.setShortcut(QKeySequence("Ctrl+M"))
-        memoAction.triggered.connect(partial(self._handle_create_memo))
+        memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))
 
-        self.content_html.addActions([
-            copyAction,
-            memoAction,
-        ])
+        self.content_html.addAction(memoAction)
 
     def _connect_signals(self):
         self.action_Close_Window \
