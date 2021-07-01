@@ -25,6 +25,7 @@ from .memo_dialog import MemoDialog
 from .search_item import SearchItemWidget
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
+from .html_content import html_page
 
 logger = _logging.getLogger(__name__)
 
@@ -257,67 +258,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
         else:
             content = 'No content.'
 
-        css = "pre { white-space: pre-wrap; }"
-
-        url = f'http://localhost:8000/queues/{self.queue_id}'
-
-        js = """
-document.addEventListener('DOMContentLoaded', function() {
-    links = document.getElementsByTagName('a');
-    for (var i=0; i<links.length; i++) {
-        links[i].onclick = function(e) {
-            url = e.target.href;
-            if (!url.startsWith('sutta:') && !url.startsWith('word:')) {
-                return;
-            }
-
-            e.preventDefault();
-
-            var params = {};
-
-            if (url.startsWith('sutta:')) {
-                s = url.replace('sutta:', '');
-                params = {
-                    action: 'show_sutta_by_uid',
-                    arg: {'uid': s},
-                };
-            } else if (url.startsWith('word:')) {
-                s = url.replace('word:', '');
-                params = {
-                    action: 'show_word_by_url_id',
-                    arg: {'url_id': s},
-                };
-            }
-            const options = {
-                method: 'POST',
-                headers: {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(params),
-            };
-            fetch('%s', options);
-        }
-    }
-});
-""" % (url,)
-
-        content_html = """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>%s</style>
-    <script>%s</script>
-</head>
-<body>
-%s
-</body>
-</html>
-""" % (css, js, content)
+        messages_url = f'http://localhost:8000/queues/{self.queue_id}'
+        html = html_page(content, messages_url)
 
         # show the sutta content
-        self._set_content_html(content_html)
+        self._set_content_html(html)
 
     def show_network_graph(self, sutta: USutta):
         self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path)
