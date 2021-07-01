@@ -1,10 +1,8 @@
 import logging as _logging
 import json
-from functools import partial
 
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QAction, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QPushButton, QPlainTextEdit, QFormLayout)
 
 from sqlalchemy.sql import func
 
