@@ -8,7 +8,6 @@ import json
 from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
-from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import ASSETS_DIR, APP_QUEUES
 
@@ -17,25 +16,19 @@ from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta
-from ..app.graph import generate_graph, document_page_nodes_and_edges
 from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow
 from .memo_sidebar import HasMemoSidebar
+from .links_sidebar import HasLinksSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar):
+class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar, HasMemoSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
         self._app_data: AppData = app_data
-
-        self._ui_setup()
-        self._connect_signals()
-
-        self.init_memo_sidebar()
-        self.connect_memo_sidebar_signals()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -45,6 +38,14 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar)
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(300)
+
+        self._ui_setup()
+        self._connect_signals()
+
+        self.init_memo_sidebar()
+        self.connect_memo_sidebar_signals()
+
+        self.init_links_sidebar()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -73,6 +74,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar)
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
 
+        self.links_tab_idx = 0
         self.memos_tab_idx = 1
 
         self.file_doc: Optional[FileDoc] = None
@@ -84,14 +86,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar)
         self.select_start_point: Optional[QPoint] = None
         self.select_end_point: Optional[QPoint] = None
         self.select_rectangle: Optional[QRect] = None
-
-        self._setup_content_graph()
-
-    def _setup_content_graph(self):
-        self.content_graph = QWebEngineView()
-        self.content_graph.setHtml('')
-        self.content_graph.show()
-        self.links_layout.addWidget(self.content_graph)
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -157,7 +151,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar)
         if self.file_doc is None or self.db_doc is None:
             return
 
-        self.generate_graph_for_document(self.file_doc, self.db_doc)
+        self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _show_sutta_from_message(self, info):
@@ -177,25 +171,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasMemoSidebar)
 
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.Trigger)
-
-    def generate_graph_for_document(self, file_doc: FileDoc, db_doc: Um.Document):
-        (nodes, edges) = document_page_nodes_and_edges(
-            app_data=self._app_data,
-            db_doc=db_doc,
-            page_number=file_doc._current_idx + 1,
-            distance=3
-        )
-
-        hits = len(nodes) - 1
-        if hits > 0:
-            self.rightside_tabs.setTabText(0, f"Links ({hits})")
-        else:
-            self.rightside_tabs.setTabText(0, "Links")
-
-        # central node was appended last
-        selected = [len(nodes) - 1]
-
-        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path)
 
     def _select_start(self, event):
         if event.button() == Qt.LeftButton:

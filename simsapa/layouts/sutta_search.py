@@ -20,16 +20,16 @@ from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
-from ..app.graph import generate_graph, sutta_nodes_and_edges, sutta_graph_id
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 from .memo_dialog import MemoDialog
 from .search_item import SearchItemWidget
 from .memo_sidebar import HasMemoSidebar
+from .links_sidebar import HasLinksSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
+class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasMemoSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
@@ -40,13 +40,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
 
         self._current_sutta: Optional[USutta] = None
 
-        self._ui_setup()
-        self._connect_signals()
-        self._setup_content_html_context_menu()
-
-        self.init_memo_sidebar()
-        self.connect_memo_sidebar_signals()
-
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
 
@@ -55,6 +48,15 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(300)
+
+        self._ui_setup()
+        self._connect_signals()
+        self._setup_content_html_context_menu()
+
+        self.init_memo_sidebar()
+        self.connect_memo_sidebar_signals()
+
+        self.init_links_sidebar()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -93,11 +95,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
         self.status_msg = QLabel("Sutta title")
         self.statusbar.addPermanentWidget(self.status_msg)
 
+        self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
         self._setup_content_html()
-        self._setup_content_graph()
 
         self.search_input.setFocus()
 
@@ -107,13 +109,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
         self.content_html.setHtml('')
         self.content_html.show()
         self.content_layout.addWidget(self.content_html)
-
-    def _setup_content_graph(self):
-        self.content_graph = QWebEngineView()
-        self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_graph.setHtml('')
-        self.content_graph.show()
-        self.links_layout.addWidget(self.content_graph)
 
     def _setup_pali_buttons(self):
         self.pali_buttons_layout = QVBoxLayout()
@@ -194,23 +189,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoSidebar):
         selected_idx = self.history_list.currentRow()
         sutta: USutta = self._history[selected_idx]
         self._show_sutta(sutta)
-
-    def generate_graph_for_sutta(self, sutta: USutta):
-        (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
-
-        hits = len(nodes) - 1
-        if hits > 0:
-            self.rightside_tabs.setTabText(1, f"Links ({hits})")
-        else:
-            self.rightside_tabs.setTabText(1, "Links")
-
-        selected = []
-
-        for idx, n in enumerate(nodes):
-            if n[0] == sutta_graph_id(sutta):
-                selected.append(idx)
-
-        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path)
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
@@ -344,7 +322,7 @@ document.addEventListener('DOMContentLoaded', function() {
         self._set_content_html(content_html)
 
     def show_network_graph(self, sutta: USutta):
-        self.generate_graph_for_sutta(sutta)
+        self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _sutta_search_query(self, query: str) -> List[USutta]:
