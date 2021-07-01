@@ -27,7 +27,12 @@ class HasLinksSidebar:
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 
-    def generate_graph_for_sutta(self, sutta: USutta, queue_id: str, graph_path: Path):
+    def generate_graph_for_sutta(self,
+                                 sutta: USutta,
+                                 queue_id: str,
+                                 graph_path: Path,
+                                 messages_url: str):
+
         (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
 
         hits = len(nodes) - 1
@@ -42,9 +47,14 @@ class HasLinksSidebar:
             if n[0] == sutta_graph_id(sutta):
                 selected.append(idx)
 
-        generate_graph(nodes, edges, selected, queue_id, graph_path)
+        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)
 
-    def generate_graph_for_dict_word(self, dict_word: UDictWord, queue_id: str, graph_path: Path):
+    def generate_graph_for_dict_word(self,
+                                     dict_word: UDictWord,
+                                     queue_id: str,
+                                     graph_path: Path,
+                                     messages_url: str):
+
         (nodes, edges) = dict_word_nodes_and_edges(app_data=self._app_data, dict_word=dict_word, distance=3)
 
         hits = len(nodes) - 1
@@ -56,9 +66,15 @@ class HasLinksSidebar:
         # central node was appended last
         selected = [len(nodes) - 1]
 
-        generate_graph(nodes, edges, selected, queue_id, graph_path)
+        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)
 
-    def generate_graph_for_document(self, file_doc: FileDoc, db_doc: Um.Document, queue_id: str, graph_path: Path):
+    def generate_graph_for_document(self,
+                                    file_doc: FileDoc,
+                                    db_doc: Um.Document,
+                                    queue_id: str,
+                                    graph_path: Path,
+                                    messages_url: str):
+
         (nodes, edges) = document_page_nodes_and_edges(
             app_data=self._app_data,
             db_doc=db_doc,
@@ -75,4 +91,4 @@ class HasLinksSidebar:
         # central node was appended last
         selected = [len(nodes) - 1]
 
-        generate_graph(nodes, edges, selected, queue_id, graph_path)
+        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)

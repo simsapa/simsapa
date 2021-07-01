@@ -37,6 +37,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSid
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
         self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
 
@@ -202,7 +203,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSid
         else:
             definition = '<p>No definition.</p>'
 
-        messages_url = f'http://localhost:8000/queues/{self.queue_id}'
+        messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
         content = "<div>%s</div><div>%s</div>" % (definition, examples)
         html = html_page(content, messages_url)
 
@@ -210,7 +211,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasLinksSid
         self._set_content_html(html)
 
     def show_network_graph(self, word: UDictWord):
-        self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path)
+        self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _word_search_query(self, query: str) -> List[UDictWord]:

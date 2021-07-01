@@ -29,7 +29,8 @@ class AppData:
     def __init__(self,
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
-                 user_db_path: Optional[Path] = None):
+                 user_db_path: Optional[Path] = None,
+                 api_port: Optional[int] = None):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -38,6 +39,11 @@ class AppData:
 
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
+
+        self.api_url: Optional[str] = None
+
+        if api_port:
+            self.api_url = f'http://localhost:{api_port}'
 
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None

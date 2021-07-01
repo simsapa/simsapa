@@ -272,7 +272,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, output_path: Path):
+def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, output_path: Path, messages_url: str):
     if len(nodes) == 0:
         return
 
@@ -393,7 +393,6 @@ desc_div.innerHTML = desc_div_content;
 
     button = Button(label='Open Sutta')
 
-    url = f'http://localhost:8000/queues/{queue_id}'
     js_code = """
 if (typeof window.selected_info === 'undefined') {
     window.selected_info = [];
@@ -413,7 +412,7 @@ if (window.selected_info.length > 0) {
     };
     fetch('%s', options);
 }
-""" % (url,)
+""" % (messages_url,)
 
     button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
 

@@ -43,6 +43,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
         self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
 
@@ -258,14 +259,13 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
         else:
             content = 'No content.'
 
-        messages_url = f'http://localhost:8000/queues/{self.queue_id}'
-        html = html_page(content, messages_url)
+        html = html_page(content, self.messages_url)
 
         # show the sutta content
         self._set_content_html(html)
 
     def show_network_graph(self, sutta: USutta):
-        self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path)
+        self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _sutta_search_query(self, query: str) -> List[USutta]:

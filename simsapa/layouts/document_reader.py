@@ -32,6 +32,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
         self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
 
@@ -149,7 +150,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         if self.file_doc is None or self.db_doc is None:
             return
 
-        self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path)
+        self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path, self.messages_url)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _show_sutta_from_message(self, info):

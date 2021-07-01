@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)  # t
 from simsapa import APP_DB_PATH
 from .app.types import AppData, create_app_dirs  # type: ignore
 from .app.windows import AppWindows  # type: ignore
-from .app.api import start_server
+from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 
@@ -51,13 +51,14 @@ def main():
 
     app = QApplication(sys.argv)
 
-    app_data = AppData(app_clipboard=app.clipboard())
-
+    port = find_available_port()
     daemon = threading.Thread(name='daemon_server',
                               target=start_server,
-                              args=(8000,))
+                              args=(port,))
     daemon.setDaemon(True)
     daemon.start()
+
+    app_data = AppData(app_clipboard=app.clipboard(), api_port=port)
 
     # === Create systray ===
 

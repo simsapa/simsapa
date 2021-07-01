@@ -1,9 +1,12 @@
+import logging as _logging
 import re
 import cgi
-
+import socket
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from simsapa import APP_QUEUES
+
+logger = _logging.getLogger(__name__)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -67,5 +70,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def start_server(port=8000):
+    logger.info(f'Starting server on port {port}')
     httpd = HTTPServer(('127.0.0.1', port), Handler)
     httpd.serve_forever()
+
+
+def find_available_port() -> int:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(('', 0))
+    _, port = sock.getsockname()
+    return port
