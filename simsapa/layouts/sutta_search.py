@@ -23,13 +23,13 @@ from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 from .memo_dialog import MemoDialog
 from .search_item import SearchItemWidget
-from .memo_sidebar import HasMemoSidebar
+from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasMemoSidebar):
+class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasMemosSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
@@ -53,9 +53,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar, HasM
         self._connect_signals()
         self._setup_content_html_context_menu()
 
-        self.init_memo_sidebar()
-        self.connect_memo_sidebar_signals()
-
+        self.init_memos_sidebar()
         self.init_links_sidebar()
 
         self.statusbar.showMessage("Ready", 3000)

@@ -17,13 +17,13 @@ from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta
 from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow
-from .memo_sidebar import HasMemoSidebar
+from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar, HasMemoSidebar):
+class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar, HasMemosSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
@@ -42,9 +42,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self._ui_setup()
         self._connect_signals()
 
-        self.init_memo_sidebar()
-        self.connect_memo_sidebar_signals()
-
+        self.init_memos_sidebar()
         self.init_links_sidebar()
 
         self.statusbar.showMessage("Ready", 3000)

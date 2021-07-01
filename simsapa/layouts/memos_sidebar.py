@@ -35,8 +35,8 @@ class MemoPlainListModel(QAbstractListModel):
             return 0
 
 
-class HasMemoSidebar:
-    def init_memo_sidebar(self):
+class HasMemosSidebar:
+    def init_memos_sidebar(self):
 
         self.model = MemoPlainListModel()
         self.memos_list.setModel(self.model)
@@ -54,6 +54,8 @@ QListView::item:selected { background-color: %s; color: %s; }
         self.memos_list.setStyleSheet(style)
 
         self.show_memo_clear()
+
+        self.connect_memos_sidebar_signals()
 
     def show_memo_clear(self):
         self.front_input.clear()
@@ -534,7 +536,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             self.remove_selected_memo()
             self.update_memos_list()
 
-    def connect_memo_sidebar_signals(self):
+    def connect_memos_sidebar_signals(self):
         self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
 
         self.clear_memo_button \
