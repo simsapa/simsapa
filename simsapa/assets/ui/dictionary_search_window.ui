@@ -274,6 +274,7 @@
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
     <addaction name="action_Memos"/>
+    <addaction name="action_Links"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -408,9 +409,12 @@
     <string>F10</string>
    </property>
   </action>
-  <action name="action_Edit_Word">
+  <action name="action_Links">
    <property name="text">
-    <string>&amp;Edit Word...</string>
+    <string>&amp;Links</string>
+   </property>
+   <property name="shortcut">
+    <string>F11</string>
    </property>
   </action>
  </widget>

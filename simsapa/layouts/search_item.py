@@ -1,6 +1,15 @@
 import re
+from typing import Optional, TypedDict
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+
+
+class SearchResult(TypedDict):
+    title: str
+    snippet: str
+    table: str
+    id: int
+    page_number: Optional[int]
 
 
 class SearchItemWidget(QWidget):

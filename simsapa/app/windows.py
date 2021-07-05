@@ -1,16 +1,17 @@
 from functools import partial
 from typing import List
 
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)  # type: ignore
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)
 
-from .types import AppData  # type: ignore
+from .types import AppData
 
-from ..layouts.sutta_search import SuttaSearchWindow  # type: ignore
-from ..layouts.dictionary_search import DictionarySearchWindow  # type: ignore
-# from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
-from ..layouts.document_reader import DocumentReaderWindow  # type: ignore
-from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
-from ..layouts.memos_browser import MemosBrowserWindow  # type: ignore
+from ..layouts.sutta_search import SuttaSearchWindow
+from ..layouts.dictionary_search import DictionarySearchWindow
+# from ..layouts.dictionaries_manager import DictionariesManagerWindow
+from ..layouts.document_reader import DocumentReaderWindow
+from ..layouts.library_browser import LibraryBrowserWindow
+from ..layouts.memos_browser import MemosBrowserWindow
+from ..layouts.links_browser import LinksBrowserWindow
 
 
 class AppWindows:
@@ -51,6 +52,12 @@ class AppWindows:
 
     def _new_memos_browser_window(self):
         view = MemosBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
+
+    def _new_links_browser_window(self):
+        view = LinksBrowserWindow(self._app_data)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
@@ -115,3 +122,5 @@ class AppWindows:
             .triggered.connect(partial(self._new_library_browser_window))
         view.action_Memos \
             .triggered.connect(partial(self._new_memos_browser_window))
+        view.action_Links \
+            .triggered.connect(partial(self._new_links_browser_window))

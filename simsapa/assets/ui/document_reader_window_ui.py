@@ -268,6 +268,8 @@ class Ui_DocumentReaderWindow(object):
         self.action_Zoom_Out.setObjectName("action_Zoom_Out")
         self.action_Zoom_In = QtWidgets.QAction(DocumentReaderWindow)
         self.action_Zoom_In.setObjectName("action_Zoom_In")
+        self.action_Links = QtWidgets.QAction(DocumentReaderWindow)
+        self.action_Links.setObjectName("action_Links")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -280,6 +282,7 @@ class Ui_DocumentReaderWindow(object):
         self.menu_Windows.addAction(self.action_Document_Reader)
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Memos)
+        self.menu_Windows.addAction(self.action_Links)
         self.menu_Help.addAction(self.action_Website)
         self.menu_Help.addAction(self.action_About)
         self.menuGo.addAction(self.action_Previous_Page)
@@ -369,4 +372,6 @@ class Ui_DocumentReaderWindow(object):
         self.action_Zoom_Out.setShortcut(_translate("DocumentReaderWindow", "Ctrl+-"))
         self.action_Zoom_In.setText(_translate("DocumentReaderWindow", "Zoom In"))
         self.action_Zoom_In.setShortcut(_translate("DocumentReaderWindow", "Ctrl++"))
+        self.action_Links.setText(_translate("DocumentReaderWindow", "&Links"))
+        self.action_Links.setShortcut(_translate("DocumentReaderWindow", "F11"))
 from simsapa.assets import icons_rc

@@ -1,5 +1,6 @@
-from typing import List, Tuple, TypedDict
+from typing import List, Tuple, TypedDict, Optional
 from pathlib import Path
+from itertools import chain
 
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
@@ -7,7 +8,7 @@ from bokeh.document import Document
 from bokeh.models import (Div, Button, Circle, MultiLine, Range1d, ColumnDataSource,
                           LabelSet, HoverTool, NodesAndLinkedEdges,
                           EdgesAndLinkedNodes)
-from bokeh.palettes import Spectral4
+from bokeh.palettes import Spectral8
 from bokeh.plotting import figure, from_networkx
 from bokeh.layouts import column
 from bokeh.models import CustomJS
@@ -16,7 +17,7 @@ from bokeh import events
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from .types import AppData, UDictWord, USutta
+from .types import AppData, UDictWord, USutta, UDocument
 
 
 class NodeData(TypedDict):
@@ -25,6 +26,7 @@ class NodeData(TypedDict):
     description: str
     table: str
     id: int
+    fill_color: str
 
 
 GraphNode = Tuple[str, NodeData]
@@ -32,8 +34,14 @@ GraphNode = Tuple[str, NodeData]
 GraphEdge = Tuple[str, str]
 
 
+class DocumentPage(TypedDict):
+    doc: UDocument
+    page_number: Optional[int]
+
+
 def sutta_graph_id(x: USutta) -> str:
-    return f"appdata.suttas.{x.id}"
+    schema = x.metadata.schema
+    return f"{schema}.suttas.{x.id}"
 
 
 def dict_word_graph_id(x: UDictWord) -> str:
@@ -41,19 +49,27 @@ def dict_word_graph_id(x: UDictWord) -> str:
     return f"{schema}.dict_words.{x.id}"
 
 
-def document_graph_id(x: Um.Document, page_number: int) -> str:
-    return f"userdata.documents.{x.id}.{page_number}"
+def document_graph_id(x: DocumentPage) -> str:
+    doc = x['doc']
+    page = x['page_number']
+    schema = doc.metadata.schema
+    if page is None:
+        return f"{schema}.documents.{doc.id}"
+    else:
+        return f"{schema}.documents.{doc.id}.{page}"
 
 
 def sutta_to_node(x: USutta) -> GraphNode:
+    schema = x.metadata.schema
     return (
         sutta_graph_id(x),
         {
             'label': x.sutta_ref,
             'title': x.title,
             'description': '',
-            'table': 'appdata.suttas',
+            'table': f'{schema}.suttas',
             'id': x.id,
+            'fill_color': Spectral8[0],
         },
     )
 
@@ -68,19 +84,28 @@ def dict_word_to_node(x: UDictWord) -> GraphNode:
             'description': '',
             'table': f'{schema}.dict_words',
             'id': x.id,
+            'fill_color': Spectral8[1],
         },
     )
 
 
-def document_to_node(x: Am.Document, page_number: int) -> GraphNode:
+def document_page_to_node(x: DocumentPage) -> GraphNode:
+    doc = x['doc']
+    page_number = x['page_number']
+    schema = doc.metadata.schema
+    if page_number is None:
+        label = doc.title
+    else:
+        label = f"{doc.title} (p.{page_number})"
     return (
-        document_graph_id(x, page_number),
+        document_graph_id(x),
         {
-            'label': 'p.' + str(page_number),
-            'title': x.title,
+            'label': label,
+            'title': doc.title,
             'description': '',
-            'table': 'userdata.documents',
-            'id': x.id,
+            'table': f'{schema}.documents',
+            'id': doc.id,
+            'fill_color': Spectral8[4],
         }
     )
 
@@ -251,7 +276,8 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     nodes = list(map(sutta_to_node, suttas))
 
     def to_edge(x: USutta):
-        from_id = document_graph_id(db_doc, page_number)
+        d = DocumentPage(doc=db_doc, page_number=page_number)
+        from_id = document_graph_id(d)
         to_id = sutta_graph_id(x)
         return (to_id, from_id)
 
@@ -267,7 +293,218 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
 
     # Append the current doument as a node
 
-    nodes.append(document_to_node(db_doc, page_number))
+    d = DocumentPage(doc=db_doc, page_number=page_number)
+    nodes.append(document_page_to_node(d))
+
+    return (unique_nodes(nodes), unique_edges(edges))
+
+
+def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
+    results: List[USutta] = []
+
+    def to_appdata_sutta_ids(x: Um.Link):
+        ids = []
+        if x.from_table == 'appdata.suttas':
+            ids.append(x.from_id)
+        if x.to_table == 'appdata.suttas':
+            ids.append(x.to_id)
+        return ids
+
+    a = list(map(to_appdata_sutta_ids, links))
+    db_ids = list(set(chain.from_iterable(a)))
+
+    r = app_data.db_session \
+        .query(Am.Sutta) \
+        .filter(Am.Sutta.id.in_(db_ids)) \
+        .all()
+
+    results.extend(r)
+
+    return results
+
+
+def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDictWord]:
+    results: List[UDictWord] = []
+
+    def to_appdata_word_ids(x: Um.Link):
+        ids = []
+        if x.from_table == 'appdata.dict_words':
+            ids.append(x.from_id)
+        if x.to_table == 'appdata.dict_words':
+            ids.append(x.to_id)
+        return ids
+
+    def to_userdata_word_ids(x: Um.Link):
+        ids = []
+        if x.from_table == 'userdata.dict_words':
+            ids.append(x.from_id)
+        if x.to_table == 'userdata.dict_words':
+            ids.append(x.to_id)
+        return ids
+
+    a = list(map(to_appdata_word_ids, links))
+    appdata_db_ids = list(set(chain.from_iterable(a)))
+
+    a = list(map(to_userdata_word_ids, links))
+    userdata_db_ids = list(set(chain.from_iterable(a)))
+
+    r = app_data.db_session \
+        .query(Am.DictWord) \
+        .filter(Am.DictWord.id.in_(appdata_db_ids)) \
+        .all()
+
+    results.extend(r)
+
+    r = app_data.db_session \
+        .query(Um.DictWord) \
+        .filter(Um.DictWord.id.in_(userdata_db_ids)) \
+        .all()
+
+    results.extend(r)
+
+    return results
+
+
+def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> List[DocumentPage]:
+    results: List[DocumentPage] = []
+
+    def to_appdata_items(x: Um.Link):
+        items = []
+        if x.from_table == 'appdata.documents':
+            items.append((x.from_id, x.from_page_number))
+        if x.to_table == 'appdata.documents':
+            items.append((x.to_id, x.to_page_number))
+        return items
+
+    def to_userdata_items(x: Um.Link):
+        items = []
+        if x.from_table == 'userdata.documents':
+            items.append((x.from_id, x.from_page_number))
+        if x.to_table == 'userdata.documents':
+            items.append((x.to_id, x.to_page_number))
+        return items
+
+    a = list(map(to_appdata_items, links))
+    appdata_items = list(set(chain.from_iterable(a)))
+    appdata_ids = list(map(lambda x: x[0], appdata_items))
+
+    a = list(map(to_userdata_items, links))
+    userdata_items = list(set(chain.from_iterable(a)))
+    userdata_ids = list(map(lambda x: x[0], userdata_items))
+
+    appdata_db_res = app_data.db_session \
+        .query(Am.Document) \
+        .filter(Am.Document.id.in_(appdata_ids)) \
+        .all()
+
+    userdata_db_res = app_data.db_session \
+        .query(Um.Document) \
+        .filter(Um.Document.id.in_(userdata_ids)) \
+        .all()
+
+    def id_to_doc(x, db_res):
+        id = x[0]
+        page = x[1]
+        doc = list(filter(lambda i: i.id == id, db_res))
+        return DocumentPage(doc=doc[0], page_number=page)
+
+    appdata_docpages = list(map(lambda x: id_to_doc(x, appdata_db_res), appdata_items))
+    results.extend(appdata_docpages)
+
+    userdata_docpages = list(map(lambda x: id_to_doc(x, userdata_db_res), userdata_items))
+    results.extend(userdata_docpages)
+
+    return results
+
+
+def all_nodes_and_edges(app_data: AppData):
+
+    links = app_data.db_session.query(Um.Link).all()
+
+    suttas = _suttas_from_links(app_data, links)
+    words = _dict_words_from_links(app_data, links)
+    documents_and_pages = _documents_and_pages_from_links(app_data, links)
+
+    nodes = []
+    nodes.extend(list(map(sutta_to_node, suttas)))
+    nodes.extend(list(map(dict_word_to_node, words)))
+    nodes.extend(list(map(document_page_to_node, documents_and_pages)))
+
+    def from_agrees(x, link, postfix):
+        from_schema = link.from_table.replace(postfix, '')
+        return x.metadata.schema == from_schema and x.id == link.from_id
+
+    def from_doc_page_agrees(x, link, postfix):
+        from_schema = link.from_table.replace(postfix, '')
+        return \
+            x['doc'].metadata.schema == from_schema and x['doc'].id == link.from_id and \
+            x['page_number'] == link.from_page_number
+
+    def to_agrees(x, link, postfix):
+        to_schema = link.to_table.replace(postfix, '')
+        return x.metadata.schema == to_schema and x.id == link.to_id
+
+    def to_doc_page_agrees(x, link, postfix):
+        to_schema = link.to_table.replace(postfix, '')
+        return \
+            x['doc'].metadata.schema == to_schema and x['doc'].id == link.to_id and \
+            x['page_number'] == link.to_page_number
+
+    def to_edge(link: Um.Link):
+        if link.from_table.endswith('.suttas'):
+            sutta = list(filter(lambda x: from_agrees(x, link, '.suttas'), suttas))
+            if len(sutta) == 1:
+                from_edge_id = sutta_graph_id(sutta[0])
+            else:
+                from_edge_id = ''
+
+        elif link.from_table.endswith('.dict_words'):
+            word = list(filter(lambda x: from_agrees(x, link, '.dict_words'), words))
+            if len(word) == 1:
+                from_edge_id = dict_word_graph_id(word[0])
+            else:
+                from_edge_id = ''
+
+        elif link.from_table.endswith('.documents'):
+            doc = list(filter(lambda x: from_doc_page_agrees(x, link, '.documents'), documents_and_pages))
+            if len(doc) == 1:
+                from_edge_id = document_graph_id(doc[0])
+            else:
+                from_edge_id = ''
+
+        else:
+            from_edge_id = ''
+
+        if link.to_table.endswith('.suttas'):
+            sutta = list(filter(lambda x: to_agrees(x, link, '.suttas'), suttas))
+            if len(sutta) == 1:
+                to_edge_id = sutta_graph_id(sutta[0])
+            else:
+                to_edge_id = ''
+
+        elif link.to_table.endswith('.dict_words'):
+            word = list(filter(lambda x: to_agrees(x, link, '.dict_words'), words))
+            if len(word) == 1:
+                to_edge_id = dict_word_graph_id(word[0])
+            else:
+                to_edge_id = ''
+
+        elif link.to_table.endswith('.documents'):
+            doc = list(filter(lambda x: to_doc_page_agrees(x, link, '.documents'), documents_and_pages))
+            if len(doc) == 1:
+                to_edge_id = document_graph_id(doc[0])
+            else:
+                to_edge_id = ''
+
+        else:
+            to_edge_id = ''
+
+        if to_edge_id < from_edge_id:
+            return (to_edge_id, from_edge_id)
+        else:
+            return (from_edge_id, to_edge_id)
+
+    edges = list(filter(lambda x: x[0] != '' and x[1] != '', map(to_edge, links)))
 
     return (unique_nodes(nodes), unique_edges(edges))
 
@@ -308,12 +545,14 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
 
-    network_graph.node_renderer.glyph = Circle(size=15, fill_color=Spectral4[0])
-    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=Spectral4[2])
-    network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color=Spectral4[1])
+    selection_color = Spectral8[6]
+
+    network_graph.node_renderer.glyph = Circle(size=15, fill_color='fill_color')
+    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=selection_color)
+    network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color='fill_color')
 
     network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
-    network_graph.edge_renderer.selection_glyph = MultiLine(line_color=Spectral4[2], line_width=2)
+    network_graph.edge_renderer.selection_glyph = MultiLine(line_color=selection_color, line_width=2)
 
     network_graph.selection_policy = NodesAndLinkedEdges()
     network_graph.inspection_policy = EdgesAndLinkedNodes()
@@ -337,7 +576,7 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     cr = plot.circle(x='x', y='y', source=source, size=25,
                      fill_color=None, line_color=None,
-                     hover_fill_color=Spectral4[2],
+                     hover_fill_color=selection_color,
                      hover_alpha=0.8, hover_line_color="white")
 
     plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))

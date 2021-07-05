@@ -199,6 +199,8 @@ class Ui_SuttaSearchWindow(object):
         self.action_Memos.setObjectName("action_Memos")
         self.action_Dictionaries_Manager = QtWidgets.QAction(SuttaSearchWindow)
         self.action_Dictionaries_Manager.setObjectName("action_Dictionaries_Manager")
+        self.action_Links = QtWidgets.QAction(SuttaSearchWindow)
+        self.action_Links.setObjectName("action_Links")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -211,6 +213,7 @@ class Ui_SuttaSearchWindow(object):
         self.menu_Windows.addAction(self.action_Document_Reader)
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Memos)
+        self.menu_Windows.addAction(self.action_Links)
         self.menu_Help.addAction(self.action_Website)
         self.menu_Help.addAction(self.action_About)
         self.menubar.addAction(self.menu_File.menuAction())
@@ -266,4 +269,6 @@ class Ui_SuttaSearchWindow(object):
         self.action_Memos.setShortcut(_translate("SuttaSearchWindow", "F9"))
         self.action_Dictionaries_Manager.setText(_translate("SuttaSearchWindow", "Dictionaries &Manager"))
         self.action_Dictionaries_Manager.setShortcut(_translate("SuttaSearchWindow", "F10"))
+        self.action_Links.setText(_translate("SuttaSearchWindow", "&Links"))
+        self.action_Links.setShortcut(_translate("SuttaSearchWindow", "F11"))
 from simsapa.assets import icons_rc

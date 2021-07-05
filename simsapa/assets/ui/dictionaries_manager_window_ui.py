@@ -184,6 +184,8 @@ class Ui_DictionariesManagerWindow(object):
         self.action_Dictionaries_Manager.setObjectName("action_Dictionaries_Manager")
         self.action_Check_Updates = QtWidgets.QAction(DictionariesManagerWindow)
         self.action_Check_Updates.setObjectName("action_Check_Updates")
+        self.action_Links = QtWidgets.QAction(DictionariesManagerWindow)
+        self.action_Links.setObjectName("action_Links")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addSeparator()
@@ -196,6 +198,7 @@ class Ui_DictionariesManagerWindow(object):
         self.menu_Windows.addAction(self.action_Document_Reader)
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Memos)
+        self.menu_Windows.addAction(self.action_Links)
         self.menu_Help.addAction(self.action_Website)
         self.menu_Help.addAction(self.action_About)
         self.menu_Library.addAction(self.action_Open_Selected)
@@ -267,4 +270,6 @@ class Ui_DictionariesManagerWindow(object):
         self.action_Dictionaries_Manager.setText(_translate("DictionariesManagerWindow", "Dictionaries &Manager"))
         self.action_Dictionaries_Manager.setShortcut(_translate("DictionariesManagerWindow", "F10"))
         self.action_Check_Updates.setText(_translate("DictionariesManagerWindow", "&Check Updates"))
+        self.action_Links.setText(_translate("DictionariesManagerWindow", "&Links"))
+        self.action_Links.setShortcut(_translate("DictionariesManagerWindow", "F11"))
 from simsapa.assets import icons_rc
