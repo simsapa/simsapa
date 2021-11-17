@@ -113,7 +113,7 @@ class AppData:
 
             e = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}", echo=False)
 
-            if e is Engine:
+            if isinstance(e, Engine):
                 engine: Engine = e
 
                 if not database_exists(engine.url):
