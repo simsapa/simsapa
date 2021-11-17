@@ -4,10 +4,10 @@ import logging as _logging
 from pathlib import Path
 from typing import Optional, Union
 
-from sqlalchemy import create_engine, text  # type: ignore
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy_utils import database_exists, create_database  # type: ignore
-from sqlalchemy.orm import sessionmaker  # type: ignore
+from sqlalchemy_utils import database_exists, create_database
+from sqlalchemy.orm import sessionmaker
 
 from PyQt5.QtGui import QClipboard
 

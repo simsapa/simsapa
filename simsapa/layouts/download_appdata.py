@@ -3,10 +3,10 @@ from functools import partial
 import tarfile
 import logging as _logging
 
-from PyQt5.QtCore import Qt  # type: ignore
+from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)  # type: ignore
-from PyQt5.QtGui import QMovie  # type: ignore
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
+from PyQt5.QtGui import QMovie
 
 from ..app.helpers import download_file
 

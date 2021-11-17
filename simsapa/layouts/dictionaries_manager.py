@@ -9,20 +9,20 @@ from pathlib import Path
 from zipfile import ZipFile
 import pandas
 from pyglossary import Glossary
-from sqlalchemy.sql import func  # type: ignore
+from sqlalchemy.sql import func
 
-from PyQt5.QtCore import QAbstractListModel, Qt  # type: ignore
-from PyQt5.QtGui import QFont, QIcon  # type: ignore
-from PyQt5.QtWidgets import (QLabel, QMainWindow,  # type: ignore
+from PyQt5.QtCore import QAbstractListModel, Qt
+from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (QLabel, QMainWindow,
                              QMessageBox, QInputDialog, QFileDialog, QLineEdit)
 
 from simsapa import ASSETS_DIR
 from simsapa.assets import icons_rc  # noqa: F401
 
-from ..app.db_models import DictionarySource  # type: ignore
-from ..app.types import AppData, DictWord  # type: ignore
-from ..app.helpers import download_file  # type: ignore
-from ..assets.ui.dictionaries_manager_window_ui import Ui_DictionariesManagerWindow  # type: ignore
+from ..app.db_models import DictionarySource
+from ..app.types import AppData, DictWord
+from ..app.helpers import download_file
+from ..assets.ui.dictionaries_manager_window_ui import Ui_DictionariesManagerWindow
 
 logger = _logging.getLogger(__name__)
 

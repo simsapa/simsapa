@@ -6,7 +6,7 @@ from typing import Optional, List
 from PyQt5.QtCore import QRect
 
 try:
-    import fitz  # type: ignore
+    import fitz
     has_fitz = True
 except ImportError:
     has_fitz = False

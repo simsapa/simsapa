@@ -5,16 +5,16 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)  # type: ignore
-from sqlalchemy.sql import func  # type: ignore
+from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)
+from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, UMemo  # type: ignore
-from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow  # type: ignore
+from ..app.types import AppData, UMemo
+from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
 
 logger = _logging.getLogger(__name__)
 

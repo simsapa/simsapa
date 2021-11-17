@@ -1,10 +1,10 @@
 import logging as _logging
 
 from sqlalchemy import (MetaData, Table, Column, Integer, String,
-                        ForeignKey, Boolean, DateTime, LargeBinary)  # type: ignore
+                        ForeignKey, Boolean, DateTime, LargeBinary)
 
-from sqlalchemy.orm import relationship  # type: ignore
-from sqlalchemy.ext.declarative import declarative_base  # type: ignore
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
 
 # -------------------------------------------------------------------------
 # NOTE: The schema label identifies the attached database. This is the only

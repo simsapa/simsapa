@@ -1,5 +1,5 @@
 from sqlalchemy import func
-from sqlalchemy.orm import joinedload  # type: ignore
+from sqlalchemy.orm import joinedload
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

@@ -7,11 +7,11 @@ import yaml
 import threading
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)  # type: ignore
+from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 
 from simsapa import APP_DB_PATH
-from .app.types import AppData, create_app_dirs  # type: ignore
-from .app.windows import AppWindows  # type: ignore
+from .app.types import AppData, create_app_dirs
+from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
@@ -23,7 +23,7 @@ logger = _logging.getLogger(__name__)
 if os.path.exists("logging.yaml"):
     with open("logging.yaml", 'r') as f:
         config = yaml.safe_load(f.read())
-        _logging.config.dictConfig(config)  # type: ignore
+        _logging.config.dictConfig(config) # type: ignore
 
 
 def excepthook(exc_type, exc_value, exc_tb):

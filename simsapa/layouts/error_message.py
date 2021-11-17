@@ -3,9 +3,9 @@ import logging as _logging
 from functools import partial
 import pyperclip
 
-from PyQt5.QtCore import Qt  # type: ignore
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
-                             QPushButton, QLabel, QMainWindow, QSizePolicy)  # type: ignore
+                             QPushButton, QLabel, QMainWindow, QSizePolicy)
 
 logger = _logging.getLogger(__name__)
 

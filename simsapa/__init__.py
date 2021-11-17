@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict
 from queue import Queue
 from dotenv import load_dotenv
-import appdirs  # type: ignore
+import appdirs
 
 load_dotenv()
 
