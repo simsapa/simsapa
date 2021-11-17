@@ -28,6 +28,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         super().__init__(parent)
         self.setupUi(self)
 
+        self.features = []
         self._app_data: AppData = app_data
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
