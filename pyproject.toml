@@ -32,6 +32,7 @@ pyperclip = "^1.8.2"
 PyQtWebEngine = "^5.15.4"
 networkx = "^2.5.1"
 bokeh = "^2.3.2"
+alembic = "^1.7.5"
 
 [tool.poetry.dev-dependencies]
 

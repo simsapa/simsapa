@@ -8,7 +8,9 @@ import appdirs
 load_dotenv()
 
 SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
-SIMSAPA_MIGRATIONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('migrations')
+
+ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
+ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
 SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 

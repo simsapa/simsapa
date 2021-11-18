@@ -8,13 +8,17 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.orm import sessionmaker
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from alembic.runtime.migration import MigrationContext
 
 from PyQt5.QtGui import QClipboard
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR, SIMSAPA_MIGRATIONS_DIR
+from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR, ALEMBIC_INI, ALEMBIC_DIR
 
 logger = _logging.getLogger(__name__)
 
@@ -91,15 +95,6 @@ class AppData:
         else:
             return None
 
-    def create_schema_sql(self) -> str:
-        try:
-            with open(SIMSAPA_MIGRATIONS_DIR.joinpath('create_schema.sql'), 'r') as f:
-                data = f.read()
-        except Exception as e:
-            logger.error(e)
-            return ""
-        return data
-
     def _find_app_data_or_exit(self):
         if not APP_DB_PATH.exists():
             logger.error("Cannot find appdata.sqlite3")
@@ -108,27 +103,50 @@ class AppData:
             return APP_DB_PATH
 
     def _find_user_data_or_create(self):
-        if not USER_DB_PATH.exists():
-            logger.info("Cannot find userdata.sqlite3, creating it")
+        # Create an in-memory database
+        engine = create_engine("sqlite+pysqlite://", echo=False)
 
-            e = create_engine(f"sqlite+pysqlite:///{USER_DB_PATH}", echo=False)
+        if isinstance(engine, Engine):
+            db_conn = engine.connect()
+            user_db_url = f"sqlite+pysqlite:///{USER_DB_PATH}"
 
-            if isinstance(e, Engine):
-                engine: Engine = e
+            alembic_cfg = Config(f"{ALEMBIC_INI}")
+            alembic_cfg.set_main_option('script_location', f"{ALEMBIC_DIR}")
+            alembic_cfg.set_main_option('sqlalchemy.url', user_db_url)
 
-                if not database_exists(engine.url):
-                    create_database(engine.url)
+            if not database_exists(user_db_url):
+                logger.info("Cannot find userdata.sqlite3, creating it")
+                # On a new install, create database and all tables with the recent schema.
+                create_database(user_db_url)
+                db_conn.execute(f"ATTACH DATABASE '{USER_DB_PATH}' AS userdata;")
+                Um.metadata.create_all(bind=engine)
 
-                with engine.connect() as db_conn:
-                    sql = self.create_schema_sql()
-                    for s in sql.split(';'):
-                        db_conn.execute(text(s))
+                # generate the Alembic version table, "stamping" it with the most recent rev:
+                command.stamp(alembic_cfg, "head")
 
-            else:
-                logger.error("Can't create db engine.")
+            elif not self._is_db_revision_at_head(alembic_cfg, engine):
+                logger.info("userdata.sqlite3 is stale, running migrations")
+
+                if db_conn is not None:
+                    # db_conn.execute(f"ATTACH DATABASE '{USER_DB_PATH}' AS userdata;")
+                    alembic_cfg.attributes['connection'] = db_conn
+                    try:
+                        command.upgrade(alembic_cfg, "head")
+                    except Exception as e:
+                        # NOTE: logger.error() is not printed for some reason.
+                        print("ERROR - Failed to run migrations.")
+                        print(e)
+                        exit(1)
+        else:
+            logger.error("Can't create in-memory database")
 
         return USER_DB_PATH
 
+    def _is_db_revision_at_head(self, alembic_cfg: Config, e: Engine) -> bool:
+        directory = ScriptDirectory.from_config(alembic_cfg)
+        with e.begin() as db_conn:
+            context = MigrationContext.configure(db_conn)
+            return set(context.get_current_heads()) == set(directory.get_heads())
 
 def create_app_dirs():
     if not SIMSAPA_DIR.exists():
