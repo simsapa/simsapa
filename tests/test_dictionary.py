@@ -16,7 +16,7 @@ class DictionaryTestSuite(unittest.TestCase):
         app_data = get_app_data()
         count = app_data.db_session.query(func.count(Um.DictWord.id)).scalar()
 
-        self.assertEqual(count, 1)
+        self.assertEqual(count, 2)
 
     def test_dict_word_examples(self):
         app_data = get_app_data()

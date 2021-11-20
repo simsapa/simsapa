@@ -4,7 +4,7 @@ import logging as _logging
 from pathlib import Path
 from typing import Optional, Union
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy.orm import sessionmaker
@@ -128,7 +128,6 @@ class AppData:
                 logger.info("userdata.sqlite3 is stale, running migrations")
 
                 if db_conn is not None:
-                    # db_conn.execute(f"ATTACH DATABASE '{USER_DB_PATH}' AS userdata;")
                     alembic_cfg.attributes['connection'] = db_conn
                     try:
                         command.upgrade(alembic_cfg, "head")
