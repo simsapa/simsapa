@@ -1,3 +1,6 @@
+"""Basic Dictionary test cases
+"""
+
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -6,39 +9,33 @@ from simsapa.app.db import userdata_models as Um
 
 from .support.helpers import get_app_data
 
-import unittest
+def test_count_userdata_dict_words():
+    app_data = get_app_data()
+    count = app_data.db_session.query(func.count(Um.DictWord.id)).scalar()
 
+    assert count == 2
 
-class DictionaryTestSuite(unittest.TestCase):
-    """Basic Dictionary test cases."""
+def test_dict_word_examples():
+    app_data = get_app_data()
 
-    def test_count_userdata_dict_words(self):
-        app_data = get_app_data()
-        count = app_data.db_session.query(func.count(Um.DictWord.id)).scalar()
+    results = app_data.db_session \
+                        .query(Am.DictWord) \
+                        .options(joinedload(Am.DictWord.examples)) \
+                        .all()
 
-        self.assertEqual(count, 2)
+    text = results[0].examples[0].text_html
 
-    def test_dict_word_examples(self):
-        app_data = get_app_data()
+    assert text == "Dhammo gambhīro duradhigamā bhogā"
 
-        results = app_data.db_session \
-                          .query(Am.DictWord) \
-                          .options(joinedload(Am.DictWord.examples)) \
-                          .all()
+def test_dict_word_dictionary():
+    app_data = get_app_data()
 
-        text = results[0].examples[0].text_html
+    results = app_data.db_session \
+        .query(Um.DictWord) \
+        .filter(Um.DictWord.word == 'dhamma') \
+        .options(joinedload(Um.DictWord.examples)) \
+        .all()
 
-        self.assertEqual(text, "Dhammo gambhīro duradhigamā bhogā")
+    dict = results[0].dictionary
 
-    def test_dict_word_dictionary(self):
-        app_data = get_app_data()
-
-        results = app_data.db_session \
-            .query(Um.DictWord) \
-            .filter(Um.DictWord.word == 'dhamma') \
-            .options(joinedload(Um.DictWord.examples)) \
-            .all()
-
-        dict = results[0].dictionary
-
-        self.assertEqual(dict.title, "Personal Study")
+    assert dict.title == "Personal Study"

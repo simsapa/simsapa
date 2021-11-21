@@ -1,94 +1,91 @@
+"""Basic Memo test cases
+"""
+
 import json
 
 from simsapa.app.db import userdata_models as Um
 
 from .support.helpers import get_app_data
 
-import unittest
+def test_dn1_memo_front_back():
+    app_data = get_app_data()
 
+    results = app_data.db_session \
+        .query(Um.MemoAssociation.memo_id) \
+        .filter(
+            Um.MemoAssociation.associated_table == 'appdata.suttas',
+            Um.MemoAssociation.associated_id == 1) \
+        .all()
 
-class MemoTestSuite(unittest.TestCase):
-    """Basic Memo test cases."""
+    memo_ids = list(map(lambda x: x[0], results))
 
-    def test_dn1_memo_front_back(self):
-        app_data = get_app_data()
+    memos_data = app_data.db_session \
+        .query(Um.Memo) \
+        .filter(Um.Memo.id.in_(memo_ids)) \
+        .all()
 
-        results = app_data.db_session \
-            .query(Um.MemoAssociation.memo_id) \
-            .filter(
-                Um.MemoAssociation.associated_table == 'appdata.suttas',
-                Um.MemoAssociation.associated_id == 1) \
-            .all()
+    def get_front(x):
+        d = json.loads(x.fields_json)
+        return d['Front']
 
-        memo_ids = list(map(lambda x: x[0], results))
+    memos_front = ' '.join(map(get_front, memos_data))
 
-        memos_data = app_data.db_session \
-            .query(Um.Memo) \
-            .filter(Um.Memo.id.in_(memo_ids)) \
-            .all()
+    assert memos_front == 'Who is criticizing the Buddha? Who is praising the Buddha?'
 
-        def get_front(x):
-            d = json.loads(x.fields_json)
-            return d['Front']
+def test_dn1_memo_deck():
+    app_data = get_app_data()
 
-        memos_front = ' '.join(map(get_front, memos_data))
+    results = app_data.db_session \
+        .query(Um.MemoAssociation.memo_id) \
+        .filter(
+            Um.MemoAssociation.associated_table == 'appdata.suttas',
+            Um.MemoAssociation.associated_id == 1) \
+        .all()
 
-        self.assertEqual(memos_front, 'Who is criticizing the Buddha? Who is praising the Buddha?')
+    memo_ids = list(map(lambda x: x[0], results))
 
-    def test_dn1_memo_deck(self):
-        app_data = get_app_data()
+    memos_data = app_data.db_session \
+        .query(Um.Memo) \
+        .filter(Um.Memo.id.in_(memo_ids)) \
+        .all()
 
-        results = app_data.db_session \
-            .query(Um.MemoAssociation.memo_id) \
-            .filter(
-                Um.MemoAssociation.associated_table == 'appdata.suttas',
-                Um.MemoAssociation.associated_id == 1) \
-            .all()
+    deck = memos_data[0].deck
 
-        memo_ids = list(map(lambda x: x[0], results))
+    assert deck.name == 'Simsapa'
 
-        memos_data = app_data.db_session \
-            .query(Um.Memo) \
-            .filter(Um.Memo.id.in_(memo_ids)) \
-            .all()
+def test_dn1_memo_has_tags():
+    app_data = get_app_data()
 
-        deck = memos_data[0].deck
+    results = app_data.db_session \
+        .query(Um.MemoAssociation.memo_id) \
+        .filter(
+            Um.MemoAssociation.associated_table == 'appdata.suttas',
+            Um.MemoAssociation.associated_id == 1) \
+        .all()
 
-        self.assertEqual(deck.name, 'Simsapa')
+    memo_ids = list(map(lambda x: x[0], results))
 
-    def test_dn1_memo_has_tags(self):
-        app_data = get_app_data()
+    memos_data = app_data.db_session \
+        .query(Um.Memo) \
+        .filter(Um.Memo.id.in_(memo_ids)) \
+        .all()
 
-        results = app_data.db_session \
-            .query(Um.MemoAssociation.memo_id) \
-            .filter(
-                Um.MemoAssociation.associated_table == 'appdata.suttas',
-                Um.MemoAssociation.associated_id == 1) \
-            .all()
+    memo = memos_data[0]
 
-        memo_ids = list(map(lambda x: x[0], results))
+    name = memo.tags[0].name
 
-        memos_data = app_data.db_session \
-            .query(Um.Memo) \
-            .filter(Um.Memo.id.in_(memo_ids)) \
-            .all()
+    assert name == 'Suppiya'
 
-        memo = memos_data[0]
+def test_tag_has_memos():
+    app_data = get_app_data()
 
-        name = memo.tags[0].name
+    results = app_data.db_session \
+        .query(Um.Tag) \
+        .filter(Um.Tag.name == 'Suppiya') \
+        .all()
 
-        self.assertEqual(name, 'Suppiya')
+    memo = results[0].memos[0]
 
-    def test_tag_has_memos(self):
-        app_data = get_app_data()
+    fields = json.loads(memo.fields_json)
 
-        results = app_data.db_session \
-            .query(Um.Tag) \
-            .filter(Um.Tag.name == 'Suppiya') \
-            .all()
-
-        memo = results[0].memos[0]
-
-        fields = json.loads(memo.fields_json)
-
-        self.assertEqual(fields['Front'], "Who is criticizing the Buddha?")
+    assert fields['Front'] == "Who is criticizing the Buddha?"

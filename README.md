@@ -21,9 +21,15 @@ poetry shell
 
 ## Tests
 
-Run tests:
+All tests:
 
 ``` shell
-python3 -m unittest tests/test_*.py
+pytest
+```
+
+A single test:
+
+``` shell
+pytest -k test_dict_word_dictionary tests/test_dictionary.py
 ```
 
