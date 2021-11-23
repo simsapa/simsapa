@@ -289,7 +289,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 .first()
 
         self._app_data.sutta_to_open = sutta
-        self.action_Sutta_Search.activate(QAction.Trigger)
+        self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
     def _handle_set_from(self):
         selected_idx = self.results_list.currentRow()

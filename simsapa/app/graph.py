@@ -1,6 +1,8 @@
 from typing import List, Tuple, TypedDict, Optional
 from pathlib import Path
 from itertools import chain
+from bokeh.document.locking import UnlockedDocumentProxy
+from bokeh.models.renderers import GraphRenderer, GlyphRenderer
 
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
@@ -9,7 +11,7 @@ from bokeh.models import (Div, Button, Circle, MultiLine, Range1d, ColumnDataSou
                           LabelSet, HoverTool, NodesAndLinkedEdges,
                           EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral8
-from bokeh.plotting import figure, from_networkx
+from bokeh.plotting import figure, from_networkx, Figure
 from bokeh.layouts import column
 from bokeh.models import CustomJS
 from bokeh import events
@@ -63,14 +65,14 @@ def sutta_to_node(x: USutta) -> GraphNode:
     schema = x.metadata.schema
     return (
         sutta_graph_id(x),
-        {
-            'label': x.sutta_ref,
-            'title': x.title,
-            'description': '',
-            'table': f'{schema}.suttas',
-            'id': x.id,
-            'fill_color': Spectral8[0],
-        },
+        NodeData(
+            label = x.sutta_ref, # type: ignore
+            title = x.title, # type: ignore
+            description = '',
+            table = f'{schema}.suttas',
+            id = x.id, # type: ignore
+            fill_color = Spectral8[0],
+        )
     )
 
 
@@ -78,14 +80,14 @@ def dict_word_to_node(x: UDictWord) -> GraphNode:
     schema = x.metadata.schema
     return (
         dict_word_graph_id(x),
-        {
-            'label': x.word,
-            'title': x.word,
-            'description': '',
-            'table': f'{schema}.dict_words',
-            'id': x.id,
-            'fill_color': Spectral8[1],
-        },
+        NodeData(
+            label = x.word, # type: ignore
+            title = x.word, # type: ignore
+            description = '',
+            table = f'{schema}.dict_words',
+            id = x.id, # type: ignore
+            fill_color = Spectral8[1],
+        )
     )
 
 
@@ -99,14 +101,14 @@ def document_page_to_node(x: DocumentPage) -> GraphNode:
         label = f"{doc.title} (p.{page_number})"
     return (
         document_graph_id(x),
-        {
-            'label': label,
-            'title': doc.title,
-            'description': '',
-            'table': f'{schema}.documents',
-            'id': doc.id,
-            'fill_color': Spectral8[4],
-        }
+        NodeData(
+            label = label, # type: ignore
+            title = doc.title, # type: ignore
+            description = '',
+            table = f'{schema}.documents',
+            id = doc.id, # type: ignore
+            fill_color = Spectral8[4],
+        )
     )
 
 
@@ -405,7 +407,7 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     def id_to_doc(x, db_res):
         id = x[0]
         page = x[1]
-        doc = list(filter(lambda i: i.id == id, db_res))
+        doc = list(filter(lambda i: i.id == id, db_res)) # type: ignore
         return DocumentPage(doc=doc[0], page_number=page)
 
     appdata_docpages = list(map(lambda x: id_to_doc(x, appdata_db_res), appdata_items))
@@ -517,7 +519,7 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
 
-    plot = figure(
+    plot: Figure = figure(
         title=None,
         plot_width=700,
         plot_height=400,
@@ -543,7 +545,7 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     plot.xaxis.minor_tick_line_color = None
     plot.yaxis.minor_tick_line_color = None
 
-    network_graph = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
+    network_graph: GraphRenderer = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
 
     selection_color = Spectral8[6]
 

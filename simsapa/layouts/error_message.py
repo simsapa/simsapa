@@ -15,7 +15,7 @@ class ErrorMessageWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Application Error")
         self.setFixedSize(500, 500)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
@@ -31,7 +31,7 @@ class ErrorMessageWindow(QMainWindow):
         else:
             self._msg.setText("<p>The application encountered and error.</p>")
 
-        self._msg.setAlignment(Qt.AlignCenter)
+        self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._layout.addWidget(self._msg)
 
@@ -50,7 +50,7 @@ class ErrorMessageWindow(QMainWindow):
   Please copy the error mesage in your bug report:
 </p>""")
 
-            self._info_help.setAlignment(Qt.AlignCenter)
+            self._info_help.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._info_help.setOpenExternalLinks(True)
             self._layout.addWidget(self._info_help)
 

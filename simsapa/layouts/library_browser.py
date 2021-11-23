@@ -26,12 +26,12 @@ class DocumentListModel(QAbstractListModel):
         self.docs = docs or []
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             filepath = self.docs[index.row()].filepath
             name = os.path.basename(filepath)
             return name
 
-        if role == Qt.DecorationRole:
+        if role == Qt.ItemDataRole.DecorationRole:
             filepath = self.docs[index.row()].filepath
             if not os.path.exists(filepath):
                 return QIcon(":close")

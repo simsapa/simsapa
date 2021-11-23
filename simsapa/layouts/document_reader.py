@@ -110,7 +110,8 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self.doc_go_to_page(1)
 
     def doc_show_current(self):
-        self.doc_go_to_page(self.file_doc.current_page_number())
+        if self.file_doc is not None:
+            self.doc_go_to_page(self.file_doc.current_page_number())
 
     def doc_go_to_page(self, page: int):
         if not self.file_doc:
@@ -170,15 +171,17 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
                 .first()
 
         self._app_data.sutta_to_open = sutta
-        self.action_Sutta_Search.activate(QAction.Trigger)
+        self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
     def _select_start(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.selecting = True
             self.select_start_point = QPoint(event.pos())
 
     def _select_move(self, event):
         if not self.selecting:
+            return
+        if self.select_start_point is None:
             return
         self.select_end_point = QPoint(event.pos())
         self.select_rectangle = QRect(self.select_start_point, self.select_end_point).normalized()
@@ -234,10 +237,18 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self.doc_go_to_page(n)
 
     def _zoom_out(self):
+        if self.file_doc is None:
+            return
+        if self.file_doc._zoom is None:
+            return
         self.file_doc.set_zoom(self.file_doc._zoom - 0.1)
         self.doc_show_current()
 
     def _zoom_in(self):
+        if self.file_doc is None:
+            return
+        if self.file_doc._zoom is None:
+            return
         self.file_doc.set_zoom(self.file_doc._zoom + 0.1)
         self.doc_show_current()
 

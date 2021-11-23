@@ -259,7 +259,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         if len(results) > 0:
             self._app_data.dict_word_to_open = results[0]
-            self.action_Dictionary_Search.activate(QAction.Trigger)
+            self.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_sutta(self, sutta: USutta):
         self._current_sutta = sutta
@@ -312,7 +312,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self._app_data.clipboard_setText(text)
 
     def _setup_content_html_context_menu(self):
-        self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu)
+        self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         copyAction = QAction("Copy", self.content_html)
         copyAction.setShortcut(QKeySequence("Ctrl+C"))

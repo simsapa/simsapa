@@ -16,7 +16,7 @@ class SearchItemWidget(QWidget):
     def __init__(self, parent=None):
         super(SearchItemWidget, self).__init__(parent)
 
-        self.layout = QVBoxLayout()
+        self.layout: QVBoxLayout = QVBoxLayout()
         self.setLayout(self.layout)
 
         self.title = QLabel()

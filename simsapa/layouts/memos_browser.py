@@ -25,7 +25,7 @@ class MemoListModel(QAbstractListModel):
         self.memos = memos or []
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             fields = json.loads(self.memos[index.row()].fields_json)
             text = " ".join(fields.values())
             return text
@@ -124,7 +124,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self.back_input.clear()
 
     def _show_memo(self, memo: UMemo):
-        fields = json.loads(memo.fields_json)
+        fields = json.loads(memo.fields_json) # type: ignore
         self.front_input.setPlainText(fields['Front'])
         self.back_input.setPlainText(fields['Back'])
 
@@ -151,6 +151,9 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         logger.info("Adding new memo")
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find Deck")
+            return
 
         memo_fields = {
             'Front': front,
@@ -177,7 +180,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.model.layoutChanged.emit()
 
@@ -191,7 +194,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
             'Back': self.back_input.toPlainText()
         }
 
-        memo.fields_json = json.dumps(fields)
+        memo.fields_json = json.dumps(fields) # type: ignore
 
         self._app_data.db_session.commit()
         self.model.layoutChanged.emit()

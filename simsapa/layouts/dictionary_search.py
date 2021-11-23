@@ -201,7 +201,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
     def _show_word(self, word: UDictWord):
         self._current_word = word
-        self.status_msg.setText(word.word)
+        self.status_msg.setText(word.word) # type: ignore
 
         self.update_memos_list_for_dict_word(word)
         self.show_network_graph(word)
@@ -209,12 +209,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
 
-        examples = "".join(list(map(example_format, word.examples)))
+        examples = "".join(list(map(example_format, word.examples))) # type: ignore
 
         if word.definition_html is not None and word.definition_html != '':
             definition = word.definition_html
         elif word.definition_plain is not None and word.definition_plain != '':
-            definition = markdown(word.definition_plain)
+            definition = markdown(word.definition_plain) # type: ignore
         else:
             definition = '<p>No definition.</p>'
 
