@@ -1,3 +1,4 @@
+import os
 import logging as _logging
 import json
 from pathlib import Path
@@ -9,7 +10,8 @@ from typing import List, Optional
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QListWidgetItem,
-                             QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox)
+                             QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
+                             QComboBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -30,6 +32,8 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+
+        self.link_table: QComboBox;
 
         self.features = []
         self._app_data: AppData = app_data
@@ -465,3 +469,13 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.create_link_btn.clicked.connect(partial(self._handle_create_link))
         self.clear_link_btn.clicked.connect(partial(self._handle_clear_link))
         self.remove_link_btn.clicked.connect(partial(self._handle_remove_link))
+
+        s = os.getenv('ENABLE_WIP_FEATURES')
+        if s is not None and s.lower() == 'true':
+            pass
+        else:
+            # don't show "Documents" option
+            self.link_table.removeItem(2)
+            # hide setting page number
+            self.page_number.setVisible(False)
+            self.set_page_number.setVisible(False)
