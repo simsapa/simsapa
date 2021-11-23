@@ -10,7 +10,7 @@ from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
                              QVBoxLayout, QHBoxLayout, QPushButton,
-                             QSizePolicy)
+                             QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -35,6 +35,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+
+        self.history_list: QListWidget;
 
         self.features = []
         self._app_data: AppData = app_data
@@ -180,14 +182,24 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         query = self.search_input.text()
         self.content_html.findText(query)
 
+    def _add_history(self, sutta: USutta):
+        # de-duplicate: if item already exists, remove it
+        if sutta in self._history:
+            self._history.remove(sutta)
+        # insert new item on top
+        self._history.insert(0, sutta)
+
+        # Rebuild Qt recents list
+        self.history_list.clear()
+        titles = list(map(lambda x: x.title, self._history))
+        self.history_list.insertItems(0, titles)
+
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
             sutta: USutta = self._results[selected_idx]
             self._show_sutta(sutta)
-
-            self._history.insert(0, sutta)
-            self.history_list.insertItem(0, sutta.title)
+            self._add_history(sutta)
 
     def _handle_history_select(self):
         selected_idx = self.history_list.currentRow()

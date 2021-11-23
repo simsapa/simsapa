@@ -175,14 +175,24 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         query = self.search_input.text()
         self.content_html.findText(query)
 
+    def _add_history(self, word: UDictWord):
+        # de-duplicate: if item already exists, remove it
+        if word in self._history:
+            self._history.remove(word)
+        # insert new item on top
+        self._history.insert(0, word)
+
+        # Rebuild Qt recents list
+        self.history_list.clear()
+        words = list(map(lambda x: x.word, self._history))
+        self.history_list.insertItems(0, words)
+
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
             word: UDictWord = self._results[selected_idx]
             self._show_word(word)
-
-            self._history.insert(0, word)
-            self.history_list.insertItem(0, word.word)
+            self._add_history(word)
 
     def _handle_history_select(self):
         selected_idx = self.history_list.currentRow()
