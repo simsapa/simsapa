@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-PyQt5 = "^5.15.0"
+PyQt5 = "^5.15.4"
 SQLAlchemy = "^1.4.6"
 Markdown = "^3.3.4"
 PyYAML = "^5.4.1"

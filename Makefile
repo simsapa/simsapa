@@ -14,4 +14,4 @@ ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/links_browser_window_ui.py simsapa/assets/ui/links_browser_window.ui
 
 tests:
-	python -m unittest -v
+	pytest tests/

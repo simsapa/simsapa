@@ -9,10 +9,6 @@ INSERT INTO links VALUES(1,'insight','appdata.suttas',1,NULL,'appdata.suttas',2,
 INSERT INTO links VALUES(2,'views','appdata.suttas',1,NULL,'appdata.suttas',3,NULL);
 INSERT INTO links VALUES(3,NULL,'appdata.suttas',1,NULL,'appdata.suttas',4,NULL);
 INSERT INTO links VALUES(4,'liberation','appdata.suttas',3,NULL,'appdata.suttas',4,NULL);
-INSERT INTO links VALUES(5,NULL,'userdata.documents',1,NULL,'appdata.suttas',1,NULL);
-INSERT INTO links VALUES(6,NULL,'userdata.documents',1,20,'appdata.suttas',5,NULL);
-INSERT INTO links VALUES(7,NULL,'userdata.documents',1,20,'appdata.suttas',6,NULL);
-INSERT INTO links VALUES(8,NULL,'userdata.documents',1,20,'appdata.suttas',7,'');
 INSERT INTO links VALUES(9,NULL,'appdata.suttas',4,NULL,'appdata.suttas',7,NULL);
 INSERT INTO links VALUES(10,NULL,'appdata.suttas',5,NULL,'appdata.suttas',7,NULL);
 INSERT INTO links VALUES(11,NULL,'appdata.suttas',7,NULL,'userdata.dict_words',2,NULL);

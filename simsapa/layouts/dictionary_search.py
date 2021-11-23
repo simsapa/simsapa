@@ -254,7 +254,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                 .first()
 
         self._app_data.sutta_to_open = sutta
-        self.action_Sutta_Search.activate(QAction.Trigger)
+        self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
 
     def _show_sutta_by_uid(self, uid: str):
         results: List[USutta] = []
@@ -273,7 +273,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         if len(results) > 0:
             self._app_data.sutta_to_open = results[0]
-            self.action_Sutta_Search.activate(QAction.Trigger)
+            self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
 
     def _show_word_by_url_id(self, url_id: str):
         results: List[UDictWord] = []
@@ -300,7 +300,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self._app_data.clipboard_setText(text)
 
     def _setup_content_html_context_menu(self):
-        self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu)
+        self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
 
         copyAction = QAction("Copy", self.content_html)
         copyAction.setShortcut(QKeySequence("Ctrl+C"))

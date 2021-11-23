@@ -1,3 +1,4 @@
+import os
 from functools import partial
 from typing import List
 
@@ -106,6 +107,7 @@ class AppWindows:
             view.action_Open_Selected \
                 .triggered.connect(partial(self._open_selected_document, view))
         except Exception:
+            # FIXME silent exception
             pass
 
         view.action_Quit \
@@ -114,13 +116,23 @@ class AppWindows:
             .triggered.connect(partial(self._new_sutta_search_window))
         view.action_Dictionary_Search \
             .triggered.connect(partial(self._new_dictionary_search_window))
-        # view.action_Dictionaries_Manager \
-        #     .triggered.connect(partial(self._new_dictionaries_manager_window))
-        view.action_Document_Reader \
-            .triggered.connect(partial(self._new_document_reader_window))
-        view.action_Library \
-            .triggered.connect(partial(self._new_library_browser_window))
         view.action_Memos \
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        s = os.getenv('ENABLE_WIP_FEATURES')
+        if s is not None and s.lower() == 'true':
+            # view.action_Dictionaries_Manager \
+            #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+            view.action_Document_Reader \
+                .triggered.connect(partial(self._new_document_reader_window))
+            view.action_Library \
+                .triggered.connect(partial(self._new_library_browser_window))
+        else:
+            if hasattr(view,'toolBar'):
+                view.toolBar.setVisible(False)
+
+            view.action_Dictionaries_Manager.setVisible(False)
+            view.action_Document_Reader.setVisible(False)
+            view.action_Library.setVisible(False)
