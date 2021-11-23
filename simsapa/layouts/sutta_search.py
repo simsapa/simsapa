@@ -36,12 +36,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         super().__init__(parent)
         self.setupUi(self)
 
-        self.history_list: QListWidget;
+        self.recent_list: QListWidget;
 
         self.features = []
         self._app_data: AppData = app_data
         self._results: List[USutta] = []
-        self._history: List[USutta] = []
+        self._recent: List[USutta] = []
 
         self._current_sutta: Optional[USutta] = None
 
@@ -182,28 +182,28 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         query = self.search_input.text()
         self.content_html.findText(query)
 
-    def _add_history(self, sutta: USutta):
+    def _add_recent(self, sutta: USutta):
         # de-duplicate: if item already exists, remove it
-        if sutta in self._history:
-            self._history.remove(sutta)
+        if sutta in self._recent:
+            self._recent.remove(sutta)
         # insert new item on top
-        self._history.insert(0, sutta)
+        self._recent.insert(0, sutta)
 
         # Rebuild Qt recents list
-        self.history_list.clear()
-        titles = list(map(lambda x: x.title, self._history))
-        self.history_list.insertItems(0, titles)
+        self.recent_list.clear()
+        titles = list(map(lambda x: x.title, self._recent))
+        self.recent_list.insertItems(0, titles)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
             sutta: USutta = self._results[selected_idx]
             self._show_sutta(sutta)
-            self._add_history(sutta)
+            self._add_recent(sutta)
 
-    def _handle_history_select(self):
-        selected_idx = self.history_list.currentRow()
-        sutta: USutta = self._history[selected_idx]
+    def _handle_recent_select(self):
+        selected_idx = self.recent_list.currentRow()
+        sutta: USutta = self._recent[selected_idx]
         self._show_sutta(sutta)
 
     def _show_sutta_from_message(self, info):
@@ -334,7 +334,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
         # self.search_input.returnPressed.connect(partial(self._update_result))
         self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
-        self.history_list.itemSelectionChanged.connect(partial(self._handle_history_select))
+        self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_sutta))

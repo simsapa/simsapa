@@ -226,15 +226,15 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="history_tab">
+            <widget class="QWidget" name="recent_tab">
              <attribute name="title">
-              <string>History</string>
+              <string>Recent</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_3">
               <item>
-               <layout class="QVBoxLayout" name="history_layout">
+               <layout class="QVBoxLayout" name="recent_layout">
                 <item>
-                 <widget class="QListWidget" name="history_list">
+                 <widget class="QListWidget" name="recent_list">
                   <property name="frameShape">
                    <enum>QFrame::NoFrame</enum>
                   </property>
