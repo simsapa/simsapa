@@ -1,16 +1,18 @@
+import os
 from functools import partial
 from typing import List
 
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)  # type: ignore
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)
 
-from .types import AppData  # type: ignore
+from .types import AppData
 
-from ..layouts.sutta_search import SuttaSearchWindow, SuttaSearchCtrl  # type: ignore
-from ..layouts.dictionary_search import DictionarySearchWindow, DictionarySearchCtrl  # type: ignore
-from ..layouts.dictionaries_manager import DictionariesManagerWindow  # type: ignore
-from ..layouts.document_reader import DocumentReaderWindow, DocumentReaderCtrl  # type: ignore
-from ..layouts.library_browser import LibraryBrowserWindow  # type: ignore
-from ..layouts.notes_browser import NotesBrowserWindow  # type: ignore
+from ..layouts.sutta_search import SuttaSearchWindow
+from ..layouts.dictionary_search import DictionarySearchWindow
+# from ..layouts.dictionaries_manager import DictionariesManagerWindow
+from ..layouts.document_reader import DocumentReaderWindow
+from ..layouts.library_browser import LibraryBrowserWindow
+from ..layouts.memos_browser import MemosBrowserWindow
+from ..layouts.links_browser import LinksBrowserWindow
 
 
 class AppWindows:
@@ -23,21 +25,25 @@ class AppWindows:
         view = SuttaSearchWindow(self._app_data)
         self._connect_signals(view)
         view.show()
-        SuttaSearchCtrl(view)
+        if self._app_data.sutta_to_open:
+            view._show_sutta(self._app_data.sutta_to_open)
+            self._app_data.sutta_to_open = None
         self._windows.append(view)
 
     def _new_dictionary_search_window(self):
         view = DictionarySearchWindow(self._app_data)
         self._connect_signals(view)
         view.show()
-        DictionarySearchCtrl(view)
+        if self._app_data.dict_word_to_open:
+            view._show_word(self._app_data.dict_word_to_open)
+            self._app_data.dict_word_to_open = None
         self._windows.append(view)
 
-    def _new_dictionaries_manager_window(self):
-        view = DictionariesManagerWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        self._windows.append(view)
+#    def _new_dictionaries_manager_window(self):
+#        view = DictionariesManagerWindow(self._app_data)
+#        self._connect_signals(view)
+#        view.show()
+#        self._windows.append(view)
 
     def _new_library_browser_window(self):
         view = LibraryBrowserWindow(self._app_data)
@@ -45,8 +51,14 @@ class AppWindows:
         view.show()
         self._windows.append(view)
 
-    def _new_notes_browser_window(self):
-        view = NotesBrowserWindow(self._app_data)
+    def _new_memos_browser_window(self):
+        view = MemosBrowserWindow(self._app_data)
+        self._connect_signals(view)
+        view.show()
+        self._windows.append(view)
+
+    def _new_links_browser_window(self):
+        view = LinksBrowserWindow(self._app_data)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
@@ -55,7 +67,6 @@ class AppWindows:
         view = DocumentReaderWindow(self._app_data)
         self._connect_signals(view)
         view.show()
-        DocumentReaderCtrl(view)
 
         if file_path is not None and file_path is not False and len(file_path) > 0:
             view.open_doc(file_path)
@@ -96,6 +107,7 @@ class AppWindows:
             view.action_Open_Selected \
                 .triggered.connect(partial(self._open_selected_document, view))
         except Exception:
+            # FIXME silent exception
             pass
 
         view.action_Quit \
@@ -104,11 +116,23 @@ class AppWindows:
             .triggered.connect(partial(self._new_sutta_search_window))
         view.action_Dictionary_Search \
             .triggered.connect(partial(self._new_dictionary_search_window))
-        view.action_Dictionaries_Manager \
-            .triggered.connect(partial(self._new_dictionaries_manager_window))
-        view.action_Document_Reader \
-            .triggered.connect(partial(self._new_document_reader_window))
-        view.action_Library \
-            .triggered.connect(partial(self._new_library_browser_window))
-        view.action_Notes \
-            .triggered.connect(partial(self._new_notes_browser_window))
+        view.action_Memos \
+            .triggered.connect(partial(self._new_memos_browser_window))
+        view.action_Links \
+            .triggered.connect(partial(self._new_links_browser_window))
+
+        s = os.getenv('ENABLE_WIP_FEATURES')
+        if s is not None and s.lower() == 'true':
+            # view.action_Dictionaries_Manager \
+            #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+            view.action_Document_Reader \
+                .triggered.connect(partial(self._new_document_reader_window))
+            view.action_Library \
+                .triggered.connect(partial(self._new_library_browser_window))
+        else:
+            if hasattr(view,'toolBar'):
+                view.toolBar.setVisible(False)
+
+            view.action_Dictionaries_Manager.setVisible(False)
+            view.action_Document_Reader.setVisible(False)
+            view.action_Library.setVisible(False)

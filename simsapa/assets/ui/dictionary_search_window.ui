@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>856</width>
-    <height>581</height>
+    <width>1068</width>
+    <height>642</height>
    </rect>
   </property>
   <property name="baseSize">
@@ -64,38 +64,172 @@
         <widget class="QWidget" name="verticalLayoutWidget_2">
          <layout class="QVBoxLayout" name="content_layout">
           <item>
-           <widget class="QLabel" name="content_title">
-            <property name="text">
-             <string>Title</string>
+           <spacer name="horizontalSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QTextBrowser" name="content_html"/>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>500</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
           </item>
          </layout>
         </widget>
         <widget class="QWidget" name="verticalLayoutWidget_3">
-         <layout class="QVBoxLayout" name="results_layout">
+         <layout class="QVBoxLayout" name="tabs_layout">
           <item>
-           <widget class="QLabel" name="label_2">
-            <property name="text">
-             <string>Results</string>
+           <widget class="QTabWidget" name="rightside_tabs">
+            <property name="minimumSize">
+             <size>
+              <width>500</width>
+              <height>500</height>
+             </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QListWidget" name="results_list"/>
-          </item>
-          <item>
-           <widget class="QLabel" name="label_3">
-            <property name="text">
-             <string>History</string>
+            <property name="currentIndex">
+             <number>0</number>
             </property>
+            <widget class="QWidget" name="results_tab">
+             <attribute name="title">
+              <string>Results</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_4">
+              <item>
+               <layout class="QVBoxLayout" name="verticalLayout">
+                <item>
+                 <widget class="QListWidget" name="results_list">
+                  <property name="frameShape">
+                   <enum>QFrame::NoFrame</enum>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="links_tab">
+             <attribute name="title">
+              <string>Links</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <layout class="QVBoxLayout" name="links_layout"/>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="memos_tab">
+             <attribute name="title">
+              <string>Memos</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <layout class="QVBoxLayout" name="memos_layout">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout">
+                  <item>
+                   <widget class="QPushButton" name="add_memo_button">
+                    <property name="text">
+                     <string>Add</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="clear_memo_button">
+                    <property name="text">
+                     <string>Clear</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="remove_memo_button">
+                    <property name="text">
+                     <string>Remove</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_2">
+                  <property name="text">
+                   <string>Front</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPlainTextEdit" name="front_input">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>50</height>
+                   </size>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_5">
+                  <property name="text">
+                   <string>Back</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPlainTextEdit" name="back_input">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>50</height>
+                   </size>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_3">
+                  <property name="text">
+                   <string>Memos for this page</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QListView" name="memos_list"/>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="recent_tab">
+             <attribute name="title">
+              <string>Recent</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_3">
+              <item>
+               <layout class="QVBoxLayout" name="recent_layout">
+                <item>
+                 <widget class="QListWidget" name="recent_list">
+                  <property name="frameShape">
+                   <enum>QFrame::NoFrame</enum>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
            </widget>
-          </item>
-          <item>
-           <widget class="QListWidget" name="history_list"/>
           </item>
          </layout>
         </widget>
@@ -110,7 +244,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>856</width>
+     <width>1068</width>
      <height>20</height>
     </rect>
    </property>
@@ -139,7 +273,8 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
-    <addaction name="action_Notes"/>
+    <addaction name="action_Memos"/>
+    <addaction name="action_Links"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -166,18 +301,6 @@
    </attribute>
    <addaction name="action_Sutta_Search"/>
    <addaction name="action_Dictionary_Search"/>
-  </widget>
-  <widget class="QToolBar" name="toolBar_2">
-   <property name="windowTitle">
-    <string>toolBar_2</string>
-   </property>
-   <attribute name="toolBarArea">
-    <enum>TopToolBarArea</enum>
-   </attribute>
-   <attribute name="toolBarBreak">
-    <bool>false</bool>
-   </attribute>
-   <addaction name="action_Edit_Word"/>
   </widget>
   <action name="action_Copy">
    <property name="text">
@@ -267,12 +390,12 @@
     <string>F8</string>
    </property>
   </action>
-  <action name="action_Notes">
+  <action name="action_Memos">
    <property name="text">
-    <string>&amp;Notes</string>
+    <string>&amp;Memos</string>
    </property>
    <property name="toolTip">
-    <string>Notes</string>
+    <string>Memos</string>
    </property>
    <property name="shortcut">
     <string>F9</string>
@@ -286,9 +409,12 @@
     <string>F10</string>
    </property>
   </action>
-  <action name="action_Edit_Word">
+  <action name="action_Links">
    <property name="text">
-    <string>&amp;Edit Word...</string>
+    <string>&amp;Links</string>
+   </property>
+   <property name="shortcut">
+    <string>F11</string>
    </property>
   </action>
  </widget>

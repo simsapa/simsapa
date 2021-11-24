@@ -3,14 +3,14 @@ from functools import partial
 import tarfile
 import logging as _logging
 
-from PyQt5.QtCore import Qt  # type: ignore
+from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)  # type: ignore
-from PyQt5.QtGui import QMovie  # type: ignore
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
+from PyQt5.QtGui import QMovie
 
-from ..app.types import ASSETS_DIR, APP_DB_PATH
 from ..app.helpers import download_file
 
+from simsapa import ASSETS_DIR, APP_DB_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class DownloadAppdataWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Download Application Assets")
         self.setFixedSize(300, 300)
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
@@ -30,12 +30,12 @@ class DownloadAppdataWindow(QMainWindow):
         self._central_widget.setLayout(self._layout)
 
         self._msg = QLabel("The application database\nwas not found on this system.\n\nDownload it now?")
-        self._msg.setAlignment(Qt.AlignCenter)
+        self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._layout.addWidget(self._msg)
 
         self._animation = QLabel(self)
-        self._animation.setAlignment(Qt.AlignCenter)
+        self._animation.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._animation)
 
         buttons_layout = QHBoxLayout()
@@ -61,7 +61,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._movie.stop()
 
     def _run_download(self):
-        self.thread = QThread()
+        self.thread: QThread = QThread()
         self.worker = DownloadWorker()
         self.worker.moveToThread(self.thread)
 
@@ -111,3 +111,6 @@ def download_extract_appdata() -> bool:
 
     if not APP_DB_PATH.exists():
         logger.error(f"File not found: {APP_DB_PATH}")
+        return False
+    else:
+        return True

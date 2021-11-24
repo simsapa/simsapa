@@ -2,18 +2,20 @@ import logging as _logging
 import os.path
 from functools import partial
 from typing import List, Optional
-from sqlalchemy.sql import func  # type: ignore
+from sqlalchemy.sql import func
 
-from PyQt5.QtCore import QAbstractListModel, Qt  # type: ignore
-from PyQt5.QtGui import QIcon, QImage, QPixmap  # type: ignore
-from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,  # type: ignore
+from PyQt5.QtCore import QAbstractListModel, Qt
+from PyQt5.QtGui import QIcon, QImage, QPixmap
+from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,
                              QMessageBox)
 from simsapa.assets import icons_rc  # noqa: F401
 
-from ..app.file_doc import FileDoc  # type: ignore
-from ..app.db_models import Document  # type: ignore
-from ..app.types import AppData  # type: ignore
-from ..assets.ui.library_browser_window_ui import Ui_LibraryBrowserWindow  # type: ignore
+from ..app.file_doc import FileDoc
+from ..app.db import appdata_models as Am
+from ..app.db import userdata_models as Um
+
+from ..app.types import AppData, UDocument
+from ..assets.ui.library_browser_window_ui import Ui_LibraryBrowserWindow
 
 logger = _logging.getLogger(__name__)
 
@@ -24,12 +26,12 @@ class DocumentListModel(QAbstractListModel):
         self.docs = docs or []
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             filepath = self.docs[index.row()].filepath
             name = os.path.basename(filepath)
             return name
 
-        if role == Qt.DecorationRole:
+        if role == Qt.ItemDataRole.DecorationRole:
             filepath = self.docs[index.row()].filepath
             if not os.path.exists(filepath):
                 return QIcon(":close")
@@ -62,13 +64,20 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self.search_input.setFocus()
         self._show_document_clear()
 
-    def _get_all_documents(self) -> List[Document]:
-        return self._app_data.user_db_session.query(Document).all()
+    def _get_all_documents(self) -> List[UDocument]:
+        results = []
+
+        res = self._app_data.db_session.query(Am.Document).all()
+        results.extend(res)
+        res = self._app_data.db_session.query(Um.Document).all()
+        results.extend(res)
+
+        return results
 
     def _handle_query(self):
         pass
 
-    def get_selected_document(self) -> Optional[Document]:
+    def get_selected_document(self) -> Optional[UDocument]:
         a = self.documents_list.selectedIndexes()
         if not a:
             return None
@@ -83,7 +92,9 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
 
         # Remove from model
         item = a[0]
-        doc_id = self.model.docs[item.row()].id
+        doc = self.model.docs[item.row()]
+        doc_id = doc.id
+        schema = doc.metadata.schema
 
         del self.model.docs[item.row()]
         self.model.layoutChanged.emit()
@@ -92,12 +103,19 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
 
         # Remove from database
 
-        db_item = self._app_data.user_db_session \
-                                .query(Document) \
-                                .filter(Document.id == doc_id) \
-                                .first()
-        self._app_data.user_db_session.delete(db_item)
-        self._app_data.user_db_session.commit()
+        if schema == 'appdata':
+            db_item = self._app_data.db_session \
+                                    .query(Am.Document) \
+                                    .filter(Am.Document.id == doc_id) \
+                                    .first()
+        else:
+            db_item = self._app_data.db_session \
+                                    .query(Um.Document) \
+                                    .filter(Um.Document.id == doc_id) \
+                                    .first()
+
+        self._app_data.db_session.delete(db_item)
+        self._app_data.db_session.commit()
 
     def _handle_document_select(self):
         doc = self.get_selected_document()
@@ -110,7 +128,7 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self.doc_author.clear()
         self.doc_cover.clear()
 
-    def _show_document(self, doc: Document):
+    def _show_document(self, doc: UDocument):
         self.status_msg.setText(doc.filepath)
         self.doc_title.setText(doc.title)
         self.doc_author.setText(doc.author)
@@ -126,10 +144,20 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
             self.doc_cover.setPixmap(QPixmap.fromImage(img))
 
     def _documents_search_query(self, query: str):
-        results = self._app_data.user_db_session \
-                               .query(Document) \
-                               .filter(Document.filepath.like(f"%{query}%")) \
-                               .all()
+        results = []
+
+        res = self._app_data.db_session \
+                            .query(Am.Document) \
+                            .filter(Am.Document.filepath.like(f"%{query}%")) \
+                            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+                            .query(Um.Document) \
+                            .filter(Um.Document.filepath.like(f"%{query}%")) \
+                            .all()
+        results.extend(res)
+
         return results
 
     def add_document(self, filepath):
@@ -147,15 +175,15 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
 
         # Insert or update database record
 
-        item = self._app_data.user_db_session \
-                             .query(Document) \
-                             .filter(Document.filepath == filepath) \
+        item = self._app_data.db_session \
+                             .query(Um.Document) \
+                             .filter(Um.Document.filepath == filepath) \
                              .first()
         if item is None:
             logger.info(f"Add new: {filepath}")
 
             if page_image:
-                db_doc = Document(
+                db_doc = Um.Document(
                     filepath=filepath,
                     title=title,
                     author=author,
@@ -166,7 +194,7 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
                     created_at=func.now(),
                 )
             else:
-                db_doc = Document(
+                db_doc = Um.Document(
                     filepath=filepath,
                     title=title,
                     author=author,
@@ -174,8 +202,8 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
                 )
 
             try:
-                self._app_data.user_db_session.add(db_doc)
-                self._app_data.user_db_session.commit()
+                self._app_data.db_session.add(db_doc)
+                self._app_data.db_session.commit()
 
                 # Add to model
                 self.model.docs.append(db_doc)
@@ -206,12 +234,12 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
                 }
 
             try:
-                self._app_data.user_db_session \
-                              .query(Document) \
-                              .filter(Document.id == item.id) \
+                self._app_data.db_session \
+                              .query(Um.Document) \
+                              .filter(Um.Document.id == item.id) \
                               .update(values)
 
-                self._app_data.user_db_session.commit()
+                self._app_data.db_session.commit()
 
             except Exception as e:
                 logger.error(e)

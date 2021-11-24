@@ -1,60 +1,91 @@
 from functools import partial
-from typing import List, Optional
+from typing import Optional
 import logging as _logging
+from pathlib import Path
+import queue
+import json
 
-from PyQt5.QtCore import QAbstractListModel, Qt
-from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog,
-                             QMessageBox)  # type: ignore
+from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
+from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
 
-from ..app.file_doc import FileDoc  # type: ignore
-from ..app.db_models import Document, Note  # type: ignore
+from simsapa import ASSETS_DIR, APP_QUEUES
 
-from ..app.types import AppData  # type: ignore
-from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow  # type: ignore
+from ..app.file_doc import FileDoc, PageImage
+from ..app.db import appdata_models as Am
+from ..app.db import userdata_models as Um
+
+from ..app.types import AppData, USutta
+from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow
+from .memos_sidebar import HasMemosSidebar
+from .links_sidebar import HasLinksSidebar
 
 logger = _logging.getLogger(__name__)
 
 
-class NoteListModel(QAbstractListModel):
-    def __init__(self, *args, notes=None, **kwargs):
-        super(NoteListModel, self).__init__(*args, **kwargs)
-        self.notes = notes or []
-
-    def data(self, index, role):
-        if role == Qt.DisplayRole:
-            text = self.notes[index.row()].front + " " + self.notes[index.row()].back
-            return text
-
-    def rowCount(self, index):
-        if self.notes:
-            return len(self.notes)
-        else:
-            return 0
-
-
-class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
+class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar, HasMemosSidebar):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
+        self.features = []
         self._app_data: AppData = app_data
 
-        self.model = NoteListModel()
-        self.notes_list.setModel(self.model)
-        self.sel_model = self.notes_list.selectionModel()
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(300)
 
         self._ui_setup()
+        self._connect_signals()
+
+        self.init_memos_sidebar()
+        self.init_links_sidebar()
 
         self.statusbar.showMessage("Ready", 3000)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        if self.graph_path.exists():
+            self.graph_path.unlink()
+
+        event.accept()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                data = json.loads(s)
+                if data['action'] == 'show_sutta':
+                    self._show_sutta_from_message(data['arg'])
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
 
     def _ui_setup(self):
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
-        self._show_note_clear()
 
-        self.file_doc = None
-        self.db_doc = None
+        self.links_tab_idx = 0
+        self.memos_tab_idx = 1
+
+        self.file_doc: Optional[FileDoc] = None
+        self.db_doc: Optional[Um.Document] = None
+        self.content_page_image: Optional[PageImage] = None
+
+        self.selecting = False
+        self.selected_text = None
+        self.select_start_point: Optional[QPoint] = None
+        self.select_end_point: Optional[QPoint] = None
+        self.select_rectangle: Optional[QRect] = None
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -67,30 +98,26 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
             self.open_doc(file_path)
 
     def open_doc(self, path):
-        self.db_doc = self._app_data.user_db_session \
-                                .query(Document) \
-                                .filter(Document.filepath == path) \
-                                .first()
+        self.db_doc = self._app_data.db_session \
+                                    .query(Um.Document) \
+                                    .filter(Um.Document.filepath == path) \
+                                    .first()
 
-        notes = self._get_notes_for_this_page()
-        if notes:
-            self.model.notes = notes
-        else:
-            self.model.notes = []
-
-        self.model.layoutChanged.emit()
+        if self.db_doc is not None and self.file_doc is not None:
+            self.update_memos_list_for_document(self.file_doc, self.db_doc)
 
         self.file_doc = FileDoc(path)
         self.doc_go_to_page(1)
 
     def doc_show_current(self):
-        self.doc_go_to_page(self.file_doc.current_page_number())
+        if self.file_doc is not None:
+            self.doc_go_to_page(self.file_doc.current_page_number())
 
     def doc_go_to_page(self, page: int):
         if not self.file_doc:
             return
 
-        logger.info(f"doc_go_to_page({page})")
+        # logger.info(f"doc_go_to_page({page})")
 
         page_count = self.file_doc.number_of_pages()
 
@@ -100,9 +127,11 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.page_current_of_total.setText(f"{page} of {page_count}")
 
         if self.file_doc:
-            self.file_doc.set_page_number(page)
+            self.file_doc.go_to_page(page)
 
-            page_img = self.file_doc.current_page_image()
+            page_img = self.file_doc.current_page_image
+            self.content_page_image = page_img
+
             if page_img:
                 img = QImage(page_img.image_bytes,
                              page_img.width,
@@ -111,32 +140,84 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
                              QImage.Format.Format_RGB888)
                 self.content_page.setPixmap(QPixmap.fromImage(img))
 
+                self.content_page.mousePressEvent = self._select_start
+                self.content_page.mouseMoveEvent = self._select_move
+                self.content_page.mouseReleaseEvent = self._select_release
+
         if self.db_doc:
-            self.notes_list.clearSelection()
-            self._show_note_clear()
-            self.model.notes = self._get_notes_for_this_page()
-            self.model.layoutChanged.emit()
+            self.update_memos_list_for_document(self.file_doc, self.db_doc)
+            self.show_network_graph()
+
+    def show_network_graph(self):
+        if self.file_doc is None or self.db_doc is None:
+            return
+
+        self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path, self.messages_url)
+        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+
+    def _show_sutta_from_message(self, info):
+        sutta: Optional[USutta] = None
+
+        if info['table'] == 'appdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id == info['id']) \
+                .first()
+
+        elif info['table'] == 'userdata.suttas':
+            sutta = self._app_data.db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id == info['id']) \
+                .first()
+
+        self._app_data.sutta_to_open = sutta
+        self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
+
+    def _select_start(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.selecting = True
+            self.select_start_point = QPoint(event.pos())
+
+    def _select_move(self, event):
+        if not self.selecting:
+            return
+        if self.select_start_point is None:
+            return
+        self.select_end_point = QPoint(event.pos())
+        self.select_rectangle = QRect(self.select_start_point, self.select_end_point).normalized()
+        if self.file_doc and self.select_rectangle:
+            self.selected_text = self.file_doc.get_selection_text(self.select_rectangle)
+            self.file_doc.paint_selection_on_current(self.select_rectangle)
+            self.doc_show_current()
+
+    def _select_release(self, event):
+        self._select_move(event)
+        self.selecting = False
 
     def _previous_page(self):
+        if not self.file_doc:
+            return
         page_nr = self.file_doc.current_page_number() - 1
-        if self.file_doc and page_nr > 0:
-            self.file_doc.set_page_number(page_nr)
+        if page_nr > 0:
+            self.file_doc.go_to_page(page_nr)
             self._upd_current_page_input(page_nr)
 
     def _next_page(self):
+        if not self.file_doc:
+            return
         page_nr = self.file_doc.current_page_number() + 1
-        if self.file_doc and page_nr <= self.file_doc.number_of_pages():
-            self.file_doc.set_page_number(page_nr)
+        if page_nr <= self.file_doc.number_of_pages():
+            self.file_doc.go_to_page(page_nr)
             self._upd_current_page_input(page_nr)
 
     def _beginning(self):
         if self.file_doc and self.file_doc.current_page_number() != 1:
-            self.file_doc.set_page_number(1)
+            self.file_doc.go_to_page(1)
             self._upd_current_page_input(1)
 
     def _end(self):
         if self.file_doc and self.file_doc.current_page_number() != self.file_doc.number_of_pages():
-            self.file_doc.set_page_number(self.file_doc.number_of_pages())
+            self.file_doc.go_to_page(self.file_doc.number_of_pages())
             self._upd_current_page_input(self.file_doc.number_of_pages())
 
     def _upd_current_page_input(self, n):
@@ -144,6 +225,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         self.current_page_input.clearFocus()
 
     def _go_to_page_dialog(self):
+        if not self.file_doc:
+            return
+
         n, ok = QInputDialog.getInt(self, "Go to Page...", "Page:", 1, 1, self.file_doc.number_of_pages(), 1)
         if ok:
             self._upd_current_page_input(n)
@@ -152,173 +236,46 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow):
         n = self.current_page_input.value()
         self.doc_go_to_page(n)
 
-    def _get_notes_for_this_page(self) -> List[Note]:
-        if self.db_doc is None or self.file_doc is None:
+    def _zoom_out(self):
+        if self.file_doc is None:
             return
-
-        notes = self._app_data.user_db_session \
-                              .query(Note) \
-                              .filter(
-                                  Note.document_id == self.db_doc.id,
-                                  Note.doc_page_number == self.file_doc.current_page_number()) \
-                              .all()
-
-        return notes
-
-    def get_selected_note(self) -> Optional[Note]:
-        a = self.notes_list.selectedIndexes()
-        if not a:
-            return None
-
-        item = a[0]
-        return self.model.notes[item.row()]
-
-    def remove_selected_note(self):
-        a = self.notes_list.selectedIndexes()
-        if not a:
-            return None
-
-        # Remove from model
-        item = a[0]
-        note_id = self.model.notes[item.row()].id
-
-        del self.model.notes[item.row()]
-        self.model.layoutChanged.emit()
-        self.notes_list.clearSelection()
-        self._show_note_clear()
-
-        # Remove from database
-
-        db_item = self._app_data.user_db_session \
-                                .query(Note) \
-                                .filter(Note.id == note_id) \
-                                .first()
-        self._app_data.user_db_session.delete(db_item)
-        self._app_data.user_db_session.commit()
-
-    def _handle_note_select(self):
-        note = self.get_selected_note()
-        if note:
-            self._show_note(note)
-
-    def _show_note_clear(self):
-        self.front_input.clear()
-        self.back_input.clear()
-
-    def _show_note(self, note: Note):
-        self.front_input.setPlainText(note.front)
-        self.back_input.setPlainText(note.back)
-
-    def add_note(self):
-
-        front = self.front_input.toPlainText()
-        back = self.back_input.toPlainText()
-
-        if len(front) == 0 and len(back) == 0:
-            logger.info("Empty content, cancel adding.")
+        if self.file_doc._zoom is None:
             return
+        self.file_doc.set_zoom(self.file_doc._zoom - 0.1)
+        self.doc_show_current()
 
-        # Insert database record
-
-        logger.info("Adding new note")
-
-        if self.db_doc is None:
-            db_note = Note(
-                front=front,
-                back=back
-            )
-        else:
-            db_note = Note(
-                front=front,
-                back=back,
-                document_id=self.db_doc.id,
-                doc_page_number=self.file_doc.current_page_number(),
-            )
-
-        try:
-            self._app_data.user_db_session.add(db_note)
-            self._app_data.user_db_session.commit()
-
-            # Add to model
-            if self.model.notes:
-                self.model.notes.append(db_note)
-            else:
-                self.model.notes = [db_note]
-
-        except Exception as e:
-            logger.error(e)
-
-        self.model.layoutChanged.emit()
-
-    def update_selected_note_front(self):
-        note = self.get_selected_note()
-        if note is None:
+    def _zoom_in(self):
+        if self.file_doc is None:
             return
-
-        note.front = self.front_input.toPlainText()
-
-        self._app_data.user_db_session.commit()
-        self.model.layoutChanged.emit()
-
-    def update_selected_note_back(self):
-        note = self.get_selected_note()
-        if note is None:
+        if self.file_doc._zoom is None:
             return
-
-        note.back = self.back_input.toPlainText()
-
-        self._app_data.user_db_session.commit()
-        self.model.layoutChanged.emit()
-
-    def remove_note_dialog(self):
-        note = self.get_selected_note()
-        if not note:
-            return
-
-        reply = QMessageBox.question(self,
-                                     'Remove Note...',
-                                     'Remove this item?',
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            self.remove_selected_note()
-
-
-class DocumentReaderCtrl:
-    def __init__(self, view):
-        self._view = view
-        self._connect_signals()
+        self.file_doc.set_zoom(self.file_doc._zoom + 0.1)
+        self.doc_show_current()
 
     def _connect_signals(self):
-        self._view.action_Close_Window \
-            .triggered.connect(partial(self._view.close))
+        self.action_Close_Window \
+            .triggered.connect(partial(self.close))
 
-        self._view.action_Previous_Page \
-            .triggered.connect(partial(self._view._previous_page))
-        self._view.action_Next_Page \
-            .triggered.connect(partial(self._view._next_page))
+        self.action_Previous_Page \
+            .triggered.connect(partial(self._previous_page))
+        self.action_Next_Page \
+            .triggered.connect(partial(self._next_page))
 
-        self._view.action_Beginning \
-            .triggered.connect(partial(self._view._beginning))
-        self._view.action_End \
-            .triggered.connect(partial(self._view._end))
+        self.action_Beginning \
+            .triggered.connect(partial(self._beginning))
+        self.action_End \
+            .triggered.connect(partial(self._end))
 
-        self._view.action_Go_to_Page \
-            .triggered.connect(partial(self._view._go_to_page_dialog))
+        self.action_Go_to_Page \
+            .triggered.connect(partial(self._go_to_page_dialog))
 
-        self._view.current_page_input \
-            .valueChanged.connect(partial(self._view._go_to_page_input))
+        self.action_Zoom_Out \
+            .triggered.connect(partial(self._zoom_out))
+        self.action_Zoom_In \
+            .triggered.connect(partial(self._zoom_in))
 
-        self._view.sel_model.selectionChanged.connect(partial(self._view._handle_note_select))
+        self.current_page_input \
+            .valueChanged.connect(partial(self._go_to_page_input))
 
-        self._view.add_note_button \
-                  .clicked.connect(partial(self._view.add_note))
-
-        self._view.remove_note_button \
-                  .clicked.connect(partial(self._view.remove_note_dialog))
-
-        self._view.front_input \
-                  .textChanged.connect(partial(self._view.update_selected_note_front))
-
-        self._view.back_input \
-                  .textChanged.connect(partial(self._view.update_selected_note_back))
+        self.add_memo_button \
+            .clicked.connect(partial(self.add_memo_for_document))

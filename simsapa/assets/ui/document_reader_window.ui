@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>856</width>
-    <height>581</height>
+    <width>1068</width>
+    <height>612</height>
    </rect>
   </property>
   <property name="baseSize">
@@ -25,6 +25,12 @@
      <layout class="QVBoxLayout" name="main_layout">
       <item>
        <widget class="QSplitter" name="splitter">
+        <property name="minimumSize">
+         <size>
+          <width>400</width>
+          <height>0</height>
+         </size>
+        </property>
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
         </property>
@@ -41,6 +47,16 @@
             <property name="currentIndex">
              <number>0</number>
             </property>
+            <widget class="QWidget" name="contents_tab">
+             <attribute name="title">
+              <string>Contents</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <widget class="QListView" name="contents_list"/>
+              </item>
+             </layout>
+            </widget>
             <widget class="QWidget" name="thumbs_tab">
              <attribute name="title">
               <string>Thumbnails</string>
@@ -71,16 +87,6 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="contents_tab">
-             <attribute name="title">
-              <string>Contents</string>
-             </attribute>
-             <layout class="QVBoxLayout" name="verticalLayout_5">
-              <item>
-               <widget class="QListView" name="contents_list"/>
-              </item>
-             </layout>
-            </widget>
            </widget>
           </item>
          </layout>
@@ -90,17 +96,17 @@
           <item>
            <layout class="QHBoxLayout" name="page_number_layout">
             <item>
-             <widget class="QLabel" name="label">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
+             <spacer name="horizontalSpacer_2">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="text">
-               <string/>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
               </property>
-             </widget>
+             </spacer>
             </item>
             <item>
              <widget class="QSpinBox" name="current_page_input">
@@ -144,20 +150,17 @@
              </widget>
             </item>
             <item>
-             <widget class="QLabel" name="label_4">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="text">
-               <string/>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
               </property>
-              <property name="alignment">
-               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-              </property>
-             </widget>
+             </spacer>
             </item>
            </layout>
           </item>
@@ -184,7 +187,7 @@
                <x>0</x>
                <y>0</y>
                <width>398</width>
-               <height>444</height>
+               <height>475</height>
               </rect>
              </property>
              <property name="sizePolicy">
@@ -214,80 +217,121 @@
          </layout>
         </widget>
         <widget class="QWidget" name="verticalLayoutWidget">
-         <layout class="QVBoxLayout" name="notes_layout">
+         <layout class="QVBoxLayout" name="tabs_layout">
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout">
-            <item>
-             <widget class="QPushButton" name="add_note_button">
-              <property name="text">
-               <string>Add</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="remove_note_button">
-              <property name="text">
-               <string>Remove</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-          <item>
-           <widget class="QLabel" name="label_2">
-            <property name="text">
-             <string>Front</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPlainTextEdit" name="front_input">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="maximumSize">
+           <widget class="QTabWidget" name="rightside_tabs">
+            <property name="minimumSize">
              <size>
-              <width>16777215</width>
-              <height>50</height>
+              <width>400</width>
+              <height>0</height>
              </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="label_5">
-            <property name="text">
-             <string>Back</string>
+            <property name="currentIndex">
+             <number>0</number>
             </property>
+            <widget class="QWidget" name="links_tab">
+             <attribute name="title">
+              <string>Links</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <layout class="QVBoxLayout" name="links_layout"/>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="memos_tab">
+             <attribute name="title">
+              <string>Memos</string>
+             </attribute>
+             <layout class="QVBoxLayout" name="verticalLayout_7">
+              <item>
+               <layout class="QVBoxLayout" name="memos_layout">
+                <item>
+                 <layout class="QHBoxLayout" name="horizontalLayout">
+                  <item>
+                   <widget class="QPushButton" name="add_memo_button">
+                    <property name="text">
+                     <string>Add</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="clear_memo_button">
+                    <property name="text">
+                     <string>Clear</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="remove_memo_button">
+                    <property name="text">
+                     <string>Remove</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_2">
+                  <property name="text">
+                   <string>Front</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPlainTextEdit" name="front_input">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>50</height>
+                   </size>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_5">
+                  <property name="text">
+                   <string>Back</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPlainTextEdit" name="back_input">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>50</height>
+                   </size>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_3">
+                  <property name="text">
+                   <string>Memos for this page</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QListView" name="memos_list"/>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
            </widget>
-          </item>
-          <item>
-           <widget class="QPlainTextEdit" name="back_input">
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>16777215</width>
-              <height>50</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="label_3">
-            <property name="text">
-             <string>Notes for this page</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QListView" name="notes_list"/>
           </item>
          </layout>
         </widget>
@@ -302,7 +346,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>856</width>
+     <width>1068</width>
      <height>20</height>
     </rect>
    </property>
@@ -331,7 +375,8 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
-    <addaction name="action_Notes"/>
+    <addaction name="action_Memos"/>
+    <addaction name="action_Links"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -387,6 +432,8 @@
    <addaction name="action_Go_to_Page"/>
    <addaction name="action_Next_Page"/>
    <addaction name="action_End"/>
+   <addaction name="action_Zoom_Out"/>
+   <addaction name="action_Zoom_In"/>
   </widget>
   <action name="action_Copy">
    <property name="text">
@@ -516,12 +563,12 @@
     <string>F8</string>
    </property>
   </action>
-  <action name="action_Notes">
+  <action name="action_Memos">
    <property name="text">
-    <string>&amp;Notes</string>
+    <string>&amp;Memos</string>
    </property>
    <property name="toolTip">
-    <string>Notes</string>
+    <string>Memos</string>
    </property>
    <property name="shortcut">
     <string>F9</string>
@@ -533,6 +580,30 @@
    </property>
    <property name="shortcut">
     <string>F10</string>
+   </property>
+  </action>
+  <action name="action_Zoom_Out">
+   <property name="text">
+    <string>Zoom Out</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
+   </property>
+  </action>
+  <action name="action_Zoom_In">
+   <property name="text">
+    <string>Zoom In</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl++</string>
+   </property>
+  </action>
+  <action name="action_Links">
+   <property name="text">
+    <string>&amp;Links</string>
+   </property>
+   <property name="shortcut">
+    <string>F11</string>
    </property>
   </action>
  </widget>

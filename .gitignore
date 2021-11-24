@@ -1,5 +1,6 @@
 appdata.sqlite3
 *.log
+tests/data/assets/
 
 __pycache__/
 .pytest_cache

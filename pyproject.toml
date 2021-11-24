@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-PyQt5 = "==5.15.0"
+PyQt5 = "^5.15.4"
 SQLAlchemy = "^1.4.6"
 Markdown = "^3.3.4"
 PyYAML = "^5.4.1"
@@ -25,6 +25,16 @@ PyMuPDF = [
 pandas = "^1.2.4"
 openpyxl = "^3.0.7"
 semver = "^2.13.0"
+pyglossary = "^4.0.11"
+lxml = "^4.6.3"
+python-dotenv = "^0.17.1"
+pyperclip = "^1.8.2"
+PyQtWebEngine = "^5.15.4"
+networkx = "^2.5.1"
+bokeh = "^2.3.2"
+alembic = "^1.7.5"
+pytest = "^6.2.5"
+sqlalchemy2-stubs = "^0.0.2-alpha.19"
 
 [tool.poetry.dev-dependencies]
 

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>NotesBrowserWindow</class>
- <widget class="QMainWindow" name="NotesBrowserWindow">
+ <class>MemosBrowserWindow</class>
+ <widget class="QMainWindow" name="MemosBrowserWindow">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
     <width>856</width>
-    <height>581</height>
+    <height>623</height>
    </rect>
   </property>
   <property name="baseSize">
@@ -17,77 +17,73 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>Notes - Simsapa</string>
+   <string>Memos - Simsapa</string>
   </property>
   <widget class="QWidget" name="central_widget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <item>
      <layout class="QVBoxLayout" name="main_layout">
       <item>
-       <layout class="QVBoxLayout" name="verticalLayout">
+       <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
-         <widget class="QLabel" name="label">
-          <property name="text">
-           <string>Front</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
-          </property>
-         </widget>
+         <layout class="QVBoxLayout" name="verticalLayout_4">
+          <item>
+           <widget class="QLabel" name="label_4">
+            <property name="text">
+             <string>Front</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="back_input">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>50</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>50</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
-         <widget class="QPlainTextEdit" name="front_input">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>50</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>50</height>
-           </size>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_2">
-          <property name="text">
-           <string>Back</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPlainTextEdit" name="back_input">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>50</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>50</height>
-           </size>
-          </property>
-         </widget>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <item>
+           <widget class="QLabel" name="label_3">
+            <property name="text">
+             <string>Back</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="front_input">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>50</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>50</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
        </layout>
       </item>
@@ -127,7 +123,14 @@
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
-         <widget class="QListView" name="notes_list"/>
+         <widget class="QListView" name="memos_list">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>400</height>
+           </size>
+          </property>
+         </widget>
         </item>
        </layout>
       </item>
@@ -169,7 +172,8 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
-    <addaction name="action_Notes"/>
+    <addaction name="action_Memos"/>
+    <addaction name="action_Links"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -178,16 +182,16 @@
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
-   <widget class="QMenu" name="menu_Notes">
+   <widget class="QMenu" name="menu_Memos">
     <property name="title">
-     <string>&amp;Notes</string>
+     <string>&amp;Memos</string>
     </property>
     <addaction name="action_Sync_to_Anki"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_Windows"/>
-   <addaction name="menu_Notes"/>
+   <addaction name="menu_Memos"/>
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -202,6 +206,7 @@
     <bool>false</bool>
    </attribute>
    <addaction name="action_Add"/>
+   <addaction name="action_Clear"/>
    <addaction name="action_Remove"/>
    <addaction name="action_Sync_to_Anki"/>
   </widget>
@@ -316,9 +321,9 @@
     <string>&amp;Sync to Anki</string>
    </property>
   </action>
-  <action name="action_Notes">
+  <action name="action_Memos">
    <property name="text">
-    <string>&amp;Notes</string>
+    <string>&amp;Memos</string>
    </property>
    <property name="toolTip">
     <string>Notes</string>
@@ -333,6 +338,19 @@
    </property>
    <property name="shortcut">
     <string>F10</string>
+   </property>
+  </action>
+  <action name="action_Clear">
+   <property name="text">
+    <string>&amp;Clear</string>
+   </property>
+  </action>
+  <action name="action_Links">
+   <property name="text">
+    <string>&amp;Links</string>
+   </property>
+   <property name="shortcut">
+    <string>F11</string>
    </property>
   </action>
  </widget>
