@@ -23,16 +23,17 @@ from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .html_content import html_page
+from .stardict_import_dialog import HasStarDictImportDialog
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
-                             HasLinksSidebar, HasMemosSidebar):
+                             HasLinksSidebar, HasMemosSidebar, HasStarDictImportDialog):
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
-        self.features = []
+        self.features: List[str] = []
         self._app_data: AppData = app_data
         self._results: List[UDictWord] = []
         self._recent: List[UDictWord] = []
@@ -56,6 +57,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
+        self.init_stardict_import_dialog()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -336,3 +338,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_dict_word))
+
+        self.action_Import_from_StarDict \
+            .triggered.connect(partial(self.import_from_stardict_dialog))

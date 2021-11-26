@@ -245,7 +245,7 @@
      <x>0</x>
      <y>0</y>
      <width>1068</width>
-     <height>20</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -283,9 +283,16 @@
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
+   <widget class="QMenu" name="menu_Dictionary">
+    <property name="title">
+     <string>&amp;Dictionary</string>
+    </property>
+    <addaction name="action_Import_from_StarDict"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_Windows"/>
+   <addaction name="menu_Dictionary"/>
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -415,6 +422,11 @@
    </property>
    <property name="shortcut">
     <string>F11</string>
+   </property>
+  </action>
+  <action name="action_Import_from_StarDict">
+   <property name="text">
+    <string>&amp;Import from StarDict...</string>
    </property>
   </action>
  </widget>
