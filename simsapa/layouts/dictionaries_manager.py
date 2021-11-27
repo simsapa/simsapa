@@ -25,6 +25,7 @@ from ..app.helpers import download_file
 from ..assets.ui.dictionaries_manager_window_ui import Ui_DictionariesManagerWindow
 
 logger = _logging.getLogger(__name__)
+Glossary.init()
 
 
 class DictionarySourceListModel(QAbstractListModel):
@@ -150,7 +151,6 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
 
     def add_words_from_stardict(self, ifo_path: Path):
         logger.info(f'add_words_from_stardict(): {ifo_path}')
-        Glossary.init()
         glos = Glossary()
         if not glos.read(ifo_path, format='Stardict', direct=True, progressbar=False):
             logger.error('Reading StarDict failed')
