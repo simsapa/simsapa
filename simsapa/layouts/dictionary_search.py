@@ -23,11 +23,11 @@ from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .html_content import html_page
-from .stardict_import_dialog import HasStarDictImportDialog
+from .import_stardict_dialog import HasImportStarDictDialog
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
-                             HasLinksSidebar, HasMemosSidebar, HasStarDictImportDialog):
+                             HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog):
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -340,4 +340,4 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
             .clicked.connect(partial(self.add_memo_for_dict_word))
 
         self.action_Import_from_StarDict \
-            .triggered.connect(partial(self.import_from_stardict_dialog))
+            .triggered.connect(partial(self.show_import_from_stardict_dialog))

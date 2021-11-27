@@ -5,7 +5,7 @@ import json
 from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import Qt, QAbstractListModel, QItemSelectionModel
-from PyQt5.QtWidgets import QListWidget, QMessageBox, QPlainTextEdit
+from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
@@ -43,7 +43,7 @@ class HasMemosSidebar:
     front: QPlainTextEdit
     back: QPlainTextEdit
     features: List[str] = []
-    memos_list: QListWidget.QListView
+    memos_list: QListView
     _current_sutta: Optional[USutta]
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]

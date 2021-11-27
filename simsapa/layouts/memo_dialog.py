@@ -5,7 +5,7 @@ from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
@@ -83,7 +83,7 @@ class HasMemoDialog:
     front: QPlainTextEdit
     back: QPlainTextEdit
     features: List[str] = []
-    memos_list: QListWidget.QListView
+    memos_list: QListView
     _current_sutta: Optional[USutta]
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]
