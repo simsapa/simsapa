@@ -1,10 +1,17 @@
 import logging as _logging
 import json
+from typing import Callable, List, Optional
+from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
 
 from sqlalchemy.sql import func
+from simsapa.app.file_doc import FileDoc
+
+from simsapa.app.types import AppData, UDictWord, USutta
+from simsapa.layouts.memos_sidebar import MemoPlainListModel
 
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -14,7 +21,7 @@ logger = _logging.getLogger(__name__)
 
 class MemoDialog(QDialog):
 
-    accepted = pyqtSignal(dict)
+    accepted = pyqtSignal(dict) # type: ignore
 
     def __init__(self, text=''):
         super().__init__()
@@ -70,6 +77,25 @@ class MemoDialog(QDialog):
 
 
 class HasMemoDialog:
+    _app_data: AppData
+    front_input: QtWidgets.QPlainTextEdit
+    back_input: QtWidgets.QPlainTextEdit
+    front: QPlainTextEdit
+    back: QPlainTextEdit
+    features: List[str] = []
+    memos_list: QListView
+    _current_sutta: Optional[USutta]
+    _current_word: Optional[UDictWord]
+    file_doc: Optional[FileDoc]
+    db_doc: Optional[Um.Document]
+    clear_memo_button: QtWidgets.QPushButton
+    remove_memo_button: QtWidgets.QPushButton
+    rightside_tabs: QtWidgets.QTabWidget
+    memos_tab_idx: int
+    content_html: QWebEngineView
+    model: MemoPlainListModel
+    update_memos_list: Callable
+
     def init_memo_dialog(self):
         self.memo_dialog_fields = {}
 
@@ -77,9 +103,16 @@ class HasMemoDialog:
         self.memo_dialog_fields = values
 
     def handle_create_memo_for_sutta(self):
+        if self._current_sutta is None:
+            logger.error("Sutta is not set")
+            return
+
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find the deck")
+            return
 
         self.memo_dialog_fields = {
             'Front': '',
@@ -127,14 +160,21 @@ class HasMemoDialog:
                 self.model.memos = [memo]
 
             index = self.model.index(len(self.model.memos) - 1)
-            self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+            self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
             self.update_memos_list()
 
     def handle_create_memo_for_dict_word(self):
+        if self._current_word is None:
+            logger.error("Word is not set")
+            return
+
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find the deck")
+            return
 
         self.memo_dialog_fields = {
             'Front': '',
@@ -182,6 +222,6 @@ class HasMemoDialog:
                 self.model.memos = [memo]
 
             index = self.model.index(len(self.model.memos) - 1)
-            self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+            self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
             self.update_memos_list()

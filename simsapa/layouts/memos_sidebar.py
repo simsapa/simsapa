@@ -2,9 +2,10 @@ from functools import partial
 from typing import List, Optional
 import logging as _logging
 import json
+from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import Qt, QAbstractListModel, QItemSelectionModel
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
@@ -12,7 +13,7 @@ from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import USutta, UDictWord, UMemo
+from ..app.types import AppData, USutta, UDictWord, UMemo
 
 logger = _logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class MemoPlainListModel(QAbstractListModel):
         self.memos = memos or []
 
     def data(self, index, role):
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             fields = json.loads(self.memos[index.row()].fields_json)
             text = "\n".join(fields.values())
             return text
@@ -36,6 +37,22 @@ class MemoPlainListModel(QAbstractListModel):
 
 
 class HasMemosSidebar:
+    _app_data: AppData
+    front_input: QtWidgets.QPlainTextEdit
+    back_input: QtWidgets.QPlainTextEdit
+    front: QPlainTextEdit
+    back: QPlainTextEdit
+    features: List[str] = []
+    memos_list: QListView
+    _current_sutta: Optional[USutta]
+    _current_word: Optional[UDictWord]
+    file_doc: Optional[FileDoc]
+    db_doc: Optional[Um.Document]
+    clear_memo_button: QtWidgets.QPushButton
+    remove_memo_button: QtWidgets.QPushButton
+    rightside_tabs: QtWidgets.QTabWidget
+    memos_tab_idx: int
+
     def init_memos_sidebar(self):
         self.features.append('memos_sidebar')
 
@@ -323,7 +340,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             self._show_memo(memo)
 
     def _show_memo(self, memo: UMemo):
-        fields = json.loads(memo.fields_json)
+        fields = json.loads(memo.fields_json) # type: ignore
         self.front_input.setPlainText(fields['Front'])
         self.back_input.setPlainText(fields['Back'])
 
@@ -350,6 +367,9 @@ QListView::item:selected { background-color: %s; color: %s; }
         logger.info("Adding new memo")
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find the deck")
+            return
 
         memo_fields = {
             'Front': front,
@@ -385,7 +405,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -407,6 +427,9 @@ QListView::item:selected { background-color: %s; color: %s; }
         logger.info("Adding new memo")
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find the deck")
+            return
 
         memo_fields = {
             'Front': front,
@@ -444,7 +467,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -466,6 +489,9 @@ QListView::item:selected { background-color: %s; color: %s; }
         logger.info("Adding new memo")
 
         deck = self._app_data.db_session.query(Um.Deck).first()
+        if deck is None:
+            logger.error("Can't find the deck")
+            return
 
         memo_fields = {
             'Front': front,
@@ -504,7 +530,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.Select)
+        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -518,7 +544,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             'Back': self.back_input.toPlainText()
         }
 
-        memo.fields_json = json.dumps(fields)
+        memo.fields_json = json.dumps(fields) # type: ignore
 
         self._app_data.db_session.commit()
         self.model.layoutChanged.emit()
@@ -528,7 +554,7 @@ QListView::item:selected { background-color: %s; color: %s; }
         if not memo:
             return
 
-        reply = QMessageBox.question(self,
+        reply = QMessageBox.question(self, # type: ignore
                                      'Remove Memo...',
                                      'Remove this item?',
                                      QMessageBox.Yes | QMessageBox.No,

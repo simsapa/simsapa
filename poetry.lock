@@ -461,6 +461,14 @@ python-versions = "*"
 cli = ["click (>=5.0)"]
 
 [[package]]
+name = "python-idzip"
+version = "0.3.7"
+description = "DictZip - Random Access gzip files"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pytz"
 version = "2021.3"
 description = "World timezone definitions, modern and historical"
@@ -631,7 +639,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "fa8c67d936dd4f221c429f2ff5edfa40e5ceb781a1aa44c02770c3617ae07b1f"
+content-hash = "a75d5895a4ea6435d786da1c093ffed4c9a3127cdf2664a1aca0cad10fe4adf2"
 
 [metadata.files]
 alembic = [
@@ -1102,6 +1110,10 @@ python-dateutil = [
 python-dotenv = [
     {file = "python-dotenv-0.17.1.tar.gz", hash = "sha256:b1ae5e9643d5ed987fc57cc2583021e38db531946518130777734f9589b3141f"},
     {file = "python_dotenv-0.17.1-py2.py3-none-any.whl", hash = "sha256:00aa34e92d992e9f8383730816359647f358f4a3be1ba45e5a5cefd27ee91544"},
+]
+python-idzip = [
+    {file = "python-idzip-0.3.7.tar.gz", hash = "sha256:dffa33760f8ddad4a6478f9516d01958fb166fe0e56bfb09d35d5f8b1038be99"},
+    {file = "python_idzip-0.3.7-py3-none-any.whl", hash = "sha256:4e904f2daa6e1286bebe1b507416136f1c64ca995ec8652d113923caa3ca62b7"},
 ]
 pytz = [
     {file = "pytz-2021.3-py2.py3-none-any.whl", hash = "sha256:3672058bc3453457b622aab7a1c3bfd5ab0bdae451512f6cf25f64ed37f5b87c"},

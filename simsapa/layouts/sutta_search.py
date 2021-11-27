@@ -192,7 +192,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         # Rebuild Qt recents list
         self.recent_list.clear()
         titles = list(map(lambda x: x.title, self._recent))
-        self.recent_list.insertItems(0, titles)
+        self.recent_list.insertItems(0, titles) # type: ignore
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -263,7 +263,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
     def _show_sutta(self, sutta: USutta):
         self._current_sutta = sutta
-        self.status_msg.setText(sutta.title)
+        self.status_msg.setText(sutta.title) # type: ignore
 
         self.update_memos_list_for_sutta(sutta)
         self.show_network_graph(sutta)
@@ -275,7 +275,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         else:
             content = 'No content.'
 
-        html = html_page(content, self.messages_url)
+        html = html_page(content, self.messages_url) # type: ignore
 
         # show the sutta content
         self._set_content_html(html)
