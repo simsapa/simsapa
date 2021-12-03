@@ -99,7 +99,7 @@ class DownloadWorker(QObject):
 
 def download_extract_appdata() -> bool:
     tar_file_path = download_file(
-        'https://ssp.a-buddha-ujja.hu/appdata/appdata.tar.bz2',
+        'https://ssp.a-buddha-ujja.hu/appdata/appdata.sqlite3.tar.bz2',
         ASSETS_DIR
     )
 

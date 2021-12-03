@@ -52,14 +52,14 @@ Open the `.ui` file in Qt Designer, in or out- of the project venv.
 designer ./simsapa/assets/ui/dictionary_search_window.ui
 ```
 
-After saving the `.ui`, re-generate the `.ui.py` files. The Makefile target calls `pyuic5 `.
+After saving the `.ui`, re-generate the `.py` files. The Makefile target calls `pyuic5 `.
 
 ``` shell
 make ui
 ```
 
-Don't use the frequently recommended pip pacakges in tutorials (`pip install
-pyqt5 pyqt5-tools`), these are often compiled at different Qt versions, and will
+Don't use the pip pacakges frequently recommended in tutorials (`pip install
+pyqt5 pyqt5-tools`), these are often compiled at different Qt versions, and may
 result in Qt Designer crashing with the following error:
 
 ```

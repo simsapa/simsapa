@@ -1,5 +1,6 @@
 import os.path
 import logging as _logging
+import shutil
 from typing import List, Optional, TypedDict
 
 from pathlib import Path
@@ -7,17 +8,13 @@ from pathlib import Path
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
 
-from sqlalchemy.sql import func
-from sqlalchemy.dialects.sqlite import insert
-
 from simsapa.app.types import AppData
 
 from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 
 from ..app.db import userdata_models as Um
 
-from ..app.stardict import (StarDictPaths, StarDictIfo, DictEntry,
-                            parse_stardict_zip, parse_ifo, stardict_to_dict_entries)
+from ..app.stardict import (StarDictPaths, StarDictIfo, import_stardict_into_db_as_new, import_stardict_into_db_update_existing, parse_stardict_zip, parse_ifo)
 
 logger = _logging.getLogger(__name__)
 
@@ -26,14 +23,6 @@ class DictData(TypedDict):
     select_idx: int
     title: str
     label: str
-
-class DbDictEntry(TypedDict):
-    word: str
-    definition_plain: str
-    definition_html: str
-    synonyms: str
-    url_id: str
-    dictionary_id: int
 
 class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
 
@@ -206,8 +195,6 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         idx = self.select_title.currentIndex()
         if idx == 0:
             return
-        # New Concise - NCPED
-        title_label = self.select_title.itemText(idx)
 
         self.update_existing_btn.setEnabled(True)
 
@@ -216,103 +203,14 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         action = values['action']
 
         if action == 'import_new':
-            self.import_stardict_into_db_as_new(paths)
+            import_stardict_into_db_as_new(self._app_data.db_session, 'userdata', paths)
         elif action == 'update_existing':
             id = values['dictionary_id']
-            self.import_stardict_into_db_update_existing(paths, id)
+            import_stardict_into_db_update_existing(self._app_data.db_session, 'userdata', paths, id)
 
-    def db_entries(self, x: DictEntry, dictionary_id: int) -> DbDictEntry:
-        return DbDictEntry(
-            # copy values
-            word = x['word'],
-            definition_plain = x['definition_plain'],
-            definition_html = x['definition_html'],
-            synonyms = ", ".join(x['synonyms']),
-            # add missing data
-            # TODO should we check for conflicting url_ids? generate with meaning count?
-            url_id = x['word'],
-            dictionary_id = dictionary_id,
-        )
-
-    def insert_db_words(self, db_words: List[DbDictEntry]):
-        batch_size = 1000
-        inserted = 0
-
-        # TODO: The user can't see this message. Dialog doesn't update while the
-        # import is blocking the GUI.
-        self.msg.setText("Importing ...")
-
-        while inserted <= len(db_words):
-            b_start = inserted
-            b_end = inserted + batch_size
-            words_batch = db_words[b_start:b_end]
-
-            try:
-                stmt = insert(Um.DictWord).values(words_batch)
-
-                # update the record if url_id already exists
-                stmt = stmt.on_conflict_do_update(
-                    index_elements = [Um.DictWord.url_id],
-                    set_ = dict(
-                        word = stmt.excluded.word,
-                        word_nom_sg = stmt.excluded.word_nom_sg,
-                        inflections = stmt.excluded.inflections,
-                        phonetic = stmt.excluded.phonetic,
-                        transliteration = stmt.excluded.transliteration,
-                        # --- Meaning ---
-                        meaning_order = stmt.excluded.meaning_order,
-                        definition_plain = stmt.excluded.definition_plain,
-                        definition_html = stmt.excluded.definition_html,
-                        summary = stmt.excluded.summary,
-                        # --- Associated words ---
-                        synonyms = stmt.excluded.synonyms,
-                        antonyms = stmt.excluded.antonyms,
-                        homonyms = stmt.excluded.homonyms,
-                        also_written_as = stmt.excluded.also_written_as,
-                        see_also = stmt.excluded.see_also,
-                    )
-                )
-
-                self._app_data.db_session.execute(stmt)
-                self._app_data.db_session.commit()
-            except Exception as e:
-                print(e)
-                logger.error(e)
-
-            inserted += batch_size
-            self.msg.setText(f"Imported {inserted} ...")
-
-    def import_stardict_into_db_update_existing(self, paths: StarDictPaths, dictionary_id: int):
-        words: List[DictEntry] = stardict_to_dict_entries(paths)
-        db_words: List[DbDictEntry] = list(map(lambda x: self.db_entries(x, dictionary_id), words))
-        self.insert_db_words(db_words)
-
-    def import_stardict_into_db_as_new(self, paths: StarDictPaths):
-        # upsert recommended by docs instead of bulk_insert_mappings
-        # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
-        # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
-
-        words: List[DictEntry] = stardict_to_dict_entries(paths)
-        ifo = parse_ifo(paths)
-        dict_title = ifo['bookname']
-
-        # create a dictionary, commit to get its ID
-        dictionary = Um.Dictionary(
-            title = dict_title,
-            label = dict_title,
-            created_at = func.now(),
-        )
-
-        try:
-            self._app_data.db_session.add(dictionary)
-            self._app_data.db_session.commit()
-        except Exception as e:
-            logger.error(e)
-
-        d_id: int = dictionary.id # type: ignore
-        db_words: List[DbDictEntry] = list(map(lambda x: self.db_entries(x, d_id), words))
-
-        self.insert_db_words(db_words)
+        # remove zip extract dir
+        if paths['unzipped_dir'].exists():
+            shutil.rmtree(paths['unzipped_dir'])
 
 class HasImportStarDictDialog():
     _app_data: AppData

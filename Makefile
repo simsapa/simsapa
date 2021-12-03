@@ -16,3 +16,6 @@ ui:
 
 tests:
 	pytest tests/
+
+bootstrap-appdata:
+	./scripts/bootstrap-appdata-db.py
