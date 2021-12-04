@@ -153,6 +153,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if len(query) >= min_length:
             self._results = self._sutta_search_query(query)
 
+            # FIXME paginate results. Too many results hang the UI while rendering.
+            self._results = self._results[0:100]
+
             hits = len(self._results)
             if hits > 0:
                 self.rightside_tabs.setTabText(0, f"Results ({hits})")
@@ -166,7 +169,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                 w.setTitle(x.title)
 
                 if x.content_html:
-                    w.setSnippet(x.content_html[0:400].strip())
+                    w.setSnippet(x.content_html.strip())
 
                 item = QListWidgetItem(self.results_list)
                 item.setSizeHint(w.sizeHint())

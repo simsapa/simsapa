@@ -148,6 +148,9 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         if len(query) >= min_length:
             self._results = self._word_search_query(query)
 
+            # FIXME paginate results. Too many results hang the UI while rendering.
+            self._results = self._results[0:100]
+
             hits = len(self._results)
             if hits > 0:
                 self.rightside_tabs.setTabText(0, f"Results ({hits})")
@@ -161,7 +164,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                 w.setTitle(x.word)
 
                 if x.definition_html:
-                    w.setSnippet(x.definition_html[0:400].strip())
+                    w.setSnippet(x.definition_html.strip())
 
                 item = QListWidgetItem(self.results_list)
                 item.setSizeHint(w.sizeHint())
