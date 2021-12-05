@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 
 from PyQt5.QtGui import QClipboard
 
+from .db.search import SearchIndexed
+
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
@@ -48,6 +50,11 @@ class AppData:
         self.dict_word_to_open: Optional[UDictWord] = None
 
         self.db_conn, self.db_session = self._connect_to_db(app_db_path, user_db_path)
+
+        self.search_indexed = SearchIndexed()
+
+        # TODO: Ask the user
+        self.search_indexed.index_if_empty(self.db_session)
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):

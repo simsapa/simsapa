@@ -19,10 +19,11 @@ from sqlalchemy import or_
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
+from ..app.db.search import SearchResult
 from ..app.types import AppData, USutta, UDictWord, UDocument
 from ..app.graph import generate_graph, all_nodes_and_edges
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
-from .search_item import SearchResult, SearchItemWidget
+from .search_item import SearchItemWidget
 
 logger = _logging.getLogger(__name__)
 
@@ -159,6 +160,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.results_list.clear()
 
+        # FIXME paginate results. Too many results hang the UI while rendering.
+        self._results = self._results[0:100]
+
         for x in self._results:
             w = SearchItemWidget()
             w.setTitle(x['title'])
@@ -198,10 +202,11 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 snippet = x.content_plain[0:400].strip()
 
             return SearchResult(
-                title=x.title,
+                title=x.title.strip(),
                 snippet=snippet,
-                table=f"{x.metadata.schema}.suttas",
-                id=x.id,
+                schema_name=x.metadata.schema,
+                table_name=f"{x.metadata.schema}.suttas",
+                id=x.id, # type: ignore
                 page_number=None,
             )
 
@@ -230,10 +235,11 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 snippet = x.definition_plain[0:400].strip()
 
             return SearchResult(
-                title=x.word,
+                title=x.word.strip(),
                 snippet=snippet,
-                table=f"{x.metadata.schema}.dict_words",
-                id=x.id,
+                schema_name=x.metadata.schema,
+                table_name=f"{x.metadata.schema}.dict_words",
+                id=x.id, # type: ignore
                 page_number=None,
             )
 
@@ -264,10 +270,11 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 title += ', ' + x.author
 
             return SearchResult(
-                title=title,
+                title=title.strip(),
                 snippet='',
-                table=f"{x.metadata.schema}.documents",
-                id=x.id,
+                schema_name=x.metadata.schema,
+                table_name=f"{x.metadata.schema}.documents",
+                id=x.id, # type: ignore
                 page_number=None,
             )
 
@@ -340,11 +347,16 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                                     QMessageBox.Ok)
             return
 
+        if self._current_from is None:
+            return
+        if self._current_to is None:
+            return
+
         link = Um.Link(
-            from_table=self._current_from['table'],
+            from_table=self._current_from['table_name'],
             from_id=self._current_from['id'],
             from_page_number=self._current_from['page_number'],
-            to_table=self._current_to['table'],
+            to_table=self._current_to['table_name'],
             to_id=self._current_to['id'],
             to_page_number=self._current_to['page_number'],
         )
@@ -389,12 +401,17 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
     def _find_existing_links(self):
         links = []
 
+        if self._current_from is None:
+            return []
+        if self._current_to is None:
+            return []
+
         r = self._app_data.db_session \
             .query(Am.Link) \
-            .filter(Am.Link.from_table == self._current_from['table']) \
+            .filter(Am.Link.from_table == self._current_from['table_name']) \
             .filter(Am.Link.from_id == self._current_from['id']) \
             .filter(Am.Link.from_page_number == self._current_from['page_number']) \
-            .filter(Am.Link.to_table == self._current_to['table']) \
+            .filter(Am.Link.to_table == self._current_to['table_name']) \
             .filter(Am.Link.to_id == self._current_to['id']) \
             .filter(Am.Link.to_page_number == self._current_to['page_number']) \
             .all()
@@ -402,10 +419,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         r = self._app_data.db_session \
             .query(Am.Link) \
-            .filter(Am.Link.to_table == self._current_from['table']) \
+            .filter(Am.Link.to_table == self._current_from['table_name']) \
             .filter(Am.Link.to_id == self._current_from['id']) \
             .filter(Am.Link.to_page_number == self._current_from['page_number']) \
-            .filter(Am.Link.from_table == self._current_to['table']) \
+            .filter(Am.Link.from_table == self._current_to['table_name']) \
             .filter(Am.Link.from_id == self._current_to['id']) \
             .filter(Am.Link.from_page_number == self._current_to['page_number']) \
             .all()
@@ -413,10 +430,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         r = self._app_data.db_session \
             .query(Um.Link) \
-            .filter(Um.Link.from_table == self._current_from['table']) \
+            .filter(Um.Link.from_table == self._current_from['table_name']) \
             .filter(Um.Link.from_id == self._current_from['id']) \
             .filter(Um.Link.from_page_number == self._current_from['page_number']) \
-            .filter(Um.Link.to_table == self._current_to['table']) \
+            .filter(Um.Link.to_table == self._current_to['table_name']) \
             .filter(Um.Link.to_id == self._current_to['id']) \
             .filter(Um.Link.to_page_number == self._current_to['page_number']) \
             .all()
@@ -424,10 +441,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         r = self._app_data.db_session \
             .query(Um.Link) \
-            .filter(Um.Link.to_table == self._current_from['table']) \
+            .filter(Um.Link.to_table == self._current_from['table_name']) \
             .filter(Um.Link.to_id == self._current_from['id']) \
             .filter(Um.Link.to_page_number == self._current_from['page_number']) \
-            .filter(Um.Link.from_table == self._current_to['table']) \
+            .filter(Um.Link.from_table == self._current_to['table_name']) \
             .filter(Um.Link.from_id == self._current_to['id']) \
             .filter(Um.Link.from_page_number == self._current_to['page_number']) \
             .all()

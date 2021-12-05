@@ -13,9 +13,8 @@ from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
                              QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from sqlalchemy import or_
-
 from simsapa import ASSETS_DIR, APP_QUEUES
+from ..app.db.search import SearchResult
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
@@ -40,7 +39,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.features = []
         self._app_data: AppData = app_data
-        self._results: List[USutta] = []
+        self._results: List[SearchResult] = []
         self._recent: List[USutta] = []
 
         self._current_sutta: Optional[USutta] = None
@@ -166,10 +165,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
             for x in self._results:
                 w = SearchItemWidget()
-                w.setTitle(x.title)
-
-                if x.content_html:
-                    w.setSnippet(x.content_html.strip())
+                w.setTitle(x['title'])
+                w.setSnippet(x['snippet'])
 
                 item = QListWidgetItem(self.results_list)
                 item.setSizeHint(w.sizeHint())
@@ -197,12 +194,26 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         titles = list(map(lambda x: x.title, self._recent))
         self.recent_list.insertItems(0, titles) # type: ignore
 
+    def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
+        if x['schema_name'] == 'appdata':
+            sutta = self._app_data.db_session \
+                                  .query(Am.Sutta) \
+                                  .filter(Am.Sutta.id == x['id']) \
+                                  .first()
+        else:
+            sutta = self._app_data.db_session \
+                                  .query(Um.Sutta) \
+                                  .filter(Um.Sutta.id == x['id']) \
+                                  .first()
+        return sutta
+
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
-            sutta: USutta = self._results[selected_idx]
-            self._show_sutta(sutta)
-            self._add_recent(sutta)
+            sutta = self._sutta_from_result(self._results[selected_idx])
+            if sutta is not None:
+                self._show_sutta(sutta)
+                self._add_recent(sutta)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
@@ -287,26 +298,27 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
-    def _sutta_search_query(self, query: str) -> List[USutta]:
-        results: List[USutta] = []
+    def _sutta_search_query(self, query: str) -> List[SearchResult]:
+        return self._app_data.search_indexed.search_suttas_indexed(query)
 
-        res = self._app_data.db_session \
-                            .query(Am.Sutta) \
-                            .filter(or_(
-                                Am.Sutta.content_plain.like(f"%{query}%"),
-                                Am.Sutta.content_html.like(f"%{query}%"))) \
-                            .all()
-        results.extend(res)
-
-        res = self._app_data.db_session \
-                            .query(Um.Sutta) \
-                            .filter(or_(
-                                Um.Sutta.content_plain.like(f"%{query}%"),
-                                Um.Sutta.content_html.like(f"%{query}%"))) \
-                            .all()
-        results.extend(res)
-
-        return results
+        # res = self._app_data.db_session \
+        #                     .query(Am.Sutta) \
+        #                     .filter(or_(
+        #                         Am.Sutta.content_plain.like(f"%{query}%"),
+        #                         Am.Sutta.content_html.like(f"%{query}%"))) \
+        #                     .all()
+        # results.extend(res)
+        #
+        # res = self._app_data.db_session \
+        #                     .query(Um.Sutta) \
+        #                     .filter(or_(
+        #                         Um.Sutta.content_plain.like(f"%{query}%"),
+        #                         Um.Sutta.content_html.like(f"%{query}%"))) \
+        #                     .all()
+        #
+        # results.extend(res)
+        #
+        # return results
 
     def _handle_copy(self):
         text = self.content_html.selectedText()

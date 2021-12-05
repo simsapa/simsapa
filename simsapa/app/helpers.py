@@ -2,6 +2,9 @@ import logging as _logging
 from pathlib import Path
 import requests
 
+import re
+import bleach
+
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
@@ -28,6 +31,19 @@ def download_file(url: str, folder_path: Path) -> Path:
                 f.write(chunk)
 
     return file_path
+
+def compactPlainText(text: str) -> str:
+    # clean up whitespace so that all text is one line
+    text = text.replace("\n", ' ')
+    text = re.sub(r"  +", ' ', text)
+
+    return text
+
+def compactRichText(text: str) -> str:
+    text = bleach.clean(text, strip=True)
+    text = compactPlainText(text)
+
+    return text
 
 def find_or_create_db(db_path: Path, schema_name: str):
     # Create an in-memory database

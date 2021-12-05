@@ -1,7 +1,7 @@
 from functools import partial
 from typing import List, Optional
 from markdown import markdown
-from sqlalchemy.orm import joinedload
+# from sqlalchemy.orm import joinedload
 from pathlib import Path
 import json
 import queue
@@ -16,6 +16,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
+from ..app.db.search import SearchResult
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .search_item import SearchItemWidget
@@ -35,7 +36,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
-        self._results: List[UDictWord] = []
+        self._results: List[SearchResult] = []
         self._recent: List[UDictWord] = []
 
         self._current_word: Optional[UDictWord] = None
@@ -161,10 +162,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
             for x in self._results:
                 w = SearchItemWidget()
-                w.setTitle(x.word)
-
-                if x.definition_html:
-                    w.setSnippet(x.definition_html.strip())
+                w.setTitle(x['title'])
+                w.setSnippet(x['snippet'])
 
                 item = QListWidgetItem(self.results_list)
                 item.setSizeHint(w.sizeHint())
@@ -192,12 +191,26 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         words = list(map(lambda x: x.word, self._recent))
         self.recent_list.insertItems(0, words)
 
+    def _dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
+        if x['schema_name'] == 'appdata':
+            word = self._app_data.db_session \
+                                 .query(Am.DictWord) \
+                                 .filter(Am.DictWord.id == x['id']) \
+                                 .first()
+        else:
+            word = self._app_data.db_session \
+                                 .query(Um.DictWord) \
+                                 .filter(Um.DictWord.id == x['id']) \
+                                 .first()
+        return word
+
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
-            word: UDictWord = self._results[selected_idx]
-            self._show_word(word)
-            self._add_recent(word)
+            word = self._dict_word_from_result(self._results[selected_idx])
+            if word is not None:
+                self._show_word(word)
+                self._add_recent(word)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
@@ -234,24 +247,26 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
-    def _word_search_query(self, query: str) -> List[UDictWord]:
-        results: List[UDictWord] = []
+    def _word_search_query(self, query: str) -> List[SearchResult]:
+        return self._app_data.search_indexed.search_dict_words_indexed(query)
 
-        res = self._app_data.db_session \
-            .query(Am.DictWord) \
-            .options(joinedload(Am.DictWord.examples)) \
-            .filter(Am.DictWord.word.like(f"%{query}%")) \
-            .all()
-        results.extend(res)
+        # TODO include examples in the result
 
-        res = self._app_data.db_session \
-            .query(Um.DictWord) \
-            .options(joinedload(Um.DictWord.examples)) \
-            .filter(Um.DictWord.word.like(f"%{query}%")) \
-            .all()
-        results.extend(res)
-
-        return results
+        # res = self._app_data.db_session \
+        #     .query(Am.DictWord) \
+        #     .options(joinedload(Am.DictWord.examples)) \
+        #     .filter(Am.DictWord.word.like(f"%{query}%")) \
+        #     .all()
+        # results.extend(res)
+        #
+        # res = self._app_data.db_session \
+        #     .query(Um.DictWord) \
+        #     .options(joinedload(Um.DictWord.examples)) \
+        #     .filter(Um.DictWord.word.like(f"%{query}%")) \
+        #     .all()
+        # results.extend(res)
+        #
+        # return results
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None

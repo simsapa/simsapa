@@ -25,4 +25,6 @@ TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
+INDEX_DIR = SIMSAPA_DIR.joinpath("index")
+
 APP_QUEUES: Dict[str, Queue] = {}

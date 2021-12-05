@@ -37,6 +37,7 @@ pytest = "^6.2.5"
 sqlalchemy2-stubs = "^0.0.2-alpha.19"
 python-idzip = "^0.3.7"
 bleach = "^4.1.0"
+Whoosh = "^2.7.4"
 
 [tool.poetry.dev-dependencies]
 
