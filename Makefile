@@ -15,7 +15,7 @@ ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/import_stardict_dialog_ui.py simsapa/assets/ui/import_stardict_dialog.ui
 
 tests:
-	pytest tests/
+	USE_TEST_DATA=true pytest tests/
 
 bootstrap-appdata:
 	./scripts/bootstrap-appdata-db.py

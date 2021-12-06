@@ -77,6 +77,6 @@ make tests -B
 A single test:
 
 ``` shell
-pytest -k test_dict_word_dictionary tests/test_dictionary.py
+USE_TEST_DATA=true pytest -k test_dict_word_dictionary tests/test_dictionary.py
 ```
 

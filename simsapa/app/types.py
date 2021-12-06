@@ -31,7 +31,8 @@ class AppData:
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
-                 api_port: Optional[int] = None):
+                 api_port: Optional[int] = None,
+                 silent_index_if_empty: bool = True):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -53,8 +54,8 @@ class AppData:
 
         self.search_indexed = SearchIndexed()
 
-        # TODO: Ask the user
-        self.search_indexed.index_if_empty(self.db_session)
+        if silent_index_if_empty:
+            self.search_indexed.index_if_empty(self.db_session)
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):

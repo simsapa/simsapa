@@ -1,12 +1,11 @@
 import logging as _logging
 from typing import List, Optional, TypedDict
-from bokeh.core.types import Unknown
 from whoosh.highlight import SCORE, HtmlFormatter
 
 from whoosh.index import FileIndex, create_in, open_dir
-from whoosh.fields import NUMERIC, SchemaClass, TEXT
+from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
-from whoosh.searching import Results, Hit, ResultsPage
+from whoosh.searching import Searcher, Results, Hit, ResultsPage
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
@@ -26,6 +25,7 @@ class SuttasIndexSchema(SchemaClass):
     title = TEXT(stored = True, analyzer = folding_analyzer)
     title_pali = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
+    ref = ID(stored = True)
 
 class DictWordsIndexSchema(SchemaClass):
     id = NUMERIC(stored = True, unique = True)
@@ -91,12 +91,16 @@ class SearchIndexed:
             a = db_session.query(Um.Sutta).all()
 
         try:
-            writer = ix.writer()
+            # NOTE: Only use multisegment=True when indexing from scratch.
+            # Memory limit applies to each process individually.
+            writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
             for i in a:
                 # Prefer the html content field if not empty
-                if len(i.content_html.strip()) > 0:
+                if i.content_html is not None and len(i.content_html.strip()) > 0:
                     content = compactRichText(i.content_html)
+                elif i.content_plain is None:
+                    continue
                 else:
                     content = compactPlainText(i.content_plain)
 
@@ -112,6 +116,7 @@ class SearchIndexed:
                     title = title,
                     title_pali = i.title_pali,
                     content = content,
+                    ref = i.sutta_ref,
                 )
             writer.commit()
 
@@ -128,11 +133,15 @@ class SearchIndexed:
             a = db_session.query(Um.DictWord).all()
 
         try:
-            writer = ix.writer()
+            # NOTE: Only use multisegment=True when indexing from scratch.
+            # Memory limit applies to each process individually.
+            writer = ix.writer(procs=4, limitmb=256, multisegment=True)
             for i in a:
                 # Prefer the html content field if not empty
-                if len(i.definition_html.strip()) > 0:
+                if i.definition_html is not None and len(i.definition_html.strip()) > 0:
                     content = compactRichText(i.definition_html)
+                elif i.definition_plain is None:
+                    continue
                 else:
                     content = compactPlainText(i.definition_plain)
 
@@ -152,16 +161,20 @@ class SearchIndexed:
             logger.error("Can't index.")
             print(e)
 
-    def search_suttas_indexed(self, query: str) -> List[SearchResult]:
-        ix = self.suttas_index
-
-        with ix.searcher() as searcher:
-            parser = QueryParser("content", ix.schema)
+    def search_field(self, ix: FileIndex, searcher: Searcher, field_name: str, query: str) -> Results:
+            parser = QueryParser(field_name, ix.schema)
             parser.add_plugin(FuzzyTermPlugin())
             q = parser.parse(query)
 
             page: ResultsPage = searcher.search_page(q, pagenum=1, pagelen=20, terms=True)
-            r: (Unknown | Results) = page.results
+            return page.results
+
+    def search_suttas_indexed(self, query: str) -> List[SearchResult]:
+        ix = self.suttas_index
+
+        with ix.searcher() as searcher:
+            r = self.search_field(ix, searcher, 'content', query)
+
             # NOTE: r.estimated_min_length() errors on some searches
             if len(r) == 0:
                 return []
@@ -195,12 +208,8 @@ class SearchIndexed:
         ix = self.dict_words_index
 
         with ix.searcher() as searcher:
-            parser = QueryParser("content", ix.schema)
-            parser.add_plugin(FuzzyTermPlugin())
-            q = parser.parse(query)
+            r = self.search_field(ix, searcher, 'content', query)
 
-            page: ResultsPage = searcher.search_page(q, pagenum=1, pagelen=20, terms=True)
-            r: (Unknown | Results) = page.results
             # NOTE: r.estimated_min_length() errors on synonyms:bim*
             if len(r) == 0:
                 return []

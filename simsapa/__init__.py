@@ -14,17 +14,17 @@ ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
 SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 
+TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
+
 s = os.getenv('USE_TEST_DATA')
 if s is not None and s.lower() == 'true':
-    ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
+    ASSETS_DIR = TEST_ASSETS_DIR
 else:
     ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
 
-TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
+INDEX_DIR = ASSETS_DIR.joinpath('index')
 
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
-
-INDEX_DIR = SIMSAPA_DIR.joinpath("index")
 
 APP_QUEUES: Dict[str, Queue] = {}
