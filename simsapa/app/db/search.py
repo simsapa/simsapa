@@ -4,7 +4,7 @@ from bokeh.core.types import Unknown
 from whoosh.highlight import SCORE, HtmlFormatter
 
 from whoosh.index import FileIndex, create_in, open_dir
-from whoosh.fields import NUMERIC, Schema, TEXT
+from whoosh.fields import NUMERIC, SchemaClass, TEXT
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
 from whoosh.searching import Results, Hit, ResultsPage
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
@@ -20,21 +20,19 @@ logger = _logging.getLogger(__name__)
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-SuttasIndexSchema = Schema(
-    id = NUMERIC(stored = True, unique = True),
-    schema_name = TEXT(stored = True),
-    title = TEXT(stored = True, analyzer = folding_analyzer),
-    title_pali = TEXT(stored = True, analyzer = folding_analyzer),
-    content = TEXT(stored = True, analyzer = folding_analyzer),
-)
+class SuttasIndexSchema(SchemaClass):
+    id = NUMERIC(stored = True, unique = True)
+    schema_name = TEXT(stored = True)
+    title = TEXT(stored = True, analyzer = folding_analyzer)
+    title_pali = TEXT(stored = True, analyzer = folding_analyzer)
+    content = TEXT(stored = True, analyzer = folding_analyzer)
 
-DictWordsIndexSchema = Schema(
-    id = NUMERIC(stored = True, unique = True),
-    schema_name = TEXT(stored = True),
-    word = TEXT(stored = True, analyzer = folding_analyzer),
-    synonyms = TEXT(stored = True, analyzer = folding_analyzer),
-    content = TEXT(stored = True, analyzer = folding_analyzer),
-)
+class DictWordsIndexSchema(SchemaClass):
+    id = NUMERIC(stored = True, unique = True)
+    schema_name = TEXT(stored = True)
+    word = TEXT(stored = True, analyzer = folding_analyzer)
+    synonyms = TEXT(stored = True, analyzer = folding_analyzer)
+    content = TEXT(stored = True, analyzer = folding_analyzer)
 
 class SearchResult(TypedDict):
     # database id
@@ -64,7 +62,7 @@ class SearchIndexed:
             print("Indexing dict_words ...")
             self.index_dict_words(db_session, 'appdata')
 
-    def _open_or_create_index(self, index_name: str, index_schema: Schema) -> FileIndex:
+    def _open_or_create_index(self, index_name: str, index_schema: SchemaClass) -> FileIndex:
         if not INDEX_DIR.exists():
             INDEX_DIR.mkdir(exist_ok=True)
 
@@ -105,12 +103,15 @@ class SearchIndexed:
                 # Add sutta ref to title so it can be matched
                 title =  f"{i.sutta_ref} {i.title}"
 
+                # Add title and title_pali to content field so a single field query will match
+                content = f"{title} {i.title_pali} {content}"
+
                 writer.add_document(
                     id = i.id,
                     schema_name = schema_name,
                     title = title,
                     title_pali = i.title_pali,
-                    content = content
+                    content = content,
                 )
             writer.commit()
 
@@ -135,6 +136,9 @@ class SearchIndexed:
                 else:
                     content = compactPlainText(i.definition_plain)
 
+                # Add word and synonyms to content field so a single query will match
+                content = f"{i.word} {i.synonyms} {content}"
+
                 writer.add_document(
                     id = i.id,
                     schema_name = schema_name,
@@ -158,7 +162,8 @@ class SearchIndexed:
 
             page: ResultsPage = searcher.search_page(q, pagenum=1, pagelen=20, terms=True)
             r: (Unknown | Results) = page.results
-            if r.estimated_min_length() == 0:
+            # NOTE: r.estimated_min_length() errors on some searches
+            if len(r) == 0:
                 return []
 
             def _result_with_snippet(x: Hit):
@@ -196,7 +201,8 @@ class SearchIndexed:
 
             page: ResultsPage = searcher.search_page(q, pagenum=1, pagelen=20, terms=True)
             r: (Unknown | Results) = page.results
-            if r.estimated_min_length() == 0:
+            # NOTE: r.estimated_min_length() errors on synonyms:bim*
+            if len(r) == 0:
                 return []
 
             def _result_with_snippet(x: Hit):
