@@ -1,5 +1,6 @@
 import logging as _logging
 import json
+import math
 from pathlib import Path
 import queue
 
@@ -12,9 +13,10 @@ from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
+from whoosh.searching import Hit
 
 from simsapa import ASSETS_DIR, APP_QUEUES
-from ..app.db.search import SearchResult
+from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
@@ -23,26 +25,35 @@ from .search_item import SearchItemWidget
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
+from .results_list import HasResultsList
 from .html_content import html_page
 
 logger = _logging.getLogger(__name__)
 
 
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
-                        HasLinksSidebar, HasMemosSidebar):
+                        HasLinksSidebar, HasMemosSidebar, HasResultsList):
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
-        self.recent_list: QListWidget;
+        self.results_list: QListWidget
+        self.recent_list: QListWidget
 
-        self.features = []
+        self.features: List[str] = []
         self._app_data: AppData = app_data
         self._results: List[SearchResult] = []
         self._recent: List[USutta] = []
 
         self._current_sutta: Optional[USutta] = None
+
+        self.page_len = 20
+        self.search_query = SearchQuery(
+            self._app_data.search_indexed.suttas_index,
+            self.page_len,
+            sutta_hit_to_search_result,
+        )
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -57,6 +68,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self._ui_setup()
         self._connect_signals()
 
+        self.init_results_list()
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
@@ -149,30 +161,16 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     def _handle_query(self, min_length=4):
         self._highlight_query()
         query = self.search_input.text()
+
         if len(query) >= min_length:
             self._results = self._sutta_search_query(query)
 
-            # FIXME paginate results. Too many results hang the UI while rendering.
-            self._results = self._results[0:100]
-
-            hits = len(self._results)
-            if hits > 0:
-                self.rightside_tabs.setTabText(0, f"Results ({hits})")
+            if self.search_query.hits > 0:
+                self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
             else:
                 self.rightside_tabs.setTabText(0, "Results")
 
-            self.results_list.clear()
-
-            for x in self._results:
-                w = SearchItemWidget()
-                w.setTitle(x['title'])
-                w.setSnippet(x['snippet'])
-
-                item = QListWidgetItem(self.results_list)
-                item.setSizeHint(w.sizeHint())
-
-                self.results_list.addItem(item)
-                self.results_list.setItemWidget(item, w)
+            self.render_results_page()
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)
@@ -299,26 +297,29 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
-        return self._app_data.search_indexed.search_suttas_indexed(query)
+        results = self.search_query.new_query(query)
+        hits = self.search_query.hits
 
-        # res = self._app_data.db_session \
-        #                     .query(Am.Sutta) \
-        #                     .filter(or_(
-        #                         Am.Sutta.content_plain.like(f"%{query}%"),
-        #                         Am.Sutta.content_html.like(f"%{query}%"))) \
-        #                     .all()
-        # results.extend(res)
-        #
-        # res = self._app_data.db_session \
-        #                     .query(Um.Sutta) \
-        #                     .filter(or_(
-        #                         Um.Sutta.content_plain.like(f"%{query}%"),
-        #                         Um.Sutta.content_html.like(f"%{query}%"))) \
-        #                     .all()
-        #
-        # results.extend(res)
-        #
-        # return results
+        if hits == 0:
+            self.results_page_input.setMinimum(0)
+            self.results_page_input.setMaximum(0)
+            self.results_first_page_btn.setEnabled(False)
+            self.results_last_page_btn.setEnabled(False)
+
+        elif hits <= self.page_len:
+            self.results_page_input.setMinimum(1)
+            self.results_page_input.setMaximum(1)
+            self.results_first_page_btn.setEnabled(False)
+            self.results_last_page_btn.setEnabled(False)
+
+        else:
+            pages = math.floor(hits / self.page_len) + 1
+            self.results_page_input.setMinimum(1)
+            self.results_page_input.setMaximum(pages)
+            self.results_first_page_btn.setEnabled(True)
+            self.results_last_page_btn.setEnabled(True)
+
+        return results
 
     def _handle_copy(self):
         text = self.content_html.selectedText()
@@ -348,7 +349,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
         # self.search_input.returnPressed.connect(partial(self._update_result))
-        self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
+
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
         self.add_memo_button \
