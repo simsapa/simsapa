@@ -1,11 +1,11 @@
 import logging as _logging
-from typing import List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict
 from whoosh.highlight import SCORE, HtmlFormatter
 
 from whoosh.index import FileIndex, create_in, open_dir
 from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
-from whoosh.searching import Searcher, Results, Hit, ResultsPage
+from whoosh.searching import Searcher, Results, Hit
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
@@ -47,6 +47,82 @@ class SearchResult(TypedDict):
     snippet: str
     # page number in a document
     page_number: Optional[int]
+
+def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
+    return SearchResult(
+        id = x['id'],
+        schema_name = x['schema_name'],
+        table_name = 'suttas',
+        title = x['title'],
+        snippet = snippet,
+        page_number = None,
+    )
+
+def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
+    return SearchResult(
+        id = x['id'],
+        schema_name = x['schema_name'],
+        table_name = 'dict_words',
+        title = x['word'],
+        snippet = snippet,
+        page_number = None,
+    )
+
+class SearchQuery:
+    def __init__(self, ix: FileIndex, page_len: int, hit_to_result_fn: Callable):
+        self.ix = ix
+        self.searcher = ix.searcher()
+        self.results: Results
+        self.hits: int = 0
+        self.page_len = page_len
+        self.hit_to_result_fn = hit_to_result_fn
+
+    def _result_with_snippet_highlight(self, x: Hit):
+        style = "<style>span.match { background-color: yellow; }</style>"
+        snippet = style + x.highlights(fieldname='content', top=5)
+
+        return self.hit_to_result_fn(x, snippet)
+
+    def _search_field(self, field_name: str, query: str) -> Results:
+        parser = QueryParser(field_name, self.ix.schema)
+        parser.add_plugin(FuzzyTermPlugin())
+        q = parser.parse(query)
+
+        # NOTE: limit=None is fast enough (~1700 hits for 'dhamma'), doesn't
+        # hang when doing incremental search while typing.
+        #
+        # The highlighting _is_ slow, that has to be only done on the
+        # displayed results page.
+
+        return self.searcher.search(q, limit=None, terms=True)
+
+    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        page_start = page_num * self.page_len
+        page_end = page_start + self.page_len
+        return list(map(self._result_with_snippet_highlight, self.results[page_start:page_end]))
+
+    def new_query(self, query: str) -> List[SearchResult]:
+        self.results = self._search_field('content', query)
+        # NOTE: r.estimated_min_length() errors on some searches
+        self.hits = len(self.results)
+
+        if self.hits == 0:
+            return []
+
+        # may slow down highlighting with many results
+        # r.fragmenter.charlimit = None
+
+        self.results.fragmenter.maxchars = 200
+        self.results.fragmenter.surround = 20
+        # FIRST (the default) Show fragments in the order they appear in the document.
+        # SCORE Show highest scoring fragments first.
+        self.results.order = SCORE
+        self.results.formatter = HtmlFormatter(tagname='span', classname='match')
+
+        # NOTE: highlighting the matched fragments is slow, so only do
+        # highlighting on the first page of results.
+
+        return self.highlight_results_page(0)
 
 class SearchIndexed:
     def __init__(self):
@@ -161,80 +237,3 @@ class SearchIndexed:
             logger.error("Can't index.")
             print(e)
 
-    def search_field(self, ix: FileIndex, searcher: Searcher, field_name: str, query: str) -> Results:
-            parser = QueryParser(field_name, ix.schema)
-            parser.add_plugin(FuzzyTermPlugin())
-            q = parser.parse(query)
-
-            page: ResultsPage = searcher.search_page(q, pagenum=1, pagelen=20, terms=True)
-            return page.results
-
-    def search_suttas_indexed(self, query: str) -> List[SearchResult]:
-        ix = self.suttas_index
-
-        with ix.searcher() as searcher:
-            r = self.search_field(ix, searcher, 'content', query)
-
-            # NOTE: r.estimated_min_length() errors on some searches
-            if len(r) == 0:
-                return []
-
-            def _result_with_snippet(x: Hit):
-                style = "<style>b.match { background-color: yellow; }</style>"
-                snippet = style + x.highlights('content', top = 5)
-                return SearchResult(
-                    id = x['id'],
-                    schema_name = x['schema_name'],
-                    table_name = 'suttas',
-                    title = x['title'],
-                    snippet = snippet,
-                    page_number = None,
-                )
-
-            # may slow down highlighting many results
-            # r.fragmenter.charlimit = None
-
-            r.fragmenter.maxchars = 200
-            r.fragmenter.surround = 20
-            # FIRST (the default) Show fragments in the order they appear in the document.
-            # SCORE Show highest scoring fragments first.
-            r.order = SCORE
-            r.formatter = HtmlFormatter(tagname='b', classname='match')
-            results = list(map(_result_with_snippet, r))
-
-            return results
-
-    def search_dict_words_indexed(self, query: str) -> List[SearchResult]:
-        ix = self.dict_words_index
-
-        with ix.searcher() as searcher:
-            r = self.search_field(ix, searcher, 'content', query)
-
-            # NOTE: r.estimated_min_length() errors on synonyms:bim*
-            if len(r) == 0:
-                return []
-
-            def _result_with_snippet(x: Hit):
-                style = "<style>b.match { background-color: yellow; }</style>"
-                snippet = style + x.highlights('content', top = 5)
-                return SearchResult(
-                    id = x['id'],
-                    schema_name = x['schema_name'],
-                    table_name = 'dict_words',
-                    title = x['word'],
-                    snippet = snippet,
-                    page_number = None,
-                )
-
-            # may slow down highlighting many results
-            # r.fragmenter.charlimit = None
-
-            r.fragmenter.maxchars = 200
-            r.fragmenter.surround = 20
-            # FIRST (the default) Show fragments in the order they appear in the document.
-            # SCORE Show highest scoring fragments first.
-            r.order = SCORE
-            r.formatter = HtmlFormatter(tagname='b', classname='match')
-            results = list(map(_result_with_snippet, r))
-
-            return results

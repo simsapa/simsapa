@@ -17,7 +17,10 @@ class SearchItemWidget(QWidget):
         self.layout.addWidget(self.title)
         self.layout.addWidget(self.snippet)
 
-    def setTitle(self, text):
+    def setTitle(self, text: str):
+        if len(text.strip()) == 0:
+            text = "(Untitled)"
+        text = f"<b>{text}</b>"
         self.title.setText(text)
 
     def setSnippet(self, text):

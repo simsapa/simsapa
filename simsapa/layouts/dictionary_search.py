@@ -1,4 +1,5 @@
 from functools import partial
+import math
 from typing import List, Optional
 from markdown import markdown
 # from sqlalchemy.orm import joinedload
@@ -8,7 +9,7 @@ import queue
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
+from PyQt5.QtWidgets import (QLabel, QListWidget, QMainWindow, QAction,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -16,23 +17,27 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.db.search import SearchResult
+from ..app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
-from .search_item import SearchItemWidget
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
+from .results_list import HasResultsList
 from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
 
 
-class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
-                             HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog):
+class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
+                             HasMemoDialog, HasLinksSidebar, HasMemosSidebar,
+                             HasResultsList, HasImportStarDictDialog):
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+
+        self.results_list: QListWidget
+        self.recent_list: QListWidget
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
@@ -40,6 +45,13 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self._recent: List[UDictWord] = []
 
         self._current_word: Optional[UDictWord] = None
+
+        self.page_len = 20
+        self.search_query = SearchQuery(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result,
+        )
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -53,12 +65,14 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self._ui_setup()
         self._connect_signals()
-        self._setup_content_html_context_menu()
 
+        self.init_results_list()
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
         self.init_stardict_import_dialog()
+
+        self._setup_content_html_context_menu()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -146,30 +160,16 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     def _handle_query(self, min_length=4):
         self._highlight_query()
         query = self.search_input.text()
+
         if len(query) >= min_length:
             self._results = self._word_search_query(query)
 
-            # FIXME paginate results. Too many results hang the UI while rendering.
-            self._results = self._results[0:100]
-
-            hits = len(self._results)
-            if hits > 0:
-                self.rightside_tabs.setTabText(0, f"Results ({hits})")
+            if self.search_query.hits > 0:
+                self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
             else:
                 self.rightside_tabs.setTabText(0, "Results")
 
-            self.results_list.clear()
-
-            for x in self._results:
-                w = SearchItemWidget()
-                w.setTitle(x['title'])
-                w.setSnippet(x['snippet'])
-
-                item = QListWidgetItem(self.results_list)
-                item.setSizeHint(w.sizeHint())
-
-                self.results_list.addItem(item)
-                self.results_list.setItemWidget(item, w)
+            self.render_results_page()
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)
@@ -189,7 +189,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         # Rebuild Qt recents list
         self.recent_list.clear()
         words = list(map(lambda x: x.word, self._recent))
-        self.recent_list.insertItems(0, words)
+        self.recent_list.insertItems(0, words) # type: ignore
 
     def _dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
         if x['schema_name'] == 'appdata':
@@ -248,25 +248,29 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
-        return self._app_data.search_indexed.search_dict_words_indexed(query)
+        results = self.search_query.new_query(query)
+        hits = self.search_query.hits
 
-        # TODO include examples in the result
+        if hits == 0:
+            self.results_page_input.setMinimum(0)
+            self.results_page_input.setMaximum(0)
+            self.results_first_page_btn.setEnabled(False)
+            self.results_last_page_btn.setEnabled(False)
 
-        # res = self._app_data.db_session \
-        #     .query(Am.DictWord) \
-        #     .options(joinedload(Am.DictWord.examples)) \
-        #     .filter(Am.DictWord.word.like(f"%{query}%")) \
-        #     .all()
-        # results.extend(res)
-        #
-        # res = self._app_data.db_session \
-        #     .query(Um.DictWord) \
-        #     .options(joinedload(Um.DictWord.examples)) \
-        #     .filter(Um.DictWord.word.like(f"%{query}%")) \
-        #     .all()
-        # results.extend(res)
-        #
-        # return results
+        elif hits <= self.page_len:
+            self.results_page_input.setMinimum(1)
+            self.results_page_input.setMaximum(1)
+            self.results_first_page_btn.setEnabled(False)
+            self.results_last_page_btn.setEnabled(False)
+
+        else:
+            pages = math.floor(hits / self.page_len) + 1
+            self.results_page_input.setMinimum(1)
+            self.results_page_input.setMaximum(pages)
+            self.results_first_page_btn.setEnabled(True)
+            self.results_last_page_btn.setEnabled(True)
+
+        return results
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
@@ -351,7 +355,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
         # self.search_input.returnPressed.connect(partial(self._update_result))
-        self.results_list.itemSelectionChanged.connect(partial(self._handle_result_select))
+
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
         self.add_memo_button \
