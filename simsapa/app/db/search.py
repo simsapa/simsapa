@@ -1,11 +1,12 @@
 import logging as _logging
+import shutil
 from typing import Callable, List, Optional, TypedDict
 from whoosh.highlight import SCORE, HtmlFormatter
 
 from whoosh.index import FileIndex, create_in, open_dir
 from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
-from whoosh.searching import Searcher, Results, Hit
+from whoosh.searching import Results, Hit
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
@@ -83,6 +84,10 @@ class SearchQuery:
 
         return self.hit_to_result_fn(x, snippet)
 
+    def _result_with_content_no_highlight(self, x: Hit):
+        snippet = x['content']
+        return self.hit_to_result_fn(x, snippet)
+
     def _search_field(self, field_name: str, query: str) -> Results:
         parser = QueryParser(field_name, self.ix.schema)
         parser.add_plugin(FuzzyTermPlugin())
@@ -124,19 +129,39 @@ class SearchQuery:
 
         return self.highlight_results_page(0)
 
-class SearchIndexed:
-    def __init__(self):
-        self.suttas_index = self._open_or_create_index('suttas', SuttasIndexSchema)
-        self.dict_words_index = self._open_or_create_index('dict_words', DictWordsIndexSchema)
+    def all_results(self, highlight: bool = False) -> List[SearchResult]:
+        if highlight:
+            return list(map(self._result_with_snippet_highlight, self.results))
+        else:
+            return list(map(self._result_with_content_no_highlight, self.results))
 
-    def index_if_empty(self, db_session):
-        if self.suttas_index.is_empty():
+
+class SearchIndexed:
+    suttas_index: FileIndex
+    dict_words_index: FileIndex
+
+    def __init__(self):
+        self.open_all()
+
+    def index_all(self, db_session, only_if_empty: bool = False):
+        if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
             print("Indexing suttas ...")
             self.index_suttas(db_session, 'appdata')
+            self.index_suttas(db_session, 'userdata')
 
-        if self.dict_words_index.is_empty():
+        if (not only_if_empty) or (only_if_empty and self.dict_words_index.is_empty()):
             print("Indexing dict_words ...")
             self.index_dict_words(db_session, 'appdata')
+            self.index_dict_words(db_session, 'userdata')
+
+    def open_all(self):
+        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
+        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema)
+
+    def create_all(self, remove_if_exists: bool = True):
+        if remove_if_exists and INDEX_DIR.exists():
+            shutil.rmtree(INDEX_DIR)
+        self.open_all()
 
     def _open_or_create_index(self, index_name: str, index_schema: SchemaClass) -> FileIndex:
         if not INDEX_DIR.exists():

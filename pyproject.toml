@@ -38,8 +38,12 @@ sqlalchemy2-stubs = "^0.0.2-alpha.19"
 python-idzip = "^0.3.7"
 bleach = "^4.1.0"
 Whoosh = "^2.7.4"
+typer = "^0.4.0"
 
 [tool.poetry.dev-dependencies]
+
+[tool.poetry.scripts]
+simsapa = 'simsapa.runner:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

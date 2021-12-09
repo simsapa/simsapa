@@ -55,7 +55,7 @@ class AppData:
         self.search_indexed = SearchIndexed()
 
         if silent_index_if_empty:
-            self.search_indexed.index_if_empty(self.db_session)
+            self.search_indexed.index_all(self.db_session, only_if_empty=True)
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):

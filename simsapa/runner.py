@@ -1,85 +1,77 @@
 import sys
-import os
-import traceback
-import logging as _logging
-import logging.config
-import yaml
-import threading
+from enum import Enum
+import typer
 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
+app = typer.Typer()
+index_app = typer.Typer()
+app.add_typer(index_app, name="index")
 
-from simsapa import APP_DB_PATH
-from .app.types import AppData, create_app_dirs
-from .app.windows import AppWindows
-from .app.api import start_server, find_available_port
-from .layouts.download_appdata import DownloadAppdataWindow
-from .layouts.error_message import ErrorMessageWindow
+@app.command()
+def gui():
+    from simsapa.gui import start
+    start()
 
-from simsapa.assets import icons_rc  # noqa: F401
+class QueryType(str, Enum):
+    suttas = "suttas"
+    dict_words = "dict_words"
 
-logger = _logging.getLogger(__name__)
+@app.command()
+def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
+    """Query the database."""
 
-if os.path.exists("logging.yaml"):
-    with open("logging.yaml", 'r') as f:
-        config = yaml.safe_load(f.read())
-        _logging.config.dictConfig(config) # type: ignore
+    from simsapa.app.db import search
+    from simsapa.app.types import AppData
 
+    app_data = AppData()
 
-def excepthook(exc_type, exc_value, exc_tb):
-    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    logger.error("Error:\n", tb)
-    w = ErrorMessageWindow(user_message=None, debug_info=tb)
-    w.show()
+    if query_type == QueryType.suttas:
+        search_query = search.SearchQuery(
+            app_data.search_indexed.suttas_index,
+            20,
+            search.sutta_hit_to_search_result,
+        )
+    elif query_type == QueryType.dict_words:
+        search_query = search.SearchQuery(
+            app_data.search_indexed.dict_words_index,
+            20,
+            search.dict_word_hit_to_search_result,
+        )
+    else:
+        print("Unrecognized query type.")
+        return
 
+    search_query.new_query(query)
 
-sys.excepthook = excepthook
+    if print_count:
+        print(f"Results count: {search_query.hits}")
 
+    if print_titles:
+        for i in search_query.all_results(highlight=False):
+            print(i['title'])
+
+@index_app.command("create")
+def index_create():
+    """Create database indexes, removing existing ones."""
+    from simsapa.app.db.search import SearchIndexed
+    search_indexed = SearchIndexed()
+    search_indexed.create_all()
+
+@index_app.command("reindex")
+def index_reindex():
+    """Clear and rebuild database indexes."""
+    from simsapa.app.db.search import SearchIndexed
+    from simsapa.app.types import AppData
+    search_indexed = SearchIndexed()
+    app_data = AppData()
+
+    search_indexed.create_all()
+    search_indexed.index_all(app_data.db_session)
 
 def main():
-    logger.info("main()")
+    if len(sys.argv) == 1:
+        gui()
+    else:
+        app()
 
-    create_app_dirs()
-
-    if not APP_DB_PATH.exists():
-        dl_app = QApplication(sys.argv)
-        w = DownloadAppdataWindow()
-        w.show()
-        status = dl_app.exec_()
-        logger.info(f"main() Exiting with status {status}.")
-        sys.exit(status)
-
-    app = QApplication(sys.argv)
-
-    port = find_available_port()
-    daemon = threading.Thread(name='daemon_server',
-                              target=start_server,
-                              args=(port,))
-    daemon.setDaemon(True)
-    daemon.start()
-
-    app_data = AppData(app_clipboard=app.clipboard(), api_port=port)
-
-    # === Create systray ===
-
-    app.setQuitOnLastWindowClosed(False)
-
-    tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
-    tray.setVisible(True)
-
-    menu = QMenu()
-
-    ac = QAction(QIcon(":close"), "Quit")
-    ac.triggered.connect(app.quit)
-    menu.addAction(ac)
-
-    tray.setContextMenu(menu)
-
-    # === Create first window ===
-
-    app_windows = AppWindows(app, app_data)
-    app_windows._new_sutta_search_window()
-
-    status = app.exec_()
-    logger.info(f"main() Exiting with status {status}.")
-    sys.exit(status)
+if __name__ == "__main__":
+    main()
