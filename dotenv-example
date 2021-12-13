@@ -1,1 +1,3 @@
 USE_TEST_DATA=true
+ENABLE_WIP_FEATURES=false
+BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources
