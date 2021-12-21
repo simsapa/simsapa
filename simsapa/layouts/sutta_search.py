@@ -196,12 +196,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if x['schema_name'] == 'appdata':
             sutta = self._app_data.db_session \
                                   .query(Am.Sutta) \
-                                  .filter(Am.Sutta.id == x['id']) \
+                                  .filter(Am.Sutta.id == x['db_id']) \
                                   .first()
         else:
             sutta = self._app_data.db_session \
                                   .query(Um.Sutta) \
-                                  .filter(Um.Sutta.id == x['id']) \
+                                  .filter(Um.Sutta.id == x['db_id']) \
                                   .first()
         return sutta
 

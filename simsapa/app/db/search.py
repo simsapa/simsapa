@@ -12,7 +12,7 @@ from whoosh.support.charset import accent_map
 
 from simsapa.app.helpers import compactPlainText, compactRichText
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.db import appdata_models as Um
+from simsapa.app.db import userdata_models as Um
 from simsapa import INDEX_DIR
 
 logger = _logging.getLogger(__name__)
@@ -21,29 +21,32 @@ logger = _logging.getLogger(__name__)
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
 class SuttasIndexSchema(SchemaClass):
-    id = NUMERIC(stored = True, unique = True)
+    db_id = NUMERIC(stored = True, unique = True)
     schema_name = TEXT(stored = True)
+    uid = ID(stored = True)
     title = TEXT(stored = True, analyzer = folding_analyzer)
     title_pali = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
     ref = ID(stored = True)
 
 class DictWordsIndexSchema(SchemaClass):
-    id = NUMERIC(stored = True, unique = True)
+    db_id = NUMERIC(stored = True, unique = True)
     schema_name = TEXT(stored = True)
+    uid = ID(stored = True)
     word = TEXT(stored = True, analyzer = folding_analyzer)
     synonyms = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
 
 class SearchResult(TypedDict):
     # database id
-    id: int
+    db_id: int
     # database schema name (appdata or userdata)
     schema_name: str
-    # database table name
+    # database table name (e.g. suttas or dict_words)
     table_name: str
-    # result title
+    uid: Optional[str]
     title: str
+    author: Optional[str]
     # highlighted snippet
     snippet: str
     # page number in a document
@@ -51,20 +54,24 @@ class SearchResult(TypedDict):
 
 def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
     return SearchResult(
-        id = x['id'],
+        db_id = x['db_id'],
         schema_name = x['schema_name'],
         table_name = 'suttas',
+        uid = x['uid'],
         title = x['title'],
+        author = None,
         snippet = snippet,
         page_number = None,
     )
 
 def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
     return SearchResult(
-        id = x['id'],
+        db_id = x['db_id'],
         schema_name = x['schema_name'],
         table_name = 'dict_words',
+        uid = x['uid'],
         title = x['word'],
+        author = None,
         snippet = snippet,
         page_number = None,
     )
@@ -212,8 +219,9 @@ class SearchIndexed:
                 content = f"{title} {i.title_pali} {content}"
 
                 writer.add_document(
-                    id = i.id,
+                    db_id = i.id,
                     schema_name = schema_name,
+                    uid = i.uid,
                     title = title,
                     title_pali = i.title_pali,
                     content = content,
@@ -250,11 +258,12 @@ class SearchIndexed:
                 content = f"{i.word} {i.synonyms} {content}"
 
                 writer.add_document(
-                    id = i.id,
+                    db_id = i.id,
                     schema_name = schema_name,
+                    uid = i.url_id,
                     word = i.word,
                     synonyms = i.synonyms,
-                    content = content
+                    content = content,
                 )
             writer.commit()
 

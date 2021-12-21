@@ -195,12 +195,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         if x['schema_name'] == 'appdata':
             word = self._app_data.db_session \
                                  .query(Am.DictWord) \
-                                 .filter(Am.DictWord.id == x['id']) \
+                                 .filter(Am.DictWord.id == x['db_id']) \
                                  .first()
         else:
             word = self._app_data.db_session \
                                  .query(Um.DictWord) \
-                                 .filter(Um.DictWord.id == x['id']) \
+                                 .filter(Um.DictWord.id == x['db_id']) \
                                  .first()
         return word
 

@@ -54,7 +54,7 @@ def get_appdata_db(db_path: Path) -> Session:
 
         db_conn = engine.connect()
 
-        # Attach appdata and userdata
+        # Attach appdata
         db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
 
         Session = sessionmaker(engine)

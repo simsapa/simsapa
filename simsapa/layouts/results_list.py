@@ -12,7 +12,7 @@ from simsapa.layouts.search_item import SearchItemWidget
 logger = _logging.getLogger(__name__)
 
 class HasResultsList:
-    features: List[str] = []
+    features: List[str]
     results_label: QLabel
     results_list: QListWidget
     results_last_page_btn: QPushButton
@@ -57,8 +57,7 @@ class HasResultsList:
 
         for x in self._results:
             w = SearchItemWidget()
-            w.setTitle(x['title'])
-            w.setSnippet(x['snippet'])
+            w.setFromResult(x)
 
             item = QListWidgetItem(self.results_list)
             item.setSizeHint(w.sizeHint())
