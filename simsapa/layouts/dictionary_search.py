@@ -98,10 +98,10 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
                     if 'uid' in info.keys():
                         self._show_sutta_by_uid(info['uid'])
 
-                elif data['action'] == 'show_word_by_url_id':
+                elif data['action'] == 'show_word_by_uid':
                     info = data['arg']
-                    if 'url_id' in info.keys():
-                        self._show_word_by_url_id(info['url_id'])
+                    if 'uid' in info.keys():
+                        self._show_word_by_uid(info['uid'])
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -309,18 +309,18 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
             self._app_data.sutta_to_open = results[0]
             self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
 
-    def _show_word_by_url_id(self, url_id: str):
+    def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []
 
         res = self._app_data.db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.url_id == url_id) \
+            .filter(Am.DictWord.uid == uid) \
             .all()
         results.extend(res)
 
         res = self._app_data.db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.url_id == url_id) \
+            .filter(Um.DictWord.uid == uid) \
             .all()
         results.extend(res)
 

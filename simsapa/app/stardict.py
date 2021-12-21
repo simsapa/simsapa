@@ -397,10 +397,12 @@ class DbDictEntry(TypedDict):
     definition_plain: str
     definition_html: str
     synonyms: str
-    url_id: str
+    uid: str
     dictionary_id: int
 
-def db_entries(x: DictEntry, dictionary_id: int) -> DbDictEntry:
+def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
+    # TODO should we check for conflicting uids? generate with meaning count?
+    uid = f"{x['word']}/{dictionary_label}".lower()
     return DbDictEntry(
         # copy values
         word = x['word'],
@@ -408,8 +410,7 @@ def db_entries(x: DictEntry, dictionary_id: int) -> DbDictEntry:
         definition_html = x['definition_html'],
         synonyms = ", ".join(x['synonyms']),
         # add missing data
-        # TODO should we check for conflicting url_ids? generate with meaning count?
-        url_id = x['word'],
+        uid = uid,
         dictionary_id = dictionary_id,
     )
 
@@ -432,9 +433,9 @@ def insert_db_words(db_session, schema_name: str, db_words: List[DbDictEntry], b
             else:
                 stmt = insert(Am.DictWord).values(words_batch)
 
-            # update the record if url_id already exists
+            # update the record if uid already exists
             stmt = stmt.on_conflict_do_update(
-                index_elements = [Um.DictWord.url_id],
+                index_elements = [Um.DictWord.uid],
                 set_ = dict(
                     word = stmt.excluded.word,
                     word_nom_sg = stmt.excluded.word_nom_sg,
@@ -465,31 +466,42 @@ def insert_db_words(db_session, schema_name: str, db_words: List[DbDictEntry], b
         # self.msg.setText(f"Imported {inserted} ...")
         print(f"Imported {inserted} ...")
 
-def import_stardict_into_db_update_existing(db_session, schema_name: str, paths: StarDictPaths, dictionary_id: int, batch_size = 1000):
+def import_stardict_into_db_update_existing(db_session,
+                                            schema_name: str,
+                                            paths: StarDictPaths,
+                                            dictionary_id: int,
+                                            label: str,
+                                            batch_size = 1000):
     words: List[DictEntry] = stardict_to_dict_entries(paths)
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id), words))
+    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
     insert_db_words(db_session, schema_name, db_words, batch_size)
 
-def import_stardict_into_db_as_new(db_session, schema_name: str, paths: StarDictPaths, batch_size = 1000):
+def import_stardict_into_db_as_new(db_session,
+                                   schema_name: str,
+                                   paths: StarDictPaths,
+                                   label: Optional[str] = None,
+                                   batch_size = 1000):
     # upsert recommended by docs instead of bulk_insert_mappings
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
     # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
 
     words: List[DictEntry] = stardict_to_dict_entries(paths)
     ifo = parse_ifo(paths)
-    dict_title = ifo['bookname']
+    title = ifo['bookname']
+    if label is None:
+        label = title
 
     # create a dictionary, commit to get its ID
     if schema_name == 'userdata':
         dictionary = Um.Dictionary(
-            title = dict_title,
-            label = dict_title,
+            title = title,
+            label = label,
             created_at = func.now(),
         )
     else:
         dictionary = Am.Dictionary(
-            title = dict_title,
-            label = dict_title,
+            title = title,
+            label = label,
             created_at = func.now(),
         )
 
@@ -500,6 +512,6 @@ def import_stardict_into_db_as_new(db_session, schema_name: str, paths: StarDict
         logger.error(e)
 
     d_id: int = dictionary.id # type: ignore
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id), words))
+    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label), words))
 
     insert_db_words(db_session, schema_name, db_words, batch_size)

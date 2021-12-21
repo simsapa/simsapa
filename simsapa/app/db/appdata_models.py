@@ -39,17 +39,6 @@ assoc_memo_tags = Table(
 )
 
 
-class PageNode(Base):
-    __tablename__ = "page_nodes"
-
-    id = Column(Integer, primary_key=True)
-    uid = Column(String, nullable=False, unique=True)
-    name = Column(String)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-
 class Author(Base):
     __tablename__ = "authors"
 
@@ -125,7 +114,7 @@ class DictWord(Base):
 
     id = Column(Integer, primary_key=True)
     dictionary_id = Column(Integer, ForeignKey("dictionaries.id", ondelete="CASCADE"), nullable=False)
-    url_id = Column(String, nullable=False, unique=True)
+    uid = Column(String, nullable=False, unique=True)
     word = Column(String, nullable=False)
     word_nom_sg = Column(String)
     inflections = Column(String)

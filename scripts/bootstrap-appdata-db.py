@@ -353,9 +353,10 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
 def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: Session):
     print("Adding Nyanatiloka DictWords from legacy dict_words")
 
+    label = 'NYANAT'
     # create the dictionary
     dictionary = Am.Dictionary(
-        label = 'NYANAT',
+        label = label,
         title = "Nyanatiloka's Buddhist Dictionary",
         created_at = func.now(),
     )
@@ -370,16 +371,19 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
 
     # get words and commit to appdata db
 
-    a = legacy_db.execute("SELECT * from dict_words WHERE entry_source = 'nyanat';") # type: ignore
+    # label is stored lowercase in legacy db
+    a = legacy_db.execute(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}';") # type: ignore
 
     LegacyDictWord = namedtuple('LegacyDictWord', a.keys())
     records = [LegacyDictWord(*r) for r in a.fetchall()]
 
     def _legacy_to_dict_word(x: LegacyDictWord) -> Am.DictWord:
+        # all-lowercase uid
+        uid = f"{x.word}/{label}".lower()
         return Am.DictWord(
             dictionary_id = dictionary.id,
             word = x.word,
-            url_id = f"{x.word}-nyanat",
+            uid = uid,
             definition_plain = x.definition_plain,
             definition_html = x.definition_html,
             summary = x.summary,
@@ -476,10 +480,12 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
 def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path):
     for d in stardict_base_path.glob("*.zip"):
         print(d)
+        # use label as the ZIP file name without the .zip extension
+        label = os.path.basename(d).replace('.zip', '')
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
         print(f"Importing {ifo['bookname']} ...")
-        import_stardict_into_db_as_new(appdata_db, 'appdata', paths, 10000)
+        import_stardict_into_db_as_new(appdata_db, 'appdata', paths, label, 10000)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")

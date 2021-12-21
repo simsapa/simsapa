@@ -67,13 +67,13 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
                                  Um.Dictionary.label) \
                           .all()
 
-        # Add the titles to the selection, with the dictionary.id as item data.
+        # Add the titles to the selection, with the (dictionary.id, dictionary.label) as item data.
         select_item_counter = 1
         for i in a:
             self.select_title.insertItem(
                 select_item_counter,
                 f"{i[1]} - {i[2]}",
-                i[0])
+                (i[0], i[2]))
 
             self.dict_select_data.append(DictData(
                 id = i[0],
@@ -108,12 +108,13 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         idx = self.select_title.currentIndex()
         if idx == 0:
             return
-        dictionary_id = self.select_title.itemData(idx)
+        dictionary_id, label = self.select_title.itemData(idx)
 
         values = {
             'action': 'update_existing',
             'stardict_paths': self.stardict_paths,
             'dictionary_id': dictionary_id,
+            'label': label,
         }
         self.accepted.emit(values)
         self.accept()
@@ -201,12 +202,13 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
     def do_import(self, values):
         paths = values['stardict_paths']
         action = values['action']
+        label = values['label']
 
         if action == 'import_new':
-            import_stardict_into_db_as_new(self._app_data.db_session, 'userdata', paths)
+            import_stardict_into_db_as_new(self._app_data.db_session, 'userdata', paths, label)
         elif action == 'update_existing':
             id = values['dictionary_id']
-            import_stardict_into_db_update_existing(self._app_data.db_session, 'userdata', paths, id)
+            import_stardict_into_db_update_existing(self._app_data.db_session, 'userdata', paths, id, label)
 
         # remove zip extract dir
         if paths['unzipped_dir'].exists():

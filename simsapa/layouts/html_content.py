@@ -25,8 +25,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (url.startsWith('word:')) {
                 s = url.replace('word:', '');
                 params = {
-                    action: 'show_word_by_url_id',
-                    arg: {'url_id': s},
+                    action: 'show_word_by_uid',
+                    arg: {'uid': s},
                 };
             }
             const options = {

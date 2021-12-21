@@ -260,7 +260,7 @@ class SearchIndexed:
                 writer.add_document(
                     db_id = i.id,
                     schema_name = schema_name,
-                    uid = i.url_id,
+                    uid = i.uid,
                     word = i.word,
                     synonyms = i.synonyms,
                     content = content,
