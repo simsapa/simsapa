@@ -12,17 +12,12 @@ https://github.com/codito/stargaze/blob/master/stargaze.py
 
 import logging as _logging
 from pathlib import Path
+import datetime
 from typing import List, TypedDict, Optional
 import shutil
-import zipfile
-from struct import unpack
+from zipfile import ZipFile
+import struct
 import idzip
-
-from sqlalchemy.sql import func
-from sqlalchemy.dialects.sqlite import insert
-
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
 
 from simsapa import SIMSAPA_DIR
 
@@ -45,13 +40,13 @@ class StarDictIfo(TypedDict):
     author=
     email=
     website=
-    description=	// You can use <br> for new line.
+    description= // You can use <br> for new line.
     date=
     sametypesequence= // very important.
     dicttype=
     ```
 
-    sametypesequence=m The data should be a utf-8 string ending with '\0'.
+    sametypesequence=m The data should be a utf-8 string ending with '\\0'.
     sametypesequence=h Html
 
 
@@ -112,8 +107,6 @@ def ifo_from_opts(opts: dict[str, str]) -> StarDictIfo:
 class IdxEntry(TypedDict):
     # a utf-8 string, `\0` stripped
     word: str
-    # index number from .idx
-    index: int
     # word data's offset in .dict file
     offset_begin: int
     # word data's total size in .dict file
@@ -165,7 +158,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
             shutil.rmtree(unzipped_dir)
         unzipped_dir.mkdir()
 
-        with zipfile.ZipFile(zip_path, 'r') as z:
+        with ZipFile(zip_path, 'r') as z:
             z.extractall(unzipped_dir)
 
         # NOTE: The zip file may or may not have a top-level folder. A
@@ -247,9 +240,10 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
 
     words_index = []
 
-    # idxoffsetbits can be 32bit or 64bit. offset_size = 8 (=64bit) works for 32bit.
+    # idxoffsetbits can be 32bit or 64bit.
+    # offset refers to two integers.
+    # struct packing uses ">II", two unsigned ints, 2*4 bytes = 32 bits
     offset_size = 8
-    count = 0
     with open(idx_path, "rb") as f:
         while True:
             word_str = _read_word(f).rstrip('\0')
@@ -258,15 +252,12 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
             if not word_pointer:
                 break
 
-            offset_begin, data_size = unpack(">II", word_pointer)
+            offset_begin, data_size = struct.unpack(">II", word_pointer)
             words_index.append(IdxEntry(
                 word = word_str,
-                index = count,
                 offset_begin = offset_begin,
                 data_size = data_size,
             ))
-
-            count += 1
 
     return words_index
 
@@ -378,7 +369,7 @@ def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
             if word_str not in syn_entries.keys():
                 syn_entries[word_str] = []
 
-            syn_entries[word_str].extend(unpack(">I", word_pointer))
+            syn_entries[word_str].extend(struct.unpack(">I", word_pointer))
 
     return syn_entries
 
@@ -392,126 +383,140 @@ def _read_word(f) -> str:
         c = f.read(1)
     return word.decode('utf-8')
 
-class DbDictEntry(TypedDict):
-    word: str
-    definition_plain: str
-    definition_html: str
-    synonyms: str
-    uid: str
-    dictionary_id: int
+def write_ifo(ifo: StarDictIfo, paths: StarDictPaths):
+    """Writes .ifo"""
 
-def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
-    # TODO should we check for conflicting uids? generate with meaning count?
-    uid = f"{x['word']}/{dictionary_label}".lower()
-    return DbDictEntry(
-        # copy values
-        word = x['word'],
-        definition_plain = x['definition_plain'],
-        definition_html = x['definition_html'],
-        synonyms = ", ".join(x['synonyms']),
-        # add missing data
-        uid = uid,
-        dictionary_id = dictionary_id,
+    if paths['ifo_path'] is None:
+        logger.error("ifo_path is required")
+        return
+
+    lines: List[str] = ["StarDict's dict ifo file"]
+
+    required = ['bookname', 'wordcount', 'synwordcount', 'idxfilesize', 'sametypesequence']
+    missing = []
+    for k in required:
+        if k not in ifo.keys() and len(ifo[k]) > 0 and ifo[k] != 'None':
+            missing.append(k)
+
+    if len(missing) > 0:
+        logger.error(f"Missing required keys: {missing}")
+        return
+
+    for k in ifo.keys():
+        v = ifo[k]
+        if len(v) > 0 and v != 'None':
+            lines.append(f"{k}={v}")
+
+    with open(paths['ifo_path'], 'w') as f:
+        f.write("\n".join(lines))
+
+class WriteResult(TypedDict):
+    idx_size: Optional[int]
+    syn_count: Optional[int]
+
+def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
+    """Writes .idx, .dict.dz, .syn"""
+
+    res = WriteResult(
+        idx_size = None,
+        syn_count = None
     )
 
-def insert_db_words(db_session, schema_name: str, db_words: List[DbDictEntry], batch_size = 1000):
-    inserted = 0
+    if paths['idx_path'] is None or paths['dic_path'] is None:
+        logger.error("idx_path and dic_path are required")
+        return res
 
-    # TODO: The user can't see this message. Dialog doesn't update while the
-    # import is blocking the GUI.
-    # self.msg.setText("Importing ...")
-    print("Importing ...")
+    idx: List[IdxEntry] = []
 
-    while inserted <= len(db_words):
-        b_start = inserted
-        b_end = inserted + batch_size
-        words_batch = db_words[b_start:b_end]
+    with idzip.IdzipFile(f"{paths['dic_path']}", "wb") as f:
+        offset_begin = 0
+        data_size = 0
+        for w in words:
+            d = bytes(w['definition_html'], 'utf-8')
+            f.write(d)
 
-        try:
-            if schema_name == 'userdata':
-                stmt = insert(Um.DictWord).values(words_batch)
-            else:
-                stmt = insert(Am.DictWord).values(words_batch)
+            data_size = len(d)
 
-            # update the record if uid already exists
-            stmt = stmt.on_conflict_do_update(
-                index_elements = [Um.DictWord.uid],
-                set_ = dict(
-                    word = stmt.excluded.word,
-                    word_nom_sg = stmt.excluded.word_nom_sg,
-                    inflections = stmt.excluded.inflections,
-                    phonetic = stmt.excluded.phonetic,
-                    transliteration = stmt.excluded.transliteration,
-                    # --- Meaning ---
-                    meaning_order = stmt.excluded.meaning_order,
-                    definition_plain = stmt.excluded.definition_plain,
-                    definition_html = stmt.excluded.definition_html,
-                    summary = stmt.excluded.summary,
-                    # --- Associated words ---
-                    synonyms = stmt.excluded.synonyms,
-                    antonyms = stmt.excluded.antonyms,
-                    homonyms = stmt.excluded.homonyms,
-                    also_written_as = stmt.excluded.also_written_as,
-                    see_also = stmt.excluded.see_also,
-                )
-            )
+            idx.append(IdxEntry(
+                word = w['word'],
+                offset_begin = offset_begin,
+                data_size = data_size,
+            ))
 
-            db_session.execute(stmt)
-            db_session.commit()
-        except Exception as e:
-            print(e)
-            logger.error(e)
+            offset_begin += data_size
 
-        inserted += batch_size
-        # self.msg.setText(f"Imported {inserted} ...")
-        print(f"Imported {inserted} ...")
+    with open(paths['idx_path'], 'wb') as f:
+        for i in idx:
+            d = bytes(f"{i['word']}\0", "utf-8")
+            f.write(d)
+            d = struct.pack(">II", i['offset_begin'], i['data_size'])
+            f.write(d)
 
-def import_stardict_into_db_update_existing(db_session,
-                                            schema_name: str,
-                                            paths: StarDictPaths,
-                                            dictionary_id: int,
-                                            label: str,
-                                            batch_size = 1000):
-    words: List[DictEntry] = stardict_to_dict_entries(paths)
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
-    insert_db_words(db_session, schema_name, db_words, batch_size)
+    res['idx_size'] = paths['idx_path'].stat().st_size
 
-def import_stardict_into_db_as_new(db_session,
-                                   schema_name: str,
-                                   paths: StarDictPaths,
-                                   label: Optional[str] = None,
-                                   batch_size = 1000):
-    # upsert recommended by docs instead of bulk_insert_mappings
-    # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
-    # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
+    if paths['syn_path'] is not None:
+        res['syn_count'] = 0
 
-    words: List[DictEntry] = stardict_to_dict_entries(paths)
-    ifo = parse_ifo(paths)
-    title = ifo['bookname']
-    if label is None:
-        label = title
+        with open(paths['syn_path'], 'wb') as f:
+            for n, w in enumerate(words):
 
-    # create a dictionary, commit to get its ID
-    if schema_name == 'userdata':
-        dictionary = Um.Dictionary(
-            title = title,
-            label = label,
-            created_at = func.now(),
-        )
-    else:
-        dictionary = Am.Dictionary(
-            title = title,
-            label = label,
-            created_at = func.now(),
-        )
+                if res['syn_count'] is not None:
+                    res['syn_count'] += len(w['synonyms'])
 
-    try:
-        db_session.add(dictionary)
-        db_session.commit()
-    except Exception as e:
-        logger.error(e)
+                for s in w['synonyms']:
+                    d = bytes(f"{s}\0", "utf-8")
+                    f.write(d)
+                    d = struct.pack(">I", n)
+                    f.write(d)
 
-    d_id: int = dictionary.id # type: ignore
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label), words))
+    return res
 
-    insert_db_words(db_session, schema_name, db_words, batch_size)
+def write_stardict_zip(paths: StarDictPaths):
+    with ZipFile(paths['zip_path'], 'w') as z:
+        a = [paths['ifo_path'],
+             paths['idx_path'],
+             paths['dic_path'],
+             paths['syn_path']]
+        for p in a:
+            if p is not None:
+                # NOTE .parent to create a top level folder in .zip
+                z.write(p, p.relative_to(paths['unzipped_dir'].parent))
+
+def export_words_as_stardict_zip(words: List[DictEntry], ifo: StarDictIfo, zip_path: Path):
+    name = zip_path.name.replace('.zip', '')
+    # No spaces in the filename and dict files.
+    name = name.replace(' ', '-')
+
+    # NOTE: A toplevel folder is created in the zip file, with the file name of the .zip file.
+    # E.g. ncped.zip will contain ncped/ncped.ifo
+    unzipped_dir: Path = SIMSAPA_DIR.joinpath("new_stardict").joinpath(name)
+    if unzipped_dir.exists():
+        shutil.rmtree(unzipped_dir)
+    unzipped_dir.mkdir(parents=True)
+
+    paths = StarDictPaths(
+        zip_path = zip_path,
+        unzipped_dir = unzipped_dir,
+        ifo_path = unzipped_dir.joinpath(f"{name}.ifo"),
+        idx_path = unzipped_dir.joinpath(f"{name}.idx"),
+        dic_path = unzipped_dir.joinpath(f"{name}.dict.dz"),
+        syn_path = unzipped_dir.joinpath(f"{name}.syn"),
+    )
+
+    ifo['version'] = '3.0.0'
+    ifo['wordcount'] = f"{len(words)}"
+    ifo['sametypesequence'] = 'h'
+    ifo['date'] = datetime.datetime.utcnow().replace(microsecond=0).isoformat()
+
+    res = write_words(words, paths)
+
+    ifo['idxoffsetbits'] = "32"
+    ifo['idxfilesize'] = f"{res['idx_size']}"
+    ifo['synwordcount'] = f"{res['syn_count']}"
+
+    write_ifo(ifo, paths)
+
+    write_stardict_zip(paths)
+
+    if unzipped_dir.exists():
+        shutil.rmtree(unzipped_dir)

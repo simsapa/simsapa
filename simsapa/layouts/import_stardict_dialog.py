@@ -14,7 +14,8 @@ from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 
 from ..app.db import userdata_models as Um
 
-from ..app.stardict import (StarDictPaths, StarDictIfo, import_stardict_into_db_as_new, import_stardict_into_db_update_existing, parse_stardict_zip, parse_ifo)
+from ..app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
+from ..app.db.stardict import import_stardict_into_db_as_new, import_stardict_into_db_update_existing
 
 logger = _logging.getLogger(__name__)
 

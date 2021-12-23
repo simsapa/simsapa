@@ -22,7 +22,8 @@ from pyArango.database import DBHandle
 from simsapa.app.db import appdata_models as Am
 
 from simsapa.app.helpers import find_or_create_db
-from simsapa.app.stardict import import_stardict_into_db_as_new, parse_ifo, parse_stardict_zip
+from simsapa.app.stardict import parse_ifo, parse_stardict_zip
+from simsapa.app.db.stardict import import_stardict_into_db_as_new
 
 logger = _logging.getLogger(__name__)
 
