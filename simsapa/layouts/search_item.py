@@ -34,7 +34,10 @@ class SearchItemWidget(QWidget):
         self.layout.addWidget(self.details)
 
     def setFromResult(self, r: SearchResult):
-        self.setTitle(r['title'])
+        if r['ref'] is not None:
+            self.setTitle(f"{r['ref']} {r['title']}")
+        else:
+            self.setTitle(r['title'])
 
         if r['author'] is not None:
             self.setAuthor(r['author'])

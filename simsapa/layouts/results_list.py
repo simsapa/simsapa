@@ -1,7 +1,6 @@
 import logging as _logging
 
 from functools import partial
-import math
 from typing import Callable, List
 
 from PyQt5.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox

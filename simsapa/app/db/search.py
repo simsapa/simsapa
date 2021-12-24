@@ -1,8 +1,9 @@
 import logging as _logging
 import shutil
 from typing import Callable, List, Optional, TypedDict
-from whoosh.highlight import SCORE, HtmlFormatter
+import re
 
+from whoosh.highlight import SCORE, HtmlFormatter
 from whoosh.index import FileIndex, create_in, open_dir
 from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
@@ -26,6 +27,7 @@ class SuttasIndexSchema(SchemaClass):
     uid = ID(stored = True)
     title = TEXT(stored = True, analyzer = folding_analyzer)
     title_pali = TEXT(stored = True, analyzer = folding_analyzer)
+    title_trans = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
     ref = ID(stored = True)
 
@@ -46,6 +48,7 @@ class SearchResult(TypedDict):
     table_name: str
     uid: Optional[str]
     title: str
+    ref: Optional[str]
     author: Optional[str]
     # highlighted snippet
     snippet: str
@@ -53,12 +56,14 @@ class SearchResult(TypedDict):
     page_number: Optional[int]
 
 def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
+
     return SearchResult(
         db_id = x['db_id'],
         schema_name = x['schema_name'],
         table_name = 'suttas',
         uid = x['uid'],
         title = x['title'],
+        ref = x['ref'],
         author = None,
         snippet = snippet,
         page_number = None,
@@ -71,6 +76,7 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         table_name = 'dict_words',
         uid = x['uid'],
         title = x['word'],
+        ref = None,
         author = None,
         snippet = snippet,
         page_number = None,
@@ -85,14 +91,76 @@ class SearchQuery:
         self.page_len = page_len
         self.hit_to_result_fn = hit_to_result_fn
 
+    def _compact_plain_snippet(self,
+                               content: str,
+                               title: Optional[str] = None,
+                               ref: Optional[str] = None) -> str:
+
+        s = content
+
+        # AN 3.119 Kammantasutta
+        # as added to the content when indexing
+        if ref is not None and title is not None:
+            s = s.replace(f"{ref} {title}", '')
+
+        # 163–182. (- dash and -- en-dash)
+        s = re.sub(r'[0-9\.–-]+', '', s)
+
+        # ... Book of the Sixes 5.123.
+        s = re.sub(r'Book of the [\w ]+[0-9\.]+', '', s)
+
+        # Connected Discourses on ... 12.55.
+        s = re.sub(r'\w+ Discourses on [\w ]+[0-9\.]+', '', s)
+
+        # ...vagga
+        s = re.sub(r'[\w -]+vagga', '', s)
+
+        # ... Nikāya 123.
+        s = re.sub(r'[\w]+ Nikāya +[0-9\.]*', '', s)
+
+        # SC 1, (link text)
+        s = re.sub('SC [0-9]+', '', s)
+
+        # Remove the title from the content, but only the first instance, so as
+        # not to remove a common word (e.g.'kamma') from the entire text.
+        if title is not None:
+            s = s.replace(title, '', 1)
+
+        return s
+
+    def _oneline(self, content: str) -> str:
+        s = content
+        # Clean up whitespace so that all text is one line
+        s = s.replace("\n", ' ')
+        # replace multiple spaces to one
+        s = re.sub(r'  +', ' ', s)
+
+        return s
+
+    def _plain_snippet_from_hit(self, x: Hit) -> str:
+            s = x['content'][0:500]
+            if 'title' in x.keys() and 'ref' in x.keys():
+                s = self._compact_plain_snippet(s, x['title'], x['ref'])
+            else:
+                s = self._compact_plain_snippet(s)
+            s = self._oneline(s).strip()
+            snippet = s[0:250] + ' ...'
+
+            return snippet
+
     def _result_with_snippet_highlight(self, x: Hit):
         style = "<style>span.match { background-color: yellow; }</style>"
-        snippet = style + x.highlights(fieldname='content', top=5)
+        fragments = x.highlights(fieldname='content', top=5)
+
+        if len(fragments) > 0:
+            snippet = style + fragments
+        else:
+            snippet = self._plain_snippet_from_hit(x)
 
         return self.hit_to_result_fn(x, snippet)
 
     def _result_with_content_no_highlight(self, x: Hit):
-        snippet = x['content']
+        snippet = self._plain_snippet_from_hit(x)
         return self.hit_to_result_fn(x, snippet)
 
     def _search_field(self, field_name: str, query: str) -> Results:
@@ -204,7 +272,7 @@ class SearchIndexed:
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
             for i in a:
-                # Prefer the html content field if not empty
+                # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
                     content = compactRichText(i.content_html)
                 elif i.content_plain is None:
@@ -212,18 +280,20 @@ class SearchIndexed:
                 else:
                     content = compactPlainText(i.content_plain)
 
-                # Add sutta ref to title so it can be matched
-                title =  f"{i.sutta_ref} {i.title}"
-
                 # Add title and title_pali to content field so a single field query will match
-                content = f"{title} {i.title_pali} {content}"
+                # Db fields can be None
+                c = list(filter(lambda x: x is not None, [i.sutta_ref, i.title, i.title_pali]))
+                pre = " ".join(c)
+                if len(pre) > 0:
+                    content = f"{pre} {content}"
 
                 writer.add_document(
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
-                    title = title,
+                    title = i.title,
                     title_pali = i.title_pali,
+                    title_trans = i.title_trans,
                     content = content,
                     ref = i.sutta_ref,
                 )
@@ -255,7 +325,11 @@ class SearchIndexed:
                     content = compactPlainText(i.definition_plain)
 
                 # Add word and synonyms to content field so a single query will match
-                content = f"{i.word} {i.synonyms} {content}"
+                if i.word is not None:
+                    content = f"{i.word} {content}"
+
+                if i.synonyms is not None:
+                    content = f"{content} {i.synonyms}"
 
                 writer.add_document(
                     db_id = i.id,

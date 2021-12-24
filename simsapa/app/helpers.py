@@ -33,14 +33,14 @@ def download_file(url: str, folder_path: Path) -> Path:
     return file_path
 
 def compactPlainText(text: str) -> str:
-    # clean up whitespace so that all text is one line
-    text = text.replace("\n", ' ')
+    # NOTE: Don't remove new lines here, useful for matching beginning of lines when setting snippets.
+    # Replace multiple spaces to one.
     text = re.sub(r"  +", ' ', text)
 
     return text
 
 def compactRichText(text: str) -> str:
-    text = bleach.clean(text, strip=True)
+    text = bleach.clean(text, tags=[], styles=[], strip=True)
     text = compactPlainText(text)
 
     return text
