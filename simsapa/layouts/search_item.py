@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QHBoxLayout, QWidget, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
 
 from simsapa.app.db.search import SearchResult
 
@@ -12,26 +12,33 @@ class SearchItemWidget(QWidget):
         self.top_info: QHBoxLayout = QHBoxLayout()
 
         self.title = QLabel()
-        self.title.setWordWrap(True)
         self.author = QLabel()
-        self.author.setWordWrap(True)
+        self.details = QLabel()
+
+        self.top_spacer = QSpacerItem(20, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         self.top_info.addWidget(self.title)
+
+        self.top_info.addItem(self.top_spacer)
+
         self.top_info.addWidget(self.author)
+        self.top_info.addWidget(self.details)
 
         self.layout.addLayout(self.top_info)
 
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
-        self.snippet.setFixedHeight(30)
+        self.snippet.setFixedHeight(35)
+        self.snippet.setContentsMargins(0, 0, 0, 5)
 
         self.layout.addWidget(self.snippet)
 
-        self.details = QLabel()
-        self.details.setWordWrap(True)
+        # self.bottom_border = QFrame()
+        # self.bottom_border.setFrameShape(QFrame.Shape.HLine)
+        # self.bottom_border.setFrameShadow(QFrame.Shadow.Sunken)
 
-        self.layout.addWidget(self.details)
+        # self.layout.addWidget(self.bottom_border)
 
     def setFromResult(self, r: SearchResult):
         if r['ref'] is not None:

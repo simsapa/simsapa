@@ -2,6 +2,7 @@ import logging as _logging
 
 from functools import partial
 from typing import Callable, List
+from PyQt5.QtGui import QColor
 
 from PyQt5.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox
 
@@ -54,12 +55,17 @@ class HasResultsList:
         msg = f"Showing {page_start+1}-{page_end} out of {self.search_query.hits}"
         self.results_label.setText(msg)
 
-        for x in self._results:
+        colors = ["#ffffff", "#efefef"]
+
+        for idx, x in enumerate(self._results):
             w = SearchItemWidget()
             w.setFromResult(x)
 
             item = QListWidgetItem(self.results_list)
             item.setSizeHint(w.sizeHint())
+
+            n = idx % len(colors)
+            item.setBackground(QColor(colors[n]))
 
             self.results_list.addItem(item)
             self.results_list.setItemWidget(item, w)
