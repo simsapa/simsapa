@@ -129,6 +129,7 @@ SynEntries = dict[
 class StarDictPaths(TypedDict):
     zip_path: Path
     unzipped_dir: Path
+    icon_path: Optional[Path]
     ifo_path: Optional[Path]
     idx_path: Optional[Path]
     dic_path: Optional[Path]
@@ -139,6 +140,7 @@ def new_stardict_paths(zip_path: Path):
     return StarDictPaths(
         zip_path = zip_path,
         unzipped_dir = unzipped_dir,
+        icon_path = None,
         ifo_path = None,
         idx_path = None,
         dic_path = None,
@@ -476,13 +478,18 @@ def write_stardict_zip(paths: StarDictPaths):
         a = [paths['ifo_path'],
              paths['idx_path'],
              paths['dic_path'],
-             paths['syn_path']]
+             paths['syn_path'],
+             paths['icon_path']]
         for p in a:
             if p is not None:
                 # NOTE .parent to create a top level folder in .zip
                 z.write(p, p.relative_to(paths['unzipped_dir'].parent))
 
-def export_words_as_stardict_zip(words: List[DictEntry], ifo: StarDictIfo, zip_path: Path):
+def export_words_as_stardict_zip(words: List[DictEntry],
+                                 ifo: StarDictIfo,
+                                 zip_path: Path,
+                                 icon_path: Optional[Path] = None):
+
     name = zip_path.name.replace('.zip', '')
     # No spaces in the filename and dict files.
     name = name.replace(' ', '-')
@@ -494,9 +501,17 @@ def export_words_as_stardict_zip(words: List[DictEntry], ifo: StarDictIfo, zip_p
         shutil.rmtree(unzipped_dir)
     unzipped_dir.mkdir(parents=True)
 
+    zip_icon_path = None
+
+    if icon_path is not None and icon_path.exists():
+        ext = icon_path.suffix
+        zip_icon_path = unzipped_dir.joinpath(f"{name}{ext}")
+        shutil.copy(icon_path, zip_icon_path)
+
     paths = StarDictPaths(
         zip_path = zip_path,
         unzipped_dir = unzipped_dir,
+        icon_path = zip_icon_path,
         ifo_path = unzipped_dir.joinpath(f"{name}.ifo"),
         idx_path = unzipped_dir.joinpath(f"{name}.idx"),
         dic_path = unzipped_dir.joinpath(f"{name}.dict.dz"),
