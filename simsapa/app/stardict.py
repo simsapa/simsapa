@@ -153,7 +153,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
     unzipped_dir = stardict_paths['unzipped_dir']
 
     # Find the .ifo, .idx, .dic, .syn
-    hits = {'*.ifo': [], '*.idx': [], '*.dic*': [], '*.syn': []}
+    hits = {'*.ifo': [], '*.idx': [], '*.dic*': [], '*.syn*': []}
     try:
         # delete and re-create to make sure it's an empty directory
         if unzipped_dir.exists():
@@ -186,7 +186,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
     stardict_paths['ifo_path'] = hits['*.ifo'][0]
     stardict_paths['idx_path'] = hits['*.idx'][0]
     stardict_paths['dic_path'] = hits['*.dic*'][0]
-    stardict_paths['syn_path'] = hits['*.syn'][0]
+    stardict_paths['syn_path'] = hits['*.syn*'][0]
 
     return stardict_paths
 
@@ -360,7 +360,11 @@ def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
 
     syn_entries: SynEntries = {}
 
-    with open(syn_path, 'rb') as f:
+    open_dict = open
+    if f"{syn_path}".endswith(".dz"):
+        open_dict = idzip.open
+
+    with open_dict(syn_path, 'rb') as f:
         while True:
             word_str = _read_word(f).rstrip('\0')
 
@@ -417,7 +421,7 @@ class WriteResult(TypedDict):
     syn_count: Optional[int]
 
 def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
-    """Writes .idx, .dict.dz, .syn"""
+    """Writes .idx, .dict.dz, .syn.dz"""
 
     res = WriteResult(
         idx_size = None,
@@ -459,7 +463,7 @@ def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
     if paths['syn_path'] is not None:
         res['syn_count'] = 0
 
-        with open(paths['syn_path'], 'wb') as f:
+        with idzip.IdzipFile(f"{paths['syn_path']}", "wb") as f:
             for n, w in enumerate(words):
 
                 if res['syn_count'] is not None:
@@ -515,7 +519,7 @@ def export_words_as_stardict_zip(words: List[DictEntry],
         ifo_path = unzipped_dir.joinpath(f"{name}.ifo"),
         idx_path = unzipped_dir.joinpath(f"{name}.idx"),
         dic_path = unzipped_dir.joinpath(f"{name}.dict.dz"),
-        syn_path = unzipped_dir.joinpath(f"{name}.syn"),
+        syn_path = unzipped_dir.joinpath(f"{name}.syn.dz"),
     )
 
     ifo['version'] = '3.0.0'
