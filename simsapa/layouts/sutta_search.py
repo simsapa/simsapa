@@ -6,7 +6,6 @@ import queue
 
 from functools import partial
 from typing import List, Optional
-import markdown
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QCloseEvent
@@ -282,7 +281,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if sutta.content_html is not None and sutta.content_html != '':
             content = sutta.content_html
         elif sutta.content_plain is not None and sutta.content_plain != '':
-            content = markdown.markdown(sutta.content_plain, extensions=['footnotes']) # type: ignore
+            style = '<style>pre { font-family: serif; }</style>'
+            content = style + '<pre>' + sutta.content_plain + '</pre>'
         else:
             content = 'No content.'
 
