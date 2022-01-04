@@ -6,14 +6,14 @@ import queue
 
 from functools import partial
 from typing import List, Optional
+import markdown
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QKeySequence, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction, QListWidgetItem,
+from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from whoosh.searching import Hit
 
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
@@ -21,7 +21,6 @@ from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
-from .search_item import SearchItemWidget
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
@@ -283,7 +282,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if sutta.content_html is not None and sutta.content_html != '':
             content = sutta.content_html
         elif sutta.content_plain is not None and sutta.content_plain != '':
-            content = '<pre>' + sutta.content_plain + '</pre>'
+            content = markdown.markdown(sutta.content_plain, extensions=['footnotes']) # type: ignore
         else:
             content = 'No content.'
 
