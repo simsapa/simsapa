@@ -88,7 +88,7 @@ def bilara_text_uid(x) -> str:
     '''dn1/pli/ms'''
 
     a = x['muids'].copy()
-    for k in ['translation', 'root', 'reference', 'variant', 'comment', x['lang']]:
+    for k in ['translation', 'root', 'reference', 'variant', 'comment', 'html', x['lang']]:
         if k in a:
             a.pop(a.index(k))
 
@@ -249,8 +249,14 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
         total_results += len(q.result[0])
 
         for r in q.result[0]:
+            # ignoring comments
             if 'muids' in r.keys() and 'comment' in r['muids']:
-                # NOTE: ignoring comments
+                ignored += 1
+                continue
+
+            # ignoring html bilara wrapper JSON
+            if ('file_path' in r.keys() and 'sc_bilara_data/html' in r['file_path']) \
+                and ('muids' in r.keys() and 'html' in r['muids']):
                 ignored += 1
                 continue
 
