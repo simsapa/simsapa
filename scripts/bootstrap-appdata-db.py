@@ -23,7 +23,7 @@ from simsapa.app.db import appdata_models as Am
 
 from simsapa.app.helpers import find_or_create_db
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
-from simsapa.app.db.stardict import import_stardict_into_db_as_new
+from simsapa.app.db.stardict import import_stardict_as_new
 
 logger = _logging.getLogger(__name__)
 
@@ -492,7 +492,12 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
         print(f"Importing {ifo['bookname']} ...")
-        import_stardict_into_db_as_new(appdata_db, 'appdata', paths, label, 10000)
+        import_stardict_as_new(appdata_db,
+                               'appdata',
+                               None,
+                               paths,
+                               label,
+                               10000)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")

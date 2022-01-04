@@ -1,7 +1,7 @@
 import os.path
 import logging as _logging
 import shutil
-from typing import List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict
 
 from pathlib import Path
 
@@ -15,7 +15,7 @@ from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 from ..app.db import userdata_models as Um
 
 from ..app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
-from ..app.db.stardict import import_stardict_into_db_as_new, import_stardict_into_db_update_existing
+from ..app.db.stardict import import_stardict_as_new, import_stardict_update_existing
 
 logger = _logging.getLogger(__name__)
 
@@ -37,11 +37,12 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
     select_title: QComboBox
     tabWidget: QTabWidget
 
-    def __init__(self, app_data: AppData, parent=None) -> None:
+    def __init__(self, app_data: AppData, reinit_index_fn: Callable, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
 
         self._app_data: AppData = app_data
+        self.reinit_index_fn = reinit_index_fn
 
         self.dict_select_data: List[DictData] = []
 
@@ -206,10 +207,21 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         label = values['label']
 
         if action == 'import_new':
-            import_stardict_into_db_as_new(self._app_data.db_session, 'userdata', paths, label)
+            import_stardict_as_new(self._app_data.db_session,
+                                   'userdata',
+                                   self._app_data.search_indexed,
+                                   paths,
+                                   label)
         elif action == 'update_existing':
             id = values['dictionary_id']
-            import_stardict_into_db_update_existing(self._app_data.db_session, 'userdata', paths, id, label)
+            import_stardict_update_existing(self._app_data.db_session,
+                                            'userdata',
+                                            self._app_data.search_indexed,
+                                            paths,
+                                            id,
+                                            label)
+
+        self.reinit_index_fn()
 
         # remove zip extract dir
         if paths['unzipped_dir'].exists():
@@ -217,11 +229,12 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
 
 class HasImportStarDictDialog():
     _app_data: AppData
+    reinit_index: Callable
 
     def init_stardict_import_dialog(self):
         pass
 
     def show_import_from_stardict_dialog(self):
-        d = ImportStarDictDialog(self._app_data)
+        d = ImportStarDictDialog(self._app_data, self.reinit_index)
         d.accepted.connect(d.do_import)
         d.exec_()

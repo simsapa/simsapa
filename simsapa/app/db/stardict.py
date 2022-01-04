@@ -7,8 +7,10 @@ from typing import Optional, List, TypedDict
 
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.sqlite import insert
+from simsapa.app.db.search import SearchIndexed
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
+from simsapa.app.types import UDictWord
 
 from . import appdata_models as Am
 from . import userdata_models as Um
@@ -37,8 +39,12 @@ def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDic
         dictionary_id = dictionary_id,
     )
 
-def insert_db_words(db_session, schema_name: str, db_words: List[DbDictEntry], batch_size = 1000):
+def insert_db_words(db_session,
+                    schema_name: str,
+                    db_words: List[DbDictEntry],
+                    batch_size = 1000) -> List[str]:
     inserted = 0
+    uids: List[str] = []
 
     # TODO: The user can't see this message. Dialog doesn't update while the
     # import is blocking the GUI.
@@ -85,25 +91,46 @@ def insert_db_words(db_session, schema_name: str, db_words: List[DbDictEntry], b
             print(e)
             logger.error(e)
 
+        uids.extend(list(map(lambda x: x['uid'], words_batch)))
         inserted += batch_size
         # self.msg.setText(f"Imported {inserted} ...")
-        print(f"Imported {inserted} ...")
+        print(f"Imported {inserted}")
 
-def import_stardict_into_db_update_existing(db_session,
-                                            schema_name: str,
-                                            paths: StarDictPaths,
-                                            dictionary_id: int,
-                                            label: str,
-                                            batch_size = 1000):
+    return uids
+
+def import_stardict_update_existing(db_session,
+                                    schema_name: str,
+                                    search_index: Optional[SearchIndexed],
+                                    paths: StarDictPaths,
+                                    dictionary_id: int,
+                                    label: str,
+                                    batch_size = 1000):
+
     words: List[DictEntry] = stardict_to_dict_entries(paths)
     db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
-    insert_db_words(db_session, schema_name, db_words, batch_size)
+    uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
-def import_stardict_into_db_as_new(db_session,
-                                   schema_name: str,
-                                   paths: StarDictPaths,
-                                   label: Optional[str] = None,
-                                   batch_size = 1000):
+    if search_index is not None:
+        if schema_name == 'appdata':
+            w: List[UDictWord] = db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid.in_(uids)) \
+                .all()
+        else:
+            w: List[UDictWord] = db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid.in_(uids)) \
+                .all()
+
+        search_index.index_dict_words(schema_name, w)
+
+def import_stardict_as_new(db_session,
+                           schema_name: str,
+                           search_index: Optional[SearchIndexed],
+                           paths: StarDictPaths,
+                           label: Optional[str] = None,
+                           batch_size = 1000):
+
     # upsert recommended by docs instead of bulk_insert_mappings
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
     # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
@@ -136,5 +163,18 @@ def import_stardict_into_db_as_new(db_session,
 
     d_id: int = dictionary.id # type: ignore
     db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label), words))
+    uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
-    insert_db_words(db_session, schema_name, db_words, batch_size)
+    if search_index is not None:
+        if schema_name == 'appdata':
+            w: List[UDictWord] = db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid.in_(uids)) \
+                .all()
+        else:
+            w: List[UDictWord] = db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid.in_(uids)) \
+                .all()
+
+        search_index.index_dict_words(schema_name, w)

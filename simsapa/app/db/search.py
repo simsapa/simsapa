@@ -1,6 +1,6 @@
 import logging as _logging
 import shutil
-from typing import Callable, List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict, Union
 import re
 
 from whoosh.highlight import SCORE, HtmlFormatter
@@ -18,11 +18,15 @@ from simsapa import INDEX_DIR
 
 logger = _logging.getLogger(__name__)
 
+USutta = Union[Am.Sutta, Um.Sutta]
+UDictWord = Union[Am.DictWord, Um.DictWord]
+
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
 class SuttasIndexSchema(SchemaClass):
-    db_id = NUMERIC(stored = True, unique = True)
+    index_key = ID(stored = True, unique = True)
+    db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
     title = TEXT(stored = True, analyzer = folding_analyzer)
@@ -32,7 +36,8 @@ class SuttasIndexSchema(SchemaClass):
     ref = ID(stored = True)
 
 class DictWordsIndexSchema(SchemaClass):
-    db_id = NUMERIC(stored = True, unique = True)
+    index_key = ID(stored = True, unique = True)
+    db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
     word = TEXT(stored = True, analyzer = folding_analyzer)
@@ -56,7 +61,6 @@ class SearchResult(TypedDict):
     page_number: Optional[int]
 
 def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
-
     return SearchResult(
         db_id = x['db_id'],
         schema_name = x['schema_name'],
@@ -221,13 +225,21 @@ class SearchIndexed:
     def index_all(self, db_session, only_if_empty: bool = False):
         if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
             print("Indexing suttas ...")
-            self.index_suttas(db_session, 'appdata')
-            self.index_suttas(db_session, 'userdata')
+
+            suttas: List[USutta] = db_session.query(Am.Sutta).all()
+            self.index_suttas('appdata', suttas)
+
+            suttas: List[USutta] = db_session.query(Um.Sutta).all()
+            self.index_suttas('userdata', suttas)
 
         if (not only_if_empty) or (only_if_empty and self.dict_words_index.is_empty()):
             print("Indexing dict_words ...")
-            self.index_dict_words(db_session, 'appdata')
-            self.index_dict_words(db_session, 'userdata')
+
+            words: List[UDictWord] = db_session.query(Am.DictWord).all()
+            self.index_dict_words('appdata', words)
+
+            words: List[UDictWord] = db_session.query(Um.DictWord).all()
+            self.index_dict_words('userdata', words)
 
     def open_all(self):
         self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
@@ -258,36 +270,32 @@ class SearchIndexed:
 
         return ix
 
-    def index_suttas(self, db_session, schema_name: str):
+    def index_suttas(self, schema_name: str, suttas: List[USutta]):
         ix = self.suttas_index
-
-        if schema_name == 'appdata':
-            a = db_session.query(Am.Sutta).all()
-        else:
-            a = db_session.query(Um.Sutta).all()
 
         try:
             # NOTE: Only use multisegment=True when indexing from scratch.
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
-            for i in a:
+            for i in suttas:
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
-                    content = compactRichText(i.content_html)
-                elif i.content_plain is None:
-                    continue
+                    content = compactRichText(i.content_html) # type: ignore
+                elif i.content_plain is not None:
+                    content = compactPlainText(i.content_plain) # type: ignore
                 else:
-                    content = compactPlainText(i.content_plain)
+                    continue
 
                 # Add title and title_pali to content field so a single field query will match
                 # Db fields can be None
                 c = list(filter(lambda x: x is not None, [i.sutta_ref, i.title, i.title_pali]))
-                pre = " ".join(c)
+                pre = " ".join(c) # type: ignore
                 if len(pre) > 0:
                     content = f"{pre} {content}"
 
-                writer.add_document(
+                writer.update_document(
+                    index_key = f"{schema_name}:suttas:{i.uid}",
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
@@ -303,26 +311,21 @@ class SearchIndexed:
             logger.error("Can't index.")
             print(e)
 
-    def index_dict_words(self, db_session, schema_name: str):
+    def index_dict_words(self, schema_name: str, words: List[UDictWord]):
         ix = self.dict_words_index
-
-        if schema_name == 'appdata':
-            a = db_session.query(Am.DictWord).all()
-        else:
-            a = db_session.query(Um.DictWord).all()
 
         try:
             # NOTE: Only use multisegment=True when indexing from scratch.
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
-            for i in a:
+            for i in words:
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    content = compactRichText(i.definition_html)
-                elif i.definition_plain is None:
-                    continue
+                    content = compactRichText(i.definition_html) # type: ignore
+                elif i.definition_plain is not None:
+                    content = compactPlainText(i.definition_plain) # type: ignore
                 else:
-                    content = compactPlainText(i.definition_plain)
+                    continue
 
                 # Add word and synonyms to content field so a single query will match
                 if i.word is not None:
@@ -331,7 +334,8 @@ class SearchIndexed:
                 if i.synonyms is not None:
                     content = f"{content} {i.synonyms}"
 
-                writer.add_document(
+                writer.update_document(
+                    index_key = f"{schema_name}:dict_words:{i.uid}",
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,

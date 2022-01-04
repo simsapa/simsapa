@@ -52,7 +52,7 @@ class HasResultsList:
 
         self._results = self.search_query.highlight_results_page(page_num)
 
-        msg = f"Showing {page_start+1}-{page_end} out of {self.search_query.hits} pages"
+        msg = f"Showing {page_start+1}-{page_end} out of {self.search_query.hits} results"
         self.results_label.setText(msg)
 
         colors = ["#ffffff", "#efefef"]

@@ -17,7 +17,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from simsapa import ASSETS_DIR, APP_QUEUES
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
+from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
@@ -84,6 +84,14 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
             self.graph_path.unlink()
 
         event.accept()
+
+    def reinit_index(self):
+        self._app_data.search_indexed = SearchIndexed()
+        self.search_query = SearchQuery(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result,
+        )
 
     def handle_messages(self):
         if self.queue_id in APP_QUEUES.keys():
