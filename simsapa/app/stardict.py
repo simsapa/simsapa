@@ -311,7 +311,6 @@ def parse_dict(paths: StarDictPaths,
 
             synonyms = []
             if syn_entries is not None:
-                synonyms = []
                 for k, v in syn_entries.items():
                     if v[0] == idx:
                         synonyms.append(k)
