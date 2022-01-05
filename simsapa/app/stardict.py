@@ -265,8 +265,8 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
 
 def parse_dict(paths: StarDictPaths,
                ifo: StarDictIfo,
-               idx: List[IdxEntry],
-               syn: Optional[SynEntries]) -> List[DictEntry]:
+               idx_entries: List[IdxEntry],
+               syn_entries: Optional[SynEntries]) -> List[DictEntry]:
     """Parse a .dict file."""
 
     dict_path = paths['dic_path']
@@ -293,7 +293,7 @@ def parse_dict(paths: StarDictPaths,
         types = "m"
 
     with open_dict(dict_path, "rb") as f:
-        for i in idx:
+        for idx, i in enumerate(idx_entries):
 
             dict_word = i['word']
             f.seek(i["offset_begin"])
@@ -310,12 +310,11 @@ def parse_dict(paths: StarDictPaths,
                 definition_html = data_str
 
             synonyms = []
-            if syn is not None and dict_word in syn.keys():
-                synonyms = list(map(lambda x: idx[x]['word'], syn[dict_word]))
-                # FIXME synonyms seem to just repeat the dict word
-                # if len(synonyms) > 0:
-                #     print(syn[dict_word])
-                #     print(synonyms)
+            if syn_entries is not None:
+                synonyms = []
+                for k, v in syn_entries.items():
+                    if v[0] == idx:
+                        synonyms.append(k)
 
             words.append(DictEntry(
                 word = dict_word,
