@@ -26,11 +26,14 @@ from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
+from .search_info import setup_info_button
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
                              HasMemoDialog, HasLinksSidebar, HasMemosSidebar,
                              HasResultsList, HasImportStarDictDialog):
+
+    searchbar_layout: QHBoxLayout
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -123,6 +126,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
+        setup_info_button(self.searchbar_layout)
         self._setup_content_html()
 
         self.search_input.setFocus()

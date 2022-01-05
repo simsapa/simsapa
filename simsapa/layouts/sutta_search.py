@@ -25,12 +25,15 @@ from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
+from .search_info import setup_info_button
 
 logger = _logging.getLogger(__name__)
 
 
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                         HasLinksSidebar, HasMemosSidebar, HasResultsList):
+
+    searchbar_layout: QHBoxLayout
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -114,6 +117,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
+        setup_info_button(self.searchbar_layout)
         self._setup_content_html()
 
         self.search_input.setFocus()
