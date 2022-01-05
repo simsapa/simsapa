@@ -283,7 +283,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.show_network_graph(sutta)
 
         if sutta.content_html is not None and sutta.content_html != '':
-            content = sutta.content_html
+            # Hide SuttaCentral ref link text
+            style = '<style>a.ref { display: none; }</style>'
+            content = style + sutta.content_html
         elif sutta.content_plain is not None and sutta.content_plain != '':
             style = '<style>pre { font-family: serif; }</style>'
             content = style + '<pre>' + sutta.content_plain + '</pre>'

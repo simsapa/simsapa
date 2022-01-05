@@ -122,7 +122,7 @@ class SearchQuery:
         # ... Nikāya 123.
         s = re.sub(r'[\w]+ Nikāya +[0-9\.]*', '', s)
 
-        # SC 1, (link text)
+        # SC 1, (SuttaCentral ref link text)
         s = re.sub('SC [0-9]+', '', s)
 
         # Remove the title from the content, but only the first instance, so as

@@ -112,7 +112,7 @@ def uid_to_ref(uid: str) -> str:
 
     # handle all-upcase collections
     subs = [('dn ', 'DN '),
-            ('mn ', 'DN '),
+            ('mn ', 'MN '),
             ('sn ', 'SN '),
             ('an ', 'AN ')]
     for sub_from, sub_to in subs:
