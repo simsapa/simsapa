@@ -44,6 +44,11 @@ class DictWordsIndexSchema(SchemaClass):
     synonyms = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
 
+# TODO same as simsapa.app.types.DictLabels, but declared here to avoid cirular import
+class DictLabels(TypedDict):
+    appdata: List[str]
+    userdata: List[str]
+
 class SearchResult(TypedDict):
     # database id
     db_id: int
@@ -90,7 +95,8 @@ class SearchQuery:
     def __init__(self, ix: FileIndex, page_len: int, hit_to_result_fn: Callable):
         self.ix = ix
         self.searcher = ix.searcher()
-        self.results: Results
+        self.all_results: Results
+        self.filtered: List[Hit]
         self.hits: int = 0
         self.page_len = page_len
         self.hit_to_result_fn = hit_to_result_fn
@@ -178,17 +184,37 @@ class SearchQuery:
         # The highlighting _is_ slow, that has to be only done on the
         # displayed results page.
 
-        return self.searcher.search(q, limit=None, terms=True)
+        return self.searcher.search(q, limit=None)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
         page_start = page_num * self.page_len
         page_end = page_start + self.page_len
-        return list(map(self._result_with_snippet_highlight, self.results[page_start:page_end]))
+        return list(map(self._result_with_snippet_highlight, self.filtered[page_start:page_end]))
 
-    def new_query(self, query: str) -> List[SearchResult]:
-        self.results = self._search_field('content', query)
+    def new_query(self,
+                  query: str,
+                  disabled_dict_labels: Optional[DictLabels] = None) -> List[SearchResult]:
+
+        self.all_results = self._search_field(field_name = 'content', query = query)
+
+        def _not_in_disabled(x: Hit):
+            if disabled_dict_labels is not None:
+                for schema in disabled_dict_labels.keys():
+                    for label in disabled_dict_labels[schema]:
+                        if x['schema_name'] == schema and x['uid'].endswith(f'/{label.lower()}'):
+                            return False
+                return True
+            else:
+                return True
+
+
+        if disabled_dict_labels is None:
+            self.filtered = list(self.all_results)
+        else:
+            self.filtered = list(filter(_not_in_disabled, self.all_results))
+
         # NOTE: r.estimated_min_length() errors on some searches
-        self.hits = len(self.results)
+        self.hits = len(self.filtered)
 
         if self.hits == 0:
             return []
@@ -196,23 +222,23 @@ class SearchQuery:
         # may slow down highlighting with many results
         # r.fragmenter.charlimit = None
 
-        self.results.fragmenter.maxchars = 200
-        self.results.fragmenter.surround = 20
+        self.all_results.fragmenter.maxchars = 200
+        self.all_results.fragmenter.surround = 20
         # FIRST (the default) Show fragments in the order they appear in the document.
         # SCORE Show highest scoring fragments first.
-        self.results.order = SCORE
-        self.results.formatter = HtmlFormatter(tagname='span', classname='match')
+        self.all_results.order = SCORE
+        self.all_results.formatter = HtmlFormatter(tagname='span', classname='match')
 
         # NOTE: highlighting the matched fragments is slow, so only do
         # highlighting on the first page of results.
 
         return self.highlight_results_page(0)
 
-    def all_results(self, highlight: bool = False) -> List[SearchResult]:
+    def get_all_results(self, highlight: bool = False) -> List[SearchResult]:
         if highlight:
-            return list(map(self._result_with_snippet_highlight, self.results))
+            return list(map(self._result_with_snippet_highlight, self.all_results))
         else:
-            return list(map(self._result_with_content_no_highlight, self.results))
+            return list(map(self._result_with_content_no_highlight, self.all_results))
 
 
 class SearchIndexed:
@@ -312,6 +338,7 @@ class SearchIndexed:
             print(e)
 
     def index_dict_words(self, schema_name: str, words: List[UDictWord]):
+        print("index_dict_words()")
         ix = self.dict_words_index
 
         try:

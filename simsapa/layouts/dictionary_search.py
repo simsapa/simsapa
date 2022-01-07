@@ -8,7 +8,7 @@ import json
 import queue
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QKeySequence, QCloseEvent
+from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap
 from PyQt5.QtWidgets import (QLabel, QListWidget, QMainWindow, QAction,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy)
@@ -26,7 +26,8 @@ from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
-from .search_info import setup_info_button
+from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
+from .dictionary_select_dialog import DictLabels, DictionarySelectDialog
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
@@ -46,7 +47,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self._app_data: AppData = app_data
         self._results: List[SearchResult] = []
         self._recent: List[UDictWord] = []
-
         self._current_word: Optional[UDictWord] = None
 
         self.page_len = 20
@@ -126,7 +126,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
-        setup_info_button(self.searchbar_layout)
+        self._setup_dict_select_button()
+        setup_info_button(self.searchbar_layout, self)
         self._setup_content_html()
 
         self.search_input.setFocus()
@@ -163,6 +164,25 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
 
         self.pali_buttons_layout.addLayout(lowercase_row)
         self.pali_buttons_layout.addLayout(uppercase_row)
+
+    def _setup_dict_select_button(self):
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/dictionary"))
+
+        btn = QPushButton()
+        btn.setFixedSize(30, 30)
+        btn.setToolTip("Select Dictionaries")
+        btn.clicked.connect(partial(self._show_dict_select_dialog))
+        btn.setIcon(icon)
+
+        self.dict_select_btn = btn
+        self.searchbar_layout.addWidget(self.dict_select_btn)
+
+    def _show_dict_select_dialog(self):
+        d = DictionarySelectDialog(self._app_data, self)
+
+        if d.exec():
+            self._handle_query()
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
@@ -260,7 +280,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query)
+        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
         hits = self.search_query.hits
 
         if hits == 0:
@@ -375,3 +395,15 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
 
         self.action_Import_from_StarDict \
             .triggered.connect(partial(self.show_import_from_stardict_dialog))
+
+        self.action_Search_Query_Terms \
+            .triggered.connect(partial(show_search_info, self))
+
+        self.action_Select_Dictionaries \
+            .triggered.connect(partial(self._show_dict_select_dialog))
+
+        self.action_Website \
+            .triggered.connect(partial(open_simsapa_website))
+
+        self.action_About \
+            .triggered.connect(partial(show_about, self))

@@ -25,7 +25,7 @@ from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
-from .search_info import setup_info_button
+from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
 
 logger = _logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.memos_tab_idx = 2
 
         self._setup_pali_buttons()
-        setup_info_button(self.searchbar_layout)
+        setup_info_button(self.searchbar_layout, self)
         self._setup_content_html()
 
         self.search_input.setFocus()
@@ -359,3 +359,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_sutta))
+
+        self.action_Search_Query_Terms \
+            .triggered.connect(partial(show_search_info, self))
+
+        self.action_Website \
+            .triggered.connect(partial(open_simsapa_website))
+
+        self.action_About \
+            .triggered.connect(partial(show_about, self))

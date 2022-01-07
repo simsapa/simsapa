@@ -1,11 +1,13 @@
+import json
 import os
 import os.path
 import logging as _logging
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, TypedDict, Union
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql.functions import func
 
 from PyQt5.QtGui import QClipboard
 
@@ -26,7 +28,19 @@ UMemo = Union[Am.Memo, Um.Memo]
 UDocument = Union[Am.Document, Um.Document]
 
 
+class DictLabels(TypedDict):
+    appdata: List[str]
+    userdata: List[str]
+
+
+class AppSettings(TypedDict):
+    disabled_dict_labels: DictLabels
+
+
 class AppData:
+
+    app_settings: AppSettings
+
     def __init__(self,
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
@@ -53,6 +67,8 @@ class AppData:
         self.db_conn, self.db_session = self._connect_to_db(app_db_path, user_db_path)
 
         self.search_indexed = SearchIndexed()
+
+        self._read_app_settings()
 
         if silent_index_if_empty:
             self.search_indexed.index_all(self.db_session, only_if_empty=True)
@@ -86,6 +102,45 @@ class AppData:
 
         return (db_conn, db_session)
 
+    def _read_app_settings(self):
+        x = self.db_session \
+                .query(Um.AppSetting) \
+                .filter(Um.AppSetting.key == 'app_settings') \
+                .first()
+
+        if x is not None:
+            self.app_settings: AppSettings = json.loads(x.value)
+        else:
+            self.app_settings = AppSettings(
+                disabled_dict_labels = DictLabels(
+                    appdata = [],
+                    userdata = [],
+                )
+            )
+            self._save_app_settings()
+
+    def _save_app_settings(self):
+        x = self.db_session \
+                .query(Um.AppSetting) \
+                .filter(Um.AppSetting.key == 'app_settings') \
+                .first()
+
+        try:
+            if x is not None:
+                x.value = json.dumps(self.app_settings)
+                x.updated_at = func.now()
+                self.db_session.commit()
+            else:
+                x = Um.AppSetting(
+                    key = 'app_settings',
+                    value = json.dumps(self.app_settings),
+                    created_at = func.now(),
+                )
+                self.db_session.add(x)
+                self.db_session.commit()
+        except Exception as e:
+            print(f"ERROR: {e}")
+
     def clipboard_setText(self, text):
         if self.clipboard is not None:
             self.clipboard.clear()
@@ -115,3 +170,4 @@ def create_app_dirs():
 
     if not ASSETS_DIR.exists():
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+

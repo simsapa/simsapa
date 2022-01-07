@@ -328,6 +328,7 @@
     <property name="title">
      <string>&amp;Help</string>
     </property>
+    <addaction name="action_Search_Query_Terms"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -335,6 +336,7 @@
     <property name="title">
      <string>&amp;Dictionary</string>
     </property>
+    <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
    <addaction name="menu_File"/>
@@ -475,6 +477,16 @@
   <action name="action_Import_from_StarDict">
    <property name="text">
     <string>&amp;Import from StarDict...</string>
+   </property>
+  </action>
+  <action name="action_Search_Query_Terms">
+   <property name="text">
+    <string>Search Query Terms</string>
+   </property>
+  </action>
+  <action name="action_Select_Dictionaries">
+   <property name="text">
+    <string>&amp;Select Dictionaries...</string>
    </property>
   </action>
  </widget>

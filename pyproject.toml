@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.7.dev2"
+version = "0.1.7.dev3"
 description = "Simsapa Dhamma Reader"
 authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"
@@ -38,6 +38,7 @@ python-idzip = "^0.3.7"
 bleach = "^4.1.0"
 Whoosh = "^2.7.4"
 typer = "^0.4.0"
+tomlkit = "^0.8.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"

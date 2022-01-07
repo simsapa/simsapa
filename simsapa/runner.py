@@ -46,7 +46,7 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
         print(f"Results count: {search_query.hits}")
 
     if print_titles:
-        for i in search_query.all_results(highlight=False):
+        for i in search_query.get_all_results(highlight=False):
             print(i['title'])
 
 @index_app.command("create")

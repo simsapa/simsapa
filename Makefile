@@ -19,3 +19,6 @@ tests:
 
 bootstrap-appdata:
 	./scripts/bootstrap-appdata-db.py
+
+count-code:
+	tokei --exclude simsapa/assets/ .

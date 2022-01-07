@@ -343,6 +343,7 @@
     <property name="title">
      <string>&amp;Help</string>
     </property>
+    <addaction name="action_Search_Query_Terms"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -478,6 +479,11 @@
    </property>
    <property name="shortcut">
     <string>F11</string>
+   </property>
+  </action>
+  <action name="action_Search_Query_Terms">
+   <property name="text">
+    <string>Search Query Terms</string>
    </property>
   </action>
  </widget>
