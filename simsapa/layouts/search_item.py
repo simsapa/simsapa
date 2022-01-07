@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
 
 from simsapa.app.db.search import SearchResult
 
@@ -51,8 +51,15 @@ class SearchItemWidget(QWidget):
 
         self.setSnippet(r['snippet'])
 
+        details = ''
+
         if r['uid'] is not None:
-            self.setDetails(r['uid'])
+            details = r['uid']
+
+        if r['schema_name'] == 'userdata':
+            details += ' (u)'
+
+        self.setDetails(details)
 
     def setTitle(self, text: str):
         if len(text.strip()) == 0:
