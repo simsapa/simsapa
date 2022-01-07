@@ -148,7 +148,6 @@ class AppData:
 
     def clipboard_getText(self) -> Optional[str]:
         if self.clipboard is not None:
-            self.clipboard.clear()
             return self.clipboard.text()
         else:
             return None
