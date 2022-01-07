@@ -27,7 +27,7 @@ from .results_list import HasResultsList
 from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
-from .dictionary_select_dialog import DictLabels, DictionarySelectDialog
+from .dictionary_select_dialog import DictionarySelectDialog
 
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
@@ -125,9 +125,9 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
-        self._setup_pali_buttons()
         self._setup_dict_select_button()
         setup_info_button(self.searchbar_layout, self)
+        self._setup_pali_buttons()
         self._setup_content_html()
 
         self.search_input.setFocus()
@@ -170,7 +170,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         icon.addPixmap(QPixmap(":/dictionary"))
 
         btn = QPushButton()
-        btn.setFixedSize(30, 30)
+        btn.setFixedSize(40, 40)
         btn.setToolTip("Select Dictionaries")
         btn.clicked.connect(partial(self._show_dict_select_dialog))
         btn.setIcon(icon)

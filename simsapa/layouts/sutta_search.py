@@ -116,8 +116,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
-        self._setup_pali_buttons()
         setup_info_button(self.searchbar_layout, self)
+        self._setup_pali_buttons()
         self._setup_content_html()
 
         self.search_input.setFocus()

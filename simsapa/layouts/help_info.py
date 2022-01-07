@@ -12,7 +12,7 @@ def setup_info_button(layout, parent=None):
     icon = QIcon()
     icon.addPixmap(QPixmap(":/info"))
     btn = QPushButton()
-    btn.setFixedSize(30, 30)
+    btn.setFixedSize(40, 40)
     btn.setToolTip("Search query terms")
     btn.setIcon(icon)
 
