@@ -40,6 +40,15 @@ Whoosh = "^2.7.4"
 typer = "^0.4.0"
 tomlkit = "^0.8.0"
 
+pyqtkeybind = [
+  { version = "^0.0.8", platform = "linux" },
+]
+
+keyboard = [
+  { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "win32" },
+  { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "darwin" },
+]
+
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
 pyArango = "^1.3.5"

@@ -4,6 +4,7 @@ from typing import Dict
 from queue import Queue
 from dotenv import load_dotenv
 import appdirs
+import platform
 
 load_dotenv()
 
@@ -28,3 +29,8 @@ APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
 APP_QUEUES: Dict[str, Queue] = {}
+
+IS_LINUX = (platform.system() == 'Linux')
+IS_WINDOWS = (platform.system() == 'Windows')
+IS_MAC = (platform.system() == 'Darwin')
+

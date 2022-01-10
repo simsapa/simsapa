@@ -9,7 +9,7 @@ import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 
-from simsapa import APP_DB_PATH
+from simsapa import APP_DB_PATH, IS_LINUX
 from .app.types import AppData, create_app_dirs
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
@@ -58,7 +58,14 @@ def start():
     daemon.setDaemon(True)
     daemon.start()
 
-    app_data = AppData(app_clipboard=app.clipboard(), api_port=port)
+    if IS_LINUX:
+        from .app.hotkeys_manager_linux import HotkeysManagerLinux
+        hotkeys_manager = HotkeysManagerLinux()
+    else:
+        from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
+        hotkeys_manager = HotkeysManagerWindowsMac()
+
+    app_data = AppData(app_clipboard=app.clipboard(), api_port=port, hotkeys_manager=hotkeys_manager)
 
     # === Create systray ===
 
@@ -81,5 +88,9 @@ def start():
     app_windows._new_sutta_search_window()
 
     status = app.exec_()
+
+    if app_data.hotkeys_manager is not None:
+        app_data.hotkeys_manager.unregister_all_hotkeys()
+
     logger.info(f"main() Exiting with status {status}.")
     sys.exit(status)

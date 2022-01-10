@@ -18,6 +18,8 @@ from .db import userdata_models as Um
 
 from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
 from simsapa.app.helpers import find_or_create_db
+from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
+
 
 logger = _logging.getLogger(__name__)
 
@@ -40,15 +42,19 @@ class AppSettings(TypedDict):
 class AppData:
 
     app_settings: AppSettings
+    hotkeys_manager: Optional[HotkeysManagerInterface]
 
     def __init__(self,
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
                  api_port: Optional[int] = None,
+                 hotkeys_manager = Optional[HotkeysManagerInterface],
                  silent_index_if_empty: bool = True):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
+
+        self.hotkeys_manager = hotkeys_manager
 
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()

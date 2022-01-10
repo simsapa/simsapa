@@ -66,6 +66,16 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(300)
 
+        if self._app_data.hotkeys_manager is not None:
+            try:
+                self._app_data \
+                    .hotkeys_manager \
+                    .setup_window(self,
+                                  sutta_lookup_fn = self._lookup_clipboard,
+                                  dict_lookup_fn = None)
+            except Exception as e:
+                print(e)
+
         self._ui_setup()
         self._connect_signals()
 
@@ -77,6 +87,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self._setup_content_html_context_menu()
 
         self.statusbar.showMessage("Ready", 3000)
+
+    def _lookup_clipboard(self):
+        s = self._app_data.clipboard_getText()
+        if s is not None:
+            self._set_query(s)
+            self._handle_query()
 
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
@@ -154,6 +170,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.pali_buttons_layout.addLayout(lowercase_row)
         self.pali_buttons_layout.addLayout(uppercase_row)
+
+    def _set_query(self, s: str):
+        self.search_input.setText(s)
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
@@ -368,3 +387,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.action_About \
             .triggered.connect(partial(show_about, self))
+
+        self.action_Lookup_Clipboard_in_Suttas \
+            .triggered.connect(partial(self._lookup_clipboard))
