@@ -49,10 +49,10 @@ class HotkeysManagerLinux(QObject, HotkeysManagerInterface):
         win_id = window.winId()
         self.win_ids.append(win_id)
 
-        self.keybinder.register_hotkey(win_id, "Ctrl+Shift+s", self.lookup_clipboard_in_suttas_signal.emit)
-        self.keybinder.register_hotkey(win_id, "Ctrl+Shift+d", self.lookup_clipboard_in_dictionary_signal.emit)
+        self.keybinder.register_hotkey(win_id, "ctrl+shift+s", self.lookup_clipboard_in_suttas_signal.emit)
+        self.keybinder.register_hotkey(win_id, "ctrl+shift+d", self.lookup_clipboard_in_dictionary_signal.emit)
 
     def unregister_all_hotkeys(self):
         for i in self.win_ids:
-            self.keybinder.unregister_hotkey(i,  "Ctrl+Shift+s")
-            self.keybinder.unregister_hotkey(i,  "Ctrl+Shift+d")
+            self.keybinder.unregister_hotkey(i,  "ctrl+shift+s")
+            self.keybinder.unregister_hotkey(i,  "ctrl+shift+d")

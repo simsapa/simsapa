@@ -103,13 +103,6 @@ class AppWindows:
         view.action_Open \
             .triggered.connect(partial(self._open_file_dialog, view))
 
-        try:
-            view.action_Open_Selected \
-                .triggered.connect(partial(self._open_selected_document, view))
-        except Exception:
-            # FIXME silent exception
-            pass
-
         view.action_Quit \
             .triggered.connect(partial(self._quit_app))
         view.action_Sutta_Search \
@@ -129,6 +122,13 @@ class AppWindows:
                 .triggered.connect(partial(self._new_document_reader_window))
             view.action_Library \
                 .triggered.connect(partial(self._new_library_browser_window))
+
+            try:
+                view.action_Open_Selected \
+                    .triggered.connect(partial(self._open_selected_document, view))
+            except Exception as e:
+                print(e)
+
         else:
             if hasattr(view,'toolBar'):
                 view.toolBar.setVisible(False)

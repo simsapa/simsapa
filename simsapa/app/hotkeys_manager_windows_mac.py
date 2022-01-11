@@ -27,8 +27,8 @@ class HotkeysManagerWindowsMac(QObject, HotkeysManagerInterface):
             self.lookup_clipboard_in_dictionary_signal.connect(dict_lookup_fn)
 
         try:
-            keyboard.add_hotkey("Ctrl+Shift+s", self.lookup_clipboard_in_suttas_signal.emit, suppress=True)
-            keyboard.add_hotkey("Ctrl+Shift+d", self.lookup_clipboard_in_dictionary_signal.emit, suppress=True)
+            keyboard.add_hotkey("ctrl+shift+s", self.lookup_clipboard_in_suttas_signal.emit, suppress=True)
+            keyboard.add_hotkey("ctrl+shift+d", self.lookup_clipboard_in_dictionary_signal.emit, suppress=True)
         except Exception as e:
             logger.error("Can't init hotkeys.")
             print(e)
