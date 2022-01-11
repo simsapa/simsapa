@@ -221,9 +221,6 @@ class Ui_DictionarySearchWindow(object):
         self.action_Search_Query_Terms.setObjectName("action_Search_Query_Terms")
         self.action_Select_Dictionaries = QtWidgets.QAction(DictionarySearchWindow)
         self.action_Select_Dictionaries.setObjectName("action_Select_Dictionaries")
-        self.action_Lookup_Clipboard = QtWidgets.QAction(DictionarySearchWindow)
-        self.action_Lookup_Clipboard.setShortcutContext(QtCore.Qt.ApplicationShortcut)
-        self.action_Lookup_Clipboard.setObjectName("action_Lookup_Clipboard")
         self.action_Lookup_Clipboard_in_Dictionary = QtWidgets.QAction(DictionarySearchWindow)
         self.action_Lookup_Clipboard_in_Dictionary.setShortcutContext(QtCore.Qt.ApplicationShortcut)
         self.action_Lookup_Clipboard_in_Dictionary.setObjectName("action_Lookup_Clipboard_in_Dictionary")
@@ -309,8 +306,6 @@ class Ui_DictionarySearchWindow(object):
         self.action_Import_from_StarDict.setText(_translate("DictionarySearchWindow", "&Import from StarDict..."))
         self.action_Search_Query_Terms.setText(_translate("DictionarySearchWindow", "Search Query Terms"))
         self.action_Select_Dictionaries.setText(_translate("DictionarySearchWindow", "&Select Dictionaries..."))
-        self.action_Lookup_Clipboard.setText(_translate("DictionarySearchWindow", "&Lookup Clipboard"))
-        self.action_Lookup_Clipboard.setShortcut(_translate("DictionarySearchWindow", "Ctrl+F11"))
         self.action_Lookup_Clipboard_in_Dictionary.setText(_translate("DictionarySearchWindow", "&Lookup Clipboard in Dictionary"))
         self.action_Lookup_Clipboard_in_Dictionary.setShortcut(_translate("DictionarySearchWindow", "Ctrl+Shift+D"))
 from simsapa.assets import icons_rc

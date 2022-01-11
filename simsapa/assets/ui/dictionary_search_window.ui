@@ -490,17 +490,6 @@
     <string>&amp;Select Dictionaries...</string>
    </property>
   </action>
-  <action name="action_Lookup_Clipboard">
-   <property name="text">
-    <string>&amp;Lookup Clipboard</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+F11</string>
-   </property>
-   <property name="shortcutContext">
-    <enum>Qt::ApplicationShortcut</enum>
-   </property>
-  </action>
   <action name="action_Lookup_Clipboard_in_Dictionary">
    <property name="text">
     <string>&amp;Lookup Clipboard in Dictionary</string>

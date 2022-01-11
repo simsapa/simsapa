@@ -43,6 +43,7 @@ def compactRichText(text: str) -> str:
     # Some CSS is not removed by bleach when syntax is malformed
     text = re.sub(r'<style>.*</style>', '', text, flags = re.DOTALL)
     text = text.replace('&nbsp;', ' ')
+    text = text.replace('&amp;', '&')
     # remove SuttaCentral ref links
     text = re.sub(r"<a class=.ref\b[^>]+>[^<]*</a>", '', text)
     # make sure there is space before and after tags, so words don't get joined after removing tags
