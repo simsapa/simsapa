@@ -29,13 +29,14 @@ UMemo = Union[Am.Memo, Um.Memo]
 UDocument = Union[Am.Document, Um.Document]
 
 
-class DictLabels(TypedDict):
+class Labels(TypedDict):
     appdata: List[str]
     userdata: List[str]
 
 
 class AppSettings(TypedDict):
-    disabled_dict_labels: DictLabels
+    disabled_sutta_labels: Labels
+    disabled_dict_labels: Labels
 
 
 class AppData:
@@ -113,7 +114,11 @@ class AppData:
             self.app_settings: AppSettings = json.loads(x.value)
         else:
             self.app_settings = AppSettings(
-                disabled_dict_labels = DictLabels(
+                disabled_sutta_labels = Labels(
+                    appdata = [],
+                    userdata = [],
+                ),
+                disabled_dict_labels = Labels(
                     appdata = [],
                     userdata = [],
                 )

@@ -44,8 +44,8 @@ class DictWordsIndexSchema(SchemaClass):
     synonyms = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
 
-# TODO same as simsapa.app.types.DictLabels, but declared here to avoid cirular import
-class DictLabels(TypedDict):
+# TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
+class Labels(TypedDict):
     appdata: List[str]
     userdata: List[str]
 
@@ -193,14 +193,14 @@ class SearchQuery:
 
     def new_query(self,
                   query: str,
-                  disabled_dict_labels: Optional[DictLabels] = None) -> List[SearchResult]:
+                  disabled_labels: Optional[Labels] = None) -> List[SearchResult]:
 
         self.all_results = self._search_field(field_name = 'content', query = query)
 
         def _not_in_disabled(x: Hit):
-            if disabled_dict_labels is not None:
-                for schema in disabled_dict_labels.keys():
-                    for label in disabled_dict_labels[schema]:
+            if disabled_labels is not None:
+                for schema in disabled_labels.keys():
+                    for label in disabled_labels[schema]:
                         if x['schema_name'] == schema and x['uid'].endswith(f'/{label.lower()}'):
                             return False
                 return True
@@ -208,7 +208,7 @@ class SearchQuery:
                 return True
 
 
-        if disabled_dict_labels is None:
+        if disabled_labels is None:
             self.filtered = list(self.all_results)
         else:
             self.filtered = list(filter(_not_in_disabled, self.all_results))

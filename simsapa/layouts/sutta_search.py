@@ -8,7 +8,7 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QKeySequence, QCloseEvent
+from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction,
                              QVBoxLayout, QHBoxLayout, QPushButton,
                              QSizePolicy, QListWidget)
@@ -26,6 +26,7 @@ from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
 from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
+from .sutta_select_dialog import SuttaSelectDialog
 
 logger = _logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
+        self._setup_sutta_select_button()
         setup_info_button(self.searchbar_layout, self)
         self._setup_pali_buttons()
         self._setup_content_html()
@@ -163,6 +165,25 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.pali_buttons_layout.addLayout(lowercase_row)
         self.pali_buttons_layout.addLayout(uppercase_row)
+
+    def _setup_sutta_select_button(self):
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/book"))
+
+        btn = QPushButton()
+        btn.setFixedSize(40, 40)
+        btn.setToolTip("Select Sutta Sources")
+        btn.clicked.connect(partial(self._show_sutta_select_dialog))
+        btn.setIcon(icon)
+
+        self.sutta_select_btn = btn
+        self.searchbar_layout.addWidget(self.sutta_select_btn)
+
+    def _show_sutta_select_dialog(self):
+        d = SuttaSelectDialog(self._app_data, self)
+
+        if d.exec():
+            self._handle_query()
 
     def _set_query(self, s: str):
         self.search_input.setText(s)
@@ -314,7 +335,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query)
+        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_sutta_labels'])
         hits = self.search_query.hits
 
         if hits == 0:
@@ -374,6 +395,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.action_Search_Query_Terms \
             .triggered.connect(partial(show_search_info, self))
+
+        self.action_Select_Sutta_Authors \
+            .triggered.connect(partial(self._show_sutta_select_dialog))
 
         self.action_Website \
             .triggered.connect(partial(open_simsapa_website))

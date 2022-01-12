@@ -1,7 +1,7 @@
 from typing import Union
 from PyQt5.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
-from ..app.types import AppData, DictLabels
+from ..app.types import AppData, Labels
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
@@ -49,7 +49,7 @@ class DictionarySelectDialog(QDialog):
 
     def _ok_pressed(self):
         a = filter(lambda x: not x.isChecked(), self.userdata_checks)
-        disabled_dict_labels = DictLabels(
+        disabled_dict_labels = Labels(
             userdata = [],
             appdata = [],
         )
