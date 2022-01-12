@@ -66,16 +66,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(300)
 
-        if self._app_data.hotkeys_manager is not None:
-            try:
-                self._app_data \
-                    .hotkeys_manager \
-                    .setup_window(self,
-                                  sutta_lookup_fn = None,
-                                  dict_lookup_fn = self._lookup_clipboard)
-            except Exception as e:
-                print(e)
-
         self._ui_setup()
         self._connect_signals()
 
@@ -129,6 +119,9 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
                     info = data['arg']
                     if 'uid' in info.keys():
                         self._show_word_by_uid(info['uid'])
+
+                elif data['action'] == 'lookup_clipboard_in_dictionary':
+                    self._lookup_clipboard()
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:

@@ -1,9 +1,14 @@
 import os
 from functools import partial
 from typing import List
+import queue
+import json
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)
 
+from simsapa import APP_QUEUES
+from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from .types import AppData
 
 from ..layouts.sutta_search import SuttaSearchWindow
@@ -16,28 +21,104 @@ from ..layouts.links_browser import LinksBrowserWindow
 
 
 class AppWindows:
-    def __init__(self, app: QApplication, app_data: AppData):
+    def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: HotkeysManagerInterface):
         self._app = app
         self._app_data = app_data
+        self._hotkeys_manager = hotkeys_manager
         self._windows: List[QMainWindow] = []
 
-    def _new_sutta_search_window(self):
+        self.queue_id = 'app_windows'
+        APP_QUEUES[self.queue_id] = queue.Queue()
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(300)
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                msg = json.loads(s)
+
+                if msg['action'] == 'lookup_clipboard_in_suttas':
+                    self._lookup_clipboard_in_suttas(msg)
+
+                elif msg['action'] == 'lookup_clipboard_in_dictionary':
+                    self._lookup_clipboard_in_dictionary(msg)
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
+
+    def _lookup_clipboard_in_suttas(self, msg):
+        has_window = False
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindow) and w.isVisible():
+                has_window = True
+                break
+
+        if has_window:
+            return
+
+        view = self._new_sutta_search_window()
+
+        if self._hotkeys_manager:
+            data = json.dumps(msg)
+            APP_QUEUES[view.queue_id].put_nowait(data)
+            view.handle_messages()
+
+    def _lookup_clipboard_in_dictionary(self, msg):
+        has_window = False
+        for w in self._windows:
+            if isinstance(w, DictionarySearchWindow) and w.isVisible():
+                has_window = True
+                break
+
+        if has_window:
+            return
+
+        view = self._new_dictionary_search_window()
+
+        if self._hotkeys_manager:
+            data = json.dumps(msg)
+            APP_QUEUES[view.queue_id].put_nowait(data)
+            view.handle_messages()
+
+    def _new_sutta_search_window(self) -> SuttaSearchWindow:
         view = SuttaSearchWindow(self._app_data)
         self._connect_signals(view)
+
+        try:
+            self._hotkeys_manager.setup_window(view)
+        except Exception as e:
+            print(e)
+
         view.show()
+
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
             self._app_data.sutta_to_open = None
         self._windows.append(view)
 
-    def _new_dictionary_search_window(self):
+        return view
+
+    def _new_dictionary_search_window(self) -> DictionarySearchWindow:
         view = DictionarySearchWindow(self._app_data)
         self._connect_signals(view)
+
+        try:
+            self._hotkeys_manager.setup_window(view)
+        except Exception as e:
+            print(e)
+
         view.show()
+
         if self._app_data.dict_word_to_open:
             view._show_word(self._app_data.dict_word_to_open)
             self._app_data.dict_word_to_open = None
         self._windows.append(view)
+
+        return view
 
 #    def _new_dictionaries_manager_window(self):
 #        view = DictionariesManagerWindow(self._app_data)

@@ -3,6 +3,7 @@ import os
 import traceback
 import logging as _logging
 import logging.config
+from PyQt5 import QtCore
 import yaml
 import threading
 
@@ -60,12 +61,14 @@ def start():
 
     if IS_LINUX:
         from .app.hotkeys_manager_linux import HotkeysManagerLinux
-        hotkeys_manager = HotkeysManagerLinux()
+        hotkeys_manager = HotkeysManagerLinux(api_port=port)
     else:
         from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
-        hotkeys_manager = HotkeysManagerWindowsMac()
+        hotkeys_manager = HotkeysManagerWindowsMac(api_port=port)
 
-    app_data = AppData(app_clipboard=app.clipboard(), api_port=port, hotkeys_manager=hotkeys_manager)
+    app_data = AppData(app_clipboard=app.clipboard(), api_port=port)
+
+    app_windows = AppWindows(app, app_data, hotkeys_manager)
 
     # === Create systray ===
 
@@ -76,21 +79,31 @@ def start():
 
     menu = QMenu()
 
-    ac = QAction(QIcon(":close"), "Quit")
-    ac.triggered.connect(app.quit)
-    menu.addAction(ac)
+    _translate = QtCore.QCoreApplication.translate
+
+    ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
+    ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
+    ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
+    menu.addAction(ac1)
+
+    ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
+    ac2.setShortcut(_translate("Systray", "Ctrl+Shift+D"))
+    ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
+    menu.addAction(ac2)
+
+    ac3 = QAction(QIcon(":close"), "Quit")
+    ac3.triggered.connect(app.quit)
+    menu.addAction(ac3)
 
     tray.setContextMenu(menu)
 
     # === Create first window ===
 
-    app_windows = AppWindows(app, app_data)
     app_windows._new_sutta_search_window()
 
     status = app.exec_()
 
-    if app_data.hotkeys_manager is not None:
-        app_data.hotkeys_manager.unregister_all_hotkeys()
+    hotkeys_manager.unregister_all_hotkeys()
 
     logger.info(f"main() Exiting with status {status}.")
     sys.exit(status)

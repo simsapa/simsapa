@@ -45,13 +45,17 @@ class Handler(BaseHTTPRequestHandler):
 
             queue_id = path.split('/')[-1]
 
-            if queue_id not in APP_QUEUES.keys():
+            if queue_id != 'all' and queue_id not in APP_QUEUES.keys():
                 self.send_response(403, 'Forbidden')
                 self._send_cors_headers()
                 self.end_headers()
                 return
 
-            APP_QUEUES[queue_id].put_nowait(data)
+            if queue_id == 'all':
+                for i in APP_QUEUES.keys():
+                    APP_QUEUES[i].put_nowait(data)
+            else:
+                APP_QUEUES[queue_id].put_nowait(data)
 
             self.send_response(200)
             self._send_cors_headers()

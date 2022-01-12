@@ -1,16 +1,28 @@
-from typing import Callable, Optional
-from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QMainWindow
+import requests
 
 class HotkeysManagerInterface:
-    lookup_clipboard_in_suttas_signal: pyqtSignal
-    lookup_clipboard_in_dictionary_signal: pyqtSignal
+    api_url: str
 
-    def setup_window(self,
-                     window: QMainWindow,
-                     sutta_lookup_fn: Optional[Callable] = None,
-                     dict_lookup_fn: Optional[Callable] = None):
-        pass
+    def __init__(self, api_port: int):
+        self.api_url = f'http://localhost:{api_port}'
+
+    def setup_window(self, window: QMainWindow):
+        raise NotImplementedError
 
     def unregister_all_hotkeys(self):
-        pass
+        raise NotImplementedError
+
+    def lookup_clipboard_in_suttas(self):
+        data = {'action': 'lookup_clipboard_in_suttas'}
+        self._send_to_all(data)
+
+    def lookup_clipboard_in_dictionary(self):
+        data = {'action': 'lookup_clipboard_in_dictionary'}
+        self._send_to_all(data)
+
+    def _send_to_all(self, data):
+        url = f"{self.api_url}/queues/all"
+        r = requests.post(url=url, json=data)
+        if r.status_code != 200:
+            print(f"ERROR: {r}")
