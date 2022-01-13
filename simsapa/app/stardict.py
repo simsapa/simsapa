@@ -170,7 +170,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
             a = list(unzipped_dir.glob(f"**/{ext}"))
             if len(a) == 0:
                 # .syn is optional
-                if ext == '*.syn':
+                if ext == '*.syn*':
                     hits[ext] = [None]
                 else:
                     msg = f"ERROR: Can't find this type of file in the .zip: {ext}"
@@ -296,6 +296,7 @@ def parse_dict(paths: StarDictPaths,
         for idx, i in enumerate(idx_entries):
 
             dict_word = i['word']
+            print(dict_word)
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")
@@ -365,11 +366,9 @@ def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
     with open_dict(syn_path, 'rb') as f:
         while True:
             word_str = _read_word(f).rstrip('\0')
-
             word_pointer = f.read(4)
             if not word_pointer:
                 break
-
             if word_str not in syn_entries.keys():
                 syn_entries[word_str] = []
 
