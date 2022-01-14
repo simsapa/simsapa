@@ -44,10 +44,11 @@ pyqtkeybind = [
   { version = "^0.0.8", platform = "linux" },
 ]
 
-keyboard = [
-  { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "win32" },
-  { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "darwin" },
-]
+# Importing from project folder directly.
+# keyboard = [
+#   { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "win32" },
+#   { git = "https://github.com/boppreh/keyboard.git", rev = "51601e61df89af8e27e3604ce75b70dea726647c", platform = "darwin" },
+# ]
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
