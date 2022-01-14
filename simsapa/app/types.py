@@ -38,6 +38,9 @@ class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
 
+class AppMessage(TypedDict):
+    kind: str
+    text: str
 
 class AppData:
 

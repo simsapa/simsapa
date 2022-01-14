@@ -1,5 +1,7 @@
+import json
 import os
 from functools import partial
+import shutil
 import tarfile
 import logging as _logging
 
@@ -8,9 +10,11 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
 from PyQt5.QtGui import QMovie
 
+from simsapa.app.types import AppMessage
+
 from ..app.helpers import download_file
 
-from simsapa import ASSETS_DIR, APP_DB_PATH
+from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
 logger = _logging.getLogger(__name__)
@@ -99,15 +103,32 @@ class DownloadWorker(QObject):
 
 def download_extract_appdata() -> bool:
     tar_file_path = download_file(
-        'https://ssp.a-buddha-ujja.hu/appdata/appdata.sqlite3.tar.bz2',
+        'https://ssp.a-buddha-ujja.hu/assets/assets.tar.bz2',
         ASSETS_DIR
     )
 
     tar = tarfile.open(tar_file_path, "r:bz2")
-    tar.extractall(ASSETS_DIR)
+    temp_dir = ASSETS_DIR.joinpath('extract_temp')
+    tar.extractall(temp_dir)
     tar.close()
 
     os.remove(tar_file_path)
+
+    shutil.move(temp_dir.joinpath("appdata.sqlite3"), ASSETS_DIR)
+
+    # only move the extracted index if there isn't yet an index (first run)
+    if not ASSETS_DIR.joinpath("index").exists():
+        shutil.move(temp_dir.joinpath("index"), ASSETS_DIR)
+    else:
+        # on the next run, notify the user to re-index
+        msg = AppMessage(
+            kind = "warning",
+            text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
+        )
+        with open(STARTUP_MESSAGE_PATH, 'w') as f:
+            f.write(json.dumps(msg))
+
+    shutil.rmtree(temp_dir)
 
     if not APP_DB_PATH.exists():
         logger.error(f"File not found: {APP_DB_PATH}")

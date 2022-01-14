@@ -28,6 +28,8 @@ INDEX_DIR = ASSETS_DIR.joinpath('index')
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
+STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
+
 APP_QUEUES: Dict[str, Queue] = {}
 
 IS_LINUX = (platform.system() == 'Linux')

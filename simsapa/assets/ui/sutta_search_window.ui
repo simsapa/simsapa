@@ -317,6 +317,8 @@
     </property>
     <addaction name="action_Open"/>
     <addaction name="action_Close_Window"/>
+    <addaction name="action_Re_index_database"/>
+    <addaction name="action_Re_download_database"/>
     <addaction name="separator"/>
     <addaction name="action_Quit"/>
    </widget>
@@ -508,6 +510,16 @@
   <action name="action_Select_Sutta_Authors">
    <property name="text">
     <string>&amp;Select Sutta Authors...</string>
+   </property>
+  </action>
+  <action name="action_Re_index_database">
+   <property name="text">
+    <string>Re-index database...</string>
+   </property>
+  </action>
+  <action name="action_Re_download_database">
+   <property name="text">
+    <string>Re-download database...</string>
    </property>
   </action>
  </widget>

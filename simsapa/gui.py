@@ -101,6 +101,8 @@ def start():
 
     app_windows._new_sutta_search_window()
 
+    app_windows.show_startup_message()
+
     status = app.exec_()
 
     hotkeys_manager.unregister_all_hotkeys()

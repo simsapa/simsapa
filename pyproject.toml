@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.7.dev3"
+version = "0.1.7.dev4"
 description = "Simsapa Dhamma Reader"
 authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"

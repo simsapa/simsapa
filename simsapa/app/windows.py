@@ -1,15 +1,16 @@
 import os
 from functools import partial
+import shutil
 from typing import List
 import queue
 import json
 
 from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog)
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
 
-from simsapa import APP_QUEUES
+from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from .types import AppData
+from .types import AppData, AppMessage
 
 from ..layouts.sutta_search import SuttaSearchWindow
 from ..layouts.dictionary_search import DictionarySearchWindow
@@ -172,6 +173,63 @@ class AppWindows:
             if len(file_path) != 0:
                 self._new_document_reader_window(file_path)
 
+    def show_startup_message(self, parent = None):
+        if not STARTUP_MESSAGE_PATH.exists():
+            return
+
+        with open(STARTUP_MESSAGE_PATH, 'r') as f:
+            msg: AppMessage = json.loads(f.read())
+
+        os.remove(STARTUP_MESSAGE_PATH)
+
+        if len(msg['text']) == 0:
+            return
+
+        box = QMessageBox(parent)
+        if msg['kind'] == 'warning':
+            box.setIcon(QMessageBox.Warning)
+        else:
+            box.setIcon(QMessageBox.Information)
+        box.setText(msg['text'])
+        box.setWindowTitle("Message")
+        box.setStandardButtons(QMessageBox.Ok)
+
+        box.exec()
+
+    def _reindex_database_dialog(self, parent = None):
+        msg = """
+        <p>Re-indexing the database can take several minutes.</p>
+        <p>If you choose <b>Yes</b>, the current index will be removed, and the application will exit.</p>
+        <p>When you start the application again, the re-indexing will begin.</p>
+        <p>Start now?</p>"""
+
+        reply = QMessageBox.question(parent,
+                                     "Re-index the database",
+                                     msg,
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            shutil.rmtree(INDEX_DIR)
+            self._quit_app()
+
+    def _redownload_database_dialog(self, parent = None):
+        msg = """
+        <p>Re-downloading the database can take several minutes.</p>
+        <p>If you choose <b>Yes</b>, the database will be removed, and the application will exit.</p>
+        <p>When you start the application again, and the download will begin.</p>
+        <p>Start now?</p>"""
+
+        reply = QMessageBox.question(parent,
+                                     "Re-download the database",
+                                     msg,
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            os.remove(APP_DB_PATH)
+            self._quit_app()
+
     def _close_all_windows(self):
         for w in self._windows:
             w.close()
@@ -183,6 +241,11 @@ class AppWindows:
     def _connect_signals(self, view: QMainWindow):
         view.action_Open \
             .triggered.connect(partial(self._open_file_dialog, view))
+
+        view.action_Re_index_database \
+            .triggered.connect(partial(self._reindex_database_dialog, view))
+        view.action_Re_download_database \
+            .triggered.connect(partial(self._redownload_database_dialog, view))
 
         view.action_Quit \
             .triggered.connect(partial(self._quit_app))
