@@ -2,7 +2,7 @@ import logging as _logging
 
 from PyQt5.QtWidgets import QMainWindow
 
-import keyboard
+from simsapa.keyboard import keyboard
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 

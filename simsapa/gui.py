@@ -10,7 +10,7 @@ import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 
-from simsapa import APP_DB_PATH, IS_LINUX
+from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC
 from .app.types import AppData, create_app_dirs
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
@@ -72,30 +72,32 @@ def start():
 
     # === Create systray ===
 
-    app.setQuitOnLastWindowClosed(False)
+    # Systray doesn't work on MAC
+    if not IS_MAC:
+        app.setQuitOnLastWindowClosed(False)
 
-    tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
-    tray.setVisible(True)
+        tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
+        tray.setVisible(True)
 
-    menu = QMenu()
+        menu = QMenu()
 
-    _translate = QtCore.QCoreApplication.translate
+        _translate = QtCore.QCoreApplication.translate
 
-    ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
-    ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
-    ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
-    menu.addAction(ac1)
+        ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
+        ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
+        ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
+        menu.addAction(ac1)
 
-    ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
-    ac2.setShortcut(_translate("Systray", "Ctrl+Shift+D"))
-    ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
-    menu.addAction(ac2)
+        ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
+        ac2.setShortcut(_translate("Systray", "Ctrl+Shift+D"))
+        ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
+        menu.addAction(ac2)
 
-    ac3 = QAction(QIcon(":close"), "Quit")
-    ac3.triggered.connect(app.quit)
-    menu.addAction(ac3)
+        ac3 = QAction(QIcon(":close"), "Quit")
+        ac3.triggered.connect(app.quit)
+        menu.addAction(ac3)
 
-    tray.setContextMenu(menu)
+        tray.setContextMenu(menu)
 
     # === Create first window ===
 
