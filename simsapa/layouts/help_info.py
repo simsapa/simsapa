@@ -1,12 +1,9 @@
-from typing import Optional
 from PyQt5.QtCore import QUrl
-import tomlkit
-from importlib import metadata
 from functools import partial
 from PyQt5.QtGui import QDesktopServices, QIcon, QPixmap
 from PyQt5.QtWidgets import QMessageBox, QPushButton
 
-from simsapa import SIMSAPA_PACKAGE_DIR
+from simsapa.app.helpers import get_app_version
 
 def setup_info_button(layout, parent=None):
     icon = QIcon()
@@ -59,40 +56,15 @@ Read more about queries at
 
     box.exec()
 
-def _get_dev_version() -> Optional[str]:
-
-    p = SIMSAPA_PACKAGE_DIR.joinpath('..').joinpath('pyproject.toml')
-    if not p.exists():
-        return None
-
-    with open(p) as pyproject:
-        s = pyproject.read()
-
-    try:
-        t = tomlkit.parse(s)
-        v = t['tool']['poetry']['version'] # type: ignore
-        ver = f"{v}"
-    except Exception as e:
-        print(f"ERROR: {e}")
-        ver = None
-
-    return ver
-
 def show_about(parent=None):
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Information)
 
     version_par = ''
 
-    # Installed version
-    ver = metadata.version('simsapa')
+    ver = get_app_version()
     if ver is not None:
         version_par = f"<p>Version {ver}</p>"
-
-    # Dev version when running from local folder
-    ver = _get_dev_version()
-    if ver is not None:
-        version_par = f"<p>Dev Version {ver}</p>"
 
     msg = f"""
 <h1>Simsapa Dhamma Reader</h1>

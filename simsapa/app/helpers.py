@@ -1,6 +1,10 @@
+from importlib import metadata
 import logging as _logging
 from pathlib import Path
+from typing import Optional, TypedDict
 import requests
+import feedparser
+import semver
 
 import re
 import bleach
@@ -12,11 +16,12 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
+import tomlkit
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
 
 logger = _logging.getLogger(__name__)
 
@@ -31,6 +36,87 @@ def download_file(url: str, folder_path: Path) -> Path:
                 f.write(chunk)
 
     return file_path
+
+def get_app_dev_version() -> Optional[str]:
+
+    p = SIMSAPA_PACKAGE_DIR.joinpath('..').joinpath('pyproject.toml')
+    if not p.exists():
+        return None
+
+    with open(p) as pyproject:
+        s = pyproject.read()
+
+    try:
+        t = tomlkit.parse(s)
+        v = t['tool']['poetry']['version'] # type: ignore
+        ver = f"{v}"
+    except Exception as e:
+        print(f"ERROR: {e}")
+        ver = None
+
+    return ver
+
+def get_app_version() -> Optional[str]:
+    # Dev version when running from local folder
+    ver = get_app_dev_version()
+    if ver is not None:
+        return ver
+
+    # If not dev, return installed version
+    return metadata.version('simsapa')
+
+class UpdateInfo(TypedDict):
+    version: str
+    message: str
+
+def get_update_info() -> Optional[UpdateInfo]:
+    try:
+        d = feedparser.parse("https://github.com/simsapa/simsapa/releases.atom")
+
+        def _id_to_version(id: str):
+            return re.sub(r'.*/([^/]+)$', r'\1', id).replace('v', '')
+
+        def _is_version_stable(ver: str):
+            return not ('.dev' in ver or '.rc' in ver)
+
+        def _is_entry_version_stable(x):
+            ver = _id_to_version(x.id)
+            return _is_version_stable(ver)
+
+        # filter entries with .dev or .rc version tags
+        stable_entries = list(filter(_is_entry_version_stable, d.entries))
+
+        if len(stable_entries) == 0:
+            return None
+
+        entry = stable_entries[0]
+
+        # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
+        remote_version = _id_to_version(entry.id)
+        content = entry.content[0]
+
+        app_version = get_app_version()
+        if app_version is None:
+            return None
+
+        # if remote version is not greater, do nothing
+        if semver.compare(remote_version, app_version) != 1:
+            return None
+
+        message = f"<h1>An update is available</h1>"
+        message += f"<h2>{entry.title}</h2>"
+        message += f"<p>Download from the <a href='{entry.link}'>Relases page</a></p>"
+        message += f"<div>{content.value}</div>"
+
+        return UpdateInfo(
+            version = remote_version,
+            message = message,
+        )
+    except Exception as e:
+        logger.error(e)
+        print(f"ERROR: {e}")
+
+        return None
 
 def compactPlainText(text: str) -> str:
     # NOTE: Don't remove new lines here, useful for matching beginning of lines when setting snippets.

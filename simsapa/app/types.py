@@ -37,6 +37,7 @@ class Labels(TypedDict):
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
+    notify_about_updates: bool
 
 class AppMessage(TypedDict):
     kind: str
@@ -124,7 +125,8 @@ class AppData:
                 disabled_dict_labels = Labels(
                     appdata = [],
                     userdata = [],
-                )
+                ),
+                notify_about_updates = True,
             )
             self._save_app_settings()
 

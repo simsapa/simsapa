@@ -25,7 +25,7 @@ from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
-from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
+from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
 
 logger = _logging.getLogger(__name__)
@@ -398,12 +398,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.action_Select_Sutta_Authors \
             .triggered.connect(partial(self._show_sutta_select_dialog))
-
-        self.action_Website \
-            .triggered.connect(partial(open_simsapa_website))
-
-        self.action_About \
-            .triggered.connect(partial(show_about, self))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard))

@@ -9,6 +9,7 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
 
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH
+from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from .types import AppData, AppMessage
 
@@ -19,6 +20,8 @@ from ..layouts.document_reader import DocumentReaderWindow
 from ..layouts.library_browser import LibraryBrowserWindow
 from ..layouts.memos_browser import MemosBrowserWindow
 from ..layouts.links_browser import LinksBrowserWindow
+
+from ..layouts.help_info import open_simsapa_website, show_about
 
 
 class AppWindows:
@@ -196,6 +199,22 @@ class AppWindows:
 
         box.exec()
 
+    def show_update_message(self, parent = None):
+        if not self._app_data.app_settings['notify_about_updates']:
+            return
+
+        update_info = get_update_info()
+        if update_info is None:
+            return
+
+        box = QMessageBox(parent)
+        box.setIcon(QMessageBox.Information)
+        box.setText(update_info['message'])
+        box.setWindowTitle("Update Available")
+        box.setStandardButtons(QMessageBox.Ok)
+
+        box.exec()
+
     def _reindex_database_dialog(self, parent = None):
         msg = """
         <p>Re-indexing the database can take several minutes.</p>
@@ -238,6 +257,11 @@ class AppWindows:
         self._close_all_windows()
         self._app.quit()
 
+    def _set_notify_setting(self, view: QMainWindow):
+        notify: bool = view.action_Notify_About_Updates.isChecked()
+        self._app_data.app_settings['notify_about_updates'] = notify
+        self._app_data._save_app_settings()
+
     def _connect_signals(self, view: QMainWindow):
         view.action_Open \
             .triggered.connect(partial(self._open_file_dialog, view))
@@ -257,6 +281,17 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        notify = self._app_data.app_settings['notify_about_updates']
+        view.action_Notify_About_Updates.setChecked(notify)
+        view.action_Notify_About_Updates \
+            .triggered.connect(partial(self._set_notify_setting, view))
+
+        view.action_Website \
+            .triggered.connect(partial(open_simsapa_website))
+
+        view.action_About \
+            .triggered.connect(partial(show_about, view))
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':

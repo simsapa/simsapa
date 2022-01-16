@@ -361,6 +361,7 @@
      <string>&amp;Help</string>
     </property>
     <addaction name="action_Search_Query_Terms"/>
+    <addaction name="action_Notify_About_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -534,6 +535,17 @@
   <action name="action_Re_download_database">
    <property name="text">
     <string>Re-download database...</string>
+   </property>
+  </action>
+  <action name="action_Notify_About_Updates">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Notify About Updates</string>
    </property>
   </action>
  </widget>

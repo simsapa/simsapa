@@ -26,7 +26,7 @@ from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
 from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
-from .help_info import open_simsapa_website, show_search_info, setup_info_button, show_about
+from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
 
 
@@ -413,12 +413,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
 
         self.action_Select_Dictionaries \
             .triggered.connect(partial(self._show_dict_select_dialog))
-
-        self.action_Website \
-            .triggered.connect(partial(open_simsapa_website))
-
-        self.action_About \
-            .triggered.connect(partial(show_about, self))
 
         self.action_Lookup_Clipboard_in_Dictionary \
             .triggered.connect(partial(self._lookup_clipboard))

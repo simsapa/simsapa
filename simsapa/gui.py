@@ -105,6 +105,8 @@ def start():
 
     app_windows.show_startup_message()
 
+    app_windows.show_update_message()
+
     status = app.exec_()
 
     hotkeys_manager.unregister_all_hotkeys()

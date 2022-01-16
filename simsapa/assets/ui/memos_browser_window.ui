@@ -144,7 +144,7 @@
      <x>0</x>
      <y>0</y>
      <width>856</width>
-     <height>20</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -153,6 +153,8 @@
     </property>
     <addaction name="action_Open"/>
     <addaction name="action_Close_Window"/>
+    <addaction name="action_Re_index_database"/>
+    <addaction name="action_Re_download_database"/>
     <addaction name="separator"/>
     <addaction name="action_Quit"/>
    </widget>
@@ -179,6 +181,7 @@
     <property name="title">
      <string>&amp;Help</string>
     </property>
+    <addaction name="action_Notify_About_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -351,6 +354,27 @@
    </property>
    <property name="shortcut">
     <string>F11</string>
+   </property>
+  </action>
+  <action name="action_Re_index_database">
+   <property name="text">
+    <string>Re-index database...</string>
+   </property>
+  </action>
+  <action name="action_Re_download_database">
+   <property name="text">
+    <string>Re-download database...</string>
+   </property>
+  </action>
+  <action name="action_Notify_About_Updates">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Notify About Updates</string>
    </property>
   </action>
  </widget>
