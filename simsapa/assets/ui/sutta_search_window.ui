@@ -123,6 +123,20 @@
                    </widget>
                   </item>
                   <item>
+                   <widget class="QPushButton" name="results_prev_btn">
+                    <property name="text">
+                     <string>Prev</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="results_next_btn">
+                    <property name="text">
+                     <string>Next</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
                    <widget class="QLabel" name="results_label">
                     <property name="text">
                      <string>Showing a-b out of x</string>

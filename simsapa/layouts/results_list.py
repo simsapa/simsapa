@@ -15,6 +15,8 @@ class HasResultsList:
     features: List[str]
     results_label: QLabel
     results_list: QListWidget
+    results_prev_btn: QPushButton
+    results_next_btn: QPushButton
     results_last_page_btn: QPushButton
     results_first_page_btn: QPushButton
     results_page_input: QSpinBox
@@ -70,6 +72,16 @@ class HasResultsList:
             self.results_list.addItem(item)
             self.results_list.setItemWidget(item, w)
 
+    def _show_prev_page(self):
+        n = self.results_page_input.value()
+        if n > self.results_page_input.minimum():
+            self.results_page_input.setValue(n - 1)
+
+    def _show_next_page(self):
+        n = self.results_page_input.value()
+        if n < self.results_page_input.maximum():
+            self.results_page_input.setValue(n + 1)
+
     def _show_first_page(self):
         self.results_page_input.setValue(1)
 
@@ -83,6 +95,9 @@ class HasResultsList:
 
         self.results_page_input \
             .valueChanged.connect(partial(self.render_results_page))
+
+        self.results_prev_btn.clicked.connect(partial(self._show_prev_page))
+        self.results_next_btn.clicked.connect(partial(self._show_next_page))
 
         self.results_first_page_btn \
             .clicked.connect(partial(self._show_first_page))

@@ -21,4 +21,4 @@ bootstrap-appdata:
 	./scripts/bootstrap-appdata-db.py
 
 count-code:
-	tokei --exclude simsapa/assets/ .
+	tokei --exclude simsapa/assets/ --exclude simsapa/keyboard/ .
