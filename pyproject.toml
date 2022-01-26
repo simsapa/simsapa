@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.7-alpha.5"
+version = "0.1.7-alpha.6"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 # pypi identification
 authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
