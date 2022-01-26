@@ -215,7 +215,7 @@ class AppWindows:
         box.exec()
 
     def show_update_message(self, parent = None):
-        if not self._app_data.app_settings['notify_about_updates']:
+        if not self._app_data.app_settings.get('notify_about_updates'):
             return
 
         update_info = get_update_info()
