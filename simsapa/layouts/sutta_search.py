@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QLabel, QMainWindow, QAction,
                              QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, APP_QUEUES
+from simsapa import APP_QUEUES, GRAPHS_DIR
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -61,7 +61,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
-        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -332,7 +332,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
     def show_network_graph(self, sutta: USutta):
         self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
         results = self.search_query.new_query(query, self._app_data.app_settings['disabled_sutta_labels'])

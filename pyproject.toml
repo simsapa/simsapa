@@ -2,6 +2,7 @@
 name = "simsapa"
 version = "0.1.7-alpha.5"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
+# pypi identification
 authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"
 
@@ -9,7 +10,6 @@ license = "MIT"
 python = "^3.9"
 PyQt5 = "^5.15.4"
 SQLAlchemy = "^1.4.6"
-Markdown = "^3.3.4"
 PyYAML = "^5.4.1"
 SQLAlchemy-Utils = "^0.37.2"
 requests = "^2.25.1"
@@ -17,6 +17,11 @@ appdirs = "^1.4.4"
 PyPDF2 = "^1.26.0"
 epub_meta = "^0.0.7"
 PyMuPDF = "^1.18.13"
+Pillow = [
+  { version = "7.2.0", platform = "linux"},
+  { version = "^9.0.0", platform = "win32" },
+  { version = "^9.0.0", platform = "darwin" },
+]
 pandas = "^1.2.4"
 openpyxl = "^3.0.7"
 semver = "^2.13.0"
@@ -35,10 +40,7 @@ Whoosh = "^2.7.4"
 typer = "^0.4.0"
 tomlkit = "^0.8.0"
 feedparser = "^6.0.8"
-
-pyqtkeybind = [
-  { version = "^0.0.8", platform = "linux" },
-]
+pyqtkeybind = [{ version = "^0.0.8", platform = "linux" },]
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
@@ -58,23 +60,23 @@ to = {format = "setuppy", path = "setup.py"}
 [tool.briefcase]
 project_name = "Simsapa Dhamma Reader"
 bundle = "io.github"
-version = "0.0.1"
+# briefcase requires PEP440 version strings
+version = "0.1.7a5"
 url = "https://github.com/simsapa/simsapa"
 license = "MIT license"
-author = 'Gambhiro'
-author_email = "gambhiro.bhikkhu.85@gmail.com"
+# Package will display this info
+author = 'Profound Labs'
+author_email = "profound.labs@gmail.com"
 
 [tool.briefcase.app.simsapa]
 formal_name = "Simsapa Dhamma Reader"
 description = "Buddhist suttas and Pali dictionary"
-icon = "simsapa/assets/icons/appicons"
+icon = "simsapa/assets/icons/appicons/simsapa"
 sources = ['simsapa']
 
 requires = [
-"python>=3.9",
 "PyQt5>=5.15.4",
 "SQLAlchemy>=1.4.6",
-"Markdown>=3.3.4",
 "PyYAML>=5.4.1",
 "SQLAlchemy-Utils>=0.37.2",
 "requests>=2.25.1",
@@ -103,16 +105,18 @@ requires = [
 ]
 
 [tool.briefcase.app.simsapa.macOS]
-requires = []
+requires = ["Pillow>=9.0.0"]
 
 [tool.briefcase.app.simsapa.linux]
 requires = [
+"Pillow==7.2.0",
 "pyqtkeybind>=0.0.8",
 ]
-system_requires = []
+
+system_requires = ["libtiff-dev"]
 
 [tool.briefcase.app.simsapa.windows]
-requires = []
+requires = ["Pillow>=9.0.0"]
 
 # Mobile deployments
 [tool.briefcase.app.simsapa.iOS]

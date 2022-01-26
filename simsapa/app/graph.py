@@ -686,5 +686,5 @@ if (window.selected_info.length > 0) {
     doc.clear()
     doc.add_root(layout)
 
-    output_file(filename=str(output_path), mode='absolute')
+    output_file(filename=str(output_path), mode='inline')
     save(doc)

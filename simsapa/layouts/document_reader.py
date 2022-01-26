@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
 
-from simsapa import ASSETS_DIR, APP_QUEUES
+from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS
 
 from ..app.file_doc import FileDoc, PageImage
 from ..app.db import appdata_models as Am
@@ -35,7 +35,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
-        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -153,7 +153,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
             return
 
         self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None

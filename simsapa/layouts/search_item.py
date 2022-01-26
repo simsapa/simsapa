@@ -41,15 +41,22 @@ class SearchItemWidget(QWidget):
         # self.layout.addWidget(self.bottom_border)
 
     def setFromResult(self, r: SearchResult):
+        style = """<style>
+        span.wrap { color: black; }
+        span.match { background-color: yellow; }
+        </style>"""
+
         if r['ref'] is not None:
-            self.setTitle(f"{r['ref']} {r['title']}")
+            title = f"{r['ref']} {r['title']}"
         else:
-            self.setTitle(r['title'])
+            title = r['title']
+
+        self.setTitle(f"{style}<span class='wrap'>{title}</span>")
 
         if r['author'] is not None:
-            self.setAuthor(r['author'])
+            self.setAuthor(f"{style}<span class='wrap'>{r['author']}</span>")
 
-        self.setSnippet(r['snippet'])
+        self.setSnippet(f"{style}<span class='wrap'>{r['snippet']}</span>")
 
         details = ''
 
@@ -59,7 +66,7 @@ class SearchItemWidget(QWidget):
         if r['schema_name'] == 'userdata':
             details += ' (u)'
 
-        self.setDetails(details)
+        self.setDetails(f"{style}<span class='wrap'>{details}</span>")
 
     def setTitle(self, text: str):
         if len(text.strip()) == 0:

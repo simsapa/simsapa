@@ -1,11 +1,11 @@
 import os
 from functools import partial
 import shutil
-from typing import List
+from typing import List, Optional
 import queue
 import json
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QSize, QTimer, Qt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
 
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH
@@ -16,8 +16,8 @@ from .types import AppData, AppMessage
 from ..layouts.sutta_search import SuttaSearchWindow
 from ..layouts.dictionary_search import DictionarySearchWindow
 # from ..layouts.dictionaries_manager import DictionariesManagerWindow
-from ..layouts.document_reader import DocumentReaderWindow
-from ..layouts.library_browser import LibraryBrowserWindow
+# from ..layouts.document_reader import DocumentReaderWindow
+# from ..layouts.library_browser import LibraryBrowserWindow
 from ..layouts.memos_browser import MemosBrowserWindow
 from ..layouts.links_browser import LinksBrowserWindow
 
@@ -25,7 +25,7 @@ from ..layouts.help_info import open_simsapa_website, show_about
 
 
 class AppWindows:
-    def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: HotkeysManagerInterface):
+    def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
         self._app = app
         self._app_data = app_data
         self._hotkeys_manager = hotkeys_manager
@@ -39,7 +39,7 @@ class AppWindows:
         self.timer.start(300)
 
     def handle_messages(self):
-        if self.queue_id in APP_QUEUES.keys():
+        if len(APP_QUEUES) > 0 and self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
                 msg = json.loads(s)
@@ -88,14 +88,22 @@ class AppWindows:
             APP_QUEUES[view.queue_id].put_nowait(data)
             view.handle_messages()
 
+    def _set_size_and_maximize(self, view: QMainWindow):
+        view.resize(1200, 800)
+        view.setBaseSize(QSize(1200, 800))
+        # window doesn't upen maximized
+        # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+
     def _new_sutta_search_window(self) -> SuttaSearchWindow:
         view = SuttaSearchWindow(self._app_data)
+        self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-        try:
-            self._hotkeys_manager.setup_window(view)
-        except Exception as e:
-            print(e)
+        if self._hotkeys_manager is not None:
+            try:
+                self._hotkeys_manager.setup_window(view)
+            except Exception as e:
+                print(e)
 
         view.show()
 
@@ -108,12 +116,14 @@ class AppWindows:
 
     def _new_dictionary_search_window(self) -> DictionarySearchWindow:
         view = DictionarySearchWindow(self._app_data)
+        self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-        try:
-            self._hotkeys_manager.setup_window(view)
-        except Exception as e:
-            print(e)
+        if self._hotkeys_manager is not None:
+            try:
+                self._hotkeys_manager.setup_window(view)
+            except Exception as e:
+                print(e)
 
         view.show()
 
@@ -124,57 +134,62 @@ class AppWindows:
 
         return view
 
-#    def _new_dictionaries_manager_window(self):
-#        view = DictionariesManagerWindow(self._app_data)
-#        self._connect_signals(view)
-#        view.show()
-#        self._windows.append(view)
+    # def _new_dictionaries_manager_window(self):
+    #     view = DictionariesManagerWindow(self._app_data)
+    #     self._set_size_and_maximize(view)
+    #     self._connect_signals(view)
+    #     view.show()
+    #     self._windows.append(view)
 
-    def _new_library_browser_window(self):
-        view = LibraryBrowserWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
-        self._windows.append(view)
+    # def _new_library_browser_window(self):
+    #     view = LibraryBrowserWindow(self._app_data)
+    #     self._set_size_and_maximize(view)
+    #     self._connect_signals(view)
+    #     view.show()
+    #     self._windows.append(view)
 
     def _new_memos_browser_window(self):
         view = MemosBrowserWindow(self._app_data)
+        self._set_size_and_maximize(view)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
 
     def _new_links_browser_window(self):
         view = LinksBrowserWindow(self._app_data)
+        self._set_size_and_maximize(view)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
 
-    def _new_document_reader_window(self, file_path=None):
-        view = DocumentReaderWindow(self._app_data)
-        self._connect_signals(view)
-        view.show()
+    # def _new_document_reader_window(self, file_path=None):
+    #     view = DocumentReaderWindow(self._app_data)
+    #     self._set_size_and_maximize(view)
+    #     self._connect_signals(view)
+    #     view.show()
 
-        if file_path is not None and file_path is not False and len(file_path) > 0:
-            view.open_doc(file_path)
+    #     if file_path is not None and file_path is not False and len(file_path) > 0:
+    #         view.open_doc(file_path)
 
-        self._windows.append(view)
+    #     self._windows.append(view)
 
-    def _open_selected_document(self, view: QMainWindow):
-        doc = view.get_selected_document()
-        if doc:
-            self._new_document_reader_window(doc.filepath)
+    # def _open_selected_document(self, view: QMainWindow):
+    #     doc = view.get_selected_document()
+    #     if doc:
+    #         self._new_document_reader_window(doc.filepath)
 
-    def _open_file_dialog(self, view: QMainWindow):
-        try:
-            view.open_file_dialog()
-        except AttributeError:
-            file_path, _ = QFileDialog.getOpenFileName(
-                None,
-                "Open File...",
-                "",
-                "PDF or Epub Files (*.pdf *.epub)")
+    # def _open_file_dialog(self, view: QMainWindow):
+    #     try:
+    #         view.open_file_dialog()
+    #     except AttributeError:
+    #         file_path, _ = QFileDialog.getOpenFileName(
+    #             None,
+    #             "Open File...",
+    #             "",
+    #             "PDF or Epub Files (*.pdf *.epub)")
 
-            if len(file_path) != 0:
-                self._new_document_reader_window(file_path)
+    #         if len(file_path) != 0:
+    #             self._new_document_reader_window(file_path)
 
     def show_startup_message(self, parent = None):
         if not STARTUP_MESSAGE_PATH.exists():
@@ -263,8 +278,8 @@ class AppWindows:
         self._app_data._save_app_settings()
 
     def _connect_signals(self, view: QMainWindow):
-        view.action_Open \
-            .triggered.connect(partial(self._open_file_dialog, view))
+        # view.action_Open \
+        #     .triggered.connect(partial(self._open_file_dialog, view))
 
         view.action_Re_index_database \
             .triggered.connect(partial(self._reindex_database_dialog, view))
@@ -295,23 +310,26 @@ class AppWindows:
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
+            print("no wip features")
             # view.action_Dictionaries_Manager \
             #     .triggered.connect(partial(self._new_dictionaries_manager_window))
-            view.action_Document_Reader \
-                .triggered.connect(partial(self._new_document_reader_window))
-            view.action_Library \
-                .triggered.connect(partial(self._new_library_browser_window))
 
-            try:
-                view.action_Open_Selected \
-                    .triggered.connect(partial(self._open_selected_document, view))
-            except Exception as e:
-                print(e)
+            # view.action_Document_Reader \
+            #     .triggered.connect(partial(self._new_document_reader_window))
+            # view.action_Library \
+            #     .triggered.connect(partial(self._new_library_browser_window))
+
+            # try:
+            #     view.action_Open_Selected \
+            #         .triggered.connect(partial(self._open_selected_document, view))
+            # except Exception as e:
+            #     print(e)
 
         else:
             if hasattr(view,'toolBar'):
                 view.toolBar.setVisible(False)
 
+            view.action_Open.setVisible(False)
             view.action_Dictionaries_Manager.setVisible(False)
             view.action_Document_Reader.setVisible(False)
             view.action_Library.setVisible(False)

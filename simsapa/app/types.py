@@ -16,7 +16,7 @@ from .db.search import SearchIndexed
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import APP_DB_PATH, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
+from simsapa import APP_DB_PATH, GRAPHS_DIR, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
 from simsapa.app.helpers import find_or_create_db
 
 
@@ -181,3 +181,5 @@ def create_app_dirs():
     if not ASSETS_DIR.exists():
         ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 
+    if not GRAPHS_DIR.exists():
+        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)

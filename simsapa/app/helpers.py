@@ -21,7 +21,7 @@ import tomlkit
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, IS_WINDOWS, SIMSAPA_PACKAGE_DIR
 
 logger = _logging.getLogger(__name__)
 
@@ -63,7 +63,15 @@ def get_app_version() -> Optional[str]:
         return ver
 
     # If not dev, return installed version
-    return metadata.version('simsapa')
+    ver = metadata.version('simsapa')
+    if len(ver) == 0:
+        return None
+
+    # convert PEP440 alpha version string to semver compatible string
+    # 0.1.7a5 -> 0.1.7-alpha.5
+    ver = re.sub(r'\.(\d+)+a(\d+)$', r'.\1-alpha.\2', ver)
+
+    return ver
 
 class UpdateInfo(TypedDict):
     version: str
@@ -186,3 +194,4 @@ def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
     with e.begin() as db_conn:
         context = MigrationContext.configure(db_conn)
         return set(context.get_current_heads()) == set(directory.get_heads())
+

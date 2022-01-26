@@ -1,3 +1,4 @@
+from subprocess import Popen
 import sys
 import os
 import traceback
@@ -10,7 +11,7 @@ import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 
-from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC
+from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from .app.types import AppData, create_app_dirs
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
@@ -37,12 +38,15 @@ def excepthook(exc_type, exc_value, exc_tb):
 sys.excepthook = excepthook
 
 
-def start():
+def start(splash_proc: Popen):
     logger.info("start()")
 
     create_app_dirs()
 
     if not APP_DB_PATH.exists():
+        if splash_proc.poll() is None:
+            splash_proc.kill()
+
         dl_app = QApplication(sys.argv)
         w = DownloadAppdataWindow()
         w.show()
@@ -59,10 +63,13 @@ def start():
     daemon.setDaemon(True)
     daemon.start()
 
+    # FIXME errors on MacOS
+    hotkeys_manager = None
+
     if IS_LINUX:
         from .app.hotkeys_manager_linux import HotkeysManagerLinux
         hotkeys_manager = HotkeysManagerLinux(api_port=port)
-    else:
+    elif IS_WINDOWS:
         from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
         hotkeys_manager = HotkeysManagerWindowsMac(api_port=port)
 
@@ -85,13 +92,15 @@ def start():
 
         ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
         ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
-        ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
         menu.addAction(ac1)
 
         ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
         ac2.setShortcut(_translate("Systray", "Ctrl+Shift+D"))
-        ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
         menu.addAction(ac2)
+
+        if hotkeys_manager is not None:
+            ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
+            ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
 
         ac3 = QAction(QIcon(":close"), "Quit")
         ac3.triggered.connect(app.quit)
@@ -107,9 +116,13 @@ def start():
 
     app_windows.show_update_message()
 
+    if splash_proc.poll() is None:
+        splash_proc.kill()
+
     status = app.exec_()
 
-    hotkeys_manager.unregister_all_hotkeys()
+    if hotkeys_manager is not None:
+        hotkeys_manager.unregister_all_hotkeys()
 
     logger.info(f"main() Exiting with status {status}.")
     sys.exit(status)

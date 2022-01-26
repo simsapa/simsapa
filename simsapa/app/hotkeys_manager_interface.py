@@ -23,6 +23,9 @@ class HotkeysManagerInterface:
 
     def _send_to_all(self, data):
         url = f"{self.api_url}/queues/all"
-        r = requests.post(url=url, json=data)
-        if r.status_code != 200:
-            print(f"ERROR: {r}")
+        try:
+            r = requests.post(url=url, json=data)
+            if r.status_code != 200:
+                print(f"ERROR: {r}")
+        except Exception as e:
+            print(f"ERROR: {e}")

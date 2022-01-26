@@ -1,7 +1,6 @@
 from functools import partial
 import math
 from typing import List, Optional
-from markdown import markdown
 # from sqlalchemy.orm import joinedload
 from pathlib import Path
 import json
@@ -14,7 +13,7 @@ from PyQt5.QtWidgets import (QLabel, QListWidget, QMainWindow, QAction,
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, APP_QUEUES
+from simsapa import APP_QUEUES, GRAPHS_DIR
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -30,8 +29,8 @@ from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
 
 
-class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
-                             HasMemoDialog, HasLinksSidebar, HasMemosSidebar,
+class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
+                             HasLinksSidebar, HasMemosSidebar,
                              HasResultsList, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
@@ -60,7 +59,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
-        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -268,17 +267,25 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
         self.update_memos_list_for_dict_word(word)
         self.show_network_graph(word)
 
+        if word.definition_html is not None and word.definition_html != '':
+            definition = word.definition_html
+        elif word.definition_plain is not None and word.definition_plain != '':
+            style = '<style>pre { font-family: serif; }</style>'
+            definition = style + '<pre>' + word.definition_plain + '</pre>'
+        else:
+            definition = '<p>No definition.</p>'
+
+        if '<html' in definition or '<HTML' in definition:
+            # Definition is a complete HTML page, possibly with its own JS and CSS.
+            self._set_content_html(definition)
+            return
+
+        # Definition is a HTML fragment block, wrap it in a complete page.
+
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
 
         examples = "".join(list(map(example_format, word.examples))) # type: ignore
-
-        if word.definition_html is not None and word.definition_html != '':
-            definition = word.definition_html
-        elif word.definition_plain is not None and word.definition_plain != '':
-            definition = markdown(word.definition_plain) # type: ignore
-        else:
-            definition = '<p>No definition.</p>'
 
         messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
         content = "<div>%s</div><div>%s</div>" % (definition, examples)
@@ -289,7 +296,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow,
 
     def show_network_graph(self, word: UDictWord):
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
         results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])

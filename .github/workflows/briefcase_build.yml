@@ -3,24 +3,17 @@ name: Briefcase Build
 on:
   push:
     branches:
-      - master
+      - main
       - develop
 
 jobs:
   briefcase:
-    name: Bundle on ${{ matrix.platform }} / {{ matrix.python-version }}
-    runs-on: ${{ matrix.platform }}
+    name: Bundle on ${{ matrix.os }} / ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [Ubuntu, macOS, Windows]
+        os: [ubuntu-20.04, macos-11, windows-2022]
         python-version: ["3.9"]
-        include:
-          - os: Ubuntu
-            image: ubuntu-latest
-          - os: Windows
-            image: windows-2022
-          - os: macOS
-            image: macos-11
       fail-fast: false
     defaults:
       run:
@@ -57,19 +50,19 @@ jobs:
         uses: actions/upload-artifact@v2
         if: runner.os == 'Linux'
         with:
-          name: simsapa-${{ runner.os }}.AppImage
+          name: simsapa-${{ matrix.os }}.AppImage
           path: '**/*.AppImage'
 
       - name: Upload Artifact for MacOS
         uses: actions/upload-artifact@v2
         if: runner.os == 'MacOS'
         with:
-          name: simsapa-${{ runner.os }}.dmg
+          name: simsapa-${{ matrix.os }}.dmg
           path: '**/*.dmg'
 
       - name: Upload Artifact for Windows
         uses: actions/upload-artifact@v2
         if: runner.os == 'Windows'
         with:
-          name: simsapa-${{ runner.os }}.msi
+          name: simsapa-${{ matrix.os }}.msi
           path: '**/*.msi'

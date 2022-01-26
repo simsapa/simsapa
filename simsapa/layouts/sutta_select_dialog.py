@@ -33,11 +33,11 @@ class SuttaSelectDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll_content = QWidget(scroll)
 
-        self._layout = QVBoxLayout(scroll_content)
-        scroll_content.setLayout(self._layout)
+        self._list_layout = QVBoxLayout(scroll_content)
+        scroll_content.setLayout(self._list_layout)
         scroll.setWidget(scroll_content)
 
-        self._layout.addWidget(QLabel("<b>Select Sutta Authors</b>"))
+        self._list_layout.addWidget(QLabel("<b>Select Sutta Authors</b>"))
 
         for schema_title in ['Userdata', 'Appdata']:
 
@@ -45,7 +45,7 @@ class SuttaSelectDialog(QDialog):
             en_checks = self._create_checks(schema_title.lower(), 'en')
 
             if len(pli_checks) + len(en_checks) > 0:
-                self._layout.addWidget(QLabel(f"<b>{schema_title}</b>"))
+                self._list_layout.addWidget(QLabel(f"<b>{schema_title}</b>"))
 
                 self._add_checks('Pali', pli_checks)
                 self._add_checks('English', en_checks)
@@ -59,7 +59,7 @@ class SuttaSelectDialog(QDialog):
         self.buttonBox.accepted.connect(self._ok_pressed)
         self.buttonBox.rejected.connect(self.reject)
 
-        self._layout.addWidget(self.buttonBox)
+        base_layout.addWidget(self.buttonBox)
 
     def _create_checks(self, schema: str, lang: str):
         if schema == 'appdata':
@@ -88,10 +88,10 @@ class SuttaSelectDialog(QDialog):
 
     def _add_checks(self, title: str, checks: List[QCheckBox]):
         if len(checks) > 0:
-            self._layout.addWidget(QLabel(f"<b>{title}</b>"))
+            self._list_layout.addWidget(QLabel(f"<b>{title}</b>"))
 
             for i in checks:
-                self._layout.addWidget(i)
+                self._list_layout.addWidget(i)
 
     def _ok_pressed(self):
         disabled_sutta_labels = Labels(

@@ -14,7 +14,7 @@ class ErrorMessageWindow(QMainWindow):
     def __init__(self, user_message=None, debug_info=None, status=None) -> None:
         super().__init__()
         self.setWindowTitle("Application Error")
-        self.setFixedSize(500, 500)
+        self.setFixedSize(800, 800)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self._central_widget = QWidget(self)

@@ -13,6 +13,8 @@ SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
+ICONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets/icons/')
+
 SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
@@ -24,6 +26,8 @@ else:
     ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
 
 INDEX_DIR = ASSETS_DIR.joinpath('index')
+
+GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')

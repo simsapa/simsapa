@@ -8,7 +8,7 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import QUrl, QTimer
-from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtGui import QCloseEvent, QColor
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
                              QComboBox)
@@ -16,7 +16,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import ASSETS_DIR, APP_QUEUES
+from simsapa import APP_QUEUES, GRAPHS_DIR
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
@@ -47,7 +47,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
-        self.graph_path: Path = ASSETS_DIR.joinpath(f"{self.queue_id}.html")
+        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -122,9 +122,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
     def show_network_graph(self):
         (nodes, edges) = all_nodes_and_edges(app_data=self._app_data)
-        generate_graph(nodes, edges, [], self.queue_id, self.graph_path, self.messages_url)
-
-        self.content_graph.load(QUrl('file://' + str(self.graph_path.absolute())))
+        if len(nodes) > 0:
+            generate_graph(nodes, edges, [], self.queue_id, self.graph_path, self.messages_url)
+            self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
@@ -163,14 +163,17 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         # FIXME paginate results. Too many results hang the UI while rendering.
         self._results = self._results[0:100]
 
-        for x in self._results:
-            w = SearchItemWidget()
-            w.setTitle(x['title'])
+        colors = ["#ffffff", "#efefef"]
 
-            w.setSnippet(x['snippet'])
+        for idx, x in enumerate(self._results):
+            w = SearchItemWidget()
+            w.setFromResult(x)
 
             item = QListWidgetItem(self.results_list)
             item.setSizeHint(w.sizeHint())
+
+            n = idx % len(colors)
+            item.setBackground(QColor(colors[n]))
 
             self.results_list.addItem(item)
             self.results_list.setItemWidget(item, w)
@@ -201,12 +204,20 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             elif x.content_plain:
                 snippet = x.content_plain[0:400].strip()
 
+            if x.title is None:
+                title = ''
+            else:
+                title = x.title.strip()
+
             return SearchResult(
-                title=x.title.strip(),
-                snippet=snippet,
+                db_id=x.id, # type: ignore
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.suttas",
-                id=x.id, # type: ignore
+                uid=None,
+                title=title,
+                ref=None,
+                author=None,
+                snippet=snippet,
                 page_number=None,
             )
 
@@ -354,10 +365,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         link = Um.Link(
             from_table=self._current_from['table_name'],
-            from_id=self._current_from['id'],
+            from_id=self._current_from['db_id'],
             from_page_number=self._current_from['page_number'],
             to_table=self._current_to['table_name'],
-            to_id=self._current_to['id'],
+            to_id=self._current_to['db_id'],
             to_page_number=self._current_to['page_number'],
         )
 
@@ -375,6 +386,8 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.from_view.setPlainText('')
         self.to_view.setPlainText('')
 
+        self.show_network_graph()
+
     def _check_from_and_to(self) -> bool:
         if not self._current_from or not self._current_to:
             QMessageBox.information(self,
@@ -383,11 +396,13 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                                     QMessageBox.Ok)
             return False
 
-        keys = ['table', 'id', 'page_number']
+        keys = ['table_name', 'db_id', 'page_number']
         is_same = True
         for k in keys:
             if self._current_from[k] != self._current_to[k]:
                 is_same = False
+
+        is_same = False
 
         if is_same:
             QMessageBox.information(self,
@@ -409,10 +424,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         r = self._app_data.db_session \
             .query(Am.Link) \
             .filter(Am.Link.from_table == self._current_from['table_name']) \
-            .filter(Am.Link.from_id == self._current_from['id']) \
+            .filter(Am.Link.from_id == self._current_from['db_id']) \
             .filter(Am.Link.from_page_number == self._current_from['page_number']) \
             .filter(Am.Link.to_table == self._current_to['table_name']) \
-            .filter(Am.Link.to_id == self._current_to['id']) \
+            .filter(Am.Link.to_id == self._current_to['db_id']) \
             .filter(Am.Link.to_page_number == self._current_to['page_number']) \
             .all()
         links.extend(r)
@@ -420,10 +435,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         r = self._app_data.db_session \
             .query(Am.Link) \
             .filter(Am.Link.to_table == self._current_from['table_name']) \
-            .filter(Am.Link.to_id == self._current_from['id']) \
+            .filter(Am.Link.to_id == self._current_from['db_id']) \
             .filter(Am.Link.to_page_number == self._current_from['page_number']) \
             .filter(Am.Link.from_table == self._current_to['table_name']) \
-            .filter(Am.Link.from_id == self._current_to['id']) \
+            .filter(Am.Link.from_id == self._current_to['db_id']) \
             .filter(Am.Link.from_page_number == self._current_to['page_number']) \
             .all()
         links.extend(r)
@@ -431,10 +446,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         r = self._app_data.db_session \
             .query(Um.Link) \
             .filter(Um.Link.from_table == self._current_from['table_name']) \
-            .filter(Um.Link.from_id == self._current_from['id']) \
+            .filter(Um.Link.from_id == self._current_from['db_id']) \
             .filter(Um.Link.from_page_number == self._current_from['page_number']) \
             .filter(Um.Link.to_table == self._current_to['table_name']) \
-            .filter(Um.Link.to_id == self._current_to['id']) \
+            .filter(Um.Link.to_id == self._current_to['db_id']) \
             .filter(Um.Link.to_page_number == self._current_to['page_number']) \
             .all()
         links.extend(r)
@@ -442,10 +457,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         r = self._app_data.db_session \
             .query(Um.Link) \
             .filter(Um.Link.to_table == self._current_from['table_name']) \
-            .filter(Um.Link.to_id == self._current_from['id']) \
+            .filter(Um.Link.to_id == self._current_from['db_id']) \
             .filter(Um.Link.to_page_number == self._current_from['page_number']) \
             .filter(Um.Link.from_table == self._current_to['table_name']) \
-            .filter(Um.Link.from_id == self._current_to['id']) \
+            .filter(Um.Link.from_id == self._current_to['db_id']) \
             .filter(Um.Link.from_page_number == self._current_to['page_number']) \
             .all()
         links.extend(r)

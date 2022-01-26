@@ -1,7 +1,7 @@
 from pathlib import Path
 import logging as _logging
 
-from PyQt5.QtWidgets import QSizePolicy
+from PyQt5.QtWidgets import QSizePolicy, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from ..app.graph import (generate_graph, sutta_nodes_and_edges,
@@ -11,12 +11,17 @@ from ..app.graph import (generate_graph, sutta_nodes_and_edges,
 from ..app.file_doc import FileDoc
 from ..app.db import userdata_models as Um
 
-from ..app.types import USutta, UDictWord
+from ..app.types import AppData, USutta, UDictWord
 
 logger = _logging.getLogger(__name__)
 
 
 class HasLinksSidebar:
+    _app_data: AppData
+    links_layout: QVBoxLayout
+    rightside_tabs: QTabWidget
+    links_tab_idx: int
+
     def init_links_sidebar(self):
         self.setup_content_graph()
 

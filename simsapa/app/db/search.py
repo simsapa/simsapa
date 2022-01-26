@@ -159,11 +159,10 @@ class SearchQuery:
             return snippet
 
     def _result_with_snippet_highlight(self, x: Hit):
-        style = "<style>span.match { background-color: yellow; }</style>"
         fragments = x.highlights(fieldname='content', top=5)
 
         if len(fragments) > 0:
-            snippet = style + fragments
+            snippet = fragments
         else:
             snippet = self._plain_snippet_from_hit(x)
 
