@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (QFrame, QLabel, QLineEdit, QListWidget, QMainWindow
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import APP_QUEUES, GRAPHS_DIR
+from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -67,7 +67,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(300)
+        self.timer.start(TIMER_SPEED)
 
         self._ui_setup()
         self._connect_signals()

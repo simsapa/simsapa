@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
 
-from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS
+from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS, TIMER_SPEED
 
 from ..app.file_doc import FileDoc, PageImage
 from ..app.db import appdata_models as Am
@@ -39,7 +39,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(300)
+        self.timer.start(TIMER_SPEED)
 
         self._ui_setup()
         self._connect_signals()

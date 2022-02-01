@@ -8,7 +8,7 @@ import json
 from PyQt5.QtCore import QSize, QTimer, Qt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
 
-from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH
+from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from .types import AppData, AppMessage
@@ -36,7 +36,7 @@ class AppWindows:
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(300)
+        self.timer.start(TIMER_SPEED)
 
     def handle_messages(self):
         if len(APP_QUEUES) > 0 and self.queue_id in APP_QUEUES.keys():

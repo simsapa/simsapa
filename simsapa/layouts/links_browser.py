@@ -16,7 +16,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import APP_QUEUES, GRAPHS_DIR
+from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
@@ -51,7 +51,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(300)
+        self.timer.start(TIMER_SPEED)
 
         self._ui_setup()
         self._connect_signals()
