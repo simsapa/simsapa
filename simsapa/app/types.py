@@ -82,6 +82,7 @@ class AppData:
         self.search_indexed = SearchIndexed()
 
         self._read_app_settings()
+        self._ensure_user_memo_deck()
 
         if silent_index_if_empty:
             self.search_indexed.index_all(self.db_session, only_if_empty=True)
@@ -160,6 +161,13 @@ class AppData:
                 self.db_session.commit()
         except Exception as e:
             print(f"ERROR: {e}")
+
+    def _ensure_user_memo_deck(self):
+        deck = self.db_session.query(Um.Deck).first()
+        if deck is None:
+            deck = Um.Deck(name = "Simsapa")
+            self.db_session.add(deck)
+            self.db_session.commit()
 
     def clipboard_setText(self, text):
         if self.clipboard is not None:

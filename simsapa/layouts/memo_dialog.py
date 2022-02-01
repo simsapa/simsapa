@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPush
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
+from simsapa.app.helpers import write_log
 
 from simsapa.app.types import AppData, UDictWord, USutta
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
@@ -104,14 +105,14 @@ class HasMemoDialog:
 
     def handle_create_memo_for_sutta(self):
         if self._current_sutta is None:
-            logger.error("Sutta is not set")
+            write_log("Sutta is not set")
             return
 
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
-            logger.error("Can't find the deck")
+            write_log("Can't find the deck")
             return
 
         self.memo_dialog_fields = {
@@ -150,7 +151,7 @@ class HasMemoDialog:
                 self._app_data.db_session.commit()
 
         except Exception as e:
-            logger.error(e)
+            write_log(f"ERROR: {e}")
 
         if 'memos_sidebar' in self.features:
             # Add to model
@@ -166,14 +167,14 @@ class HasMemoDialog:
 
     def handle_create_memo_for_dict_word(self):
         if self._current_word is None:
-            logger.error("Word is not set")
+            write_log("Word is not set")
             return
 
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
-            logger.error("Can't find the deck")
+            write_log("Can't find the deck")
             return
 
         self.memo_dialog_fields = {
@@ -212,7 +213,7 @@ class HasMemoDialog:
                 self._app_data.db_session.commit()
 
         except Exception as e:
-            logger.error(e)
+            write_log(f"ERROR: {e}")
 
         if 'memos_sidebar' in self.features:
             # Add to model
