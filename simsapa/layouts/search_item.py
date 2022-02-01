@@ -12,8 +12,13 @@ class SearchItemWidget(QWidget):
         self.top_info: QHBoxLayout = QHBoxLayout()
 
         self.title = QLabel()
+        self.title.setMaximumHeight(20)
+
         self.author = QLabel()
+        self.author.setMaximumHeight(20)
+
         self.details = QLabel()
+        self.details.setMaximumHeight(20)
 
         self.top_spacer = QSpacerItem(20, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
 
@@ -29,8 +34,11 @@ class SearchItemWidget(QWidget):
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
-        self.snippet.setFixedHeight(35)
-        self.snippet.setContentsMargins(0, 0, 0, 5)
+        self.snippet.setMinimumHeight(25)
+        self.snippet.setMaximumHeight(60)
+        self.snippet.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        self.snippet.setContentsMargins(0, 0, 0, 0)
 
         self.layout.addWidget(self.snippet)
 
@@ -56,7 +64,11 @@ class SearchItemWidget(QWidget):
         if r['author'] is not None:
             self.setAuthor(f"{style}<span class='wrap'>{r['author']}</span>")
 
-        self.setSnippet(f"{style}<span class='wrap'>{r['snippet']}</span>")
+        snippet = r['snippet'].strip() \
+                              .replace("\n", " ") \
+                              .replace("  ", " ")
+        snippet = snippet[0:500]
+        self.setSnippet(f"{style}<span class='wrap'>{snippet}</span>")
 
         details = ''
 

@@ -41,6 +41,7 @@ typer = "^0.4.0"
 tomlkit = "^0.8.0"
 feedparser = "^6.0.8"
 pyqtkeybind = [{ version = "^0.0.8", platform = "linux" },]
+falcon = "^3.0.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
@@ -102,6 +103,7 @@ requires = [
 "typer>=0.4.0",
 "tomlkit>=0.8.0",
 "feedparser>=6.0.8",
+"falcon>=3.0.1",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

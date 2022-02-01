@@ -11,6 +11,8 @@ from sqlalchemy.sql.functions import func
 
 from PyQt5.QtGui import QClipboard
 
+from simsapa.app.actions_manager import ActionsManager
+
 from .db.search import SearchIndexed
 
 from .db import appdata_models as Am
@@ -38,6 +40,8 @@ class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
     notify_about_updates: bool
+    suttas_show_pali_buttons: bool
+    dictionary_show_pali_buttons: bool
 
 class AppMessage(TypedDict):
     kind: str
@@ -48,6 +52,7 @@ class AppData:
     app_settings: AppSettings
 
     def __init__(self,
+                 actions_manager: Optional[ActionsManager] = None,
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
@@ -55,6 +60,8 @@ class AppData:
                  silent_index_if_empty: bool = True):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
+
+        self.actions_manager = actions_manager
 
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
@@ -127,6 +134,8 @@ class AppData:
                     userdata = [],
                 ),
                 notify_about_updates = True,
+                suttas_show_pali_buttons = True,
+                dictionary_show_pali_buttons = True,
             )
             self._save_app_settings()
 

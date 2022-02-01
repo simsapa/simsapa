@@ -8,8 +8,8 @@ import queue
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap
-from PyQt5.QtWidgets import (QLabel, QListWidget, QMainWindow, QAction,
-                             QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt5.QtWidgets import (QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
+                             QHBoxLayout, QPushButton,
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
@@ -34,6 +34,10 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                              HasResultsList, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
+    searchbuttons_layout: QHBoxLayout
+    palibuttons_frame: QFrame
+    search_input: QLineEdit
+    toggle_pali_btn: QPushButton
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -78,11 +82,39 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self.statusbar.showMessage("Ready", 3000)
 
-    def _lookup_clipboard(self):
+    def _lookup_clipboard_in_suttas(self):
+        text = self._app_data.clipboard_getText()
+        if text is not None and self._app_data.actions_manager is not None:
+            self._app_data.actions_manager.lookup_in_suttas(text)
+
+    def _lookup_clipboard_in_dictionary(self):
+        self.activateWindow()
         s = self._app_data.clipboard_getText()
         if s is not None:
             self._set_query(s)
             self._handle_query()
+
+    def _lookup_selection_in_suttas(self):
+        text = self._get_selection()
+        if text is not None and self._app_data.actions_manager is not None:
+            self._app_data.actions_manager.lookup_in_suttas(text)
+
+    def _lookup_selection_in_dictionary(self):
+        self.activateWindow()
+        text = self._get_selection()
+        if text is not None:
+            self._set_query(text)
+            self._handle_query()
+
+    def _get_selection(self) -> Optional[str]:
+        text = self.content_html.selectedText()
+        # U+2029 Paragraph Separator to blank line
+        text = text.replace('\u2029', "\n\n")
+        text = text.strip()
+        if len(text) > 0:
+            return text
+        else:
+            return None
 
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
@@ -120,7 +152,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                         self._show_word_by_uid(info['uid'])
 
                 elif data['action'] == 'lookup_clipboard_in_dictionary':
-                    self._lookup_clipboard()
+                    self._lookup_clipboard_in_dictionary()
+
+                elif data['action'] == 'lookup_in_dictionary':
+                    text = data['query']
+                    self._set_query(text)
+                    self._handle_query()
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -133,8 +170,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
+        self.searchbuttons_layout = QHBoxLayout()
+        self.searchbar_layout.addLayout(self.searchbuttons_layout)
+
         self._setup_dict_select_button()
-        setup_info_button(self.searchbar_layout, self)
+        self._setup_toggle_pali_button()
+        setup_info_button(self.searchbuttons_layout, self)
         self._setup_pali_buttons()
         self._setup_content_html()
 
@@ -147,31 +188,50 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.content_html.show()
         self.content_layout.addWidget(self.content_html)
 
+    def _toggle_pali_buttons(self):
+        show = self.toggle_pali_btn.isChecked()
+        self.palibuttons_frame.setVisible(show)
+
+        self._app_data.app_settings['dictionary_show_pali_buttons'] = show
+        self._app_data._save_app_settings()
+
+    def _setup_toggle_pali_button(self):
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/keyboard"))
+
+        btn = QPushButton()
+        btn.setFixedSize(40, 40)
+        btn.setToolTip("Toggle Pali Buttons")
+        btn.clicked.connect(partial(self._toggle_pali_buttons))
+        btn.setIcon(icon)
+
+        show = self._app_data.app_settings.get('dictionary_show_pali_buttons', False)
+        btn.setCheckable(True)
+        btn.setChecked(show)
+
+        self.toggle_pali_btn = btn
+        self.searchbuttons_layout.addWidget(self.toggle_pali_btn)
+
     def _setup_pali_buttons(self):
-        self.pali_buttons_layout = QVBoxLayout()
-        self.searchbar_layout.addLayout(self.pali_buttons_layout)
+        palibuttons_layout = QHBoxLayout()
+        self.palibuttons_frame.setLayout(palibuttons_layout)
 
-        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
-        uppercase = "Ā Ī Ū Ṃ Ṁ Ṅ Ñ Ṭ Ḍ Ṇ Ḷ".split(' ')
+        s = '√'
+        btn = QPushButton(s)
+        btn.setFixedSize(35, 35)
+        btn.clicked.connect(partial(self._append_to_query, s))
+        palibuttons_layout.addWidget(btn)
 
-        lowercase_row = QHBoxLayout()
+        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
 
         for i in lowercase:
             btn = QPushButton(i)
-            btn.setFixedSize(30, 30)
+            btn.setFixedSize(35, 35)
             btn.clicked.connect(partial(self._append_to_query, i))
-            lowercase_row.addWidget(btn)
+            palibuttons_layout.addWidget(btn)
 
-        uppercase_row = QHBoxLayout()
-
-        for i in uppercase:
-            btn = QPushButton(i)
-            btn.setFixedSize(30, 30)
-            btn.clicked.connect(partial(self._append_to_query, i))
-            uppercase_row.addWidget(btn)
-
-        self.pali_buttons_layout.addLayout(lowercase_row)
-        self.pali_buttons_layout.addLayout(uppercase_row)
+        show = self._app_data.app_settings.get('dictionary_show_pali_buttons', False)
+        self.palibuttons_frame.setVisible(show)
 
     def _setup_dict_select_button(self):
         icon = QIcon()
@@ -184,7 +244,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         btn.setIcon(icon)
 
         self.dict_select_btn = btn
-        self.searchbar_layout.addWidget(self.dict_select_btn)
+        self.searchbuttons_layout.addWidget(self.dict_select_btn)
 
     def _show_dict_select_dialog(self):
         d = DictionarySelectDialog(self._app_data, self)
@@ -197,7 +257,11 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
-        self.search_input.setText(a + s)
+        n = self.search_input.cursorPosition()
+        pre = a[:n]
+        post = a[n:]
+        self.search_input.setText(pre + s + post)
+        self.search_input.setCursorPosition(n + 1)
         self.search_input.setFocus()
 
     def _handle_query(self, min_length=4):
@@ -379,10 +443,9 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
             self._show_word(results[0])
 
     def _handle_copy(self):
-        text = self.content_html.selectedText()
-        # U+2029 Paragraph Separator to blank line
-        text = text.replace('\u2029', "\n\n")
-        self._app_data.clipboard_setText(text)
+        text = self._get_selection()
+        if text is not None:
+            self._app_data.clipboard_setText(text)
 
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
@@ -398,6 +461,16 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         memoAction.triggered.connect(partial(self.handle_create_memo_for_dict_word))
 
         self.content_html.addAction(memoAction)
+
+        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", self.content_html)
+        lookupSelectionInSuttas.triggered.connect(partial(self._lookup_selection_in_suttas))
+
+        self.content_html.addAction(lookupSelectionInSuttas)
+
+        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", self.content_html)
+        lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
+
+        self.content_html.addAction(lookupSelectionInDictionary)
 
     def _connect_signals(self):
         self.action_Close_Window \
@@ -421,5 +494,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.action_Select_Dictionaries \
             .triggered.connect(partial(self._show_dict_select_dialog))
 
+        self.action_Lookup_Clipboard_in_Suttas \
+            .triggered.connect(partial(self._lookup_clipboard_in_suttas))
+
         self.action_Lookup_Clipboard_in_Dictionary \
-            .triggered.connect(partial(self._lookup_clipboard))
+            .triggered.connect(partial(self._lookup_clipboard_in_dictionary))

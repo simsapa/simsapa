@@ -33,6 +33,8 @@ class HasResultsList:
         self.results_label.clear()
         self.results_list.clear()
 
+        self.results_list.setUniformItemSizes(True)
+
         self.results_page_input.setMinimum(0)
         self.results_page_input.setMaximum(0)
         self.results_first_page_btn.setEnabled(False)

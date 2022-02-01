@@ -1,9 +1,6 @@
 import sys
 from enum import Enum
 import typer
-import subprocess
-
-from simsapa import SIMSAPA_PACKAGE_DIR
 
 app = typer.Typer()
 index_app = typer.Typer()
@@ -11,14 +8,16 @@ app.add_typer(index_app, name="index")
 
 @app.command()
 def gui():
-    try:
-        proc = subprocess.Popen(['python3', SIMSAPA_PACKAGE_DIR.joinpath('splash.py')])
-    except Exception as e:
-        print(e)
-        sys.exit(2)
+    # import subprocess
+    # from simsapa import SIMSAPA_PACKAGE_DIR
+    # try:
+    #     proc = subprocess.Popen(['python3', SIMSAPA_PACKAGE_DIR.joinpath('splash.py')])
+    # except Exception as e:
+    #     print(e)
+    #     sys.exit(2)
 
     from simsapa.gui import start
-    start(proc)
+    start()
 
 class QueryType(str, Enum):
     suttas = "suttas"

@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import QMainWindow
-import requests
+
+from simsapa.app.actions_manager import ActionsManager
 
 class HotkeysManagerInterface:
     api_url: str
 
-    def __init__(self, api_port: int):
-        self.api_url = f'http://localhost:{api_port}'
+    def __init__(self, actions_manager: ActionsManager):
+        self.actions_manager = actions_manager
 
     def setup_window(self, window: QMainWindow):
         raise NotImplementedError
@@ -14,18 +15,7 @@ class HotkeysManagerInterface:
         raise NotImplementedError
 
     def lookup_clipboard_in_suttas(self):
-        data = {'action': 'lookup_clipboard_in_suttas'}
-        self._send_to_all(data)
+        self.actions_manager.lookup_clipboard_in_suttas()
 
     def lookup_clipboard_in_dictionary(self):
-        data = {'action': 'lookup_clipboard_in_dictionary'}
-        self._send_to_all(data)
-
-    def _send_to_all(self, data):
-        url = f"{self.api_url}/queues/all"
-        try:
-            r = requests.post(url=url, json=data)
-            if r.status_code != 200:
-                print(f"ERROR: {r}")
-        except Exception as e:
-            print(f"ERROR: {e}")
+        self.actions_manager.lookup_clipboard_in_dictionary()

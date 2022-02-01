@@ -3,7 +3,7 @@ from functools import partial
 from PyQt5.QtGui import QDesktopServices, QIcon, QPixmap
 from PyQt5.QtWidgets import QMessageBox, QPushButton
 
-from simsapa.app.helpers import get_app_version
+from simsapa.app.helpers import get_app_version, get_sys_version
 
 def setup_info_button(layout, parent=None):
     icon = QIcon()
@@ -60,18 +60,22 @@ def show_about(parent=None):
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Information)
 
-    version_par = ''
+    app_version_par = ''
+    sys_version_par = ''
 
     ver = get_app_version()
     if ver is not None:
-        version_par = f"<p>Version {ver}</p>"
+        app_version_par += f"<p>Version {ver}</p>"
+
+    sys_version_par += f"<p>System: {get_sys_version()}</p>"
 
     msg = f"""
 <h1>Simsapa Dhamma Reader</h1>
-{version_par}
+{app_version_par}
 <p>
 <a href="https://github.com/simsapa/simsapa">github.com/simsapa/simsapa</a>
 </p>
+{sys_version_par}
 """
     box.setText(msg)
     box.setWindowTitle("About Simsapa Dhamma Reader")

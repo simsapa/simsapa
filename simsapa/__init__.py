@@ -17,6 +17,8 @@ ICONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets/icons/')
 
 SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 
+SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
+
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
 s = os.getenv('USE_TEST_DATA')

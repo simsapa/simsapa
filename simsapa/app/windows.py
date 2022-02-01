@@ -47,7 +47,13 @@ class AppWindows:
                 if msg['action'] == 'lookup_clipboard_in_suttas':
                     self._lookup_clipboard_in_suttas(msg)
 
-                elif msg['action'] == 'lookup_clipboard_in_dictionary':
+                if msg['action'] == 'lookup_clipboard_in_dictionary':
+                    self._lookup_clipboard_in_dictionary(msg)
+
+                if msg['action'] == 'lookup_in_suttas':
+                    self._lookup_clipboard_in_suttas(msg)
+
+                elif msg['action'] == 'lookup_in_dictionary':
                     self._lookup_clipboard_in_dictionary(msg)
 
                 APP_QUEUES[self.queue_id].task_done()
@@ -55,14 +61,10 @@ class AppWindows:
                 pass
 
     def _lookup_clipboard_in_suttas(self, msg):
-        has_window = False
+        # Is there a sutta window to handle the message?
         for w in self._windows:
             if isinstance(w, SuttaSearchWindow) and w.isVisible():
-                has_window = True
-                break
-
-        if has_window:
-            return
+                return
 
         view = self._new_sutta_search_window()
 
@@ -72,14 +74,10 @@ class AppWindows:
             view.handle_messages()
 
     def _lookup_clipboard_in_dictionary(self, msg):
-        has_window = False
+        # Is there a dictionary window to handle the message?
         for w in self._windows:
             if isinstance(w, DictionarySearchWindow) and w.isVisible():
-                has_window = True
-                break
-
-        if has_window:
-            return
+                return
 
         view = self._new_dictionary_search_window()
 

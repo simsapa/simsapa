@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1068</width>
-    <height>612</height>
+    <height>625</height>
    </rect>
   </property>
   <property name="baseSize">
@@ -80,6 +80,19 @@
         </widget>
         <widget class="QWidget" name="verticalLayoutWidget_3">
          <layout class="QVBoxLayout" name="tabs_layout">
+          <item>
+           <widget class="QFrame" name="palibuttons_frame">
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Raised</enum>
+            </property>
+            <property name="lineWidth">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
           <item>
            <widget class="QTabWidget" name="rightside_tabs">
             <property name="minimumSize">
@@ -343,6 +356,7 @@
     <addaction name="action_Copy"/>
     <addaction name="action_Paste"/>
     <addaction name="action_Lookup_Clipboard_in_Suttas"/>
+    <addaction name="action_Lookup_Clipboard_in_Dictionary"/>
    </widget>
    <widget class="QMenu" name="menu_Windows">
     <property name="title">
@@ -395,10 +409,16 @@
    <property name="text">
     <string>&amp;Copy</string>
    </property>
+   <property name="shortcut">
+    <string>Ctrl+C</string>
+   </property>
   </action>
   <action name="action_Paste">
    <property name="text">
     <string>&amp;Paste</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+V</string>
    </property>
   </action>
   <action name="action_Quit">
@@ -546,6 +566,17 @@
    </property>
    <property name="text">
     <string>Notify About Updates</string>
+   </property>
+  </action>
+  <action name="action_Lookup_Clipboard_in_Dictionary">
+   <property name="text">
+    <string>&amp;Lookup Clipboard in Dictionary</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+G</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
    </property>
   </action>
  </widget>

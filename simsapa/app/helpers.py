@@ -2,9 +2,12 @@ from importlib import metadata
 import logging as _logging
 from pathlib import Path
 from typing import Optional, TypedDict
+from datetime import datetime
 import requests
 import feedparser
 import semver
+import sys
+from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 import re
 import bleach
@@ -21,7 +24,7 @@ import tomlkit
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR, IS_WINDOWS, SIMSAPA_PACKAGE_DIR
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_LOG_PATH, SIMSAPA_PACKAGE_DIR
 
 logger = _logging.getLogger(__name__)
 
@@ -72,6 +75,9 @@ def get_app_version() -> Optional[str]:
     ver = re.sub(r'\.(\d+)+a(\d+)$', r'.\1-alpha.\2', ver)
 
     return ver
+
+def get_sys_version() -> str:
+    return f"Python {sys.version}, Qt {QT_VERSION_STR}, PyQt {PYQT_VERSION_STR}"
 
 class UpdateInfo(TypedDict):
     version: str
@@ -195,3 +201,15 @@ def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
         context = MigrationContext.configure(db_conn)
         return set(context.get_current_heads()) == set(directory.get_heads())
 
+def write_log(msg: str, start_new: bool = False):
+    msg = msg.strip()
+    logger.info(msg)
+
+    if start_new:
+        mode = 'w'
+    else:
+        mode = 'a'
+
+    with open(SIMSAPA_LOG_PATH, mode, encoding='utf-8') as f:
+        t = datetime.now()
+        f.write(f"[{t}] {msg}\n")

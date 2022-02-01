@@ -1,83 +1,60 @@
+import json
 import logging as _logging
 import re
-import cgi
 import socket
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Optional
+import falcon
+from wsgiref.simple_server import make_server
 
 from simsapa import APP_QUEUES
+from simsapa.app.helpers import write_log
 
 logger = _logging.getLogger(__name__)
 
+class QueueResource:
+    def on_get(self, req: falcon.Request, resp: falcon.Response):
+        write_log("Resp: 404 Not Found")
+        resp.status = falcon.HTTP_404
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(404, 'Not Found')
-        self._send_cors_headers()
-        self.end_headers()
-
-        # self.send_response(200)
-        # self._send_cors_headers()
-        # self.send_header('Content-type', 'text/html')
-        # self.end_headers()
-        # res = "<h1>It's over 9000!</h1>"
-        # self.wfile.write(bytes(res, 'utf-8'))
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self._send_cors_headers()
-        self.end_headers()
-
-    def do_POST(self):
-        path = self.path.rstrip('/')
-
-        if re.search('/queues/*', path):
-
-            ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
-            if ctype == 'application/json':
-                length = int(self.headers.get('content-length'))
-                data: str = self.rfile.read(length).decode('utf8')
-
-            else:
-                self.send_response(400, "Bad Request")
-                self._send_cors_headers()
-                self.end_headers()
-                return
-
-            queue_id = path.split('/')[-1]
-
-            if queue_id != 'all' and queue_id not in APP_QUEUES.keys():
-                self.send_response(403, 'Forbidden')
-                self._send_cors_headers()
-                self.end_headers()
-                return
-
-            if queue_id == 'all':
-                for i in APP_QUEUES.keys():
-                    APP_QUEUES[i].put_nowait(data)
-            else:
-                APP_QUEUES[queue_id].put_nowait(data)
-
-            self.send_response(200)
-            self._send_cors_headers()
-            self.end_headers()
+    def on_post(self, req: falcon.Request, resp: falcon.Response, queue_id: Optional[str]):
+        if req.content_type == 'application/json':
+            m = req.get_media(default_when_empty="{}")
+            data = json.dumps(m)
+            write_log(data)
 
         else:
-            self.send_response(404, 'Not Found')
-            self._send_cors_headers()
-            self.end_headers()
+            write_log("Resp: 400 Bad Request")
+            resp.status = falcon.HTTP_400
+            return
 
-    def _send_cors_headers(self):
-        """ Sets headers required for CORS """
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "x-api-key,Content-Type")
+        if queue_id is None:
+            resp.status = falcon.HTTP_404
+            return
 
+        if queue_id != 'all' and queue_id not in APP_QUEUES.keys():
+            write_log("Resp: 403 Forbidden")
+            resp.status = falcon.HTTP_403
+            return
+
+        if queue_id == 'all':
+            for i in APP_QUEUES.keys():
+                APP_QUEUES[i].put_nowait(data)
+        else:
+            APP_QUEUES[queue_id].put_nowait(data)
+
+        write_log("Resp: 200 OK")
+        resp.status = falcon.HTTP_200
 
 def start_server(port=8000):
-    logger.info(f'Starting server on port {port}')
-    httpd = HTTPServer(('127.0.0.1', port), Handler)
-    httpd.serve_forever()
+    write_log("start_server()")
 
+    app = falcon.App(cors_enable=True)
+    queues = QueueResource()
+    app.add_route('/queues/{queue_id}', queues)
+
+    with make_server('127.0.0.1', port, app) as httpd:
+        write_log(f'Starting server on port {port}')
+        httpd.serve_forever()
 
 def find_available_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

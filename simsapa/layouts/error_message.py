@@ -7,6 +7,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
                              QPushButton, QLabel, QMainWindow, QSizePolicy)
 
+from simsapa.app.helpers import get_app_version, get_sys_version
+
 logger = _logging.getLogger(__name__)
 
 
@@ -37,6 +39,8 @@ class ErrorMessageWindow(QMainWindow):
 
         if debug_info:
             debug_info = f"```\n{debug_info}\n```"
+            debug_info += f"\nSimsapa {get_app_version()}\n{get_sys_version()}"
+
             self._info_help = QLabel()
             self._info_help.setText("""
 <p>
@@ -47,7 +51,8 @@ class ErrorMessageWindow(QMainWindow):
   Or send an email to <a href="mailto:profound.labs@gmail.com">profound.labs@gmail.com</a>
 </p>
 <p>
-  Please copy the error mesage in your bug report:
+  Please include the error mesage in your bug report.<br>
+  If this window is unresponsive, please take a screenshot.
 </p>""")
 
             self._info_help.setAlignment(Qt.AlignmentFlag.AlignCenter)
