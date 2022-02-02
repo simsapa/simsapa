@@ -250,7 +250,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.search_input.setCursorPosition(n + len(s))
         self.search_input.setFocus()
 
-    def _handle_query(self, min_length=4):
+    def _handle_query(self, min_length: int = 4):
         self._highlight_query()
         query = self.search_input.text()
 
@@ -458,7 +458,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
-        # self.search_input.returnPressed.connect(partial(self._update_result))
+        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
