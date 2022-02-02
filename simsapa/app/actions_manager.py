@@ -1,6 +1,6 @@
 import requests
 
-from simsapa.app.helpers import write_log
+from simsapa import logger
 
 class ActionsManager:
     api_url: str
@@ -32,10 +32,10 @@ class ActionsManager:
 
     def _send_to_all(self, data):
         url = f"{self.api_url}/queues/all"
-        write_log(f"_send_to_all(): {url}, {data}")
+        logger.info(f"_send_to_all(): {url}, {data}")
         try:
             r = requests.post(url=url, json=data)
             if r.status_code != 200:
-                write_log(f"ERROR: {r}")
+                logger.error(f"{r}")
         except Exception as e:
-            write_log(f"ERROR: {e}")
+            logger.error(e)

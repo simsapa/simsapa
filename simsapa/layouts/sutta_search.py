@@ -1,4 +1,3 @@
-import logging as _logging
 import json
 import math
 from pathlib import Path
@@ -14,6 +13,7 @@ from PyQt5.QtWidgets import (QFrame, QLabel, QLineEdit, QMainWindow, QAction,
                              QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
+from simsapa import logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
 from ..app.db import appdata_models as Am
@@ -28,8 +28,6 @@ from .html_content import html_page
 from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
 
-logger = _logging.getLogger(__name__)
-
 
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                         HasLinksSidebar, HasMemosSidebar, HasResultsList):
@@ -43,6 +41,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("SuttaSearchWindow()")
 
         self.results_list: QListWidget
         self.recent_list: QListWidget

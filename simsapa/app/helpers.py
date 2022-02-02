@@ -1,8 +1,6 @@
 from importlib import metadata
-import logging as _logging
 from pathlib import Path
 from typing import Optional, TypedDict
-from datetime import datetime
 import requests
 import feedparser
 import semver
@@ -12,6 +10,7 @@ from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 import re
 import bleach
 
+from simsapa import logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
@@ -24,9 +23,7 @@ import tomlkit
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_LOG_PATH, SIMSAPA_PACKAGE_DIR
-
-logger = _logging.getLogger(__name__)
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
 
 def download_file(url: str, folder_path: Path) -> Path:
     file_name = url.split('/')[-1]
@@ -54,7 +51,7 @@ def get_app_dev_version() -> Optional[str]:
         v = t['tool']['poetry']['version'] # type: ignore
         ver = f"{v}"
     except Exception as e:
-        print(f"ERROR: {e}")
+        logger.error(e)
         ver = None
 
     return ver
@@ -128,8 +125,6 @@ def get_update_info() -> Optional[UpdateInfo]:
         )
     except Exception as e:
         logger.error(e)
-        print(f"ERROR: {e}")
-
         return None
 
 def compactPlainText(text: str) -> str:
@@ -188,9 +183,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
                 try:
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
-                    # NOTE: logger.error() is not printed for some reason.
-                    print("ERROR - Failed to run migrations.")
-                    print(e)
+                    logger.error("Failed to run migrations.")
                     exit(1)
     else:
         logger.error("Can't create in-memory database")
@@ -201,15 +194,3 @@ def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
         context = MigrationContext.configure(db_conn)
         return set(context.get_current_heads()) == set(directory.get_heads())
 
-def write_log(msg: str, start_new: bool = False):
-    msg = msg.strip()
-    logger.info(msg)
-
-    if start_new:
-        mode = 'w'
-    else:
-        mode = 'a'
-
-    with open(SIMSAPA_LOG_PATH, mode, encoding='utf-8') as f:
-        t = datetime.now()
-        f.write(f"[{t}] {msg}\n")

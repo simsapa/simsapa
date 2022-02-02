@@ -2,7 +2,6 @@ import os
 import shutil
 import json
 import semver
-import logging as _logging
 from functools import partial
 from typing import List, Optional
 from pathlib import Path
@@ -16,6 +15,7 @@ from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (QLabel, QMainWindow,
                              QMessageBox, QInputDialog, QFileDialog, QLineEdit)
 
+from simsapa import logger
 from simsapa import ASSETS_DIR
 from simsapa.assets import icons_rc  # noqa: F401
 
@@ -24,7 +24,6 @@ from ..app.types import AppData, DictWord
 from ..app.helpers import download_file
 from ..assets.ui.dictionaries_manager_window_ui import Ui_DictionariesManagerWindow
 
-logger = _logging.getLogger(__name__)
 Glossary.init()
 
 
@@ -147,7 +146,7 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
 
         words: List[DictWord] = list(map(to_word, words_data))
 
-        print(len(words))
+        logger.info(len(words))
 
     def add_words_from_stardict(self, ifo_path: Path):
         logger.info(f'add_words_from_stardict(): {ifo_path}')
@@ -176,7 +175,7 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
             word.definition_md = entry.defi
             words.append(word)
 
-        print(len(words))
+        logger.info(len(words))
 
     def process_file(self, p: Path):
         # MS Excel Spreadsheet

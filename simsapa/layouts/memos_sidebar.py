@@ -1,6 +1,5 @@
 from functools import partial
 from typing import List, Optional
-import logging as _logging
 import json
 from PyQt5 import QtWidgets
 
@@ -9,13 +8,12 @@ from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
+from simsapa import logger
 from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord, UMemo
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoPlainListModel(QAbstractListModel):

@@ -1,16 +1,13 @@
-import logging as _logging
-
 from PyQt5.QtCore import QAbstractNativeEventFilter, QAbstractEventDispatcher
 from PyQt5.QtWidgets import QMainWindow
 
 from pyqtkeybind.x11 import X11KeyBinder
 from pyqtkeybind import keybinder
 
-from simsapa.app.helpers import write_log
+from simsapa import logger
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.actions_manager import ActionsManager
 
-logger = _logging.getLogger(__name__)
 
 class WinEventFilter(QAbstractNativeEventFilter):
     def __init__(self, keybinder):
@@ -35,7 +32,7 @@ class HotkeysManagerLinux(HotkeysManagerInterface):
         self.event_dispatcher.installNativeEventFilter(self.win_event_filter)
 
     def setup_window(self, window: QMainWindow):
-        write_log("setup_window()")
+        logger.info("setup_window()")
         win_id = window.winId()
         self.win_ids.append(win_id)
 
@@ -43,13 +40,13 @@ class HotkeysManagerLinux(HotkeysManagerInterface):
             self.keybinder.register_hotkey(win_id, "ctrl+shift+s", self.lookup_clipboard_in_suttas)
             self.keybinder.register_hotkey(win_id, "ctrl+shift+g", self.lookup_clipboard_in_dictionary)
         except Exception as e:
-            write_log(f"ERROR: {e}")
+            logger.error(e)
 
     def unregister_all_hotkeys(self):
-        write_log("unregister_all_hotkeys()")
+        logger.info("unregister_all_hotkeys()")
         try:
             for i in self.win_ids:
                 self.keybinder.unregister_hotkey(i, "ctrl+shift+s")
                 self.keybinder.unregister_hotkey(i, "ctrl+shift+g")
         except Exception as e:
-            write_log(f"ERROR: {e}")
+            logger.error(e)

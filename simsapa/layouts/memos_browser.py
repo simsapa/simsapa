@@ -1,4 +1,3 @@
-import logging as _logging
 import json
 import requests
 from functools import partial
@@ -10,13 +9,12 @@ from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
 
+from simsapa import logger
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, UMemo
 from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoListModel(QAbstractListModel):
@@ -41,6 +39,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("MemosBrowserWindow()")
 
         self._app_data: AppData = app_data
 

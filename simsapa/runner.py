@@ -13,7 +13,7 @@ def gui():
     # try:
     #     proc = subprocess.Popen(['python3', SIMSAPA_PACKAGE_DIR.joinpath('splash.py')])
     # except Exception as e:
-    #     print(e)
+    #     print(str(e))
     #     sys.exit(2)
 
     from simsapa.gui import start

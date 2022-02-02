@@ -1,4 +1,3 @@
-import logging as _logging
 import json
 from typing import Callable, List, Optional
 from PyQt5 import QtWidgets
@@ -9,15 +8,13 @@ from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPush
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
-from simsapa.app.helpers import write_log
+from simsapa import logger
 
 from simsapa.app.types import AppData, UDictWord, USutta
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
 
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoDialog(QDialog):
@@ -105,14 +102,14 @@ class HasMemoDialog:
 
     def handle_create_memo_for_sutta(self):
         if self._current_sutta is None:
-            write_log("Sutta is not set")
+            logger.error("Sutta is not set")
             return
 
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
-            write_log("Can't find the deck")
+            logger.error("Can't find the deck")
             return
 
         self.memo_dialog_fields = {
@@ -151,7 +148,7 @@ class HasMemoDialog:
                 self._app_data.db_session.commit()
 
         except Exception as e:
-            write_log(f"ERROR: {e}")
+            logger.error(e)
 
         if 'memos_sidebar' in self.features:
             # Add to model
@@ -167,14 +164,14 @@ class HasMemoDialog:
 
     def handle_create_memo_for_dict_word(self):
         if self._current_word is None:
-            write_log("Word is not set")
+            logger.error("Word is not set")
             return
 
         text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
-            write_log("Can't find the deck")
+            logger.error("Can't find the deck")
             return
 
         self.memo_dialog_fields = {
@@ -213,7 +210,7 @@ class HasMemoDialog:
                 self._app_data.db_session.commit()
 
         except Exception as e:
-            write_log(f"ERROR: {e}")
+            logger.error(e)
 
         if 'memos_sidebar' in self.features:
             # Add to model

@@ -1,5 +1,4 @@
 import os
-import logging as _logging
 import json
 from pathlib import Path
 import queue
@@ -16,6 +15,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
+from simsapa import logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -25,14 +25,13 @@ from ..app.graph import generate_graph, all_nodes_and_edges
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
-logger = _logging.getLogger(__name__)
-
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("LinksBrowserWindow()")
 
         self.link_table: QComboBox;
 

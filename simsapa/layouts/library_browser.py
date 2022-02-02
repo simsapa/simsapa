@@ -1,4 +1,3 @@
-import logging as _logging
 import os.path
 from functools import partial
 from typing import List, Optional
@@ -10,14 +9,13 @@ from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,
                              QMessageBox)
 from simsapa.assets import icons_rc  # noqa: F401
 
+from simsapa import logger
 from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, UDocument
 from ..assets.ui.library_browser_window_ui import Ui_LibraryBrowserWindow
-
-logger = _logging.getLogger(__name__)
 
 
 class DocumentListModel(QAbstractListModel):

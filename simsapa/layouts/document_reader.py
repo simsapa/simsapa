@@ -1,6 +1,5 @@
 from functools import partial
 from typing import Optional
-import logging as _logging
 from pathlib import Path
 import queue
 import json
@@ -19,8 +18,6 @@ from ..app.types import AppData, USutta
 from ..assets.ui.document_reader_window_ui import Ui_DocumentReaderWindow
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
-
-logger = _logging.getLogger(__name__)
 
 
 class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar, HasMemosSidebar):

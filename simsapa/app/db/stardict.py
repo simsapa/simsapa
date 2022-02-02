@@ -1,8 +1,6 @@
 """Stardict related database funcions
 """
 
-import logging as _logging
-
 from typing import Optional, List, TypedDict
 
 from sqlalchemy.sql import func
@@ -11,11 +9,10 @@ from simsapa.app.db.search import SearchIndexed
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
 from simsapa.app.types import UDictWord
+from simsapa import logger
 
 from . import appdata_models as Am
 from . import userdata_models as Um
-
-logger = _logging.getLogger(__name__)
 
 class DbDictEntry(TypedDict):
     word: str
@@ -49,7 +46,7 @@ def insert_db_words(db_session,
     # TODO: The user can't see this message. Dialog doesn't update while the
     # import is blocking the GUI.
     # self.msg.setText("Importing ...")
-    print("Importing ...")
+    logger.info("Importing ...")
 
     while inserted <= len(db_words):
         b_start = inserted
@@ -88,13 +85,12 @@ def insert_db_words(db_session,
             db_session.execute(stmt)
             db_session.commit()
         except Exception as e:
-            print(e)
             logger.error(e)
 
         uids.extend(list(map(lambda x: x['uid'], words_batch)))
         inserted += batch_size
         # self.msg.setText(f"Imported {inserted} ...")
-        print(f"Imported {inserted}")
+        logger.info(f"Imported {inserted}")
 
     return uids
 

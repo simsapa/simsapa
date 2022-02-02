@@ -101,7 +101,7 @@ class AppWindows:
             try:
                 self._hotkeys_manager.setup_window(view)
             except Exception as e:
-                print(e)
+                logger.error(e)
 
         view.show()
 
@@ -121,7 +121,7 @@ class AppWindows:
             try:
                 self._hotkeys_manager.setup_window(view)
             except Exception as e:
-                print(e)
+                logger.error(e)
 
         view.show()
 
@@ -308,7 +308,7 @@ class AppWindows:
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
-            print("no wip features")
+            logger.info("no wip features")
             # view.action_Dictionaries_Manager \
             #     .triggered.connect(partial(self._new_dictionaries_manager_window))
 
@@ -321,7 +321,7 @@ class AppWindows:
             #     view.action_Open_Selected \
             #         .triggered.connect(partial(self._open_selected_document, view))
             # except Exception as e:
-            #     print(e)
+            #     logger.error(e)
 
         else:
             if hasattr(view,'toolBar'):

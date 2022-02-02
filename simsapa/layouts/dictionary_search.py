@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (QFrame, QLabel, QLineEdit, QListWidget, QMainWindow
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
+from simsapa import logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -42,6 +43,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("DictionarySearchWindow()")
 
         self.results_list: QListWidget
         self.recent_list: QListWidget

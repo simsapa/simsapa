@@ -1,7 +1,6 @@
 import json
 import os
 import os.path
-import logging as _logging
 from pathlib import Path
 from typing import List, Optional, TypedDict, Union
 
@@ -11,6 +10,7 @@ from sqlalchemy.sql.functions import func
 
 from PyQt5.QtGui import QClipboard
 
+from simsapa import logger
 from simsapa.app.actions_manager import ActionsManager
 
 from .db.search import SearchIndexed
@@ -21,8 +21,6 @@ from .db import userdata_models as Um
 from simsapa import APP_DB_PATH, GRAPHS_DIR, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
 from simsapa.app.helpers import find_or_create_db
 
-
-logger = _logging.getLogger(__name__)
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -110,8 +108,7 @@ class AppData:
             Session.configure(bind=engine)
             db_session = Session()
         except Exception as e:
-            logger.error("Can't connect to database.")
-            print(e)
+            logger.error(f"Can't connect to database: {e}")
             exit(1)
 
         return (db_conn, db_session)
@@ -160,7 +157,7 @@ class AppData:
                 self.db_session.add(x)
                 self.db_session.commit()
         except Exception as e:
-            print(f"ERROR: {e}")
+            logger.error(e)
 
     def _ensure_user_memo_deck(self):
         deck = self.db_session.query(Um.Deck).first()
