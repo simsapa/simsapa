@@ -247,7 +247,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         pre = a[:n]
         post = a[n:]
         self.search_input.setText(pre + s + post)
-        self.search_input.setCursorPosition(n + 1)
+        self.search_input.setCursorPosition(n + len(s))
         self.search_input.setFocus()
 
     def _handle_query(self, min_length=4):
@@ -421,11 +421,17 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if text is not None:
             self._app_data.clipboard_setText(text)
 
+    def _handle_paste(self):
+        s = self._app_data.clipboard_getText()
+        if s is not None:
+            self._append_to_query(s)
+            self._handle_query()
+
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         copyAction = QAction("Copy", self.content_html)
-        copyAction.setShortcut(QKeySequence("Ctrl+C"))
+        # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
         copyAction.triggered.connect(partial(self._handle_copy))
 
         self.content_html.addAction(copyAction)
@@ -458,6 +464,12 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_sutta))
+
+        self.action_Copy \
+            .triggered.connect(partial(self._handle_copy))
+
+        self.action_Paste \
+            .triggered.connect(partial(self._handle_paste))
 
         self.action_Search_Query_Terms \
             .triggered.connect(partial(show_search_info, self))
