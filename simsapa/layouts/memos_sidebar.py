@@ -4,6 +4,7 @@ import json
 from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import Qt, QAbstractListModel, QItemSelectionModel
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
@@ -46,6 +47,7 @@ class HasMemosSidebar:
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]
     db_doc: Optional[Um.Document]
+    add_memo_button: QtWidgets.QPushButton
     clear_memo_button: QtWidgets.QPushButton
     remove_memo_button: QtWidgets.QPushButton
     rightside_tabs: QtWidgets.QTabWidget
@@ -563,6 +565,15 @@ QListView::item:selected { background-color: %s; color: %s; }
 
     def connect_memos_sidebar_signals(self):
         self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
+
+        self.add_memo_button.setShortcut(QKeySequence("Ctrl+Return"))
+        self.add_memo_button.setToolTip("Ctrl+Return")
+
+        self.front_input.setTabChangesFocus(True)
+        self.back_input.setTabChangesFocus(True)
+
+        # NOTE: register add_memo_button.clicked in the sutta and dict window,
+        # to call content-specific handlers.
 
         self.clear_memo_button \
             .clicked.connect(partial(self.clear_memo))

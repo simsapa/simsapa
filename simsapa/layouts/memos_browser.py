@@ -60,6 +60,9 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self.front_input.setFocus()
         self._show_memo_clear()
 
+        self.front_input.setTabChangesFocus(True)
+        self.back_input.setTabChangesFocus(True)
+
     def _get_all_memos(self) -> List[UMemo]:
         results = []
         res = self._app_data.db_session.query(Am.Memo).all()

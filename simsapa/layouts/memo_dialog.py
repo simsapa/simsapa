@@ -3,6 +3,7 @@ from typing import Callable, List, Optional
 from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
 
@@ -21,20 +22,24 @@ class MemoDialog(QDialog):
 
     accepted = pyqtSignal(dict) # type: ignore
 
-    def __init__(self, text=''):
+    def __init__(self, front_text='', back_text=''):
         super().__init__()
         self.setWindowTitle("Create Memo")
 
-        self.front = QPlainTextEdit()
+        self.front = QPlainTextEdit(front_text)
         self.front.setFixedSize(300, 50)
         self.front.textChanged.connect(self.unlock)
+        self.front.setTabChangesFocus(True)
 
-        self.back = QPlainTextEdit(text)
+        self.back = QPlainTextEdit(back_text)
         self.back.setFixedSize(300, 50)
         self.back.textChanged.connect(self.unlock)
+        self.back.setTabChangesFocus(True)
 
         self.add_btn = QPushButton('Add')
         self.add_btn.setDisabled(True)
+        self.add_btn.setShortcut(QKeySequence("Ctrl+Return"))
+        self.add_btn.setToolTip("Ctrl+Return")
         self.add_btn.clicked.connect(self.add_pressed)
 
         self.close_btn = QPushButton('Close')
@@ -105,7 +110,8 @@ class HasMemoDialog:
             logger.error("Sutta is not set")
             return
 
-        text = self.content_html.selectedText()
+        front_text = f"...\n\n({self._current_sutta.sutta_ref} {self._current_sutta.title})"
+        back_text = self.content_html.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
@@ -117,7 +123,7 @@ class HasMemoDialog:
             'Back': '',
         }
 
-        d = MemoDialog(text)
+        d = MemoDialog(front_text, back_text)
         d.accepted.connect(self.set_memo_dialog_fields)
         d.exec_()
 
