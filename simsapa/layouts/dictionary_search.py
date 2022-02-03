@@ -5,10 +5,11 @@ from typing import List, Optional
 from pathlib import Path
 import json
 import queue
+import re
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap
-from PyQt5.QtWidgets import (QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
+from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
+from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
                              QHBoxLayout, QPushButton,
                              QSizePolicy)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -35,7 +36,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                              HasResultsList, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
-    searchbuttons_layout: QHBoxLayout
+    search_extras: QHBoxLayout
     palibuttons_frame: QFrame
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
@@ -60,6 +61,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
             self.page_len,
             dict_word_hit_to_search_result,
         )
+
+        self._autocomplete_model = QStandardItemModel()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -166,18 +169,29 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Word title")
+        self.status_msg = QLabel("Ready")
         self.statusbar.addPermanentWidget(self.status_msg)
 
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
-        self.searchbuttons_layout = QHBoxLayout()
-        self.searchbar_layout.addLayout(self.searchbuttons_layout)
+        style = """
+QWidget { border: 1px solid #272727; }
+QWidget:focus { border: 1px solid blue; }
+        """
+
+        self.search_input.setStyleSheet(style)
+
+        completer = QCompleter(self._autocomplete_model, self)
+        completer.setMaxVisibleItems(20)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setModelSorting(QCompleter.ModelSorting.CaseInsensitivelySortedModel)
+
+        self.search_input.setCompleter(completer)
 
         self._setup_dict_select_button()
         self._setup_toggle_pali_button()
-        setup_info_button(self.searchbuttons_layout, self)
+        setup_info_button(self.search_extras, self)
         self._setup_pali_buttons()
         self._setup_content_html()
 
@@ -212,7 +226,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         btn.setChecked(show)
 
         self.toggle_pali_btn = btn
-        self.searchbuttons_layout.addWidget(self.toggle_pali_btn)
+        self.search_extras.addWidget(self.toggle_pali_btn)
 
     def _setup_pali_buttons(self):
         palibuttons_layout = QHBoxLayout()
@@ -246,7 +260,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         btn.setIcon(icon)
 
         self.dict_select_btn = btn
-        self.searchbuttons_layout.addWidget(self.dict_select_btn)
+        self.search_extras.addWidget(self.dict_select_btn)
 
     def _show_dict_select_dialog(self):
         d = DictionarySelectDialog(self._app_data, self)
@@ -271,6 +285,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         query = self.search_input.text()
 
         if len(query) >= min_length:
+            self._autocomplete_search(query)
             self._results = self._word_search_query(query)
 
             if self.search_query.hits > 0:
@@ -279,6 +294,30 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                 self.rightside_tabs.setTabText(0, "Results")
 
             self.render_results_page()
+
+    def _autocomplete_search(self, text: str):
+        self._autocomplete_model.clear()
+
+        if text:
+            res: List[UDictWord] = []
+            r = self._app_data.db_session \
+                              .query(Am.DictWord.word) \
+                              .filter(Am.DictWord.word.like(f"%{text}%")) \
+                              .all()
+            res.extend(r)
+
+            r = self._app_data.db_session \
+                              .query(Um.DictWord.word) \
+                              .filter(Um.DictWord.word.like(f"%{text}%")) \
+                              .all()
+            res.extend(r)
+
+            a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
+
+            for i in a:
+                self._autocomplete_model.appendRow(QStandardItem(i))
+
+            self._autocomplete_model.sort(0)
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)
