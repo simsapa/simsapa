@@ -281,6 +281,10 @@ class AppWindows:
         self._app_data.app_settings['show_toolbar'] = checked
         self._app_data._save_app_settings()
 
+        for w in self._windows:
+            if hasattr(w,'toolBar'):
+                w.toolBar.setVisible(checked)
+
     def _connect_signals(self, view: QMainWindow):
         # view.action_Open \
         #     .triggered.connect(partial(self._open_file_dialog, view))
