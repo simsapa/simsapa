@@ -26,6 +26,8 @@ class MemoListModel(QAbstractListModel):
         if role == Qt.ItemDataRole.DisplayRole:
             fields = json.loads(self.memos[index.row()].fields_json)
             text = " ".join(fields.values())
+            text = text.replace("\n", " ")
+            text = text[0:200] + " ..."
             return text
 
     def rowCount(self, index):

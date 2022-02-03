@@ -258,7 +258,7 @@
      <x>0</x>
      <y>0</y>
      <width>1068</width>
-     <height>20</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -290,6 +290,7 @@
     <addaction name="action_Library"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
+    <addaction name="action_Show_Toolbar"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -305,6 +306,21 @@
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="toolBar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>LeftToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="action_Sutta_Search"/>
+   <addaction name="action_Dictionary_Search"/>
+   <addaction name="action_Memos"/>
+   <addaction name="action_Links"/>
+  </widget>
   <action name="action_Copy">
    <property name="text">
     <string>&amp;Copy</string>
@@ -394,6 +410,10 @@
    </property>
   </action>
   <action name="action_Memos">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/pen-fancy</normaloff>:/pen-fancy</iconset>
+   </property>
    <property name="text">
     <string>&amp;Memos</string>
    </property>
@@ -413,6 +433,10 @@
    </property>
   </action>
   <action name="action_Links">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/diagram</normaloff>:/diagram</iconset>
+   </property>
    <property name="text">
     <string>&amp;Links</string>
    </property>
@@ -439,6 +463,14 @@
    </property>
    <property name="text">
     <string>Notify About Updates</string>
+   </property>
+  </action>
+  <action name="action_Show_Toolbar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Toolbar</string>
    </property>
   </action>
  </widget>

@@ -85,6 +85,7 @@ def get_update_info() -> Optional[UpdateInfo]:
     try:
         requests.head("https://github.com/", timeout=5)
     except requests.ConnectionError:
+        logger.error("No Connection: Update info unavailable")
         return None
 
     try:

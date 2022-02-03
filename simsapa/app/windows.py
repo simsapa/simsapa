@@ -8,6 +8,7 @@ import json
 from PyQt5.QtCore import QSize, QTimer, Qt
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
 
+from simsapa import logger
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
@@ -271,8 +272,13 @@ class AppWindows:
         self._app.quit()
 
     def _set_notify_setting(self, view: QMainWindow):
-        notify: bool = view.action_Notify_About_Updates.isChecked()
-        self._app_data.app_settings['notify_about_updates'] = notify
+        checked: bool = view.action_Notify_About_Updates.isChecked()
+        self._app_data.app_settings['notify_about_updates'] = checked
+        self._app_data._save_app_settings()
+
+    def _set_show_toolbar_setting(self, view: QMainWindow):
+        checked: bool = view.action_Show_Toolbar.isChecked()
+        self._app_data.app_settings['show_toolbar'] = checked
         self._app_data._save_app_settings()
 
     def _connect_signals(self, view: QMainWindow):
@@ -295,7 +301,7 @@ class AppWindows:
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
 
-        notify = self._app_data.app_settings['notify_about_updates']
+        notify = self._app_data.app_settings.get('notify_about_updates', True)
         view.action_Notify_About_Updates.setChecked(notify)
         view.action_Notify_About_Updates \
             .triggered.connect(partial(self._set_notify_setting, view))
@@ -305,6 +311,14 @@ class AppWindows:
 
         view.action_About \
             .triggered.connect(partial(show_about, view))
+
+        show_toolbar = self._app_data.app_settings.get('show_toolbar', True)
+        view.action_Show_Toolbar.setChecked(show_toolbar)
+        view.action_Show_Toolbar \
+            .triggered.connect(partial(self._set_show_toolbar_setting, view))
+
+        if hasattr(view,'toolBar') and not show_toolbar:
+            view.toolBar.setVisible(False)
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
@@ -324,9 +338,6 @@ class AppWindows:
             #     logger.error(e)
 
         else:
-            if hasattr(view,'toolBar'):
-                view.toolBar.setVisible(False)
-
             view.action_Open.setVisible(False)
             view.action_Dictionaries_Manager.setVisible(False)
             view.action_Document_Reader.setVisible(False)

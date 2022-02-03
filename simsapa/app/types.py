@@ -40,6 +40,7 @@ class AppSettings(TypedDict):
     notify_about_updates: bool
     suttas_show_pali_buttons: bool
     dictionary_show_pali_buttons: bool
+    show_toolbar: bool
 
 class AppMessage(TypedDict):
     kind: str
@@ -134,6 +135,7 @@ class AppData:
                 notify_about_updates = True,
                 suttas_show_pali_buttons = True,
                 dictionary_show_pali_buttons = True,
+                show_toolbar = True,
             )
             self._save_app_settings()
 
