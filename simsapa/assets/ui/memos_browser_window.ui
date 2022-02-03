@@ -50,7 +50,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPlainTextEdit" name="back_input">
+           <widget class="QPlainTextEdit" name="front_input">
             <property name="minimumSize">
              <size>
               <width>0</width>
@@ -92,7 +92,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPlainTextEdit" name="front_input">
+           <widget class="QPlainTextEdit" name="back_input">
             <property name="minimumSize">
              <size>
               <width>0</width>

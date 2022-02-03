@@ -27,12 +27,12 @@ class MemoDialog(QDialog):
         self.setWindowTitle("Create Memo")
 
         self.front = QPlainTextEdit(front_text)
-        self.front.setFixedSize(300, 50)
+        self.front.setMinimumSize(400, 200)
         self.front.textChanged.connect(self.unlock)
         self.front.setTabChangesFocus(True)
 
         self.back = QPlainTextEdit(back_text)
-        self.back.setFixedSize(300, 50)
+        self.back.setMinimumSize(400, 200)
         self.back.textChanged.connect(self.unlock)
         self.back.setTabChangesFocus(True)
 

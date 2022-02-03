@@ -81,6 +81,12 @@ class UpdateInfo(TypedDict):
     message: str
 
 def get_update_info() -> Optional[UpdateInfo]:
+    # Test if connection to github is working.
+    try:
+        requests.head("https://github.com/", timeout=5)
+    except requests.ConnectionError:
+        return None
+
     try:
         d = feedparser.parse("https://github.com/simsapa/simsapa/releases.atom")
 
