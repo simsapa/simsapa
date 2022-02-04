@@ -8,8 +8,7 @@ from typing import List, Optional
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QPushButton,
-                             QSizePolicy, QListWidget)
+                             QHBoxLayout, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import logger
@@ -36,6 +35,10 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     palibuttons_frame: QFrame
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
+    content_layout: QVBoxLayout
+    content_html: QWebEngineView
+    _app_data: AppData
+    _autocomplete_model: QStandardItemModel
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -180,6 +183,7 @@ QWidget:focus { border: 1px solid blue; }
         self._setup_sutta_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
+
         self._setup_pali_buttons()
         self._setup_content_html()
 
@@ -263,43 +267,49 @@ QWidget:focus { border: 1px solid blue; }
         self.search_input.setFocus()
 
     def _handle_query(self, min_length: int = 4):
-        self._highlight_query()
         query = self.search_input.text()
 
-        if len(query) >= min_length:
-            self._autocomplete_search(query)
-            self._results = self._sutta_search_query(query)
+        if len(query) < min_length:
+            return
 
-            if self.search_query.hits > 0:
-                self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
-            else:
-                self.rightside_tabs.setTabText(0, "Results")
+        self._handle_autocomplete_query(min_length)
+        self._highlight_query()
+        self._results = self._sutta_search_query(query)
 
-            self.render_results_page()
+        if self.search_query.hits > 0:
+            self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
+        else:
+            self.rightside_tabs.setTabText(0, "Results")
 
-    def _autocomplete_search(self, text: str):
+        self.render_results_page()
+
+    def _handle_autocomplete_query(self, min_length: int = 4):
+        query = self.search_input.text()
+
+        if len(query) < min_length:
+            return
+
         self._autocomplete_model.clear()
 
-        if text:
-            res: List[USutta] = []
-            r = self._app_data.db_session \
-                              .query(Am.Sutta.title) \
-                              .filter(Am.Sutta.title.like(f"%{text}%")) \
-                              .all()
-            res.extend(r)
+        res: List[USutta] = []
+        r = self._app_data.db_session \
+                            .query(Am.Sutta.title) \
+                            .filter(Am.Sutta.title.like(f"{query}%")) \
+                            .all()
+        res.extend(r)
 
-            r = self._app_data.db_session \
-                              .query(Um.Sutta.title) \
-                              .filter(Um.Sutta.title.like(f"%{text}%")) \
-                              .all()
-            res.extend(r)
+        r = self._app_data.db_session \
+                            .query(Um.Sutta.title) \
+                            .filter(Um.Sutta.title.like(f"{query}%")) \
+                            .all()
+        res.extend(r)
 
-            a = set(map(lambda x: x[0], res))
+        a = set(map(lambda x: x[0], res))
 
-            for i in set(a):
-                self._autocomplete_model.appendRow(QStandardItem(i))
+        for i in a:
+            self._autocomplete_model.appendRow(QStandardItem(i))
 
-            self._autocomplete_model.sort(0)
+        self._autocomplete_model.sort(0)
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)
@@ -494,8 +504,9 @@ QWidget:focus { border: 1px solid blue; }
             .triggered.connect(partial(self.close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
-        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
+        # self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 

@@ -90,10 +90,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.search_input.setFocus()
 
     def _setup_pali_buttons(self):
-        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
-        uppercase = 'Ā Ī Ū Ṃ Ṁ Ṅ Ñ Ṭ Ḍ Ṇ Ḷ'.split(' ')
-
         lowercase_row = QHBoxLayout()
+
+        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
 
         for i in lowercase:
             btn = QPushButton(i)
@@ -101,16 +100,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             btn.clicked.connect(partial(self._append_to_query, i))
             lowercase_row.addWidget(btn)
 
-        uppercase_row = QHBoxLayout()
-
-        for i in uppercase:
-            btn = QPushButton(i)
-            btn.setFixedSize(30, 30)
-            btn.clicked.connect(partial(self._append_to_query, i))
-            uppercase_row.addWidget(btn)
-
         self.pali_buttons_layout.addLayout(lowercase_row)
-        self.pali_buttons_layout.addLayout(uppercase_row)
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()

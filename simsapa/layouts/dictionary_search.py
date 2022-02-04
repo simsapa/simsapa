@@ -1,17 +1,17 @@
 from functools import partial
 import math
 from typing import List, Optional
-# from sqlalchemy.orm import joinedload
+from sqlalchemy import or_
 from pathlib import Path
 import json
 import queue
 import re
+from bs4 import BeautifulSoup
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
-                             QHBoxLayout, QPushButton,
-                             QSizePolicy)
+                             QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import logger
@@ -40,6 +40,11 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     palibuttons_frame: QFrame
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
+    content_layout: QVBoxLayout
+    content_html: QWebEngineView
+    _app_data: AppData
+    _autocomplete_model: QStandardItemModel
+    _current_words: List[UDictWord]
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -53,7 +58,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self._app_data: AppData = app_data
         self._results: List[SearchResult] = []
         self._recent: List[UDictWord] = []
-        self._current_word: Optional[UDictWord] = None
+        self._current_words: List[UDictWord] = []
 
         self.page_len = 20
         self.search_query = SearchQuery(
@@ -192,6 +197,7 @@ QWidget:focus { border: 1px solid blue; }
         self._setup_dict_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
+
         self._setup_pali_buttons()
         self._setup_content_html()
 
@@ -281,43 +287,64 @@ QWidget:focus { border: 1px solid blue; }
         self.search_input.setFocus()
 
     def _handle_query(self, min_length: int = 4):
-        self._highlight_query()
         query = self.search_input.text()
 
-        if len(query) >= min_length:
-            self._autocomplete_search(query)
-            self._results = self._word_search_query(query)
+        if len(query) < min_length:
+            return
 
-            if self.search_query.hits > 0:
-                self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
-            else:
-                self.rightside_tabs.setTabText(0, "Results")
+        self._handle_autocomplete_query(min_length)
+        self._highlight_query()
+        self._results = self._word_search_query(query)
 
-            self.render_results_page()
+        if self.search_query.hits > 0:
+            self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
+        else:
+            self.rightside_tabs.setTabText(0, "Results")
 
-    def _autocomplete_search(self, text: str):
+        self.render_results_page()
+
+    def _handle_autocomplete_query(self, min_length: int = 4):
+        query = self.search_input.text()
+
+        if len(query) < min_length:
+            return
+
         self._autocomplete_model.clear()
 
-        if text:
-            res: List[UDictWord] = []
-            r = self._app_data.db_session \
-                              .query(Am.DictWord.word) \
-                              .filter(Am.DictWord.word.like(f"%{text}%")) \
-                              .all()
-            res.extend(r)
+        res: List[UDictWord] = []
+        r = self._app_data.db_session \
+                            .query(Am.DictWord.word) \
+                            .filter(or_(
+                                Am.DictWord.word.like(f"{query}%"),
+                                Am.DictWord.synonyms.like(f"{query}%"),
+                            )) \
+                            .all()
+        res.extend(r)
 
-            r = self._app_data.db_session \
-                              .query(Um.DictWord.word) \
-                              .filter(Um.DictWord.word.like(f"%{text}%")) \
-                              .all()
-            res.extend(r)
+        r = self._app_data.db_session \
+                            .query(Um.DictWord.word) \
+                            .filter(or_(
+                                Um.DictWord.word.like(f"{query}%"),
+                                Um.DictWord.synonyms.like(f"{query}%"),
+                            )) \
+                            .all()
+        res.extend(r)
 
-            a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
+        a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
 
-            for i in a:
-                self._autocomplete_model.appendRow(QStandardItem(i))
+        for i in a:
+            self._autocomplete_model.appendRow(QStandardItem(i))
 
-            self._autocomplete_model.sort(0)
+        self._autocomplete_model.sort(0)
+
+    def _handle_exact_query(self, min_length: int = 4):
+        query = self.search_input.text()
+
+        if len(query) < min_length:
+            return
+
+        res = self._word_exact_matches(query)
+        self._render_words(res)
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html)
@@ -365,13 +392,60 @@ QWidget:focus { border: 1px solid blue; }
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
 
+    def _render_words(self, words: List[UDictWord]):
+        self._current_words = words
+        if len(self._current_words) == 0:
+            return
+
+        self.status_msg.setText(self._current_words[0].word) # type: ignore
+
+        self.update_memos_list_for_dict_word(self._current_words[0])
+        self.show_network_graph(self._current_words[0])
+
+        content = ''
+
+        for w in words:
+            html = self._format_word_html(w, ensure_fragment=True)
+            content += f"<h1>{w.word}</h1>{html}"
+
+        page_html = self._content_html_page(content)
+
+        self._set_content_html(page_html)
+
+    def _content_html_page(self, content: str, css_head: str = '', js_head: str = '', js_body: str = ''):
+        css_head += "h1 { font-size: 1.5em; }"
+
+        page_html = """
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>%s</style>
+    <script>%s</script>
+</head>
+<body>
+    %s
+    <script>%s</script>
+</body>
+</html>
+""" % (css_head, js_head, content, js_body)
+
+        return page_html
+
     def _show_word(self, word: UDictWord):
-        self._current_word = word
-        self.status_msg.setText(word.word) # type: ignore
+        self._current_words = [word]
+        self.status_msg.setText(self._current_words[0].word) # type: ignore
 
-        self.update_memos_list_for_dict_word(word)
-        self.show_network_graph(word)
+        self.update_memos_list_for_dict_word(self._current_words[0])
+        self.show_network_graph(self._current_words[0])
 
+        html = self._format_word_html(word, ensure_fragment=True)
+        content = f"<h1>{word.word}</h1>{html}"
+        page_html = self._content_html_page(content)
+
+        self._set_content_html(page_html)
+
+    def _format_word_html(self, word: UDictWord, ensure_fragment: bool = False) -> str:
         if word.definition_html is not None and word.definition_html != '':
             definition = word.definition_html
         elif word.definition_plain is not None and word.definition_plain != '':
@@ -382,10 +456,32 @@ QWidget:focus { border: 1px solid blue; }
 
         if '<html' in definition or '<HTML' in definition:
             # Definition is a complete HTML page, possibly with its own JS and CSS.
-            self._set_content_html(definition)
-            return
+            if not ensure_fragment:
+                return definition # type: ignore
 
-        # Definition is a HTML fragment block, wrap it in a complete page.
+            soup = BeautifulSoup(definition, 'html.parser') # type: ignore
+
+            css = ""
+            h = soup.find_all(name = 'style')
+            for i in h:
+                css += str(i)
+
+            js = ""
+            h = soup.find_all(name = 'script')
+            for i in h:
+                js += str(i)
+
+            h = soup.find(name = 'body')
+            if h is None:
+                return ''
+
+            body = h.decode_contents() # type: ignore
+
+            content = f"<div class=\"word-wrap\"> {css} {js} {body} </div>"
+
+            return content
+
+        # Definition is a HTML fragment block
 
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
@@ -394,10 +490,14 @@ QWidget:focus { border: 1px solid blue; }
 
         messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
         content = "<div>%s</div><div>%s</div>" % (definition, examples)
-        html = html_page(content, messages_url)
 
-        # show the word content
-        self._set_content_html(html)
+        if not ensure_fragment:
+            # wrap it in a complete page.
+            html = html_page(content, messages_url)
+        else:
+            html = content
+
+        return html
 
     def show_network_graph(self, word: UDictWord):
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
@@ -427,6 +527,38 @@ QWidget:focus { border: 1px solid blue; }
             self.results_last_page_btn.setEnabled(True)
 
         return results
+
+    def _word_exact_matches(self, query: str) -> List[UDictWord]:
+        res: List[UDictWord] = []
+
+        r = self._app_data.db_session \
+                          .query(Am.DictWord) \
+                          .filter(or_(
+                              Am.DictWord.word.like(f"{query}%"),
+                              Am.DictWord.synonyms.like(f"{query}%"),
+                          )) \
+                          .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+                          .query(Um.DictWord) \
+                          .filter(or_(
+                              Um.DictWord.word.like(f"{query}%"),
+                              Um.DictWord.synonyms.like(f"{query}%"),
+                          )) \
+                          .all()
+        res.extend(r)
+
+        ch = "." * len(query)
+        p_query = re.compile(f"^{ch}$")
+        p_num = re.compile(f"^{ch}[ 0-9]+$")
+
+        def _is_match(x: UDictWord):
+            return re.match(p_query, x.word) or re.match(p_num, x.word) # type: ignore
+
+        res = list(filter(_is_match, res))
+
+        return res
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
@@ -524,8 +656,11 @@ QWidget:focus { border: 1px solid blue; }
             .triggered.connect(partial(self.close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
-        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+
+        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 

@@ -312,6 +312,7 @@ class Ui_DictionarySearchWindow(object):
     def retranslateUi(self, DictionarySearchWindow):
         _translate = QtCore.QCoreApplication.translate
         DictionarySearchWindow.setWindowTitle(_translate("DictionarySearchWindow", "Dictionary Search - Simsapa"))
+        self.search_input.setPlaceholderText(_translate("DictionarySearchWindow", "Type here to search"))
         self.search_button.setText(_translate("DictionarySearchWindow", "Search"))
         self.results_prev_btn.setText(_translate("DictionarySearchWindow", "Prev"))
         self.results_next_btn.setText(_translate("DictionarySearchWindow", "Next"))

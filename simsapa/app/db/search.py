@@ -89,6 +89,19 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         page_number = None,
     )
 
+def dict_word_to_search_result(x: UDictWord) -> SearchResult:
+    return SearchResult(
+        db_id = x.id, # type: ignore
+        schema_name = x.metadata.schema,
+        table_name = 'dict_words',
+        uid = x.uid, # type: ignore
+        title = x.word, # type: ignore
+        ref = None,
+        author = None,
+        snippet = '',
+        page_number = None,
+    )
+
 class SearchQuery:
     def __init__(self, ix: FileIndex, page_len: int, hit_to_result_fn: Callable):
         self.ix = ix
