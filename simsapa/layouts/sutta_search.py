@@ -505,7 +505,6 @@ QWidget:focus { border: 1px solid blue; }
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
-        # self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))

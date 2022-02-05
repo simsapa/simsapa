@@ -392,6 +392,15 @@ QWidget:focus { border: 1px solid blue; }
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
 
+    def _word_header(self, w: UDictWord) -> str:
+        return f"""
+        <div class="word-heading">
+            <h1>{w.word}</h1>
+            <div class="uid">{w.uid}</div>
+        </div>
+        <div class="clear"></div>
+        """
+
     def _render_words(self, words: List[UDictWord]):
         self._current_words = words
         if len(self._current_words) == 0:
@@ -406,14 +415,18 @@ QWidget:focus { border: 1px solid blue; }
 
         for w in words:
             html = self._format_word_html(w, ensure_fragment=True)
-            content += f"<h1>{w.word}</h1>{html}"
+            content += self._word_header(w) + html
 
         page_html = self._content_html_page(content)
 
         self._set_content_html(page_html)
 
     def _content_html_page(self, content: str, css_head: str = '', js_head: str = '', js_body: str = ''):
-        css_head += "h1 { font-size: 1.5em; }"
+        css_head += """
+        .word-heading h1 { float: left; font-size: 1.2em; color: #282828; padding-top: 20pt; margin-top: 0; }
+        .word-heading .uid { float: right; font-size: 0.9em; font-style: italic; color: #aaa; padding-top: 20pt; margin-top: 0; }
+        .clear { clear: both; }
+        """
 
         page_html = """
 <!doctype html>
@@ -440,7 +453,7 @@ QWidget:focus { border: 1px solid blue; }
         self.show_network_graph(self._current_words[0])
 
         html = self._format_word_html(word, ensure_fragment=True)
-        content = f"<h1>{word.word}</h1>{html}"
+        content = self._word_header(word) + html
         page_html = self._content_html_page(content)
 
         self._set_content_html(page_html)
