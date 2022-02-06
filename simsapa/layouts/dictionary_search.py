@@ -303,6 +303,9 @@ QWidget:focus { border: 1px solid blue; }
 
         self.render_results_page()
 
+        if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
+            self._show_word_by_uid(self._results[0]['uid'])
+
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
 
@@ -314,19 +317,13 @@ QWidget:focus { border: 1px solid blue; }
         res: List[UDictWord] = []
         r = self._app_data.db_session \
                             .query(Am.DictWord.word) \
-                            .filter(or_(
-                                Am.DictWord.word.like(f"{query}%"),
-                                Am.DictWord.synonyms.like(f"{query}%"),
-                            )) \
+                            .filter(Am.DictWord.word.like(f"{query}%")) \
                             .all()
         res.extend(r)
 
         r = self._app_data.db_session \
                             .query(Um.DictWord.word) \
-                            .filter(or_(
-                                Um.DictWord.word.like(f"{query}%"),
-                                Um.DictWord.synonyms.like(f"{query}%"),
-                            )) \
+                            .filter(Um.DictWord.word.like(f"{query}%")) \
                             .all()
         res.extend(r)
 
@@ -548,7 +545,7 @@ QWidget:focus { border: 1px solid blue; }
                           .query(Am.DictWord) \
                           .filter(or_(
                               Am.DictWord.word.like(f"{query}%"),
-                              Am.DictWord.synonyms.like(f"{query}%"),
+                              Am.DictWord.synonyms.like(f"%{query}%"),
                           )) \
                           .all()
         res.extend(r)
@@ -557,13 +554,17 @@ QWidget:focus { border: 1px solid blue; }
                           .query(Um.DictWord) \
                           .filter(or_(
                               Um.DictWord.word.like(f"{query}%"),
-                              Um.DictWord.synonyms.like(f"{query}%"),
+                              Um.DictWord.synonyms.like(f"%{query}%"),
                           )) \
                           .all()
         res.extend(r)
 
         ch = "." * len(query)
+        # for 'dhamma' also match 'dhammā'
+        # for 'akata' also match 'akaṭa'
+        # for 'konndanna' also match 'koṇḍañña'
         p_query = re.compile(f"^{ch}$")
+        # for 'dhamma' also match 'dhamma 1'
         p_num = re.compile(f"^{ch}[ 0-9]+$")
 
         def _is_match(x: UDictWord):
@@ -673,6 +674,7 @@ QWidget:focus { border: 1px solid blue; }
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
+        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))

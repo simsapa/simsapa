@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 import re
 import json
-from typing import List
+from bs4 import BeautifulSoup
+from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
 
@@ -121,7 +122,27 @@ def uid_to_ref(uid: str) -> str:
 
     return uid
 
-def html_text_to_sutta(x, title: str) -> Am.Sutta:
+def get_sutta_page_body(html_page: str):
+    if '<html' in html_page or '<HTML' in html_page:
+        soup = BeautifulSoup(html_page, 'html.parser')
+        h = soup.find(name = 'body')
+        if h is None:
+            logger.error("HTML document is missing a <body>")
+            body = html_page
+        else:
+            body = h.decode_contents() # type: ignore
+    else:
+        body = html_page
+
+    return body
+
+def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
+    # html pages can be complete docs, <!DOCTYPE html><html>...
+    page = x['text']
+
+    body = get_sutta_page_body(page)
+    content_html = f"""<div class="suttacentral html-text">{body}</div>"""
+
     return Am.Sutta(
         source_info = x['_id'],
         # The All-embracing Net of Views
@@ -132,23 +153,31 @@ def html_text_to_sutta(x, title: str) -> Am.Sutta:
         sutta_ref = uid_to_ref(x['uid']),
         # en
         language = x['lang'],
-        # <!DOCTYPE html>\n<html>\n<head>...
-        content_html = x['text'],
+        content_html = content_html,
         created_at = func.now(),
     )
 
-def bilara_text_to_sutta(x, title: str) -> Am.Sutta:
+def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
     a = json.loads(x['text'])
-    text = "\n\n".join(a.values())
 
-    # test if text contains html tags
-    m = re.match(r'<\w+', text)
-    if m is not None:
-        content_html = text
-        content_plain = null()
+    if tmpl is None:
+        logger.warn(f"No template: {x['uid']} {title} {x['file_path']}")
     else:
+        for i in a.keys():
+            if i in tmpl.keys():
+                a[i] = tmpl[i].replace('{}', a[i])
+            # else:
+            #     logger.warn(f"No template key: {i} {x['uid']} {title} {x['file_path']}")
+
+    page = "\n\n".join(a.values())
+
+    if tmpl is None:
         content_html = null()
-        content_plain = text
+        content_plain = page
+    else:
+        body = get_sutta_page_body(page)
+        content_html = f"""<div class="suttacentral bilara-text">{body}</div>"""
+        content_plain = null()
 
     return Am.Sutta(
         source_info = x['_id'],
@@ -197,6 +226,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
     # Bilara format is newer and edited, we'll prefer that source to html_text.
 
     suttas: dict[str, Am.Sutta] = {}
+    suttas_html_tmpl: dict[str, dict] = {}
 
     get_html_text_aql = '''
     LET docs = (
@@ -215,6 +245,27 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
     )
     RETURN docs
     '''
+
+    get_bilara_text_templates_aql = '''
+    LET docs = (
+        FOR x IN sc_bilara_texts
+            FILTER x.lang == 'pli' && x._key LIKE '%_html'
+            RETURN x
+    )
+    RETURN docs
+    '''
+
+    # collect templates
+    q = db.AQLQuery(get_bilara_text_templates_aql)
+    for r in q.result[0]:
+        # html bilara wrapper JSON
+        if ('file_path' in r.keys() and 'sc_bilara_data/html' in r['file_path']) \
+            and ('muids' in r.keys() and 'html' in r['muids']):
+
+            convert_paths_to_content(r)
+            text_uid_ref = r['uid']
+            if text_uid_ref not in suttas_html_tmpl.keys():
+                suttas_html_tmpl[text_uid_ref] = json.loads(r['text'])
 
     titles = get_titles(db, language)
 
@@ -247,12 +298,20 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
         total_results += len(q.result[0])
 
         for r in q.result[0]:
-            # ignoring comments
+            # ignore site pages and some collections
+            if ('file_path' in r.keys() and '/site/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/xplayground/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/sutta/sa/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/sutta/ma/' in r['file_path']):
+                ignored += 1
+                continue
+
+            # ignore comments
             if 'muids' in r.keys() and 'comment' in r['muids']:
                 ignored += 1
                 continue
 
-            # ignoring html bilara wrapper JSON
+            # html bilara wrapper JSON already collected, skip
             if ('file_path' in r.keys() and 'sc_bilara_data/html' in r['file_path']) \
                 and ('muids' in r.keys() and 'html' in r['muids']):
                 ignored += 1
@@ -261,9 +320,10 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             convert_paths_to_content(r)
             uid = f_uid(r)
             title = f_title(r, titles)
+            tmpl = suttas_html_tmpl.get(r['uid'], None)
 
             if uid not in suttas.keys():
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             elif 'muids' in r.keys() and ('reference' in r['muids'] or 'variant' in r['muids']):
                 # keeping only the 'root' version
@@ -273,12 +333,12 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             elif 'muids' in r.keys() and 'root' in r['muids']:
                 # keeping only the 'root' version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             elif r['_id'].startswith('sc_bilara_texts/') and suttas[uid].source_info.startswith('html_text/'):
                 # keeping the Bilara version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             else:
                 unknown_dup += 1
@@ -351,7 +411,6 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
                 appdata_db.add(i)
                 appdata_db.commit()
         except Exception as e:
-            logger.error(e)
             logger.error(e)
             exit(1)
 

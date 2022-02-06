@@ -283,6 +283,9 @@ QWidget:focus { border: 1px solid blue; }
 
         self.render_results_page()
 
+        if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
+            self._show_sutta_by_uid(self._results[0]['uid'])
+
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
 
@@ -420,12 +423,9 @@ QWidget:focus { border: 1px solid blue; }
         self.show_network_graph(sutta)
 
         if sutta.content_html is not None and sutta.content_html != '':
-            # Hide SuttaCentral ref link text
-            style = '<style>a.ref { display: none; }</style>'
-            content = style + sutta.content_html
+            content = sutta.content_html
         elif sutta.content_plain is not None and sutta.content_plain != '':
-            style = '<style>pre { font-family: serif; }</style>'
-            content = style + '<pre>' + sutta.content_plain + '</pre>'
+            content = '<pre>' + sutta.content_plain + '</pre>'
         else:
             content = 'No content.'
 
@@ -505,6 +505,7 @@ QWidget:focus { border: 1px solid blue; }
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
+        # NOTE search_input.returnPressed removes the selected completion and uses the typed query
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))

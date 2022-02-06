@@ -144,6 +144,8 @@ def compactPlainText(text: str) -> str:
 def compactRichText(text: str) -> str:
     # Some CSS is not removed by bleach when syntax is malformed
     text = re.sub(r'<style>.*</style>', '', text, flags = re.DOTALL)
+    # escaped html tags
+    text = re.sub(r'&lt;[^&]+&gt;', '', text)
     text = text.replace('&nbsp;', ' ')
     text = text.replace('&amp;', '&')
     # remove SuttaCentral ref links

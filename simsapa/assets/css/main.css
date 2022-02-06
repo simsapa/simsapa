@@ -1,0 +1,36 @@
+pre {
+  font-family: serif;
+  white-space: pre-wrap;
+}
+
+.suttacentral header ul li {
+  font-size: 0.8em;
+  list-style-type: none;
+}
+.suttacentral header ul li.division {
+  font-size: 1em;
+}
+.suttacentral header h1 {
+  font-size: 2em;
+}
+.suttacentral h2 {
+  font-size: 1.5em;
+}
+.suttacentral h3 {
+  font-size: 1.2em;
+}
+.suttacentral span.evam {
+  font-style: italic;
+}
+.suttacentral p.endsutta {
+  font-style: italic;
+}
+.suttacentral a.ref {
+  display: none;
+}
+.suttacentral footer span.author {
+  font-style: italic;
+}
+.suttacentral footer span.publication-date {
+  font-style: italic;
+}

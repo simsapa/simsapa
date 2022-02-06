@@ -1,6 +1,12 @@
+from simsapa import SIMSAPA_PACKAGE_DIR, logger
 
 def html_page(content: str, messages_url: str):
-    css = "pre { white-space: pre-wrap; }"
+    try:
+        with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/main.css'), 'r') as f:
+            css = f.read()
+    except Exception as e:
+        logger.error("Can't read main.css")
+        css = ""
 
     js = """
 document.addEventListener('DOMContentLoaded', function() {
