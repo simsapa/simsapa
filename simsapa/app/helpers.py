@@ -203,3 +203,11 @@ def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
         context = MigrationContext.configure(db_conn)
         return set(context.get_current_heads()) == set(directory.get_heads())
 
+def latinize(text: str) -> str:
+    accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
+    latin = 'a i u m m n n t d n l r s s'.split(' ')
+
+    for idx, i in enumerate(accents):
+        text = text.replace(i, latin[idx])
+
+    return text

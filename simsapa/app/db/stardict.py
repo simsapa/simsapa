@@ -6,6 +6,7 @@ from typing import Optional, List, TypedDict
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.sqlite import insert
 from simsapa.app.db.search import SearchIndexed
+from simsapa.app.helpers import latinize
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
 from simsapa.app.types import UDictWord
@@ -25,12 +26,19 @@ class DbDictEntry(TypedDict):
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
     # TODO should we check for conflicting uids? generate with meaning count?
     uid = f"{x['word']}/{dictionary_label}".lower()
+
+    # add a Latinized lowercase synonym
+    syn = x['synonyms']
+    latin = latinize(x['word']).lower()
+    if latin not in syn:
+        syn.append(latin)
+
     return DbDictEntry(
         # copy values
         word = x['word'],
         definition_plain = x['definition_plain'],
         definition_html = x['definition_html'],
-        synonyms = ", ".join(x['synonyms']),
+        synonyms = ", ".join(syn),
         # add missing data
         uid = uid,
         dictionary_id = dictionary_id,

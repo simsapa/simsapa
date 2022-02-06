@@ -345,7 +345,7 @@ class SearchIndexed:
             logger.error(f"Can't index: {e}")
 
     def index_dict_words(self, schema_name: str, words: List[UDictWord]):
-        logger.info("index_dict_words()")
+        logger.info(f"index_dict_words('{schema_name}')")
         ix = self.dict_words_index
 
         try:

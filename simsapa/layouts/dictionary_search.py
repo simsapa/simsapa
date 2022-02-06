@@ -562,7 +562,7 @@ QWidget:focus { border: 1px solid blue; }
         ch = "." * len(query)
         # for 'dhamma' also match 'dhammā'
         # for 'akata' also match 'akaṭa'
-        # for 'konndanna' also match 'koṇḍañña'
+        # for 'kondanna' also match 'koṇḍañña'
         p_query = re.compile(f"^{ch}$")
         # for 'dhamma' also match 'dhamma 1'
         p_num = re.compile(f"^{ch}[ 0-9]+$")

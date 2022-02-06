@@ -24,7 +24,7 @@ tests:
 	USE_TEST_DATA=true pytest tests/
 
 bootstrap-appdata:
-	./scripts/bootstrap-appdata-db.py
+	./scripts/bootstrap-appdata.sh
 
 count-code:
 	tokei --exclude simsapa/assets/ --exclude simsapa/keyboard/ .

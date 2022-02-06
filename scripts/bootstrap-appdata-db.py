@@ -61,8 +61,7 @@ def get_appdata_db(db_path: Path) -> Session:
         Session.configure(bind=engine)
         db_session = Session()
     except Exception as e:
-        logger.error("Can't connect to database.")
-        logger.error(e)
+        logger.error(f"Can't connect to database: {e}")
         sys.exit(1)
 
     return db_session
@@ -392,8 +391,7 @@ def get_legacy_db(db_path: Path) -> Session:
         Session.configure(bind=engine)
         db_session = Session()
     except Exception as e:
-        logger.error("Can't connect to database.")
-        logger.error(e)
+        logger.error(f"Can't connect to database: {e}")
         exit(1)
 
     return db_session
@@ -430,7 +428,6 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
         appdata_db.commit()
     except Exception as e:
         logger.error(e)
-        logger.error(e)
         exit(1)
 
     # get words and commit to appdata db
@@ -461,7 +458,6 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
             appdata_db.add(i)
             appdata_db.commit()
     except Exception as e:
-        logger.error(e)
         logger.error(e)
         exit(1)
 
@@ -508,7 +504,6 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
             new_db_session.commit()
     except Exception as e:
         logger.error(e)
-        logger.error(e)
         exit(1)
 
     logger.info("Adding Suttas from traslated_texts")
@@ -538,7 +533,6 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
             new_db_session.commit()
     except Exception as e:
         logger.error(e)
-        logger.error(e)
         exit(1)
 
 def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path):
@@ -549,12 +543,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
         logger.info(f"Importing {ifo['bookname']} ...")
-        import_stardict_as_new(appdata_db,
-                               'appdata',
-                               None,
-                               paths,
-                               label,
-                               10000)
+        import_stardict_as_new(appdata_db, 'appdata', None, paths, label, 10000)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
