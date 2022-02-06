@@ -204,6 +204,8 @@ class Ui_LinksBrowserWindow(object):
         self.action_Show_Toolbar = QtWidgets.QAction(LinksBrowserWindow)
         self.action_Show_Toolbar.setCheckable(True)
         self.action_Show_Toolbar.setObjectName("action_Show_Toolbar")
+        self.action_First_Window_on_Startup = QtWidgets.QAction(LinksBrowserWindow)
+        self.action_First_Window_on_Startup.setObjectName("action_First_Window_on_Startup")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addAction(self.action_Re_index_database)
@@ -219,6 +221,7 @@ class Ui_LinksBrowserWindow(object):
         self.menu_Windows.addAction(self.action_Library)
         self.menu_Windows.addAction(self.action_Memos)
         self.menu_Windows.addAction(self.action_Links)
+        self.menu_Windows.addAction(self.action_First_Window_on_Startup)
         self.menu_Windows.addAction(self.action_Show_Toolbar)
         self.menu_Help.addAction(self.action_Notify_About_Updates)
         self.menu_Help.addAction(self.action_Website)
@@ -284,4 +287,5 @@ class Ui_LinksBrowserWindow(object):
         self.action_Re_download_database.setText(_translate("LinksBrowserWindow", "Re-download database..."))
         self.action_Notify_About_Updates.setText(_translate("LinksBrowserWindow", "Notify About Updates"))
         self.action_Show_Toolbar.setText(_translate("LinksBrowserWindow", "Show Toolbar"))
+        self.action_First_Window_on_Startup.setText(_translate("LinksBrowserWindow", "First Window on Startup..."))
 from simsapa.assets import icons_rc

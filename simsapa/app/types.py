@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 import os
 import os.path
@@ -33,6 +34,18 @@ class Labels(TypedDict):
     appdata: List[str]
     userdata: List[str]
 
+class WindowType(int, Enum):
+    SuttaSearch = 0
+    DictionarySearch = 1
+    Memos = 2
+    Links = 3
+
+WindowNameToType = {
+    "Sutta Search": WindowType.SuttaSearch,
+    "Dictionary Search": WindowType.DictionarySearch,
+    "Memos": WindowType.Memos,
+    "Links": WindowType.Links,
+}
 
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
@@ -41,6 +54,7 @@ class AppSettings(TypedDict):
     suttas_show_pali_buttons: bool
     dictionary_show_pali_buttons: bool
     show_toolbar: bool
+    first_window_on_startup: WindowType
 
 class AppMessage(TypedDict):
     kind: str
@@ -136,6 +150,7 @@ class AppData:
                 suttas_show_pali_buttons = True,
                 dictionary_show_pali_buttons = True,
                 show_toolbar = True,
+                first_window_on_startup = WindowType.SuttaSearch,
             )
             self._save_app_settings()
 

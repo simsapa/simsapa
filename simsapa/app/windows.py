@@ -6,13 +6,13 @@ import queue
 import json
 
 from PyQt5.QtCore import QSize, QTimer, Qt
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QFileDialog, QMessageBox)
+from PyQt5.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
 from simsapa import logger
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from .types import AppData, AppMessage
+from .types import AppData, AppMessage, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
 from ..layouts.dictionary_search import DictionarySearchWindow
@@ -90,8 +90,26 @@ class AppWindows:
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
         view.setBaseSize(QSize(1200, 800))
-        # window doesn't upen maximized
+        # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+
+    def _open_first_window(self) -> QMainWindow:
+        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+
+        if window_type == WindowType.SuttaSearch:
+            return self._new_sutta_search_window()
+
+        elif window_type == WindowType.DictionarySearch:
+            return self._new_dictionary_search_window()
+
+        elif window_type == WindowType.Memos:
+            return self._new_memos_browser_window()
+
+        elif window_type == WindowType.Links:
+            return self._new_links_browser_window()
+
+        else:
+            return self._new_sutta_search_window()
 
     def _new_sutta_search_window(self) -> SuttaSearchWindow:
         view = SuttaSearchWindow(self._app_data)
@@ -147,19 +165,21 @@ class AppWindows:
     #     view.show()
     #     self._windows.append(view)
 
-    def _new_memos_browser_window(self):
+    def _new_memos_browser_window(self) -> MemosBrowserWindow:
         view = MemosBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
+        return view
 
-    def _new_links_browser_window(self):
+    def _new_links_browser_window(self) -> LinksBrowserWindow:
         view = LinksBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
         view.show()
         self._windows.append(view)
+        return view
 
     # def _new_document_reader_window(self, file_path=None):
     #     view = DocumentReaderWindow(self._app_data)
@@ -285,6 +305,19 @@ class AppWindows:
             if hasattr(w,'toolBar'):
                 w.toolBar.setVisible(checked)
 
+    def _first_window_on_startup_dialog(self, view: QMainWindow):
+        options = WindowNameToType.keys()
+
+        item, ok = QInputDialog.getItem(view,
+                                        "Select Window",
+                                        "Select First Window to Open on Startup:",
+                                        options,
+                                        0,
+                                        False)
+        if ok and item:
+            self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
+            self._app_data._save_app_settings()
+
     def _connect_signals(self, view: QMainWindow):
         # view.action_Open \
         #     .triggered.connect(partial(self._open_file_dialog, view))
@@ -304,6 +337,9 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        view.action_First_Window_on_Startup \
+            .triggered.connect(partial(self._first_window_on_startup_dialog, view))
 
         notify = self._app_data.app_settings.get('notify_about_updates', True)
         view.action_Notify_About_Updates.setChecked(notify)

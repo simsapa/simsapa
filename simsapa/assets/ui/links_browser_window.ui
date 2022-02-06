@@ -290,6 +290,7 @@
     <addaction name="action_Library"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
+    <addaction name="action_First_Window_on_Startup"/>
     <addaction name="action_Show_Toolbar"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
@@ -477,6 +478,11 @@
    </property>
    <property name="text">
     <string>Show Toolbar</string>
+   </property>
+  </action>
+  <action name="action_First_Window_on_Startup">
+   <property name="text">
+    <string>First Window on Startup...</string>
    </property>
   </action>
  </widget>

@@ -114,7 +114,7 @@ def start(splash_proc: Optional[Popen] = None):
 
     # === Create first window ===
 
-    app_windows._new_sutta_search_window()
+    app_windows._open_first_window()
 
     app_windows.show_startup_message()
 
