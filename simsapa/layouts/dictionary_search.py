@@ -13,9 +13,9 @@ from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
                              QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout)
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
 
-from simsapa import logger
+from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -82,6 +82,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
+
+        self.is_dev_tools_open = False
 
         self._ui_setup()
         self._connect_signals()
@@ -208,11 +210,18 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def _setup_content_html(self):
-        self.content_html = QWebEngineView()
+        self.content_html = QWebEngineView(self)
+
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_html.setHtml('')
         self.content_html.show()
-        self.content_layout.addWidget(self.content_html)
+        self.content_layout.addWidget(self.content_html, 100)
+
+        # Enable dev tools
+        self.content_html.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        self.content_html.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        self.content_html.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
+        self.content_html.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -348,7 +357,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._render_words(res)
 
     def _set_content_html(self, html):
-        self.content_html.setHtml(html)
+        self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
         self._highlight_query()
 
     def _highlight_query(self):
@@ -403,7 +412,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         """
 
     def _render_words(self, words: List[UDictWord]):
-        logger.info("render_words()")
         self._current_words = words
         if len(self._current_words) == 0:
             return
@@ -439,8 +447,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             "\n\n".join(page_js.values()))
 
         self._set_content_html(page_html)
-
-        logger.info("render_words() end")
 
     def _content_html_page(self, body: str, css_head: str = '', js_head: str = '', js_body: str = ''):
         css_head += """
@@ -672,6 +678,17 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._append_to_query(s)
             self._handle_query()
 
+    def _toggle_dev_tools_inspector(self):
+        if self.is_dev_tools_open:
+            self.content_html.page().devToolsPage().deleteLater()
+            self.dev_view.deleteLater()
+        else:
+            self.dev_view = QWebEngineView()
+            self.content_layout.addWidget(self.dev_view, 100)
+            self.content_html.page().setDevToolsPage(self.dev_view.page())
+
+        self.is_dev_tools_open = not self.is_dev_tools_open
+
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
 
@@ -696,6 +713,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
 
         self.content_html.addAction(lookupSelectionInDictionary)
+
+        devToolsAction = QAction("Toggle Inspector", self.content_html)
+        devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
+
+        self.content_html.addAction(devToolsAction)
 
     def _connect_signals(self):
         self.action_Close_Window \
