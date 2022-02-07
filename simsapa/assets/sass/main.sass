@@ -2,27 +2,75 @@ pre
   font-family: serif
   white-space: pre-wrap
 
+html
+  font-size: 18px
+  line-height: 27px
+
+body
+  padding: 0 2rem
+  max-width: 90ex
+
+p
+  margin: 0.8rem 0 0 0
+
 .suttacentral
   header
+    text-align: center
     ul
       li
-        font-size: 0.8em
         list-style-type: none
-        &.division
-          font-size: 1em
+        text-transform: uppercase
+        font-size: 0.65rem
+        letter-spacing: 1pt
+        word-spacing: 1.5pt
+        padding-top: .1.5rem
+
     h1
-      font-size: 2em
+      font-size: 1.3rem
+      font-style: bold
+      padding-top: 0.8rem
+      padding-bottom: 0.8rem
+
   h2
-    font-size: 1.5em
+    font-size: 1rem
+    font-style: bold
+    text-transform: uppercase
+    letter-spacing: 0.8pt
+    word-spacing: 2pt
+    padding-top: 1rem
+
   h3
-    font-size: 1.2em
-  span.evam
+    font-size: 1rem
+    font-style: bold
+    padding-top: 1rem
+
+  .evam
+    text-transform: uppercase
+    font-size: 0.8rem
+    letter-spacing: .8pt
+    word-spacing: 1pt
+
+  .speaker
     font-style: italic
-  p.endsutta
+    text-indent: 3em
+    display: block
+
+  blockquote.gatha
+    font-style: normal
+    margin-left: 3em
+
+  .endsutta
     font-style: italic
+
+
   a.ref
     display: none
+
   footer
+    margin-top: 4rem
+    border-top: 1px solid #aaa
+    font-size: 0.8rem
+    line-height: 1rem
     span.author
       font-style: italic
     span.publication-date
