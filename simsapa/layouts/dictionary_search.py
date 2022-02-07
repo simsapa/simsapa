@@ -1,12 +1,13 @@
 from functools import partial
 import math
-from typing import List, Optional
+from typing import List, Optional, TypedDict
 from sqlalchemy import or_
 from pathlib import Path
 import json
 import queue
 import re
 from bs4 import BeautifulSoup
+from binascii import crc32
 
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
@@ -25,11 +26,14 @@ from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
 from .results_list import HasResultsList
-from .html_content import html_page
 from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
 
+class WordHtml(TypedDict):
+    body: str
+    css: str
+    js: str
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,
@@ -389,7 +393,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
 
-    def _word_header(self, w: UDictWord) -> str:
+    def _word_heading(self, w: UDictWord) -> str:
         return f"""
         <div class="word-heading">
             <h1>{w.word}</h1>
@@ -399,6 +403,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         """
 
     def _render_words(self, words: List[UDictWord]):
+        logger.info("render_words()")
         self._current_words = words
         if len(self._current_words) == 0:
             return
@@ -408,17 +413,36 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        content = ''
+        # avoid multiple copies of the same content with a crc32 checksum
+        page_body: dict[int, str] = {}
+        page_css: dict[int, str] = {}
+        page_js: dict[int, str] = {}
 
         for w in words:
-            html = self._format_word_html(w, ensure_fragment=True)
-            content += self._word_header(w) + html
+            word_html = self._get_word_html(w)
 
-        page_html = self._content_html_page(content)
+            body_sum = crc32(bytes(word_html['body'], 'utf-8'))
+            if body_sum not in page_body.keys():
+                page_body[body_sum] = word_html['body']
+
+            css_sum = crc32(bytes(word_html['css'], 'utf-8'))
+            if css_sum not in page_css.keys():
+                page_css[css_sum] = word_html['css']
+
+            js_sum = crc32(bytes(word_html['js'], 'utf-8'))
+            if js_sum not in page_js.keys():
+                page_js[js_sum] = word_html['js']
+
+        page_html = self._content_html_page(
+            "\n\n".join(page_body.values()),
+            "\n\n".join(page_css.values()),
+            "\n\n".join(page_js.values()))
 
         self._set_content_html(page_html)
 
-    def _content_html_page(self, content: str, css_head: str = '', js_head: str = '', js_body: str = ''):
+        logger.info("render_words() end")
+
+    def _content_html_page(self, body: str, css_head: str = '', js_head: str = '', js_body: str = ''):
         css_head += """
         .word-heading h1 { float: left; font-size: 1.2em; color: #282828; padding-top: 20pt; margin-top: 0; }
         .word-heading .uid { float: right; font-size: 0.9em; font-style: italic; color: #aaa; padding-top: 20pt; margin-top: 0; }
@@ -438,24 +462,26 @@ QWidget:focus { border: 1px solid #1092C3; }
     <script>%s</script>
 </body>
 </html>
-""" % (css_head, js_head, content, js_body)
+""" % (css_head, js_head, body, js_body)
 
         return page_html
 
     def _show_word(self, word: UDictWord):
+        logger.info("show_word()")
         self._current_words = [word]
         self.status_msg.setText(self._current_words[0].word) # type: ignore
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        html = self._format_word_html(word, ensure_fragment=True)
-        content = self._word_header(word) + html
-        page_html = self._content_html_page(content)
+        word_html = self._get_word_html(word)
+
+        page_html = self._content_html_page(word_html['body'], word_html['css'], word_html['js'])
 
         self._set_content_html(page_html)
+        logger.info("show_word() end")
 
-    def _format_word_html(self, word: UDictWord, ensure_fragment: bool = False) -> str:
+    def _get_word_html(self, word: UDictWord) -> WordHtml:
         if word.definition_html is not None and word.definition_html != '':
             definition = word.definition_html
         elif word.definition_plain is not None and word.definition_plain != '':
@@ -464,50 +490,56 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             definition = '<p>No definition.</p>'
 
-        if '<html' in definition or '<HTML' in definition:
-            # Definition is a complete HTML page, possibly with its own JS and CSS.
-            if not ensure_fragment:
-                return definition # type: ignore
+        # We'll remove CSS and JS from 'definition' before assigning it to 'body'
+        body = ""
+        css = ""
+        js = ""
 
-            soup = BeautifulSoup(definition, 'html.parser') # type: ignore
+        soup = BeautifulSoup(definition, 'html.parser') # type: ignore
 
-            css = ""
+        if '<style' in definition:
             h = soup.find_all(name = 'style')
             for i in h:
-                css += str(i)
+                css += i.decode_contents()
+                definition = definition.replace(css, '')
 
-            js = ""
+        if '<script' in definition:
             h = soup.find_all(name = 'script')
             for i in h:
-                js += str(i)
+                js += i.decode_contents()
+                definition = definition.replace(js, '')
 
+        if '<html' in definition or '<HTML' in definition:
+            # Definition is a complete HTML page with a <body> block
             h = soup.find(name = 'body')
-            if h is None:
-                return ''
-
-            body = h.decode_contents() # type: ignore
-
-            content = f"<div class=\"word-wrap\"> {css} {js} {body} </div>"
-
-            return content
-
-        # Definition is a HTML fragment block
+            if h is not None:
+                body = h.decode_contents() # type: ignore
+            else:
+                logger.warn("Missing <body> from html page in %s" % word.uid)
+                body = definition
+        else:
+            # Definition is a HTML fragment block, CSS and JS already removed
+            body = definition
 
         def example_format(example):
             return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
 
         examples = "".join(list(map(example_format, word.examples))) # type: ignore
 
-        messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
-        content = "<div>%s</div><div>%s</div>" % (definition, examples)
+        # Wrap definition body in a class
+        body = "<div class=\"word-definition\">%s</div>" % body
 
-        if not ensure_fragment:
-            # wrap it in a complete page.
-            html = html_page(content, messages_url)
-        else:
-            html = content
+        # Add examples to body
+        if len(examples) > 0:
+            body += "<div class=\"word-examples\">%s</div>" % examples
 
-        return html
+        body = self._word_heading(word) + body
+
+        return WordHtml(
+            body = body,
+            css = css,
+            js = js,
+        )
 
     def show_network_graph(self, word: UDictWord):
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
