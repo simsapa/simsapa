@@ -182,7 +182,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         style = """
 QWidget { border: 1px solid #272727; }
-QWidget:focus { border: 1px solid blue; }
+QWidget:focus { border: 1px solid #1092C3; }
         """
 
         self.search_input.setStyleSheet(style)

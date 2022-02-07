@@ -273,6 +273,8 @@ class Ui_DictionarySearchWindow(object):
         self.action_Show_Toolbar.setObjectName("action_Show_Toolbar")
         self.action_First_Window_on_Startup = QtWidgets.QAction(DictionarySearchWindow)
         self.action_First_Window_on_Startup.setObjectName("action_First_Window_on_Startup")
+        self.action_Focus_Search_Input = QtWidgets.QAction(DictionarySearchWindow)
+        self.action_Focus_Search_Input.setObjectName("action_Focus_Search_Input")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addAction(self.action_Re_index_database)
@@ -281,6 +283,7 @@ class Ui_DictionarySearchWindow(object):
         self.menu_File.addAction(self.action_Quit)
         self.menu_Edit.addAction(self.action_Copy)
         self.menu_Edit.addAction(self.action_Paste)
+        self.menu_Edit.addAction(self.action_Focus_Search_Input)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Suttas)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Dictionary)
         self.menu_Windows.addAction(self.action_Sutta_Search)
@@ -377,4 +380,6 @@ class Ui_DictionarySearchWindow(object):
         self.action_Lookup_Clipboard_in_Suttas.setShortcut(_translate("DictionarySearchWindow", "Ctrl+Shift+S"))
         self.action_Show_Toolbar.setText(_translate("DictionarySearchWindow", "Show Toolbar"))
         self.action_First_Window_on_Startup.setText(_translate("DictionarySearchWindow", "First Window on Startup..."))
+        self.action_Focus_Search_Input.setText(_translate("DictionarySearchWindow", "Focus Search Input"))
+        self.action_Focus_Search_Input.setShortcut(_translate("DictionarySearchWindow", "Ctrl+L"))
 from simsapa.assets import icons_rc

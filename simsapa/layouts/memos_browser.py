@@ -4,7 +4,7 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)
+from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow,  QMessageBox)
 from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
@@ -38,6 +38,9 @@ class MemoListModel(QAbstractListModel):
 
 
 class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
+
+    search_input: QLineEdit
+
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)

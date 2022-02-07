@@ -278,6 +278,7 @@
     </property>
     <addaction name="action_Copy"/>
     <addaction name="action_Paste"/>
+    <addaction name="action_Focus_Search_Input"/>
    </widget>
    <widget class="QMenu" name="menu_Windows">
     <property name="title">
@@ -483,6 +484,14 @@
   <action name="action_First_Window_on_Startup">
    <property name="text">
     <string>First Window on Startup...</string>
+   </property>
+  </action>
+  <action name="action_Focus_Search_Input">
+   <property name="text">
+    <string>Focus Search Input</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+L</string>
    </property>
   </action>
  </widget>

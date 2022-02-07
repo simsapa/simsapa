@@ -172,6 +172,8 @@ class Ui_MemosBrowserWindow(object):
         self.action_Show_Toolbar.setObjectName("action_Show_Toolbar")
         self.action_First_Window_on_Startup = QtWidgets.QAction(MemosBrowserWindow)
         self.action_First_Window_on_Startup.setObjectName("action_First_Window_on_Startup")
+        self.action_Focus_Search_Input = QtWidgets.QAction(MemosBrowserWindow)
+        self.action_Focus_Search_Input.setObjectName("action_Focus_Search_Input")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addAction(self.action_Re_index_database)
@@ -180,6 +182,7 @@ class Ui_MemosBrowserWindow(object):
         self.menu_File.addAction(self.action_Quit)
         self.menu_Edit.addAction(self.action_Copy)
         self.menu_Edit.addAction(self.action_Paste)
+        self.menu_Edit.addAction(self.action_Focus_Search_Input)
         self.menu_Windows.addAction(self.action_Sutta_Search)
         self.menu_Windows.addAction(self.action_Dictionary_Search)
         self.menu_Windows.addAction(self.action_Dictionaries_Manager)
@@ -262,4 +265,6 @@ class Ui_MemosBrowserWindow(object):
         self.action_Notify_About_Updates.setText(_translate("MemosBrowserWindow", "Notify About Updates"))
         self.action_Show_Toolbar.setText(_translate("MemosBrowserWindow", "Show Toolbar"))
         self.action_First_Window_on_Startup.setText(_translate("MemosBrowserWindow", "First Window on Startup..."))
+        self.action_Focus_Search_Input.setText(_translate("MemosBrowserWindow", "Focus Search Input"))
+        self.action_Focus_Search_Input.setShortcut(_translate("MemosBrowserWindow", "Ctrl+L"))
 from simsapa.assets import icons_rc

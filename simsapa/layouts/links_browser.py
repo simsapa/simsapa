@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent, QColor
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QListWidgetItem,
+from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
                              QComboBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -27,6 +27,8 @@ from .search_item import SearchItemWidget
 
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
+
+    search_input: QLineEdit
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)

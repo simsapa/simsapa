@@ -318,6 +318,9 @@ class AppWindows:
             self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
             self._app_data._save_app_settings()
 
+    def _focus_search_input(self, view: QMainWindow):
+        view.search_input.setFocus()
+
     def _connect_signals(self, view: QMainWindow):
         # view.action_Open \
         #     .triggered.connect(partial(self._open_file_dialog, view))
@@ -326,6 +329,10 @@ class AppWindows:
             .triggered.connect(partial(self._reindex_database_dialog, view))
         view.action_Re_download_database \
             .triggered.connect(partial(self._redownload_database_dialog, view))
+
+        if hasattr(view, 'action_Focus_Search_Input'):
+            view.action_Focus_Search_Input \
+                .triggered.connect(partial(self._focus_search_input, view))
 
         view.action_Quit \
             .triggered.connect(partial(self._quit_app))
@@ -357,7 +364,7 @@ class AppWindows:
         view.action_Show_Toolbar \
             .triggered.connect(partial(self._set_show_toolbar_setting, view))
 
-        if hasattr(view,'toolBar') and not show_toolbar:
+        if hasattr(view, 'toolBar') and not show_toolbar:
             view.toolBar.setVisible(False)
 
         s = os.getenv('ENABLE_WIP_FEATURES')
