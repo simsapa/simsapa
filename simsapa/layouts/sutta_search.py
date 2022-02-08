@@ -5,14 +5,16 @@ import queue
 
 from functools import partial
 from typing import List, Optional
+from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
-from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
+                             QHBoxLayout, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
+from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.layouts.find_panel import FindPanel
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -191,6 +193,14 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setFocus()
 
+        self._find_panel = FindPanel()
+
+        self.find_toolbar = QToolBar()
+        self.find_toolbar.addWidget(self._find_panel)
+
+        self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+        self.find_toolbar.hide()
+
     def _setup_content_html(self):
         self.content_html = QWebEngineView(self)
 
@@ -282,7 +292,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         self._handle_autocomplete_query(min_length)
-        self._highlight_query()
         self._results = self._sutta_search_query(query)
 
         if self.search_query.hits > 0:
@@ -325,11 +334,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
-        self._highlight_query()
-
-    def _highlight_query(self):
-        query = self.search_input.text()
-        self.content_html.findText(query)
 
     def _add_recent(self, sutta: USutta):
         # de-duplicate: if item already exists, remove it
@@ -355,6 +359,15 @@ QWidget:focus { border: 1px solid #1092C3; }
                                   .filter(Um.Sutta.id == x['db_id']) \
                                   .first()
         return sutta
+
+    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
+    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
+        def callback(found):
+            if text and not found:
+                self.statusBar().showMessage('Not found')
+            else:
+                self.statusBar().showMessage('')
+        self.content_html.findText(text, flag, callback)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -533,6 +546,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
+        self._find_panel.searched.connect(self.on_searched) # type: ignore
+        self._find_panel.closed.connect(self.find_toolbar.hide)
+
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_sutta))
 
@@ -541,6 +557,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Paste \
             .triggered.connect(partial(self._handle_paste))
+
+        self.action_Find_in_Page \
+            .triggered.connect(self.find_toolbar.show)
 
         self.action_Search_Query_Terms \
             .triggered.connect(partial(show_search_info, self))

@@ -371,6 +371,7 @@
     </property>
     <addaction name="action_Copy"/>
     <addaction name="action_Paste"/>
+    <addaction name="action_Find_in_Page"/>
     <addaction name="action_Focus_Search_Input"/>
     <addaction name="action_Lookup_Clipboard_in_Suttas"/>
     <addaction name="action_Lookup_Clipboard_in_Dictionary"/>
@@ -633,6 +634,14 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="action_Find_in_Page">
+   <property name="text">
+    <string>Find in Page...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
    </property>
   </action>
  </widget>

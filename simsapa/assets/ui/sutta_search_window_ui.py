@@ -280,6 +280,8 @@ class Ui_SuttaSearchWindow(object):
         self.action_First_Window_on_Startup.setObjectName("action_First_Window_on_Startup")
         self.action_Focus_Search_Input = QtWidgets.QAction(SuttaSearchWindow)
         self.action_Focus_Search_Input.setObjectName("action_Focus_Search_Input")
+        self.action_Find_in_Page = QtWidgets.QAction(SuttaSearchWindow)
+        self.action_Find_in_Page.setObjectName("action_Find_in_Page")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addAction(self.action_Re_index_database)
@@ -288,6 +290,7 @@ class Ui_SuttaSearchWindow(object):
         self.menu_File.addAction(self.action_Quit)
         self.menu_Edit.addAction(self.action_Copy)
         self.menu_Edit.addAction(self.action_Paste)
+        self.menu_Edit.addAction(self.action_Find_in_Page)
         self.menu_Edit.addAction(self.action_Focus_Search_Input)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Suttas)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Dictionary)
@@ -385,4 +388,6 @@ class Ui_SuttaSearchWindow(object):
         self.action_First_Window_on_Startup.setText(_translate("SuttaSearchWindow", "First Window on Startup..."))
         self.action_Focus_Search_Input.setText(_translate("SuttaSearchWindow", "Focus Search Input"))
         self.action_Focus_Search_Input.setShortcut(_translate("SuttaSearchWindow", "Ctrl+L"))
+        self.action_Find_in_Page.setText(_translate("SuttaSearchWindow", "Find in Page..."))
+        self.action_Find_in_Page.setShortcut(_translate("SuttaSearchWindow", "Ctrl+F"))
 from simsapa.assets import icons_rc

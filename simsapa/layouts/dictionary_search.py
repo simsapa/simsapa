@@ -9,14 +9,16 @@ import re
 from bs4 import BeautifulSoup
 from binascii import crc32
 
+from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
-                             QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout)
-from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
+                             QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
+from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.layouts.find_panel import FindPanel
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -209,6 +211,14 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setFocus()
 
+        self._find_panel = FindPanel()
+
+        self.find_toolbar = QToolBar()
+        self.find_toolbar.addWidget(self._find_panel)
+
+        self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+        self.find_toolbar.hide()
+
     def _setup_content_html(self):
         self.content_html = QWebEngineView(self)
 
@@ -306,7 +316,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         self._handle_autocomplete_query(min_length)
-        self._highlight_query()
         self._results = self._word_search_query(query)
 
         if self.search_query.hits > 0:
@@ -358,11 +367,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _set_content_html(self, html):
         self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
-        self._highlight_query()
-
-    def _highlight_query(self):
-        query = self.search_input.text()
-        self.content_html.findText(query)
 
     def _add_recent(self, word: UDictWord):
         # de-duplicate: if item already exists, remove it
@@ -388,6 +392,15 @@ QWidget:focus { border: 1px solid #1092C3; }
                                  .filter(Um.DictWord.id == x['db_id']) \
                                  .first()
         return word
+
+    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
+    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
+        def callback(found):
+            if text and not found:
+                self.statusBar().showMessage('Not found')
+            else:
+                self.statusBar().showMessage('')
+        self.content_html.findText(text, flag, callback)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -731,6 +744,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
+        self._find_panel.searched.connect(self.on_searched) # type: ignore
+        self._find_panel.closed.connect(self.find_toolbar.hide)
+
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_dict_word))
 
@@ -739,6 +755,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Paste \
             .triggered.connect(partial(self._handle_paste))
+
+        self.action_Find_in_Page \
+            .triggered.connect(self.find_toolbar.show)
 
         self.action_Import_from_StarDict \
             .triggered.connect(partial(self.show_import_from_stardict_dialog))
