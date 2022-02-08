@@ -535,7 +535,7 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
         logger.error(e)
         exit(1)
 
-def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path):
+def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path, ignore_synonyms = False):
     for d in stardict_base_path.glob("*.zip"):
         logger.info(d)
         # use label as the ZIP file name without the .zip extension
@@ -543,7 +543,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
         logger.info(f"Importing {ifo['bookname']} ...")
-        import_stardict_as_new(appdata_db, 'appdata', None, paths, label, 10000)
+        import_stardict_as_new(appdata_db, 'appdata', None, paths, label, 10000, ignore_synonyms)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
@@ -563,7 +563,7 @@ def main():
 
     populate_suttas_from_suttacentral(appdata_db, sc_db)
 
-    populate_dict_words_from_stardict(appdata_db, stardict_base_path)
+    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
 if __name__ == "__main__":
     main()

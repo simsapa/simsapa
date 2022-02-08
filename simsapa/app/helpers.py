@@ -142,18 +142,40 @@ def compactPlainText(text: str) -> str:
     return text
 
 def compactRichText(text: str) -> str:
+    # All on one line
+    text = text.replace("\n", " ")
     # Some CSS is not removed by bleach when syntax is malformed
-    text = re.sub(r'<style>.*</style>', '', text, flags = re.DOTALL)
+    text = re.sub(r'<style.*</style>', '', text)
+    # No JS here
+    text = re.sub(r'<script.*</script>', '', text)
     # escaped html tags
     text = re.sub(r'&lt;[^&]+&gt;', '', text)
     text = text.replace('&nbsp;', ' ')
     text = text.replace('&amp;', '&')
     # remove SuttaCentral ref links
     text = re.sub(r"<a class=.ref\b[^>]+>[^<]*</a>", '', text)
-    # make sure there is space before and after tags, so words don't get joined after removing tags
+
+    text = text.replace("<br>", " ")
+    text = text.replace("<br/>", " ")
+
+    # Respect word boundaries for <b> <strong> <i> <em> so that dhamm<b>āya</b> becomes dhammāya, not dhamm āya.
+    text = re.sub(r'(\w*)<(b|strong|i|em)([^>]*)>(\w*)', r'\1\4', text)
+    # corresponding closing tags
+    text = re.sub(r'(\w*)</*(b|strong|i|em)>(\w*)', r'\1\3', text)
+
+    # Make sure there is space before and after other tags, so words don't get joined after removing tags.
+    #
+    # <td>dhammassa</td>
+    # <td>dhammāya</td>
+    #
+    # should become
+    #
+    # dhammassa dhammāya
+
     text = text.replace('<', ' <')
     text = text.replace('</', ' </')
     text = text.replace('>', '> ')
+
     text = bleach.clean(text, tags=[], styles=[], strip=True)
     text = compactPlainText(text)
 
@@ -192,7 +214,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
                 try:
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
-                    logger.error("Failed to run migrations.")
+                    logger.error("Failed to run migrations: %s" % e)
                     exit(1)
     else:
         logger.error("Can't create in-memory database")

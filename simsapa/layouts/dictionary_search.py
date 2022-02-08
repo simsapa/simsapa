@@ -473,7 +473,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         return page_html
 
     def _show_word(self, word: UDictWord):
-        logger.info("show_word()")
         self._current_words = [word]
         self.status_msg.setText(self._current_words[0].word) # type: ignore
 
@@ -485,7 +484,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         page_html = self._content_html_page(word_html['body'], word_html['css'], word_html['js'])
 
         self._set_content_html(page_html)
-        logger.info("show_word() end")
 
     def _get_word_html(self, word: UDictWord) -> WordHtml:
         if word.definition_html is not None and word.definition_html != '':

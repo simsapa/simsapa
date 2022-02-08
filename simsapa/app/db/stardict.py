@@ -108,7 +108,11 @@ def import_stardict_update_existing(db_session,
                                     paths: StarDictPaths,
                                     dictionary_id: int,
                                     label: str,
-                                    batch_size = 1000):
+                                    batch_size = 1000,
+                                    ignore_synonyms = False):
+
+    if ignore_synonyms:
+        paths['syn_path'] = None
 
     words: List[DictEntry] = stardict_to_dict_entries(paths)
     db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
@@ -133,7 +137,11 @@ def import_stardict_as_new(db_session,
                            search_index: Optional[SearchIndexed],
                            paths: StarDictPaths,
                            label: Optional[str] = None,
-                           batch_size = 1000):
+                           batch_size = 1000,
+                           ignore_synonyms = False):
+
+    if ignore_synonyms:
+        paths['syn_path'] = None
 
     # upsert recommended by docs instead of bulk_insert_mappings
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
