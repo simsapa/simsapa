@@ -19,6 +19,7 @@ from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEng
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -220,7 +221,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.hide()
 
     def _setup_content_html(self):
-        self.content_html = QWebEngineView(self)
+        self.content_html = QWebEngineView()
+        self.content_html.setPage(ReaderWebEnginePage(self))
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_html.setHtml('')
@@ -659,6 +661,17 @@ QWidget:focus { border: 1px solid #1092C3; }
         if len(results) > 0:
             self._app_data.sutta_to_open = results[0]
             self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
+
+    def _show_word_by_bword_url(self, url: QUrl):
+        # FIXME encoding is wrong
+        # araghaṭṭa
+        # Show Word: xn--araghaa-jb4ca
+        s = url.toString()
+        query = s.replace("bword://", "")
+        print(f"Show Word: {query}")
+        self._set_query(query)
+        self._handle_query()
+        self._handle_exact_query()
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []

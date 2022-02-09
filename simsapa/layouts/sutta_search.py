@@ -15,6 +15,7 @@ from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEng
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -27,7 +28,6 @@ from .results_list import HasResultsList
 from .html_content import html_page
 from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
-
 
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                         HasLinksSidebar, HasMemosSidebar, HasResultsList):
@@ -202,7 +202,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.hide()
 
     def _setup_content_html(self):
-        self.content_html = QWebEngineView(self)
+        self.content_html = QWebEngineView()
+        self.content_html.setPage(ReaderWebEnginePage(self))
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_html.setHtml('')
@@ -504,6 +505,8 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.dev_view = QWebEngineView()
             self.content_layout.addWidget(self.dev_view, 100)
             self.content_html.page().setDevToolsPage(self.dev_view.page())
+
+        self.is_dev_tools_open = not self.is_dev_tools_open
 
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
