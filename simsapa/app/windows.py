@@ -21,6 +21,7 @@ from ..layouts.dictionary_search import DictionarySearchWindow
 # from ..layouts.library_browser import LibraryBrowserWindow
 from ..layouts.memos_browser import MemosBrowserWindow
 from ..layouts.links_browser import LinksBrowserWindow
+from simsapa.layouts.word_scan_popup import WordScanPopup
 
 from ..layouts.help_info import open_simsapa_website, show_about
 
@@ -39,11 +40,16 @@ class AppWindows:
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
+        self.word_scan_popup: Optional[WordScanPopup] = None
+
     def handle_messages(self):
         if len(APP_QUEUES) > 0 and self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
                 msg = json.loads(s)
+
+                if msg['action'] == 'show_word_scan_popup':
+                    self._toggle_word_scan_popup()
 
                 if msg['action'] == 'lookup_clipboard_in_suttas':
                     self._lookup_clipboard_in_suttas(msg)
@@ -150,6 +156,20 @@ class AppWindows:
         self._windows.append(view)
 
         return view
+
+    def _toggle_word_scan_popup(self):
+        if self.word_scan_popup is None:
+            self.word_scan_popup = WordScanPopup(self._app_data)
+            self.word_scan_popup.show()
+
+        else:
+            self.word_scan_popup.close()
+            self.word_scan_popup = None
+
+        is_on = self.word_scan_popup is not None
+        for w in self._windows:
+            if hasattr(w, 'action_Show_Word_Scan_Popup'):
+                w.action_Show_Word_Scan_Popup.setChecked(is_on)
 
     # def _new_dictionaries_manager_window(self):
     #     view = DictionariesManagerWindow(self._app_data)
@@ -344,6 +364,12 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        if hasattr(view, 'action_Show_Word_Scan_Popup'):
+            view.action_Show_Word_Scan_Popup \
+                .triggered.connect(partial(self._toggle_word_scan_popup))
+            is_on = self.word_scan_popup is not None
+            view.action_Show_Word_Scan_Popup.setChecked(is_on)
 
         view.action_First_Window_on_Startup \
             .triggered.connect(partial(self._first_window_on_startup_dialog, view))

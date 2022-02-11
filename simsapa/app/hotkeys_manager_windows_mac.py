@@ -11,6 +11,7 @@ class HotkeysManagerWindowsMac(HotkeysManagerInterface):
         super().__init__(actions_manager)
 
         try:
+            keyboard.add_hotkey("ctrl+shift+f6", self.show_word_scan_popup, suppress=True)
             keyboard.add_hotkey("ctrl+shift+s", self.lookup_clipboard_in_suttas, suppress=True)
             keyboard.add_hotkey("ctrl+shift+g", self.lookup_clipboard_in_dictionary, suppress=True)
         except Exception as e:

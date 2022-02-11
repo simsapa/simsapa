@@ -76,8 +76,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self.is_dev_tools_open = False
-
         self._ui_setup()
         self._connect_signals()
 
@@ -498,15 +496,13 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._handle_query()
 
     def _toggle_dev_tools_inspector(self):
-        if self.is_dev_tools_open:
-            self.content_html.page().devToolsPage().deleteLater()
-            self.dev_view.deleteLater()
-        else:
+        if self.devToolsAction.isChecked():
             self.dev_view = QWebEngineView()
             self.content_layout.addWidget(self.dev_view, 100)
             self.content_html.page().setDevToolsPage(self.dev_view.page())
-
-        self.is_dev_tools_open = not self.is_dev_tools_open
+        else:
+            self.content_html.page().devToolsPage().deleteLater()
+            self.dev_view.deleteLater()
 
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
@@ -533,10 +529,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.content_html.addAction(lookupSelectionInDictionary)
 
-        devToolsAction = QAction("Toggle Inspector", self.content_html)
-        devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
+        self.devToolsAction = QAction("Show Inspector", self.content_html)
+        self.devToolsAction.setCheckable(True)
+        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
 
-        self.content_html.addAction(devToolsAction)
+        self.content_html.addAction(self.devToolsAction)
 
     def _connect_signals(self):
         self.action_Close_Window \

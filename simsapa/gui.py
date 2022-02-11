@@ -94,6 +94,10 @@ def start(splash_proc: Optional[Popen] = None):
 
         _translate = QtCore.QCoreApplication.translate
 
+        ac0 = QAction("Show Word Scan Popup")
+        ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
+        menu.addAction(ac0)
+
         ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
         ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
         menu.addAction(ac1)
@@ -103,6 +107,7 @@ def start(splash_proc: Optional[Popen] = None):
         menu.addAction(ac2)
 
         if hotkeys_manager is not None:
+            ac0.triggered.connect(hotkeys_manager.show_word_scan_popup)
             ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
             ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
 

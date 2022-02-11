@@ -196,6 +196,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Dictionary_Search"/>
+    <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -455,6 +456,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="action_Show_Word_Scan_Popup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Word Scan Popup</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F6</string>
    </property>
   </action>
  </widget>

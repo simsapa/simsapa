@@ -1,13 +1,10 @@
 from functools import partial
 import math
-from typing import List, Optional, TypedDict
-from sqlalchemy import or_
+from typing import List, Optional
 from pathlib import Path
 import json
 import queue
 import re
-from bs4 import BeautifulSoup
-from binascii import crc32
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
@@ -18,6 +15,7 @@ from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEng
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
@@ -33,11 +31,6 @@ from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
 
-class WordHtml(TypedDict):
-    body: str
-    css: str
-    js: str
-
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,
                              HasResultsList, HasImportStarDictDialog):
@@ -50,6 +43,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     content_layout: QVBoxLayout
     content_html: QWebEngineView
     _app_data: AppData
+    _results: List[SearchResult]
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
 
@@ -74,6 +68,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
             dict_word_hit_to_search_result,
         )
 
+        self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
@@ -85,8 +80,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
-
-        self.is_dev_tools_open = False
 
         self._ui_setup()
         self._connect_signals()
@@ -317,7 +310,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         if len(query) < min_length:
             return
 
-        self._handle_autocomplete_query(min_length)
         self._results = self._word_search_query(query)
 
         if self.search_query.hits > 0:
@@ -338,20 +330,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.clear()
 
-        res: List[UDictWord] = []
-        r = self._app_data.db_session \
-                            .query(Am.DictWord.word) \
-                            .filter(Am.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                            .query(Um.DictWord.word) \
-                            .filter(Um.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
+        a = self.queries.autocomplete_hits(query)
 
         for i in a:
             self._autocomplete_model.appendRow(QStandardItem(i))
@@ -364,10 +343,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         if len(query) < min_length:
             return
 
-        res = self._word_exact_matches(query)
+        res = self.queries.word_exact_matches(query)
         self._render_words(res)
 
-    def _set_content_html(self, html):
+    def _set_content_html(self, html: str):
         self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _add_recent(self, word: UDictWord):
@@ -382,19 +361,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         words = list(map(lambda x: x.word, self._recent))
         self.recent_list.insertItems(0, words) # type: ignore
 
-    def _dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
-        if x['schema_name'] == 'appdata':
-            word = self._app_data.db_session \
-                                 .query(Am.DictWord) \
-                                 .filter(Am.DictWord.id == x['db_id']) \
-                                 .first()
-        else:
-            word = self._app_data.db_session \
-                                 .query(Um.DictWord) \
-                                 .filter(Um.DictWord.id == x['db_id']) \
-                                 .first()
-        return word
-
     @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
         def callback(found):
@@ -407,7 +373,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
         if selected_idx < len(self._results):
-            word = self._dict_word_from_result(self._results[selected_idx])
+            word = self.queries.dict_word_from_result(self._results[selected_idx])
             if word is not None:
                 self._show_word(word)
                 self._add_recent(word)
@@ -416,15 +382,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         selected_idx = self.recent_list.currentRow()
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
-
-    def _word_heading(self, w: UDictWord) -> str:
-        return f"""
-        <div class="word-heading">
-            <h1>{w.word}</h1>
-            <div class="uid">{w.uid}</div>
-        </div>
-        <div class="clear"></div>
-        """
 
     def _render_words(self, words: List[UDictWord]):
         self._current_words = words
@@ -436,56 +393,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        # avoid multiple copies of the same content with a crc32 checksum
-        page_body: dict[int, str] = {}
-        page_css: dict[int, str] = {}
-        page_js: dict[int, str] = {}
-
-        for w in words:
-            word_html = self._get_word_html(w)
-
-            body_sum = crc32(bytes(word_html['body'], 'utf-8'))
-            if body_sum not in page_body.keys():
-                page_body[body_sum] = word_html['body']
-
-            css_sum = crc32(bytes(word_html['css'], 'utf-8'))
-            if css_sum not in page_css.keys():
-                page_css[css_sum] = word_html['css']
-
-            js_sum = crc32(bytes(word_html['js'], 'utf-8'))
-            if js_sum not in page_js.keys():
-                page_js[js_sum] = word_html['js']
-
-        page_html = self._content_html_page(
-            "\n\n".join(page_body.values()),
-            "\n\n".join(page_css.values()),
-            "\n\n".join(page_js.values()))
+        page_html = self.queries.words_to_html_page(words)
 
         self._set_content_html(page_html)
-
-    def _content_html_page(self, body: str, css_head: str = '', js_head: str = '', js_body: str = ''):
-        css_head += """
-        .word-heading h1 { float: left; font-size: 1.2em; color: #282828; padding-top: 20pt; margin-top: 0; }
-        .word-heading .uid { float: right; font-size: 0.9em; font-style: italic; color: #aaa; padding-top: 20pt; margin-top: 0; }
-        .clear { clear: both; }
-        """
-
-        page_html = """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>%s</style>
-    <script>%s</script>
-</head>
-<body>
-    %s
-    <script>%s</script>
-</body>
-</html>
-""" % (css_head, js_head, body, js_body)
-
-        return page_html
 
     def _show_word(self, word: UDictWord):
         self._current_words = [word]
@@ -494,71 +404,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        word_html = self._get_word_html(word)
+        word_html = self.queries.get_word_html(word)
 
-        page_html = self._content_html_page(word_html['body'], word_html['css'], word_html['js'])
+        page_html = self.queries.content_html_page(word_html['body'], word_html['css'], word_html['js'])
 
         self._set_content_html(page_html)
-
-    def _get_word_html(self, word: UDictWord) -> WordHtml:
-        if word.definition_html is not None and word.definition_html != '':
-            definition = word.definition_html
-        elif word.definition_plain is not None and word.definition_plain != '':
-            style = '<style>pre { font-family: serif; }</style>'
-            definition = style + '<pre>' + word.definition_plain + '</pre>'
-        else:
-            definition = '<p>No definition.</p>'
-
-        # We'll remove CSS and JS from 'definition' before assigning it to 'body'
-        body = ""
-        css = ""
-        js = ""
-
-        soup = BeautifulSoup(definition, 'html.parser') # type: ignore
-
-        if '<style' in definition:
-            h = soup.find_all(name = 'style')
-            for i in h:
-                css += i.decode_contents()
-                definition = definition.replace(css, '')
-
-        if '<script' in definition:
-            h = soup.find_all(name = 'script')
-            for i in h:
-                js += i.decode_contents()
-                definition = definition.replace(js, '')
-
-        if '<html' in definition or '<HTML' in definition:
-            # Definition is a complete HTML page with a <body> block
-            h = soup.find(name = 'body')
-            if h is not None:
-                body = h.decode_contents() # type: ignore
-            else:
-                logger.warn("Missing <body> from html page in %s" % word.uid)
-                body = definition
-        else:
-            # Definition is a HTML fragment block, CSS and JS already removed
-            body = definition
-
-        def example_format(example):
-            return "<div>" + example.text_html + "</div><div>" + example.translation_html + "</div>"
-
-        examples = "".join(list(map(example_format, word.examples))) # type: ignore
-
-        # Wrap definition body in a class
-        body = "<div class=\"word-definition\">%s</div>" % body
-
-        # Add examples to body
-        if len(examples) > 0:
-            body += "<div class=\"word-examples\">%s</div>" % examples
-
-        body = self._word_heading(word) + body
-
-        return WordHtml(
-            body = body,
-            css = css,
-            js = js,
-        )
 
     def show_network_graph(self, word: UDictWord):
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
@@ -588,42 +438,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.results_last_page_btn.setEnabled(True)
 
         return results
-
-    def _word_exact_matches(self, query: str) -> List[UDictWord]:
-        res: List[UDictWord] = []
-
-        r = self._app_data.db_session \
-                          .query(Am.DictWord) \
-                          .filter(or_(
-                              Am.DictWord.word.like(f"{query}%"),
-                              Am.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                          .query(Um.DictWord) \
-                          .filter(or_(
-                              Um.DictWord.word.like(f"{query}%"),
-                              Um.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        ch = "." * len(query)
-        # for 'dhamma' also match 'dhammā'
-        # for 'akata' also match 'akaṭa'
-        # for 'kondanna' also match 'koṇḍañña'
-        p_query = re.compile(f"^{ch}$")
-        # for 'dhamma' also match 'dhamma 1'
-        p_num = re.compile(f"^{ch}[ 0-9]+$")
-
-        def _is_match(x: UDictWord):
-            return re.match(p_query, x.word) or re.match(p_num, x.word) # type: ignore
-
-        res = list(filter(_is_match, res))
-
-        return res
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
@@ -668,26 +482,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         # Show Word: xn--araghaa-jb4ca
         s = url.toString()
         query = s.replace("bword://", "")
-        print(f"Show Word: {query}")
+        logger.info(f"Show Word: {query}")
         self._set_query(query)
         self._handle_query()
         self._handle_exact_query()
 
     def _show_word_by_uid(self, uid: str):
-        results: List[UDictWord] = []
-
-        res = self._app_data.db_session \
-            .query(Am.DictWord) \
-            .filter(Am.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
-
-        res = self._app_data.db_session \
-            .query(Um.DictWord) \
-            .filter(Um.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
-
+        results = self.queries.get_words_by_uid(uid)
         if len(results) > 0:
             self._show_word(results[0])
 
@@ -703,15 +504,13 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._handle_query()
 
     def _toggle_dev_tools_inspector(self):
-        if self.is_dev_tools_open:
-            self.content_html.page().devToolsPage().deleteLater()
-            self.dev_view.deleteLater()
-        else:
+        if self.devToolsAction.isChecked():
             self.dev_view = QWebEngineView()
             self.content_layout.addWidget(self.dev_view, 100)
             self.content_html.page().setDevToolsPage(self.dev_view.page())
-
-        self.is_dev_tools_open = not self.is_dev_tools_open
+        else:
+            self.content_html.page().devToolsPage().deleteLater()
+            self.dev_view.deleteLater()
 
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
@@ -738,10 +537,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.content_html.addAction(lookupSelectionInDictionary)
 
-        devToolsAction = QAction("Toggle Inspector", self.content_html)
-        devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
+        self.devToolsAction = QAction("Show Inspector", self.content_html)
+        self.devToolsAction.setCheckable(True)
+        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
 
-        self.content_html.addAction(devToolsAction)
+        self.content_html.addAction(self.devToolsAction)
 
     def _connect_signals(self):
         self.action_Close_Window \
@@ -750,6 +550,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+
+        self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))

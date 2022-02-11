@@ -8,6 +8,10 @@ class ActionsManager:
     def __init__(self, api_port: int):
         self.api_url = f'http://localhost:{api_port}'
 
+    def show_word_scan_popup(self):
+        data = {'action': 'show_word_scan_popup'}
+        self._send_to_all(data)
+
     def lookup_clipboard_in_suttas(self):
         data = {'action': 'lookup_clipboard_in_suttas'}
         self._send_to_all(data)
