@@ -2,11 +2,11 @@ from functools import partial
 import math
 from typing import List, Optional
 from PyQt5.QtCore import QUrl, Qt
-from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QPixmap, QStandardItemModel, QStandardItem
+from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QKeySequence, QPixmap, QStandardItemModel, QStandardItem
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import IS_MAC, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -15,7 +15,7 @@ from simsapa.layouts.results_list import HasResultsList
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class WordScanPopup(QWidget, HasResultsList):
+class WordScanPopup(QDialog, HasResultsList):
 
     search_input: QLineEdit
     content_layout: QVBoxLayout
@@ -27,7 +27,6 @@ class WordScanPopup(QWidget, HasResultsList):
 
     def __init__(self, app_data: AppData) -> None:
         super().__init__()
-
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
@@ -72,7 +71,7 @@ class WordScanPopup(QWidget, HasResultsList):
         self._clipboard = self._app_data.clipboard
 
         self.setObjectName("WordScanPopup")
-        self.setStyleSheet("QWidget#WordScanPopup { background-color: #FDF6E3; }")
+        self.setStyleSheet("#WordScanPopup { background-color: #FDF6E3; border: 1px solid #ababab; }")
 
         self._resized = False
         self._margin = 5
@@ -88,7 +87,6 @@ class WordScanPopup(QWidget, HasResultsList):
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
-        print(p)
         if p is not None:
             self.resize(p['width'], p['height'])
             self.move(p['x'], p['y'])
@@ -104,7 +102,6 @@ class WordScanPopup(QWidget, HasResultsList):
             width = qr.width(),
             height = qr.height(),
         )
-        print(p)
         self._app_data.app_settings['word_scan_popup_pos'] = p
         self._app_data._save_app_settings()
 
@@ -112,8 +109,30 @@ class WordScanPopup(QWidget, HasResultsList):
 
     def _ui_setup(self):
         self._layout = QVBoxLayout()
-        self._layout.setContentsMargins(8, 20, 8, 8)
+        self._layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self._layout)
+
+        top_buttons_box = QHBoxLayout()
+        self._layout.addLayout(top_buttons_box)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/close"))
+
+        self.close_button = QPushButton()
+        self.close_button.setFixedSize(20, 20)
+        self.close_button.setStyleSheet("QPushButton { background-color: #FDF6E3; border: none; }")
+        self.close_button.setIcon(icon)
+
+        self.close_button.setShortcut(QKeySequence("Ctrl+F6"))
+
+        spacer = QSpacerItem(100, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        if IS_MAC:
+            top_buttons_box.addWidget(self.close_button)
+            top_buttons_box.addItem(spacer)
+        else:
+            top_buttons_box.addItem(spacer)
+            top_buttons_box.addWidget(self.close_button)
 
         search_box = QHBoxLayout()
 
@@ -484,3 +503,5 @@ class WordScanPopup(QWidget, HasResultsList):
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.close_button.clicked.connect(self.close)
