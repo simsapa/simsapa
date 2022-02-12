@@ -218,7 +218,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.content_html.setPage(ReaderWebEnginePage(self))
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_html.setHtml('')
+        self.content_html.setHtml(self.queries.content_html_page(body=''))
         self.content_html.show()
         self.content_layout.addWidget(self.content_html, 100)
 
@@ -406,7 +406,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         word_html = self.queries.get_word_html(word)
 
-        page_html = self.queries.content_html_page(word_html['body'], word_html['css'], word_html['js'])
+        page_html = self.queries.content_html_page(
+            body = word_html['body'],
+            css_head = word_html['css'],
+            js_head = word_html['js'])
 
         self._set_content_html(page_html)
 

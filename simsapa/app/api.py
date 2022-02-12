@@ -5,13 +5,13 @@ from typing import Optional
 import falcon
 from wsgiref.simple_server import make_server
 
-from simsapa import APP_QUEUES
+from simsapa import APP_QUEUES, PACKAGE_ASSETS_DIR
 from simsapa import logger
 
 class QueueResource:
-    def on_get(self, req: falcon.Request, resp: falcon.Response):
-        logger.error("Resp: 404 Not Found")
-        resp.status = falcon.HTTP_404
+    # def on_get(self, req: falcon.Request, resp: falcon.Response):
+    #     logger.error("Resp: 404 Not Found")
+    #     resp.status = falcon.HTTP_404
 
     def on_post(self, req: falcon.Request, resp: falcon.Response, queue_id: Optional[str]):
         if req.content_type == 'application/json':
@@ -48,6 +48,8 @@ def start_server(port=8000):
     app = falcon.App(cors_enable=True)
     queues = QueueResource()
     app.add_route('/queues/{queue_id}', queues)
+
+    app.add_static_route('/assets', PACKAGE_ASSETS_DIR)
 
     with make_server('127.0.0.1', port, app) as httpd:
         logger.info(f'Starting server on port {port}')

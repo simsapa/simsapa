@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
-from simsapa import logger
+from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult
 from ..app.types import AppData, UDictWord
 from ..app.db import appdata_models as Am
@@ -86,7 +86,7 @@ class DictionaryQueries:
 
         return res
 
-    def words_to_html_page(self, words: List[UDictWord]) -> str:
+    def words_to_html_page(self, words: List[UDictWord], css_extra: Optional[str] = None) -> str:
         # avoid multiple copies of the same content with a crc32 checksum
         page_body: dict[int, str] = {}
         page_css: dict[int, str] = {}
@@ -108,18 +108,33 @@ class DictionaryQueries:
                 page_js[js_sum] = word_html['js']
 
         page_html = self.content_html_page(
-            "\n\n".join(page_body.values()),
-            "\n\n".join(page_css.values()),
-            "\n\n".join(page_js.values()))
+            body = "\n\n".join(page_body.values()),
+            css_head = "\n\n".join(page_css.values()),
+            css_extra = css_extra,
+            js_head = "\n\n".join(page_js.values()))
 
         return page_html
 
-    def content_html_page(self, body: str, css_head: str = '', js_head: str = '', js_body: str = '') -> str:
-        css_head += """
-        .word-heading h1 { float: left; font-size: 1.2em; color: #282828; padding-top: 20pt; margin-top: 0; }
-        .word-heading .uid { float: right; font-size: 0.9em; font-style: italic; color: #aaa; padding-top: 20pt; margin-top: 0; }
-        .clear { clear: both; }
-        """
+    def content_html_page(self,
+                          body: str,
+                          css_head: str = '',
+                          css_extra: Optional[str] = None,
+                          js_head: str = '',
+                          js_body: str = '') -> str:
+        try:
+            with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f:
+                css = f.read()
+                if self._app_data.api_url is not None:
+                    css = css.replace("http://localhost:8000", self._app_data.api_url)
+        except Exception as e:
+            logger.error("Can't read dictionary.css")
+            css = ""
+
+        css_head = re.sub(r'font-family[^;]+;', '', css_head)
+        css_head += css
+
+        if css_extra is not None:
+            css_head += css_extra
 
         page_html = """
 <!doctype html>

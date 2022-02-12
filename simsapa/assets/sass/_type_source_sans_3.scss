@@ -1,0 +1,32 @@
+// 400, Normal
+
+@font-face {
+    font-family: 'Source Sans 3 SSP';
+    font-style: normal;
+    font-weight: 400;
+    src: url('http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Source Sans 3 SSP';
+  font-style: italic;
+  font-weight: 400;
+  src: url('http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-It.ttf') format('truetype');
+}
+
+// 700, Bold
+
+@font-face {
+    font-family: 'Source Sans 3 SSP';
+    font-style: normal;
+    font-weight: 700;
+    src: url('http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Source Sans 3 SSP';
+  font-style: italic;
+  font-weight: 700;
+  src: url('http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-BoldIt.ttf') format('truetype');
+}
+

@@ -1,0 +1,180 @@
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 500;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 600;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 800;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-ExtraBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-It.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-BoldIt.ttf") format("truetype");
+}
+html, body {
+  height: 100%;
+  color: #1a1a1a;
+  background-color: #FDF6E3;
+}
+
+pre {
+  font-family: serif;
+  white-space: pre-wrap;
+}
+
+html {
+  font-size: 22px;
+  line-height: 1.5;
+  font-family: "Crimson Pro SSP";
+  font-weight: 400;
+}
+
+body {
+  padding: 0 2rem;
+  max-width: 70ex;
+  margin: 0 auto;
+}
+
+p {
+  margin: 0.8rem 0 0 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+}
+
+.suttacentral header {
+  text-align: center;
+}
+.suttacentral header ul li {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.3rem;
+}
+.suttacentral header h1 {
+  font-size: 1.4rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+}
+.suttacentral h2 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 1rem;
+}
+.suttacentral h3 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 1rem;
+}
+.suttacentral .evam {
+  text-transform: lowercase;
+  font-variant: small-caps;
+  font-size: 1.15rem;
+  letter-spacing: 0.8pt;
+  word-spacing: 1pt;
+}
+.suttacentral .speaker {
+  font-style: italic;
+  text-indent: 3em;
+  display: block;
+}
+.suttacentral blockquote.gatha {
+  font-style: normal;
+  margin-left: 3em;
+}
+.suttacentral blockquote.gatha .verse-line {
+  display: block;
+}
+.suttacentral .endsutta {
+  font-style: italic;
+}
+.suttacentral a.ref {
+  display: none;
+}
+.suttacentral footer {
+  margin-top: 4rem;
+  border-top: 1px solid #aaa;
+  font-size: 0.8rem;
+  line-height: 1rem;
+}
+.suttacentral footer span.author {
+  font-style: italic;
+}
+.suttacentral footer span.publication-date {
+  font-style: italic;
+}

@@ -10,6 +10,8 @@ load_dotenv()
 
 SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
 
+PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets')
+
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 

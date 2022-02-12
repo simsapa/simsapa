@@ -1,11 +1,12 @@
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 
-def html_page(content: str, messages_url: str):
+def html_page(content: str, api_url: str, messages_url: str):
     try:
-        with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/main.css'), 'r') as f:
+        with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/suttas.css'), 'r') as f:
             css = f.read()
+            css = css.replace("http://localhost:8000", api_url)
     except Exception as e:
-        logger.error("Can't read main.css")
+        logger.error("Can't read suttas.css")
         css = ""
 
     js = """

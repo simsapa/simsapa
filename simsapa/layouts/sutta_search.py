@@ -204,7 +204,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.content_html.setPage(ReaderWebEnginePage(self))
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_html.setHtml('')
+        if self._app_data.api_url is not None:
+            url = self._app_data.api_url
+        else:
+            url = ''
+        self.content_html.setHtml(html_page('', url, ''))
         self.content_html.show()
         self.content_layout.addWidget(self.content_html, 100)
 
@@ -450,7 +454,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             content = 'No content.'
 
-        html = html_page(content, self.messages_url) # type: ignore
+        html = html_page(content, self._app_data.api_url, '') # type: ignore
 
         # show the sutta content
         self._set_content_html(html)

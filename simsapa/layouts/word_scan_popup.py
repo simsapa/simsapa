@@ -13,6 +13,7 @@ from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.results_list import HasResultsList
 
+CSS_EXTRA = "html { font-size: 14px; }"
 
 class WordScanPopup(QWidget, HasResultsList):
 
@@ -51,10 +52,12 @@ class WordScanPopup(QWidget, HasResultsList):
             Qt.WindowType.WindowStaysOnTopHint | \
             Qt.WindowType.FramelessWindowHint
 
-        # NOTE on Linux this succeeds to set 'always on top',
-        # but loses system resize and drag,
-        # plus the window appears on every virtual screen.
-        # Better to let Linux users toggle always on top in their window manager.
+        # NOTE On Linux this succeeds to make the window stay 'always on top',
+        # but loses system resize and drag, plus the window appears on every
+        # virtual screen.
+        #
+        # The .startSystemResize() and .startSystemMove() have to be
+        # reimplemented for it to work.
 
         # flags = Qt.WindowType.Dialog | \
         #     Qt.WindowType.CustomizeWindowHint | \
@@ -126,20 +129,14 @@ class WordScanPopup(QWidget, HasResultsList):
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         msg = """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body>
-    <p>
+<p>
     Select a word or phrase and copy to clipboard with Ctrl+C.
     When the clipboard content changes, this window will display dictionary lookup results.
-    </p>
-</body>
-</html>"""
+</p>
+"""
+        page_html = self.queries.content_html_page(body=msg, css_extra=CSS_EXTRA)
 
-        self.content_html.setHtml(msg)
+        self.content_html.setHtml(page_html)
         self.content_html.show()
         self.content_layout.addWidget(self.content_html, 100)
 
@@ -264,7 +261,7 @@ class WordScanPopup(QWidget, HasResultsList):
         if len(words) == 0:
             return
 
-        page_html = self.queries.words_to_html_page(words)
+        page_html = self.queries.words_to_html_page(words, CSS_EXTRA)
         self._set_content_html(page_html)
 
     def _setup_search_tabs(self):
@@ -335,7 +332,11 @@ class WordScanPopup(QWidget, HasResultsList):
     def _show_word(self, word: UDictWord):
         word_html = self.queries.get_word_html(word)
 
-        page_html = self.queries.content_html_page(word_html['body'], word_html['css'], word_html['js'])
+        page_html = self.queries.content_html_page(
+            body = word_html['body'],
+            css_head = word_html['css'],
+            css_extra = CSS_EXTRA,
+            js_head = word_html['js'])
 
         self._set_content_html(page_html)
 
