@@ -40,6 +40,12 @@ class WindowType(int, Enum):
     Memos = 2
     Links = 3
 
+class WindowPosSize(TypedDict):
+    x: int
+    y: int
+    width: int
+    height: int
+
 WindowNameToType = {
     "Sutta Search": WindowType.SuttaSearch,
     "Dictionary Search": WindowType.DictionarySearch,
@@ -55,6 +61,7 @@ class AppSettings(TypedDict):
     dictionary_show_pali_buttons: bool
     show_toolbar: bool
     first_window_on_startup: WindowType
+    word_scan_popup_pos: WindowPosSize
 
 class AppMessage(TypedDict):
     kind: str
@@ -151,6 +158,12 @@ class AppData:
                 dictionary_show_pali_buttons = True,
                 show_toolbar = True,
                 first_window_on_startup = WindowType.SuttaSearch,
+                word_scan_popup_pos = WindowPosSize(
+                    x = 100,
+                    y = 100,
+                    width = 400,
+                    height = 500,
+                ),
             )
             self._save_app_settings()
 

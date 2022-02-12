@@ -2,13 +2,13 @@ from functools import partial
 import math
 from typing import List, Optional
 from PyQt5.QtCore import QUrl, Qt
-from PyQt5.QtGui import QClipboard, QCursor, QIcon, QPixmap, QStandardItemModel, QStandardItem
+from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QPixmap, QStandardItemModel, QStandardItem
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
-from simsapa.app.types import AppData, UDictWord
+from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.results_list import HasResultsList
@@ -45,8 +45,9 @@ class WordScanPopup(QWidget, HasResultsList):
 
         self.setWindowTitle("Clipboard Scanning Word Lookup")
         self.setMinimumSize(50, 50)
-        self.resize(400, 500)
         self.setMouseTracking(True)
+
+        self._restore_size_pos()
 
         flags = Qt.WindowType.Dialog | \
             Qt.WindowType.WindowStaysOnTopHint | \
@@ -70,9 +71,8 @@ class WordScanPopup(QWidget, HasResultsList):
 
         self._clipboard = self._app_data.clipboard
 
-        self.center()
         self.setObjectName("WordScanPopup")
-        self.setStyleSheet("QWidget#WordScanPopup { background-color: white; }")
+        self.setStyleSheet("QWidget#WordScanPopup { background-color: #FDF6E3; }")
 
         self._resized = False
         self._margin = 5
@@ -85,6 +85,30 @@ class WordScanPopup(QWidget, HasResultsList):
         self._connect_signals()
 
         self.init_results_list()
+
+    def _restore_size_pos(self):
+        p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
+        print(p)
+        if p is not None:
+            self.resize(p['width'], p['height'])
+            self.move(p['x'], p['y'])
+        else:
+            self.center()
+            self.resize(400, 500)
+
+    def closeEvent(self, event: QCloseEvent):
+        qr = self.frameGeometry()
+        p = WindowPosSize(
+            x = qr.x(),
+            y = qr.y(),
+            width = qr.width(),
+            height = qr.height(),
+        )
+        print(p)
+        self._app_data.app_settings['word_scan_popup_pos'] = p
+        self._app_data._save_app_settings()
+
+        event.accept()
 
     def _ui_setup(self):
         self._layout = QVBoxLayout()
@@ -279,6 +303,9 @@ class WordScanPopup(QWidget, HasResultsList):
 
     def _setup_words_tab(self):
         self.tab_word = QWidget()
+        self.tab_word.setObjectName("Words")
+        self.tab_word.setStyleSheet("QWidget#Words { background-color: #FDF6E3; }")
+
         self.tabs.addTab(self.tab_word, "Words")
 
         self.content_layout = QVBoxLayout()
@@ -288,6 +315,9 @@ class WordScanPopup(QWidget, HasResultsList):
 
     def _setup_results_tab(self):
         self.results_tab = QWidget()
+        self.results_tab.setObjectName("Fulltext")
+        self.results_tab.setStyleSheet("QWidget#Fulltext { background-color: #FDF6E3; }")
+
         self.tabs.addTab(self.results_tab, "Fulltext")
 
         self.results_tab_layout = QVBoxLayout(self.results_tab)
