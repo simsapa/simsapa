@@ -171,6 +171,15 @@ class AppWindows:
             if hasattr(w, 'action_Show_Word_Scan_Popup'):
                 w.action_Show_Word_Scan_Popup.setChecked(is_on)
 
+    def _toggle_show_related_suttas(self, view):
+        is_on = view.action_Show_Related_Suttas.isChecked()
+        self._app_data.app_settings['show_related_suttas'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Show_Related_Suttas'):
+                w.action_Show_Related_Suttas.setChecked(is_on)
+
     # def _new_dictionaries_manager_window(self):
     #     view = DictionariesManagerWindow(self._app_data)
     #     self._set_size_and_maximize(view)
@@ -364,6 +373,13 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        if hasattr(view, 'action_Show_Related_Suttas'):
+            is_on = self._app_data.app_settings.get('show_related_suttas', True)
+            view.action_Show_Word_Scan_Popup.setChecked(is_on)
+
+            view.action_Show_Related_Suttas \
+                .triggered.connect(partial(self._toggle_show_related_suttas, view))
 
         if hasattr(view, 'action_Show_Word_Scan_Popup'):
             view.action_Show_Word_Scan_Popup \

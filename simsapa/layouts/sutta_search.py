@@ -2,6 +2,7 @@ import json
 import math
 from pathlib import Path
 import queue
+import re
 
 from functools import partial
 from typing import List, Optional
@@ -9,8 +10,9 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
+                             QHBoxLayout, QTabWidget, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+from sqlalchemy.sql.elements import and_
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
@@ -29,6 +31,64 @@ from .html_content import html_page
 from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
 
+class SuttaTabWidget(QWidget):
+    def __init__(self,
+                 title: str,
+                 tab_index: int,
+                 qwe: QWebEngineView,
+                 api_url: Optional[str] = None,
+                 sutta: Optional[USutta] = None) -> None:
+
+        super().__init__()
+
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.setProperty('style_class', 'sutta_tab')
+
+        self.title = title
+        self.tab_index = tab_index
+        self.qwe = qwe
+        self.api_url = api_url
+        self.sutta = sutta
+
+        self._layout = QVBoxLayout()
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(self._layout)
+        self._layout.addWidget(self.qwe, 100)
+
+        self.devToolsAction = QAction("Show Inspector", qwe)
+        self.devToolsAction.setCheckable(True)
+        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
+
+        self.qwe.addAction(self.devToolsAction)
+
+    def set_content_html(self, html: str):
+        self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+
+    def render_sutta_content(self):
+        if self.sutta is None:
+            return
+
+        if self.sutta.content_html is not None and self.sutta.content_html != '':
+            content = str(self.sutta.content_html)
+        elif self.sutta.content_plain is not None and self.sutta.content_plain != '':
+            content = '<pre>' + str(self.sutta.content_plain) + '</pre>'
+        else:
+            content = 'No content.'
+
+        html = html_page(content, self.api_url)
+
+        self.set_content_html(html)
+
+    def _toggle_dev_tools_inspector(self):
+        if self.devToolsAction.isChecked():
+            self.dev_view = QWebEngineView()
+            self._layout.addWidget(self.dev_view, 100)
+            self.qwe.page().setDevToolsPage(self.dev_view.page())
+        else:
+            self.qwe.page().devToolsPage().deleteLater()
+            self.dev_view.deleteLater()
+
+
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                         HasLinksSidebar, HasMemosSidebar, HasResultsList):
 
@@ -41,6 +101,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     content_html: QWebEngineView
     _app_data: AppData
     _autocomplete_model: QStandardItemModel
+    sutta_tabs: QTabWidget
+    sutta_tab: SuttaTabWidget
+    _related_tabs: List[SuttaTabWidget]
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -56,6 +119,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self._recent: List[USutta] = []
 
         self._current_sutta: Optional[USutta] = None
+        self._related_tabs: List[SuttaTabWidget] = []
 
         self.page_len = 20
         self.search_query = SearchQuery(
@@ -84,8 +148,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
-        self._setup_content_html_context_menu()
-
         self.statusbar.showMessage("Ready", 3000)
 
     def _lookup_clipboard_in_suttas(self):
@@ -112,8 +174,18 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if text is not None and self._app_data.actions_manager is not None:
             self._app_data.actions_manager.lookup_in_dictionary(text)
 
+    def _get_active_tab(self) -> SuttaTabWidget:
+        current_idx = self.sutta_tabs.currentIndex()
+        if current_idx == 0:
+            tab = self.sutta_tab
+        else:
+            tab = self._related_tabs[current_idx-1]
+
+        return tab
+
     def _get_selection(self) -> Optional[str]:
-        text = self.content_html.selectedText()
+        tab = self._get_active_tab()
+        text = tab.qwe.selectedText()
         # U+2029 Paragraph Separator to blank line
         text = text.replace('\u2029', "\n\n")
         text = text.strip()
@@ -187,7 +259,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         setup_info_button(self.search_extras, self)
 
         self._setup_pali_buttons()
-        self._setup_content_html()
+
+        self._setup_sutta_tabs()
+
+        show = self._app_data.app_settings.get('show_related_suttas', True)
+        self.action_Show_Related_Suttas.setChecked(show)
 
         self.search_input.setFocus()
 
@@ -199,24 +275,55 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
         self.find_toolbar.hide()
 
-    def _setup_content_html(self):
-        self.content_html = QWebEngineView()
-        self.content_html.setPage(ReaderWebEnginePage(self))
+    def _setup_sutta_tabs(self):
+        self.sutta_tabs = QTabWidget()
+        self.sutta_tabs.setStyleSheet("*[style_class='sutta_tab'] { background-color: #FDF6E3; }")
 
-        self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        if self._app_data.api_url is not None:
-            url = self._app_data.api_url
-        else:
-            url = ''
-        self.content_html.setHtml(html_page('', url, ''))
-        self.content_html.show()
-        self.content_layout.addWidget(self.content_html, 100)
+        self.sutta_tab = SuttaTabWidget("Sutta", 0, self._new_webengine(), self._app_data.api_url)
+        self.sutta_tab.setProperty('style_class', 'sutta_tab')
+        self.sutta_tab.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.sutta_tabs.addTab(self.sutta_tab, "Sutta")
+
+        html = html_page('', self._app_data.api_url)
+        self.sutta_tab.set_content_html(html)
+
+        self.sutta_tabs_layout.addWidget(self.sutta_tabs)
+
+        self.content_html = self.sutta_tab.qwe
+        self.content_layout = self.sutta_tab._layout
+
+    def _new_webengine(self) -> QWebEngineView:
+        qwe = QWebEngineView()
+        qwe.setPage(ReaderWebEnginePage(self))
+
+        qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Enable dev tools
-        self.content_html.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+
+        self._setup_webengine_context_menu(qwe)
+
+        return qwe
+
+    def _add_new_tab(self, title: str, sutta: Optional[USutta]):
+        # don't substract one because the _related_tabs start after sutta_tab,
+        # and tab indexing start from 0
+        tab_index = len(self._related_tabs)
+        tab = SuttaTabWidget(title,
+                             tab_index,
+                             self._new_webengine(),
+                             self._app_data.api_url,
+                             sutta)
+
+        tab.render_sutta_content()
+
+        self._related_tabs.append(tab)
+
+        self.sutta_tabs.addTab(tab, title)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -298,9 +405,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._results = self._sutta_search_query(query)
 
         if self.search_query.hits > 0:
-            self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
+            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query.hits})")
         else:
-            self.rightside_tabs.setTabText(0, "Results")
+            self.rightside_tabs.setTabText(0, "Fulltext")
 
         self.render_results_page()
 
@@ -335,8 +442,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.sort(0)
 
-    def _set_content_html(self, html):
-        self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+    def _set_content_html(self, html: str):
+        self.sutta_tab.set_content_html(html)
 
     def _add_recent(self, sutta: USutta):
         # de-duplicate: if item already exists, remove it
@@ -442,22 +549,67 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _show_sutta(self, sutta: USutta):
         self._current_sutta = sutta
-        self.status_msg.setText(sutta.title) # type: ignore
+        self.sutta_tab.sutta = sutta
+        self.sutta_tab.render_sutta_content()
+
+        self.sutta_tabs.setTabText(0, str(sutta.uid))
+
+        self.status_msg.setText(str(sutta.title))
 
         self.update_memos_list_for_sutta(sutta)
         self.show_network_graph(sutta)
 
-        if sutta.content_html is not None and sutta.content_html != '':
-            content = sutta.content_html
-        elif sutta.content_plain is not None and sutta.content_plain != '':
-            content = '<pre>' + sutta.content_plain + '</pre>'
-        else:
-            content = 'No content.'
+        self._add_related_tabs(sutta)
 
-        html = html_page(content, self._app_data.api_url, '') # type: ignore
+    def _remove_related_tabs(self):
+        n = 0
+        max_tries = 5
+        # Tabs are not removed immediately. Have to repeatedly try to remove the
+        # tabs until they are all gone.
+        while len(self._related_tabs) > 0 and n < max_tries:
+            for idx, tab in enumerate(self._related_tabs):
+                del self._related_tabs[idx]
+                tab.close()
+                tab.deleteLater()
 
-        # show the sutta content
-        self._set_content_html(html)
+            n += 1
+
+    def _add_related_tabs(self, sutta: USutta):
+        self._remove_related_tabs()
+
+        # read state from the window action, not from app_data.app_settings, b/c
+        # that will be set from windows.py
+        if not self.action_Show_Related_Suttas.isChecked():
+            return
+
+        uid_ref = re.sub('^([^/]+)/.*', r'\1', sutta.uid) # type: ignore
+
+        res: List[USutta] = []
+        r = self._app_data.db_session \
+                          .query(Am.Sutta) \
+                          .filter(and_(
+                              Am.Sutta.uid != sutta.uid,
+                              Am.Sutta.uid.like(f"{uid_ref}/%"),
+                          )) \
+                          .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+                          .query(Um.Sutta) \
+                          .filter(and_(
+                              Um.Sutta.uid != sutta.uid,
+                              Um.Sutta.uid.like(f"{uid_ref}/%"),
+                          )) \
+                          .all()
+        res.extend(r)
+
+        for sutta in res:
+            if sutta.uid is not None:
+                title = str(sutta.uid) # type: ignore
+            else:
+                title = ""
+
+            self._add_new_tab(title, sutta)
 
     def show_network_graph(self, sutta: USutta):
         self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
@@ -499,45 +651,34 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._append_to_query(s)
             self._handle_query()
 
-    def _toggle_dev_tools_inspector(self):
-        if self.devToolsAction.isChecked():
-            self.dev_view = QWebEngineView()
-            self.content_layout.addWidget(self.dev_view, 100)
-            self.content_html.page().setDevToolsPage(self.dev_view.page())
-        else:
-            self.content_html.page().devToolsPage().deleteLater()
-            self.dev_view.deleteLater()
+    def _setup_webengine_context_menu(self, qwe: QWebEngineView):
+        qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
-    def _setup_content_html_context_menu(self):
-        self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
-
-        copyAction = QAction("Copy", self.content_html)
+        copyAction = QAction("Copy", qwe)
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
         copyAction.triggered.connect(partial(self._handle_copy))
 
-        self.content_html.addAction(copyAction)
+        qwe.addAction(copyAction)
 
-        memoAction = QAction("Create Memo", self.content_html)
+        memoAction = QAction("Create Memo", qwe)
         memoAction.setShortcut(QKeySequence("Ctrl+M"))
         memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))
 
-        self.content_html.addAction(memoAction)
+        qwe.addAction(memoAction)
 
-        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", self.content_html)
+        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
         lookupSelectionInSuttas.triggered.connect(partial(self._lookup_selection_in_suttas))
 
-        self.content_html.addAction(lookupSelectionInSuttas)
+        qwe.addAction(lookupSelectionInSuttas)
 
-        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", self.content_html)
+        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", qwe)
         lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
 
-        self.content_html.addAction(lookupSelectionInDictionary)
+        qwe.addAction(lookupSelectionInDictionary)
 
-        self.devToolsAction = QAction("Show Inspector", self.content_html)
-        self.devToolsAction.setCheckable(True)
-        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
-
-        self.content_html.addAction(self.devToolsAction)
+    def _handle_show_related_suttas(self):
+        if self._current_sutta is not None:
+            self._add_related_tabs(self._current_sutta)
 
     def _connect_signals(self):
         self.action_Close_Window \
@@ -570,6 +711,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Select_Sutta_Authors \
             .triggered.connect(partial(self._show_sutta_select_dialog))
+
+        self.action_Show_Related_Suttas \
+            .triggered.connect(partial(self._handle_show_related_suttas))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))

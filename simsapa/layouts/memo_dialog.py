@@ -5,7 +5,7 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget, QWidget)
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
@@ -87,7 +87,6 @@ class HasMemoDialog:
     back: QPlainTextEdit
     features: List[str] = []
     memos_list: QListView
-    _current_sutta: Optional[USutta]
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]
     db_doc: Optional[Um.Document]
@@ -98,6 +97,11 @@ class HasMemoDialog:
     content_html: QWebEngineView
     model: MemoPlainListModel
     update_memos_list: Callable
+    sutta_tabs: QTabWidget
+    # FIXME SuttaTabWidget causes circular import
+    _get_active_tab: Callable
+    sutta_tab: QWidget
+    _related_tabs: List[QWidget]
 
     def init_memo_dialog(self):
         self.memo_dialog_fields = {}
@@ -106,12 +110,14 @@ class HasMemoDialog:
         self.memo_dialog_fields = values
 
     def handle_create_memo_for_sutta(self):
-        if self._current_sutta is None:
+        tab = self._get_active_tab()
+
+        if tab.sutta is None:
             logger.error("Sutta is not set")
             return
 
-        front_text = f"...\n\n({self._current_sutta.sutta_ref} {self._current_sutta.title})"
-        back_text = self.content_html.selectedText()
+        front_text = f"...\n\n({tab.sutta.sutta_ref} {tab.sutta.title})"
+        back_text = tab.qwe.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
@@ -140,14 +146,14 @@ class HasMemoDialog:
             self._app_data.db_session.add(memo)
             self._app_data.db_session.commit()
 
-            schema = self._current_sutta.metadata.schema
+            schema = tab.sutta.metadata.schema
 
-            if self._current_sutta is not None:
+            if tab.sutta is not None:
 
                 memo_assoc = Um.MemoAssociation(
                     memo_id=memo.id,
                     associated_table=f'{schema}.suttas',
-                    associated_id=self._current_sutta.id,
+                    associated_id=tab.sutta.id,
                 )
 
                 self._app_data.db_session.add(memo_assoc)

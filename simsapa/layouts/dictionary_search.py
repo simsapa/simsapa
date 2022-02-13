@@ -313,9 +313,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._results = self._word_search_query(query)
 
         if self.search_query.hits > 0:
-            self.rightside_tabs.setTabText(0, f"Results ({self.search_query.hits})")
+            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query.hits})")
         else:
-            self.rightside_tabs.setTabText(0, "Results")
+            self.rightside_tabs.setTabText(0, "Fulltext")
 
         self.render_results_page()
 

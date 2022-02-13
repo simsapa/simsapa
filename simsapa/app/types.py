@@ -62,6 +62,7 @@ class AppSettings(TypedDict):
     show_toolbar: bool
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
+    show_related_suttas: bool
 
 class AppMessage(TypedDict):
     kind: str
@@ -156,7 +157,7 @@ class AppData:
                 notify_about_updates = True,
                 suttas_show_pali_buttons = True,
                 dictionary_show_pali_buttons = True,
-                show_toolbar = True,
+                show_toolbar = False,
                 first_window_on_startup = WindowType.SuttaSearch,
                 word_scan_popup_pos = WindowPosSize(
                     x = 100,
@@ -164,6 +165,7 @@ class AppData:
                     width = 400,
                     height = 500,
                 ),
+                show_related_suttas = True,
             )
             self._save_app_settings()
 

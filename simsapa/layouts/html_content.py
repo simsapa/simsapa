@@ -1,15 +1,21 @@
+from typing import Optional
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 
-def html_page(content: str, api_url: str, messages_url: str):
+def html_page(content: str,
+              api_url: Optional[str] = None,
+              messages_url: Optional[str] = None):
     try:
         with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/suttas.css'), 'r') as f:
             css = f.read()
-            css = css.replace("http://localhost:8000", api_url)
+            if api_url is not None:
+                css = css.replace("http://localhost:8000", api_url)
     except Exception as e:
-        logger.error("Can't read suttas.css")
+        logger.error(f"Can't read suttas.css: {e}")
         css = ""
 
-    js = """
+    js = ""
+    if messages_url is not None:
+        js = """
 document.addEventListener('DOMContentLoaded', function() {
     links = document.getElementsByTagName('a');
     for (var i=0; i<links.length; i++) {

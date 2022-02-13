@@ -93,7 +93,7 @@
          <enum>Qt::Horizontal</enum>
         </property>
         <widget class="QWidget" name="verticalLayoutWidget_2">
-         <layout class="QVBoxLayout" name="content_layout">
+         <layout class="QVBoxLayout" name="sutta_tabs_layout">
           <item>
            <spacer name="horizontalSpacer">
             <property name="orientation">
@@ -102,7 +102,7 @@
             <property name="sizeHint" stdset="0">
              <size>
               <width>500</width>
-              <height>20</height>
+              <height>0</height>
              </size>
             </property>
            </spacer>
@@ -149,7 +149,7 @@
               </size>
              </property>
              <attribute name="title">
-              <string>Results</string>
+              <string>Fulltext</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout">
               <item>
@@ -420,6 +420,7 @@
      <string>&amp;Suttas</string>
     </property>
     <addaction name="action_Select_Sutta_Authors"/>
+    <addaction name="action_Show_Related_Suttas"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
@@ -663,6 +664,14 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>
+   </property>
+  </action>
+  <action name="action_Show_Related_Suttas">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Related Suttas</string>
    </property>
   </action>
  </widget>

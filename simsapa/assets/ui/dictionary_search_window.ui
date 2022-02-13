@@ -137,7 +137,7 @@
             </property>
             <widget class="QWidget" name="results_tab">
              <attribute name="title">
-              <string>Results</string>
+              <string>Fulltext</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_4">
               <item>

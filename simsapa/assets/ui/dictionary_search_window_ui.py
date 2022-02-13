@@ -332,7 +332,7 @@ class Ui_DictionarySearchWindow(object):
         self.results_label.setText(_translate("DictionarySearchWindow", "Showing a-b out of x"))
         self.results_first_page_btn.setText(_translate("DictionarySearchWindow", "First"))
         self.results_last_page_btn.setText(_translate("DictionarySearchWindow", "Last"))
-        self.rightside_tabs.setTabText(self.rightside_tabs.indexOf(self.results_tab), _translate("DictionarySearchWindow", "Results"))
+        self.rightside_tabs.setTabText(self.rightside_tabs.indexOf(self.results_tab), _translate("DictionarySearchWindow", "Fulltext"))
         self.rightside_tabs.setTabText(self.rightside_tabs.indexOf(self.links_tab), _translate("DictionarySearchWindow", "Links"))
         self.add_memo_button.setText(_translate("DictionarySearchWindow", "Add"))
         self.clear_memo_button.setText(_translate("DictionarySearchWindow", "Clear"))
