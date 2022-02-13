@@ -258,6 +258,9 @@ class SearchIndexed:
     def __init__(self):
         self.open_all()
 
+    def has_empty_index(self) -> bool:
+        return (self.suttas_index.is_empty() or self.dict_words_index.is_empty())
+
     def index_all(self, db_session, only_if_empty: bool = False):
         if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
             logger.info("Indexing suttas ...")

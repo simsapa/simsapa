@@ -119,7 +119,9 @@ def start(splash_proc: Optional[Popen] = None):
 
     # === Create first window ===
 
-    app_windows._open_first_window()
+    app_windows.open_first_window()
+
+    app_windows.ask_index_if_empty()
 
     app_windows.show_startup_message()
 

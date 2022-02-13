@@ -99,7 +99,7 @@ class AppWindows:
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
-    def _open_first_window(self) -> QMainWindow:
+    def open_first_window(self) -> QMainWindow:
         window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
 
         if window_type == WindowType.SuttaSearch:
@@ -346,6 +346,23 @@ class AppWindows:
         if ok and item:
             self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
             self._app_data._save_app_settings()
+
+    def ask_index_if_empty(self):
+        if not self._app_data.search_indexed.has_empty_index():
+            return
+
+        if self._app_data.silent_index_if_empty:
+            self._app_data.search_indexed.index_all(self._app_data.db_session, only_if_empty=True)
+        else:
+            dlg = QMessageBox()
+            dlg.setWindowTitle("Indexing")
+            dlg.setText("The fulltext search index is empty. Search results will be empty without an index. Start indexing now? This may take a while.")
+            dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            dlg.setIcon(QMessageBox.Question)
+            button = dlg.exec()
+
+            if button == QMessageBox.Yes:
+                self._app_data.search_indexed.index_all(self._app_data.db_session, only_if_empty=True)
 
     def _focus_search_input(self, view: QMainWindow):
         view.search_input.setFocus()

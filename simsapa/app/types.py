@@ -78,7 +78,7 @@ class AppData:
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
                  api_port: Optional[int] = None,
-                 silent_index_if_empty: bool = True):
+                 silent_index_if_empty: bool = False):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -89,6 +89,8 @@ class AppData:
 
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
+
+        self.silent_index_if_empty = silent_index_if_empty
 
         self.api_url: Optional[str] = None
 
@@ -104,9 +106,6 @@ class AppData:
 
         self._read_app_settings()
         self._ensure_user_memo_deck()
-
-        if silent_index_if_empty:
-            self.search_indexed.index_all(self.db_session, only_if_empty=True)
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):
