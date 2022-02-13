@@ -5,13 +5,13 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget, QWidget)
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget)
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
 from simsapa import logger
 
-from simsapa.app.types import AppData, UDictWord, USutta
+from simsapa.app.types import AppData, UDictWord
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 
