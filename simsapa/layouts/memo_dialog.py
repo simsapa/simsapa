@@ -13,6 +13,7 @@ from simsapa import logger
 
 from simsapa.app.types import AppData, UDictWord, USutta
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
+from simsapa.layouts.sutta_tab import SuttaTabWidget
 
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -98,10 +99,9 @@ class HasMemoDialog:
     model: MemoPlainListModel
     update_memos_list: Callable
     sutta_tabs: QTabWidget
-    # FIXME SuttaTabWidget causes circular import
     _get_active_tab: Callable
-    sutta_tab: QWidget
-    _related_tabs: List[QWidget]
+    sutta_tab: SuttaTabWidget
+    _related_tabs: List[SuttaTabWidget]
 
     def init_memo_dialog(self):
         self.memo_dialog_fields = {}

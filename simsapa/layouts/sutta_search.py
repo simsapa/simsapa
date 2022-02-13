@@ -10,11 +10,11 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QTabWidget, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget, QWidget)
+                             QHBoxLayout, QTabWidget, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -23,6 +23,7 @@ from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
+from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
@@ -30,63 +31,6 @@ from .results_list import HasResultsList
 from .html_content import html_page
 from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
-
-class SuttaTabWidget(QWidget):
-    def __init__(self,
-                 title: str,
-                 tab_index: int,
-                 qwe: QWebEngineView,
-                 api_url: Optional[str] = None,
-                 sutta: Optional[USutta] = None) -> None:
-
-        super().__init__()
-
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.setProperty('style_class', 'sutta_tab')
-
-        self.title = title
-        self.tab_index = tab_index
-        self.qwe = qwe
-        self.api_url = api_url
-        self.sutta = sutta
-
-        self._layout = QVBoxLayout()
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(self._layout)
-        self._layout.addWidget(self.qwe, 100)
-
-        self.devToolsAction = QAction("Show Inspector", qwe)
-        self.devToolsAction.setCheckable(True)
-        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
-
-        self.qwe.addAction(self.devToolsAction)
-
-    def set_content_html(self, html: str):
-        self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
-
-    def render_sutta_content(self):
-        if self.sutta is None:
-            return
-
-        if self.sutta.content_html is not None and self.sutta.content_html != '':
-            content = str(self.sutta.content_html)
-        elif self.sutta.content_plain is not None and self.sutta.content_plain != '':
-            content = '<pre>' + str(self.sutta.content_plain) + '</pre>'
-        else:
-            content = 'No content.'
-
-        html = html_page(content, self.api_url)
-
-        self.set_content_html(html)
-
-    def _toggle_dev_tools_inspector(self):
-        if self.devToolsAction.isChecked():
-            self.dev_view = QWebEngineView()
-            self._layout.addWidget(self.dev_view, 100)
-            self.qwe.page().setDevToolsPage(self.dev_view.page())
-        else:
-            self.qwe.page().devToolsPage().deleteLater()
-            self.dev_view.deleteLater()
 
 
 class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
