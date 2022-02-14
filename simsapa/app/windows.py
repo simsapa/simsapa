@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialo
 
 from simsapa import logger
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import get_update_info
+from simsapa.app.helpers import get_update_info, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
@@ -297,6 +297,9 @@ class AppWindows:
         box.exec()
 
     def _reindex_database_dialog(self, parent = None):
+        show_work_in_progress()
+
+        '''
         msg = """
         <p>Re-indexing the database can take several minutes.</p>
         <p>If you choose <b>Yes</b>, the current index will be removed, and the application will exit.</p>
@@ -312,8 +315,12 @@ class AppWindows:
         if reply == QMessageBox.Yes:
             shutil.rmtree(INDEX_DIR)
             self._quit_app()
+        '''
 
     def _redownload_database_dialog(self, parent = None):
+        show_work_in_progress()
+
+        '''
         msg = """
         <p>Re-downloading the database can take several minutes.</p>
         <p>If you choose <b>Yes</b>, the database will be removed, and the application will exit.</p>
@@ -329,6 +336,7 @@ class AppWindows:
         if reply == QMessageBox.Yes:
             os.remove(APP_DB_PATH)
             self._quit_app()
+        '''
 
     def _close_all_windows(self):
         for w in self._windows:

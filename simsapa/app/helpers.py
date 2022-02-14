@@ -1,6 +1,7 @@
 from importlib import metadata
 from pathlib import Path
 from typing import Optional, TypedDict
+from PyQt5.QtWidgets import QMessageBox
 import requests
 import feedparser
 import semver
@@ -233,3 +234,9 @@ def latinize(text: str) -> str:
         text = text.replace(i, latin[idx])
 
     return text
+
+def show_work_in_progress():
+    d = QMessageBox()
+    d.setWindowTitle("Work in Progress")
+    d.setText("Work in Progress")
+    d.exec()
