@@ -1,3 +1,4 @@
+from typing import List
 import requests
 
 from simsapa import logger
@@ -38,6 +39,13 @@ class ActionsManager:
         data = {
             'action': 'open_sutta_new',
             'uid': uid,
+        }
+        self._send_to_all(data)
+
+    def open_words_new(self, schemas_ids: List[tuple[str, int]]):
+        data = {
+            'action': 'open_words_new',
+            'schemas_ids': schemas_ids,
         }
         self._send_to_all(data)
 

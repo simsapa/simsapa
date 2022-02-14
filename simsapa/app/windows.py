@@ -13,6 +13,7 @@ from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TI
 from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
+from simsapa.layouts.words_window import WordsWindow
 from .types import AppData, AppMessage, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
@@ -55,6 +56,9 @@ class AppWindows:
                 elif msg['action'] == 'open_sutta_new':
                     self.open_sutta_new(msg['uid'])
 
+                elif msg['action'] == 'open_words_new':
+                    self.open_words_new(msg['schemas_ids'])
+
                 elif msg['action'] == 'lookup_clipboard_in_suttas':
                     self._lookup_clipboard_in_suttas(msg)
 
@@ -73,6 +77,11 @@ class AppWindows:
 
     def open_sutta_new(self, uid: str):
         view = SuttaWindow(self._app_data, uid)
+        self._windows.append(view)
+        view.show()
+
+    def open_words_new(self, schemas_ids: List[tuple[str, int]]):
+        view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
         view.show()
 

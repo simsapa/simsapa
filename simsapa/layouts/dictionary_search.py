@@ -515,6 +515,19 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.content_html.page().devToolsPage().deleteLater()
             self.dev_view.deleteLater()
 
+    def _handle_open_content_new(self):
+        if self._app_data.actions_manager is not None \
+           and len(self._current_words) > 0:
+
+            def _f(x: UDictWord):
+                return (str(x.metadata.schema), int(x.id)) # type: ignore
+
+            schemas_ids = list(map(_f, self._current_words))
+
+            self._app_data.actions_manager.open_words_new(schemas_ids)
+        else:
+            logger.warn("Sutta is not set")
+
     def _setup_content_html_context_menu(self):
         self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
 
@@ -539,6 +552,15 @@ QWidget:focus { border: 1px solid #1092C3; }
         lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
 
         self.content_html.addAction(lookupSelectionInDictionary)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/new-window"))
+
+        open_new_action = QAction("Open in New Window", self.content_html)
+        open_new_action.setIcon(icon)
+        open_new_action.triggered.connect(partial(self._handle_open_content_new))
+
+        self.content_html.addAction(open_new_action)
 
         self.devToolsAction = QAction("Show Inspector", self.content_html)
         self.devToolsAction.setCheckable(True)
