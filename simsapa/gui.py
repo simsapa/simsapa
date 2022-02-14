@@ -13,14 +13,14 @@ from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
-from .app.types import AppData, create_app_dirs
+from simsapa.app.helpers import create_app_dirs
+from .app.types import AppData
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 
 from simsapa.assets import icons_rc  # noqa: F401
-
 
 def excepthook(exc_type, exc_value, exc_tb):
     logger.error("excepthook()")
@@ -32,11 +32,10 @@ def excepthook(exc_type, exc_value, exc_tb):
 
 sys.excepthook = excepthook
 
+create_app_dirs()
 
 def start(splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
-
-    create_app_dirs()
 
     if not APP_DB_PATH.exists():
         if splash_proc is not None:

@@ -45,4 +45,3 @@ APP_QUEUES: Dict[str, Queue] = {}
 IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
 IS_MAC = (platform.system() == 'Darwin')
-

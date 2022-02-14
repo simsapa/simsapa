@@ -219,12 +219,3 @@ class AppData:
         find_or_create_db(USER_DB_PATH, 'userdata')
         return USER_DB_PATH
 
-def create_app_dirs():
-    if not SIMSAPA_DIR.exists():
-        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not ASSETS_DIR.exists():
-        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not GRAPHS_DIR.exists():
-        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)

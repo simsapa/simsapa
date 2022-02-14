@@ -11,7 +11,7 @@ from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 import re
 import bleach
 
-from simsapa import logger
+from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
@@ -25,6 +25,16 @@ from .db import appdata_models as Am
 from .db import userdata_models as Um
 
 from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
+
+def create_app_dirs():
+    if not SIMSAPA_DIR.exists():
+        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not ASSETS_DIR.exists():
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not GRAPHS_DIR.exists():
+        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_file(url: str, folder_path: Path) -> Path:
     file_name = url.split('/')[-1]

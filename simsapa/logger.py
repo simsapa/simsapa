@@ -2,6 +2,9 @@ from datetime import datetime
 from typing import Any
 
 from simsapa import SIMSAPA_LOG_PATH
+from simsapa.app.helpers import create_app_dirs
+
+create_app_dirs()
 
 def info(msg: Any, start_new = False):
     _write_log(msg, "INFO", start_new)
