@@ -318,9 +318,6 @@ class AppWindows:
         '''
 
     def _redownload_database_dialog(self, parent = None):
-        show_work_in_progress()
-
-        '''
         msg = """
         <p>Re-downloading the database can take several minutes.</p>
         <p>If you choose <b>Yes</b>, the database will be removed, and the application will exit.</p>
@@ -336,7 +333,6 @@ class AppWindows:
         if reply == QMessageBox.Yes:
             os.remove(APP_DB_PATH)
             self._quit_app()
-        '''
 
     def _close_all_windows(self):
         for w in self._windows:
