@@ -1,11 +1,13 @@
 from typing import Optional
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import PACKAGE_ASSETS_DIR, logger
+from mako.template import Template
 
-def html_page(content: str,
-              api_url: Optional[str] = None,
-              messages_url: Optional[str] = None):
+open_sutta_links_js_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/open_sutta_links.js')))
+page_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/page.html')))
+
+def html_page(content: str, api_url: Optional[str] = None):
     try:
-        with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/suttas.css'), 'r') as f:
+        with open(PACKAGE_ASSETS_DIR.joinpath('css/suttas.css'), 'r') as f:
             css = f.read()
             if api_url is not None:
                 css = css.replace("http://localhost:8000", api_url)
@@ -13,61 +15,9 @@ def html_page(content: str,
         logger.error(f"Can't read suttas.css: {e}")
         css = ""
 
-    js = ""
-    if messages_url is not None:
-        js = """
-document.addEventListener('DOMContentLoaded', function() {
-    links = document.getElementsByTagName('a');
-    for (var i=0; i<links.length; i++) {
-        links[i].onclick = function(e) {
-            url = e.target.href;
-            if (!url.startsWith('sutta:') && !url.startsWith('word:')) {
-                return;
-            }
+    # NOTE not using this atm
+    # js = str(open_sutta_links_js_tmpl.render(api_url=api_url))
 
-            e.preventDefault();
+    html = str(page_tmpl.render(content=content, css_head=css, js_head='', js_body=''))
 
-            var params = {};
-
-            if (url.startsWith('sutta:')) {
-                s = url.replace('sutta:', '');
-                params = {
-                    action: 'show_sutta_by_uid',
-                    arg: {'uid': s},
-                };
-            } else if (url.startsWith('word:')) {
-                s = url.replace('word:', '');
-                params = {
-                    action: 'show_word_by_uid',
-                    arg: {'uid': s},
-                };
-            }
-            const options = {
-                method: 'POST',
-                headers: {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(params),
-            };
-            fetch('%s', options);
-        }
-    }
-});
-""" % (messages_url,)
-
-    page_html = """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>%s</style>
-    <script>%s</script>
-</head>
-<body>
-%s
-</body>
-</html>
-""" % (css, js, content)
-
-    return page_html
+    return html

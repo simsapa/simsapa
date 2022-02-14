@@ -10,6 +10,7 @@ from simsapa.app.db.search import SearchResult
 from ..app.types import AppData, UDictWord
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
+from .html_content import page_tmpl
 
 class ResultHtml(TypedDict):
     body: str
@@ -136,22 +137,9 @@ class DictionaryQueries:
         if css_extra is not None:
             css_head += css_extra
 
-        page_html = """
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>%s</style>
-    <script>%s</script>
-</head>
-<body>
-    %s
-    <script>%s</script>
-</body>
-</html>
-""" % (css_head, js_head, body, js_body)
+        html = str(page_tmpl.render(content=body, css_head=css_head, js_head=js_head, js_body=js_body))
 
-        return page_html
+        return html
 
     def word_heading(self, w: UDictWord) -> str:
         return f"""
