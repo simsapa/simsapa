@@ -12,6 +12,7 @@ from simsapa import logger
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import get_update_info
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
+from simsapa.layouts.sutta_window import SuttaWindow
 from .types import AppData, AppMessage, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
@@ -51,13 +52,16 @@ class AppWindows:
                 if msg['action'] == 'show_word_scan_popup':
                     self._toggle_word_scan_popup()
 
-                if msg['action'] == 'lookup_clipboard_in_suttas':
+                elif msg['action'] == 'open_sutta_new':
+                    self.open_sutta_new(msg['uid'])
+
+                elif msg['action'] == 'lookup_clipboard_in_suttas':
                     self._lookup_clipboard_in_suttas(msg)
 
-                if msg['action'] == 'lookup_clipboard_in_dictionary':
+                elif msg['action'] == 'lookup_clipboard_in_dictionary':
                     self._lookup_clipboard_in_dictionary(msg)
 
-                if msg['action'] == 'lookup_in_suttas':
+                elif msg['action'] == 'lookup_in_suttas':
                     self._lookup_clipboard_in_suttas(msg)
 
                 elif msg['action'] == 'lookup_in_dictionary':
@@ -66,6 +70,11 @@ class AppWindows:
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
+
+    def open_sutta_new(self, uid: str):
+        view = SuttaWindow(self._app_data, uid)
+        self._windows.append(view)
+        view.show()
 
     def _lookup_clipboard_in_suttas(self, msg):
         # Is there a sutta window to handle the message?

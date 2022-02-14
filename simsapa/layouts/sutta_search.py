@@ -223,7 +223,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.sutta_tabs = QTabWidget()
         self.sutta_tabs.setStyleSheet("*[style_class='sutta_tab'] { background-color: #FDF6E3; }")
 
-        self.sutta_tab = SuttaTabWidget("Sutta", 0, self._new_webengine(), self._app_data.api_url)
+        self.sutta_tab = SuttaTabWidget(self._app_data, "Sutta", 0, self._new_webengine())
         self.sutta_tab.setProperty('style_class', 'sutta_tab')
         self.sutta_tab.layout().setContentsMargins(0, 0, 0, 0)
 
@@ -241,7 +241,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         qwe = QWebEngineView()
         qwe.setPage(ReaderWebEnginePage(self))
 
-        qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Enable dev tools
         qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
@@ -257,10 +257,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         # don't substract one because the _related_tabs start after sutta_tab,
         # and tab indexing start from 0
         tab_index = len(self._related_tabs)
-        tab = SuttaTabWidget(title,
+        tab = SuttaTabWidget(self._app_data,
+                             title,
                              tab_index,
                              self._new_webengine(),
-                             self._app_data.api_url,
                              sutta)
 
         tab.render_sutta_content()

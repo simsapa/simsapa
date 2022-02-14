@@ -34,6 +34,13 @@ class ActionsManager:
         }
         self._send_to_all(data)
 
+    def open_sutta_new(self, uid: str):
+        data = {
+            'action': 'open_sutta_new',
+            'uid': uid,
+        }
+        self._send_to_all(data)
+
     def _send_to_all(self, data):
         url = f"{self.api_url}/queues/all"
         logger.info(f"_send_to_all(): {url}, {data}")

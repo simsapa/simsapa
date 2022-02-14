@@ -137,7 +137,11 @@ class DictionaryQueries:
         if css_extra is not None:
             css_head += css_extra
 
-        html = str(page_tmpl.render(content=body, css_head=css_head, js_head=js_head, js_body=js_body))
+        html = str(page_tmpl.render(content=body,
+                                    css_head=css_head,
+                                    js_head=js_head,
+                                    js_body=js_body,
+                                    api_url=self._app_data.api_url))
 
         return html
 

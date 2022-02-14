@@ -18,6 +18,10 @@ def html_page(content: str, api_url: Optional[str] = None):
     # NOTE not using this atm
     # js = str(open_sutta_links_js_tmpl.render(api_url=api_url))
 
-    html = str(page_tmpl.render(content=content, css_head=css, js_head='', js_body=''))
+    html = str(page_tmpl.render(content=content,
+                                css_head=css,
+                                js_head='',
+                                js_body='',
+                                api_url=api_url))
 
     return html

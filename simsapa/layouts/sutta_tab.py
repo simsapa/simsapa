@@ -2,19 +2,20 @@ from functools import partial
 from typing import Optional
 
 from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import QWidget, QAction, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import SIMSAPA_PACKAGE_DIR
-from ..app.types import USutta
+from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from ..app.types import AppData, USutta
 from .html_content import html_page
 
 class SuttaTabWidget(QWidget):
     def __init__(self,
+                 app_data: AppData,
                  title: str,
                  tab_index: int,
                  qwe: QWebEngineView,
-                 api_url: Optional[str] = None,
                  sutta: Optional[USutta] = None) -> None:
 
         super().__init__()
@@ -22,16 +23,26 @@ class SuttaTabWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setProperty('style_class', 'sutta_tab')
 
+        self._app_data = app_data
         self.title = title
         self.tab_index = tab_index
         self.qwe = qwe
-        self.api_url = api_url
         self.sutta = sutta
+        self.api_url = self._app_data.api_url
 
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self._layout)
         self._layout.addWidget(self.qwe, 100)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/new-window"))
+
+        open_new_action = QAction("Open in New Window", qwe)
+        open_new_action.setIcon(icon)
+        open_new_action.triggered.connect(partial(self._handle_open_content_new))
+
+        self.qwe.addAction(open_new_action)
 
         self.devToolsAction = QAction("Show Inspector", qwe)
         self.devToolsAction.setCheckable(True)
@@ -65,3 +76,10 @@ class SuttaTabWidget(QWidget):
         else:
             self.qwe.page().devToolsPage().deleteLater()
             self.dev_view.deleteLater()
+
+    def _handle_open_content_new(self):
+        if self._app_data.actions_manager is not None \
+           and self.sutta is not None:
+            self._app_data.actions_manager.open_sutta_new(str(self.sutta.uid))
+        else:
+            logger.warn("Sutta is not set")
