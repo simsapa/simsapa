@@ -421,7 +421,9 @@ QWidget:focus { border: 1px solid #1092C3; }
                 self.statusBar().showMessage('Not found')
             else:
                 self.statusBar().showMessage('')
-        self.content_html.findText(text, flag, callback)
+
+        tab = self._get_active_tab()
+        tab.qwe.findText(text, flag, callback)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
