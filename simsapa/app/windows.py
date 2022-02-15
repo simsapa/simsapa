@@ -332,6 +332,7 @@ class AppWindows:
                                      QMessageBox.No)
 
         if reply == QMessageBox.Yes:
+            self._app_data.db_session.commit()
             self._app_data.db_session.close_all()
             self._app_data.db_conn.close()
             os.remove(APP_DB_PATH)
