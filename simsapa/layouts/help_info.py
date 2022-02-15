@@ -2,6 +2,7 @@ from PyQt5.QtCore import QUrl
 from functools import partial
 from PyQt5.QtGui import QDesktopServices, QIcon, QPixmap
 from PyQt5.QtWidgets import QMessageBox, QPushButton
+from simsapa import SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
 
 from simsapa.app.helpers import get_app_version, get_sys_version
 
@@ -69,6 +70,8 @@ def show_about(parent=None):
 
     sys_version_par += f"<p>System: {get_sys_version()}</p>"
 
+    dirs_par = f"<p>SIMSAPA_DIR: {SIMSAPA_DIR}<br> SIMSAPA_PACKAGE_DIR: {SIMSAPA_PACKAGE_DIR}</p>"
+
     msg = f"""
 <h1>Simsapa Dhamma Reader</h1>
 {app_version_par}
@@ -76,6 +79,7 @@ def show_about(parent=None):
 <a href="https://github.com/simsapa/simsapa">github.com/simsapa/simsapa</a>
 </p>
 {sys_version_par}
+{dirs_par}
 """
     box.setText(msg)
     box.setWindowTitle("About Simsapa Dhamma Reader")

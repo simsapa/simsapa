@@ -25,6 +25,7 @@ class SuttaWindow(QMainWindow):
 
         self.sutta = sutta
         self.setWindowTitle(str(sutta.title))
+        self.resize(800, 800)
 
         self.qwe = self._new_webengine()
 

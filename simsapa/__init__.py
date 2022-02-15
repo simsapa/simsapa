@@ -45,3 +45,6 @@ APP_QUEUES: Dict[str, Queue] = {}
 IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
 IS_MAC = (platform.system() == 'Darwin')
+
+READING_TEXT_COLOR = "#1a1a1a" # 90% black
+READING_BACKGROUND_COLOR = "#FAE6B2"

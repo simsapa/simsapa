@@ -319,20 +319,22 @@ class AppWindows:
 
     def _redownload_database_dialog(self, parent = None):
         msg = """
-        <p>Re-downloading the database can take several minutes.</p>
-        <p>If you choose <b>Yes</b>, the database will be removed, and the application will exit.</p>
+        <p>Re-downloading the database and index can take several minutes.</p>
+        <p>If you choose <b>Yes</b>, the database and the index data will be removed, and the application will exit.</p>
         <p>When you start the application again, and the download will begin.</p>
         <p>Start now?</p>"""
 
         reply = QMessageBox.question(parent,
-                                     "Re-download the database",
+                                     "Re-download the database and index",
                                      msg,
                                      QMessageBox.Yes | QMessageBox.No,
                                      QMessageBox.No)
 
         if reply == QMessageBox.Yes:
+            self._app_data.db_session.close_all()
             self._app_data.db_conn.close()
             os.remove(APP_DB_PATH)
+            shutil.rmtree(INDEX_DIR)
             self._quit_app()
 
     def _close_all_windows(self):

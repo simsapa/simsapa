@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow,
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 
-from simsapa import logger
+from simsapa import READING_BACKGROUND_COLOR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -221,7 +221,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _setup_sutta_tabs(self):
         self.sutta_tabs = QTabWidget()
-        self.sutta_tabs.setStyleSheet("*[style_class='sutta_tab'] { background-color: #FDF6E3; }")
+        self.sutta_tabs.setStyleSheet("*[style_class='sutta_tab'] { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self.sutta_tab = SuttaTabWidget(self._app_data, "Sutta", 0, self._new_webengine())
         self.sutta_tab.setProperty('style_class', 'sutta_tab')

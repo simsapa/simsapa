@@ -6,7 +6,7 @@ from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QKeySequence, Q
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_MAC, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -71,7 +71,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self._clipboard = self._app_data.clipboard
 
         self.setObjectName("WordScanPopup")
-        self.setStyleSheet("#WordScanPopup { background-color: #FDF6E3; border: 1px solid #ababab; }")
+        self.setStyleSheet("#WordScanPopup { background-color: %s; border: 1px solid #ababab; }" % READING_BACKGROUND_COLOR)
 
         self._resized = False
         self._margin = 5
@@ -120,7 +120,7 @@ class WordScanPopup(QDialog, HasResultsList):
 
         self.close_button = QPushButton()
         self.close_button.setFixedSize(20, 20)
-        self.close_button.setStyleSheet("QPushButton { background-color: #FDF6E3; border: none; }")
+        self.close_button.setStyleSheet("QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR)
         self.close_button.setIcon(icon)
 
         self.close_button.setShortcut(QKeySequence("Ctrl+F6"))
@@ -323,7 +323,7 @@ class WordScanPopup(QDialog, HasResultsList):
     def _setup_words_tab(self):
         self.tab_word = QWidget()
         self.tab_word.setObjectName("Words")
-        self.tab_word.setStyleSheet("QWidget#Words { background-color: #FDF6E3; }")
+        self.tab_word.setStyleSheet("QWidget#Words { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self.tabs.addTab(self.tab_word, "Words")
 
@@ -335,7 +335,7 @@ class WordScanPopup(QDialog, HasResultsList):
     def _setup_results_tab(self):
         self.results_tab = QWidget()
         self.results_tab.setObjectName("Fulltext")
-        self.results_tab.setStyleSheet("QWidget#Fulltext { background-color: #FDF6E3; }")
+        self.results_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self.tabs.addTab(self.results_tab, "Fulltext")
 
@@ -490,6 +490,10 @@ class WordScanPopup(QDialog, HasResultsList):
             self._handle_query(min_length=4)
             self._handle_exact_query(min_length=4)
 
+    def _handle_close_button(self):
+        if self._app_data.actions_manager is not None:
+            self._app_data.actions_manager.show_word_scan_popup()
+
     def _connect_signals(self):
         if self._clipboard is not None:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
@@ -504,4 +508,4 @@ class WordScanPopup(QDialog, HasResultsList):
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
-        self.close_button.clicked.connect(self.close)
+        self.close_button.clicked.connect(partial(self._handle_close_button))

@@ -26,6 +26,7 @@ class WordsWindow(QMainWindow):
         self.queries = DictionaryQueries(self._app_data)
         self.words = words
         self.setWindowTitle(str(words[0].word))
+        self.resize(800, 800)
 
         self.qwe = self._new_webengine()
 
