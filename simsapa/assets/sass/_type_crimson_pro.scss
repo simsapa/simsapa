@@ -1,0 +1,32 @@
+// 400, Normal
+
+@font-face {
+    font-family: 'Crimson Pro SSP';
+    font-style: normal;
+    font-weight: 400;
+    src: url('http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Crimson Pro SSP';
+  font-style: italic;
+  font-weight: 400;
+  src: url('http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Italic.ttf') format('truetype');
+}
+
+// 700, Bold
+
+@font-face {
+    font-family: 'Crimson Pro SSP';
+    font-style: normal;
+    font-weight: 700;
+    src: url('http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Bold.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Crimson Pro SSP';
+  font-style: italic;
+  font-weight: 700;
+  src: url('http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf') format('truetype');
+}
+

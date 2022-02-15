@@ -1,7 +1,7 @@
+from enum import Enum
 import json
 import os
 import os.path
-import logging as _logging
 from pathlib import Path
 from typing import List, Optional, TypedDict, Union
 
@@ -11,6 +11,7 @@ from sqlalchemy.sql.functions import func
 
 from PyQt5.QtGui import QClipboard
 
+from simsapa import logger
 from simsapa.app.actions_manager import ActionsManager
 
 from .db.search import SearchIndexed
@@ -21,8 +22,6 @@ from .db import userdata_models as Um
 from simsapa import APP_DB_PATH, GRAPHS_DIR, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
 from simsapa.app.helpers import find_or_create_db
 
-
-logger = _logging.getLogger(__name__)
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -35,6 +34,24 @@ class Labels(TypedDict):
     appdata: List[str]
     userdata: List[str]
 
+class WindowType(int, Enum):
+    SuttaSearch = 0
+    DictionarySearch = 1
+    Memos = 2
+    Links = 3
+
+class WindowPosSize(TypedDict):
+    x: int
+    y: int
+    width: int
+    height: int
+
+WindowNameToType = {
+    "Sutta Search": WindowType.SuttaSearch,
+    "Dictionary Search": WindowType.DictionarySearch,
+    "Memos": WindowType.Memos,
+    "Links": WindowType.Links,
+}
 
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
@@ -42,6 +59,10 @@ class AppSettings(TypedDict):
     notify_about_updates: bool
     suttas_show_pali_buttons: bool
     dictionary_show_pali_buttons: bool
+    show_toolbar: bool
+    first_window_on_startup: WindowType
+    word_scan_popup_pos: WindowPosSize
+    show_related_suttas: bool
 
 class AppMessage(TypedDict):
     kind: str
@@ -57,7 +78,7 @@ class AppData:
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
                  api_port: Optional[int] = None,
-                 silent_index_if_empty: bool = True):
+                 silent_index_if_empty: bool = False):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -68,6 +89,8 @@ class AppData:
 
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
+
+        self.silent_index_if_empty = silent_index_if_empty
 
         self.api_url: Optional[str] = None
 
@@ -82,9 +105,7 @@ class AppData:
         self.search_indexed = SearchIndexed()
 
         self._read_app_settings()
-
-        if silent_index_if_empty:
-            self.search_indexed.index_all(self.db_session, only_if_empty=True)
+        self._ensure_user_memo_deck()
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):
@@ -109,8 +130,7 @@ class AppData:
             Session.configure(bind=engine)
             db_session = Session()
         except Exception as e:
-            logger.error("Can't connect to database.")
-            print(e)
+            logger.error(f"Can't connect to database: {e}")
             exit(1)
 
         return (db_conn, db_session)
@@ -136,6 +156,15 @@ class AppData:
                 notify_about_updates = True,
                 suttas_show_pali_buttons = True,
                 dictionary_show_pali_buttons = True,
+                show_toolbar = False,
+                first_window_on_startup = WindowType.SuttaSearch,
+                word_scan_popup_pos = WindowPosSize(
+                    x = 100,
+                    y = 100,
+                    width = 400,
+                    height = 500,
+                ),
+                show_related_suttas = True,
             )
             self._save_app_settings()
 
@@ -159,7 +188,14 @@ class AppData:
                 self.db_session.add(x)
                 self.db_session.commit()
         except Exception as e:
-            print(f"ERROR: {e}")
+            logger.error(e)
+
+    def _ensure_user_memo_deck(self):
+        deck = self.db_session.query(Um.Deck).first()
+        if deck is None:
+            deck = Um.Deck(name = "Simsapa")
+            self.db_session.add(deck)
+            self.db_session.commit()
 
     def clipboard_setText(self, text):
         if self.clipboard is not None:
@@ -183,12 +219,3 @@ class AppData:
         find_or_create_db(USER_DB_PATH, 'userdata')
         return USER_DB_PATH
 
-def create_app_dirs():
-    if not SIMSAPA_DIR.exists():
-        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not ASSETS_DIR.exists():
-        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not GRAPHS_DIR.exists():
-        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)

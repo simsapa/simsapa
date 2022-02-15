@@ -2,8 +2,6 @@ from subprocess import Popen
 import sys
 import os
 import traceback
-import logging as _logging
-import logging.config
 from typing import Optional
 from PyQt5 import QtCore
 import yaml
@@ -12,10 +10,11 @@ import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 
+from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import write_log
-from .app.types import AppData, create_app_dirs
+from simsapa.app.helpers import create_app_dirs
+from .app.types import AppData
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
@@ -23,31 +22,20 @@ from .layouts.error_message import ErrorMessageWindow
 
 from simsapa.assets import icons_rc  # noqa: F401
 
-logger = _logging.getLogger(__name__)
-
-if os.path.exists("logging.yaml"):
-    with open("logging.yaml", 'r') as f:
-        config = yaml.safe_load(f.read())
-        _logging.config.dictConfig(config) # type: ignore
-
-
 def excepthook(exc_type, exc_value, exc_tb):
-    write_log("excepthook()")
+    logger.error("excepthook()")
     tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    write_log(tb)
-    logger.error("Error:\n", tb)
+    logger.error(tb)
     w = ErrorMessageWindow(user_message=None, debug_info=tb)
     w.show()
 
 
 sys.excepthook = excepthook
 
+create_app_dirs()
 
 def start(splash_proc: Optional[Popen] = None):
-    logger.info("start()")
-    write_log("start()", start_new=True)
-
-    create_app_dirs()
+    logger.info("start()", start_new=True)
 
     if not APP_DB_PATH.exists():
         if splash_proc is not None:
@@ -65,14 +53,14 @@ def start(splash_proc: Optional[Popen] = None):
 
     try:
         port = find_available_port()
-        write_log(f"Available port: {port}")
+        logger.info(f"Available port: {port}")
         daemon = threading.Thread(name='daemon_server',
                                 target=start_server,
                                 args=(port,))
         daemon.setDaemon(True)
         daemon.start()
     except Exception as e:
-        write_log(f"{e}")
+        logger.error(e)
         # FIXME show error to user
         port = 6789
 
@@ -105,6 +93,10 @@ def start(splash_proc: Optional[Popen] = None):
 
         _translate = QtCore.QCoreApplication.translate
 
+        ac0 = QAction("Show Word Scan Popup")
+        ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
+        menu.addAction(ac0)
+
         ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
         ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
         menu.addAction(ac1)
@@ -114,6 +106,7 @@ def start(splash_proc: Optional[Popen] = None):
         menu.addAction(ac2)
 
         if hotkeys_manager is not None:
+            ac0.triggered.connect(hotkeys_manager.show_word_scan_popup)
             ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
             ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
 
@@ -125,7 +118,9 @@ def start(splash_proc: Optional[Popen] = None):
 
     # === Create first window ===
 
-    app_windows._new_sutta_search_window()
+    app_windows.open_first_window()
+
+    app_windows.ask_index_if_empty()
 
     app_windows.show_startup_message()
 
@@ -140,5 +135,5 @@ def start(splash_proc: Optional[Popen] = None):
     if hotkeys_manager is not None:
         hotkeys_manager.unregister_all_hotkeys()
 
-    write_log(f"start() Exiting with status {status}.")
+    logger.info(f"start() Exiting with status {status}.")
     sys.exit(status)

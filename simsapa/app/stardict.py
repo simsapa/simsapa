@@ -10,7 +10,6 @@ Support functions:
 https://github.com/codito/stargaze/blob/master/stargaze.py
 """
 
-import logging as _logging
 from pathlib import Path
 import datetime
 from typing import List, TypedDict, Optional
@@ -19,9 +18,8 @@ from zipfile import ZipFile
 import struct
 import idzip
 
+from simsapa import logger
 from simsapa import SIMSAPA_DIR
-
-logger = _logging.getLogger(__name__)
 
 class DictError(Exception):
     """Error in the dictionary."""
@@ -296,7 +294,7 @@ def parse_dict(paths: StarDictPaths,
         for idx, i in enumerate(idx_entries):
 
             dict_word = i['word']
-            print(dict_word)
+            logger.info(dict_word)
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")

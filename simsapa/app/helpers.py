@@ -1,8 +1,7 @@
 from importlib import metadata
-import logging as _logging
 from pathlib import Path
 from typing import Optional, TypedDict
-from datetime import datetime
+from PyQt5.QtWidgets import QMessageBox
 import requests
 import feedparser
 import semver
@@ -12,6 +11,7 @@ from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 import re
 import bleach
 
+from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
@@ -24,9 +24,17 @@ import tomlkit
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_LOG_PATH, SIMSAPA_PACKAGE_DIR
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
 
-logger = _logging.getLogger(__name__)
+def create_app_dirs():
+    if not SIMSAPA_DIR.exists():
+        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not ASSETS_DIR.exists():
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not GRAPHS_DIR.exists():
+        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_file(url: str, folder_path: Path) -> Path:
     file_name = url.split('/')[-1]
@@ -54,7 +62,7 @@ def get_app_dev_version() -> Optional[str]:
         v = t['tool']['poetry']['version'] # type: ignore
         ver = f"{v}"
     except Exception as e:
-        print(f"ERROR: {e}")
+        logger.error(e)
         ver = None
 
     return ver
@@ -84,6 +92,13 @@ class UpdateInfo(TypedDict):
     message: str
 
 def get_update_info() -> Optional[UpdateInfo]:
+    # Test if connection to github is working.
+    try:
+        requests.head("https://github.com/", timeout=5)
+    except Exception as e:
+        logger.error("No Connection: Update info unavailable: %s" % e)
+        return None
+
     try:
         d = feedparser.parse("https://github.com/simsapa/simsapa/releases.atom")
 
@@ -128,8 +143,6 @@ def get_update_info() -> Optional[UpdateInfo]:
         )
     except Exception as e:
         logger.error(e)
-        print(f"ERROR: {e}")
-
         return None
 
 def compactPlainText(text: str) -> str:
@@ -140,16 +153,40 @@ def compactPlainText(text: str) -> str:
     return text
 
 def compactRichText(text: str) -> str:
+    # All on one line
+    text = text.replace("\n", " ")
     # Some CSS is not removed by bleach when syntax is malformed
-    text = re.sub(r'<style>.*</style>', '', text, flags = re.DOTALL)
+    text = re.sub(r'<style.*</style>', '', text)
+    # No JS here
+    text = re.sub(r'<script.*</script>', '', text)
+    # escaped html tags
+    text = re.sub(r'&lt;[^&]+&gt;', '', text)
     text = text.replace('&nbsp;', ' ')
     text = text.replace('&amp;', '&')
     # remove SuttaCentral ref links
     text = re.sub(r"<a class=.ref\b[^>]+>[^<]*</a>", '', text)
-    # make sure there is space before and after tags, so words don't get joined after removing tags
+
+    text = text.replace("<br>", " ")
+    text = text.replace("<br/>", " ")
+
+    # Respect word boundaries for <b> <strong> <i> <em> so that dhamm<b>āya</b> becomes dhammāya, not dhamm āya.
+    text = re.sub(r'(\w*)<(b|strong|i|em)([^>]*)>(\w*)', r'\1\4', text)
+    # corresponding closing tags
+    text = re.sub(r'(\w*)</*(b|strong|i|em)>(\w*)', r'\1\3', text)
+
+    # Make sure there is space before and after other tags, so words don't get joined after removing tags.
+    #
+    # <td>dhammassa</td>
+    # <td>dhammāya</td>
+    #
+    # should become
+    #
+    # dhammassa dhammāya
+
     text = text.replace('<', ' <')
     text = text.replace('</', ' </')
     text = text.replace('>', '> ')
+
     text = bleach.clean(text, tags=[], styles=[], strip=True)
     text = compactPlainText(text)
 
@@ -188,9 +225,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
                 try:
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
-                    # NOTE: logger.error() is not printed for some reason.
-                    print("ERROR - Failed to run migrations.")
-                    print(e)
+                    logger.error("Failed to run migrations: %s" % e)
                     exit(1)
     else:
         logger.error("Can't create in-memory database")
@@ -201,15 +236,17 @@ def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
         context = MigrationContext.configure(db_conn)
         return set(context.get_current_heads()) == set(directory.get_heads())
 
-def write_log(msg: str, start_new: bool = False):
-    msg = msg.strip()
-    logger.info(msg)
+def latinize(text: str) -> str:
+    accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
+    latin = 'a i u m m n n t d n l r s s'.split(' ')
 
-    if start_new:
-        mode = 'w'
-    else:
-        mode = 'a'
+    for idx, i in enumerate(accents):
+        text = text.replace(i, latin[idx])
 
-    with open(SIMSAPA_LOG_PATH, mode, encoding='utf-8') as f:
-        t = datetime.now()
-        f.write(f"[{t}] {msg}\n")
+    return text
+
+def show_work_in_progress():
+    d = QMessageBox()
+    d.setWindowTitle("Work in Progress")
+    d.setText("Work in Progress")
+    d.exec()

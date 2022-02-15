@@ -1,42 +1,46 @@
-import logging as _logging
 import json
 from typing import Callable, List, Optional
 from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QListWidget, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget)
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
+from simsapa import logger
 
-from simsapa.app.types import AppData, UDictWord, USutta
+from simsapa.app.types import AppData, UDictWord
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
+from simsapa.layouts.sutta_tab import SuttaTabWidget
 
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoDialog(QDialog):
 
     accepted = pyqtSignal(dict) # type: ignore
 
-    def __init__(self, text=''):
+    def __init__(self, front_text='', back_text=''):
         super().__init__()
         self.setWindowTitle("Create Memo")
 
-        self.front = QPlainTextEdit()
-        self.front.setFixedSize(300, 50)
+        self.front = QPlainTextEdit(front_text)
+        self.front.setMinimumSize(400, 200)
         self.front.textChanged.connect(self.unlock)
+        self.front.setTabChangesFocus(True)
 
-        self.back = QPlainTextEdit(text)
-        self.back.setFixedSize(300, 50)
+        self.back = QPlainTextEdit(back_text)
+        self.back.setMinimumSize(400, 200)
         self.back.textChanged.connect(self.unlock)
+        self.back.setTabChangesFocus(True)
 
         self.add_btn = QPushButton('Add')
         self.add_btn.setDisabled(True)
+        self.add_btn.setShortcut(QKeySequence("Ctrl+Return"))
+        self.add_btn.setToolTip("Ctrl+Return")
         self.add_btn.clicked.connect(self.add_pressed)
 
         self.close_btn = QPushButton('Close')
@@ -84,7 +88,6 @@ class HasMemoDialog:
     back: QPlainTextEdit
     features: List[str] = []
     memos_list: QListView
-    _current_sutta: Optional[USutta]
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]
     db_doc: Optional[Um.Document]
@@ -95,6 +98,10 @@ class HasMemoDialog:
     content_html: QWebEngineView
     model: MemoPlainListModel
     update_memos_list: Callable
+    sutta_tabs: QTabWidget
+    _get_active_tab: Callable
+    sutta_tab: SuttaTabWidget
+    _related_tabs: List[SuttaTabWidget]
 
     def init_memo_dialog(self):
         self.memo_dialog_fields = {}
@@ -103,11 +110,14 @@ class HasMemoDialog:
         self.memo_dialog_fields = values
 
     def handle_create_memo_for_sutta(self):
-        if self._current_sutta is None:
+        tab = self._get_active_tab()
+
+        if tab.sutta is None:
             logger.error("Sutta is not set")
             return
 
-        text = self.content_html.selectedText()
+        front_text = f"...\n\n({tab.sutta.sutta_ref} {tab.sutta.title})"
+        back_text = tab.qwe.selectedText()
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
@@ -119,7 +129,7 @@ class HasMemoDialog:
             'Back': '',
         }
 
-        d = MemoDialog(text)
+        d = MemoDialog(front_text, back_text)
         d.accepted.connect(self.set_memo_dialog_fields)
         d.exec_()
 
@@ -136,14 +146,14 @@ class HasMemoDialog:
             self._app_data.db_session.add(memo)
             self._app_data.db_session.commit()
 
-            schema = self._current_sutta.metadata.schema
+            schema = tab.sutta.metadata.schema
 
-            if self._current_sutta is not None:
+            if tab.sutta is not None:
 
                 memo_assoc = Um.MemoAssociation(
                     memo_id=memo.id,
                     associated_table=f'{schema}.suttas',
-                    associated_id=self._current_sutta.id,
+                    associated_id=tab.sutta.id,
                 )
 
                 self._app_data.db_session.add(memo_assoc)

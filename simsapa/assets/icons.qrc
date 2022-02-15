@@ -8,6 +8,9 @@
     <file alias="dictionary">icons/32x32/bxs_book_content.png</file>
     <file alias="info">icons/32x32/fa_circle-info-solid.png</file>
     <file alias="keyboard">icons/32x32/fa_keyboard-solid.png</file>
+    <file alias="diagram">icons/32x32/fa_diagram-project-solid.png</file>
+    <file alias="pen-fancy">icons/32x32/fa_pen-fancy-solid.png</file>
+    <file alias="new-window">icons/32x32/fa_arrow-up-right-from-square-solid.png</file>
     <file alias="simsapa-tray">icons/32x32/simsapa-tray.png</file>
     <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
   </qresource>

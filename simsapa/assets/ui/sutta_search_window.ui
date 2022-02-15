@@ -30,11 +30,20 @@
         </property>
         <item>
          <widget class="QLineEdit" name="search_input">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
-            <width>0</width>
+            <width>500</width>
             <height>35</height>
            </size>
+          </property>
+          <property name="placeholderText">
+           <string>Type here to search</string>
           </property>
           <property name="clearButtonEnabled">
            <bool>true</bool>
@@ -43,6 +52,12 @@
         </item>
         <item>
          <widget class="QPushButton" name="search_button">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
@@ -54,6 +69,22 @@
           </property>
          </widget>
         </item>
+        <item>
+         <layout class="QHBoxLayout" name="search_extras"/>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
        </layout>
       </item>
       <item>
@@ -62,7 +93,7 @@
          <enum>Qt::Horizontal</enum>
         </property>
         <widget class="QWidget" name="verticalLayoutWidget_2">
-         <layout class="QVBoxLayout" name="content_layout">
+         <layout class="QVBoxLayout" name="sutta_tabs_layout">
           <item>
            <spacer name="horizontalSpacer">
             <property name="orientation">
@@ -71,7 +102,7 @@
             <property name="sizeHint" stdset="0">
              <size>
               <width>500</width>
-              <height>20</height>
+              <height>0</height>
              </size>
             </property>
            </spacer>
@@ -118,7 +149,7 @@
               </size>
              </property>
              <attribute name="title">
-              <string>Results</string>
+              <string>Fulltext</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout">
               <item>
@@ -355,6 +386,8 @@
     </property>
     <addaction name="action_Copy"/>
     <addaction name="action_Paste"/>
+    <addaction name="action_Find_in_Page"/>
+    <addaction name="action_Focus_Search_Input"/>
     <addaction name="action_Lookup_Clipboard_in_Suttas"/>
     <addaction name="action_Lookup_Clipboard_in_Dictionary"/>
    </widget>
@@ -364,11 +397,14 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Dictionary_Search"/>
+    <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
+    <addaction name="action_First_Window_on_Startup"/>
+    <addaction name="action_Show_Toolbar"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -384,6 +420,7 @@
      <string>&amp;Suttas</string>
     </property>
     <addaction name="action_Select_Sutta_Authors"/>
+    <addaction name="action_Show_Related_Suttas"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
@@ -404,6 +441,8 @@
    </attribute>
    <addaction name="action_Sutta_Search"/>
    <addaction name="action_Dictionary_Search"/>
+   <addaction name="action_Memos"/>
+   <addaction name="action_Links"/>
   </widget>
   <action name="action_Copy">
    <property name="text">
@@ -500,6 +539,10 @@
    </property>
   </action>
   <action name="action_Memos">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/pen-fancy</normaloff>:/pen-fancy</iconset>
+   </property>
    <property name="text">
     <string>&amp;Memos</string>
    </property>
@@ -519,6 +562,10 @@
    </property>
   </action>
   <action name="action_Links">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/diagram</normaloff>:/diagram</iconset>
+   </property>
    <property name="text">
     <string>&amp;Links</string>
    </property>
@@ -577,6 +624,54 @@
    </property>
    <property name="shortcutContext">
     <enum>Qt::ApplicationShortcut</enum>
+   </property>
+  </action>
+  <action name="action_Show_Toolbar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Toolbar</string>
+   </property>
+  </action>
+  <action name="action_First_Window_on_Startup">
+   <property name="text">
+    <string>First Window on Startup...</string>
+   </property>
+  </action>
+  <action name="action_Focus_Search_Input">
+   <property name="text">
+    <string>Focus Search Input</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+L</string>
+   </property>
+  </action>
+  <action name="action_Find_in_Page">
+   <property name="text">
+    <string>Find in Page...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F</string>
+   </property>
+  </action>
+  <action name="action_Show_Word_Scan_Popup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Word Scan Popup</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F6</string>
+   </property>
+  </action>
+  <action name="action_Show_Related_Suttas">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Related Suttas</string>
    </property>
   </action>
  </widget>

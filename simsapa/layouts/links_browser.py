@@ -1,5 +1,4 @@
 import os
-import logging as _logging
 import json
 from pathlib import Path
 import queue
@@ -9,14 +8,15 @@ from typing import List, Optional
 
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent, QColor
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QListWidgetItem,
+from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
                              QComboBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import APP_QUEUES, GRAPHS_DIR
+from simsapa import logger
+from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
@@ -25,14 +25,15 @@ from ..app.graph import generate_graph, all_nodes_and_edges
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
-logger = _logging.getLogger(__name__)
-
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
+
+    search_input: QLineEdit
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("LinksBrowserWindow()")
 
         self.link_table: QComboBox;
 
@@ -51,7 +52,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(300)
+        self.timer.start(TIMER_SPEED)
 
         self._ui_setup()
         self._connect_signals()
@@ -91,10 +92,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.search_input.setFocus()
 
     def _setup_pali_buttons(self):
-        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
-        uppercase = 'Ā Ī Ū Ṃ Ṁ Ṅ Ñ Ṭ Ḍ Ṇ Ḷ'.split(' ')
-
         lowercase_row = QHBoxLayout()
+
+        lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ'.split(' ')
 
         for i in lowercase:
             btn = QPushButton(i)
@@ -102,16 +102,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             btn.clicked.connect(partial(self._append_to_query, i))
             lowercase_row.addWidget(btn)
 
-        uppercase_row = QHBoxLayout()
-
-        for i in uppercase:
-            btn = QPushButton(i)
-            btn.setFixedSize(30, 30)
-            btn.clicked.connect(partial(self._append_to_query, i))
-            uppercase_row.addWidget(btn)
-
         self.pali_buttons_layout.addLayout(lowercase_row)
-        self.pali_buttons_layout.addLayout(uppercase_row)
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()

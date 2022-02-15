@@ -11,9 +11,7 @@ try:
 except ImportError:
     has_fitz = False
 
-import logging as _logging
-
-logger = _logging.getLogger(__name__)
+from simsapa import logger
 
 
 class PageImage():

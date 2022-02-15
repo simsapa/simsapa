@@ -14,11 +14,17 @@ ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/links_browser_window_ui.py simsapa/assets/ui/links_browser_window.ui && \
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/import_stardict_dialog_ui.py simsapa/assets/ui/import_stardict_dialog.ui
 
+sass-build:
+	sass --no-source-map './simsapa/assets/sass/:./simsapa/assets/css/'
+
+sass-watch:
+	sass --no-source-map --watch './simsapa/assets/sass/:./simsapa/assets/css/'
+
 tests:
 	USE_TEST_DATA=true pytest tests/
 
 bootstrap-appdata:
-	./scripts/bootstrap-appdata-db.py
+	./scripts/bootstrap-appdata.sh
 
 count-code:
 	tokei --exclude simsapa/assets/ --exclude simsapa/keyboard/ .

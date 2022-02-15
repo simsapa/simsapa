@@ -3,7 +3,6 @@ import os
 from functools import partial
 import shutil
 import tarfile
-import logging as _logging
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
@@ -14,10 +13,9 @@ from simsapa.app.types import AppMessage
 
 from ..app.helpers import download_file
 
+from simsapa import logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
-
-logger = _logging.getLogger(__name__)
 
 
 class DownloadAppdataWindow(QMainWindow):

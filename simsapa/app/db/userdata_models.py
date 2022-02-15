@@ -1,11 +1,11 @@
-import logging as _logging
-
 from sqlalchemy import (MetaData, Table, Column, Integer, String,
                         ForeignKey, Boolean, DateTime, LargeBinary)
 
 from sqlalchemy import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+
+from simsapa import logger
 
 # -------------------------------------------------------------------------
 # NOTE: The schema label identifies the attached database. This is the only
@@ -14,8 +14,6 @@ from sqlalchemy.ext.declarative import declarative_base
 
 metadata = MetaData(schema='userdata')
 Base = declarative_base(metadata=metadata)
-
-logger = _logging.getLogger(__name__)
 
 assoc_sutta_authors = Table(
     'sutta_authors',

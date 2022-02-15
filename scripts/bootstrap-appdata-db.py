@@ -2,11 +2,11 @@
 
 import os
 import sys
-import logging as _logging
 from pathlib import Path
 import re
 import json
-from typing import List
+from bs4 import BeautifulSoup
+from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
 
@@ -19,19 +19,18 @@ from sqlalchemy.sql import func
 from pyArango.connection import Connection
 from pyArango.database import DBHandle
 
+from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 
 from simsapa.app.helpers import find_or_create_db
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
 
-logger = _logging.getLogger(__name__)
-
 load_dotenv()
 
 s = os.getenv('BOOTSTRAP_ASSETS_DIR')
 if s is None or s == "":
-    print("Missing env variable: BOOTSTRAP_ASSETS_DIR")
+    logger.error("Missing env variable: BOOTSTRAP_ASSETS_DIR")
     sys.exit(1)
 
 bootstrap_assets_dir = Path(s)
@@ -39,7 +38,7 @@ sc_data_dir = bootstrap_assets_dir.joinpath("sc-data")
 
 for p in [bootstrap_assets_dir, sc_data_dir]:
     if not p.exists():
-        print(f"Missing folder: {p}")
+        logger.error(f"Missing folder: {p}")
         sys.exit(1)
 
 def get_appdata_db(db_path: Path) -> Session:
@@ -62,8 +61,7 @@ def get_appdata_db(db_path: Path) -> Session:
         Session.configure(bind=engine)
         db_session = Session()
     except Exception as e:
-        logger.error("Can't connect to database.")
-        print(e)
+        logger.error(f"Can't connect to database: {e}")
         sys.exit(1)
 
     return db_session
@@ -99,7 +97,7 @@ def bilara_text_uid(x) -> str:
     elif len(a) == 0 and '/pli/vri/' in x['file_path']:
         author = 'vri'
     else:
-        print(f"Can't find author for bilara text, _id: {x['_id']}, muids: {x['muids']}, {x['file_path']}")
+        logger.warn(f"Can't find author for bilara text, _id: {x['_id']}, muids: {x['muids']}, {x['file_path']}")
         author = 'unknown'
 
     return f"{x['uid']}/{x['lang']}/{author}"
@@ -123,7 +121,27 @@ def uid_to_ref(uid: str) -> str:
 
     return uid
 
-def html_text_to_sutta(x, title: str) -> Am.Sutta:
+def get_sutta_page_body(html_page: str):
+    if '<html' in html_page or '<HTML' in html_page:
+        soup = BeautifulSoup(html_page, 'html.parser')
+        h = soup.find(name = 'body')
+        if h is None:
+            logger.error("HTML document is missing a <body>")
+            body = html_page
+        else:
+            body = h.decode_contents() # type: ignore
+    else:
+        body = html_page
+
+    return body
+
+def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
+    # html pages can be complete docs, <!DOCTYPE html><html>...
+    page = x['text']
+
+    body = get_sutta_page_body(page)
+    content_html = f"""<div class="suttacentral html-text">{body}</div>"""
+
     return Am.Sutta(
         source_info = x['_id'],
         # The All-embracing Net of Views
@@ -134,23 +152,31 @@ def html_text_to_sutta(x, title: str) -> Am.Sutta:
         sutta_ref = uid_to_ref(x['uid']),
         # en
         language = x['lang'],
-        # <!DOCTYPE html>\n<html>\n<head>...
-        content_html = x['text'],
+        content_html = content_html,
         created_at = func.now(),
     )
 
-def bilara_text_to_sutta(x, title: str) -> Am.Sutta:
+def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
     a = json.loads(x['text'])
-    text = "\n\n".join(a.values())
 
-    # test if text contains html tags
-    m = re.match(r'<\w+', text)
-    if m is not None:
-        content_html = text
-        content_plain = null()
+    if tmpl is None:
+        logger.warn(f"No template: {x['uid']} {title} {x['file_path']}")
     else:
+        for i in a.keys():
+            if i in tmpl.keys():
+                a[i] = tmpl[i].replace('{}', a[i])
+            # else:
+            #     logger.warn(f"No template key: {i} {x['uid']} {title} {x['file_path']}")
+
+    page = "\n\n".join(a.values())
+
+    if tmpl is None:
         content_html = null()
-        content_plain = text
+        content_plain = page
+    else:
+        body = get_sutta_page_body(page)
+        content_html = f"""<div class="suttacentral bilara-text">{body}</div>"""
+        content_plain = null()
 
     return Am.Sutta(
         source_info = x['_id'],
@@ -182,7 +208,7 @@ def get_titles(db: DBHandle, language = 'en') -> dict[str, str]:
     for x in q.result[0]:
         uid = x['uid']
         if uid in titles.keys():
-            print(f"WARN: title for {uid} exists")
+            logger.warn(f"title for {uid} exists")
         else:
             titles[uid] = x['name']
 
@@ -199,6 +225,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
     # Bilara format is newer and edited, we'll prefer that source to html_text.
 
     suttas: dict[str, Am.Sutta] = {}
+    suttas_html_tmpl: dict[str, dict] = {}
 
     get_html_text_aql = '''
     LET docs = (
@@ -217,6 +244,27 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
     )
     RETURN docs
     '''
+
+    get_bilara_text_templates_aql = '''
+    LET docs = (
+        FOR x IN sc_bilara_texts
+            FILTER x.lang == 'pli' && x._key LIKE '%_html'
+            RETURN x
+    )
+    RETURN docs
+    '''
+
+    # collect templates
+    q = db.AQLQuery(get_bilara_text_templates_aql)
+    for r in q.result[0]:
+        # html bilara wrapper JSON
+        if ('file_path' in r.keys() and 'sc_bilara_data/html' in r['file_path']) \
+            and ('muids' in r.keys() and 'html' in r['muids']):
+
+            convert_paths_to_content(r)
+            text_uid_ref = r['uid']
+            if text_uid_ref not in suttas_html_tmpl.keys():
+                suttas_html_tmpl[text_uid_ref] = json.loads(r['text'])
 
     titles = get_titles(db, language)
 
@@ -249,12 +297,20 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
         total_results += len(q.result[0])
 
         for r in q.result[0]:
-            # ignoring comments
+            # ignore site pages and some collections
+            if ('file_path' in r.keys() and '/site/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/xplayground/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/sutta/sa/' in r['file_path']) \
+               or ('file_path' in r.keys() and '/sutta/ma/' in r['file_path']):
+                ignored += 1
+                continue
+
+            # ignore comments
             if 'muids' in r.keys() and 'comment' in r['muids']:
                 ignored += 1
                 continue
 
-            # ignoring html bilara wrapper JSON
+            # html bilara wrapper JSON already collected, skip
             if ('file_path' in r.keys() and 'sc_bilara_data/html' in r['file_path']) \
                 and ('muids' in r.keys() and 'html' in r['muids']):
                 ignored += 1
@@ -263,9 +319,10 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             convert_paths_to_content(r)
             uid = f_uid(r)
             title = f_title(r, titles)
+            tmpl = suttas_html_tmpl.get(r['uid'], None)
 
             if uid not in suttas.keys():
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             elif 'muids' in r.keys() and ('reference' in r['muids'] or 'variant' in r['muids']):
                 # keeping only the 'root' version
@@ -275,23 +332,23 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             elif 'muids' in r.keys() and 'root' in r['muids']:
                 # keeping only the 'root' version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             elif r['_id'].startswith('sc_bilara_texts/') and suttas[uid].source_info.startswith('html_text/'):
                 # keeping the Bilara version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title)
+                suttas[uid] = f_to_sutta(r, title, tmpl)
 
             else:
                 unknown_dup += 1
-                print(f"WARN: Unknown duplicate uid: {uid}")
-                print(r['_id'])
-                print(r['muids'])
-                print(suttas[uid].source_info)
+                logger.warn(f"Unknown duplicate uid: {uid}")
+                logger.warn(r['_id'])
+                logger.warn(r['muids'])
+                logger.warn(suttas[uid].source_info)
 
     n = total_results - ignored - known_dup - unknown_dup
     if len(suttas) != n:
-        print(f"WARN: Count is not adding up: {len(suttas)} != {n}, {total_results} - {ignored} - {known_dup} - {unknown_dup}.")
+        logger.warn(f"Count is not adding up: {len(suttas)} != {n}, {total_results} - {ignored} - {known_dup} - {unknown_dup}.")
 
     # clear source_info, where we temp stored x['_id']
     for k, v in suttas.items():
@@ -317,7 +374,7 @@ def convert_paths_to_content(doc):
                 p = Path(file_path)
 
                 if not p.exists():
-                    print(f"ERROR: File not found: {p}")
+                    logger.error(f"File not found: {p}")
                     doc[to_prop] = None
                 else:
                     with open(p) as f:
@@ -334,8 +391,7 @@ def get_legacy_db(db_path: Path) -> Session:
         Session.configure(bind=engine)
         db_session = Session()
     except Exception as e:
-        logger.error("Can't connect to database.")
-        print(e)
+        logger.error(f"Can't connect to database: {e}")
         exit(1)
 
     return db_session
@@ -344,7 +400,7 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
     for lang in ['en', 'pli']:
         suttas = get_suttas(sc_db, lang)
 
-        print(f"Adding {lang}, count {len(suttas)} ...")
+        logger.info(f"Adding {lang}, count {len(suttas)} ...")
 
         try:
             # TODO: bulk insert errors out
@@ -354,11 +410,10 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
                 appdata_db.commit()
         except Exception as e:
             logger.error(e)
-            print(e)
             exit(1)
 
 def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: Session):
-    print("Adding Nyanatiloka DictWords from legacy dict_words")
+    logger.info("Adding Nyanatiloka DictWords from legacy dict_words")
 
     label = 'NYANAT'
     # create the dictionary
@@ -373,7 +428,6 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
         appdata_db.commit()
     except Exception as e:
         logger.error(e)
-        print(e)
         exit(1)
 
     # get words and commit to appdata db
@@ -405,13 +459,12 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
             appdata_db.commit()
     except Exception as e:
         logger.error(e)
-        print(e)
         exit(1)
 
 def populate_suttas_from_legacy(new_db_session, legacy_db_session):
     a = new_db_session.query(Am.Sutta).all()
 
-    print("Adding Suttas from root_texts")
+    logger.info("Adding Suttas from root_texts")
 
     a = legacy_db_session.execute("SELECT * from root_texts;")
 
@@ -451,10 +504,9 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
             new_db_session.commit()
     except Exception as e:
         logger.error(e)
-        print(e)
         exit(1)
 
-    print("Adding Suttas from traslated_texts")
+    logger.info("Adding Suttas from traslated_texts")
 
     a = legacy_db_session.execute("SELECT * from translated_texts;")
 
@@ -481,23 +533,17 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
             new_db_session.commit()
     except Exception as e:
         logger.error(e)
-        print(e)
         exit(1)
 
-def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path):
+def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: Path, ignore_synonyms = False):
     for d in stardict_base_path.glob("*.zip"):
-        print(d)
+        logger.info(d)
         # use label as the ZIP file name without the .zip extension
         label = os.path.basename(d).replace('.zip', '')
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
-        print(f"Importing {ifo['bookname']} ...")
-        import_stardict_as_new(appdata_db,
-                               'appdata',
-                               None,
-                               paths,
-                               label,
-                               10000)
+        logger.info(f"Importing {ifo['bookname']} ...")
+        import_stardict_as_new(appdata_db, 'appdata', None, paths, label, 10000, ignore_synonyms)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
@@ -517,7 +563,7 @@ def main():
 
     populate_suttas_from_suttacentral(appdata_db, sc_db)
 
-    populate_dict_words_from_stardict(appdata_db, stardict_base_path)
+    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
 if __name__ == "__main__":
     main()

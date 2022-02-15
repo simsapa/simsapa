@@ -10,6 +10,8 @@ load_dotenv()
 
 SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
 
+PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets')
+
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
@@ -20,6 +22,8 @@ SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
+
+TIMER_SPEED = 50
 
 s = os.getenv('USE_TEST_DATA')
 if s is not None and s.lower() == 'true':
@@ -42,3 +46,5 @@ IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
 IS_MAC = (platform.system() == 'Darwin')
 
+READING_TEXT_COLOR = "#1a1a1a" # 90% black
+READING_BACKGROUND_COLOR = "#FAE6B2"

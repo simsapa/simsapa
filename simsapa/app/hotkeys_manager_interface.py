@@ -14,6 +14,9 @@ class HotkeysManagerInterface:
     def unregister_all_hotkeys(self):
         raise NotImplementedError
 
+    def show_word_scan_popup(self):
+        self.actions_manager.show_word_scan_popup()
+
     def lookup_clipboard_in_suttas(self):
         self.actions_manager.lookup_clipboard_in_suttas()
 

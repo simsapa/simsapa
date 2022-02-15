@@ -1,21 +1,20 @@
 from functools import partial
 from typing import List, Optional
-import logging as _logging
 import json
 from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import Qt, QAbstractListModel, QItemSelectionModel
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
+from simsapa import logger
 from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord, UMemo
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoPlainListModel(QAbstractListModel):
@@ -26,7 +25,9 @@ class MemoPlainListModel(QAbstractListModel):
     def data(self, index, role):
         if role == Qt.ItemDataRole.DisplayRole:
             fields = json.loads(self.memos[index.row()].fields_json)
-            text = "\n".join(fields.values())
+            text = " ".join(fields.values())
+            text = text.replace("\n", " ")
+            text = text[0:150] + " ..."
             return text
 
     def rowCount(self, index):
@@ -48,6 +49,7 @@ class HasMemosSidebar:
     _current_word: Optional[UDictWord]
     file_doc: Optional[FileDoc]
     db_doc: Optional[Um.Document]
+    add_memo_button: QtWidgets.QPushButton
     clear_memo_button: QtWidgets.QPushButton
     remove_memo_button: QtWidgets.QPushButton
     rightside_tabs: QtWidgets.QTabWidget
@@ -565,6 +567,15 @@ QListView::item:selected { background-color: %s; color: %s; }
 
     def connect_memos_sidebar_signals(self):
         self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
+
+        self.add_memo_button.setShortcut(QKeySequence("Ctrl+Return"))
+        self.add_memo_button.setToolTip("Ctrl+Return")
+
+        self.front_input.setTabChangesFocus(True)
+        self.back_input.setTabChangesFocus(True)
+
+        # NOTE: register add_memo_button.clicked in the sutta and dict window,
+        # to call content-specific handlers.
 
         self.clear_memo_button \
             .clicked.connect(partial(self.clear_memo))

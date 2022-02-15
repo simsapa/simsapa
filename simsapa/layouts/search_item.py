@@ -34,6 +34,7 @@ class SearchItemWidget(QWidget):
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
+        self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 9pt;")
         self.snippet.setMinimumHeight(25)
         self.snippet.setMaximumHeight(60)
         self.snippet.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)

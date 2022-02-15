@@ -1,0 +1,133 @@
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 500;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 600;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 800;
+  src: url("http://localhost:8000/assets/fonts/abhaya-libre/AbhayaLibreX-ExtraBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-It.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:8000/assets/fonts/source-sans-3/SourceSans3-BoldIt.ttf") format("truetype");
+}
+html, body {
+  height: 100%;
+  color: #1a1a1a;
+  background-color: #FAE6B2;
+}
+
+pre {
+  font-family: serif;
+  white-space: pre-wrap;
+}
+
+.ssp-toolbar {
+  position: fixed;
+  top: 1em;
+  right: 1em;
+  font-size: 0.7rem;
+}
+
+.svg-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+
+html {
+  font-size: 18px;
+  line-height: 1.4;
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 800;
+}
+
+.word-heading h1 {
+  float: left;
+  font-size: 1.2em;
+  color: #282828;
+  padding-top: 20pt;
+  margin-top: 0;
+}
+.word-heading .uid {
+  float: right;
+  font-size: 0.9em;
+  font-style: italic;
+  color: #aaa;
+  padding-top: 20pt;
+  margin-top: 0;
+}
+
+.clear {
+  clear: both;
+}

@@ -1,5 +1,4 @@
 from pathlib import Path
-import logging as _logging
 
 from PyQt5.QtWidgets import QSizePolicy, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -12,8 +11,6 @@ from ..app.file_doc import FileDoc
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord
-
-logger = _logging.getLogger(__name__)
 
 
 class HasLinksSidebar:

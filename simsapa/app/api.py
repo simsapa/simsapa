@@ -1,29 +1,26 @@
 import json
-import logging as _logging
 import re
 import socket
 from typing import Optional
 import falcon
 from wsgiref.simple_server import make_server
 
-from simsapa import APP_QUEUES
-from simsapa.app.helpers import write_log
-
-logger = _logging.getLogger(__name__)
+from simsapa import APP_QUEUES, PACKAGE_ASSETS_DIR
+from simsapa import logger
 
 class QueueResource:
-    def on_get(self, req: falcon.Request, resp: falcon.Response):
-        write_log("Resp: 404 Not Found")
-        resp.status = falcon.HTTP_404
+    # def on_get(self, req: falcon.Request, resp: falcon.Response):
+    #     logger.error("Resp: 404 Not Found")
+    #     resp.status = falcon.HTTP_404
 
     def on_post(self, req: falcon.Request, resp: falcon.Response, queue_id: Optional[str]):
         if req.content_type == 'application/json':
             m = req.get_media(default_when_empty="{}")
             data = json.dumps(m)
-            write_log(data)
+            logger.info("QueueResource.on_post() data: %s" % data)
 
         else:
-            write_log("Resp: 400 Bad Request")
+            logger.error("Resp: 400 Bad Request")
             resp.status = falcon.HTTP_400
             return
 
@@ -32,7 +29,7 @@ class QueueResource:
             return
 
         if queue_id != 'all' and queue_id not in APP_QUEUES.keys():
-            write_log("Resp: 403 Forbidden")
+            logger.error("Resp: 403 Forbidden")
             resp.status = falcon.HTTP_403
             return
 
@@ -42,18 +39,20 @@ class QueueResource:
         else:
             APP_QUEUES[queue_id].put_nowait(data)
 
-        write_log("Resp: 200 OK")
+        logger.info("Resp: 200 OK")
         resp.status = falcon.HTTP_200
 
 def start_server(port=8000):
-    write_log("start_server()")
+    logger.info("start_server()")
 
     app = falcon.App(cors_enable=True)
     queues = QueueResource()
     app.add_route('/queues/{queue_id}', queues)
 
+    app.add_static_route('/assets', PACKAGE_ASSETS_DIR)
+
     with make_server('127.0.0.1', port, app) as httpd:
-        write_log(f'Starting server on port {port}')
+        logger.info(f'Starting server on port {port}')
         httpd.serve_forever()
 
 def find_available_port() -> int:

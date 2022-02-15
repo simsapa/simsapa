@@ -1,13 +1,14 @@
 import os.path
-import logging as _logging
 import shutil
 from typing import Callable, List, Optional, TypedDict
 
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
+from PyQt5.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QMessageBox, QTabWidget
 
+from simsapa import logger
+from simsapa.app.helpers import show_work_in_progress
 from simsapa.app.types import AppData
 
 from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
@@ -17,7 +18,6 @@ from ..app.db import userdata_models as Um
 from ..app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
 from ..app.db.stardict import import_stardict_as_new, import_stardict_update_existing
 
-logger = _logging.getLogger(__name__)
 
 class DictData(TypedDict):
     id: int
@@ -235,6 +235,10 @@ class HasImportStarDictDialog():
         pass
 
     def show_import_from_stardict_dialog(self):
+        show_work_in_progress()
+
+        """
         d = ImportStarDictDialog(self._app_data, self.reinit_index)
         d.accepted.connect(d.do_import)
         d.exec_()
+        """

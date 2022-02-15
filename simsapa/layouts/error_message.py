@@ -1,5 +1,4 @@
 import sys
-import logging as _logging
 from functools import partial
 import pyperclip
 
@@ -7,9 +6,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
                              QPushButton, QLabel, QMainWindow, QSizePolicy)
 
+from simsapa import logger
 from simsapa.app.helpers import get_app_version, get_sys_version
-
-logger = _logging.getLogger(__name__)
 
 
 class ErrorMessageWindow(QMainWindow):

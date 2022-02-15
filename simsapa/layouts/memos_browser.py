@@ -1,22 +1,20 @@
-import logging as _logging
 import json
 import requests
 from functools import partial
 from typing import List, Optional
 
 from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt5.QtWidgets import (QLabel, QMainWindow,  QMessageBox)
+from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow,  QMessageBox)
 from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
 
+from simsapa import logger
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, UMemo
 from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
-
-logger = _logging.getLogger(__name__)
 
 
 class MemoListModel(QAbstractListModel):
@@ -28,6 +26,8 @@ class MemoListModel(QAbstractListModel):
         if role == Qt.ItemDataRole.DisplayRole:
             fields = json.loads(self.memos[index.row()].fields_json)
             text = " ".join(fields.values())
+            text = text.replace("\n", " ")
+            text = text[0:200] + " ..."
             return text
 
     def rowCount(self, index):
@@ -38,9 +38,13 @@ class MemoListModel(QAbstractListModel):
 
 
 class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
+
+    search_input: QLineEdit
+
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
+        logger.info("MemosBrowserWindow()")
 
         self._app_data: AppData = app_data
 
@@ -57,6 +61,9 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
     def _ui_setup(self):
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
+
+        self.front_input.setTabChangesFocus(True)
+        self.back_input.setTabChangesFocus(True)
 
         self.front_input.setFocus()
         self._show_memo_clear()

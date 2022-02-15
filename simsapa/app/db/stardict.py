@@ -1,21 +1,19 @@
 """Stardict related database funcions
 """
 
-import logging as _logging
-
 from typing import Optional, List, TypedDict
 
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.sqlite import insert
 from simsapa.app.db.search import SearchIndexed
+from simsapa.app.helpers import latinize
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
 from simsapa.app.types import UDictWord
+from simsapa import logger
 
 from . import appdata_models as Am
 from . import userdata_models as Um
-
-logger = _logging.getLogger(__name__)
 
 class DbDictEntry(TypedDict):
     word: str
@@ -28,12 +26,19 @@ class DbDictEntry(TypedDict):
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
     # TODO should we check for conflicting uids? generate with meaning count?
     uid = f"{x['word']}/{dictionary_label}".lower()
+
+    # add a Latinized lowercase synonym
+    syn = x['synonyms']
+    latin = latinize(x['word']).lower()
+    if latin not in syn:
+        syn.append(latin)
+
     return DbDictEntry(
         # copy values
         word = x['word'],
         definition_plain = x['definition_plain'],
         definition_html = x['definition_html'],
-        synonyms = ", ".join(x['synonyms']),
+        synonyms = ", ".join(syn),
         # add missing data
         uid = uid,
         dictionary_id = dictionary_id,
@@ -49,7 +54,7 @@ def insert_db_words(db_session,
     # TODO: The user can't see this message. Dialog doesn't update while the
     # import is blocking the GUI.
     # self.msg.setText("Importing ...")
-    print("Importing ...")
+    logger.info("Importing ...")
 
     while inserted <= len(db_words):
         b_start = inserted
@@ -88,13 +93,12 @@ def insert_db_words(db_session,
             db_session.execute(stmt)
             db_session.commit()
         except Exception as e:
-            print(e)
             logger.error(e)
 
         uids.extend(list(map(lambda x: x['uid'], words_batch)))
         inserted += batch_size
         # self.msg.setText(f"Imported {inserted} ...")
-        print(f"Imported {inserted}")
+        logger.info(f"Imported {inserted}")
 
     return uids
 
@@ -104,7 +108,11 @@ def import_stardict_update_existing(db_session,
                                     paths: StarDictPaths,
                                     dictionary_id: int,
                                     label: str,
-                                    batch_size = 1000):
+                                    batch_size = 1000,
+                                    ignore_synonyms = False):
+
+    if ignore_synonyms:
+        paths['syn_path'] = None
 
     words: List[DictEntry] = stardict_to_dict_entries(paths)
     db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
@@ -129,7 +137,11 @@ def import_stardict_as_new(db_session,
                            search_index: Optional[SearchIndexed],
                            paths: StarDictPaths,
                            label: Optional[str] = None,
-                           batch_size = 1000):
+                           batch_size = 1000,
+                           ignore_synonyms = False):
+
+    if ignore_synonyms:
+        paths['syn_path'] = None
 
     # upsert recommended by docs instead of bulk_insert_mappings
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects

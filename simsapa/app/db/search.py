@@ -1,4 +1,3 @@
-import logging as _logging
 import shutil
 from typing import Callable, List, Optional, TypedDict, Union
 import re
@@ -11,12 +10,11 @@ from whoosh.searching import Results, Hit
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
+from simsapa import logger
 from simsapa.app.helpers import compactPlainText, compactRichText
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa import INDEX_DIR
-
-logger = _logging.getLogger(__name__)
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -88,6 +86,19 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         ref = None,
         author = None,
         snippet = snippet,
+        page_number = None,
+    )
+
+def dict_word_to_search_result(x: UDictWord) -> SearchResult:
+    return SearchResult(
+        db_id = x.id, # type: ignore
+        schema_name = x.metadata.schema,
+        table_name = 'dict_words',
+        uid = x.uid, # type: ignore
+        title = x.word, # type: ignore
+        ref = None,
+        author = None,
+        snippet = '',
         page_number = None,
     )
 
@@ -247,9 +258,12 @@ class SearchIndexed:
     def __init__(self):
         self.open_all()
 
+    def has_empty_index(self) -> bool:
+        return (self.suttas_index.is_empty() or self.dict_words_index.is_empty())
+
     def index_all(self, db_session, only_if_empty: bool = False):
         if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
-            print("Indexing suttas ...")
+            logger.info("Indexing suttas ...")
 
             suttas: List[USutta] = db_session.query(Am.Sutta).all()
             self.index_suttas('appdata', suttas)
@@ -258,7 +272,7 @@ class SearchIndexed:
             self.index_suttas('userdata', suttas)
 
         if (not only_if_empty) or (only_if_empty and self.dict_words_index.is_empty()):
-            print("Indexing dict_words ...")
+            logger.info("Indexing dict_words ...")
 
             words: List[UDictWord] = db_session.query(Am.DictWord).all()
             self.index_dict_words('appdata', words)
@@ -283,14 +297,12 @@ class SearchIndexed:
             ix = open_dir(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
             return ix
         except Exception as e:
-            logger.info(f"Can't open the index: {index_name}")
-            print(e)
+            logger.info(f"Can't open the index: {index_name}, {e}")
 
         try:
             ix = create_in(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
         except Exception as e:
-            logger.error(f"Can't create the index: {index_name}")
-            print(e)
+            logger.error(f"Can't create the index: {index_name}, {e}")
             exit(1)
 
         return ix
@@ -333,11 +345,10 @@ class SearchIndexed:
             writer.commit()
 
         except Exception as e:
-            logger.error("Can't index.")
-            print(e)
+            logger.error(f"Can't index: {e}")
 
     def index_dict_words(self, schema_name: str, words: List[UDictWord]):
-        print("index_dict_words()")
+        logger.info(f"index_dict_words('{schema_name}')")
         ix = self.dict_words_index
 
         try:
@@ -372,6 +383,4 @@ class SearchIndexed:
             writer.commit()
 
         except Exception as e:
-            logger.error("Can't index.")
-            print(e)
-
+            logger.error(f"Can't index: {e}")
