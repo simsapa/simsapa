@@ -17,6 +17,7 @@ from sqlalchemy import or_
 
 from simsapa import logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.app.helpers import compactRichText
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
@@ -154,6 +155,12 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         # FIXME paginate results. Too many results hang the UI while rendering.
         self._results = self._results[0:100]
 
+        def _compact_snippet(x: SearchResult) -> SearchResult:
+            x['snippet'] = compactRichText(x['snippet'])
+            return x
+
+        self._results = list(map(_compact_snippet, self._results))
+
         colors = ["#ffffff", "#efefef"]
 
         for idx, x in enumerate(self._results):
@@ -204,9 +211,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 db_id=x.id, # type: ignore
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.suttas",
-                uid=None,
+                uid=str(x.uid),
                 title=title,
-                ref=None,
+                ref=str(x.sutta_ref),
                 author=None,
                 snippet=snippet,
                 page_number=None,
