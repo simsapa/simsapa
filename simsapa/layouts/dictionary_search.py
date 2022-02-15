@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import IS_WINDOWS, SIMSAPA_PACKAGE_DIR, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
@@ -553,14 +553,16 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.content_html.addAction(lookupSelectionInDictionary)
 
-        icon = QIcon()
-        icon.addPixmap(QPixmap(":/new-window"))
+        if not IS_WINDOWS:
+            # FIXME app not responding
+            icon = QIcon()
+            icon.addPixmap(QPixmap(":/new-window"))
 
-        open_new_action = QAction("Open in New Window", self.content_html)
-        open_new_action.setIcon(icon)
-        open_new_action.triggered.connect(partial(self._handle_open_content_new))
+            open_new_action = QAction("Open in New Window", self.content_html)
+            open_new_action.setIcon(icon)
+            open_new_action.triggered.connect(partial(self._handle_open_content_new))
 
-        self.content_html.addAction(open_new_action)
+            self.content_html.addAction(open_new_action)
 
         self.devToolsAction = QAction("Show Inspector", self.content_html)
         self.devToolsAction.setCheckable(True)

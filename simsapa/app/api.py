@@ -1,5 +1,4 @@
 import json
-import re
 import socket
 from typing import Optional
 import falcon
@@ -25,6 +24,7 @@ class QueueResource:
             return
 
         if queue_id is None:
+            logger.error("Resp: 404 Not Found")
             resp.status = falcon.HTTP_404
             return
 
