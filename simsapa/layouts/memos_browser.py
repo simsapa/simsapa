@@ -1,3 +1,4 @@
+import os
 import json
 import requests
 from functools import partial
@@ -59,6 +60,13 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self.statusbar.showMessage("Ready", 3000)
 
     def _ui_setup(self):
+        s = os.getenv('ENABLE_WIP_FEATURES')
+        if s is not None and s.lower() == 'true':
+            pass
+        else:
+            self.search_input.setVisible(False)
+            self.search_button.setVisible(False)
+
         self.status_msg = QLabel("")
         self.statusbar.addPermanentWidget(self.status_msg)
 
