@@ -49,6 +49,7 @@ class AppWindows:
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
                 msg = json.loads(s)
+                logger.info("Handle message: %s" % msg)
 
                 if msg['action'] == 'show_word_scan_popup':
                     self._toggle_word_scan_popup()

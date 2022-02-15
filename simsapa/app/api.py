@@ -17,7 +17,7 @@ class QueueResource:
         if req.content_type == 'application/json':
             m = req.get_media(default_when_empty="{}")
             data = json.dumps(m)
-            logger.info(data)
+            logger.info("QueueResource.on_post() data: %s" % data)
 
         else:
             logger.error("Resp: 400 Bad Request")
