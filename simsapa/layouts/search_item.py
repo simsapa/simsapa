@@ -1,4 +1,5 @@
 from PyQt5.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
+from simsapa import IS_MAC
 
 from simsapa.app.db.search import SearchResult
 
@@ -34,7 +35,11 @@ class SearchItemWidget(QWidget):
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
-        self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 9pt;")
+        if IS_MAC:
+            self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 10pt;")
+        else:
+            self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 9pt;")
+
         self.snippet.setMinimumHeight(25)
         self.snippet.setMaximumHeight(60)
         self.snippet.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
