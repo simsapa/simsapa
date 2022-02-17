@@ -138,7 +138,6 @@ class WordScanPopup(QDialog, HasResultsList):
         self.resize_button.setFixedSize(20, 20)
         self.resize_button.setStyleSheet(button_style)
         self.resize_button.setIcon(icon)
-        self.resize_button.setToolTip("Resize the window: check resize button, left-click, hold and drag, uncheck resize button.")
 
         spacer = QSpacerItem(100, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -198,8 +197,8 @@ class WordScanPopup(QDialog, HasResultsList):
 </p>
 """
         page_html = self.queries.content_html_page(body=msg, css_extra=CSS_EXTRA)
+        self._set_content_html(page_html)
 
-        self.content_html.setHtml(page_html)
         self.content_html.show()
         self.content_layout.addWidget(self.content_html, 100)
 
@@ -253,6 +252,14 @@ class WordScanPopup(QDialog, HasResultsList):
     # prevent accumulated cursor shape bug
     def enterEvent(self, e):
         self.__set_cursor_shape_for_current_point(e.pos())
+
+        self.search_input.setFocus()
+        self.search_input.grabKeyboard()
+
+        return super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self.search_input.releaseKeyboard()
         return super().enterEvent(e)
 
     def __set_cursor_shape_for_current_point(self, p):
@@ -318,7 +325,16 @@ class WordScanPopup(QDialog, HasResultsList):
         self.oldPos = e.globalPos()
 
     def _set_content_html(self, html: str):
+        self._current_html = html
         self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+
+    def _show_temp_content_msg(self, html_body: str):
+        self.tabs.setCurrentIndex(0)
+        page_html = self.queries.content_html_page(body=html_body, css_extra=CSS_EXTRA)
+        self.content_html.setHtml(page_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+
+    def _show_current_html(self):
+        self.content_html.setHtml(self._current_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _render_words(self, words: List[UDictWord]):
         if len(words) == 0:
@@ -514,9 +530,20 @@ class WordScanPopup(QDialog, HasResultsList):
         if self.drag_button.isChecked():
             self.drag_button.grabMouse()
             button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+
+            msg = """
+            <h2>Moving the window</h2>
+            <ol>
+                <li>Check the move button.</li>
+                <li>Left-click, hold and drag.</li>
+                <li>Uncheck the move button.</li>
+            </ol>
+            """
+            self._show_temp_content_msg(msg)
         else:
             self.drag_button.releaseMouse()
             button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+            self._show_current_html()
 
         self.drag_button.setStyleSheet(button_style)
 
@@ -524,9 +551,20 @@ class WordScanPopup(QDialog, HasResultsList):
         if self.resize_button.isChecked():
             self.resize_button.grabMouse()
             button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+
+            msg = """
+            <h2>Resizing the window</h2>
+            <ol>
+                <li>Check the resize button.</li>
+                <li>Left-click, hold and drag.</li>
+                <li>Uncheck the resize button.</li>
+            </ol>
+            """
+            self._show_temp_content_msg(msg)
         else:
             self.resize_button.releaseMouse()
             button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+            self._show_current_html()
 
         self.resize_button.setStyleSheet(button_style)
 
