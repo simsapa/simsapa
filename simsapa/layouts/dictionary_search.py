@@ -570,6 +570,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.content_html.addAction(self.devToolsAction)
 
+    def _handle_show_find_panel(self):
+        self.find_toolbar.show()
+        self._find_panel.search_input.setFocus()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -599,7 +603,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             .triggered.connect(partial(self._handle_paste))
 
         self.action_Find_in_Page \
-            .triggered.connect(self.find_toolbar.show)
+            .triggered.connect(self._handle_show_find_panel)
 
         self.action_Import_from_StarDict \
             .triggered.connect(partial(self.show_import_from_stardict_dialog))
