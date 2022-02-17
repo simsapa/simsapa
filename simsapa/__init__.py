@@ -48,3 +48,4 @@ IS_MAC = (platform.system() == 'Darwin')
 
 READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
+DARK_READING_BACKGROUND_COLOR = "#F0B211"

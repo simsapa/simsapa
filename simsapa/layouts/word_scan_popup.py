@@ -1,12 +1,12 @@
 from functools import partial
 import math
 from typing import List, Optional
-from PyQt5.QtCore import QUrl, Qt
-from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QKeySequence, QPixmap, QStandardItemModel, QStandardItem
+from PyQt5.QtCore import QPoint, QUrl, Qt
+from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QAction, QCompleter, QDesktopWidget, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -49,22 +49,11 @@ class WordScanPopup(QDialog, HasResultsList):
         self._restore_size_pos()
 
         flags = Qt.WindowType.Dialog | \
+            Qt.WindowType.CustomizeWindowHint | \
             Qt.WindowType.WindowStaysOnTopHint | \
-            Qt.WindowType.FramelessWindowHint
-
-        # NOTE On Linux this succeeds to make the window stay 'always on top',
-        # but loses system resize and drag, plus the window appears on every
-        # virtual screen.
-        #
-        # The .startSystemResize() and .startSystemMove() have to be
-        # reimplemented for it to work.
-
-        # flags = Qt.WindowType.Dialog | \
-        #     Qt.WindowType.CustomizeWindowHint | \
-        #     Qt.WindowType.WindowStaysOnTopHint | \
-        #     Qt.WindowType.FramelessWindowHint | \
-        #     Qt.WindowType.BypassWindowManagerHint | \
-        #     Qt.WindowType.X11BypassWindowManagerHint
+            Qt.WindowType.FramelessWindowHint | \
+            Qt.WindowType.BypassWindowManagerHint | \
+            Qt.WindowType.X11BypassWindowManagerHint
 
         self.setWindowFlags(flags) # type: ignore
 
@@ -74,11 +63,13 @@ class WordScanPopup(QDialog, HasResultsList):
         self.setStyleSheet("#WordScanPopup { background-color: %s; border: 1px solid #ababab; }" % READING_BACKGROUND_COLOR)
 
         self._resized = False
-        self._margin = 5
+        self._left_pressed = False
+        self._margin = 8
         self._cursor = QCursor()
         self._dragMenuBarOnlyWayToMoveWindowFlag = False
 
         self.__init_position()
+        self.oldPos = self.pos()
 
         self._ui_setup()
         self._connect_signals()
@@ -118,19 +109,47 @@ class WordScanPopup(QDialog, HasResultsList):
         icon = QIcon()
         icon.addPixmap(QPixmap(":/close"))
 
+        button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+
         self.close_button = QPushButton()
         self.close_button.setFixedSize(20, 20)
-        self.close_button.setStyleSheet("QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR)
+        self.close_button.setStyleSheet(button_style)
         self.close_button.setIcon(icon)
 
         self.close_button.setShortcut(QKeySequence("Ctrl+F6"))
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/drag"))
+
+        self.drag_button = QPushButton()
+        self.drag_button.setCheckable(True)
+        self.drag_button.setFixedSize(20, 20)
+        self.drag_button.setStyleSheet(button_style)
+        self.drag_button.setIcon(icon)
+
+        # FIXME tooltip doesn't activate, show in window content
+        self.drag_button.setToolTip("Move the window: check move button, left-click, hold and drag, uncheck move button.")
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/resize"))
+
+        self.resize_button = QPushButton()
+        self.resize_button.setCheckable(True)
+        self.resize_button.setFixedSize(20, 20)
+        self.resize_button.setStyleSheet(button_style)
+        self.resize_button.setIcon(icon)
+        self.resize_button.setToolTip("Resize the window: check resize button, left-click, hold and drag, uncheck resize button.")
 
         spacer = QSpacerItem(100, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         if IS_MAC:
             top_buttons_box.addWidget(self.close_button)
             top_buttons_box.addItem(spacer)
+            top_buttons_box.addWidget(self.resize_button)
+            top_buttons_box.addWidget(self.drag_button)
         else:
+            top_buttons_box.addWidget(self.drag_button)
+            top_buttons_box.addWidget(self.resize_button)
             top_buttons_box.addItem(spacer)
             top_buttons_box.addWidget(self.close_button)
 
@@ -171,6 +190,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self.content_html.setPage(ReaderWebEnginePage(self))
 
         self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
         msg = """
 <p>
     Select a word or phrase and copy to clipboard with Ctrl+C.
@@ -195,19 +215,39 @@ class WordScanPopup(QDialog, HasResultsList):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            if self._resized:
-                self._resize()
-            else:
-                if self._dragMenuBarOnlyWayToMoveWindowFlag:
-                    pass
-                else:
-                    self._move()
+    def mousePressEvent(self, e: QMouseEvent):
+        self.oldPos = e.globalPos()
+        self._left_pressed = (e.button() == Qt.MouseButton.LeftButton)
+        # if e.button() == Qt.MouseButton.LeftButton:
+        #     if self._resized:
+        #         self._resize()
+        #     else:
+        #         if self._dragMenuBarOnlyWayToMoveWindowFlag:
+        #             pass
+        #         else:
+        #             self._move()
         return super().mousePressEvent(e)
 
-    def mouseMoveEvent(self, e):
+    def mouseReleaseEvent(self, e: QMouseEvent):
+        self._left_pressed = not (e.button() == Qt.MouseButton.LeftButton)
+        return super().mouseReleaseEvent(e)
+
+    def mouseMoveEvent(self, e: QMouseEvent):
         self.__set_cursor_shape_for_current_point(e.pos())
+
+        is_resizing_cursor_shape = (self._cursor.shape() == Qt.CursorShape.SizeBDiagCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeFDiagCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeHorCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeVerCursor)
+
+        if self.drag_button.isChecked() \
+           or (not self.resize_button.isChecked() and self._left_pressed and self._cursor.shape() == Qt.CursorShape.ClosedHandCursor):
+            self._move(e)
+
+        elif self.resize_button.isChecked() \
+           or (not self.drag_button.isChecked() and self._left_pressed and is_resizing_cursor_shape):
+            self._resize(e)
+
         return super().mouseMoveEvent(e)
 
     # prevent accumulated cursor shape bug
@@ -245,13 +285,10 @@ class WordScanPopup(QDialog, HasResultsList):
             self.__bottom = abs(y - (y2 + y1)) <= self._margin # far bottom
 
             # set the cursor shape based on flag above
-            # not using the top edge and corners, to allow space for dragging
             if self.__top and self.__left:
-                pass
-                # self._cursor.setShape(Qt.CursorShape.SizeFDiagCursor)
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
             elif self.__top and self.__right:
-                pass
-                # self._cursor.setShape(Qt.CursorShape.SizeBDiagCursor)
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
             elif self.__bottom and self.__left:
                 self._cursor.setShape(Qt.CursorShape.SizeBDiagCursor)
             elif self.__bottom and self.__right:
@@ -259,8 +296,7 @@ class WordScanPopup(QDialog, HasResultsList):
             elif self.__left:
                 self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
             elif self.__top:
-                pass
-                # self._cursor.setShape(Qt.CursorShape.SizeVerCursor)
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
             elif self.__right:
                 self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
             elif self.__bottom:
@@ -269,33 +305,17 @@ class WordScanPopup(QDialog, HasResultsList):
 
         self._resized = not self._resized
 
-    def _resize(self):
-        window = self.windowHandle()
-        # reshape cursor for resize
-        if self._cursor.shape() == Qt.CursorShape.SizeHorCursor:
-            if self.__left:
-                window.startSystemResize(Qt.Edge.LeftEdge)
-            elif self.__right:
-                window.startSystemResize(Qt.Edge.RightEdge)
-        elif self._cursor.shape() == Qt.CursorShape.SizeVerCursor:
-            if self.__top:
-                window.startSystemResize(Qt.Edge.TopEdge)
-            elif self.__bottom:
-                window.startSystemResize(Qt.Edge.BottomEdge)
-        elif self._cursor.shape() == Qt.CursorShape.SizeBDiagCursor:
-            if self.__top and self.__right:
-                window.startSystemResize(Qt.Edge.TopEdge | Qt.Edge.RightEdge) # type: ignore
-            elif self.__bottom and self.__left:
-                window.startSystemResize(Qt.Edge.BottomEdge | Qt.Edge.LeftEdge) # type: ignore
-        elif self._cursor.shape() == Qt.CursorShape.SizeFDiagCursor:
-            if self.__top and self.__left:
-                window.startSystemResize(Qt.Edge.TopEdge | Qt.Edge.LeftEdge) # type: ignore
-            elif self.__bottom and self.__right:
-                window.startSystemResize(Qt.Edge.BottomEdge | Qt.Edge.RightEdge) # type: ignore
+    def _resize(self, e: QMouseEvent):
+        delta = QPoint(e.globalPos() - self.oldPos)
+        size = self.rect()
+        self.resize(size.width() + delta.x(),
+                    size.height() + delta.y())
+        self.oldPos = e.globalPos()
 
-    def _move(self):
-        window = self.windowHandle()
-        window.startSystemMove()
+    def _move(self, e: QMouseEvent):
+        delta = QPoint(e.globalPos() - self.oldPos)
+        self.move(self.x() + delta.x(), self.y() + delta.y())
+        self.oldPos = e.globalPos()
 
     def _set_content_html(self, html: str):
         self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
@@ -490,6 +510,26 @@ class WordScanPopup(QDialog, HasResultsList):
             self._handle_query(min_length=4)
             self._handle_exact_query(min_length=4)
 
+    def _handle_drag_button(self):
+        if self.drag_button.isChecked():
+            self.drag_button.grabMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+        else:
+            self.drag_button.releaseMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+
+        self.drag_button.setStyleSheet(button_style)
+
+    def _handle_resize_button(self):
+        if self.resize_button.isChecked():
+            self.resize_button.grabMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+        else:
+            self.resize_button.releaseMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+
+        self.resize_button.setStyleSheet(button_style)
+
     def _handle_close_button(self):
         if self._app_data.actions_manager is not None:
             self._app_data.actions_manager.show_word_scan_popup()
@@ -508,4 +548,6 @@ class WordScanPopup(QDialog, HasResultsList):
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
+        self.drag_button.clicked.connect(partial(self._handle_drag_button))
+        self.resize_button.clicked.connect(partial(self._handle_resize_button))
         self.close_button.clicked.connect(partial(self._handle_close_button))
