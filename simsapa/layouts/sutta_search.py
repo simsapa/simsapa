@@ -521,6 +521,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             n += 1
 
     def _add_related_tabs(self, sutta: USutta):
+        self.sutta_tabs.setCurrentIndex(0)
         self._remove_related_tabs()
 
         # read state from the window action, not from app_data.app_settings, b/c
