@@ -239,16 +239,20 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         def to_search_result(x: UDictWord):
             snippet = ''
             if x.definition_html:
-                snippet = x.definition_html[0:400].strip()
+                snippet = compactRichText(str(x.definition_html))
+                snippet = snippet[0:400]
             elif x.definition_plain:
                 snippet = x.definition_plain[0:400].strip()
 
             return SearchResult(
-                title=x.word.strip(),
-                snippet=snippet,
+                db_id=x.id, # type: ignore
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.dict_words",
-                id=x.id, # type: ignore
+                uid=str(x.uid),
+                title=str(x.word),
+                ref=None,
+                author=None,
+                snippet=snippet,
                 page_number=None,
             )
 
