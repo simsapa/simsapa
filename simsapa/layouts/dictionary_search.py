@@ -41,7 +41,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
     content_layout: QVBoxLayout
-    content_html: QWebEngineView
+    qwe: QWebEngineView
     _app_data: AppData
     _results: List[SearchResult]
     _autocomplete_model: QStandardItemModel
@@ -90,7 +90,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.init_links_sidebar()
         self.init_stardict_import_dialog()
 
-        self._setup_content_html_context_menu()
+        self._setup_qwe_context_menu()
 
         self.statusbar.showMessage("Ready", 3000)
 
@@ -119,7 +119,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
             self._handle_query()
 
     def _get_selection(self) -> Optional[str]:
-        text = self.content_html.selectedText()
+        text = self.qwe.selectedText()
         # U+2029 Paragraph Separator to blank line
         text = text.replace('\u2029', "\n\n")
         text = text.strip()
@@ -201,7 +201,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         setup_info_button(self.search_extras, self)
 
         self._setup_pali_buttons()
-        self._setup_content_html()
+        self._setup_qwe()
 
         self.search_input.setFocus()
 
@@ -213,20 +213,20 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
         self.find_toolbar.hide()
 
-    def _setup_content_html(self):
-        self.content_html = QWebEngineView()
-        self.content_html.setPage(ReaderWebEnginePage(self))
+    def _setup_qwe(self):
+        self.qwe = QWebEngineView()
+        self.qwe.setPage(ReaderWebEnginePage(self))
 
-        self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_html.setHtml(self.queries.content_html_page(body=''))
-        self.content_html.show()
-        self.content_layout.addWidget(self.content_html, 100)
+        self.qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qwe.setHtml(self.queries.render_html_page(body=''))
+        self.qwe.show()
+        self.content_layout.addWidget(self.qwe, 100)
 
         # Enable dev tools
-        self.content_html.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        self.content_html.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -346,8 +346,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         res = self.queries.word_exact_matches(query)
         self._render_words(res)
 
-    def _set_content_html(self, html: str):
-        self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+    def _set_qwe_html(self, html: str):
+        self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _add_recent(self, word: UDictWord):
         # de-duplicate: if item already exists, remove it
@@ -368,7 +368,7 @@ QWidget:focus { border: 1px solid #1092C3; }
                 self.statusBar().showMessage('Not found')
             else:
                 self.statusBar().showMessage('')
-        self.content_html.findText(text, flag, callback)
+        self.qwe.findText(text, flag, callback)
 
     def _handle_result_select(self):
         selected_idx = self.results_list.currentRow()
@@ -395,7 +395,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         page_html = self.queries.words_to_html_page(words)
 
-        self._set_content_html(page_html)
+        self._set_qwe_html(page_html)
 
     def _show_word(self, word: UDictWord):
         self._current_words = [word]
@@ -406,12 +406,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         word_html = self.queries.get_word_html(word)
 
-        page_html = self.queries.content_html_page(
+        page_html = self.queries.render_html_page(
             body = word_html['body'],
             css_head = word_html['css'],
             js_head = word_html['js'])
 
-        self._set_content_html(page_html)
+        self._set_qwe_html(page_html)
 
     def show_network_graph(self, word: UDictWord):
         self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
@@ -510,9 +510,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self.devToolsAction.isChecked():
             self.dev_view = QWebEngineView()
             self.content_layout.addWidget(self.dev_view, 100)
-            self.content_html.page().setDevToolsPage(self.dev_view.page())
+            self.qwe.page().setDevToolsPage(self.dev_view.page())
         else:
-            self.content_html.page().devToolsPage().deleteLater()
+            self.qwe.page().devToolsPage().deleteLater()
             self.dev_view.deleteLater()
 
     def _handle_open_content_new(self):
@@ -528,47 +528,47 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             logger.warn("Sutta is not set")
 
-    def _setup_content_html_context_menu(self):
-        self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+    def _setup_qwe_context_menu(self):
+        self.qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
-        copyAction = QAction("Copy", self.content_html)
+        copyAction = QAction("Copy", self.qwe)
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
         copyAction.triggered.connect(partial(self._handle_copy))
 
-        self.content_html.addAction(copyAction)
+        self.qwe.addAction(copyAction)
 
-        memoAction = QAction("Create Memo", self.content_html)
+        memoAction = QAction("Create Memo", self.qwe)
         memoAction.setShortcut(QKeySequence("Ctrl+M"))
         memoAction.triggered.connect(partial(self.handle_create_memo_for_dict_word))
 
-        self.content_html.addAction(memoAction)
+        self.qwe.addAction(memoAction)
 
-        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", self.content_html)
+        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", self.qwe)
         lookupSelectionInSuttas.triggered.connect(partial(self._lookup_selection_in_suttas))
 
-        self.content_html.addAction(lookupSelectionInSuttas)
+        self.qwe.addAction(lookupSelectionInSuttas)
 
-        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", self.content_html)
+        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", self.qwe)
         lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
 
-        self.content_html.addAction(lookupSelectionInDictionary)
+        self.qwe.addAction(lookupSelectionInDictionary)
 
         if not IS_WINDOWS:
             # FIXME app not responding
             icon = QIcon()
             icon.addPixmap(QPixmap(":/new-window"))
 
-            open_new_action = QAction("Open in New Window", self.content_html)
+            open_new_action = QAction("Open in New Window", self.qwe)
             open_new_action.setIcon(icon)
             open_new_action.triggered.connect(partial(self._handle_open_content_new))
 
-            self.content_html.addAction(open_new_action)
+            self.qwe.addAction(open_new_action)
 
-        self.devToolsAction = QAction("Show Inspector", self.content_html)
+        self.devToolsAction = QAction("Show Inspector", self.qwe)
         self.devToolsAction.setCheckable(True)
         self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
 
-        self.content_html.addAction(self.devToolsAction)
+        self.qwe.addAction(self.devToolsAction)
 
     def _handle_show_find_panel(self):
         self.find_toolbar.show()

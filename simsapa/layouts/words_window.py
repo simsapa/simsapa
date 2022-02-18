@@ -56,12 +56,12 @@ class WordsWindow(QMainWindow):
 
         return results
 
-    def set_content_html(self, html: str):
+    def set_qwe_html(self, html: str):
         self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def render_words_content(self):
         html = self.queries.words_to_html_page(self.words)
-        self.set_content_html(html)
+        self.set_qwe_html(html)
 
     def _ui_setup(self):
         self._central_widget = QWidget(self)

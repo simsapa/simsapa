@@ -23,9 +23,15 @@ class MemoDialog(QDialog):
 
     accepted = pyqtSignal(dict) # type: ignore
 
-    def __init__(self, front_text='', back_text=''):
+    def __init__(self, front_text: Optional[str] = None, back_text: Optional[str] = None):
         super().__init__()
         self.setWindowTitle("Create Memo")
+
+        if front_text is None:
+            front_text = ''
+
+        if back_text is None:
+            back_text = ''
 
         self.front = QPlainTextEdit(front_text)
         self.front.setMinimumSize(400, 200)
@@ -88,18 +94,18 @@ class HasMemoDialog:
     back: QPlainTextEdit
     features: List[str] = []
     memos_list: QListView
-    _current_word: Optional[UDictWord]
+    _current_words: List[UDictWord]
     file_doc: Optional[FileDoc]
     db_doc: Optional[Um.Document]
     clear_memo_button: QtWidgets.QPushButton
     remove_memo_button: QtWidgets.QPushButton
     rightside_tabs: QtWidgets.QTabWidget
     memos_tab_idx: int
-    content_html: QWebEngineView
     model: MemoPlainListModel
     update_memos_list: Callable
     sutta_tabs: QTabWidget
     _get_active_tab: Callable
+    _get_selection: Callable
     sutta_tab: SuttaTabWidget
     _related_tabs: List[SuttaTabWidget]
 
@@ -175,11 +181,13 @@ class HasMemoDialog:
             self.update_memos_list()
 
     def handle_create_memo_for_dict_word(self):
-        if self._current_word is None:
+        if len(self._current_words) == 0:
             logger.error("Word is not set")
             return
 
-        text = self.content_html.selectedText()
+        text = self._get_selection()
+        if text is None:
+            text = ''
 
         deck = self._app_data.db_session.query(Um.Deck).first()
         if deck is None:
@@ -208,14 +216,14 @@ class HasMemoDialog:
             self._app_data.db_session.add(memo)
             self._app_data.db_session.commit()
 
-            schema = self._current_word.metadata.schema
+            if len(self._current_words) > 0:
 
-            if self._current_word is not None:
+                schema = self._current_words[0].metadata.schema
 
                 memo_assoc = Um.MemoAssociation(
                     memo_id=memo.id,
                     associated_table=f'{schema}.dict_words',
-                    associated_id=self._current_word.id,
+                    associated_id=self._current_words[0].id,
                 )
 
                 self._app_data.db_session.add(memo_assoc)

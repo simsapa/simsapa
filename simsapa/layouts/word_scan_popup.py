@@ -19,7 +19,7 @@ class WordScanPopup(QDialog, HasResultsList):
 
     search_input: QLineEdit
     content_layout: QVBoxLayout
-    content_html: QWebEngineView
+    qwe: QWebEngineView
     _app_data: AppData
     _results: List[SearchResult]
     _clipboard: Optional[QClipboard]
@@ -184,11 +184,11 @@ class WordScanPopup(QDialog, HasResultsList):
 
         self._setup_search_tabs()
 
-    def _setup_content_html(self):
-        self.content_html = QWebEngineView()
-        self.content_html.setPage(ReaderWebEnginePage(self))
+    def _setup_qwe(self):
+        self.qwe = QWebEngineView()
+        self.qwe.setPage(ReaderWebEnginePage(self))
 
-        self.content_html.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         msg = """
 <p>
@@ -196,11 +196,11 @@ class WordScanPopup(QDialog, HasResultsList):
     When the clipboard content changes, this window will display dictionary lookup results.
 </p>
 """
-        page_html = self.queries.content_html_page(body=msg, css_extra=CSS_EXTRA)
-        self._set_content_html(page_html)
+        page_html = self.queries.render_html_page(body=msg, css_extra=CSS_EXTRA)
+        self._set_qwe_html(page_html)
 
-        self.content_html.show()
-        self.content_layout.addWidget(self.content_html, 100)
+        self.qwe.show()
+        self.content_layout.addWidget(self.qwe, 100)
 
     def __init_position(self):
         self.__top = False
@@ -324,24 +324,24 @@ class WordScanPopup(QDialog, HasResultsList):
         self.move(self.x() + delta.x(), self.y() + delta.y())
         self.oldPos = e.globalPos()
 
-    def _set_content_html(self, html: str):
+    def _set_qwe_html(self, html: str):
         self._current_html = html
-        self.content_html.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+        self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_temp_content_msg(self, html_body: str):
         self.tabs.setCurrentIndex(0)
-        page_html = self.queries.content_html_page(body=html_body, css_extra=CSS_EXTRA)
-        self.content_html.setHtml(page_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+        page_html = self.queries.render_html_page(body=html_body, css_extra=CSS_EXTRA)
+        self.qwe.setHtml(page_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_current_html(self):
-        self.content_html.setHtml(self._current_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
+        self.qwe.setHtml(self._current_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _render_words(self, words: List[UDictWord]):
         if len(words) == 0:
             return
 
         page_html = self.queries.words_to_html_page(words, CSS_EXTRA)
-        self._set_content_html(page_html)
+        self._set_qwe_html(page_html)
 
     def _setup_search_tabs(self):
         self.tabs_layout = QVBoxLayout()
@@ -366,7 +366,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self.content_layout = QVBoxLayout()
         self.tab_word.setLayout(self.content_layout)
 
-        self._setup_content_html()
+        self._setup_qwe()
 
     def _setup_results_tab(self):
         self.results_tab = QWidget()
@@ -417,13 +417,13 @@ class WordScanPopup(QDialog, HasResultsList):
     def _show_word(self, word: UDictWord):
         word_html = self.queries.get_word_html(word)
 
-        page_html = self.queries.content_html_page(
+        page_html = self.queries.render_html_page(
             body = word_html['body'],
             css_head = word_html['css'],
             css_extra = CSS_EXTRA,
             js_head = word_html['js'])
 
-        self._set_content_html(page_html)
+        self._set_qwe_html(page_html)
 
     def _show_word_by_bword_url(self, url: QUrl):
         # FIXME encoding is wrong

@@ -52,7 +52,7 @@ class SuttaTabWidget(QWidget):
 
         self.qwe.addAction(self.devToolsAction)
 
-    def set_content_html(self, html: str):
+    def set_qwe_html(self, html: str):
         self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def render_sutta_content(self):
@@ -68,7 +68,7 @@ class SuttaTabWidget(QWidget):
 
         html = html_page(content, self.api_url)
 
-        self.set_content_html(html)
+        self.set_qwe_html(html)
 
     def _toggle_dev_tools_inspector(self):
         if self.devToolsAction.isChecked():

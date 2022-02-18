@@ -108,7 +108,7 @@ class DictionaryQueries:
             if js_sum not in page_js.keys():
                 page_js[js_sum] = word_html['js']
 
-        page_html = self.content_html_page(
+        page_html = self.render_html_page(
             body = "\n\n".join(page_body.values()),
             css_head = "\n\n".join(page_css.values()),
             css_extra = css_extra,
@@ -116,7 +116,7 @@ class DictionaryQueries:
 
         return page_html
 
-    def content_html_page(self,
+    def render_html_page(self,
                           body: str,
                           css_head: str = '',
                           css_extra: Optional[str] = None,

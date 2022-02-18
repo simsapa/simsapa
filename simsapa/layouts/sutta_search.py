@@ -42,7 +42,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
     content_layout: QVBoxLayout
-    content_html: QWebEngineView
     _app_data: AppData
     _autocomplete_model: QStandardItemModel
     sutta_tabs: QTabWidget
@@ -230,11 +229,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.sutta_tabs.addTab(self.sutta_tab, "Sutta")
 
         html = html_page('', self._app_data.api_url)
-        self.sutta_tab.set_content_html(html)
+        self.sutta_tab.set_qwe_html(html)
 
         self.sutta_tabs_layout.addWidget(self.sutta_tabs)
 
-        self.content_html = self.sutta_tab.qwe
         self.content_layout = self.sutta_tab._layout
 
     def _new_webengine(self) -> QWebEngineView:
@@ -249,7 +247,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
         qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
 
-        self._setup_webengine_context_menu(qwe)
+        self._setup_qwe_context_menu(qwe)
 
         return qwe
 
@@ -386,8 +384,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.sort(0)
 
-    def _set_content_html(self, html: str):
-        self.sutta_tab.set_content_html(html)
+    def _set_qwe_html(self, html: str):
+        self.sutta_tab.set_qwe_html(html)
 
     def _add_recent(self, sutta: USutta):
         # de-duplicate: if item already exists, remove it
@@ -598,7 +596,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._append_to_query(s)
             self._handle_query()
 
-    def _setup_webengine_context_menu(self, qwe: QWebEngineView):
+    def _setup_qwe_context_menu(self, qwe: QWebEngineView):
         qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         copyAction = QAction("Copy", qwe)
