@@ -41,7 +41,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     palibuttons_frame: QFrame
     search_input: QLineEdit
     toggle_pali_btn: QPushButton
-    content_layout: QVBoxLayout
     _app_data: AppData
     _autocomplete_model: QStandardItemModel
     sutta_tabs: QTabWidget
@@ -232,8 +231,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.sutta_tab.set_qwe_html(html)
 
         self.sutta_tabs_layout.addWidget(self.sutta_tabs)
-
-        self.content_layout = self.sutta_tab._layout
 
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
