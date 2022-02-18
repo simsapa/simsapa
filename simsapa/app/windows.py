@@ -180,6 +180,7 @@ class AppWindows:
         if self.word_scan_popup is None:
             self.word_scan_popup = WordScanPopup(self._app_data)
             self.word_scan_popup.show()
+            self.word_scan_popup.activateWindow()
 
         else:
             self.word_scan_popup.close()
