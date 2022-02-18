@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
-from simsapa import IS_MAC
+from simsapa import IS_MAC, DbSchemaName
 
 from simsapa.app.db.search import SearchResult
 
@@ -81,7 +81,7 @@ class SearchItemWidget(QWidget):
         if r['uid'] is not None:
             details = r['uid']
 
-        if r['schema_name'] == 'userdata':
+        if r['schema_name'] == DbSchemaName.UserData.value:
             details += ' (u)'
 
         self.setDetails(f"{style}<span class='wrap'>{details}</span>")

@@ -5,14 +5,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
-from simsapa import logger
+from simsapa import DbSchemaName
 
 # -------------------------------------------------------------------------
 # NOTE: The schema label identifies the attached database. This is the only
 # difference between appdata_models.py and userdata_models.py.
 # -------------------------------------------------------------------------
 
-metadata = MetaData(schema='appdata')
+metadata = MetaData(schema=DbSchemaName.AppData.value)
 Base = declarative_base(metadata=metadata)
 
 assoc_sutta_authors = Table(

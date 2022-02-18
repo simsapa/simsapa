@@ -10,7 +10,7 @@ from whoosh.searching import Results, Hit
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import compactPlainText, compactRichText
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -266,19 +266,19 @@ class SearchIndexed:
             logger.info("Indexing suttas ...")
 
             suttas: List[USutta] = db_session.query(Am.Sutta).all()
-            self.index_suttas('appdata', suttas)
+            self.index_suttas(DbSchemaName.AppData.value, suttas)
 
             suttas: List[USutta] = db_session.query(Um.Sutta).all()
-            self.index_suttas('userdata', suttas)
+            self.index_suttas(DbSchemaName.UserData.value, suttas)
 
         if (not only_if_empty) or (only_if_empty and self.dict_words_index.is_empty()):
             logger.info("Indexing dict_words ...")
 
             words: List[UDictWord] = db_session.query(Am.DictWord).all()
-            self.index_dict_words('appdata', words)
+            self.index_dict_words(DbSchemaName.AppData.value, words)
 
             words: List[UDictWord] = db_session.query(Um.DictWord).all()
-            self.index_dict_words('userdata', words)
+            self.index_dict_words(DbSchemaName.UserData.value, words)
 
     def open_all(self):
         self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)

@@ -19,7 +19,7 @@ from sqlalchemy.sql import func
 from pyArango.connection import Connection
 from pyArango.database import DBHandle
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 
 from simsapa.app.helpers import find_or_create_db
@@ -46,7 +46,7 @@ def get_appdata_db(db_path: Path) -> Session:
     if db_path.exists():
         db_path.unlink()
 
-    find_or_create_db(db_path, 'appdata')
+    find_or_create_db(db_path, DbSchemaName.AppData.value)
 
     try:
         # Create an in-memory database
@@ -543,7 +543,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
         paths = parse_stardict_zip(Path(d))
         ifo = parse_ifo(paths)
         logger.info(f"Importing {ifo['bookname']} ...")
-        import_stardict_as_new(appdata_db, 'appdata', None, paths, label, 10000, ignore_synonyms)
+        import_stardict_as_new(appdata_db, DbSchemaName.AppData.value, None, paths, label, 10000, ignore_synonyms)
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")

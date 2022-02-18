@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -87,7 +87,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         schema = sutta.metadata.schema
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
 
             res = self._app_data.db_session \
                                 .query(Am.MemoAssociation) \
@@ -141,7 +141,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         schema = word.metadata.schema
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
 
             res = self._app_data.db_session \
                                 .query(Am.MemoAssociation) \
@@ -234,7 +234,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         doc_schema = db_doc.metadata.schema
 
-        if doc_schema == 'appdata':
+        if doc_schema == DbSchemaName.AppData.value:
 
             res = self._app_data.db_session \
                                 .query(Am.MemoAssociation) \
@@ -311,7 +311,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         # Remove memo from database
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
             db_item = self._app_data.db_session \
                 .query(Am.Memo) \
                 .filter(Am.Memo.id == memo_id) \

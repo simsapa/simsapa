@@ -7,7 +7,7 @@ from pathlib import Path
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QMessageBox, QTabWidget
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import show_work_in_progress
 from simsapa.app.types import AppData
 
@@ -208,14 +208,14 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
 
         if action == 'import_new':
             import_stardict_as_new(self._app_data.db_session,
-                                   'userdata',
+                                   DbSchemaName.UserData.value,
                                    self._app_data.search_indexed,
                                    paths,
                                    label)
         elif action == 'update_existing':
             id = values['dictionary_id']
             import_stardict_update_existing(self._app_data.db_session,
-                                            'userdata',
+                                            DbSchemaName.UserData.value,
                                             self._app_data.search_indexed,
                                             paths,
                                             id,

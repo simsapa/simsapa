@@ -10,7 +10,7 @@ from simsapa.app.helpers import latinize
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
 from simsapa.app.types import UDictWord
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 
 from . import appdata_models as Am
 from . import userdata_models as Um
@@ -62,7 +62,7 @@ def insert_db_words(db_session,
         words_batch = db_words[b_start:b_end]
 
         try:
-            if schema_name == 'userdata':
+            if schema_name == DbSchemaName.UserData.value:
                 stmt = insert(Um.DictWord).values(words_batch)
             else:
                 stmt = insert(Am.DictWord).values(words_batch)
@@ -119,7 +119,7 @@ def import_stardict_update_existing(db_session,
     uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
     if search_index is not None:
-        if schema_name == 'appdata':
+        if schema_name == DbSchemaName.AppData.value:
             w: List[UDictWord] = db_session \
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid.in_(uids)) \
@@ -154,7 +154,7 @@ def import_stardict_as_new(db_session,
         label = title
 
     # create a dictionary, commit to get its ID
-    if schema_name == 'userdata':
+    if schema_name == DbSchemaName.UserData.value:
         dictionary = Um.Dictionary(
             title = title,
             label = label,
@@ -178,7 +178,7 @@ def import_stardict_as_new(db_session,
     uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
     if search_index is not None:
-        if schema_name == 'appdata':
+        if schema_name == DbSchemaName.AppData.value:
             w: List[UDictWord] = db_session \
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid.in_(uids)) \

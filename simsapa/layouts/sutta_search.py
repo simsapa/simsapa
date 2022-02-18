@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow,
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 
-from simsapa import READING_BACKGROUND_COLOR, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -402,7 +402,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.recent_list.insertItems(0, titles) # type: ignore
 
     def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
-        if x['schema_name'] == 'appdata':
+        if x['schema_name'] == DbSchemaName.AppData.value:
             sutta = self._app_data.db_session \
                                   .query(Am.Sutta) \
                                   .filter(Am.Sutta.id == x['db_id']) \

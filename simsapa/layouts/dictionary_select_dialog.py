@@ -1,6 +1,8 @@
 from typing import Union
 from PyQt5.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
+from simsapa import DbSchemaName
+
 from ..app.types import AppData, Labels
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -53,10 +55,10 @@ class DictionarySelectDialog(QDialog):
             userdata = [],
             appdata = [],
         )
-        disabled_dict_labels['userdata'] = list(map(lambda x: x.property('dict_label'), a))
+        disabled_dict_labels[DbSchemaName.UserData.value] = list(map(lambda x: x.property('dict_label'), a))
 
         a = filter(lambda x: not x.isChecked(), self.appdata_checks)
-        disabled_dict_labels['appdata'] = list(map(lambda x: x.property('dict_label'), a))
+        disabled_dict_labels[DbSchemaName.AppData.value] = list(map(lambda x: x.property('dict_label'), a))
 
         self._app_data.app_settings['disabled_dict_labels'] = disabled_dict_labels
         self._app_data._save_app_settings()

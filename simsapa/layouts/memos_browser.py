@@ -10,7 +10,7 @@ from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
@@ -114,7 +114,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
 
         # Remove from database
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
             db_item = self._app_data.db_session \
                                     .query(Am.Memo) \
                                     .filter(Am.Memo.id == memo_id) \

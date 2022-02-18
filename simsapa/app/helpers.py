@@ -11,7 +11,7 @@ from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 import re
 import bleach
 
-from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, logger
+from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, DbSchemaName, logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import database_exists, create_database
@@ -209,7 +209,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
             # On a new install, create database and all tables with the recent schema.
             create_database(db_url)
             db_conn.execute(f"ATTACH DATABASE '{db_path}' AS '{schema_name}';")
-            if schema_name == 'userdata':
+            if schema_name == DbSchemaName.UserData.value:
                 Um.metadata.create_all(bind=engine)
             else:
                 Am.metadata.create_all(bind=engine)

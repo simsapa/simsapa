@@ -11,10 +11,10 @@ from alembic.config import Config
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR
+from simsapa import ALEMBIC_INI, ALEMBIC_DIR, DbSchemaName
 
 
-def create_schema(schema: str = 'userdata',
+def create_schema(schema: str = DbSchemaName.UserData.value,
                   db_path: str = 'userdata.sqlite3'):
 
     # Create an in-memory database
@@ -30,9 +30,9 @@ def create_schema(schema: str = 'userdata',
         create_database(db_url)
         db_conn.execute(f"ATTACH DATABASE '{db_path}' AS {schema};")
 
-        if schema == 'userdata':
+        if schema == DbSchemaName.UserData.value:
             Um.metadata.create_all(bind=engine)
-        elif schema == 'appdata':
+        elif schema == DbSchemaName.AppData.value:
             Am.metadata.create_all(bind=engine)
         else:
             print(f"Invalid schema name: {schema}")

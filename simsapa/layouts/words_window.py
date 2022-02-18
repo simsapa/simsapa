@@ -3,7 +3,7 @@ from PyQt5.QtCore import QUrl
 from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
 from PyQt5.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.types import AppData, UDictWord
@@ -36,8 +36,8 @@ class WordsWindow(QMainWindow):
     def _get_words_by_ids(self, ids: List[tuple[str, int]]) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        appdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == 'appdata', ids)))
-        userdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == 'userdata', ids)))
+        appdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.AppData.value, ids)))
+        userdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.UserData.value, ids)))
 
         res = self._app_data.db_session \
             .query(Am.DictWord) \

@@ -11,7 +11,7 @@ from sqlalchemy.sql.functions import func
 
 from PyQt5.QtGui import QClipboard
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.actions_manager import ActionsManager
 
 from .db.search import SearchIndexed
@@ -19,7 +19,7 @@ from .db.search import SearchIndexed
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import APP_DB_PATH, GRAPHS_DIR, USER_DB_PATH, SIMSAPA_DIR, ASSETS_DIR
+from simsapa import APP_DB_PATH, USER_DB_PATH
 from simsapa.app.helpers import find_or_create_db
 
 
@@ -28,7 +28,6 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
 UDocument = Union[Am.Document, Um.Document]
-
 
 class Labels(TypedDict):
     appdata: List[str]
@@ -216,6 +215,6 @@ class AppData:
             return APP_DB_PATH
 
     def _find_user_data_or_create(self) -> Path:
-        find_or_create_db(USER_DB_PATH, 'userdata')
+        find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
         return USER_DB_PATH
 

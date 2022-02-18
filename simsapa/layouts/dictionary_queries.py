@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.db.search import SearchResult
 from ..app.types import AppData, UDictWord
 from ..app.db import appdata_models as Am
@@ -39,7 +39,7 @@ class DictionaryQueries:
         return results
 
     def dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
-        if x['schema_name'] == 'appdata':
+        if x['schema_name'] == DbSchemaName.AppData.value:
             word = self._app_data.db_session \
                                  .query(Am.DictWord) \
                                  .filter(Am.DictWord.id == x['db_id']) \

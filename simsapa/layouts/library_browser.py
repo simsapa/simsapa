@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,
                              QMessageBox)
 from simsapa.assets import icons_rc  # noqa: F401
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -101,7 +101,7 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
 
         # Remove from database
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
             db_item = self._app_data.db_session \
                                     .query(Am.Document) \
                                     .filter(Am.Document.id == doc_id) \

@@ -2,6 +2,8 @@ import re
 from typing import List, Union
 from PyQt5.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QScrollArea, QVBoxLayout, QWidget
 
+from simsapa import DbSchemaName
+
 from ..app.types import AppData, Labels
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -19,8 +21,8 @@ class SuttaSelectDialog(QDialog):
         self._app_data = app_data
 
         self._checks = {
-            'appdata': [],
-            'userdata': [],
+            DbSchemaName.AppData.value: [],
+            DbSchemaName.UserData.value: [],
         }
 
         # Create scrolling layout
@@ -39,19 +41,20 @@ class SuttaSelectDialog(QDialog):
 
         self._list_layout.addWidget(QLabel("<b>Select Sutta Authors</b>"))
 
-        for schema_title in ['Userdata', 'Appdata']:
+        for schema in [DbSchemaName.UserData.value,
+                       DbSchemaName.AppData.value]:
 
-            pli_checks = self._create_checks(schema_title.lower(), 'pli')
-            en_checks = self._create_checks(schema_title.lower(), 'en')
+            pli_checks = self._create_checks(schema, 'pli')
+            en_checks = self._create_checks(schema, 'en')
 
             if len(pli_checks) + len(en_checks) > 0:
-                self._list_layout.addWidget(QLabel(f"<b>{schema_title}</b>"))
+                self._list_layout.addWidget(QLabel(f"<b>{schema.capitalize()}</b>"))
 
                 self._add_checks('Pali', pli_checks)
                 self._add_checks('English', en_checks)
 
-                self._checks[schema_title.lower()].extend(pli_checks)
-                self._checks[schema_title.lower()].extend(en_checks)
+                self._checks[schema].extend(pli_checks)
+                self._checks[schema].extend(en_checks)
 
         buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         self.buttonBox = QDialogButtonBox(buttons)
@@ -62,7 +65,7 @@ class SuttaSelectDialog(QDialog):
         base_layout.addWidget(self.buttonBox)
 
     def _create_checks(self, schema: str, lang: str):
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
             a = self._app_data.db_session \
                             .query(Am.Sutta.uid) \
                             .filter(Am.Sutta.uid.like(f"%/{lang}/%")) \
@@ -79,7 +82,7 @@ class SuttaSelectDialog(QDialog):
 
         labels = sorted(set(map(_uid_to_label, a)))
 
-        if schema == 'appdata':
+        if schema == DbSchemaName.AppData.value:
             checks = list(map(self._appdata_label_to_check, labels))
         else:
             checks = list(map(self._userdata_label_to_check, labels))
@@ -99,7 +102,7 @@ class SuttaSelectDialog(QDialog):
             appdata = [],
         )
 
-        for schema in ['appdata', 'userdata']:
+        for schema in [DbSchemaName.AppData.value, DbSchemaName.UserData.value]:
             a = filter(lambda x: not x.isChecked(), self._checks[schema])
             disabled_sutta_labels[schema] = list(map(lambda x: x.property('sutta_label'), a))
 
@@ -109,10 +112,10 @@ class SuttaSelectDialog(QDialog):
         self.accept()
 
     def _appdata_label_to_check(self, label: str):
-        return self._label_to_check(label, 'appdata')
+        return self._label_to_check(label, DbSchemaName.AppData.value)
 
     def _userdata_label_to_check(self, label: str):
-        return self._label_to_check(label, 'userdata')
+        return self._label_to_check(label, DbSchemaName.UserData.value)
 
     def _label_to_check(self, label: str, schema: str):
         chk = QCheckBox(label, self)
