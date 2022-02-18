@@ -342,7 +342,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             self._show_memo(memo)
 
     def _show_memo(self, memo: UMemo):
-        fields = json.loads(memo.fields_json) # type: ignore
+        fields = json.loads(str(memo.fields_json))
         self.front_input.setPlainText(fields['Front'])
         self.back_input.setPlainText(fields['Back'])
 

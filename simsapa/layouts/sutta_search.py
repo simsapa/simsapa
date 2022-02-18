@@ -398,8 +398,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        titles = list(map(lambda x: x.title, self._recent))
-        self.recent_list.insertItems(0, titles) # type: ignore
+        titles = list(map(lambda x: str(x.title), self._recent))
+        self.recent_list.insertItems(0, titles)
 
     def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
         if x['schema_name'] == DbSchemaName.AppData.value:
@@ -529,7 +529,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.action_Show_Related_Suttas.isChecked():
             return
 
-        uid_ref = re.sub('^([^/]+)/.*', r'\1', sutta.uid) # type: ignore
+        uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
 
         res: List[USutta] = []
         r = self._app_data.db_session \
@@ -552,7 +552,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         for sutta in res:
             if sutta.uid is not None:
-                title = str(sutta.uid) # type: ignore
+                title = str(sutta.uid)
             else:
                 title = ""
 

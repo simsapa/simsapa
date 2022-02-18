@@ -91,11 +91,11 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
 
 def dict_word_to_search_result(x: UDictWord) -> SearchResult:
     return SearchResult(
-        db_id = x.id, # type: ignore
+        db_id = int(str(x.id)),
         schema_name = x.metadata.schema,
         table_name = 'dict_words',
-        uid = x.uid, # type: ignore
-        title = x.word, # type: ignore
+        uid = str(x.uid),
+        title = str(x.word),
         ref = None,
         author = None,
         snippet = '',
@@ -318,16 +318,16 @@ class SearchIndexed:
             for i in suttas:
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
-                    content = compactRichText(i.content_html) # type: ignore
+                    content = compactRichText(str(i.content_html))
                 elif i.content_plain is not None:
-                    content = compactPlainText(i.content_plain) # type: ignore
+                    content = compactPlainText(str(i.content_plain))
                 else:
                     continue
 
                 # Add title and title_pali to content field so a single field query will match
                 # Db fields can be None
-                c = list(filter(lambda x: x is not None, [i.sutta_ref, i.title, i.title_pali]))
-                pre = " ".join(c) # type: ignore
+                c = list(filter(lambda x: x is not None, [str(i.sutta_ref), str(i.title), str(i.title_pali)]))
+                pre = " ".join(c)
                 if len(pre) > 0:
                     content = f"{pre} {content}"
 
@@ -358,9 +358,9 @@ class SearchIndexed:
             for i in words:
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    content = compactRichText(i.definition_html) # type: ignore
+                    content = compactRichText(str(i.definition_html))
                 elif i.definition_plain is not None:
-                    content = compactPlainText(i.definition_plain) # type: ignore
+                    content = compactPlainText(str(i.definition_plain))
                 else:
                     continue
 

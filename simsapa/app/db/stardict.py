@@ -173,7 +173,7 @@ def import_stardict_as_new(db_session,
     except Exception as e:
         logger.error(e)
 
-    d_id: int = dictionary.id # type: ignore
+    d_id: int = int(str(dictionary.id))
     db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label), words))
     uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 

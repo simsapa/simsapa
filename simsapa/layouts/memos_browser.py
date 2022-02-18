@@ -139,7 +139,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self.back_input.clear()
 
     def _show_memo(self, memo: UMemo):
-        fields = json.loads(memo.fields_json) # type: ignore
+        fields = json.loads(str(memo.fields_json))
         self.front_input.setPlainText(fields['Front'])
         self.back_input.setPlainText(fields['Back'])
 

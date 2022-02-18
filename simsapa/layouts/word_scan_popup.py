@@ -55,7 +55,7 @@ class WordScanPopup(QDialog, HasResultsList):
             Qt.WindowType.BypassWindowManagerHint | \
             Qt.WindowType.X11BypassWindowManagerHint
 
-        self.setWindowFlags(flags) # type: ignore
+        self.setWindowFlags(Qt.WindowType(flags))
 
         self._clipboard = self._app_data.clipboard
 

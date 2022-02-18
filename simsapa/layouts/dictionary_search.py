@@ -358,8 +358,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        words = list(map(lambda x: x.word, self._recent))
-        self.recent_list.insertItems(0, words) # type: ignore
+        words = list(map(lambda x: str(x.word), self._recent))
+        self.recent_list.insertItems(0, words)
 
     @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
@@ -388,7 +388,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if len(self._current_words) == 0:
             return
 
-        self.status_msg.setText(self._current_words[0].word) # type: ignore
+        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -399,7 +399,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _show_word(self, word: UDictWord):
         self._current_words = [word]
-        self.status_msg.setText(self._current_words[0].word) # type: ignore
+        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -458,7 +458,7 @@ QWidget:focus { border: 1px solid #1092C3; }
                 .first()
 
         self._app_data.sutta_to_open = sutta
-        self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
+        self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_sutta_by_uid(self, uid: str):
         results: List[USutta] = []
@@ -477,7 +477,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if len(results) > 0:
             self._app_data.sutta_to_open = results[0]
-            self.action_Sutta_Search.activate(QAction.Trigger) # type: ignore
+            self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_word_by_bword_url(self, url: QUrl):
         # FIXME encoding is wrong
@@ -520,7 +520,7 @@ QWidget:focus { border: 1px solid #1092C3; }
            and len(self._current_words) > 0:
 
             def _f(x: UDictWord):
-                return (str(x.metadata.schema), int(x.id)) # type: ignore
+                return (str(x.metadata.schema), int(str(x.id)))
 
             schemas_ids = list(map(_f, self._current_words))
 
@@ -529,7 +529,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             logger.warn("Sutta is not set")
 
     def _setup_content_html_context_menu(self):
-        self.content_html.setContextMenuPolicy(Qt.ActionsContextMenu) # type: ignore
+        self.content_html.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
         copyAction = QAction("Copy", self.content_html)
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action

@@ -66,11 +66,11 @@ def sutta_to_node(x: USutta) -> GraphNode:
     return (
         sutta_graph_id(x),
         NodeData(
-            label = x.sutta_ref, # type: ignore
-            title = x.title, # type: ignore
+            label = str(x.sutta_ref),
+            title = str(x.title),
             description = '',
             table = f'{schema}.suttas',
-            id = x.id, # type: ignore
+            id = int(str(x.id)),
             fill_color = Spectral8[0],
         )
     )
@@ -81,11 +81,11 @@ def dict_word_to_node(x: UDictWord) -> GraphNode:
     return (
         dict_word_graph_id(x),
         NodeData(
-            label = x.word, # type: ignore
-            title = x.word, # type: ignore
+            label = str(x.word),
+            title = str(x.word),
             description = '',
             table = f'{schema}.dict_words',
-            id = x.id, # type: ignore
+            id = int(str(x.id)),
             fill_color = Spectral8[1],
         )
     )
@@ -102,11 +102,11 @@ def document_page_to_node(x: DocumentPage) -> GraphNode:
     return (
         document_graph_id(x),
         NodeData(
-            label = label, # type: ignore
-            title = doc.title, # type: ignore
+            label = str(label),
+            title = str(doc.title),
             description = '',
             table = f'{schema}.documents',
-            id = doc.id, # type: ignore
+            id = int(str(doc.id)),
             fill_color = Spectral8[4],
         )
     )
@@ -407,7 +407,7 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     def id_to_doc(x, db_res):
         id = x[0]
         page = x[1]
-        doc = list(filter(lambda i: i.id == id, db_res)) # type: ignore
+        doc = list(filter(lambda i: i.id == id, db_res))
         return DocumentPage(doc=doc[0], page_number=page)
 
     appdata_docpages = list(map(lambda x: id_to_doc(x, appdata_db_res), appdata_items))

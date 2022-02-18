@@ -13,7 +13,9 @@ class SplashWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("")
 
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint) # type: ignore
+        flags = Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint
+
+        self.setWindowFlags(Qt.WindowType(flags))
 
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)

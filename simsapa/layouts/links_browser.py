@@ -208,7 +208,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 title = x.title.strip()
 
             return SearchResult(
-                db_id=x.id, # type: ignore
+                db_id=int(str(x.id)),
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.suttas",
                 uid=str(x.uid),
@@ -245,7 +245,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 snippet = x.definition_plain[0:400].strip()
 
             return SearchResult(
-                db_id=x.id, # type: ignore
+                db_id=int(str(x.id)),
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.dict_words",
                 uid=str(x.uid),
@@ -283,11 +283,14 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 title += ', ' + x.author
 
             return SearchResult(
-                title=title.strip(),
-                snippet='',
+                db_id=int(str(x.id)),
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.documents",
-                id=x.id, # type: ignore
+                uid=None,
+                title=str(title).strip(),
+                ref=None,
+                author=None,
+                snippet='',
                 page_number=None,
             )
 

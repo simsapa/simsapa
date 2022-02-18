@@ -81,7 +81,7 @@ class DictionaryQueries:
         p_num = re.compile(f"^{ch}[ 0-9]+$")
 
         def _is_match(x: UDictWord):
-            return re.match(p_query, x.word) or re.match(p_num, x.word) # type: ignore
+            return re.match(p_query, str(x.word)) or re.match(p_num, str(x.word))
 
         res = list(filter(_is_match, res))
 
@@ -168,7 +168,7 @@ class DictionaryQueries:
         css = ""
         js = ""
 
-        soup = BeautifulSoup(definition, 'html.parser') # type: ignore
+        soup = BeautifulSoup(str(definition), 'html.parser')
 
         if '<style' in definition:
             h = soup.find_all(name = 'style')
