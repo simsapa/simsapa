@@ -1,10 +1,8 @@
 from subprocess import Popen
 import sys
-import os
 import traceback
 from typing import Optional
 from PyQt5 import QtCore
-import yaml
 import threading
 
 from PyQt5.QtGui import QIcon
