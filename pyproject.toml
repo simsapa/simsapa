@@ -7,47 +7,48 @@ authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.9"
-PyQt5 = "^5.15.4"
-SQLAlchemy = "^1.4.6"
-PyYAML = "^5.4.1"
-SQLAlchemy-Utils = "^0.37.2"
-requests = "^2.25.1"
-appdirs = "^1.4.4"
-PyPDF2 = "^1.26.0"
-epub_meta = "^0.0.7"
-PyMuPDF = "^1.18.13"
+python = "~3.9"
+PyQt5 = "~5.15.4"
+PyQtWebEngine = "~5.15.4"
+SQLAlchemy = "~1.4.6"
+PyYAML = "~5.4.1"
+SQLAlchemy-Utils = "~0.37.2"
+requests = "~2"
+appdirs = "~1.4.4"
+PyPDF2 = "~1.26.0"
+epub_meta = "~0.0.7"
+PyMuPDF = "~1"
 Pillow = [
   { version = "7.2.0", platform = "linux"},
-  { version = "^9.0.0", platform = "win32" },
-  { version = "^9.0.0", platform = "darwin" },
+  { version = "~9.0.0", platform = "win32" },
+  { version = "~9.0.0", platform = "darwin" },
 ]
-pandas = "^1.2.4"
-openpyxl = "^3.0.7"
-semver = "^2.13.0"
-pyglossary = "^4.0.11"
-lxml = "^4.6.3"
-python-dotenv = "^0.17.1"
-pyperclip = "^1.8.2"
-PyQtWebEngine = "^5.15.4"
-networkx = "^2.5.1"
-bokeh = "^2.3.2"
-alembic = "^1.7.5"
-sqlalchemy2-stubs = "^0.0.2-alpha.19"
-python-idzip = "^0.3.7"
-bleach = "^4.1.0"
-Whoosh = "^2.7.4"
-typer = "^0.4.0"
-tomlkit = "^0.8.0"
-feedparser = "^6.0.8"
-pyqtkeybind = [{ version = "^0.0.8", platform = "linux" },]
-falcon = "^3.0.1"
-beautifulsoup4 = "^4.10.0"
-Mako = "^1.1.6"
+pandas = "~1"
+openpyxl = "~3.0.7"
+semver = "~2.13.0"
+pyglossary = "~4"
+lxml = "~4"
+python-dotenv = "~0.17.1"
+pyperclip = "~1.8.2"
+networkx = "~2"
+bokeh = "~2"
+alembic = "~1.7.5"
+sqlalchemy2-stubs = "~0.0.2-alpha.19"
+python-idzip = "~0.3.7"
+bleach = "~4.1.0"
+Whoosh = "~2.7.4"
+typer = "~0.4.0"
+tomlkit = "~0.8.0"
+feedparser = "~6.0.8"
+pyqtkeybind = [{ version = "~0.0.9", platform = "linux" },]
+falcon = "~3.0.1"
+beautifulsoup4 = "~4.10.0"
+MarkupSafe = "2.0.1"
+Mako = "~1.1.6"
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.2.5"
-pyArango = "^1.3.5"
+pytest = "~6.2.5"
+pyArango = "~1.3.5"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -82,51 +83,56 @@ icon = "simsapa/assets/icons/appicons/simsapa"
 sources = ['simsapa']
 
 requires = [
-"PyQt5>=5.15.4",
-"SQLAlchemy>=1.4.6",
-"PyYAML>=5.4.1",
-"SQLAlchemy-Utils>=0.37.2",
-"requests>=2.25.1",
-"appdirs>=1.4.4",
-"PyPDF2>=1.26.0",
-"epub_meta>=0.0.7",
-"PyMuPDF>=1.18.13",
-"pandas>=1.2.4",
-"openpyxl>=3.0.7",
-"semver>=2.13.0",
-"pyglossary>=4.0.11",
-"lxml>=4.6.3",
-"python-dotenv>=0.17.1",
-"pyperclip>=1.8.2",
-"PyQtWebEngine>=5.15.4",
-"networkx>=2.5.1",
-"bokeh>=2.3.2",
-"alembic>=1.7.5",
-"sqlalchemy2-stubs>=0.0.2-alpha.19",
-"python-idzip>=0.3.7",
-"bleach>=4.1.0",
-"Whoosh>=2.7.4",
-"typer>=0.4.0",
-"tomlkit>=0.8.0",
-"feedparser>=6.0.8",
-"falcon>=3.0.1",
-"beautifulsoup4>=4.10.0",
-"Mako>=1.1.6",
+"PyQt5              >= 5.15.4,   < 5.16.0",
+"PyQtWebEngine      >= 5.15.4,   < 5.16.0",
+"SQLAlchemy         >= 1.4.6,    < 1.5.0",
+"PyYAML             >= 5.4.1,    < 5.5.0",
+"SQLAlchemy-Utils   >= 0.37.2,   < 0.38.0",
+"requests           >= 2.25.0,   < 3.0.0",
+"appdirs            >= 1.4.4,    < 1.5.0",
+"PyPDF2             >= 1.26.0,   < 1.27.0",
+"epub_meta          >= 0.0.7,    < 0.1.0",
+"PyMuPDF            >= 1.18.0,   < 2.0.0",
+"pandas             >= 1.2.0,    < 2.0.0",
+"openpyxl           >= 3.0.7,    < 3.1.0",
+"semver             >= 2.13.0,   < 2.14.0",
+"pyglossary         >= 4.0.0,    < 5.0.0",
+"lxml               >= 4.6.0,    < 5.0.0",
+"python-dotenv      >= 0.17.1,   < 0.18.0",
+"pyperclip          >= 1.8.2,    < 1.9.0",
+"networkx           >= 2.5.0,    < 3.0.0",
+"bokeh              >= 2.4.0,    < 3.0.0",
+"alembic            >= 1.7.5,    < 1.8.0",
+"sqlalchemy2-stubs  >= 0.0.2,    < 0.1.0",
+"python-idzip       >= 0.3.7,    < 0.4.0",
+"bleach             >= 4.1.0,    < 4.2.0",
+"Whoosh             >= 2.7.4,    < 2.8.0",
+"typer              >= 0.4.0,    < 0.5.0",
+"tomlkit            >= 0.8.0,    < 0.9.0",
+"feedparser         >= 6.0.8,    < 6.1.0",
+"falcon             >= 3.0.1,    < 3.1.0",
+"beautifulsoup4     >= 4.10.0,   < 4.11.0",
+"MarkupSafe         == 2.0.1",
+"Mako               >= 1.1.6,    < 1.2.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]
-requires = ["Pillow>=9.0.0"]
+requires = [
+"Pillow >= 9.0.0, < 9.1.0",
+]
 
 [tool.briefcase.app.simsapa.linux]
 requires = [
-"Pillow==7.2.0",
-"pyqtkeybind>=0.0.8",
+"Pillow == 7.2.0",
+"pyqtkeybind >= 0.0.9, < 0.1.0",
 ]
 
 system_requires = ["libtiff-dev"]
 
 [tool.briefcase.app.simsapa.windows]
-requires = ["Pillow>=9.0.0"]
+requires = [
+"Pillow >= 9.0.0, < 9.1.0",
+]
 
 # Mobile deployments
 [tool.briefcase.app.simsapa.iOS]
