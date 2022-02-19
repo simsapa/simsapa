@@ -11,11 +11,11 @@ from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_se
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from simsapa.layouts.results_list import HasResultsList
+from simsapa.layouts.fulltext_list import HasFulltextList
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class WordScanPopup(QDialog, HasResultsList):
+class WordScanPopup(QDialog, HasFulltextList):
 
     search_input: QLineEdit
     content_layout: QVBoxLayout
@@ -74,7 +74,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self._ui_setup()
         self._connect_signals()
 
-        self.init_results_list()
+        self.init_fulltext_list()
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
@@ -354,7 +354,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self._layout.addLayout(self.tabs_layout)
 
         self._setup_words_tab()
-        self._setup_results_tab()
+        self._setup_fulltext_tab()
 
     def _setup_words_tab(self):
         self.tab_word = QWidget()
@@ -368,48 +368,48 @@ class WordScanPopup(QDialog, HasResultsList):
 
         self._setup_qwe()
 
-    def _setup_results_tab(self):
-        self.results_tab = QWidget()
-        self.results_tab.setObjectName("Fulltext")
-        self.results_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
+    def _setup_fulltext_tab(self):
+        self.fulltext_tab = QWidget()
+        self.fulltext_tab.setObjectName("Fulltext")
+        self.fulltext_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self.tabs.addTab(self.results_tab, "Fulltext")
+        self.tabs.addTab(self.fulltext_tab, "Fulltext")
 
-        self.results_tab_layout = QVBoxLayout(self.results_tab)
-        self.results_tab_inner_layout = QVBoxLayout()
+        self.fulltext_tab_layout = QVBoxLayout(self.fulltext_tab)
+        self.fulltext_tab_inner_layout = QVBoxLayout()
 
-        self.results_pages_layout = QHBoxLayout()
+        self.fulltext_pages_layout = QHBoxLayout()
 
-        self.results_page_input = QSpinBox(self.results_tab)
-        self.results_page_input.setMinimum(1)
-        self.results_page_input.setMaximum(999)
-        self.results_pages_layout.addWidget(self.results_page_input)
+        self.fulltext_page_input = QSpinBox(self.fulltext_tab)
+        self.fulltext_page_input.setMinimum(1)
+        self.fulltext_page_input.setMaximum(999)
+        self.fulltext_pages_layout.addWidget(self.fulltext_page_input)
 
-        self.results_prev_btn = QPushButton("Prev", self.results_tab)
-        self.results_pages_layout.addWidget(self.results_prev_btn)
+        self.fulltext_prev_btn = QPushButton("Prev", self.fulltext_tab)
+        self.fulltext_pages_layout.addWidget(self.fulltext_prev_btn)
 
-        self.results_next_btn = QPushButton("Next", self.results_tab)
-        self.results_pages_layout.addWidget(self.results_next_btn)
+        self.fulltext_next_btn = QPushButton("Next", self.fulltext_tab)
+        self.fulltext_pages_layout.addWidget(self.fulltext_next_btn)
 
         spacerItem2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.results_pages_layout.addItem(spacerItem2)
+        self.fulltext_pages_layout.addItem(spacerItem2)
 
-        self.results_first_page_btn = QPushButton("First", self.results_tab)
-        self.results_pages_layout.addWidget(self.results_first_page_btn)
+        self.fulltext_first_page_btn = QPushButton("First", self.fulltext_tab)
+        self.fulltext_pages_layout.addWidget(self.fulltext_first_page_btn)
 
-        self.results_last_page_btn = QPushButton("Last", self.results_tab)
-        self.results_pages_layout.addWidget(self.results_last_page_btn)
+        self.fulltext_last_page_btn = QPushButton("Last", self.fulltext_tab)
+        self.fulltext_pages_layout.addWidget(self.fulltext_last_page_btn)
 
-        self.results_tab_inner_layout.addLayout(self.results_pages_layout)
+        self.fulltext_tab_inner_layout.addLayout(self.fulltext_pages_layout)
 
-        self.results_label = QLabel(self.results_tab)
-        self.results_tab_inner_layout.addWidget(self.results_label)
+        self.fulltext_label = QLabel(self.fulltext_tab)
+        self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
 
-        self.results_list = QListWidget(self.results_tab)
-        self.results_list.setFrameShape(QFrame.NoFrame)
-        self.results_tab_inner_layout.addWidget(self.results_list)
+        self.fulltext_list = QListWidget(self.fulltext_tab)
+        self.fulltext_list.setFrameShape(QFrame.NoFrame)
+        self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
 
-        self.results_tab_layout.addLayout(self.results_tab_inner_layout)
+        self.fulltext_tab_layout.addLayout(self.fulltext_tab_inner_layout)
 
     def _set_query(self, s: str):
         self.search_input.setText(s)
@@ -446,23 +446,23 @@ class WordScanPopup(QDialog, HasResultsList):
         hits = self.search_query.hits
 
         if hits == 0:
-            self.results_page_input.setMinimum(0)
-            self.results_page_input.setMaximum(0)
-            self.results_first_page_btn.setEnabled(False)
-            self.results_last_page_btn.setEnabled(False)
+            self.fulltext_page_input.setMinimum(0)
+            self.fulltext_page_input.setMaximum(0)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
 
         elif hits <= self.page_len:
-            self.results_page_input.setMinimum(1)
-            self.results_page_input.setMaximum(1)
-            self.results_first_page_btn.setEnabled(False)
-            self.results_last_page_btn.setEnabled(False)
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(1)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
 
         else:
             pages = math.floor(hits / self.page_len) + 1
-            self.results_page_input.setMinimum(1)
-            self.results_page_input.setMaximum(pages)
-            self.results_first_page_btn.setEnabled(True)
-            self.results_last_page_btn.setEnabled(True)
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(pages)
+            self.fulltext_first_page_btn.setEnabled(True)
+            self.fulltext_last_page_btn.setEnabled(True)
 
         return results
 
@@ -479,7 +479,7 @@ class WordScanPopup(QDialog, HasResultsList):
         else:
             self.tabs.setTabText(1, "Fulltext")
 
-        self.render_results_page()
+        self.render_fulltext_page()
 
         if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
             self._show_word_by_uid(self._results[0]['uid'])
@@ -509,7 +509,7 @@ class WordScanPopup(QDialog, HasResultsList):
         self._render_words(res)
 
     def _handle_result_select(self):
-        selected_idx = self.results_list.currentRow()
+        selected_idx = self.fulltext_list.currentRow()
         if selected_idx < len(self._results):
             word = self.queries.dict_word_from_result(self._results[selected_idx])
             if word is not None:

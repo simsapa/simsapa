@@ -26,14 +26,14 @@ from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
-from .results_list import HasResultsList
+from .fulltext_list import HasFulltextList
 from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,
-                             HasResultsList, HasImportStarDictDialog):
+                             HasFulltextList, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
     search_extras: QHBoxLayout
@@ -52,7 +52,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.setupUi(self)
         logger.info("DictionarySearchWindow()")
 
-        self.results_list: QListWidget
+        self.fulltext_list: QListWidget
         self.recent_list: QListWidget
 
         self.features: List[str] = []
@@ -84,7 +84,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self._ui_setup()
         self._connect_signals()
 
-        self.init_results_list()
+        self.init_fulltext_list()
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
@@ -317,7 +317,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             self.rightside_tabs.setTabText(0, "Fulltext")
 
-        self.render_results_page()
+        self.render_fulltext_page()
 
         if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
             self._show_word_by_uid(self._results[0]['uid'])
@@ -371,7 +371,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.qwe.findText(text, flag, callback)
 
     def _handle_result_select(self):
-        selected_idx = self.results_list.currentRow()
+        selected_idx = self.fulltext_list.currentRow()
         if selected_idx < len(self._results):
             word = self.queries.dict_word_from_result(self._results[selected_idx])
             if word is not None:
@@ -422,23 +422,23 @@ QWidget:focus { border: 1px solid #1092C3; }
         hits = self.search_query.hits
 
         if hits == 0:
-            self.results_page_input.setMinimum(0)
-            self.results_page_input.setMaximum(0)
-            self.results_first_page_btn.setEnabled(False)
-            self.results_last_page_btn.setEnabled(False)
+            self.fulltext_page_input.setMinimum(0)
+            self.fulltext_page_input.setMaximum(0)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
 
         elif hits <= self.page_len:
-            self.results_page_input.setMinimum(1)
-            self.results_page_input.setMaximum(1)
-            self.results_first_page_btn.setEnabled(False)
-            self.results_last_page_btn.setEnabled(False)
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(1)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
 
         else:
             pages = math.floor(hits / self.page_len) + 1
-            self.results_page_input.setMinimum(1)
-            self.results_page_input.setMaximum(pages)
-            self.results_first_page_btn.setEnabled(True)
-            self.results_last_page_btn.setEnabled(True)
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(pages)
+            self.fulltext_first_page_btn.setEnabled(True)
+            self.fulltext_last_page_btn.setEnabled(True)
 
         return results
 

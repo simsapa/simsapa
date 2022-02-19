@@ -135,17 +135,17 @@
             <property name="currentIndex">
              <number>0</number>
             </property>
-            <widget class="QWidget" name="results_tab">
+            <widget class="QWidget" name="fulltext_tab">
              <attribute name="title">
               <string>Fulltext</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_4">
               <item>
-               <layout class="QVBoxLayout" name="verticalLayout">
+               <layout class="QVBoxLayout" name="fulltext_layout">
                 <item>
-                 <layout class="QHBoxLayout" name="results_pages_layout">
+                 <layout class="QHBoxLayout" name="fulltext_pages_layout">
                   <item>
-                   <widget class="QSpinBox" name="results_page_input">
+                   <widget class="QSpinBox" name="fulltext_page_input">
                     <property name="minimum">
                      <number>1</number>
                     </property>
@@ -155,21 +155,21 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="results_prev_btn">
+                   <widget class="QPushButton" name="fulltext_prev_btn">
                     <property name="text">
                      <string>Prev</string>
                     </property>
                    </widget>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="results_next_btn">
+                   <widget class="QPushButton" name="fulltext_next_btn">
                     <property name="text">
                      <string>Next</string>
                     </property>
                    </widget>
                   </item>
                   <item>
-                   <widget class="QLabel" name="results_label">
+                   <widget class="QLabel" name="fulltext_label">
                     <property name="text">
                      <string>Showing a-b out of x</string>
                     </property>
@@ -189,14 +189,14 @@
                    </spacer>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="results_first_page_btn">
+                   <widget class="QPushButton" name="fulltext_first_page_btn">
                     <property name="text">
                      <string>First</string>
                     </property>
                    </widget>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="results_last_page_btn">
+                   <widget class="QPushButton" name="fulltext_last_page_btn">
                     <property name="text">
                      <string>Last</string>
                     </property>
@@ -205,7 +205,7 @@
                  </layout>
                 </item>
                 <item>
-                 <widget class="QListWidget" name="results_list">
+                 <widget class="QListWidget" name="fulltext_list">
                   <property name="frameShape">
                    <enum>QFrame::NoFrame</enum>
                   </property>
