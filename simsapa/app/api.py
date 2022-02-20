@@ -49,7 +49,7 @@ def start_server(port=8000):
     queues = QueueResource()
     app.add_route('/queues/{queue_id}', queues)
 
-    app.add_static_route('/assets', PACKAGE_ASSETS_DIR)
+    app.add_static_route('/assets', f"{PACKAGE_ASSETS_DIR}")
 
     with make_server('127.0.0.1', port, app) as httpd:
         logger.info(f'Starting server on port {port}')
