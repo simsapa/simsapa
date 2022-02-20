@@ -99,7 +99,7 @@ class AppData:
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
 
-        self.db_conn, self.db_session = self._connect_to_db(app_db_path, user_db_path)
+        self._connect_to_db(app_db_path, user_db_path)
 
         self.search_indexed = SearchIndexed()
 
@@ -117,22 +117,21 @@ class AppData:
 
         try:
             # Create an in-memory database
-            engine = create_engine("sqlite+pysqlite://", echo=False)
+            self.db_eng = create_engine("sqlite+pysqlite://", echo=False)
 
-            db_conn = engine.connect()
+            self.db_conn = self.db_eng.connect()
 
             # Attach appdata and userdata
-            db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
-            db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+            self.db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
+            self.db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
 
-            Session = sessionmaker(engine)
-            Session.configure(bind=engine)
-            db_session = Session()
+            Session = sessionmaker(self.db_eng)
+            Session.configure(bind=self.db_eng)
+            self.db_session = Session()
+
         except Exception as e:
             logger.error(f"Can't connect to database: {e}")
             exit(1)
-
-        return (db_conn, db_session)
 
     def _read_app_settings(self):
         x = self.db_session \
