@@ -13,7 +13,7 @@ from simsapa.app.types import AppMessage
 
 from ..app.helpers import download_file
 
-from simsapa import logger
+from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
@@ -114,17 +114,23 @@ def download_extract_appdata() -> bool:
 
     shutil.move(temp_dir.joinpath("appdata.sqlite3"), ASSETS_DIR)
 
-    # only move the extracted index if there isn't yet an index (first run)
-    if not ASSETS_DIR.joinpath("index").exists():
-        shutil.move(temp_dir.joinpath("index"), ASSETS_DIR)
-    else:
-        # on the next run, notify the user to re-index
-        msg = AppMessage(
-            kind = "warning",
-            text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
-        )
-        with open(STARTUP_MESSAGE_PATH, 'w') as f:
-            f.write(json.dumps(msg))
+    # Remove existing indexes here. Can't safely clear and remove them in
+    # windows._redownload_database_dialog().
+    if INDEX_DIR.exists():
+        shutil.rmtree(INDEX_DIR)
+
+    shutil.move(temp_dir.joinpath("index"), ASSETS_DIR)
+
+    # FIXME When removing the previous index, test if there were user imported
+    # data in the userdata database, and if so, tell the user that they have to
+    # re-index.
+
+    # msg = AppMessage(
+    #     kind = "warning",
+    #     text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
+    # )
+    # with open(STARTUP_MESSAGE_PATH, 'w') as f:
+    #     f.write(json.dumps(msg))
 
     shutil.rmtree(temp_dir)
 

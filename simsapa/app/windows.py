@@ -341,11 +341,10 @@ class AppWindows:
             if APP_DB_PATH.exists():
                 os.remove(APP_DB_PATH)
 
-            self._app_data.search_indexed.clear_all()
-            self._app_data.search_indexed.close_all()
-
-            if INDEX_DIR.exists():
-                shutil.rmtree(INDEX_DIR)
+            # NOTE: Can't safely clear and remove indexes here. rmtree()
+            # triggers an error on Windows about .seg files still being locked.
+            # The index will be removed when download_extract_appdata() runs on
+            # the next run.
 
             self._quit_app()
 
