@@ -2,6 +2,7 @@ import shutil
 from typing import Callable, List, Optional, TypedDict, Union
 import re
 
+from whoosh import writing
 from whoosh.highlight import SCORE, HtmlFormatter
 from whoosh.index import FileIndex, create_in, open_dir
 from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
@@ -283,6 +284,13 @@ class SearchIndexed:
     def open_all(self):
         self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
         self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema)
+
+    def clear_all(self):
+        w = self.suttas_index.writer()
+        w.commit(mergetype=writing.CLEAR)
+
+        w = self.dict_words_index.writer()
+        w.commit(mergetype=writing.CLEAR)
 
     def close_all(self):
         self.suttas_index.close()
