@@ -284,6 +284,10 @@ class SearchIndexed:
         self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
         self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema)
 
+    def close_all(self):
+        self.suttas_index.close()
+        self.dict_words_index.close()
+
     def create_all(self, remove_if_exists: bool = True):
         if remove_if_exists and INDEX_DIR.exists():
             shutil.rmtree(INDEX_DIR)

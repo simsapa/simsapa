@@ -6,7 +6,7 @@ from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import QWidget, QAction, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import IS_WINDOWS, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from ..app.types import AppData, USutta
 from .html_content import html_page
 
@@ -35,16 +35,14 @@ class SuttaTabWidget(QWidget):
         self.setLayout(self._layout)
         self._layout.addWidget(self.qwe, 100)
 
-        if not IS_WINDOWS:
-            # FIXME app not responding
-            icon = QIcon()
-            icon.addPixmap(QPixmap(":/new-window"))
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/new-window"))
 
-            open_new_action = QAction("Open in New Window", qwe)
-            open_new_action.setIcon(icon)
-            open_new_action.triggered.connect(partial(self._handle_open_content_new))
+        open_new_action = QAction("Open in New Window", qwe)
+        open_new_action.setIcon(icon)
+        open_new_action.triggered.connect(partial(self._handle_open_content_new))
 
-            self.qwe.addAction(open_new_action)
+        self.qwe.addAction(open_new_action)
 
         self.devToolsAction = QAction("Show Inspector", qwe)
         self.devToolsAction.setCheckable(True)

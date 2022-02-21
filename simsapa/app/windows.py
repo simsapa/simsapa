@@ -337,8 +337,15 @@ class AppWindows:
             self._app_data.db_session.close_all()
             self._app_data.db_conn.close()
             self._app_data.db_eng.dispose()
-            os.remove(APP_DB_PATH)
-            shutil.rmtree(INDEX_DIR)
+
+            if APP_DB_PATH.exists():
+                os.remove(APP_DB_PATH)
+
+            self._app_data.search_indexed.close_all()
+
+            if INDEX_DIR.exists():
+                shutil.rmtree(INDEX_DIR)
+
             self._quit_app()
 
     def _close_all_windows(self):
