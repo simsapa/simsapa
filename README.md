@@ -1,12 +1,14 @@
 # Simsapa Dhamma Reader
 
-See further notes in the [docs](./docs/index.md) folder.
-
 ## Install
 
-``` shell
-pip install simsapa
-```
+Download the [latest build](https://www.dropbox.com/sh/j26b8sb955hj5x6/AABh0SCsRA7bY1bTGhKA5x1Pa?dl=0) for Linux (.AppImage), Mac (.dmg) or Windows (.msi).
+
+On the first run, it downloads the application database and fulltext index.
+
+Short feature demo: <https://vimeo.com/677880749>
+
+![Sutta Search](docs/sutta-search-screenshot.jpg)
 
 ## Development
 
