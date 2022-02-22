@@ -104,6 +104,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         if s is not None:
             self._set_query(s)
             self._handle_query()
+            self._handle_exact_query()
 
     def _lookup_selection_in_suttas(self):
         text = self._get_selection()
@@ -116,6 +117,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         if text is not None:
             self._set_query(text)
             self._handle_query()
+            self._handle_exact_query()
 
     def _get_selection(self) -> Optional[str]:
         text = self.qwe.selectedText()
@@ -169,6 +171,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                     text = data['query']
                     self._set_query(text)
                     self._handle_query()
+                    self._handle_exact_query()
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:

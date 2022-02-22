@@ -88,11 +88,14 @@ class AppWindows:
 
     def _lookup_clipboard_in_suttas(self, msg):
         # Is there a sutta window to handle the message?
+        view = None
         for w in self._windows:
             if isinstance(w, SuttaSearchWindow) and w.isVisible():
-                return
+                view = w
+                break
 
-        view = self._new_sutta_search_window()
+        if view is None:
+            view = self._new_sutta_search_window()
 
         if self._hotkeys_manager:
             data = json.dumps(msg)
@@ -101,11 +104,14 @@ class AppWindows:
 
     def _lookup_clipboard_in_dictionary(self, msg):
         # Is there a dictionary window to handle the message?
+        view = None
         for w in self._windows:
             if isinstance(w, DictionarySearchWindow) and w.isVisible():
-                return
+                view = w
+                break
 
-        view = self._new_dictionary_search_window()
+        if view is None:
+            view = self._new_dictionary_search_window()
 
         if self._hotkeys_manager:
             data = json.dumps(msg)
