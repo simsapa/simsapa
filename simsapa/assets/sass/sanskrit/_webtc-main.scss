@@ -1,0 +1,70 @@
+td {line-height: 130%;}
+.g {font-size:smaller;font-style:italic;}
+.lang {font-size:smaller;font-style:italic;}
+.hrefdata,.lnum {
+ font-size:smaller;
+ background-color:rgb(240,240,240);
+}
+.sdata {color:teal;}
+.sdatadeva {color:teal;}
+.asdata {color:blue;}
+.pb {font-size:smaller; }
+.hom {color:red;}
+.footnote {font-size:smaller;}
+.ls {
+color:gray; 
+font-size:10pt; /*smaller;*/
+}
+.gram {font-weight:bold;}
+.divm {font-weight:bold;}
+.wide {font-stretch:wider;}
+
+p {
+	padding-left: 15pt;
+	padding-right: 15pt;
+}
+
+table.display {
+  width: 100%;
+}
+
+td, th {
+  padding:         5px;
+  text-align:      left;
+}
+plex {
+	color: black;
+	background-color: #36648b;
+	font-size: 12pt;
+}
+
+a:link {
+        color: black;
+}
+
+a:visited {
+	color: #36648b;
+}
+
+a:active {
+	color: #4876ff;
+}
+a:hover {
+	background-color: #ffffcc;
+	color: #000033;
+}
+#CologneBasic .cssshade {
+ background-color:#EAEAEA; /* light gray */
+}
+#disp {
+ position:absolute;
+ background-color: white;
+ left: 1%;
+ /*width: 98%; 11-23-2020 */
+ right: 5px;
+ height: 400px;
+ overflow-y:auto;overflow-x:hidden;
+}
+.dotunder {
+  border-bottom: 1px dotted #000;  
+}

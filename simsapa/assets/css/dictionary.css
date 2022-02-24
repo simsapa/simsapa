@@ -100,6 +100,217 @@ pre {
   vertical-align: -0.125em;
 }
 
+.cologne {
+  /* selectors for webtc2 not in webtc */
+}
+.cologne .sdata_siddhanta {
+  color: teal;
+  font-weight: normal;
+  /* 07-14-2018*/
+}
+.cologne .sdata_system {
+  color: teal;
+}
+.cologne i {
+  font-style: italic;
+}
+.cologne .noti {
+  font-style: normal;
+}
+.cologne .sdata_italic_iast i {
+  color: teal;
+}
+.cologne table.display {
+  width: 100%;
+}
+.cologne td {
+  line-height: 130%;
+}
+.cologne .g {
+  font-size: smaller;
+  font-style: italic;
+}
+.cologne .lang {
+  font-size: smaller;
+  font-style: italic;
+}
+.cologne .hrefdata, .cologne .lnum {
+  font-size: smaller;
+  background-color: #f0f0f0;
+}
+.cologne .sdata {
+  color: teal;
+}
+.cologne .sdatadeva {
+  color: teal;
+}
+.cologne .asdata {
+  color: blue;
+}
+.cologne .pb {
+  font-size: smaller;
+}
+.cologne .hom {
+  color: red;
+}
+.cologne .footnote {
+  font-size: smaller;
+}
+.cologne .ls {
+  color: gray;
+  font-size: 10pt;
+  /*smaller;*/
+}
+.cologne .gram {
+  font-weight: bold;
+}
+.cologne .divm {
+  font-weight: bold;
+}
+.cologne .wide {
+  font-stretch: wider;
+}
+.cologne p {
+  padding-left: 15pt;
+  padding-right: 15pt;
+}
+.cologne table.display {
+  width: 100%;
+}
+.cologne td, .cologne th {
+  padding: 5px;
+  text-align: left;
+}
+.cologne plex {
+  color: black;
+  background-color: #36648b;
+  font-size: 12pt;
+}
+.cologne a:link {
+  color: black;
+}
+.cologne a:visited {
+  color: #36648b;
+}
+.cologne a:active {
+  color: #4876ff;
+}
+.cologne a:hover {
+  background-color: #ffffcc;
+  color: #000033;
+}
+.cologne #CologneBasic .cssshade {
+  background-color: #EAEAEA;
+  /* light gray */
+}
+.cologne #disp {
+  position: absolute;
+  background-color: white;
+  left: 1%;
+  /*width: 98%; 11-23-2020 */
+  right: 5px;
+  height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.cologne .dotunder {
+  border-bottom: 1px dotted #000;
+}
+.cologne p.words {
+  text-align: left;
+}
+.cologne a.words {
+  color: blue;
+}
+.cologne table {
+  width: 100%;
+}
+.cologne li.display {
+  margin-left: 5px;
+}
+.cologne td.ready {
+  font-weight: normal;
+  font-style: italic;
+}
+.cologne .hk {
+  font-size: 100%;
+}
+.cologne .hklarge {
+  font-size: 150%;
+}
+.cologne span.abbr {
+  color: #339933;
+  text-decoration: underline;
+}
+.cologne span.abbr:hover {
+  color: #FF00FF;
+}
+.cologne span.hk {
+  color: blue;
+}
+.cologne span.hklarge {
+  color: blue;
+}
+.cologne span.q {
+  color: #333333;
+}
+.cologne span.entity {
+  color: red;
+}
+.cologne span.see {
+  font-weight: bolder;
+  font-style: italic;
+}
+.cologne span.sense {
+  font-weight: bolder;
+}
+.cologne span.datakey {
+  font-weight: bolder;
+}
+.cologne p.tabkey {
+  font-weight: bolder;
+}
+.cologne span.pb {
+  font-size: smaller;
+}
+.cologne .container {
+  width: 800px;
+}
+.cologne #headtitle {
+  font-size: normal;
+  font-weight: bolder;
+}
+.cologne #updbutton {
+  background-color: red;
+}
+.cologne #data {
+  position: absolute;
+  left: 31%;
+  width: 68%;
+  background-color: white;
+  overflow: auto;
+  height: 400px;
+  border: solid;
+}
+.cologne #ansdiv {
+  position: absolute;
+  left: 1%;
+  width: 99%;
+  background-color: white;
+  overflow: auto;
+  height: 400px;
+  border: solid;
+}
+.cologne #querydiv {
+  background-color: #DBE4ED;
+}
+.cologne #navbtns {
+  position: absolute;
+  left: 1%;
+  width: 48%;
+  height: 50px;
+}
+
 html {
   font-size: 18px;
   line-height: 1.4;

@@ -50,6 +50,7 @@ Flask-Cors = "~3.0.10"
 [tool.poetry.dev-dependencies]
 pytest = "~6.2.5"
 pyArango = "~1.3.5"
+selenium = "^4.1.1"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
