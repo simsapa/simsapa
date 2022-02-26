@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import shutil
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 from dotenv import load_dotenv
 import sqlite3
 import multiprocessing
@@ -22,10 +21,6 @@ from simsapa import logger
 # The word list IS SORTED alphabetically by the sqlite db key (i.e. 'aMSa').
 # Parallel processing nonetheless scrambles the order of words to some extent.
 #
-# A batch is not guaranteed to complete without error, sometimes the webdriver
-# crashes unexpectedly. Due to the large number of words, this script may need
-# to run several times.
-#
 # If the key file (aMSa.txt) for a word already exists, we assume it is from a
 # previous export run and skip.
 
@@ -34,6 +29,9 @@ load_dotenv()
 SEARCH_URL = "http://localhost:8888/web/webtc2/index.php"
 
 CHROMEDRIVER_PATH = "/snap/bin/chromium.chromedriver"
+
+# These word keys return empty data.
+SKIP_WORDS = ['kIdfkza', 'kIdfSa', 'nF~HpraRetra']
 
 s = os.getenv('BOOTSTRAP_ASSETS_DIR')
 if s is None or s == "":
@@ -63,11 +61,11 @@ def get_word_keys() -> List[str]:
     return word_keys
 
 
-def export_word(word_key: str):
+def export_word(word_key: str) -> Tuple[str, str]:
     key_path = WORDS_OUT_DIR.joinpath(f"{word_key}.txt")
-    if key_path.exists():
+    if key_path.exists() or word_key in SKIP_WORDS:
         logger.info(f"SKIPPING {word_key}")
-        return
+        return (word_key, "")
 
     options = webdriver.ChromeOptions()
     options.headless = True
@@ -123,8 +121,6 @@ def export_word(word_key: str):
 
     word_path = WORDS_OUT_DIR.joinpath(f"{title}.html")
 
-    logger.info(f"{word_key}: {title}")
-
     with open(word_path, 'w') as f:
         f.write(html)
 
@@ -133,6 +129,21 @@ def export_word(word_key: str):
         f.write('')
 
     driver.close()
+
+    return (word_key, title)
+
+
+def process_word(word_key: str) -> Tuple[str, str]:
+    for attempt in range(5):
+        try:
+            r = export_word(word_key)
+            return r
+        except Exception as e:
+            logger.error(f"{word_key}: {e.__class__.__name__}, after {attempt+1} attempt(s). Retrying.")
+            # logger.error(f"{e}")
+    else:
+        logger.error(f"All attempts failed for {word_key}. Exiting.")
+        sys.exit(1)
 
 def main():
     if len(sys.argv) == 1:
@@ -145,13 +156,29 @@ def main():
         print("Either 0 or 2 arguments are allowed.")
         sys.exit(1)
 
+    global total
     total = len(word_keys)
 
     logger.info(f"Total words: {total}", start_new = True)
 
+    global done_count
+    done_count = 0
+
+    def word_done(item: Tuple[str, str]):
+        global total
+        global done_count
+        done_count += 1
+        if item[1] != "":
+            logger.info(f"{done_count:05d} / {total}: {item[0]} - {item[1]}")
+
     pool = multiprocessing.Pool(processes=8)
-    outputs_async = pool.map_async(export_word, word_keys)
-    outputs_async.get()
+
+    results = []
+    for w in word_keys:
+        r = pool.apply_async(process_word, (w,), callback = word_done)
+        results.append(r)
+    for r in results:
+        r.wait()
 
     logger.info("Done")
 
