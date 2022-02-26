@@ -462,7 +462,9 @@ def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
             for n, w in enumerate(words):
 
                 if res['syn_count'] is not None:
-                    res['syn_count'] += len(w['synonyms'])
+                    n = int(res['syn_count'])
+                    n += len(w['synonyms'])
+                    res['syn_count'] = n
 
                 for s in w['synonyms']:
                     d = bytes(f"{s}\0", "utf-8")
