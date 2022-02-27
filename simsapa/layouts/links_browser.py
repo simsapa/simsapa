@@ -15,7 +15,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import logger
+from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.helpers import compactRichText
 from ..app.db import appdata_models as Am
@@ -73,9 +73,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:

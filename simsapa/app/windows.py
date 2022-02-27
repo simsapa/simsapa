@@ -8,7 +8,7 @@ import json
 from PyQt5.QtCore import QSize, QTimer, Qt
 from PyQt5.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
-from simsapa import logger
+from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import get_update_info, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
@@ -48,28 +48,29 @@ class AppWindows:
         if len(APP_QUEUES) > 0 and self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                msg = json.loads(s)
+                msg: ApiMessage = json.loads(s)
                 logger.info("Handle message: %s" % msg)
 
-                if msg['action'] == 'show_word_scan_popup':
+                if msg['action'] == ApiAction.show_word_scan_popup:
                     self._toggle_word_scan_popup()
 
-                elif msg['action'] == 'open_sutta_new':
-                    self.open_sutta_new(msg['uid'])
+                elif msg['action'] == ApiAction.open_sutta_new:
+                    self.open_sutta_new(uid = msg['data'])
 
-                elif msg['action'] == 'open_words_new':
-                    self.open_words_new(msg['schemas_ids'])
+                elif msg['action'] == ApiAction.open_words_new:
+                    schemas_ids = json.loads(msg['data'])
+                    self.open_words_new(schemas_ids)
 
-                elif msg['action'] == 'lookup_clipboard_in_suttas':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
                     self._lookup_clipboard_in_suttas(msg)
 
-                elif msg['action'] == 'lookup_clipboard_in_dictionary':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_dictionary:
                     self._lookup_clipboard_in_dictionary(msg)
 
-                elif msg['action'] == 'lookup_in_suttas':
+                elif msg['action'] == ApiAction.lookup_in_suttas:
                     self._lookup_clipboard_in_suttas(msg)
 
-                elif msg['action'] == 'lookup_in_dictionary':
+                elif msg['action'] == ApiAction.lookup_in_dictionary:
                     self._lookup_clipboard_in_dictionary(msg)
 
                 APP_QUEUES[self.queue_id].task_done()
@@ -86,7 +87,7 @@ class AppWindows:
         self._windows.append(view)
         view.show()
 
-    def _lookup_clipboard_in_suttas(self, msg):
+    def _lookup_clipboard_in_suttas(self, msg: ApiMessage):
         # Is there a sutta window to handle the message?
         view = None
         for w in self._windows:
@@ -102,7 +103,7 @@ class AppWindows:
             APP_QUEUES[view.queue_id].put_nowait(data)
             view.handle_messages()
 
-    def _lookup_clipboard_in_dictionary(self, msg):
+    def _lookup_clipboard_in_dictionary(self, msg: ApiMessage):
         # Is there a dictionary window to handle the message?
         view = None
         for w in self._windows:

@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow,
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 
-from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -149,25 +149,26 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
-                elif data['action'] == 'show_sutta_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_sutta_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_sutta_by_uid(info['uid'])
 
-                elif data['action'] == 'show_word_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_word_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_word_by_uid(info['uid'])
 
-                elif data['action'] == 'lookup_clipboard_in_suttas':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
                     self._lookup_clipboard_in_suttas()
 
-                elif data['action'] == 'lookup_in_suttas':
-                    text = data['query']
+                elif msg['action'] == ApiAction.lookup_in_suttas:
+                    text = msg['data']
                     self._set_query(text)
                     self._handle_query()
 

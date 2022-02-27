@@ -63,6 +63,7 @@ class AppSettings(TypedDict):
     word_scan_popup_pos: WindowPosSize
     show_related_suttas: bool
 
+# Message to show to the user.
 class AppMessage(TypedDict):
     kind: str
     text: str

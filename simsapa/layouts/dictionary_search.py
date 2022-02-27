@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
@@ -150,25 +150,26 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
-                elif data['action'] == 'show_sutta_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_sutta_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_sutta_by_uid(info['uid'])
 
-                elif data['action'] == 'show_word_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_word_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_word_by_uid(info['uid'])
 
-                elif data['action'] == 'lookup_clipboard_in_dictionary':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_dictionary:
                     self._lookup_clipboard_in_dictionary()
 
-                elif data['action'] == 'lookup_in_dictionary':
-                    text = data['query']
+                elif msg['action'] == ApiAction.lookup_in_dictionary:
+                    text = msg['data']
                     self._set_query(text)
                     self._handle_query()
                     self._handle_exact_query()

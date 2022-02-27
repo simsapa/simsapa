@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, TypedDict
 from enum import Enum
 from queue import Queue
 from dotenv import load_dotenv
@@ -54,3 +54,20 @@ DARK_READING_BACKGROUND_COLOR = "#F0B211"
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
     UserData = 'userdata'
+
+class ApiAction(str, Enum):
+    lookup_clipboard_in_dictionary = 'lookup_clipboard_in_dictionary'
+    lookup_clipboard_in_suttas = 'lookup_clipboard_in_suttas'
+    lookup_in_dictionary = 'lookup_in_dictionary'
+    lookup_in_suttas = 'lookup_in_suttas'
+    open_sutta_new = 'open_sutta_new'
+    open_words_new = 'open_words_new'
+    show_sutta_by_uid = 'show_sutta_by_uid'
+    show_sutta = 'show_sutta'
+    show_word_by_uid = 'show_word_by_uid'
+    show_word_scan_popup = 'show_word_scan_popup'
+
+# Messages sent via the localhost web API
+class ApiMessage(TypedDict):
+    action: ApiAction
+    data: str
