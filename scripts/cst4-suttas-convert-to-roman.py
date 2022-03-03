@@ -4,7 +4,6 @@ import os
 import shutil
 import sys
 import glob
-import re
 from pathlib import Path
 from dotenv import load_dotenv
 from aksharamukha import transliterate
@@ -24,16 +23,16 @@ bootstrap_assets_dir = Path(s)
 
 SRC_XML_DIR = bootstrap_assets_dir.joinpath('cst4/extracted/Cst4/Xml/')
 
-DEST_XML_DIR = bootstrap_assets_dir.joinpath('cst4/roman')
+DEST_HTML_DIR = bootstrap_assets_dir.joinpath('cst4/roman')
 
-if DEST_XML_DIR.exists():
-    shutil.rmtree(DEST_XML_DIR)
+if DEST_HTML_DIR.exists():
+    shutil.rmtree(DEST_HTML_DIR)
 
-DEST_XML_DIR.mkdir()
+DEST_HTML_DIR.mkdir()
 
 
 def main():
-    logger.info("Convert CST4 from Devanagari to Roman", start_new=True)
+    logger.info("Convert CST4 from Devanagari to Roman (ISO Pali)", start_new=True)
 
     xslt = etree.parse(SRC_XML_DIR.joinpath('tipitaka-deva.xsl'))
     transform = etree.XSLT(xslt)
@@ -73,7 +72,8 @@ def main():
 
         deva_html = str(soup)
 
-        roman_html = transliterate.process('Devanagari', 'IAST', deva_html)
+        # ISO Pali: cūḷakammavibhaṅgasuttaṁ
+        roman_html = transliterate.process('Devanagari', 'ISOPali', deva_html)
 
         if roman_html.__class__ != str:
             logger.error(f"Can't convert: {p.name}")
@@ -81,7 +81,7 @@ def main():
 
         roman_html = str(roman_html)
 
-        out_path = DEST_XML_DIR.joinpath(p.name).with_suffix('.html')
+        out_path = DEST_HTML_DIR.joinpath(p.name).with_suffix('.html')
 
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(roman_html)

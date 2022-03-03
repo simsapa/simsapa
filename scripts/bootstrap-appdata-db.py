@@ -3,7 +3,6 @@
 import os
 import sys
 from pathlib import Path
-import re
 import json
 from bs4 import BeautifulSoup
 from typing import List, Optional
@@ -25,6 +24,9 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.helpers import find_or_create_db
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
+
+import helpers
+import cst4
 
 load_dotenv()
 
@@ -102,25 +104,6 @@ def bilara_text_uid(x) -> str:
 
     return f"{x['uid']}/{x['lang']}/{author}"
 
-def uid_to_ref(uid: str) -> str:
-    '''sn12.23 to SN 12.23'''
-
-    # Add a space after the letters, i.e. the collection abbrev
-    uid = re.sub(r'^([a-z]+)([0-9])', r'\1 \2', uid)
-
-    # handle all-upcase collections
-    subs = [('dn ', 'DN '),
-            ('mn ', 'MN '),
-            ('sn ', 'SN '),
-            ('an ', 'AN ')]
-    for sub_from, sub_to in subs:
-        uid = uid.replace(sub_from, sub_to)
-
-    # titlecase the rest, upcase the first letter
-    uid = uid[0].upper() + uid[1:]
-
-    return uid
-
 def get_sutta_page_body(html_page: str):
     if '<html' in html_page or '<HTML' in html_page:
         soup = BeautifulSoup(html_page, 'html.parser')
@@ -149,7 +132,7 @@ def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutt
         # dn1/en/bodhi
         uid = html_text_uid(x),
         # SN 12.23
-        sutta_ref = uid_to_ref(x['uid']),
+        sutta_ref = helpers.uid_to_ref(x['uid']),
         # en
         language = x['lang'],
         content_html = content_html,
@@ -184,7 +167,7 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Su
         # mn123/pli/ms
         uid = bilara_text_uid(x),
         # SN 12.23
-        sutta_ref = uid_to_ref(x['uid']),
+        sutta_ref = helpers.uid_to_ref(x['uid']),
         # pli
         language = x['lang'],
         content_plain = content_plain,
@@ -562,6 +545,8 @@ def main():
     populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db)
 
     populate_suttas_from_suttacentral(appdata_db, sc_db)
+
+    cst4.populate_suttas_from_cst4(appdata_db)
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
