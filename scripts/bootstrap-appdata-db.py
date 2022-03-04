@@ -28,6 +28,7 @@ from simsapa.app.db.stardict import import_stardict_as_new
 import helpers
 import cst4
 import dhammatalks_org
+import dhammapada_munindo
 
 load_dotenv()
 
@@ -555,6 +556,8 @@ def main():
     cst4.populate_suttas_from_cst4(appdata_db)
 
     dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
+
+    dhammapada_munindo.populate_suttas_from_dhammapada_munindo(appdata_db)
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 

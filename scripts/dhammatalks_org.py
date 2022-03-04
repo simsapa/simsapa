@@ -5,7 +5,7 @@ import sys
 import glob
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -27,35 +27,6 @@ if s is None or s == "":
 bootstrap_assets_dir = Path(s)
 
 HTML_DIR = bootstrap_assets_dir.joinpath('dhammatalks-org/www.dhammatalks.org/suttas/')
-
-DHP_CHAPTERS_TO_RANGE = {
-    1: (1, 20),
-    2: (21, 32),
-    3: (33, 43),
-    4: (44, 59),
-    5: (60, 75),
-    6: (76, 89),
-    7: (90, 99),
-    8: (100, 115),
-    9: (116, 128),
-    10: (129, 145),
-    11: (146, 156),
-    12: (157, 166),
-    13: (167, 178),
-    14: (179, 196),
-    15: (197, 208),
-    16: (209, 220),
-    17: (221, 234),
-    18: (235, 255),
-    19: (256, 272),
-    20: (273, 289),
-    21: (290, 305),
-    22: (306, 319),
-    23: (320, 333),
-    24: (334, 359),
-    25: (360, 382),
-    26: (383, 423),
-}
 
 
 def parse_sutta(p: Path) -> Am.Sutta:
@@ -125,7 +96,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     if ref.startswith('ch'):
         m = re.findall(r'ch(\d+)', ref)
         ch_num = int(m[0])
-        r = DHP_CHAPTERS_TO_RANGE[ch_num]
+        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
 
         ref = f"dhp{r[0]}-{r[1]}"
 
