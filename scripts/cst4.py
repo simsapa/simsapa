@@ -6,7 +6,7 @@ import sys
 import re
 import glob
 from pathlib import Path
-from typing import Any, List, Optional, Pattern, TypedDict
+from typing import Any, List, Optional, Pattern, Tuple, TypedDict
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
@@ -526,9 +526,14 @@ class Group(GroupInterface):
         else:
             ref = self.ref['ref']
 
+        if self.wisdom_pubs_ref is None:
+            wis_ref = 'x'
+        else:
+            wis_ref = self.wisdom_pubs_ref
+
         lvl_sep = lvl*"  "
         # S an_4_3_11  | ...
-        s = f"{label} {ref:15} | {lvl_sep}{self.title}"
+        s = f"{label} {ref:13} | {wis_ref:10} | {lvl_sep}{self.title}"
 
         return s
 
@@ -940,13 +945,22 @@ class Group(GroupInterface):
             return
 
 
-def get_nikaya_tree(group: Group) -> str:
+class SuttaCounters(TypedDict):
+    cur_nikaya: str
+    cur_book_str: str
+    cur_samyutta_num: int
+    cur_sutta_num: int
+
+
+def get_nikaya_tree(group: Group, c: SuttaCounters) -> str:
     tree = ''
 
     for i in group.sub_groups:
+        s, c = set_wisdom_pubs_ref(i, c)
+        i = s
         tree += i.as_string_node() + "\n"
         if len(i.sub_groups) > 0:
-            tree += get_nikaya_tree(i)
+            tree += get_nikaya_tree(i, c)
 
     return tree
 
@@ -966,6 +980,67 @@ def get_sutta_groups(group: Group) -> List[Group]:
             suttas.extend(a)
 
     return suttas
+
+
+def set_wisdom_pubs_ref(sutta: Group,
+                        c: SuttaCounters) -> Tuple[Group, SuttaCounters]:
+
+    if sutta.ref is None or sutta.parent_group is None:
+        return (sutta, c)
+
+    if sutta.ref['sutta_num'] is None:
+        return (sutta, c)
+
+    if c['cur_nikaya'] != sutta.ref['nikaya']:
+        c['cur_nikaya'] = sutta.ref['nikaya']
+        c['cur_sutta_num'] = 1
+        c['cur_book_str'] = '1'
+
+    if sutta.ref['nikaya'] == 'dn' \
+        or sutta.ref['nikaya'] == 'mn':
+
+        if sutta.parent_group.parent_group is None:
+            return (sutta, c)
+
+        if re.search('vaggo$', sutta.title):
+            return (sutta, c)
+
+        sutta.wisdom_pubs_ref = f"{sutta.ref['nikaya']}{c['cur_sutta_num']}"
+        c['cur_sutta_num'] += 1
+
+    elif sutta.ref['nikaya'] == 'an':
+
+        book_str = re.sub(r'^an_(\d+)_.*', r'\1', sutta.ref['ref'])
+        if c['cur_book_str'] != book_str:
+            c['cur_book_str'] = book_str
+            c['cur_sutta_num'] = 1
+
+        sutta.wisdom_pubs_ref = f"{sutta.ref['nikaya']}{c['cur_book_str']}.{c['cur_sutta_num']}"
+        c['cur_sutta_num'] += 1
+
+    elif sutta.ref['nikaya'] == 'sn':
+
+        if re.search(r'saṁyuttaṁ*$', sutta.parent_group.title):
+            g = sutta.parent_group
+        elif re.search(r'saṁyuttaṁ*$', sutta.parent_group.parent_group.title):
+            g = sutta.parent_group.parent_group
+        else:
+            logger.error(f"Can't find book parent group for: {sutta.group_sep_text}")
+            return (sutta, c)
+
+        book_str = g.title
+        if c['cur_book_str'] != book_str:
+            c['cur_book_str'] = book_str
+            c['cur_samyutta_num'] += 1
+            c['cur_sutta_num'] = 1
+
+        sutta.wisdom_pubs_ref = f"{sutta.ref['nikaya']}{c['cur_samyutta_num']}.{c['cur_sutta_num']}"
+        c['cur_sutta_num'] += 1
+
+    else:
+        logger.error(f"Unrecognized nikaya: {sutta.ref['nikaya']}")
+
+    return (sutta, c)
 
 def get_mula_suttas() -> List[Group]:
     sutta_groups: List[Group] = []
@@ -1052,66 +1127,19 @@ def get_mula_suttas() -> List[Group]:
     # Create a string representation of the group tree for testing and inspection
 
     for nikaya in nikaya_files.keys():
-        text = get_nikaya_tree(nikaya_groups[nikaya])
+        c = SuttaCounters(
+            cur_nikaya = '',
+            cur_book_str = '1',
+            cur_samyutta_num = 0,
+            cur_sutta_num = 1,
+        )
+        text = get_nikaya_tree(nikaya_groups[nikaya], c)
         with open(TREES_DIR.joinpath(f"{nikaya}-tree.txt"), 'w') as f:
             f.write(text)
 
     for nikaya in nikaya_files.keys():
         a = get_sutta_groups(nikaya_groups[nikaya])
         sutta_groups.extend(a)
-
-    # Set the Wisdom Pubs style ref
-    cur_nikaya = ''
-    cur_book_str = '1'
-    cur_samyutta_num = 0
-    cur_sutta_num = 1
-    for i in sutta_groups:
-        if i.ref is None or i.parent_group is None:
-            continue
-
-        if cur_nikaya != i.ref['nikaya']:
-            cur_nikaya = i.ref['nikaya']
-            cur_sutta_num = 1
-            cur_book_str = '1'
-
-        if i.ref['nikaya'] == 'dn' \
-           or i.ref['nikaya'] == 'mn':
-
-            i.wisdom_pubs_ref = f"{i.ref['nikaya']}{cur_sutta_num}"
-            cur_sutta_num += 1
-
-        elif i.ref['nikaya'] == 'an':
-
-            book_str = re.sub(r'^an_(\d+)_.*', r'\1', i.ref['ref'])
-            if cur_book_str != book_str:
-                cur_book_str = book_str
-                cur_sutta_num = 1
-
-            i.wisdom_pubs_ref = f"{i.ref['nikaya']}{cur_book_str}.{cur_sutta_num}"
-            cur_sutta_num += 1
-
-        elif i.ref['nikaya'] == 'sn':
-
-            if re.search(r'saṁyuttaṁ*$', i.parent_group.title):
-                g = i.parent_group
-            elif re.search(r'saṁyuttaṁ*$', i.parent_group.parent_group.title):
-                g = i.parent_group.parent_group
-            else:
-                logger.error(f"Can't find book parent group for: {i.group_sep_text}")
-                continue
-
-            book_str = g.title
-            if cur_book_str != book_str:
-                cur_book_str = book_str
-                cur_samyutta_num += 1
-                cur_sutta_num = 1
-
-            i.wisdom_pubs_ref = f"{i.ref['nikaya']}{cur_samyutta_num}.{cur_sutta_num}"
-            cur_sutta_num += 1
-
-        else:
-            logger.error(f"Unrecognized nikaya: {i.ref['nikaya']}")
-            continue
 
     return sutta_groups
 
