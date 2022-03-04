@@ -1218,11 +1218,14 @@ def group_to_sutta(g: Group) -> Am.Sutta:
         logger.error("Error in sutta attrs")
         sys.exit(1)
 
-    # Sutta has at least one parent, add it as a header
+    content_html = g.group_sep_text + g.group_text
 
-    content_html = g.parent_group.group_sep_text \
-        + g.group_sep_text \
-        + g.group_text
+    # Add sutta headers, at least from one parent
+    if g.parent_group is not None:
+        content_html = g.parent_group.group_sep_text + content_html
+
+    if hasattr(g.parent_group, 'parent_group') and g.parent_group.parent_group is not None:
+        content_html = g.parent_group.parent_group.group_sep_text + content_html
 
     # an_2_5_11 > an2.5.11
     # ref = re.sub(r'^(dn|mn|sn|an)_(\d)(.*)', r'\1\2\3', g.ref['ref'])
@@ -1273,17 +1276,17 @@ def populate_suttas_from_cst4(appdata_db: Session):
         logger.error(e)
         exit(1)
 
-    # suttas = get_other_texts_body()
+    suttas = get_other_texts_body()
 
-    # logger.info(f"Adding CST4 remaining texts as html <body>, count {len(suttas)} ...")
+    logger.info(f"Adding CST4 remaining texts as html <body>, count {len(suttas)} ...")
 
-    # try:
-    #     for i in suttas:
-    #         appdata_db.add(i)
-    #         appdata_db.commit()
-    # except Exception as e:
-    #     logger.error(e)
-    #     exit(1)
+    try:
+        for i in suttas:
+            appdata_db.add(i)
+            appdata_db.commit()
+    except Exception as e:
+        logger.error(e)
+        exit(1)
 
 def main():
     logger.info("Extract suttas from CST4", start_new=True)
