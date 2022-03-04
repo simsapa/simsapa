@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+from typing import Optional
 
 def uid_to_ref(uid: str) -> str:
     '''sn12.23 to SN 12.23'''
@@ -49,3 +50,10 @@ DHP_CHAPTERS_TO_RANGE = {
     25: (360, 382),
     26: (383, 423),
 }
+
+def dhp_chapter_ref_for_verse_num(num: int) -> Optional[str]:
+    for v in DHP_CHAPTERS_TO_RANGE.values():
+        if num >= v[0] and num <= v[1]:
+            return f"dhp{v[0]}-{v[1]}"
+
+    return None

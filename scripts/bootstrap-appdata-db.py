@@ -29,6 +29,7 @@ import helpers
 import cst4
 import dhammatalks_org
 import dhammapada_munindo
+import dhammapada_tipitaka_net
 
 load_dotenv()
 
@@ -558,6 +559,8 @@ def main():
     dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
 
     dhammapada_munindo.populate_suttas_from_dhammapada_munindo(appdata_db)
+
+    dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db)
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
