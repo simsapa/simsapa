@@ -27,6 +27,7 @@ from simsapa.app.db.stardict import import_stardict_as_new
 
 import helpers
 import cst4
+import dhammatalks_org
 
 load_dotenv()
 
@@ -304,6 +305,11 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             title = f_title(r, titles)
             tmpl = suttas_html_tmpl.get(r['uid'], None)
 
+            if uid.endswith('/than'):
+                # We'll use Aj Thanissaro's translations from dhammatalks.org
+                ignored += 1
+                continue
+
             if uid not in suttas.keys():
                 suttas[uid] = f_to_sutta(r, title, tmpl)
 
@@ -547,6 +553,8 @@ def main():
     populate_suttas_from_suttacentral(appdata_db, sc_db)
 
     cst4.populate_suttas_from_cst4(appdata_db)
+
+    dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
