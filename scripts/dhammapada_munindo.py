@@ -52,13 +52,15 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     logger.info(f"{ref} -- {title}")
 
+    content_html = '<div class="dhammapada_munindo">' + html_text + '</div>'
+
     sutta = Am.Sutta(
         title = title,
         title_pali = '',
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
         language = lang,
-        content_html = html_text,
+        content_html = content_html,
         created_at = func.now(),
     )
 

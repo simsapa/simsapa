@@ -1221,10 +1221,13 @@ def group_to_sutta(g: Group) -> Am.Sutta:
     content_html = g.group_sep_text + g.group_text
 
     # Add sutta headers, at least from one parent
-    if g.parent_group is not None:
+    if g.parent_group is not None \
+       and g.parent_group.group_sep_text is not None:
         content_html = g.parent_group.group_sep_text + content_html
 
-    if hasattr(g.parent_group, 'parent_group') and g.parent_group.parent_group is not None:
+    if hasattr(g.parent_group, 'parent_group') \
+       and g.parent_group.parent_group is not None \
+       and g.parent_group.parent_group.group_sep_text is not None:
         content_html = g.parent_group.parent_group.group_sep_text + content_html
 
     # an_2_5_11 > an2.5.11
@@ -1237,6 +1240,8 @@ def group_to_sutta(g: Group) -> Am.Sutta:
     lang = "pli"
     author = "cst4"
     uid = f"{ref}/{lang}/{author}"
+
+    content_html = '<div class="cst4">' + content_html + '</div>'
 
     return Am.Sutta(
         title = g.title,

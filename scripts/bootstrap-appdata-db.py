@@ -307,7 +307,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             title = f_title(r, titles)
             tmpl = suttas_html_tmpl.get(r['uid'], None)
 
-            if uid.endswith('/than'):
+            if uid.endswith('/than') or uid.endswith('/thanissaro'):
                 # We'll use Aj Thanissaro's translations from dhammatalks.org
                 ignored += 1
                 continue
@@ -550,11 +550,11 @@ def main():
     # NOTE: Deprecated. Use the suttacentral db.
     # populate_suttas_from_legacy(appdata_db, legacy_db)
 
-    populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db)
+    # populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db)
 
-    populate_suttas_from_suttacentral(appdata_db, sc_db)
+    # populate_suttas_from_suttacentral(appdata_db, sc_db)
 
-    cst4.populate_suttas_from_cst4(appdata_db)
+    # cst4.populate_suttas_from_cst4(appdata_db)
 
     dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
 
@@ -562,7 +562,7 @@ def main():
 
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db)
 
-    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
+    # populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
 
 if __name__ == "__main__":
     main()

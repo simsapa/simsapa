@@ -28,6 +28,31 @@ bootstrap_assets_dir = Path(s)
 
 HTML_DIR = bootstrap_assets_dir.joinpath('dhammatalks-org/www.dhammatalks.org/suttas/')
 
+RE_SUTTA_HTML_NAME = re.compile(r'(DN|MN|SN|AN|Ch|iti|khp|StNp|thag|thig|ud)[\d_]+.html')
+
+def href_sutta_html_to_ssp(href: str) -> str:
+    m = re.findall(r'#.+', href)
+    if len(m) > 0:
+        anchor = m[0]
+    else:
+        anchor = ''
+
+    ref = re.sub(r'^.*/([^/]+)$', r'\1', href)
+    ref = ref.replace('.html', '').lower()
+
+    ref = ref.replace('StNp', 'snp')
+    ref = re.sub(r'ud(\d)', r'uda\1', ref)
+
+    if ref.startswith('ch'):
+        m = re.findall(r'ch(\d+)', ref)
+        ch_num = int(m[0])
+        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
+
+        ref = f"dhp{r[0]}-{r[1]}"
+
+    ssp_uid = f"ssp://{ref}/en/thanissaro{anchor}"
+
+    return ssp_uid
 
 def parse_sutta(p: Path) -> Am.Sutta:
     html_text = open(p, 'r', encoding='utf-8').read()
@@ -35,6 +60,18 @@ def parse_sutta(p: Path) -> Am.Sutta:
     soup = BeautifulSoup(html_text, 'html.parser')
     h = soup.find(id = 'sutta')
     if h is not None:
+        # Replace sutta links with internal ssp://
+        links = soup.select('#sutta a')
+        for link in links:
+            href = link.get('href', None)
+            if href is not None:
+                if href.__class__ == list:
+                    href = href[0]
+
+                if re.search(RE_SUTTA_HTML_NAME, href): # type: ignore
+                    ssp_href = href_sutta_html_to_ssp(href) # type: ignore
+                    link['href'] = ssp_href
+
         content_html = h.decode_contents() # type: ignore
     else:
         logger.error("No #sutta in %s" % p)
@@ -101,10 +138,12 @@ def parse_sutta(p: Path) -> Am.Sutta:
         ref = f"dhp{r[0]}-{r[1]}"
 
     lang = "en"
-    author = "than"
+    author = "thanissaro"
     uid = f"{ref}/{lang}/{author}"
 
     logger.info(f"{ref} -- {title} -- {title_pali}")
+
+    content_html = '<div class="dhammatalks_org">' + content_html + '</div>'
 
     sutta = Am.Sutta(
         title = title,
@@ -131,7 +170,7 @@ def get_suttas() -> List[Am.Sutta]:
 
     for p in paths:
         p = Path(p)
-        if not re.search(r'^(DN|MN|SN|AN|Ch|iti|khp|StNp|thag|thig|ud)[\d_]+.html', p.name):
+        if not re.search(RE_SUTTA_HTML_NAME, p.name):
             continue
 
         sutta = parse_sutta(p)
