@@ -30,6 +30,24 @@ HTML_DIR = bootstrap_assets_dir.joinpath('dhammatalks-org/www.dhammatalks.org/su
 
 RE_SUTTA_HTML_NAME = re.compile(r'(DN|MN|SN|AN|Ch|iti|khp|StNp|thag|thig|ud)[\d_]+.html')
 
+def ref_notation_convert(ref: str) -> str:
+    ref = ref.replace('_', '.').lower()
+    ref = ref.replace('.html', '').lower()
+    ref = ref.replace('stnp', 'snp')
+    ref = re.sub(r'ud(\d)', r'uda\1', ref)
+
+    # remove leading zeros, dn02
+    ref = re.sub(r'([a-z])0+', r'\1', ref)
+
+    if ref.startswith('ch'):
+        m = re.findall(r'ch(\d+)', ref)
+        ch_num = int(m[0])
+        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
+
+        ref = f"dhp{r[0]}-{r[1]}"
+
+    return ref
+
 def href_sutta_html_to_ssp(href: str) -> str:
     m = re.findall(r'#.+', href)
     if len(m) > 0:
@@ -38,17 +56,8 @@ def href_sutta_html_to_ssp(href: str) -> str:
         anchor = ''
 
     ref = re.sub(r'^.*/([^/]+)$', r'\1', href)
-    ref = ref.replace('.html', '').lower()
 
-    ref = ref.replace('StNp', 'snp')
-    ref = re.sub(r'ud(\d)', r'uda\1', ref)
-
-    if ref.startswith('ch'):
-        m = re.findall(r'ch(\d+)', ref)
-        ch_num = int(m[0])
-        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
-
-        ref = f"dhp{r[0]}-{r[1]}"
+    ref = ref_notation_convert(ref)
 
     ssp_uid = f"ssp://{ref}/en/thanissaro{anchor}"
 
@@ -127,15 +136,8 @@ def parse_sutta(p: Path) -> Am.Sutta:
         title_pali = m[0]
 
     ref = re.sub(r'([^0-9])0*', r'\1', p.stem).lower()
-    ref = ref.replace('_', '.')
-    ref = ref.replace('stnp', 'snp')
 
-    if ref.startswith('ch'):
-        m = re.findall(r'ch(\d+)', ref)
-        ch_num = int(m[0])
-        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
-
-        ref = f"dhp{r[0]}-{r[1]}"
+    ref = ref_notation_convert(ref)
 
     lang = "en"
     author = "thanissaro"

@@ -263,6 +263,10 @@ a {
   font-weight: bold;
   font-size: 1em;
 }
+.dhammatalks_org .fn {
+  vertical-align: 0.4em;
+  font-size: 0.8em;
+}
 .dhammatalks_org .verse {
   margin: 0.8em 8%;
   text-indent: 0;

@@ -394,7 +394,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        titles = list(map(lambda x: str(x.title), self._recent))
+
+        def _to_title(x: USutta):
+            return " - ".join([str(x.uid), str(x.title)])
+
+        titles = list(map(lambda x: _to_title(x), self._recent))
         self.recent_list.insertItems(0, titles)
 
     def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
@@ -469,6 +473,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if len(results) > 0:
             self._show_sutta(results[0])
+            self._add_recent(results[0])
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []

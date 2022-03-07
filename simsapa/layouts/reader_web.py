@@ -13,7 +13,14 @@ class ReaderWebEnginePage(QWebEnginePage):
 
     def acceptNavigationRequest(self, url: QUrl, _type: QWebEnginePage.NavigationType, isMainFrame):
         if _type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            if url.scheme() == 'http' or \
+
+            # Don't follow relative URLs. It's usually from static content
+            # linking to files (which are now not present) such as
+            # '../pages/dhamma.html#anatta'
+            if url.isRelative():
+                return
+
+            elif url.scheme() == 'http' or \
                url.scheme() == 'https' or \
                url.scheme() == 'mailto':
 
@@ -21,6 +28,15 @@ class ReaderWebEnginePage(QWebEnginePage):
                     QDesktopServices.openUrl(url)
                 except Exception as e:
                     logger.error("Can't open %s : %s" % (url, e))
+
+            elif url.scheme() == 'ssp':
+
+                if self._parent_window is None:
+                    return
+
+                if hasattr(self._parent_window, '_show_sutta_by_uid'):
+                    uid = url.toString().replace('ssp://', '')
+                    self._parent_window._show_sutta_by_uid(uid)
 
             elif url.scheme() == 'bword':
 

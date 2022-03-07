@@ -19,7 +19,7 @@ from bokeh import events
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from .types import AppData, UDictWord, USutta, UDocument
+from .types import AppData, UDictWord, USutta, UDocument, ULink
 
 
 class NodeData(TypedDict):
@@ -141,38 +141,49 @@ def unique_edges(edges: List[GraphEdge]) -> List[GraphEdge]:
 
 
 def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
-    links = []
+    links = {'appdata.suttas': [], 'userdata.suttas': []}
+    sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
 
-    # TODO: Assuming all links are in userdata, made between
-    # 'appdata.suttas' records
+    for DbLink in [Am.Link, Um.Link]:
+        for table in ['appdata.suttas', 'userdata.suttas']:
+
+            r = app_data.db_session \
+                .query(DbLink.to_id) \
+                .filter(DbLink.from_table == table) \
+                .filter(DbLink.to_table == table) \
+                .filter(DbLink.from_id == sutta.id) \
+                .all()
+
+            links[table].extend(r)
+
+            r = app_data.db_session \
+                .query(DbLink.from_id) \
+                .filter(DbLink.from_table == table) \
+                .filter(DbLink.to_table == table) \
+                .filter(DbLink.to_id == sutta.id) \
+                .all()
+
+            links[table].extend(r)
+
+    for table in ['appdata.suttas', 'userdata.suttas']:
+        # results IDs, exluding the the current sutta ID (i.e. suttas connecting to it)
+        ids = filter(lambda x: x != sutta.id, map(lambda x: x[0], links[table]))
+        # set() will contain unique items
+        sutta_ids[table] = list(set(ids))
+
+    suttas = []
 
     r = app_data.db_session \
-        .query(Um.Link.to_id) \
-        .filter(Um.Link.from_table == "appdata.suttas") \
-        .filter(Um.Link.to_table == "appdata.suttas") \
-        .filter(Um.Link.from_id == sutta.id) \
-        .all()
-
-    links.extend(r)
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id.in_(sutta_ids['appdata.suttas'])) \
+                .all()
+    suttas.extend(r)
 
     r = app_data.db_session \
-        .query(Um.Link.from_id) \
-        .filter(Um.Link.from_table == "appdata.suttas") \
-        .filter(Um.Link.to_table == "appdata.suttas") \
-        .filter(Um.Link.to_id == sutta.id) \
-        .all()
-
-    links.extend(r)
-
-    # IDs without the current sutta ID
-    ids = filter(lambda x: x != sutta.id, map(lambda x: x[0], links))
-    # set() will contain unique items
-    sutta_ids = list(set(ids))
-
-    suttas = app_data.db_session \
-        .query(Am.Sutta) \
-        .filter(Am.Sutta.id.in_(sutta_ids)) \
-        .all()
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id.in_(sutta_ids['userdata.suttas'])) \
+                .all()
+    suttas.extend(r)
 
     nodes = list(map(sutta_to_node, suttas))
 
@@ -421,7 +432,11 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
 
 def all_nodes_and_edges(app_data: AppData):
 
-    links = app_data.db_session.query(Um.Link).all()
+    links = []
+    r = app_data.db_session.query(Am.Link).all()
+    links.extend(r)
+    r = app_data.db_session.query(Um.Link).all()
+    links.extend(r)
 
     suttas = _suttas_from_links(app_data, links)
     words = _dict_words_from_links(app_data, links)
@@ -452,7 +467,7 @@ def all_nodes_and_edges(app_data: AppData):
             x['doc'].metadata.schema == to_schema and x['doc'].id == link.to_id and \
             x['page_number'] == link.to_page_number
 
-    def to_edge(link: Um.Link):
+    def to_edge(link: ULink):
         if link.from_table.endswith('.suttas'):
             sutta = list(filter(lambda x: from_agrees(x, link, '.suttas'), suttas))
             if len(sutta) == 1:
@@ -641,7 +656,7 @@ if (typeof window.selected_info === 'undefined') {
 if (window.selected_info.length > 0) {
     const params = {
         action: 'show_sutta',
-        arg: window.selected_info[0],
+        data: JSON.stringify(window.selected_info[0]),
     };
     const options = {
         method: 'POST',

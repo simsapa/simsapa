@@ -25,6 +25,7 @@ from simsapa.app.helpers import find_or_create_db
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
+ULink = Union[Am.Link, Um.Link]
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
 UDocument = Union[Am.Document, Um.Document]

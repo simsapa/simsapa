@@ -30,6 +30,7 @@ import cst4
 import dhammatalks_org
 import dhammapada_munindo
 import dhammapada_tipitaka_net
+import create_links
 
 load_dotenv()
 
@@ -550,11 +551,11 @@ def main():
     # NOTE: Deprecated. Use the suttacentral db.
     # populate_suttas_from_legacy(appdata_db, legacy_db)
 
-    # populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db)
+    populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db)
 
-    # populate_suttas_from_suttacentral(appdata_db, sc_db)
+    populate_suttas_from_suttacentral(appdata_db, sc_db)
 
-    # cst4.populate_suttas_from_cst4(appdata_db)
+    cst4.populate_suttas_from_cst4(appdata_db)
 
     dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
 
@@ -562,7 +563,10 @@ def main():
 
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db)
 
-    # populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
+    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
+
+    # Create db links from ssp:// links after all suttas have been added.
+    create_links.populate_links(appdata_db)
 
 if __name__ == "__main__":
     main()
