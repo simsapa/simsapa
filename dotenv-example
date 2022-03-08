@@ -1,3 +1,4 @@
+SIMSAPA_DIR=/home/<user>/.local/share/simsapa
+BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources
 USE_TEST_DATA=true
 ENABLE_WIP_FEATURES=false
-BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources

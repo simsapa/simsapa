@@ -18,7 +18,11 @@ ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
 ICONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets/icons/')
 
-SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
+s = os.getenv('SIMSAPA_DIR')
+if s is not None and s != '' and Path(s).exists():
+    SIMSAPA_DIR = Path(s)
+else:
+    SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
@@ -50,6 +54,8 @@ IS_MAC = (platform.system() == 'Darwin')
 READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
+
+LOADING_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/loading.html'), 'r').read()
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'

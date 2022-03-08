@@ -1,7 +1,10 @@
+from functools import partial
 from pathlib import Path
+from typing import Callable, Optional
 
 from PyQt5.QtWidgets import QSizePolicy, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtCore import QThread, QUrl
 
 from ..app.graph import (generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
@@ -12,12 +15,62 @@ from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord
 
+from simsapa import LOADING_HTML
+from simsapa.app.helpers import get_db_engine_connection_session
+
+
+class GraphGenerator(QThread):
+    def __init__(self,
+                 sutta: Optional[USutta],
+                 dict_word: Optional[UDictWord],
+                 queue_id: str,
+                 graph_path: Path,
+                 messages_url: str):
+
+        super().__init__()
+
+        self.sutta = sutta
+        self.dict_word = dict_word
+        self.queue_id = queue_id
+        self.graph_path = graph_path
+        self.messages_url = messages_url
+
+        self.hits = 0
+
+    def run(self):
+        _, _, self._db_session = get_db_engine_connection_session()
+
+        if self.sutta is not None:
+
+            (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=3)
+
+            selected = []
+            for idx, n in enumerate(nodes):
+                if n[0] == sutta_graph_id(self.sutta):
+                    selected.append(idx)
+
+        elif self.dict_word is not None:
+            (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=3)
+
+            selected = []
+            for idx, n in enumerate(nodes):
+                if n[0] == sutta_graph_id(self.dict_word):
+                    selected.append(idx)
+
+        else:
+            return
+
+        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path, self.messages_url)
+
+        self.hits = len(nodes) - 1
+
 
 class HasLinksSidebar:
     _app_data: AppData
     links_layout: QVBoxLayout
     rightside_tabs: QTabWidget
     links_tab_idx: int
+    content_graph: QWebEngineView
 
     def init_links_sidebar(self):
         self.setup_content_graph()
@@ -29,46 +82,33 @@ class HasLinksSidebar:
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 
-    def generate_graph_for_sutta(self,
-                                 sutta: USutta,
-                                 queue_id: str,
-                                 graph_path: Path,
-                                 messages_url: str):
-
-        (nodes, edges) = sutta_nodes_and_edges(app_data=self._app_data, sutta=sutta, distance=3)
-
-        hits = len(nodes) - 1
+    def _graph_finished(self, done_callback: Optional[Callable] = None):
+        hits = self.graph_gen.hits
         if hits > 0:
             self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
         else:
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        selected = []
+        self.content_graph.load(QUrl(str(self.graph_gen.graph_path.absolute().as_uri())))
 
-        for idx, n in enumerate(nodes):
-            if n[0] == sutta_graph_id(sutta):
-                selected.append(idx)
+        if done_callback is not None:
+            done_callback()
 
-        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)
+    def generate_and_show_graph(self,
+                                sutta: Optional[USutta],
+                                dict_word: Optional[UDictWord],
+                                queue_id: str,
+                                graph_path: Path,
+                                messages_url: str,
+                                done_callback: Optional[Callable] = None):
 
-    def generate_graph_for_dict_word(self,
-                                     dict_word: UDictWord,
-                                     queue_id: str,
-                                     graph_path: Path,
-                                     messages_url: str):
+        self.graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url)
+        self.graph_gen.finished.connect(partial(self._graph_finished, done_callback))
 
-        (nodes, edges) = dict_word_nodes_and_edges(app_data=self._app_data, dict_word=dict_word, distance=3)
+        self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
+        self.content_graph.setHtml(LOADING_HTML)
 
-        hits = len(nodes) - 1
-        if hits > 0:
-            self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
-        else:
-            self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
-
-        # central node was appended last
-        selected = [len(nodes) - 1]
-
-        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)
+        self.graph_gen.start()
 
     def generate_graph_for_document(self,
                                     file_doc: FileDoc,
@@ -78,7 +118,7 @@ class HasLinksSidebar:
                                     messages_url: str):
 
         (nodes, edges) = document_page_nodes_and_edges(
-            app_data=self._app_data,
+            db_session=self._app_data.db_session,
             db_doc=db_doc,
             page_number=file_doc._current_idx + 1,
             distance=3

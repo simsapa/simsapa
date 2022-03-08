@@ -10,7 +10,7 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QTabWidget, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
+                             QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 
@@ -560,8 +560,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._add_new_tab(title, sutta)
 
     def show_network_graph(self, sutta: USutta):
-        self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+        self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
         results = self.search_query.new_query(query, self._app_data.app_settings['disabled_sutta_labels'])

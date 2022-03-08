@@ -16,10 +16,12 @@ from bokeh.layouts import column
 from bokeh.models import CustomJS
 from bokeh import events
 
+from sqlalchemy.orm.session import Session
+
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from .types import AppData, UDictWord, USutta, UDocument, ULink
+from .types import UDictWord, USutta, UDocument, ULink
 
 
 class NodeData(TypedDict):
@@ -140,14 +142,14 @@ def unique_edges(edges: List[GraphEdge]) -> List[GraphEdge]:
     return unique_edges
 
 
-def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
+def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1):
     links = {'appdata.suttas': [], 'userdata.suttas': []}
     sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
 
     for DbLink in [Am.Link, Um.Link]:
         for table in ['appdata.suttas', 'userdata.suttas']:
 
-            r = app_data.db_session \
+            r = db_session \
                 .query(DbLink.to_id) \
                 .filter(DbLink.from_table == table) \
                 .filter(DbLink.to_table == table) \
@@ -156,7 +158,7 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
 
             links[table].extend(r)
 
-            r = app_data.db_session \
+            r = db_session \
                 .query(DbLink.from_id) \
                 .filter(DbLink.from_table == table) \
                 .filter(DbLink.to_table == table) \
@@ -173,13 +175,13 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
 
     suttas = []
 
-    r = app_data.db_session \
+    r = db_session \
                 .query(Am.Sutta) \
                 .filter(Am.Sutta.id.in_(sutta_ids['appdata.suttas'])) \
                 .all()
     suttas.extend(r)
 
-    r = app_data.db_session \
+    r = db_session \
                 .query(Um.Sutta) \
                 .filter(Um.Sutta.id.in_(sutta_ids['userdata.suttas'])) \
                 .all()
@@ -201,23 +203,22 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
     # Append the current sutta as a node
-
     nodes.append(sutta_to_node(sutta))
 
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance: int = 1):
+def dict_word_nodes_and_edges(db_session: Session, dict_word: UDictWord, distance: int = 1):
     schema = dict_word.metadata.schema
 
     links = []
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == f"{schema}.dict_words") \
         .filter(Um.Link.to_table == "appdata.suttas") \
@@ -226,7 +227,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
 
     links.extend(r)
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.Link.from_id) \
         .filter(Um.Link.from_table == f"{schema}.dict_words") \
         .filter(Um.Link.to_table == "appdata.suttas") \
@@ -239,7 +240,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
     # set() will contain unique items
     sutta_ids = list(set(ids))
 
-    suttas = app_data.db_session \
+    suttas = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(sutta_ids)) \
         .all()
@@ -257,7 +258,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -268,8 +269,8 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_number: int, distance: int = 1):
-    links = app_data.db_session \
+def document_page_nodes_and_edges(db_session: Session, db_doc: Am.Document, page_number: int, distance: int = 1):
+    links = db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == "userdata.documents") \
         .filter(Um.Link.from_page_number == page_number) \
@@ -281,7 +282,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     # set() will contain unique items
     sutta_ids = list(set(ids))
 
-    suttas = app_data.db_session \
+    suttas = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(sutta_ids)) \
         .all()
@@ -300,7 +301,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -312,7 +313,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
+def _suttas_from_links(db_session: Session, links: List[Um.Link]) -> List[USutta]:
     results: List[USutta] = []
 
     def to_appdata_sutta_ids(x: Um.Link):
@@ -326,7 +327,7 @@ def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
     a = list(map(to_appdata_sutta_ids, links))
     db_ids = list(set(chain.from_iterable(a)))
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(db_ids)) \
         .all()
@@ -336,7 +337,7 @@ def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
     return results
 
 
-def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDictWord]:
+def _dict_words_from_links(db_session: Session, links: List[Um.Link]) -> List[UDictWord]:
     results: List[UDictWord] = []
 
     def to_appdata_word_ids(x: Um.Link):
@@ -361,14 +362,14 @@ def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDic
     a = list(map(to_userdata_word_ids, links))
     userdata_db_ids = list(set(chain.from_iterable(a)))
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Am.DictWord) \
         .filter(Am.DictWord.id.in_(appdata_db_ids)) \
         .all()
 
     results.extend(r)
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.DictWord) \
         .filter(Um.DictWord.id.in_(userdata_db_ids)) \
         .all()
@@ -378,7 +379,7 @@ def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDic
     return results
 
 
-def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> List[DocumentPage]:
+def _documents_and_pages_from_links(db_session: Session, links: List[Um.Link]) -> List[DocumentPage]:
     results: List[DocumentPage] = []
 
     def to_appdata_items(x: Um.Link):
@@ -405,12 +406,12 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     userdata_items = list(set(chain.from_iterable(a)))
     userdata_ids = list(map(lambda x: x[0], userdata_items))
 
-    appdata_db_res = app_data.db_session \
+    appdata_db_res = db_session \
         .query(Am.Document) \
         .filter(Am.Document.id.in_(appdata_ids)) \
         .all()
 
-    userdata_db_res = app_data.db_session \
+    userdata_db_res = db_session \
         .query(Um.Document) \
         .filter(Um.Document.id.in_(userdata_ids)) \
         .all()
@@ -430,17 +431,17 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     return results
 
 
-def all_nodes_and_edges(app_data: AppData):
+def all_nodes_and_edges(db_session: Session):
 
     links = []
-    r = app_data.db_session.query(Am.Link).all()
+    r = db_session.query(Am.Link).all()
     links.extend(r)
-    r = app_data.db_session.query(Um.Link).all()
+    r = db_session.query(Um.Link).all()
     links.extend(r)
 
-    suttas = _suttas_from_links(app_data, links)
-    words = _dict_words_from_links(app_data, links)
-    documents_and_pages = _documents_and_pages_from_links(app_data, links)
+    suttas = _suttas_from_links(db_session, links)
+    words = _dict_words_from_links(db_session, links)
+    documents_and_pages = _documents_and_pages_from_links(db_session, links)
 
     nodes = []
     nodes.extend(list(map(sutta_to_node, suttas)))

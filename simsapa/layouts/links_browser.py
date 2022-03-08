@@ -114,7 +114,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.links_layout.addWidget(self.content_graph)
 
     def show_network_graph(self):
-        (nodes, edges) = all_nodes_and_edges(app_data=self._app_data)
+        (nodes, edges) = all_nodes_and_edges(self._app_data.db_session)
         if len(nodes) > 0:
             generate_graph(nodes, edges, [], self.queue_id, self.graph_path, self.messages_url)
             self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))

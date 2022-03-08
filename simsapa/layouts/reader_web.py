@@ -18,7 +18,7 @@ class ReaderWebEnginePage(QWebEnginePage):
             # linking to files (which are now not present) such as
             # '../pages/dhamma.html#anatta'
             if url.isRelative():
-                return
+                logger.info("Not following relative links: %s" % url)
 
             elif url.scheme() == 'http' or \
                url.scheme() == 'https' or \

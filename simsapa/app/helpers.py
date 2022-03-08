@@ -1,29 +1,34 @@
 from importlib import metadata
 from pathlib import Path
-from typing import Optional, TypedDict
-from PyQt5.QtWidgets import QMessageBox
+from typing import Optional, Tuple, TypedDict
 import requests
 import feedparser
 import semver
+import os
 import sys
-from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
-
 import re
 import bleach
 
-from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, DbSchemaName, logger
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.base import Connection
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.session import Session
 from sqlalchemy_utils import database_exists, create_database
+
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
 import tomlkit
 
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
+from simsapa import APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, DbSchemaName, logger
 from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
 
 def create_app_dirs():
@@ -229,6 +234,38 @@ def find_or_create_db(db_path: Path, schema_name: str):
                     exit(1)
     else:
         logger.error("Can't create in-memory database")
+
+def get_db_engine_connection_session() -> Tuple[Engine, Connection, Session]:
+    app_db_path = APP_DB_PATH
+    user_db_path = USER_DB_PATH
+
+    if not os.path.isfile(app_db_path):
+        logger.error(f"Database file doesn't exist: {app_db_path}")
+        exit(1)
+
+    if not os.path.isfile(user_db_path):
+        logger.error(f"Database file doesn't exist: {user_db_path}")
+        exit(1)
+
+    try:
+        # Create an in-memory database
+        db_eng = create_engine("sqlite+pysqlite://", echo=False)
+
+        db_conn = db_eng.connect()
+
+        # Attach appdata and userdata
+        db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
+        db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+
+        Session = sessionmaker(db_eng)
+        Session.configure(bind=db_eng)
+        db_session = Session()
+
+    except Exception as e:
+        logger.error(f"Can't connect to database: {e}")
+        exit(1)
+
+    return (db_eng, db_conn, db_session)
 
 def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
     directory = ScriptDirectory.from_config(alembic_cfg)

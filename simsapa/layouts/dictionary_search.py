@@ -417,8 +417,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._set_qwe_html(page_html)
 
     def show_network_graph(self, word: UDictWord):
-        self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+        self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
         results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
