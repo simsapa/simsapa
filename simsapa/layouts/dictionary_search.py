@@ -356,8 +356,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        words = list(map(lambda x: str(x.word), self._recent))
-        self.recent_list.insertItems(0, words)
+
+        def _to_title(x: UDictWord):
+            return " - ".join([str(x.uid), str(x.word)])
+
+        titles = list(map(lambda x: _to_title(x), self._recent))
+
+        self.recent_list.insertItems(0, titles)
 
     @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):

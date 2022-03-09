@@ -105,7 +105,11 @@ class HasLinksSidebar:
         self.graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url)
         self.graph_gen.finished.connect(partial(self._graph_finished, done_callback))
 
-        self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
+        # Only update text when it already has a links number,
+        # so that empty results don't cause jumping layout
+        if self.rightside_tabs.tabText(self.links_tab_idx) != "Links":
+            self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
+
         self.content_graph.setHtml(LOADING_HTML)
 
         self.graph_gen.start()
