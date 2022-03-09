@@ -1,10 +1,10 @@
 from functools import partial
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from PyQt5.QtWidgets import QSizePolicy, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QThread, QUrl
+from PyQt5.QtCore import QObject, QRunnable, QThread, QUrl, pyqtSignal, pyqtSlot
 
 from ..app.graph import (generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
@@ -18,8 +18,12 @@ from ..app.types import AppData, USutta, UDictWord
 from simsapa import LOADING_HTML
 from simsapa.app.helpers import get_db_engine_connection_session
 
+class GraphGenSignals(QObject):
+    finished = pyqtSignal()
+    # Results is the number of hits (links) and the path of the graph html
+    result = pyqtSignal(tuple)
 
-class GraphGenerator(QThread):
+class GraphGenerator(QRunnable):
     def __init__(self,
                  sutta: Optional[USutta],
                  dict_word: Optional[UDictWord],
@@ -27,7 +31,13 @@ class GraphGenerator(QThread):
                  graph_path: Path,
                  messages_url: str):
 
-        super().__init__()
+        super(GraphGenerator, self).__init__()
+
+        # Allow removing the thread when another graph is started and this is
+        # still in the queue.
+        self.setAutoDelete(True)
+
+        self.signals = GraphGenSignals()
 
         self.sutta = sutta
         self.dict_word = dict_word
@@ -35,35 +45,45 @@ class GraphGenerator(QThread):
         self.graph_path = graph_path
         self.messages_url = messages_url
 
-        self.hits = 0
-
+    @pyqtSlot()
     def run(self):
-        _, _, self._db_session = get_db_engine_connection_session()
+        try:
+            _, _, self._db_session = get_db_engine_connection_session()
 
-        if self.sutta is not None:
+            if self.sutta is not None:
 
-            (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=3)
+                (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=3)
 
-            selected = []
-            for idx, n in enumerate(nodes):
-                if n[0] == sutta_graph_id(self.sutta):
-                    selected.append(idx)
+                selected = []
+                for idx, n in enumerate(nodes):
+                    if n[0] == sutta_graph_id(self.sutta):
+                        selected.append(idx)
 
-        elif self.dict_word is not None:
-            (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=3)
+            elif self.dict_word is not None:
+                (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=3)
 
-            selected = []
-            for idx, n in enumerate(nodes):
-                if n[0] == sutta_graph_id(self.dict_word):
-                    selected.append(idx)
+                selected = []
+                for idx, n in enumerate(nodes):
+                    if n[0] == sutta_graph_id(self.dict_word):
+                        selected.append(idx)
+
+            else:
+                return
+
+            generate_graph(nodes, edges, selected, self.queue_id, self.graph_path, self.messages_url)
+
+            hits = len(nodes) - 1
+
+            result = (hits, self.graph_path)
+
+        except Exception as e:
+            print("ERROR: {e}" % e)
 
         else:
-            return
+            self.signals.result.emit(result)
 
-        generate_graph(nodes, edges, selected, self.queue_id, self.graph_path, self.messages_url)
-
-        self.hits = len(nodes) - 1
-
+        finally:
+            self.signals.finished.emit()
 
 class HasLinksSidebar:
     _app_data: AppData
@@ -82,28 +102,30 @@ class HasLinksSidebar:
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 
-    def _graph_finished(self, done_callback: Optional[Callable] = None):
-        hits = self.graph_gen.hits
+    def _graph_finished(self, result: Tuple[int, Path]):
+        hits = result[0]
+        graph_path = result[1]
+
         if hits > 0:
             self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
         else:
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        self.content_graph.load(QUrl(str(self.graph_gen.graph_path.absolute().as_uri())))
-
-        if done_callback is not None:
-            done_callback()
+        self.content_graph.load(QUrl(str(graph_path.absolute().as_uri())))
 
     def generate_and_show_graph(self,
                                 sutta: Optional[USutta],
                                 dict_word: Optional[UDictWord],
                                 queue_id: str,
                                 graph_path: Path,
-                                messages_url: str,
-                                done_callback: Optional[Callable] = None):
+                                messages_url: str):
 
-        self.graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url)
-        self.graph_gen.finished.connect(partial(self._graph_finished, done_callback))
+        # Remove worker thread which are in the queue.
+        self._app_data.graph_gen_pool.clear()
+
+        graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url)
+
+        graph_gen.signals.result.connect(self._graph_finished)
 
         # Only update text when it already has a links number,
         # so that empty results don't cause jumping layout
@@ -112,7 +134,7 @@ class HasLinksSidebar:
 
         self.content_graph.setHtml(LOADING_HTML)
 
-        self.graph_gen.start()
+        self._app_data.graph_gen_pool.start(graph_gen)
 
     def generate_graph_for_document(self,
                                     file_doc: FileDoc,
