@@ -57,8 +57,6 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self._ui_setup()
         self._connect_signals()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def _ui_setup(self):
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
@@ -66,9 +64,6 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         else:
             self.search_input.setVisible(False)
             self.search_button.setVisible(False)
-
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
 
         self.front_input.setTabChangesFocus(True)
         self.back_input.setTabChangesFocus(True)
@@ -134,7 +129,6 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
             self._show_memo(memo)
 
     def _show_memo_clear(self):
-        self.status_msg.clear()
         self.front_input.clear()
         self.back_input.clear()
 
@@ -311,7 +305,6 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         self.back_input.textChanged.connect(partial(self.update_selected_memo_fields))
 
         self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
-
 
 def is_anki_live() -> bool:
     try:

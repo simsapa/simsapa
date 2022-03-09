@@ -1,6 +1,7 @@
 <RCC>
   <qresource>
     <file alias="search">icons/32x32/bx_search_alt_2.png</file>
+    <file alias="fa-search">icons/32x32/fa_magnifying-glass-solid.png</file>
     <file alias="close">icons/32x32/fa_times-circle.png</file>
     <file alias="sync">icons/32x32/fa_sync.png</file>
     <file alias="reload">icons/32x32/fa_redo.png</file>
@@ -15,5 +16,24 @@
     <file alias="resize">icons/32x32/fa_down-left-and-up-right-to-center-solid.png</file>
     <file alias="simsapa-tray">icons/32x32/simsapa-tray.png</file>
     <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
+    <file alias="arrow-down">icons/32x32/fa_arrow-down-solid.png</file>
+    <file alias="arrow-left">icons/32x32/fa_arrow-left-solid.png</file>
+    <file alias="arrow-right">icons/32x32/fa_arrow-right-solid.png</file>
+    <file alias="arrow-up">icons/32x32/fa_arrow-up-solid.png</file>
+    <file alias="backward-fast">icons/32x32/fa_backward-fast-solid.png</file>
+    <file alias="forward-fast">icons/32x32/fa_forward-fast-solid.png</file>
+    <file alias="caret-left">icons/32x32/fa_caret-left-solid.png</file>
+    <file alias="caret-right">icons/32x32/fa_caret-right-solid.png</file>
+    <file alias="chevron-down">icons/32x32/fa_chevron-down-solid.png</file>
+    <file alias="chevron-left">icons/32x32/fa_chevron-left-solid.png</file>
+    <file alias="chevron-right">icons/32x32/fa_chevron-right-solid.png</file>
+    <file alias="chevron-up">icons/32x32/fa_chevron-up-solid.png</file>
+    <file alias="angles-left">icons/32x32/fa_angles-left-solid.png</file>
+    <file alias="angles-right">icons/32x32/fa_angles-right-solid.png</file>
+    <file alias="angle-down">icons/32x32/fa_angle-down-solid.png</file>
+    <file alias="angle-left">icons/32x32/fa_angle-left-solid.png</file>
+    <file alias="angle-right">icons/32x32/fa_angle-right-solid.png</file>
+    <file alias="angle-up">icons/32x32/fa_angle-up-solid.png</file>
+    <file alias="maximize">icons/32x32/fa_maximize-solid.png</file>
   </qresource>
 </RCC>

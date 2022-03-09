@@ -303,12 +303,19 @@
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
+   <widget class="QMenu" name="menu_Go">
+    <property name="title">
+     <string>&amp;Go</string>
+    </property>
+    <addaction name="action_Previous_Result"/>
+    <addaction name="action_Next_Result"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
+   <addaction name="menu_Go"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Help"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
    <property name="windowTitle">
     <string>toolBar</string>
@@ -504,6 +511,22 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>
+   </property>
+  </action>
+  <action name="action_Next_Result">
+   <property name="text">
+    <string>Next Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Down</string>
+   </property>
+  </action>
+  <action name="action_Previous_Result">
+   <property name="text">
+    <string>Previous Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Up</string>
    </property>
   </action>
  </widget>

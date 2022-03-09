@@ -58,8 +58,6 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self._ui_setup()
         self._connect_signals()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
@@ -83,9 +81,6 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self._setup_pali_buttons()
 
         self.setup_content_graph()
@@ -495,6 +490,22 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                                     "No link was found with these properties.",
                                     QMessageBox.Ok)
 
+    def _select_prev_result(self):
+        selected_idx = self.results_list.currentRow()
+        if selected_idx == -1:
+            self.results_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.results_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.results_list.currentRow()
+        if selected_idx == -1:
+            self.results_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.results_list):
+            self.results_list.setCurrentRow(selected_idx + 1)
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -507,6 +518,12 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.create_link_btn.clicked.connect(partial(self._handle_create_link))
         self.clear_link_btn.clicked.connect(partial(self._handle_clear_link))
         self.remove_link_btn.clicked.connect(partial(self._handle_remove_link))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':

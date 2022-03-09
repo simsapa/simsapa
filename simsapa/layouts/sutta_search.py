@@ -7,9 +7,9 @@ import re
 from functools import partial
 from typing import List, Optional
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QUrl, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
+from PyQt5.QtWidgets import (QCompleter, QFrame, QLineEdit, QMainWindow, QAction,
                              QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
@@ -89,8 +89,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
-
-        self.statusbar.showMessage("Ready", 3000)
 
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
@@ -177,9 +175,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Ready")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -418,9 +413,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
         def callback(found):
             if text and not found:
-                self.statusBar().showMessage('Not found')
-            else:
-                self.statusBar().showMessage('')
+                logger.info('Not found')
 
         tab = self._get_active_tab()
         tab.qwe.findText(text, flag, callback)
@@ -430,13 +423,69 @@ QWidget:focus { border: 1px solid #1092C3; }
         if selected_idx < len(self._results):
             sutta = self._sutta_from_result(self._results[selected_idx])
             if sutta is not None:
-                self._show_sutta(sutta)
                 self._add_recent(sutta)
+                self._show_sutta(sutta)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
         sutta: USutta = self._recent[selected_idx]
         self._show_sutta(sutta)
+
+    def _select_prev_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        if selected_idx == -1:
+            self.recent_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.recent_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        # List is empty or lost focus (no selected item)
+        if selected_idx == -1:
+            if len(self.recent_list) == 1:
+                # Only one viewed item, which is presently being shown, and no
+                # next item
+                return
+            else:
+                # The 0 index is already the presently show item
+                self.recent_list.setCurrentRow(1)
+
+        elif selected_idx + 1 < len(self.recent_list):
+            self.recent_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.fulltext_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.fulltext_list):
+            self.fulltext_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_tab(self):
+        selected_idx = self.sutta_tabs.currentIndex()
+        if selected_idx == -1:
+            self.sutta_tabs.setCurrentIndex(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.sutta_tabs.setCurrentIndex(selected_idx - 1)
+
+    def _select_next_tab(self):
+        selected_idx = self.sutta_tabs.currentIndex()
+        if selected_idx == -1:
+            self.sutta_tabs.setCurrentIndex(0)
+        elif selected_idx + 1 < len(self.sutta_tabs):
+            self.sutta_tabs.setCurrentIndex(selected_idx + 1)
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
@@ -495,13 +544,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_sutta(self, sutta: USutta):
+        logger.info(f"_show_sutta() : {sutta.uid}")
         self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
         self.sutta_tab.render_sutta_content()
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
-
-        self.status_msg.setText(str(sutta.title))
 
         self.update_memos_list_for_sutta(sutta)
         self.show_network_graph(sutta)
@@ -671,3 +719,19 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Lookup_Clipboard_in_Dictionary \
             .triggered.connect(partial(self._lookup_clipboard_in_dictionary))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
+
+        self.action_Previous_Tab \
+            .triggered.connect(partial(self._select_prev_tab))
+
+        self.action_Next_Tab \
+            .triggered.connect(partial(self._select_next_tab))
+
+        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+
+        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))

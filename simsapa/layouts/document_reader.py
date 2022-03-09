@@ -44,8 +44,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
@@ -69,9 +67,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 0
         self.memos_tab_idx = 1
 

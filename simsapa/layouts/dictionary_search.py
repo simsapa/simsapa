@@ -91,8 +91,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
         self._setup_qwe_context_menu()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
         if text is not None and self._app_data.actions_manager is not None:
@@ -179,9 +177,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Ready")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -368,9 +363,8 @@ QWidget:focus { border: 1px solid #1092C3; }
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
         def callback(found):
             if text and not found:
-                self.statusBar().showMessage('Not found')
-            else:
-                self.statusBar().showMessage('')
+                logger.info('Not found')
+
         self.qwe.findText(text, flag, callback)
 
     def _handle_result_select(self):
@@ -378,20 +372,58 @@ QWidget:focus { border: 1px solid #1092C3; }
         if selected_idx < len(self._results):
             word = self.queries.dict_word_from_result(self._results[selected_idx])
             if word is not None:
-                self._show_word(word)
                 self._add_recent(word)
+                self._show_word(word)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
 
+    def _select_prev_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        if selected_idx == -1:
+            self.recent_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.recent_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        # List is empty or lost focus (no selected item)
+        if selected_idx == -1:
+            if len(self.recent_list) == 1:
+                # Only one viewed item, which is presently being shown, and no
+                # next item
+                return
+            else:
+                # The 0 index is already the presently show item
+                self.recent_list.setCurrentRow(1)
+
+        elif selected_idx + 1 < len(self.recent_list):
+            self.recent_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.fulltext_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.fulltext_list):
+            self.fulltext_list.setCurrentRow(selected_idx + 1)
+
     def _render_words(self, words: List[UDictWord]):
         self._current_words = words
         if len(self._current_words) == 0:
             return
-
-        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -402,7 +434,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _show_word(self, word: UDictWord):
         self._current_words = [word]
-        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -619,3 +650,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Lookup_Clipboard_in_Dictionary \
             .triggered.connect(partial(self._lookup_clipboard_in_dictionary))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
+
+        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+
+        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))

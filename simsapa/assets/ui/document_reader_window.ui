@@ -186,7 +186,7 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>398</width>
+               <width>396</width>
                <height>475</height>
               </rect>
              </property>
@@ -347,7 +347,7 @@
      <x>0</x>
      <y>0</y>
      <width>1068</width>
-     <height>20</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -403,7 +403,6 @@
    <addaction name="menuGo"/>
    <addaction name="menu_Help"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="windows_toolbar">
    <property name="windowTitle">
     <string>toolBar</string>
