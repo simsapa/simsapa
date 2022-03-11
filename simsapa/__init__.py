@@ -72,8 +72,14 @@ class ApiAction(str, Enum):
     show_sutta = 'show_sutta'
     show_word_by_uid = 'show_word_by_uid'
     show_word_scan_popup = 'show_word_scan_popup'
+    set_selected = "set_selected"
 
 # Messages sent via the localhost web API
 class ApiMessage(TypedDict):
     action: ApiAction
     data: str
+
+class ShowLabels(str, Enum):
+    SuttaRef = "Sutta Ref."
+    RefAndTitle = "Ref. + Title"
+    NoLabels = "No Labels"

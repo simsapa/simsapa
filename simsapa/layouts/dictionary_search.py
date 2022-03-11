@@ -1,6 +1,6 @@
 from functools import partial
 import math
-from typing import List, Optional
+from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
@@ -45,6 +45,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     _results: List[SearchResult]
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -73,6 +74,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.selected_info = {}
 
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
@@ -171,6 +174,10 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
                     self._set_query(text)
                     self._handle_query()
                     self._handle_exact_query()
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -452,7 +459,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._set_qwe_html(page_html)
 
-    def show_network_graph(self, word: UDictWord):
+    def show_network_graph(self, word: Optional[UDictWord] = None):
+        if word is None:
+            if len(self._current_words) == 0:
+                return
+            else:
+                word = self._current_words[0]
+
         self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
@@ -480,8 +493,14 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         return results
 
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \

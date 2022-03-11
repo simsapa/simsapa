@@ -1,10 +1,11 @@
 from functools import partial
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
-from PyQt5.QtWidgets import QSizePolicy, QTabWidget, QVBoxLayout
+from PyQt5.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QObject, QRunnable, QThread, QUrl, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
+from enum import Enum
 
 from ..app.graph import (generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
@@ -15,13 +16,15 @@ from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord
 
-from simsapa import LOADING_HTML
+from simsapa import LOADING_HTML, ShowLabels
 from simsapa.app.helpers import get_db_engine_connection_session
+
 
 class GraphGenSignals(QObject):
     finished = pyqtSignal()
-    # Results is the number of hits (links) and the path of the graph html
+    # Result is a Tuple[int, Path], the number of hits (links) and the path of the graph html
     result = pyqtSignal(tuple)
+
 
 class GraphGenerator(QRunnable):
     def __init__(self,
@@ -29,7 +32,13 @@ class GraphGenerator(QRunnable):
                  dict_word: Optional[UDictWord],
                  queue_id: str,
                  graph_path: Path,
-                 messages_url: str):
+                 messages_url: str,
+                 labels: str,
+                 distance: int,
+                 min_links: int,
+                 width: int,
+                 height: int):
+
 
         super(GraphGenerator, self).__init__()
 
@@ -44,6 +53,13 @@ class GraphGenerator(QRunnable):
         self.queue_id = queue_id
         self.graph_path = graph_path
         self.messages_url = messages_url
+        self.width = width
+        self.height = height
+
+        self.labels = ShowLabels(labels)
+
+        self.distance = distance
+        self.min_links = min_links
 
     @pyqtSlot()
     def run(self):
@@ -52,7 +68,7 @@ class GraphGenerator(QRunnable):
 
             if self.sutta is not None:
 
-                (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=3)
+                (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=self.distance)
 
                 selected = []
                 for idx, n in enumerate(nodes):
@@ -60,7 +76,7 @@ class GraphGenerator(QRunnable):
                         selected.append(idx)
 
             elif self.dict_word is not None:
-                (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=3)
+                (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=self.distance)
 
                 selected = []
                 for idx, n in enumerate(nodes):
@@ -70,14 +86,22 @@ class GraphGenerator(QRunnable):
             else:
                 return
 
-            generate_graph(nodes, edges, selected, self.queue_id, self.graph_path, self.messages_url)
+            generate_graph(nodes,
+                           edges,
+                           selected,
+                           self.queue_id,
+                           self.graph_path,
+                           self.messages_url,
+                           self.labels,
+                           self.min_links,
+                           (self.width, self.height))
 
             hits = len(nodes) - 1
 
             result = (hits, self.graph_path)
 
         except Exception as e:
-            print("ERROR: {e}" % e)
+            print("ERROR: %s" % e)
 
         else:
             self.signals.result.emit(result)
@@ -85,15 +109,51 @@ class GraphGenerator(QRunnable):
         finally:
             self.signals.finished.emit()
 
+
 class HasLinksSidebar:
     _app_data: AppData
     links_layout: QVBoxLayout
     rightside_tabs: QTabWidget
     links_tab_idx: int
     content_graph: QWebEngineView
+    label_select: QComboBox
+    distance_input: QSpinBox
+    min_links_input: QSpinBox
+    links_regenerate_button: QPushButton
+    open_selected_link_button: QPushButton
+    open_links_new_window_button: QPushButton
+    show_network_graph: Callable
+    _show_selected: Callable
 
     def init_links_sidebar(self):
+        self.setup_links_controls()
         self.setup_content_graph()
+
+    def setup_links_controls(self):
+        self.distance_input.setMinimum(1)
+        self.distance_input.setValue(2)
+
+        self.min_links_input.setMinimum(1)
+        self.min_links_input.setValue(1)
+
+        def _show_graph(arg: Optional[Any] = None):
+            # ignore the argument value, will read params somewhere else
+            self.show_network_graph()
+
+        # "Sutta Ref.", "Ref. + Title", "No Labels"
+        self.label_select.currentIndexChanged.connect(partial(_show_graph))
+
+        self.distance_input \
+            .valueChanged.connect(partial(_show_graph))
+
+        self.min_links_input \
+            .valueChanged.connect(partial(_show_graph))
+
+        self.links_regenerate_button \
+            .clicked.connect(partial(_show_graph))
+
+        self.open_selected_link_button \
+            .clicked.connect(partial(self._show_selected))
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
@@ -120,10 +180,19 @@ class HasLinksSidebar:
                                 graph_path: Path,
                                 messages_url: str):
 
-        # Remove worker thread which are in the queue.
+        # Remove worker threads which are in the queue.
         self._app_data.graph_gen_pool.clear()
 
-        graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url)
+        distance = self.distance_input.value()
+        min_links = self.min_links_input.value()
+
+        n = self.label_select.currentIndex()
+        labels = self.label_select.itemText(n)
+
+        width = self.rightside_tabs.frameGeometry().width() - 20
+        height = self.rightside_tabs.frameGeometry().height() - 80
+
+        graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url, labels, distance, min_links, width, height)
 
         graph_gen.signals.result.connect(self._graph_finished)
 

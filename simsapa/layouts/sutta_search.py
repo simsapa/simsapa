@@ -5,7 +5,7 @@ import queue
 import re
 
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
@@ -46,6 +46,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     sutta_tabs: QTabWidget
     sutta_tab: SuttaTabWidget
     _related_tabs: List[SuttaTabWidget]
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -75,6 +76,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.selected_info = {}
 
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
@@ -169,6 +172,10 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
                     text = msg['data']
                     self._set_query(text)
                     self._handle_query()
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
@@ -487,8 +494,14 @@ QWidget:focus { border: 1px solid #1092C3; }
         elif selected_idx + 1 < len(self.sutta_tabs):
             self.sutta_tabs.setCurrentIndex(selected_idx + 1)
 
-    def _show_sutta_from_message(self, info):
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
+    def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \
@@ -607,7 +620,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
             self._add_new_tab(title, sutta)
 
-    def show_network_graph(self, sutta: USutta):
+    def show_network_graph(self, sutta: Optional[USutta] = None):
+        if sutta is None:
+            if self._current_sutta is None:
+                return
+            else:
+                sutta = self._current_sutta
+
         self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:

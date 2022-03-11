@@ -16,7 +16,12 @@ from bokeh.layouts import column
 from bokeh.models import CustomJS
 from bokeh import events
 
+import networkx
+from bokeh.transform import linear_cmap
+
 from sqlalchemy.orm.session import Session
+
+from simsapa import ShowLabels
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
@@ -527,7 +532,16 @@ def all_nodes_and_edges(db_session: Session):
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, output_path: Path, messages_url: str):
+def generate_graph(nodes,
+                   edges,
+                   selected_indices: List[int],
+                   queue_id: str,
+                   output_path: Path,
+                   messages_url: str,
+                   show_labels: Optional[ShowLabels] = ShowLabels.SuttaRef,
+                   min_degree: Optional[int] = None,
+                   plot_size: Optional[Tuple[int, int]] = None):
+
     if len(nodes) == 0:
         return
 
@@ -535,10 +549,36 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
 
+    if min_degree is not None and min_degree > 1 and len(G.nodes()) > 2:
+        remove_nodes = [x for x in G.nodes() if G.degree(x) < min_degree]
+        G.remove_nodes_from(remove_nodes)
+
+    if len(G.nodes()) == 0:
+        # Create an empty graph and render the html to show the user visible
+        # feedback that no nodes were left
+        G = nx.Graph()
+
+    degrees = dict(networkx.degree(G))
+    networkx.set_node_attributes(G, name='degree', values=degrees)
+
+    number_to_adjust_by = 5
+    adjusted_node_size = dict([(node, degree+number_to_adjust_by) for node, degree in networkx.degree(G)])
+    networkx.set_node_attributes(G, name='adjusted_node_size', values=adjusted_node_size)
+
+    size_by_this_attribute = 'adjusted_node_size'
+    color_by_this_attribute = 'adjusted_node_size'
+
+    if plot_size is not None:
+        plot_width = plot_size[0]
+        plot_height = plot_size[1]
+    else:
+        plot_width = 700
+        plot_height = 400
+
     plot: Figure = figure(
         title=None,
-        plot_width=700,
-        plot_height=400,
+        plot_width=plot_width,
+        plot_height=plot_height,
         x_range=Range1d(-1.1, 1.1),
         y_range=Range1d(-1.1, 1.1),
         tools="pan,tap,wheel_zoom,reset",
@@ -561,15 +601,19 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     plot.xaxis.minor_tick_line_color = None
     plot.yaxis.minor_tick_line_color = None
 
-    network_graph: GraphRenderer = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
+    network_graph: GraphRenderer = from_networkx(G, nx.spring_layout, scale=1.0, center=(0, 0), seed=100)
 
     selection_color = Spectral8[6]
 
-    network_graph.node_renderer.glyph = Circle(size=15, fill_color='fill_color')
-    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=selection_color)
-    network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color='fill_color')
+    color_palette = Spectral8
 
-    network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
+    minimum_value_color = min(network_graph.node_renderer.data_source.data[color_by_this_attribute])
+    maximum_value_color = max(network_graph.node_renderer.data_source.data[color_by_this_attribute])
+    network_graph.node_renderer.glyph = Circle(size=size_by_this_attribute, fill_color=linear_cmap(color_by_this_attribute, color_palette, minimum_value_color, maximum_value_color))
+
+    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=selection_color)
+
+    network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.2, line_width=0.5)
     network_graph.edge_renderer.selection_glyph = MultiLine(line_color=selection_color, line_width=2)
 
     network_graph.selection_policy = NodesAndLinkedEdges()
@@ -577,19 +621,24 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     plot.renderers.append(network_graph)
 
+    def _fmt(s: str) -> str:
+        return s.replace('Sutta', '').replace('sutta', '')
+
     x, y = zip(*network_graph.layout_provider.graph_layout.values())
     source = ColumnDataSource({
         'x': x,
         'y': y,
         'label': [nodes[i][1]['label'] for i in range(len(x))],
-        'title': [nodes[i][1]['title'] for i in range(len(x))],
+        'title': [nodes[i][1]['label'] + ' ' + _fmt(nodes[i][1]['title']) for i in range(len(x))],
         'description': [nodes[i][1]['description'] for i in range(len(x))],
         'table': [nodes[i][1]['table'] for i in range(len(x))],
         'id': [nodes[i][1]['id'] for i in range(len(x))],
     })
 
     tooltips = [
-        ('Title', '@title')
+        # ('Title', '@title'),
+        # No need for the 'Title:' ... prefix
+        ('', '@title'),
     ]
 
     cr = plot.circle(x='x', y='y', source=source, size=25,
@@ -599,16 +648,27 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))
 
-    labels = LabelSet(
-        x='x',
-        y='y',
-        text='label',
-        source=source,
-        background_fill_color='white',
-        text_font_size='15px',
-        background_fill_alpha=.7)
+    if show_labels != ShowLabels.NoLabels:
 
-    plot.renderers.append(labels)
+        if show_labels == ShowLabels.SuttaRef:
+            label_attr = 'label'
+        else:
+            # ShowLabels.RefAndTitle
+            label_attr = 'title'
+
+        labels = LabelSet(
+            x='x',
+            y='y',
+            text=label_attr,
+            source=source,
+            text_color='black',
+            text_alpha=0.8,
+            text_font_size='15px',
+            background_fill_color='white',
+            background_fill_alpha=0.5,
+        )
+
+        plot.renderers.append(labels)
 
     network_graph.node_renderer.data_source.selected.indices = selected_indices
 
@@ -616,20 +676,6 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 window.selected_info = [];
 
 var inds = cb_obj.indices;
-
-var body = document.getElementsByTagName('body')[0];
-
-var desc_div = document.getElementById('selected_descriptions');
-
-if (desc_div == null || typeof desc_div == 'undefined') {
-    desc_div = document.createElement('div');
-    desc_div.setAttribute('id', 'selected_descriptions');
-    body.appendChild(desc_div);
-}
-
-desc_div.innerHTML = '';
-var desc_div_content = '';
-
 var data = source.data;
 
 for (var i=0; i<inds.length; i++) {
@@ -637,26 +683,13 @@ for (var i=0; i<inds.length; i++) {
 
     var table = data['table'][idx];
     var id = data['id'][idx];
-    var title = data['title'][idx];
-    var desc_content = data['description'][idx];
 
     window.selected_info.push({ table: table, id: id });
-
-    desc_div_content += '<h1 class="title">' + title + '</h1><div class="description">' + desc_content + '</div>';
 }
 
-desc_div.innerHTML = desc_div_content;
-"""))
-
-    button = Button(label='Open Sutta')
-
-    js_code = """
-if (typeof window.selected_info === 'undefined') {
-    window.selected_info = [];
-}
 if (window.selected_info.length > 0) {
     const params = {
-        action: 'show_sutta',
+        action: 'set_selected',
         data: JSON.stringify(window.selected_info[0]),
     };
     const options = {
@@ -669,12 +702,14 @@ if (window.selected_info.length > 0) {
     };
     fetch('%s', options);
 }
-""" % (messages_url,)
-
-    button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
+""" % (messages_url,)))
 
     text = """
 <style>
+    body {
+        margin: -25px 0 0 -5px;
+        padding: 0;
+    }
     #selected_descriptions {
         font-family: Helvetica, Arial, sans-serif;
         padding: 0 30px;
@@ -696,7 +731,7 @@ if (window.selected_info.length > 0) {
 </style>"""
 
     header = Div(text=text)
-    layout = column(header, button, plot)
+    layout = column(header, plot)
 
     doc: Document = curdoc()
     doc.clear()
