@@ -1,3 +1,4 @@
+import time
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
@@ -5,7 +6,6 @@ from typing import Any, Callable, Optional, Tuple
 from PyQt5.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
-from enum import Enum
 
 from ..app.graph import (generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
@@ -22,12 +22,16 @@ from simsapa.app.helpers import get_db_engine_connection_session
 
 class GraphGenSignals(QObject):
     finished = pyqtSignal()
-    # Result is a Tuple[int, Path], the number of hits (links) and the path of the graph html
+    # Result is a Tuple[float, int, Path]:
+    # - timestamp
+    # - number of hits (links)
+    # - path of the graph html
     result = pyqtSignal(tuple)
 
 
 class GraphGenerator(QRunnable):
     def __init__(self,
+                 graph_gen_timestamp: float,
                  sutta: Optional[USutta],
                  dict_word: Optional[UDictWord],
                  queue_id: str,
@@ -48,6 +52,7 @@ class GraphGenerator(QRunnable):
 
         self.signals = GraphGenSignals()
 
+        self.graph_gen_timestamp = graph_gen_timestamp
         self.sutta = sutta
         self.dict_word = dict_word
         self.queue_id = queue_id
@@ -98,7 +103,7 @@ class GraphGenerator(QRunnable):
 
             hits = len(nodes) - 1
 
-            result = (hits, self.graph_path)
+            result = (self.graph_gen_timestamp, hits, self.graph_path)
 
         except Exception as e:
             print("ERROR: %s" % e)
@@ -124,8 +129,11 @@ class HasLinksSidebar:
     open_links_new_window_button: QPushButton
     show_network_graph: Callable
     _show_selected: Callable
+    _last_graph_gen_timestamp: float
 
     def init_links_sidebar(self):
+        self._last_graph_gen_timestamp = 0.0
+
         self.setup_links_controls()
         self.setup_content_graph()
 
@@ -162,9 +170,14 @@ class HasLinksSidebar:
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 
-    def _graph_finished(self, result: Tuple[int, Path]):
-        hits = result[0]
-        graph_path = result[1]
+    def _graph_finished(self, result: Tuple[float, int, Path]):
+        result_timestamp = result[0]
+        hits = result[1]
+        graph_path = result[2]
+
+        # Ignore this result if it is not the last which the user has initiated.
+        if result_timestamp != self._last_graph_gen_timestamp:
+            return
 
         if hits > 0:
             self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
@@ -180,7 +193,7 @@ class HasLinksSidebar:
                                 graph_path: Path,
                                 messages_url: str):
 
-        # Remove worker threads which are in the queue.
+        # Remove worker threads which are in the queue and not yet started.
         self._app_data.graph_gen_pool.clear()
 
         distance = self.distance_input.value()
@@ -192,7 +205,9 @@ class HasLinksSidebar:
         width = self.rightside_tabs.frameGeometry().width() - 20
         height = self.rightside_tabs.frameGeometry().height() - 80
 
-        graph_gen = GraphGenerator(sutta, dict_word, queue_id, graph_path, messages_url, labels, distance, min_links, width, height)
+        graph_gen_timestamp = time.time()
+        self._last_graph_gen_timestamp = graph_gen_timestamp
+        graph_gen = GraphGenerator(graph_gen_timestamp, sutta, dict_word, queue_id, graph_path, messages_url, labels, distance, min_links, width, height)
 
         graph_gen.signals.result.connect(self._graph_finished)
 
