@@ -402,7 +402,7 @@
                   </property>
                   <property name="icon">
                    <iconset resource="../icons.qrc">
-                    <normaloff>:/arrow-left</normaloff>:/arrow-left</iconset>
+                    <normaloff>:/book</normaloff>:/book</iconset>
                   </property>
                  </widget>
                 </item>
