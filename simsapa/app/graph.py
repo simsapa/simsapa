@@ -1,3 +1,4 @@
+import re
 from typing import List, Tuple, TypedDict, Optional
 from pathlib import Path
 from itertools import chain
@@ -7,19 +8,19 @@ from bokeh.models.renderers import GraphRenderer, GlyphRenderer
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
 from bokeh.document import Document
-from bokeh.models import (Div, Button, Circle, MultiLine, Range1d, ColumnDataSource,
+from bokeh.models import (Div, Circle, MultiLine, Range1d, ColumnDataSource,
                           LabelSet, HoverTool, NodesAndLinkedEdges,
                           EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral8
 from bokeh.plotting import figure, from_networkx, Figure
 from bokeh.layouts import column
 from bokeh.models import CustomJS
-from bokeh import events
 
 import networkx
 from bokeh.transform import linear_cmap
 
 from sqlalchemy.orm.session import Session
+from sqlalchemy.sql.elements import and_
 
 from simsapa import ShowLabels
 
@@ -147,34 +148,65 @@ def unique_edges(edges: List[GraphEdge]) -> List[GraphEdge]:
     return unique_edges
 
 
+def get_related_suttas(db_session: Session, sutta: USutta) -> List[USutta]:
+    uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
+
+    res: List[USutta] = []
+    r = db_session \
+        .query(Am.Sutta) \
+        .filter(and_(
+            Am.Sutta.uid != sutta.uid,
+            Am.Sutta.uid.like(f"{uid_ref}/%"),
+        )) \
+        .all()
+    res.extend(r)
+
+    r = db_session \
+        .query(Um.Sutta) \
+        .filter(and_(
+            Um.Sutta.uid != sutta.uid,
+            Um.Sutta.uid.like(f"{uid_ref}/%"),
+        )) \
+        .all()
+    res.extend(r)
+
+    return res
+
+
 def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1):
     links = {'appdata.suttas': [], 'userdata.suttas': []}
     sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
 
-    for DbLink in [Am.Link, Um.Link]:
-        for table in ['appdata.suttas', 'userdata.suttas']:
+    related_suttas = get_related_suttas(db_session, sutta)
+    related_suttas.append(sutta)
 
-            r = db_session \
-                .query(DbLink.to_id) \
-                .filter(DbLink.from_table == table) \
-                .filter(DbLink.to_table == table) \
-                .filter(DbLink.from_id == sutta.id) \
-                .all()
+    related_ids = list(map(lambda x: x.id, related_suttas))
 
-            links[table].extend(r)
+    for s in related_suttas:
+        for DbLink in [Am.Link, Um.Link]:
+            for table in ['appdata.suttas', 'userdata.suttas']:
 
-            r = db_session \
-                .query(DbLink.from_id) \
-                .filter(DbLink.from_table == table) \
-                .filter(DbLink.to_table == table) \
-                .filter(DbLink.to_id == sutta.id) \
-                .all()
+                r = db_session \
+                    .query(DbLink.to_id) \
+                    .filter(DbLink.from_table == table) \
+                    .filter(DbLink.to_table == table) \
+                    .filter(DbLink.from_id == s.id) \
+                    .all()
 
-            links[table].extend(r)
+                links[table].extend(r)
+
+                r = db_session \
+                    .query(DbLink.from_id) \
+                    .filter(DbLink.from_table == table) \
+                    .filter(DbLink.to_table == table) \
+                    .filter(DbLink.to_id == s.id) \
+                    .all()
+
+                links[table].extend(r)
 
     for table in ['appdata.suttas', 'userdata.suttas']:
         # results IDs, exluding the the current sutta ID (i.e. suttas connecting to it)
-        ids = filter(lambda x: x != sutta.id, map(lambda x: x[0], links[table]))
+        ids = filter(lambda x: x not in related_ids, map(lambda x: x[0], links[table]))
         # set() will contain unique items
         sutta_ids[table] = list(set(ids))
 
