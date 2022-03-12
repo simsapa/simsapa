@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabW
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
-from ..app.graph import (generate_graph, sutta_nodes_and_edges,
+from ..app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
                          document_page_nodes_and_edges, sutta_graph_id)
 
@@ -89,7 +89,8 @@ class GraphGenerator(QRunnable):
                         selected.append(idx)
 
             else:
-                return
+                (nodes, edges) = all_nodes_and_edges(self._db_session)
+                selected = []
 
             generate_graph(nodes,
                            edges,

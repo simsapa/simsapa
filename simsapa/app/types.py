@@ -79,8 +79,7 @@ class AppData:
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
-                 api_port: Optional[int] = None,
-                 silent_index_if_empty: bool = False):
+                 api_port: Optional[int] = None):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -91,8 +90,6 @@ class AppData:
 
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
-
-        self.silent_index_if_empty = silent_index_if_empty
 
         self.graph_gen_pool = QThreadPool()
 

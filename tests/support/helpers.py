@@ -9,6 +9,6 @@ def get_app_data():
     app_db_path = tests_data_dir.joinpath('appdata.sqlite3')
     user_db_path = tests_data_dir.joinpath('userdata.sqlite3')
 
-    app_data = AppData(app_db_path=app_db_path, user_db_path=user_db_path, silent_index_if_empty=True)
+    app_data = AppData(app_db_path=app_db_path, user_db_path=user_db_path)
 
     return app_data

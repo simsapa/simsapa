@@ -42,6 +42,7 @@ def create_app_dirs():
         GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_file(url: str, folder_path: Path) -> Path:
+    logger.info(f"download_file() : {url}, {folder_path}")
     file_name = url.split('/')[-1]
     file_path = folder_path.joinpath(file_name)
 
@@ -235,7 +236,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
     else:
         logger.error("Can't create in-memory database")
 
-def get_db_engine_connection_session() -> Tuple[Engine, Connection, Session]:
+def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Engine, Connection, Session]:
     app_db_path = APP_DB_PATH
     user_db_path = USER_DB_PATH
 
@@ -243,7 +244,7 @@ def get_db_engine_connection_session() -> Tuple[Engine, Connection, Session]:
         logger.error(f"Database file doesn't exist: {app_db_path}")
         exit(1)
 
-    if not os.path.isfile(user_db_path):
+    if include_userdata and not os.path.isfile(user_db_path):
         logger.error(f"Database file doesn't exist: {user_db_path}")
         exit(1)
 
@@ -255,7 +256,8 @@ def get_db_engine_connection_session() -> Tuple[Engine, Connection, Session]:
 
         # Attach appdata and userdata
         db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
-        db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+        if include_userdata:
+            db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
 
         Session = sessionmaker(db_eng)
         Session.configure(bind=db_eng)

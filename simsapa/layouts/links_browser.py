@@ -1,28 +1,29 @@
 import os
 import json
+import time
 from pathlib import Path
 import queue
 
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent, QColor
-from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow, QListWidgetItem,
+from PyQt5.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
                              QComboBox)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import logger, ApiAction, ApiMessage
+from simsapa import LOADING_HTML, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.helpers import compactRichText
+from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
 from ..app.types import AppData, USutta, UDictWord, UDocument
-from ..app.graph import generate_graph, all_nodes_and_edges
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
@@ -30,6 +31,8 @@ from .search_item import SearchItemWidget
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
     search_input: QLineEdit
+    _last_graph_gen_timestamp: float
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -49,7 +52,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
+        self.selected_info = {}
+
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
+        self._last_graph_gen_timestamp = 0.0
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -76,6 +82,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                     info = json.loads(msg['data'])
                     self._show_sutta_from_message(info)
 
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
+
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
@@ -83,8 +93,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
     def _ui_setup(self):
         self._setup_pali_buttons()
 
+        self.setup_links_controls()
         self.setup_content_graph()
-        self.show_network_graph()
+        self.generate_and_show_graph()
 
         self.search_input.setFocus()
 
@@ -101,6 +112,26 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.pali_buttons_layout.addLayout(lowercase_row)
 
+    def setup_links_controls(self):
+        self.min_links_input.setMinimum(1)
+        self.min_links_input.setValue(3)
+
+        def _show_graph(arg: Optional[Any] = None):
+            # ignore the argument value, will read params somewhere else
+            self.show_network_graph()
+
+        # "Sutta Ref.", "Ref. + Title", "No Labels"
+        self.label_select.currentIndexChanged.connect(partial(_show_graph))
+
+        self.min_links_input \
+            .valueChanged.connect(partial(_show_graph))
+
+        self.links_regenerate_button \
+            .clicked.connect(partial(_show_graph))
+
+        self.open_selected_link_button \
+            .clicked.connect(partial(self._show_selected))
+
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
         self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -109,10 +140,39 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.links_layout.addWidget(self.content_graph)
 
     def show_network_graph(self):
-        (nodes, edges) = all_nodes_and_edges(self._app_data.db_session)
-        if len(nodes) > 0:
-            generate_graph(nodes, edges, [], self.queue_id, self.graph_path, self.messages_url)
-            self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+        self.generate_and_show_graph()
+
+    def _graph_finished(self, result: Tuple[float, int, Path]):
+        result_timestamp = result[0]
+        graph_path = result[2]
+
+        # Ignore this result if it is not the last which the user has initiated.
+        if result_timestamp != self._last_graph_gen_timestamp:
+            return
+
+        self.content_graph.load(QUrl(str(graph_path.absolute().as_uri())))
+
+    def generate_and_show_graph(self):
+        # Remove worker threads which are in the queue and not yet started.
+        self._app_data.graph_gen_pool.clear()
+
+        min_links = self.min_links_input.value()
+
+        n = self.label_select.currentIndex()
+        labels = self.label_select.itemText(n)
+
+        width = self.content_graph.frameGeometry().width() - 5
+        height = self.content_graph.frameGeometry().height() - 5
+
+        graph_gen_timestamp = time.time()
+        self._last_graph_gen_timestamp = graph_gen_timestamp
+        graph_gen = GraphGenerator(graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
+
+        graph_gen.signals.result.connect(self._graph_finished)
+
+        self.content_graph.setHtml(LOADING_HTML)
+
+        self._app_data.graph_gen_pool.start(graph_gen)
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
@@ -292,8 +352,14 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         return list(map(to_search_result, db_results))
 
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \

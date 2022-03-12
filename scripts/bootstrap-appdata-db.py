@@ -21,7 +21,6 @@ from pyArango.database import DBHandle
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 
-from simsapa.app.helpers import find_or_create_db
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
 
@@ -46,31 +45,6 @@ for p in [bootstrap_assets_dir, sc_data_dir]:
     if not p.exists():
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
-
-def get_appdata_db(db_path: Path) -> Session:
-    # remove previously generated db
-    if db_path.exists():
-        db_path.unlink()
-
-    find_or_create_db(db_path, DbSchemaName.AppData.value)
-
-    try:
-        # Create an in-memory database
-        engine = create_engine("sqlite+pysqlite://", echo=False)
-
-        db_conn = engine.connect()
-
-        # Attach appdata
-        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
-
-        Session = sessionmaker(engine)
-        Session.configure(bind=engine)
-        db_session = Session()
-    except Exception as e:
-        logger.error(f"Can't connect to database: {e}")
-        sys.exit(1)
-
-    return db_session
 
 def get_suttacentral_db() -> DBHandle:
     conn = Connection(
@@ -539,7 +513,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
-    appdata_db = get_appdata_db(appdata_db_path)
+    appdata_db = helpers.get_appdata_db(appdata_db_path)
 
     legacy_db_path = bootstrap_assets_dir.joinpath("db").joinpath("appdata-legacy.sqlite3")
     legacy_db = get_legacy_db(legacy_db_path)

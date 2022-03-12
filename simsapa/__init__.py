@@ -19,7 +19,7 @@ ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 ICONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets/icons/')
 
 s = os.getenv('SIMSAPA_DIR')
-if s is not None and s != '' and Path(s).exists():
+if s is not None and s != '':
     SIMSAPA_DIR = Path(s)
 else:
     SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))

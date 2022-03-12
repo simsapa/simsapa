@@ -1,7 +1,41 @@
 #!/usr/bin/env python3
 
+import sys
 import re
 from typing import Optional
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.session import Session
+
+from simsapa.app.helpers import find_or_create_db
+from simsapa import DbSchemaName, logger
+
+def get_appdata_db(db_path: Path) -> Session:
+    # remove previously generated db
+    if db_path.exists():
+        db_path.unlink()
+
+    find_or_create_db(db_path, DbSchemaName.AppData.value)
+
+    try:
+        # Create an in-memory database
+        engine = create_engine("sqlite+pysqlite://", echo=False)
+
+        db_conn = engine.connect()
+
+        # Attach appdata
+        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
+
+        Session = sessionmaker(engine)
+        Session.configure(bind=engine)
+        db_session = Session()
+    except Exception as e:
+        logger.error(f"Can't connect to database: {e}")
+        sys.exit(1)
+
+    return db_session
 
 def uid_to_ref(uid: str) -> str:
     '''sn12.23 to SN 12.23'''

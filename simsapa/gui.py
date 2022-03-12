@@ -17,6 +17,7 @@ from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
+from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
 from simsapa.assets import icons_rc  # noqa: F401
 
@@ -76,6 +77,13 @@ def start(splash_proc: Optional[Popen] = None):
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
 
+    if app_data.search_indexed.has_empty_index():
+        w = CreateSearchIndexWindow()
+        w.show()
+        status = app.exec_()
+        logger.info(f"start() Exiting with status {status}.")
+        sys.exit(status)
+
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
     # === Create systray ===
@@ -117,8 +125,6 @@ def start(splash_proc: Optional[Popen] = None):
     # === Create first window ===
 
     app_windows.open_first_window()
-
-    app_windows.ask_index_if_empty()
 
     app_windows.show_startup_message()
 
