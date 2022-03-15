@@ -11,7 +11,7 @@ from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent, QColor
 from PyQt5.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
-                             QComboBox)
+                             QComboBox, QSplitter, QVBoxLayout, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -31,6 +31,8 @@ CLICK_GENERATE_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/click_generate
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
+    splitter: QSplitter
+    tabs_layout: QVBoxLayout
     search_input: QLineEdit
     _last_graph_gen_timestamp: float
     selected_info: Any
@@ -575,6 +577,13 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         elif selected_idx + 1 < len(self.results_list):
             self.results_list.setCurrentRow(selected_idx + 1)
 
+    def _handle_toggle_links_panel(self):
+        sizes = self.splitter.sizes()
+        if sizes[1] == 0:
+            self.splitter.setSizes([100,100])
+        else:
+            self.splitter.setSizes([100,0])
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -587,6 +596,8 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.create_link_btn.clicked.connect(partial(self._handle_create_link))
         self.clear_link_btn.clicked.connect(partial(self._handle_clear_link))
         self.remove_link_btn.clicked.connect(partial(self._handle_remove_link))
+
+        self.toggle_links_panel_button.clicked.connect(partial(self._handle_toggle_links_panel))
 
         self.action_Previous_Result \
             .triggered.connect(partial(self._select_prev_result))
