@@ -21,6 +21,7 @@ class CreateSearchIndexWindow(QMainWindow):
 
         self.thread_pool = QThreadPool()
 
+        self.open_simsapa = False
         self._setup_ui()
 
 
@@ -31,7 +32,7 @@ class CreateSearchIndexWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
-        self._msg = QLabel("The fulltext search index is empty. Start indexing now?\nThis may take 30-60 minutes.")
+        self._msg = QLabel("<p>The fulltext search index is empty. There will be<br> no search results in Simsapa without an index.</p><p>Start indexing now?<br>This may take 30-60 minutes.</p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
@@ -45,19 +46,30 @@ class CreateSearchIndexWindow(QMainWindow):
         self._layout.addWidget(self._animation)
 
 
+    def _handle_open(self):
+        self.open_simsapa = True
+        self.close()
+
+
     def _setup_buttons(self):
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 20, 0, 10)
 
         self._start_button = QPushButton("Start Indexing")
         self._start_button.setFixedSize(100, 30)
+
+        self._open_button = QPushButton("Open Simsapa")
+        self._open_button.setFixedSize(100, 30)
+
         self._quit_button = QPushButton("Quit")
         self._quit_button.setFixedSize(100, 30)
 
         self._start_button.clicked.connect(partial(self._run_indexing))
+        self._open_button.clicked.connect(partial(self._handle_open))
         self._quit_button.clicked.connect(partial(self.close))
 
         buttons_layout.addWidget(self._quit_button)
+        buttons_layout.addWidget(self._open_button)
         buttons_layout.addWidget(self._start_button)
 
         self._layout.addLayout(buttons_layout)
@@ -94,7 +106,7 @@ class CreateSearchIndexWindow(QMainWindow):
         self.stop_animation()
         self._animation.deleteLater()
 
-        self._msg.setText("Indexing completed.\n\nQuit and start the application again.")
+        self._msg.setText("<p>Indexing completed.</p><p>Quit and start the application again.</p>")
 
 
 class WorkerSignals(QObject):

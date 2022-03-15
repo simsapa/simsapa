@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import create_app_dirs
+from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
 from .app.types import AppData
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
@@ -35,6 +35,8 @@ create_app_dirs()
 
 def start(splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
+
+    ensure_empty_graphs_cache()
 
     if not APP_DB_PATH.exists():
         if splash_proc is not None:
@@ -81,8 +83,11 @@ def start(splash_proc: Optional[Popen] = None):
         w = CreateSearchIndexWindow()
         w.show()
         status = app.exec_()
-        logger.info(f"start() Exiting with status {status}.")
-        sys.exit(status)
+        logger.info(f"open_simsapa: {w.open_simsapa}")
+        logger.info(f"app status: {status}")
+        if not w.open_simsapa:
+            logger.info("Exiting.")
+            sys.exit(status)
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 

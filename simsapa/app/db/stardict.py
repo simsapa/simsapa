@@ -25,7 +25,8 @@ class DbDictEntry(TypedDict):
 
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
     # TODO should we check for conflicting uids? generate with meaning count?
-    uid = f"{x['word']}/{dictionary_label}".lower()
+    w = x['word'].replace("'", "").replace('"', '').replace(' ', '-')
+    uid = f"{w}/{dictionary_label}".lower()
 
     # add a Latinized lowercase synonym
     syn = x['synonyms']

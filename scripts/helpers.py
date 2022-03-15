@@ -12,9 +12,9 @@ from sqlalchemy.orm.session import Session
 from simsapa.app.helpers import find_or_create_db
 from simsapa import DbSchemaName, logger
 
-def get_appdata_db(db_path: Path) -> Session:
+def get_appdata_db(db_path: Path, remove_if_exists: bool) -> Session:
     # remove previously generated db
-    if db_path.exists():
+    if remove_if_exists and db_path.exists():
         db_path.unlink()
 
     find_or_create_db(db_path, DbSchemaName.AppData.value)

@@ -1,5 +1,6 @@
 from importlib import metadata
 from pathlib import Path
+import shutil
 from typing import Optional, Tuple, TypedDict
 import requests
 import feedparser
@@ -40,6 +41,12 @@ def create_app_dirs():
 
     if not GRAPHS_DIR.exists():
         GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+def ensure_empty_graphs_cache():
+    if GRAPHS_DIR.exists():
+        shutil.rmtree(GRAPHS_DIR)
+
+    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_file(url: str, folder_path: Path) -> Path:
     logger.info(f"download_file() : {url}, {folder_path}")
@@ -155,6 +162,7 @@ def compactPlainText(text: str) -> str:
     # NOTE: Don't remove new lines here, useful for matching beginning of lines when setting snippets.
     # Replace multiple spaces to one.
     text = re.sub(r"  +", ' ', text)
+    text = text.replace('{', '').replace('}', '')
 
     return text
 

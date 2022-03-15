@@ -65,6 +65,9 @@ class SearchItemWidget(QWidget):
         else:
             title = r['title']
 
+        if len(title) > 70:
+            title = title[:70] + '...'
+
         self.setTitle(f"{style}<span class='wrap'>{title}</span>")
 
         if r['author'] is not None:

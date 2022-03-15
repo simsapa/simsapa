@@ -314,7 +314,7 @@ html {
 
 body {
   padding: 0 2rem;
-  max-width: 70ex;
+  max-width: 75ex;
   margin: 0 auto;
 }
 
@@ -341,4 +341,19 @@ h3 {
 
 h4 {
   font-size: 1rem;
+}
+
+.gretil {
+  font-size: 18px;
+  font-family: "DejaVu Serif", serif;
+  margin-left: -5ex;
+  margin-right: -5ex;
+}
+.gretil h1, .gretil h2, .gretil h3, .gretil h4, .gretil h5, .gretil h6 {
+  font-family: "DejaVu Serif", serif;
+}
+
+.gretil > footer {
+  padding-top: 4em;
+  font-size: 14px;
 }

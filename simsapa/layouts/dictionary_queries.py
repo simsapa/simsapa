@@ -156,12 +156,29 @@ class DictionaryQueries:
 
     def get_word_html(self, word: UDictWord) -> ResultHtml:
         if word.definition_html is not None and word.definition_html != '':
-            definition = word.definition_html
+            definition = str(word.definition_html)
+
         elif word.definition_plain is not None and word.definition_plain != '':
             style = '<style>pre { font-family: serif; }</style>'
-            definition = style + '<pre>' + word.definition_plain + '</pre>'
+            text = str(word.definition_plain)
+
+            # Wordnet uses curly braces syntax for links: {Lions' beard}
+            matches = re.findall(r'(\{(.+?)\})', text, flags = re.DOTALL)
+            for m in matches:
+                name = m[0].replace('{', '').replace('}', '')
+                name = re.sub(r'[\n ]+', ' ', name)
+                url = "bword://localhost/" + name.replace(' ', '%20')
+                text = text.replace(m[0], f'<a href="{url}">{name}</a>')
+
+            definition = style + '<pre>' + text + '</pre>'
         else:
             definition = '<p>No definition.</p>'
+
+        # Ensure localhost in bword:// urls, otherwise they are invalid and lookup content is empty
+        # First remove possibly correct cases, to then replace all cases
+        definition = definition \
+            .replace('bword://localhost/', 'bword://') \
+            .replace('bword://', 'bword://localhost/')
 
         # We'll remove CSS and JS from 'definition' before assigning it to 'body'
         body = ""

@@ -1,6 +1,7 @@
 import shutil
 from typing import Callable, List, Optional, TypedDict, Union
 import re
+from bs4 import BeautifulSoup
 
 from whoosh import writing
 from whoosh.highlight import SCORE, HtmlFormatter
@@ -330,9 +331,17 @@ class SearchIndexed:
             for i in suttas:
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
-                    content = compactRichText(str(i.content_html))
+                    # Remove content marked with 'noindex' class, such as footer material
+                    soup = BeautifulSoup(str(i.content_html), 'html.parser')
+                    h = soup.find_all(class_='noindex')
+                    for x in h:
+                        x.decompose()
+
+                    content = compactRichText(str(soup))
+
                 elif i.content_plain is not None:
                     content = compactPlainText(str(i.content_plain))
+
                 else:
                     continue
 
@@ -371,8 +380,10 @@ class SearchIndexed:
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
                     content = compactRichText(str(i.definition_html))
+
                 elif i.definition_plain is not None:
                     content = compactPlainText(str(i.definition_plain))
+
                 else:
                     continue
 

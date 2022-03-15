@@ -302,8 +302,15 @@ def parse_dict(paths: StarDictPaths,
             definition_plain = ""
             definition_html = ""
             # Only accept sametypesequence = m, h
-            if types == "m" and data_str[0] == "m":
-                definition_plain = data_str[1:]
+            if types == "m":
+                # NOTE: it doesn't seem to be necessary to strip the 'm'
+                #
+                # if data_str[0] == "m":
+                #     definition_plain = data_str[1:]
+                # else:
+                #     definition_plain = data_str
+
+                definition_plain = data_str
 
             if types == "h":
                 definition_html = data_str

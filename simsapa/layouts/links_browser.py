@@ -16,7 +16,7 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import LOADING_HTML, logger, ApiAction, ApiMessage
+from simsapa import LOADING_HTML, PACKAGE_ASSETS_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.helpers import compactRichText
 from simsapa.layouts.links_sidebar import GraphGenerator
@@ -27,6 +27,7 @@ from ..app.types import AppData, USutta, UDictWord, UDocument
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
+CLICK_GENERATE_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/click_generate.html'), 'r').read()
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
@@ -95,7 +96,9 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.setup_links_controls()
         self.setup_content_graph()
-        self.generate_and_show_graph()
+
+        # FIXME graph size is not known when opening the window
+        # self.generate_and_show_graph()
 
         self.search_input.setFocus()
 
@@ -135,7 +138,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
         self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_graph.setHtml('')
+        self.content_graph.setHtml(CLICK_GENERATE_HTML)
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 

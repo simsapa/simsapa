@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
+from bs4 import BeautifulSoup
 
 from sqlalchemy import create_engine, null
 from sqlalchemy.orm import sessionmaker
@@ -96,12 +97,27 @@ def get_sutta_page_body(html_page: str):
 
     return body
 
+def html_post_process(body: str) -> str:
+    # add .noindex to <footer> in suttacentral
+
+    # soup = BeautifulSoup(body, 'html.parser')
+    # h = soup.find(name = 'footer')
+    # if h is not None:
+    #     h['class'] = h.get('class', []) + ['noindex'] # type: ignore
+    #
+    # html = str(soup)
+
+    html = body.replace('<footer>', '<footer class="noindex">')
+
+    return html
+
 def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
     body = get_sutta_page_body(page)
-    content_html = f"""<div class="suttacentral html-text">{body}</div>"""
+    body = html_post_process(body)
+    content_html = '<div class="suttacentral html-text">' + body + '</div>'
 
     return Am.Sutta(
         source_info = x['_id'],
@@ -136,7 +152,8 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Su
         content_plain = page
     else:
         body = get_sutta_page_body(page)
-        content_html = f"""<div class="suttacentral bilara-text">{body}</div>"""
+        body = html_post_process(body)
+        content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
         content_plain = null()
 
     return Am.Sutta(
@@ -513,7 +530,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
-    appdata_db = helpers.get_appdata_db(appdata_db_path)
+    appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = True)
 
     legacy_db_path = bootstrap_assets_dir.joinpath("db").joinpath("appdata-legacy.sqlite3")
     legacy_db = get_legacy_db(legacy_db_path)
