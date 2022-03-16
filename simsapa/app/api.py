@@ -68,7 +68,8 @@ def resp_forbidden(e):
 
 def start_server(port=8000):
     logger.info(f'Starting server on port {port}')
-    app.run(host='127.0.0.1', port=port)
+    os.environ["FLASK_ENV"] = "development"
+    app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)
 
 def find_available_port() -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
