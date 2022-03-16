@@ -205,9 +205,16 @@ class SearchQuery:
 
     def new_query(self,
                   query: str,
-                  disabled_labels: Optional[Labels] = None) -> List[SearchResult]:
+                  disabled_labels: Optional[Labels] = None,
+                  only_source: Optional[str] = None) -> List[SearchResult]:
 
         self.all_results = self._search_field(field_name = 'content', query = query)
+
+        def _only_in_source(x: Hit):
+            if only_source is not None:
+                return x['uid'].endswith(f'/{only_source.lower()}')
+            else:
+                return True
 
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
@@ -219,11 +226,14 @@ class SearchQuery:
             else:
                 return True
 
+        if only_source is not None:
+            self.filtered = list(filter(_only_in_source, self.all_results))
 
-        if disabled_labels is None:
-            self.filtered = list(self.all_results)
-        else:
+        elif disabled_labels is not None:
             self.filtered = list(filter(_not_in_disabled, self.all_results))
+
+        else:
+            self.filtered = list(self.all_results)
 
         # NOTE: r.estimated_min_length() errors on some searches
         self.hits = len(self.filtered)

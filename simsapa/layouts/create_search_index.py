@@ -1,4 +1,5 @@
 from functools import partial
+from PyQt5 import QtWidgets
 
 from PyQt5.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
 from PyQt5.QtCore import QObject, pyqtSignal
@@ -32,11 +33,18 @@ class CreateSearchIndexWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self._layout.addItem(spacerItem)
+
         self._msg = QLabel("<p>The fulltext search index is empty. There will be<br> no search results in Simsapa without an index.</p><p>Start indexing now?<br>This may take 30-60 minutes.</p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
         self._setup_animation()
+
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self._layout.addItem(spacerItem)
+
         self._setup_buttons()
 
 
@@ -78,6 +86,7 @@ class CreateSearchIndexWindow(QMainWindow):
     def setup_animation(self):
         self._msg.setText("Indexing ...")
         self._start_button.setEnabled(False)
+        self._open_button.setEnabled(False)
 
         self._movie = QMovie(':simsapa-loading')
         self._animation.setMovie(self._movie)

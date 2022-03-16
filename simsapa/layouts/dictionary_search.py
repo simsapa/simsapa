@@ -4,11 +4,12 @@ from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
+import re
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
+from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
@@ -201,6 +202,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setCompleter(completer)
 
+        self._setup_dict_filter_dropdown()
         self._setup_dict_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
@@ -277,6 +279,32 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         show = self._app_data.app_settings.get('dictionary_show_pali_buttons', False)
         self.palibuttons_frame.setVisible(show)
+
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.DictWord.uid).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.DictWord.uid).all()
+        res.extend(r)
+
+        def _uid_to_label(x):
+            return re.sub(r'.*/([^/]+)', r'\1', x['uid'])
+
+        labels = sorted(set(map(_uid_to_label, res)))
+
+        return labels
+
+    def _setup_dict_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Dictionaries",]
+        items.extend(self._get_filter_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(40)
+        self.dict_filter_dropdown = cmb
+        self.search_extras.addWidget(self.dict_filter_dropdown)
 
     def _setup_dict_select_button(self):
         icon = QIcon()
@@ -473,7 +501,15 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        results = self.search_query.new_query(query, disabled_labels, only_source)
         hits = self.search_query.hits
 
         if hits == 0:
@@ -644,6 +680,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 

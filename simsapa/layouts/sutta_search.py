@@ -9,10 +9,11 @@ from typing import Any, List, Optional
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QCompleter, QFrame, QLineEdit, QMainWindow, QAction,
+from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QMainWindow, QAction,
                              QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
+from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
@@ -199,6 +200,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setCompleter(completer)
 
+        self._setup_sutta_filter_dropdown()
         self._setup_sutta_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
@@ -305,6 +307,32 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         show = self._app_data.app_settings.get('suttas_show_pali_buttons', False)
         self.palibuttons_frame.setVisible(show)
+
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.Sutta.uid).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Sutta.uid).all()
+        res.extend(r)
+
+        def _uid_to_label(x):
+            return re.sub(r'[^/]+/([^/]+/.*)', r'\1', x['uid'])
+
+        labels = sorted(set(map(_uid_to_label, res)))
+
+        return labels
+
+    def _setup_sutta_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Sources",]
+        items.extend(self._get_filter_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(40)
+        self.sutta_filter_dropdown = cmb
+        self.search_extras.addWidget(self.sutta_filter_dropdown)
 
     def _setup_sutta_select_button(self):
         icon = QIcon()
@@ -630,7 +658,15 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_sutta_labels'])
+        idx = self.sutta_filter_dropdown.currentIndex()
+        source = self.sutta_filter_dropdown.itemText(idx)
+        if source == "Sources":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
+        results = self.search_query.new_query(query, disabled_labels, only_source)
         hits = self.search_query.hits
 
         if hits == 0:
@@ -706,6 +742,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
         # NOTE search_input.returnPressed removes the selected completion and uses the typed query
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+
+        self.sutta_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 

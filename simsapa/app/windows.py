@@ -330,7 +330,7 @@ class AppWindows:
         msg = """
         <p>Re-downloading the database and index can take several minutes.</p>
         <p>If you choose <b>Yes</b>, the database and the index data will be removed, and the application will exit.</p>
-        <p>When you start the application again, and the download will begin.</p>
+        <p>When you start the application again, the download will begin.</p>
         <p>Start now?</p>"""
 
         reply = QMessageBox.question(parent,

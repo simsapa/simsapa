@@ -49,12 +49,19 @@ class DownloadAppdataWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self._layout.addItem(spacerItem)
+
         self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
         self._setup_info_frame()
         self._setup_animation()
+
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        self._layout.addItem(spacerItem)
+
         self._setup_buttons()
 
 
