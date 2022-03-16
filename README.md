@@ -10,6 +10,8 @@ Short feature demo: <https://vimeo.com/677880749>
 
 ![Sutta Search](docs/sutta-search-screenshot.jpg)
 
+![Sutta Links](docs/sutta-links-screenshot.jpg)
+
 ## Development
 
 Install Poetry, clone this repo and run `poetry install` to install dependencies.
