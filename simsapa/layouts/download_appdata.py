@@ -211,7 +211,8 @@ class Worker(QRunnable):
                 self.download_extract_tar_bz2(i)
 
             def _not_core_db(s: str) -> bool:
-                return not s.endswith('/appdata.sqlite3') and not s.endswith('/userdata.sqlite3')
+                p = Path(s)
+                return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
 
             # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
             sqlite_files = list(filter(_not_core_db, glob.glob(f"{ASSETS_DIR}/*.sqlite3")))
