@@ -53,12 +53,7 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self._ui_setup()
         self._connect_signals()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.search_input.setFocus()
         self._show_document_clear()
 
@@ -121,13 +116,11 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
             self._show_document(doc)
 
     def _show_document_clear(self):
-        self.status_msg.clear()
         self.doc_title.clear()
         self.doc_author.clear()
         self.doc_cover.clear()
 
     def _show_document(self, doc: UDocument):
-        self.status_msg.setText(doc.filepath)
         self.doc_title.setText(doc.title)
         self.doc_author.setText(doc.author)
 

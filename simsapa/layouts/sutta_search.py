@@ -5,16 +5,17 @@ import queue
 import re
 
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QUrl, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QTabWidget, QToolBar, QVBoxLayout, QPushButton, QSizePolicy, QListWidget)
+from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QMainWindow, QAction,
+                             QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
+from tomlkit import items
 
-from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -46,6 +47,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     sutta_tabs: QTabWidget
     sutta_tab: SuttaTabWidget
     _related_tabs: List[SuttaTabWidget]
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -76,6 +78,8 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
+        self.selected_info = {}
+
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
@@ -89,8 +93,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
-
-        self.statusbar.showMessage("Ready", 3000)
 
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
@@ -149,36 +151,38 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
-                elif data['action'] == 'show_sutta_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_sutta_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_sutta_by_uid(info['uid'])
 
-                elif data['action'] == 'show_word_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_word_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_word_by_uid(info['uid'])
 
-                elif data['action'] == 'lookup_clipboard_in_suttas':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
                     self._lookup_clipboard_in_suttas()
 
-                elif data['action'] == 'lookup_in_suttas':
-                    text = data['query']
+                elif msg['action'] == ApiAction.lookup_in_suttas:
+                    text = msg['data']
                     self._set_query(text)
                     self._handle_query()
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Ready")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -196,6 +200,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setCompleter(completer)
 
+        self._setup_sutta_filter_dropdown()
         self._setup_sutta_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
@@ -303,6 +308,32 @@ QWidget:focus { border: 1px solid #1092C3; }
         show = self._app_data.app_settings.get('suttas_show_pali_buttons', False)
         self.palibuttons_frame.setVisible(show)
 
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.Sutta.uid).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Sutta.uid).all()
+        res.extend(r)
+
+        def _uid_to_label(x):
+            return re.sub(r'[^/]+/([^/]+/.*)', r'\1', x['uid'])
+
+        labels = sorted(set(map(_uid_to_label, res)))
+
+        return labels
+
+    def _setup_sutta_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Sources",]
+        items.extend(self._get_filter_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(40)
+        self.sutta_filter_dropdown = cmb
+        self.search_extras.addWidget(self.sutta_filter_dropdown)
+
     def _setup_sutta_select_button(self):
         icon = QIcon()
         icon.addPixmap(QPixmap(":/book"))
@@ -393,7 +424,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        titles = list(map(lambda x: str(x.title), self._recent))
+
+        def _to_title(x: USutta):
+            return " - ".join([str(x.uid), str(x.title)])
+
+        titles = list(map(lambda x: _to_title(x), self._recent))
         self.recent_list.insertItems(0, titles)
 
     def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
@@ -413,9 +448,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
         def callback(found):
             if text and not found:
-                self.statusBar().showMessage('Not found')
-            else:
-                self.statusBar().showMessage('')
+                logger.info('Not found')
 
         tab = self._get_active_tab()
         tab.qwe.findText(text, flag, callback)
@@ -425,16 +458,78 @@ QWidget:focus { border: 1px solid #1092C3; }
         if selected_idx < len(self._results):
             sutta = self._sutta_from_result(self._results[selected_idx])
             if sutta is not None:
-                self._show_sutta(sutta)
                 self._add_recent(sutta)
+                self._show_sutta(sutta)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
         sutta: USutta = self._recent[selected_idx]
         self._show_sutta(sutta)
 
-    def _show_sutta_from_message(self, info):
+    def _select_prev_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        if selected_idx == -1:
+            self.recent_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.recent_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        # List is empty or lost focus (no selected item)
+        if selected_idx == -1:
+            if len(self.recent_list) == 1:
+                # Only one viewed item, which is presently being shown, and no
+                # next item
+                return
+            else:
+                # The 0 index is already the presently show item
+                self.recent_list.setCurrentRow(1)
+
+        elif selected_idx + 1 < len(self.recent_list):
+            self.recent_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.fulltext_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.fulltext_list):
+            self.fulltext_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_tab(self):
+        selected_idx = self.sutta_tabs.currentIndex()
+        if selected_idx == -1:
+            self.sutta_tabs.setCurrentIndex(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.sutta_tabs.setCurrentIndex(selected_idx - 1)
+
+    def _select_next_tab(self):
+        selected_idx = self.sutta_tabs.currentIndex()
+        if selected_idx == -1:
+            self.sutta_tabs.setCurrentIndex(0)
+        elif selected_idx + 1 < len(self.sutta_tabs):
+            self.sutta_tabs.setCurrentIndex(selected_idx + 1)
+
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
+    def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \
@@ -468,6 +563,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if len(results) > 0:
             self._show_sutta(results[0])
+            self._add_recent(results[0])
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []
@@ -489,13 +585,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_sutta(self, sutta: USutta):
+        logger.info(f"_show_sutta() : {sutta.uid}")
         self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
         self.sutta_tab.render_sutta_content()
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
-
-        self.status_msg.setText(str(sutta.title))
 
         self.update_memos_list_for_sutta(sutta)
         self.show_network_graph(sutta)
@@ -553,12 +648,25 @@ QWidget:focus { border: 1px solid #1092C3; }
 
             self._add_new_tab(title, sutta)
 
-    def show_network_graph(self, sutta: USutta):
-        self.generate_graph_for_sutta(sutta, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+    def show_network_graph(self, sutta: Optional[USutta] = None):
+        if sutta is None:
+            if self._current_sutta is None:
+                return
+            else:
+                sutta = self._current_sutta
+
+        self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
     def _sutta_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_sutta_labels'])
+        idx = self.sutta_filter_dropdown.currentIndex()
+        source = self.sutta_filter_dropdown.itemText(idx)
+        if source == "Sources":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
+        results = self.search_query.new_query(query, disabled_labels, only_source)
         hits = self.search_query.hits
 
         if hits == 0:
@@ -635,6 +743,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         # NOTE search_input.returnPressed removes the selected completion and uses the typed query
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
+        self.sutta_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
         self._find_panel.searched.connect(self.on_searched) # type: ignore
@@ -666,3 +776,19 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Lookup_Clipboard_in_Dictionary \
             .triggered.connect(partial(self._lookup_clipboard_in_dictionary))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
+
+        self.action_Previous_Tab \
+            .triggered.connect(partial(self._select_prev_tab))
+
+        self.action_Next_Tab \
+            .triggered.connect(partial(self._select_next_tab))
+
+        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+
+        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))

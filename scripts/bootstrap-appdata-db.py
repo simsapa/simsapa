@@ -3,12 +3,12 @@
 import os
 import sys
 from pathlib import Path
-import re
 import json
 from bs4 import BeautifulSoup
 from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
+from bs4 import BeautifulSoup
 
 from sqlalchemy import create_engine, null
 from sqlalchemy.orm import sessionmaker
@@ -22,9 +22,15 @@ from pyArango.database import DBHandle
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 
-from simsapa.app.helpers import find_or_create_db
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
+
+import helpers
+import cst4
+import dhammatalks_org
+import dhammapada_munindo
+import dhammapada_tipitaka_net
+import create_links
 
 load_dotenv()
 
@@ -40,31 +46,6 @@ for p in [bootstrap_assets_dir, sc_data_dir]:
     if not p.exists():
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
-
-def get_appdata_db(db_path: Path) -> Session:
-    # remove previously generated db
-    if db_path.exists():
-        db_path.unlink()
-
-    find_or_create_db(db_path, DbSchemaName.AppData.value)
-
-    try:
-        # Create an in-memory database
-        engine = create_engine("sqlite+pysqlite://", echo=False)
-
-        db_conn = engine.connect()
-
-        # Attach appdata
-        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
-
-        Session = sessionmaker(engine)
-        Session.configure(bind=engine)
-        db_session = Session()
-    except Exception as e:
-        logger.error(f"Can't connect to database: {e}")
-        sys.exit(1)
-
-    return db_session
 
 def get_suttacentral_db() -> DBHandle:
     conn = Connection(
@@ -102,25 +83,6 @@ def bilara_text_uid(x) -> str:
 
     return f"{x['uid']}/{x['lang']}/{author}"
 
-def uid_to_ref(uid: str) -> str:
-    '''sn12.23 to SN 12.23'''
-
-    # Add a space after the letters, i.e. the collection abbrev
-    uid = re.sub(r'^([a-z]+)([0-9])', r'\1 \2', uid)
-
-    # handle all-upcase collections
-    subs = [('dn ', 'DN '),
-            ('mn ', 'MN '),
-            ('sn ', 'SN '),
-            ('an ', 'AN ')]
-    for sub_from, sub_to in subs:
-        uid = uid.replace(sub_from, sub_to)
-
-    # titlecase the rest, upcase the first letter
-    uid = uid[0].upper() + uid[1:]
-
-    return uid
-
 def get_sutta_page_body(html_page: str):
     if '<html' in html_page or '<HTML' in html_page:
         soup = BeautifulSoup(html_page, 'html.parser')
@@ -135,12 +97,27 @@ def get_sutta_page_body(html_page: str):
 
     return body
 
+def html_post_process(body: str) -> str:
+    # add .noindex to <footer> in suttacentral
+
+    # soup = BeautifulSoup(body, 'html.parser')
+    # h = soup.find(name = 'footer')
+    # if h is not None:
+    #     h['class'] = h.get('class', []) + ['noindex'] # type: ignore
+    #
+    # html = str(soup)
+
+    html = body.replace('<footer>', '<footer class="noindex">')
+
+    return html
+
 def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
     body = get_sutta_page_body(page)
-    content_html = f"""<div class="suttacentral html-text">{body}</div>"""
+    body = html_post_process(body)
+    content_html = '<div class="suttacentral html-text">' + body + '</div>'
 
     return Am.Sutta(
         source_info = x['_id'],
@@ -149,7 +126,7 @@ def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutt
         # dn1/en/bodhi
         uid = html_text_uid(x),
         # SN 12.23
-        sutta_ref = uid_to_ref(x['uid']),
+        sutta_ref = helpers.uid_to_ref(x['uid']),
         # en
         language = x['lang'],
         content_html = content_html,
@@ -175,7 +152,8 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Su
         content_plain = page
     else:
         body = get_sutta_page_body(page)
-        content_html = f"""<div class="suttacentral bilara-text">{body}</div>"""
+        body = html_post_process(body)
+        content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
         content_plain = null()
 
     return Am.Sutta(
@@ -184,7 +162,7 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Su
         # mn123/pli/ms
         uid = bilara_text_uid(x),
         # SN 12.23
-        sutta_ref = uid_to_ref(x['uid']),
+        sutta_ref = helpers.uid_to_ref(x['uid']),
         # pli
         language = x['lang'],
         content_plain = content_plain,
@@ -320,6 +298,11 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             uid = f_uid(r)
             title = f_title(r, titles)
             tmpl = suttas_html_tmpl.get(r['uid'], None)
+
+            if uid.endswith('/than') or uid.endswith('/thanissaro'):
+                # We'll use Aj Thanissaro's translations from dhammatalks.org
+                ignored += 1
+                continue
 
             if uid not in suttas.keys():
                 suttas[uid] = f_to_sutta(r, title, tmpl)
@@ -547,7 +530,7 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
 
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
-    appdata_db = get_appdata_db(appdata_db_path)
+    appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = True)
 
     legacy_db_path = bootstrap_assets_dir.joinpath("db").joinpath("appdata-legacy.sqlite3")
     legacy_db = get_legacy_db(legacy_db_path)
@@ -563,7 +546,18 @@ def main():
 
     populate_suttas_from_suttacentral(appdata_db, sc_db)
 
+    cst4.populate_suttas_from_cst4(appdata_db)
+
+    dhammatalks_org.populate_suttas_from_dhammatalks_org(appdata_db)
+
+    dhammapada_munindo.populate_suttas_from_dhammapada_munindo(appdata_db)
+
+    dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db)
+
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False)
+
+    # Create db links from ssp:// links after all suttas have been added.
+    create_links.populate_links(appdata_db)
 
 if __name__ == "__main__":
     main()

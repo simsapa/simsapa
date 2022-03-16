@@ -4,6 +4,7 @@ import os
 import os.path
 from pathlib import Path
 from typing import List, Optional, TypedDict, Union
+from PyQt5.QtCore import QThreadPool
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -25,6 +26,7 @@ from simsapa.app.helpers import find_or_create_db
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
+ULink = Union[Am.Link, Um.Link]
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
 UDocument = Union[Am.Document, Um.Document]
@@ -63,6 +65,7 @@ class AppSettings(TypedDict):
     word_scan_popup_pos: WindowPosSize
     show_related_suttas: bool
 
+# Message to show to the user.
 class AppMessage(TypedDict):
     kind: str
     text: str
@@ -76,8 +79,7 @@ class AppData:
                  app_clipboard: Optional[QClipboard] = None,
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
-                 api_port: Optional[int] = None,
-                 silent_index_if_empty: bool = False):
+                 api_port: Optional[int] = None):
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -89,7 +91,7 @@ class AppData:
         if user_db_path is None:
             user_db_path = self._find_user_data_or_create()
 
-        self.silent_index_if_empty = silent_index_if_empty
+        self.graph_gen_pool = QThreadPool()
 
         self.api_url: Optional[str] = None
 

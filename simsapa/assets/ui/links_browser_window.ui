@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1068</width>
+    <width>1146</width>
     <height>643</height>
    </rect>
   </property>
@@ -29,7 +29,106 @@
          <enum>Qt::Horizontal</enum>
         </property>
         <widget class="QWidget" name="verticalLayoutWidget_2">
-         <layout class="QVBoxLayout" name="links_layout">
+         <layout class="QVBoxLayout" name="links_wrap_layout">
+          <item>
+           <layout class="QHBoxLayout" name="links_controls_layout">
+            <item>
+             <widget class="QLabel" name="label_6">
+              <property name="text">
+               <string>Labels:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="label_select">
+              <item>
+               <property name="text">
+                <string>Sutta Ref.</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Ref. + Title</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>No Labels</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="label_4">
+              <property name="text">
+               <string>Min. links:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="min_links_input">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="links_regenerate_button">
+              <property name="toolTip">
+               <string>Regenerate Links Graph</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="icon">
+               <iconset resource="../icons.qrc">
+                <normaloff>:/reload</normaloff>:/reload</iconset>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="open_selected_link_button">
+              <property name="toolTip">
+               <string>Open Selected Link</string>
+              </property>
+              <property name="text">
+               <string>Open Selected</string>
+              </property>
+              <property name="icon">
+               <iconset resource="../icons.qrc">
+                <normaloff>:/book</normaloff>:/book</iconset>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="toggle_links_panel_button">
+              <property name="text">
+               <string>Toggle Links Panel</string>
+              </property>
+              <property name="icon">
+               <iconset resource="../icons.qrc">
+                <normaloff>:/caret-right</normaloff>:/caret-right</iconset>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer_4">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="links_layout"/>
+          </item>
           <item>
            <spacer name="horizontalSpacer">
             <property name="orientation">
@@ -257,7 +356,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1068</width>
+     <width>1146</width>
      <height>25</height>
     </rect>
    </property>
@@ -303,12 +402,19 @@
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
+   <widget class="QMenu" name="menu_Go">
+    <property name="title">
+     <string>&amp;Go</string>
+    </property>
+    <addaction name="action_Previous_Result"/>
+    <addaction name="action_Next_Result"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
+   <addaction name="menu_Go"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Help"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
    <property name="windowTitle">
     <string>toolBar</string>
@@ -504,6 +610,22 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>
+   </property>
+  </action>
+  <action name="action_Next_Result">
+   <property name="text">
+    <string>Next Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Down</string>
+   </property>
+  </action>
+  <action name="action_Previous_Result">
+   <property name="text">
+    <string>Previous Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Up</string>
    </property>
   </action>
  </widget>

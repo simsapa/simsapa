@@ -1,6 +1,10 @@
 @charset "utf-8"
 
 @import "base"
+@import "suttacentral"
+@import "cst4"
+@import "dhammatalks_org"
+@import "tipitaka_net"
 
 html
   font-size: 22px
@@ -8,9 +12,12 @@ html
   font-family: "Crimson Pro SSP"
   font-weight: 400
 
+#ssp_main
+  padding-bottom: 4rem
+
 body
   padding: 0 2rem
-  max-width: 70ex
+  max-width: 75ex
   margin: 0 auto
 
 p
@@ -20,70 +27,13 @@ h1, h2, h3, h4, h5, h6
   font-family: "Abhaya Libre SSP"
   font-weight: 800
 
-.suttacentral
-  header
-    text-align: center
-    ul
-      li
-        font-family: "Source Sans 3 SSP"
-        font-weight: 400
-        list-style-type: none
-        text-transform: uppercase
-        font-size: 0.65rem
-        letter-spacing: 1pt
-        word-spacing: 1.5pt
-        padding-top: 0.3rem
+h1
+  font-size: 1.6rem
+h2
+  font-size: 1.4rem
+h3
+  font-size: 1.2rem
+h4
+  font-size: 1.0rem
 
-    h1
-      font-size: 1.4rem
-      font-weight: bold
-      word-spacing: 2pt
-      padding-top: 0.8rem
-      padding-bottom: 0.8rem
-
-  h2
-    font-size: 1.1rem
-    font-weight: bold
-    word-spacing: 2pt
-    padding-top: 1rem
-
-  h3
-    font-size: 1.1rem
-    font-weight: bold
-    word-spacing: 2pt
-    padding-top: 1rem
-
-  .evam
-    text-transform: lowercase
-    font-variant: small-caps
-    font-size: 1.15rem
-    letter-spacing: .8pt
-    word-spacing: 1pt
-
-  .speaker
-    font-style: italic
-    text-indent: 3em
-    display: block
-
-  blockquote.gatha
-    font-style: normal
-    margin-left: 3em
-    .verse-line
-      display: block
-
-  .endsutta
-    font-style: italic
-
-
-  a.ref
-    display: none
-
-  footer
-    margin-top: 4rem
-    border-top: 1px solid #aaa
-    font-size: 0.8rem
-    line-height: 1rem
-    span.author
-      font-style: italic
-    span.publication-date
-      font-style: italic
+@import "gretil_post"

@@ -22,6 +22,20 @@ assoc_sutta_authors = Table(
     Column('author_id', Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
+assoc_sutta_tags = Table(
+    'sutta_tags',
+    Base.metadata,
+    Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+    Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+)
+
+assoc_dict_word_tags = Table(
+    'dict_word_tags',
+    Base.metadata,
+    Column('dict_word_id', Integer, ForeignKey("dict_words.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+    Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+)
+
 assoc_document_tags = Table(
     'document_tags',
     Base.metadata,
@@ -82,6 +96,7 @@ class Sutta(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
+    tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
 
 
 class Dictionary(Base):
@@ -137,6 +152,7 @@ class DictWord(Base):
 
     dictionary = relationship("Dictionary", back_populates="dict_words")
     examples = relationship("Example", back_populates="dict_word", passive_deletes=True)
+    tags = relationship("Tag", secondary=assoc_dict_word_tags, back_populates="dict_words")
 
 
 class Example(Base):
@@ -252,6 +268,8 @@ class Tag(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
+    suttas = relationship("Sutta", secondary=assoc_sutta_tags, back_populates="tags")
+    dict_words = relationship("DictWord", secondary=assoc_dict_word_tags, back_populates="tags")
     documents = relationship("Document", secondary=assoc_document_tags, back_populates="tags")
     memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
 
@@ -261,12 +279,16 @@ class Link(Base):
 
     id = Column(Integer, primary_key=True)
     label = Column(String)
+
     from_table = Column(String, nullable=False)
     from_id = Column(Integer, nullable=False)
     from_page_number = Column(Integer)
+    from_target = Column(String)
+
     to_table = Column(String, nullable=False)
     to_id = Column(Integer, nullable=False)
     to_page_number = Column(Integer)
+    to_target = Column(String)
 
 
 class AppSetting(Base):

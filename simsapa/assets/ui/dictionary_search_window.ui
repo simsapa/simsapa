@@ -29,6 +29,58 @@
          <enum>QLayout::SetMinimumSize</enum>
         </property>
         <item>
+         <widget class="QPushButton" name="back_recent_button">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>40</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Back in History</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="icon">
+           <iconset resource="../icons.qrc">
+            <normaloff>:/arrow-left</normaloff>:/arrow-left</iconset>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="forward_recent_button">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>40</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Forward in History</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="icon">
+           <iconset resource="../icons.qrc">
+            <normaloff>:/arrow-right</normaloff>:/arrow-right</iconset>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QLineEdit" name="search_input">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
@@ -64,8 +116,15 @@
             <height>40</height>
            </size>
           </property>
+          <property name="toolTip">
+           <string>Search</string>
+          </property>
           <property name="text">
            <string>Search</string>
+          </property>
+          <property name="icon">
+           <iconset resource="../icons.qrc">
+            <normaloff>:/search</normaloff>:/search</iconset>
           </property>
          </widget>
         </item>
@@ -156,15 +215,29 @@
                   </item>
                   <item>
                    <widget class="QPushButton" name="fulltext_prev_btn">
+                    <property name="toolTip">
+                     <string>Previous page of results</string>
+                    </property>
                     <property name="text">
-                     <string>Prev</string>
+                     <string/>
+                    </property>
+                    <property name="icon">
+                     <iconset resource="../icons.qrc">
+                      <normaloff>:/angle-left</normaloff>:/angle-left</iconset>
                     </property>
                    </widget>
                   </item>
                   <item>
                    <widget class="QPushButton" name="fulltext_next_btn">
+                    <property name="toolTip">
+                     <string>Next page of results</string>
+                    </property>
                     <property name="text">
-                     <string>Next</string>
+                     <string/>
+                    </property>
+                    <property name="icon">
+                     <iconset resource="../icons.qrc">
+                      <normaloff>:/angle-right</normaloff>:/angle-right</iconset>
                     </property>
                    </widget>
                   </item>
@@ -190,15 +263,29 @@
                   </item>
                   <item>
                    <widget class="QPushButton" name="fulltext_first_page_btn">
+                    <property name="toolTip">
+                     <string>First page of results</string>
+                    </property>
                     <property name="text">
-                     <string>First</string>
+                     <string/>
+                    </property>
+                    <property name="icon">
+                     <iconset resource="../icons.qrc">
+                      <normaloff>:/angles-left</normaloff>:/angles-left</iconset>
                     </property>
                    </widget>
                   </item>
                   <item>
                    <widget class="QPushButton" name="fulltext_last_page_btn">
+                    <property name="toolTip">
+                     <string>Last page of results</string>
+                    </property>
                     <property name="text">
-                     <string>Last</string>
+                     <string/>
+                    </property>
+                    <property name="icon">
+                     <iconset resource="../icons.qrc">
+                      <normaloff>:/angles-right</normaloff>:/angles-right</iconset>
                     </property>
                    </widget>
                   </item>
@@ -220,6 +307,105 @@
               <string>Links</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <layout class="QHBoxLayout" name="links_controls_layout">
+                <item>
+                 <widget class="QLabel" name="label_6">
+                  <property name="text">
+                   <string>Labels:</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QComboBox" name="label_select">
+                  <item>
+                   <property name="text">
+                    <string>Sutta Ref.</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Ref. + Title</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>No Labels</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label">
+                  <property name="text">
+                   <string>Distance:</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="distance_input">
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label_4">
+                  <property name="text">
+                   <string>Min. links:</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="min_links_input">
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="links_regenerate_button">
+                  <property name="toolTip">
+                   <string>Regenerate Links Graph</string>
+                  </property>
+                  <property name="text">
+                   <string/>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="../icons.qrc">
+                    <normaloff>:/reload</normaloff>:/reload</iconset>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="open_selected_link_button">
+                  <property name="toolTip">
+                   <string>Open Selected Link</string>
+                  </property>
+                  <property name="text">
+                   <string>Open Selected</string>
+                  </property>
+                  <property name="icon">
+                   <iconset resource="../icons.qrc">
+                    <normaloff>:/book</normaloff>:/book</iconset>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="horizontalSpacer_4">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
+              </item>
               <item>
                <layout class="QVBoxLayout" name="links_layout"/>
               </item>
@@ -319,7 +505,7 @@
             </widget>
             <widget class="QWidget" name="recent_tab">
              <attribute name="title">
-              <string>Recent</string>
+              <string>History</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_3">
               <item>
@@ -407,13 +593,20 @@
     <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
+   <widget class="QMenu" name="menu_Go">
+    <property name="title">
+     <string>&amp;Go</string>
+    </property>
+    <addaction name="action_Previous_Result"/>
+    <addaction name="action_Next_Result"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
+   <addaction name="menu_Go"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Dictionary"/>
    <addaction name="menu_Help"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
    <property name="windowTitle">
     <string>toolBar</string>
@@ -654,6 +847,22 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>
+   </property>
+  </action>
+  <action name="action_Next_Result">
+   <property name="text">
+    <string>Next Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Down</string>
+   </property>
+  </action>
+  <action name="action_Previous_Result">
+   <property name="text">
+    <string>Previous Result</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Up</string>
    </property>
   </action>
  </widget>

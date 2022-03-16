@@ -59,12 +59,7 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         self._ui_setup()
         self._connect_signals()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self._show_dictionary_source_clear()
 
     def _get_all_dictionary_sources(self) -> List[DictionarySource]:
@@ -109,7 +104,6 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
             self._show_dictionary_source_clear()
 
     def _show_dictionary_source_clear(self):
-        self.status_msg.clear()
         self.dict_creator.clear()
         self.dict_cover.clear()
         self.dict_message.clear()
@@ -119,7 +113,6 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         self.dict_update_button.hide()
 
     def _show_dictionary_source(self, dict_source: DictionarySource):
-        self.status_msg.setText(dict_source.title)
         self.dict_creator.setText(dict_source.creator)
         self.dict_title.setText(dict_source.title)
         self.dict_version.setText(dict_source.version)

@@ -11,12 +11,13 @@ from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
 from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import create_app_dirs
+from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
 from .app.types import AppData
 from .app.windows import AppWindows
 from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
+from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
 from simsapa.assets import icons_rc  # noqa: F401
 
@@ -34,6 +35,8 @@ create_app_dirs()
 
 def start(splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
+
+    ensure_empty_graphs_cache()
 
     if not APP_DB_PATH.exists():
         if splash_proc is not None:
@@ -76,6 +79,16 @@ def start(splash_proc: Optional[Popen] = None):
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
 
+    if app_data.search_indexed.has_empty_index():
+        w = CreateSearchIndexWindow()
+        w.show()
+        status = app.exec_()
+        logger.info(f"open_simsapa: {w.open_simsapa}")
+        logger.info(f"app status: {status}")
+        if not w.open_simsapa:
+            logger.info("Exiting.")
+            sys.exit(status)
+
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
     # === Create systray ===
@@ -117,8 +130,6 @@ def start(splash_proc: Optional[Popen] = None):
     # === Create first window ===
 
     app_windows.open_first_window()
-
-    app_windows.ask_index_if_empty()
 
     app_windows.show_startup_message()
 

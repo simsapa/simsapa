@@ -1,18 +1,19 @@
 from functools import partial
 import math
-from typing import List, Optional
+from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
+import re
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
+from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
@@ -45,6 +46,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     _results: List[SearchResult]
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -74,6 +76,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
+        self.selected_info = {}
+
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
 
         self.timer = QTimer()
@@ -90,8 +94,6 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self.init_stardict_import_dialog()
 
         self._setup_qwe_context_menu()
-
-        self.statusbar.showMessage("Ready", 3000)
 
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
@@ -150,37 +152,39 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
-                elif data['action'] == 'show_sutta_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_sutta_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_sutta_by_uid(info['uid'])
 
-                elif data['action'] == 'show_word_by_uid':
-                    info = data['arg']
+                elif msg['action'] == ApiAction.show_word_by_uid:
+                    info = json.loads(msg['data'])
                     if 'uid' in info.keys():
                         self._show_word_by_uid(info['uid'])
 
-                elif data['action'] == 'lookup_clipboard_in_dictionary':
+                elif msg['action'] == ApiAction.lookup_clipboard_in_dictionary:
                     self._lookup_clipboard_in_dictionary()
 
-                elif data['action'] == 'lookup_in_dictionary':
-                    text = data['query']
+                elif msg['action'] == ApiAction.lookup_in_dictionary:
+                    text = msg['data']
                     self._set_query(text)
                     self._handle_query()
                     self._handle_exact_query()
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("Ready")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -198,6 +202,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setCompleter(completer)
 
+        self._setup_dict_filter_dropdown()
         self._setup_dict_select_button()
         self._setup_toggle_pali_button()
         setup_info_button(self.search_extras, self)
@@ -275,6 +280,32 @@ QWidget:focus { border: 1px solid #1092C3; }
         show = self._app_data.app_settings.get('dictionary_show_pali_buttons', False)
         self.palibuttons_frame.setVisible(show)
 
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.DictWord.uid).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.DictWord.uid).all()
+        res.extend(r)
+
+        def _uid_to_label(x):
+            return re.sub(r'.*/([^/]+)', r'\1', x['uid'])
+
+        labels = sorted(set(map(_uid_to_label, res)))
+
+        return labels
+
+    def _setup_dict_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Dictionaries",]
+        items.extend(self._get_filter_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(40)
+        self.dict_filter_dropdown = cmb
+        self.search_extras.addWidget(self.dict_filter_dropdown)
+
     def _setup_dict_select_button(self):
         icon = QIcon()
         icon.addPixmap(QPixmap(":/dictionary"))
@@ -339,13 +370,17 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.sort(0)
 
-    def _handle_exact_query(self, min_length: int = 4):
+    def _handle_exact_query(self, add_recent: bool = False, min_length: int = 4):
         query = self.search_input.text()
 
         if len(query) < min_length:
             return
 
         res = self.queries.word_exact_matches(query)
+
+        if len(res) > 0 and add_recent:
+            self._add_recent(res[0])
+
         self._render_words(res)
 
     def _set_qwe_html(self, html: str):
@@ -360,16 +395,20 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Rebuild Qt recents list
         self.recent_list.clear()
-        words = list(map(lambda x: str(x.word), self._recent))
-        self.recent_list.insertItems(0, words)
+
+        def _to_title(x: UDictWord):
+            return " - ".join([str(x.uid), str(x.word)])
+
+        titles = list(map(lambda x: _to_title(x), self._recent))
+
+        self.recent_list.insertItems(0, titles)
 
     @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
     def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
         def callback(found):
             if text and not found:
-                self.statusBar().showMessage('Not found')
-            else:
-                self.statusBar().showMessage('')
+                logger.info('Not found')
+
         self.qwe.findText(text, flag, callback)
 
     def _handle_result_select(self):
@@ -377,20 +416,58 @@ QWidget:focus { border: 1px solid #1092C3; }
         if selected_idx < len(self._results):
             word = self.queries.dict_word_from_result(self._results[selected_idx])
             if word is not None:
-                self._show_word(word)
                 self._add_recent(word)
+                self._show_word(word)
 
     def _handle_recent_select(self):
         selected_idx = self.recent_list.currentRow()
         word: UDictWord = self._recent[selected_idx]
         self._show_word(word)
 
+    def _select_prev_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        if selected_idx == -1:
+            self.recent_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.recent_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        # List is empty or lost focus (no selected item)
+        if selected_idx == -1:
+            if len(self.recent_list) == 1:
+                # Only one viewed item, which is presently being shown, and no
+                # next item
+                return
+            else:
+                # The 0 index is already the presently show item
+                self.recent_list.setCurrentRow(1)
+
+        elif selected_idx + 1 < len(self.recent_list):
+            self.recent_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.fulltext_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.fulltext_list):
+            self.fulltext_list.setCurrentRow(selected_idx + 1)
+
     def _render_words(self, words: List[UDictWord]):
         self._current_words = words
         if len(self._current_words) == 0:
             return
-
-        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -401,7 +478,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _show_word(self, word: UDictWord):
         self._current_words = [word]
-        self.status_msg.setText(str(self._current_words[0].word))
 
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
@@ -415,12 +491,25 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._set_qwe_html(page_html)
 
-    def show_network_graph(self, word: UDictWord):
-        self.generate_graph_for_dict_word(word, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+    def show_network_graph(self, word: Optional[UDictWord] = None):
+        if word is None:
+            if len(self._current_words) == 0:
+                return
+            else:
+                word = self._current_words[0]
+
+        self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
     def _word_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        results = self.search_query.new_query(query, disabled_labels, only_source)
         hits = self.search_query.hits
 
         if hits == 0:
@@ -444,8 +533,14 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         return results
 
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \
@@ -482,15 +577,13 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
     def _show_word_by_bword_url(self, url: QUrl):
-        # FIXME encoding is wrong
-        # araghaṭṭa
-        # Show Word: xn--araghaa-jb4ca
-        s = url.toString()
-        query = s.replace("bword://", "")
+        # bword://localhost/American%20pasqueflower
+        # path: /American pasqueflower
+        query = url.path().replace('/', '')
         logger.info(f"Show Word: {query}")
         self._set_query(query)
         self._handle_query()
-        self._handle_exact_query()
+        self._handle_exact_query(add_recent=True)
 
     def _show_word_by_uid(self, uid: str):
         results = self.queries.get_words_by_uid(uid)
@@ -588,6 +681,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
         self._find_panel.searched.connect(self.on_searched) # type: ignore
@@ -619,3 +714,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Lookup_Clipboard_in_Dictionary \
             .triggered.connect(partial(self._lookup_clipboard_in_dictionary))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
+
+        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+
+        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))

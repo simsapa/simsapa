@@ -1,35 +1,41 @@
 import os
 import json
+import time
 from pathlib import Path
 import queue
 
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtGui import QCloseEvent, QColor
-from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow, QListWidgetItem,
+from PyQt5.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
-                             QComboBox)
+                             QComboBox, QSplitter, QVBoxLayout, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import logger
+from simsapa import LOADING_HTML, PACKAGE_ASSETS_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.helpers import compactRichText
+from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
 from ..app.types import AppData, USutta, UDictWord, UDocument
-from ..app.graph import generate_graph, all_nodes_and_edges
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
+CLICK_GENERATE_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/click_generate.html'), 'r').read()
 
 class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
+    splitter: QSplitter
+    tabs_layout: QVBoxLayout
     search_input: QLineEdit
+    _last_graph_gen_timestamp: float
+    selected_info: Any
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -49,7 +55,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
 
+        self.selected_info = {}
+
         self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
+        self._last_graph_gen_timestamp = 0.0
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
@@ -57,8 +66,6 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self._ui_setup()
         self._connect_signals()
-
-        self.statusbar.showMessage("Ready", 3000)
 
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
@@ -73,22 +80,27 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self._setup_pali_buttons()
 
+        self.setup_links_controls()
         self.setup_content_graph()
-        self.show_network_graph()
+
+        # FIXME graph size is not known when opening the window
+        # self.generate_and_show_graph()
 
         self.search_input.setFocus()
 
@@ -105,18 +117,67 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         self.pali_buttons_layout.addLayout(lowercase_row)
 
+    def setup_links_controls(self):
+        self.min_links_input.setMinimum(1)
+        self.min_links_input.setValue(3)
+
+        def _show_graph(arg: Optional[Any] = None):
+            # ignore the argument value, will read params somewhere else
+            self.show_network_graph()
+
+        # "Sutta Ref.", "Ref. + Title", "No Labels"
+        self.label_select.currentIndexChanged.connect(partial(_show_graph))
+
+        self.min_links_input \
+            .valueChanged.connect(partial(_show_graph))
+
+        self.links_regenerate_button \
+            .clicked.connect(partial(_show_graph))
+
+        self.open_selected_link_button \
+            .clicked.connect(partial(self._show_selected))
+
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
         self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_graph.setHtml('')
+        self.content_graph.setHtml(CLICK_GENERATE_HTML)
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
 
     def show_network_graph(self):
-        (nodes, edges) = all_nodes_and_edges(app_data=self._app_data)
-        if len(nodes) > 0:
-            generate_graph(nodes, edges, [], self.queue_id, self.graph_path, self.messages_url)
-            self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+        self.generate_and_show_graph()
+
+    def _graph_finished(self, result: Tuple[float, int, Path]):
+        result_timestamp = result[0]
+        graph_path = result[2]
+
+        # Ignore this result if it is not the last which the user has initiated.
+        if result_timestamp != self._last_graph_gen_timestamp:
+            return
+
+        self.content_graph.load(QUrl(str(graph_path.absolute().as_uri())))
+
+    def generate_and_show_graph(self):
+        # Remove worker threads which are in the queue and not yet started.
+        self._app_data.graph_gen_pool.clear()
+
+        min_links = self.min_links_input.value()
+
+        n = self.label_select.currentIndex()
+        labels = self.label_select.itemText(n)
+
+        width = self.content_graph.frameGeometry().width() - 5
+        height = self.content_graph.frameGeometry().height() - 5
+
+        graph_gen_timestamp = time.time()
+        self._last_graph_gen_timestamp = graph_gen_timestamp
+        graph_gen = GraphGenerator(graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
+
+        graph_gen.signals.result.connect(self._graph_finished)
+
+        self.content_graph.setHtml(LOADING_HTML)
+
+        self._app_data.graph_gen_pool.start(graph_gen)
 
     def _append_to_query(self, s: str):
         a = self.search_input.text()
@@ -296,8 +357,14 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         return list(map(to_search_result, db_results))
 
+    def _show_selected(self):
+        self._show_sutta_from_message(self.selected_info)
+
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
+
+        if not 'table' in info.keys() or not 'id' in info.keys():
+            return
 
         if info['table'] == 'appdata.suttas':
             sutta = self._app_data.db_session \
@@ -494,6 +561,29 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                                     "No link was found with these properties.",
                                     QMessageBox.Ok)
 
+    def _select_prev_result(self):
+        selected_idx = self.results_list.currentRow()
+        if selected_idx == -1:
+            self.results_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.results_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.results_list.currentRow()
+        if selected_idx == -1:
+            self.results_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.results_list):
+            self.results_list.setCurrentRow(selected_idx + 1)
+
+    def _handle_toggle_links_panel(self):
+        sizes = self.splitter.sizes()
+        if sizes[1] == 0:
+            self.splitter.setSizes([100,100])
+        else:
+            self.splitter.setSizes([100,0])
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -506,6 +596,14 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.create_link_btn.clicked.connect(partial(self._handle_create_link))
         self.clear_link_btn.clicked.connect(partial(self._handle_clear_link))
         self.remove_link_btn.clicked.connect(partial(self._handle_remove_link))
+
+        self.toggle_links_panel_button.clicked.connect(partial(self._handle_toggle_links_panel))
+
+        self.action_Previous_Result \
+            .triggered.connect(partial(self._select_prev_result))
+
+        self.action_Next_Result \
+            .triggered.connect(partial(self._select_next_result))
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':

@@ -87,6 +87,10 @@ pre {
   white-space: pre-wrap;
 }
 
+a {
+  color: black;
+}
+
 .ssp-toolbar {
   position: fixed;
   top: 1em;
@@ -98,28 +102,6 @@ pre {
   width: 1em;
   height: 1em;
   vertical-align: -0.125em;
-}
-
-html {
-  font-size: 22px;
-  line-height: 1.5;
-  font-family: "Crimson Pro SSP";
-  font-weight: 400;
-}
-
-body {
-  padding: 0 2rem;
-  max-width: 70ex;
-  margin: 0 auto;
-}
-
-p {
-  margin: 0.8rem 0 0 0;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-family: "Abhaya Libre SSP";
-  font-weight: 800;
 }
 
 .suttacentral header {
@@ -190,4 +172,188 @@ h1, h2, h3, h4, h5, h6 {
 }
 .suttacentral footer span.publication-date {
   font-style: italic;
+}
+
+.cst4 .note {
+  color: blue;
+}
+.cst4 .bld {
+  font-weight: bold;
+}
+.cst4 .paranum {
+  font-weight: bold;
+}
+.cst4 .indent {
+  font-size: 12pt;
+  text-indent: 2em;
+  margin-left: 3em;
+}
+.cst4 .bodytext {
+  font-size: 12pt;
+  text-indent: 2em;
+}
+.cst4 .hangnum {
+  font-size: 12pt;
+  margin-bottom: -18pt;
+  text-indent: 2em;
+}
+.cst4 .centered {
+  font-size: 12pt;
+  text-align: center;
+}
+.cst4 .unindented {
+  font-size: 12pt;
+}
+.cst4 .book {
+  font-size: 21pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .chapter {
+  font-size: 18pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .nikaya {
+  font-size: 24pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .title {
+  font-size: 12pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .subhead {
+  font-size: 12pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .subsubhead {
+  font-size: 12pt;
+  text-align: center;
+  font-weight: bold;
+}
+.cst4 .gatha1 {
+  font-size: 12pt;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gatha2 {
+  font-size: 12pt;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gatha3 {
+  font-size: 12pt;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gathalast {
+  font-size: 12pt;
+  margin-bottom: 0.5cm;
+  margin-left: 4em;
+}
+
+.dhammatalks_org .author {
+  font-style: italic;
+  font-size: 1em;
+}
+.dhammatalks_org .title {
+  font-weight: bold;
+  font-size: 1em;
+}
+.dhammatalks_org .fn {
+  vertical-align: 0.4em;
+  font-size: 0.8em;
+}
+.dhammatalks_org .verse {
+  margin: 0.8em 8%;
+  text-indent: 0;
+}
+.dhammatalks_org .verse p {
+  margin-top: 0;
+}
+.dhammatalks_org .verse p.v2 {
+  text-indent: -2%;
+  padding-left: 10%;
+}
+.dhammatalks_org .verse p.vspk {
+  margin-bottom: 0.1em;
+  text-indent: -2.6em;
+  font-style: italic;
+}
+.dhammatalks_org .verse p.seealso {
+  margin-top: 0.8em;
+  font-style: italic;
+  font-size: 0.9em;
+}
+.dhammatalks_org .verse-add {
+  margin-top: 0.4em;
+  text-indent: 0;
+}
+.dhammatalks_org .note {
+  margin: 0.6em 4%;
+  font-size: 0.85em;
+}
+
+.tipitaka_net ul.toc li {
+  font-size: 0.8em;
+}
+
+html {
+  font-size: 22px;
+  line-height: 1.5;
+  font-family: "Crimson Pro SSP";
+  font-weight: 400;
+}
+
+#ssp_main {
+  padding-bottom: 4rem;
+}
+
+body {
+  padding: 0 2rem;
+  max-width: 75ex;
+  margin: 0 auto;
+}
+
+p {
+  margin: 0.8rem 0 0 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+h2 {
+  font-size: 1.4rem;
+}
+
+h3 {
+  font-size: 1.2rem;
+}
+
+h4 {
+  font-size: 1rem;
+}
+
+.gretil {
+  font-size: 18px;
+  font-family: "DejaVu Serif", serif;
+  margin-left: -5ex;
+  margin-right: -5ex;
+}
+.gretil h1, .gretil h2, .gretil h3, .gretil h4, .gretil h5, .gretil h6 {
+  font-family: "DejaVu Serif", serif;
+}
+
+.gretil > footer {
+  padding-top: 4em;
+  font-size: 14px;
 }

@@ -1,3 +1,4 @@
+import re
 from typing import List, Tuple, TypedDict, Optional
 from pathlib import Path
 from itertools import chain
@@ -7,19 +8,26 @@ from bokeh.models.renderers import GraphRenderer, GlyphRenderer
 import networkx as nx
 from bokeh.io import output_file, save, curdoc
 from bokeh.document import Document
-from bokeh.models import (Div, Button, Circle, MultiLine, Range1d, ColumnDataSource,
+from bokeh.models import (Div, Circle, MultiLine, Range1d, ColumnDataSource,
                           LabelSet, HoverTool, NodesAndLinkedEdges,
                           EdgesAndLinkedNodes)
 from bokeh.palettes import Spectral8
 from bokeh.plotting import figure, from_networkx, Figure
 from bokeh.layouts import column
 from bokeh.models import CustomJS
-from bokeh import events
+
+import networkx
+from bokeh.transform import linear_cmap
+
+from sqlalchemy.orm.session import Session
+from sqlalchemy.sql.elements import and_
+
+from simsapa import ShowLabels
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from .types import AppData, UDictWord, USutta, UDocument
+from .types import UDictWord, USutta, UDocument, ULink
 
 
 class NodeData(TypedDict):
@@ -140,39 +148,81 @@ def unique_edges(edges: List[GraphEdge]) -> List[GraphEdge]:
     return unique_edges
 
 
-def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
-    links = []
+def get_related_suttas(db_session: Session, sutta: USutta) -> List[USutta]:
+    uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
 
-    # TODO: Assuming all links are in userdata, made between
-    # 'appdata.suttas' records
-
-    r = app_data.db_session \
-        .query(Um.Link.to_id) \
-        .filter(Um.Link.from_table == "appdata.suttas") \
-        .filter(Um.Link.to_table == "appdata.suttas") \
-        .filter(Um.Link.from_id == sutta.id) \
-        .all()
-
-    links.extend(r)
-
-    r = app_data.db_session \
-        .query(Um.Link.from_id) \
-        .filter(Um.Link.from_table == "appdata.suttas") \
-        .filter(Um.Link.to_table == "appdata.suttas") \
-        .filter(Um.Link.to_id == sutta.id) \
-        .all()
-
-    links.extend(r)
-
-    # IDs without the current sutta ID
-    ids = filter(lambda x: x != sutta.id, map(lambda x: x[0], links))
-    # set() will contain unique items
-    sutta_ids = list(set(ids))
-
-    suttas = app_data.db_session \
+    res: List[USutta] = []
+    r = db_session \
         .query(Am.Sutta) \
-        .filter(Am.Sutta.id.in_(sutta_ids)) \
+        .filter(and_(
+            Am.Sutta.uid != sutta.uid,
+            Am.Sutta.uid.like(f"{uid_ref}/%"),
+        )) \
         .all()
+    res.extend(r)
+
+    r = db_session \
+        .query(Um.Sutta) \
+        .filter(and_(
+            Um.Sutta.uid != sutta.uid,
+            Um.Sutta.uid.like(f"{uid_ref}/%"),
+        )) \
+        .all()
+    res.extend(r)
+
+    return res
+
+
+def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1):
+    links = {'appdata.suttas': [], 'userdata.suttas': []}
+    sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
+
+    related_suttas = get_related_suttas(db_session, sutta)
+    related_suttas.append(sutta)
+
+    related_ids = list(map(lambda x: x.id, related_suttas))
+
+    for s in related_suttas:
+        for DbLink in [Am.Link, Um.Link]:
+            for table in ['appdata.suttas', 'userdata.suttas']:
+
+                r = db_session \
+                    .query(DbLink.to_id) \
+                    .filter(DbLink.from_table == table) \
+                    .filter(DbLink.to_table == table) \
+                    .filter(DbLink.from_id == s.id) \
+                    .all()
+
+                links[table].extend(r)
+
+                r = db_session \
+                    .query(DbLink.from_id) \
+                    .filter(DbLink.from_table == table) \
+                    .filter(DbLink.to_table == table) \
+                    .filter(DbLink.to_id == s.id) \
+                    .all()
+
+                links[table].extend(r)
+
+    for table in ['appdata.suttas', 'userdata.suttas']:
+        # results IDs, exluding the the current sutta ID (i.e. suttas connecting to it)
+        ids = filter(lambda x: x not in related_ids, map(lambda x: x[0], links[table]))
+        # set() will contain unique items
+        sutta_ids[table] = list(set(ids))
+
+    suttas = []
+
+    r = db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.id.in_(sutta_ids['appdata.suttas'])) \
+                .all()
+    suttas.extend(r)
+
+    r = db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.id.in_(sutta_ids['userdata.suttas'])) \
+                .all()
+    suttas.extend(r)
 
     nodes = list(map(sutta_to_node, suttas))
 
@@ -190,23 +240,22 @@ def sutta_nodes_and_edges(app_data: AppData, sutta: USutta, distance: int = 1):
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
     # Append the current sutta as a node
-
     nodes.append(sutta_to_node(sutta))
 
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance: int = 1):
+def dict_word_nodes_and_edges(db_session: Session, dict_word: UDictWord, distance: int = 1):
     schema = dict_word.metadata.schema
 
     links = []
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == f"{schema}.dict_words") \
         .filter(Um.Link.to_table == "appdata.suttas") \
@@ -215,7 +264,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
 
     links.extend(r)
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.Link.from_id) \
         .filter(Um.Link.from_table == f"{schema}.dict_words") \
         .filter(Um.Link.to_table == "appdata.suttas") \
@@ -228,7 +277,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
     # set() will contain unique items
     sutta_ids = list(set(ids))
 
-    suttas = app_data.db_session \
+    suttas = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(sutta_ids)) \
         .all()
@@ -246,7 +295,7 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -257,8 +306,8 @@ def dict_word_nodes_and_edges(app_data: AppData, dict_word: UDictWord, distance:
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_number: int, distance: int = 1):
-    links = app_data.db_session \
+def document_page_nodes_and_edges(db_session: Session, db_doc: Am.Document, page_number: int, distance: int = 1):
+    links = db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == "userdata.documents") \
         .filter(Um.Link.from_page_number == page_number) \
@@ -270,7 +319,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     # set() will contain unique items
     sutta_ids = list(set(ids))
 
-    suttas = app_data.db_session \
+    suttas = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(sutta_ids)) \
         .all()
@@ -289,7 +338,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(app_data=app_data, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -301,7 +350,7 @@ def document_page_nodes_and_edges(app_data: AppData, db_doc: Am.Document, page_n
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
+def _suttas_from_links(db_session: Session, links: List[Um.Link]) -> List[USutta]:
     results: List[USutta] = []
 
     def to_appdata_sutta_ids(x: Um.Link):
@@ -315,7 +364,7 @@ def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
     a = list(map(to_appdata_sutta_ids, links))
     db_ids = list(set(chain.from_iterable(a)))
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Am.Sutta) \
         .filter(Am.Sutta.id.in_(db_ids)) \
         .all()
@@ -325,7 +374,7 @@ def _suttas_from_links(app_data: AppData, links: List[Um.Link]) -> List[USutta]:
     return results
 
 
-def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDictWord]:
+def _dict_words_from_links(db_session: Session, links: List[Um.Link]) -> List[UDictWord]:
     results: List[UDictWord] = []
 
     def to_appdata_word_ids(x: Um.Link):
@@ -350,14 +399,14 @@ def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDic
     a = list(map(to_userdata_word_ids, links))
     userdata_db_ids = list(set(chain.from_iterable(a)))
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Am.DictWord) \
         .filter(Am.DictWord.id.in_(appdata_db_ids)) \
         .all()
 
     results.extend(r)
 
-    r = app_data.db_session \
+    r = db_session \
         .query(Um.DictWord) \
         .filter(Um.DictWord.id.in_(userdata_db_ids)) \
         .all()
@@ -367,7 +416,7 @@ def _dict_words_from_links(app_data: AppData, links: List[Um.Link]) -> List[UDic
     return results
 
 
-def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> List[DocumentPage]:
+def _documents_and_pages_from_links(db_session: Session, links: List[Um.Link]) -> List[DocumentPage]:
     results: List[DocumentPage] = []
 
     def to_appdata_items(x: Um.Link):
@@ -394,12 +443,12 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     userdata_items = list(set(chain.from_iterable(a)))
     userdata_ids = list(map(lambda x: x[0], userdata_items))
 
-    appdata_db_res = app_data.db_session \
+    appdata_db_res = db_session \
         .query(Am.Document) \
         .filter(Am.Document.id.in_(appdata_ids)) \
         .all()
 
-    userdata_db_res = app_data.db_session \
+    userdata_db_res = db_session \
         .query(Um.Document) \
         .filter(Um.Document.id.in_(userdata_ids)) \
         .all()
@@ -419,13 +468,17 @@ def _documents_and_pages_from_links(app_data: AppData, links: List[Um.Link]) -> 
     return results
 
 
-def all_nodes_and_edges(app_data: AppData):
+def all_nodes_and_edges(db_session: Session):
 
-    links = app_data.db_session.query(Um.Link).all()
+    links = []
+    r = db_session.query(Am.Link).all()
+    links.extend(r)
+    r = db_session.query(Um.Link).all()
+    links.extend(r)
 
-    suttas = _suttas_from_links(app_data, links)
-    words = _dict_words_from_links(app_data, links)
-    documents_and_pages = _documents_and_pages_from_links(app_data, links)
+    suttas = _suttas_from_links(db_session, links)
+    words = _dict_words_from_links(db_session, links)
+    documents_and_pages = _documents_and_pages_from_links(db_session, links)
 
     nodes = []
     nodes.extend(list(map(sutta_to_node, suttas)))
@@ -452,7 +505,7 @@ def all_nodes_and_edges(app_data: AppData):
             x['doc'].metadata.schema == to_schema and x['doc'].id == link.to_id and \
             x['page_number'] == link.to_page_number
 
-    def to_edge(link: Um.Link):
+    def to_edge(link: ULink):
         if link.from_table.endswith('.suttas'):
             sutta = list(filter(lambda x: from_agrees(x, link, '.suttas'), suttas))
             if len(sutta) == 1:
@@ -511,7 +564,16 @@ def all_nodes_and_edges(app_data: AppData):
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, output_path: Path, messages_url: str):
+def generate_graph(nodes,
+                   edges,
+                   selected_indices: List[int],
+                   queue_id: str,
+                   output_path: Path,
+                   messages_url: str,
+                   show_labels: Optional[ShowLabels] = ShowLabels.SuttaRef,
+                   min_degree: Optional[int] = None,
+                   plot_size: Optional[Tuple[int, int]] = None):
+
     if len(nodes) == 0:
         return
 
@@ -519,10 +581,36 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     G.add_nodes_from(nodes)
     G.add_edges_from(edges)
 
+    if min_degree is not None and min_degree > 1 and len(G.nodes()) > 2:
+        remove_nodes = [x for x in G.nodes() if G.degree(x) < min_degree]
+        G.remove_nodes_from(remove_nodes)
+
+    if len(G.nodes()) == 0:
+        # Create an empty graph and render the html to show the user visible
+        # feedback that no nodes were left
+        G = nx.Graph()
+
+    degrees = dict(networkx.degree(G))
+    networkx.set_node_attributes(G, name='degree', values=degrees)
+
+    number_to_adjust_by = 5
+    adjusted_node_size = dict([(node, degree+number_to_adjust_by) for node, degree in networkx.degree(G)])
+    networkx.set_node_attributes(G, name='adjusted_node_size', values=adjusted_node_size)
+
+    size_by_this_attribute = 'adjusted_node_size'
+    color_by_this_attribute = 'adjusted_node_size'
+
+    if plot_size is not None:
+        plot_width = plot_size[0]
+        plot_height = plot_size[1]
+    else:
+        plot_width = 700
+        plot_height = 400
+
     plot: Figure = figure(
         title=None,
-        plot_width=700,
-        plot_height=400,
+        plot_width=plot_width,
+        plot_height=plot_height,
         x_range=Range1d(-1.1, 1.1),
         y_range=Range1d(-1.1, 1.1),
         tools="pan,tap,wheel_zoom,reset",
@@ -545,15 +633,19 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
     plot.xaxis.minor_tick_line_color = None
     plot.yaxis.minor_tick_line_color = None
 
-    network_graph: GraphRenderer = from_networkx(G, nx.spring_layout, scale=0.8, center=(0, 0), seed=100)
+    network_graph: GraphRenderer = from_networkx(G, nx.spring_layout, scale=1.0, center=(0, 0), seed=100)
 
     selection_color = Spectral8[6]
 
-    network_graph.node_renderer.glyph = Circle(size=15, fill_color='fill_color')
-    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=selection_color)
-    network_graph.node_renderer.nonselection_glyph = Circle(size=15, fill_color='fill_color')
+    color_palette = Spectral8
 
-    network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.8, line_width=1)
+    minimum_value_color = min(network_graph.node_renderer.data_source.data[color_by_this_attribute])
+    maximum_value_color = max(network_graph.node_renderer.data_source.data[color_by_this_attribute])
+    network_graph.node_renderer.glyph = Circle(size=size_by_this_attribute, fill_color=linear_cmap(color_by_this_attribute, color_palette, minimum_value_color, maximum_value_color))
+
+    network_graph.node_renderer.selection_glyph = Circle(size=15, fill_color=selection_color)
+
+    network_graph.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=0.2, line_width=0.5)
     network_graph.edge_renderer.selection_glyph = MultiLine(line_color=selection_color, line_width=2)
 
     network_graph.selection_policy = NodesAndLinkedEdges()
@@ -561,19 +653,24 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     plot.renderers.append(network_graph)
 
+    def _fmt(s: str) -> str:
+        return s.replace('Sutta', '').replace('sutta', '')
+
     x, y = zip(*network_graph.layout_provider.graph_layout.values())
     source = ColumnDataSource({
         'x': x,
         'y': y,
         'label': [nodes[i][1]['label'] for i in range(len(x))],
-        'title': [nodes[i][1]['title'] for i in range(len(x))],
+        'title': [nodes[i][1]['label'] + ' ' + _fmt(nodes[i][1]['title']) for i in range(len(x))],
         'description': [nodes[i][1]['description'] for i in range(len(x))],
         'table': [nodes[i][1]['table'] for i in range(len(x))],
         'id': [nodes[i][1]['id'] for i in range(len(x))],
     })
 
     tooltips = [
-        ('Title', '@title')
+        # ('Title', '@title'),
+        # No need for the 'Title:' ... prefix
+        ('', '@title'),
     ]
 
     cr = plot.circle(x='x', y='y', source=source, size=25,
@@ -583,16 +680,27 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 
     plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))
 
-    labels = LabelSet(
-        x='x',
-        y='y',
-        text='label',
-        source=source,
-        background_fill_color='white',
-        text_font_size='15px',
-        background_fill_alpha=.7)
+    if show_labels != ShowLabels.NoLabels:
 
-    plot.renderers.append(labels)
+        if show_labels == ShowLabels.SuttaRef:
+            label_attr = 'label'
+        else:
+            # ShowLabels.RefAndTitle
+            label_attr = 'title'
+
+        labels = LabelSet(
+            x='x',
+            y='y',
+            text=label_attr,
+            source=source,
+            text_color='black',
+            text_alpha=0.8,
+            text_font_size='15px',
+            background_fill_color='white',
+            background_fill_alpha=0.5,
+        )
+
+        plot.renderers.append(labels)
 
     network_graph.node_renderer.data_source.selected.indices = selected_indices
 
@@ -600,20 +708,6 @@ def generate_graph(nodes, edges, selected_indices: List[int], queue_id: str, out
 window.selected_info = [];
 
 var inds = cb_obj.indices;
-
-var body = document.getElementsByTagName('body')[0];
-
-var desc_div = document.getElementById('selected_descriptions');
-
-if (desc_div == null || typeof desc_div == 'undefined') {
-    desc_div = document.createElement('div');
-    desc_div.setAttribute('id', 'selected_descriptions');
-    body.appendChild(desc_div);
-}
-
-desc_div.innerHTML = '';
-var desc_div_content = '';
-
 var data = source.data;
 
 for (var i=0; i<inds.length; i++) {
@@ -621,27 +715,14 @@ for (var i=0; i<inds.length; i++) {
 
     var table = data['table'][idx];
     var id = data['id'][idx];
-    var title = data['title'][idx];
-    var desc_content = data['description'][idx];
 
     window.selected_info.push({ table: table, id: id });
-
-    desc_div_content += '<h1 class="title">' + title + '</h1><div class="description">' + desc_content + '</div>';
 }
 
-desc_div.innerHTML = desc_div_content;
-"""))
-
-    button = Button(label='Open Sutta')
-
-    js_code = """
-if (typeof window.selected_info === 'undefined') {
-    window.selected_info = [];
-}
 if (window.selected_info.length > 0) {
     const params = {
-        action: 'show_sutta',
-        arg: window.selected_info[0],
+        action: 'set_selected',
+        data: JSON.stringify(window.selected_info[0]),
     };
     const options = {
         method: 'POST',
@@ -653,12 +734,14 @@ if (window.selected_info.length > 0) {
     };
     fetch('%s', options);
 }
-""" % (messages_url,)
-
-    button.js_on_event(events.ButtonClick, CustomJS(code=js_code, args={}))
+""" % (messages_url,)))
 
     text = """
 <style>
+    body {
+        margin: -25px 0 0 -5px;
+        padding: 0;
+    }
     #selected_descriptions {
         font-family: Helvetica, Arial, sans-serif;
         padding: 0 30px;
@@ -680,7 +763,7 @@ if (window.selected_info.length > 0) {
 </style>"""
 
     header = Div(text=text)
-    layout = column(header, button, plot)
+    layout = column(header, plot)
 
     doc: Document = curdoc()
     doc.clear()

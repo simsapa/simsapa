@@ -426,15 +426,13 @@ class WordScanPopup(QDialog, HasFulltextList):
         self._set_qwe_html(page_html)
 
     def _show_word_by_bword_url(self, url: QUrl):
-        # FIXME encoding is wrong
-        # araghaṭṭa
-        # Show Word: xn--araghaa-jb4ca
-        s = url.toString()
-        query = s.replace("bword://", "")
+        # bword://localhost/American%20pasqueflower
+        # path: /American pasqueflower
+        query = url.path().replace('/', '')
         logger.info(f"Show Word: {query}")
         self._set_query(query)
         self._handle_query()
-        self._handle_exact_query()
+        self._handle_exact_query(add_recent=True)
 
     def _show_word_by_uid(self, uid: str):
         results = self.queries.get_words_by_uid(uid)
@@ -499,13 +497,17 @@ class WordScanPopup(QDialog, HasFulltextList):
 
         self._autocomplete_model.sort(0)
 
-    def _handle_exact_query(self, min_length: int = 4):
+    def _handle_exact_query(self, add_recent: bool = False, min_length: int = 4):
         query = self.search_input.text()
 
         if len(query) < min_length:
             return
 
         res = self.queries.word_exact_matches(query)
+
+        if len(res) > 0 and add_recent:
+            self._add_recent(res[0])
+
         self._render_words(res)
 
     def _handle_result_select(self):

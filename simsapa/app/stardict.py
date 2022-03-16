@@ -302,8 +302,15 @@ def parse_dict(paths: StarDictPaths,
             definition_plain = ""
             definition_html = ""
             # Only accept sametypesequence = m, h
-            if types == "m" and data_str[0] == "m":
-                definition_plain = data_str[1:]
+            if types == "m":
+                # NOTE: it doesn't seem to be necessary to strip the 'm'
+                #
+                # if data_str[0] == "m":
+                #     definition_plain = data_str[1:]
+                # else:
+                #     definition_plain = data_str
+
+                definition_plain = data_str
 
             if types == "h":
                 definition_html = data_str
@@ -462,7 +469,9 @@ def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
             for n, w in enumerate(words):
 
                 if res['syn_count'] is not None:
-                    res['syn_count'] += len(w['synonyms'])
+                    n = int(res['syn_count'])
+                    n += len(w['synonyms'])
+                    res['syn_count'] = n
 
                 for s in w['synonyms']:
                     d = bytes(f"{s}\0", "utf-8")

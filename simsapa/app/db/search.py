@@ -1,6 +1,7 @@
 import shutil
 from typing import Callable, List, Optional, TypedDict, Union
 import re
+from bs4 import BeautifulSoup
 
 from whoosh import writing
 from whoosh.highlight import SCORE, HtmlFormatter
@@ -204,9 +205,16 @@ class SearchQuery:
 
     def new_query(self,
                   query: str,
-                  disabled_labels: Optional[Labels] = None) -> List[SearchResult]:
+                  disabled_labels: Optional[Labels] = None,
+                  only_source: Optional[str] = None) -> List[SearchResult]:
 
         self.all_results = self._search_field(field_name = 'content', query = query)
+
+        def _only_in_source(x: Hit):
+            if only_source is not None:
+                return x['uid'].endswith(f'/{only_source.lower()}')
+            else:
+                return True
 
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
@@ -218,11 +226,14 @@ class SearchQuery:
             else:
                 return True
 
+        if only_source is not None:
+            self.filtered = list(filter(_only_in_source, self.all_results))
 
-        if disabled_labels is None:
-            self.filtered = list(self.all_results)
-        else:
+        elif disabled_labels is not None:
             self.filtered = list(filter(_not_in_disabled, self.all_results))
+
+        else:
+            self.filtered = list(self.all_results)
 
         # NOTE: r.estimated_min_length() errors on some searches
         self.hits = len(self.filtered)
@@ -330,9 +341,17 @@ class SearchIndexed:
             for i in suttas:
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
-                    content = compactRichText(str(i.content_html))
+                    # Remove content marked with 'noindex' class, such as footer material
+                    soup = BeautifulSoup(str(i.content_html), 'html.parser')
+                    h = soup.find_all(class_='noindex')
+                    for x in h:
+                        x.decompose()
+
+                    content = compactRichText(str(soup))
+
                 elif i.content_plain is not None:
                     content = compactPlainText(str(i.content_plain))
+
                 else:
                     continue
 
@@ -371,8 +390,10 @@ class SearchIndexed:
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
                     content = compactRichText(str(i.definition_html))
+
                 elif i.definition_plain is not None:
                     content = compactPlainText(str(i.definition_plain))
+
                 else:
                     continue
 

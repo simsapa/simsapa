@@ -1,7 +1,9 @@
+import json
 from typing import List
 import requests
 
 from simsapa import logger
+from simsapa import ApiAction, ApiMessage
 
 class ActionsManager:
     api_url: str
@@ -10,50 +12,42 @@ class ActionsManager:
         self.api_url = f'http://localhost:{api_port}'
 
     def show_word_scan_popup(self):
-        data = {'action': 'show_word_scan_popup'}
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.show_word_scan_popup, data = '')
+        self._send_to_all(msg)
 
     def lookup_clipboard_in_suttas(self):
-        data = {'action': 'lookup_clipboard_in_suttas'}
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.lookup_clipboard_in_suttas, data = '')
+        self._send_to_all(msg)
 
     def lookup_clipboard_in_dictionary(self):
-        data = {'action': 'lookup_clipboard_in_dictionary'}
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.lookup_clipboard_in_dictionary, data = '')
+        self._send_to_all(msg)
 
     def lookup_in_suttas(self, query: str):
-        data = {
-            'action': 'lookup_in_suttas',
-            'query': query,
-        }
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.lookup_in_suttas,
+                         data = query)
+        self._send_to_all(msg)
 
     def lookup_in_dictionary(self, query: str):
-        data = {
-            'action': 'lookup_in_dictionary',
-            'query': query,
-        }
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.lookup_in_dictionary,
+                         data = query)
+        self._send_to_all(msg)
 
     def open_sutta_new(self, uid: str):
-        data = {
-            'action': 'open_sutta_new',
-            'uid': uid,
-        }
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.open_sutta_new,
+                         data = uid)
+        self._send_to_all(msg)
 
     def open_words_new(self, schemas_ids: List[tuple[str, int]]):
-        data = {
-            'action': 'open_words_new',
-            'schemas_ids': schemas_ids,
-        }
-        self._send_to_all(data)
+        msg = ApiMessage(action = ApiAction.open_words_new,
+                         data = json.dumps(schemas_ids))
+        self._send_to_all(msg)
 
-    def _send_to_all(self, data):
+    def _send_to_all(self, msg: ApiMessage):
         url = f"{self.api_url}/queues/all"
-        logger.info(f"_send_to_all(): {url}, {data}")
+        logger.info(f"_send_to_all(): {url}, {msg}")
         try:
-            r = requests.post(url=url, json=data)
+            r = requests.post(url=url, json=msg)
             if r.status_code != 200:
                 logger.error(f"{r}")
         except Exception as e:

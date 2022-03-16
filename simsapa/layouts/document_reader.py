@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
 from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
 
-from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS, TIMER_SPEED
+from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS, TIMER_SPEED, ApiAction, ApiMessage
 
 from ..app.file_doc import FileDoc, PageImage
 from ..app.db import appdata_models as Am
@@ -44,8 +44,6 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
-        self.statusbar.showMessage("Ready", 3000)
-
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
@@ -59,18 +57,16 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         if self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
-                data = json.loads(s)
-                if data['action'] == 'show_sutta':
-                    self._show_sutta_from_message(data['arg'])
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_from_message(info)
 
                 APP_QUEUES[self.queue_id].task_done()
             except queue.Empty:
                 pass
 
     def _ui_setup(self):
-        self.status_msg = QLabel("")
-        self.statusbar.addPermanentWidget(self.status_msg)
-
         self.links_tab_idx = 0
         self.memos_tab_idx = 1
 

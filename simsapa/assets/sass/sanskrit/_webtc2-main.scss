@@ -1,0 +1,97 @@
+/* selectors for webtc2 not in webtc */
+p.words {
+text-align: left;
+}
+a.words {
+ color: blue;
+}
+table {
+  width: 100%;
+}
+
+li.display {
+margin-left: 5px;
+}
+td.ready {
+ font-weight: normal;
+ font-style: italic;
+}
+.hk {
+ font-size: 100%;
+}
+.hklarge {
+ font-size: 150%;
+}
+span.abbr {
+ color: #339933;
+ text-decoration: underline;
+}
+span.abbr:hover {color: #FF00FF} 
+
+span.hk {
+ color:blue;
+ }
+span.hklarge {
+ color:blue;
+ }
+span.q {
+  color: #333333;
+}
+span.entity {
+ color: red;
+}
+span.see {
+ font-weight: bolder;
+ font-style: italic;
+}
+span.sense {
+ font-weight: bolder;
+}
+span.datakey {
+ font-weight: bolder;
+}
+p.tabkey {
+ font-weight: bolder;
+}
+span.pb {
+ font-size : smaller;
+}
+.container {
+ width: 800px;
+}
+
+#headtitle {
+ font-size: normal;
+ font-weight: bolder;
+}
+#updbutton {
+ background-color: red;
+}
+#data {
+ position:absolute;
+ left: 31%;
+ width: 68%;
+ background-color: white;
+ overflow: auto;
+ height: 400px;
+ border: solid;
+}
+#ansdiv {
+ position:absolute;
+ left: 1%;
+ width: 99%;
+ background-color: white;
+ overflow: auto;
+ height: 400px;
+ border: solid;
+}
+#querydiv {
+  background-color: #DBE4ED; 
+}
+
+#navbtns {
+  position:absolute;
+  left: 1%;
+  width: 48%;
+  height: 50px;
+}
