@@ -95,7 +95,7 @@ def start(splash_proc: Optional[Popen] = None):
 
     # Systray doesn't work on MAC
     if not IS_MAC:
-        app.setQuitOnLastWindowClosed(False)
+        app.setQuitOnLastWindowClosed(True)
 
         tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
         tray.setVisible(True)
