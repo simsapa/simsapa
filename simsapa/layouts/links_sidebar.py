@@ -16,7 +16,7 @@ from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord
 
-from simsapa import LOADING_HTML, ShowLabels
+from simsapa import IS_MAC, LOADING_HTML, ShowLabels
 from simsapa.app.helpers import get_db_engine_connection_session
 
 
@@ -203,7 +203,10 @@ class HasLinksSidebar:
         n = self.label_select.currentIndex()
         labels = self.label_select.itemText(n)
 
-        width = self.rightside_tabs.frameGeometry().width() - 20
+        if IS_MAC:
+            width = self.rightside_tabs.frameGeometry().width() - 40
+        else:
+            width = self.rightside_tabs.frameGeometry().width() - 20
         height = self.rightside_tabs.frameGeometry().height() - 80
 
         graph_gen_timestamp = time.time()

@@ -215,7 +215,8 @@ class Worker(QRunnable):
                 return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
 
             # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
-            sqlite_files = list(filter(_not_core_db, glob.glob(f"{ASSETS_DIR}/*.sqlite3")))
+            p = ASSETS_DIR.joinpath("*.sqlite3")
+            sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
 
             for i in sqlite_files:
                 self.import_suttas_to_appdata(Path(i))
