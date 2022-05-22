@@ -6,14 +6,13 @@ import re
 
 from functools import partial
 from typing import Any, List, Optional
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QMainWindow, QAction,
-                             QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget)
+from PyQt5.QtWidgets import (QComboBox, QAction, QCompleter, QFrame, QLineEdit, QMainWindow, QVBoxLayout, QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
-from tomlkit import items
+# from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
@@ -33,11 +32,12 @@ from .html_content import html_page
 from .help_info import show_search_info, setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
 
+class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
-class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
-                        HasLinksSidebar, HasMemosSidebar, HasFulltextList):
+    searchbar_layout: Optional[QHBoxLayout]
+    sutta_tabs_layout: Optional[QVBoxLayout]
+    tabs_layout: Optional[QVBoxLayout]
 
-    searchbar_layout: QHBoxLayout
     search_extras: QHBoxLayout
     palibuttons_frame: QFrame
     search_input: QLineEdit
@@ -47,23 +47,30 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
     sutta_tabs: QTabWidget
     sutta_tab: SuttaTabWidget
     _related_tabs: List[SuttaTabWidget]
-    selected_info: Any
 
-    def __init__(self, app_data: AppData, parent=None) -> None:
-        super().__init__(parent)
-        self.setupUi(self)
-        logger.info("SuttaSearchWindow()")
+    def __init__(self,
+                 app_data: AppData,
+                 parent_window: QMainWindow,
+                 searchbar_layout: Optional[QHBoxLayout],
+                 sutta_tabs_layout: Optional[QVBoxLayout],
+                 tabs_layout: Optional[QVBoxLayout],
+                 enable_search_extras: bool = True,
+                 enable_sidebar: bool = True,
+                 enable_find_panel: bool = True) -> None:
+        super().__init__()
 
-        self.fulltext_list: QListWidget
-        self.recent_list: QListWidget
+        self.pw = parent_window
+
+        self.enable_search_extras = enable_search_extras
+        self.enable_sidebar = enable_sidebar
+        self.enable_find_panel = enable_find_panel
+
+        self.searchbar_layout = searchbar_layout
+        self.sutta_tabs_layout = sutta_tabs_layout
+        self.tabs_layout = tabs_layout
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
-        self._results: List[SearchResult] = []
-        self._recent: List[USutta] = []
-
-        self._current_sutta: Optional[USutta] = None
-        self._related_tabs: List[SuttaTabWidget] = []
 
         self.page_len = 20
         self.search_query = SearchQuery(
@@ -72,51 +79,18 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
             sutta_hit_to_search_result,
         )
 
+        self._results: List[SearchResult] = []
+        self._recent: List[USutta] = []
+
+        self._current_sutta: Optional[USutta] = None
+        self._related_tabs: List[SuttaTabWidget] = []
+
         self._autocomplete_model = QStandardItemModel()
-
-        self.queue_id = 'window_' + str(len(APP_QUEUES))
-        APP_QUEUES[self.queue_id] = queue.Queue()
-        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
-
-        self.selected_info = {}
-
-        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
-
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.handle_messages)
-        self.timer.start(TIMER_SPEED)
 
         self._ui_setup()
         self._connect_signals()
 
-        self.init_fulltext_list()
         self.init_memo_dialog()
-        self.init_memos_sidebar()
-        self.init_links_sidebar()
-
-    def _lookup_clipboard_in_suttas(self):
-        self.activateWindow()
-        s = self._app_data.clipboard_getText()
-        if s is not None:
-            self._set_query(s)
-            self._handle_query()
-
-    def _lookup_clipboard_in_dictionary(self):
-        text = self._app_data.clipboard_getText()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_dictionary(text)
-
-    def _lookup_selection_in_suttas(self):
-        self.activateWindow()
-        text = self._get_selection()
-        if text is not None:
-            self._set_query(text)
-            self._handle_query()
-
-    def _lookup_selection_in_dictionary(self):
-        text = self._get_selection()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_dictionary(text)
 
     def _get_active_tab(self) -> SuttaTabWidget:
         current_idx = self.sutta_tabs.currentIndex()
@@ -138,53 +112,100 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasMemoDialog,
         else:
             return None
 
-    def closeEvent(self, event: QCloseEvent):
-        if self.queue_id in APP_QUEUES.keys():
-            del APP_QUEUES[self.queue_id]
-
-        if self.graph_path.exists():
-            self.graph_path.unlink()
-
-        event.accept()
-
-    def handle_messages(self):
-        if self.queue_id in APP_QUEUES.keys():
-            try:
-                s = APP_QUEUES[self.queue_id].get_nowait()
-                msg: ApiMessage = json.loads(s)
-                if msg['action'] == ApiAction.show_sutta:
-                    info = json.loads(msg['data'])
-                    self._show_sutta_from_message(info)
-
-                elif msg['action'] == ApiAction.show_sutta_by_uid:
-                    info = json.loads(msg['data'])
-                    if 'uid' in info.keys():
-                        self._show_sutta_by_uid(info['uid'])
-
-                elif msg['action'] == ApiAction.show_word_by_uid:
-                    info = json.loads(msg['data'])
-                    if 'uid' in info.keys():
-                        self._show_word_by_uid(info['uid'])
-
-                elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
-                    self._lookup_clipboard_in_suttas()
-
-                elif msg['action'] == ApiAction.lookup_in_suttas:
-                    text = msg['data']
-                    self._set_query(text)
-                    self._handle_query()
-
-                elif msg['action'] == ApiAction.set_selected:
-                    info = json.loads(msg['data'])
-                    self.selected_info = info
-
-                APP_QUEUES[self.queue_id].task_done()
-            except queue.Empty:
-                pass
-
     def _ui_setup(self):
-        self.links_tab_idx = 1
-        self.memos_tab_idx = 2
+        self._setup_search_bar();
+
+        self._setup_sutta_tabs()
+
+        if self.enable_search_extras:
+            self._setup_sutta_filter_dropdown()
+            self._setup_sutta_select_button()
+            self._setup_toggle_pali_button()
+            setup_info_button(self.search_extras, self)
+
+            self._setup_pali_buttons()
+
+        if self.enable_find_panel:
+            self._find_panel = FindPanel()
+
+            self.find_toolbar = QToolBar()
+            self.find_toolbar.addWidget(self._find_panel)
+
+            self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+            self.find_toolbar.hide()
+
+    def _setup_search_bar(self):
+        if self.searchbar_layout is None:
+            return
+
+        self.back_recent_button = QtWidgets.QPushButton()
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.back_recent_button.sizePolicy().hasHeightForWidth())
+
+        self.back_recent_button.setSizePolicy(sizePolicy)
+        self.back_recent_button.setMinimumSize(QtCore.QSize(40, 40))
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/arrow-left"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.back_recent_button.setIcon(icon)
+        self.back_recent_button.setObjectName("back_recent_button")
+
+        self.searchbar_layout.addWidget(self.back_recent_button)
+
+        self.forward_recent_button = QtWidgets.QPushButton()
+
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.forward_recent_button.sizePolicy().hasHeightForWidth())
+
+        self.forward_recent_button.setSizePolicy(sizePolicy)
+        self.forward_recent_button.setMinimumSize(QtCore.QSize(40, 40))
+
+        icon1 = QtGui.QIcon()
+        icon1.addPixmap(QtGui.QPixmap(":/arrow-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self.forward_recent_button.setIcon(icon1)
+
+        self.searchbar_layout.addWidget(self.forward_recent_button)
+
+        self.search_input = QtWidgets.QLineEdit()
+
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
+        self.search_input.setSizePolicy(sizePolicy)
+
+        self.search_input.setMinimumSize(QtCore.QSize(500, 35))
+        self.search_input.setClearButtonEnabled(True)
+
+        self.searchbar_layout.addWidget(self.search_input)
+
+        self.search_button = QtWidgets.QPushButton()
+
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.search_button.sizePolicy().hasHeightForWidth())
+
+        self.search_button.setSizePolicy(sizePolicy)
+        self.search_button.setMinimumSize(QtCore.QSize(0, 40))
+
+        icon2 = QtGui.QIcon()
+        icon2.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.search_button.setIcon(icon2)
+        self.searchbar_layout.addWidget(self.search_button)
+
+        self.search_extras = QtWidgets.QHBoxLayout()
+        self.searchbar_layout.addLayout(self.search_extras)
+
+        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+
+        self.searchbar_layout.addItem(spacerItem)
 
         style = """
 QWidget { border: 1px solid #272727; }
@@ -200,29 +221,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setCompleter(completer)
 
-        self._setup_sutta_filter_dropdown()
-        self._setup_sutta_select_button()
-        self._setup_toggle_pali_button()
-        setup_info_button(self.search_extras, self)
-
-        self._setup_pali_buttons()
-
-        self._setup_sutta_tabs()
-
-        show = self._app_data.app_settings.get('show_related_suttas', True)
-        self.action_Show_Related_Suttas.setChecked(show)
-
         self.search_input.setFocus()
 
-        self._find_panel = FindPanel()
-
-        self.find_toolbar = QToolBar()
-        self.find_toolbar.addWidget(self._find_panel)
-
-        self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
-        self.find_toolbar.hide()
-
     def _setup_sutta_tabs(self):
+        if self.sutta_tabs_layout is None:
+            return
+
         self.sutta_tabs = QTabWidget()
         self.sutta_tabs.setStyleSheet("*[style_class='sutta_tab'] { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
@@ -295,7 +299,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _setup_pali_buttons(self):
         palibuttons_layout = QHBoxLayout()
-        self.palibuttons_frame.setLayout(palibuttons_layout)
+        self.pw.palibuttons_frame.setLayout(palibuttons_layout)
 
         lowercase = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
 
@@ -306,7 +310,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             palibuttons_layout.addWidget(btn)
 
         show = self._app_data.app_settings.get('suttas_show_pali_buttons', False)
-        self.palibuttons_frame.setVisible(show)
+        self.pw.palibuttons_frame.setVisible(show)
 
     def _get_filter_labels(self):
         res = []
@@ -371,15 +375,21 @@ QWidget:focus { border: 1px solid #1092C3; }
         if len(query) < min_length:
             return
 
-        self._handle_autocomplete_query(min_length)
-        self._results = self._sutta_search_query(query)
-
-        if self.search_query.hits > 0:
-            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query.hits})")
+        if self.enable_search_extras:
+            idx = self.sutta_filter_dropdown.currentIndex()
+            source = self.sutta_filter_dropdown.itemText(idx)
+            if source == "Sources":
+                only_source = None
+            else:
+                only_source = source
         else:
-            self.rightside_tabs.setTabText(0, "Fulltext")
+            only_source = None
 
-        self.render_fulltext_page()
+        self._handle_autocomplete_query(min_length)
+        self._results = self._sutta_search_query(query, only_source)
+
+        if self.enable_sidebar:
+            self.pw._update_sidebar_fulltext(self.search_query.hits)
 
         if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
             self._show_sutta_by_uid(self._results[0]['uid'])
@@ -412,6 +422,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.sort(0)
 
+    def _sutta_search_query(self, query: str, only_source: Optional[str] = None) -> List[SearchResult]:
+        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
+        results = self.search_query.new_query(query, disabled_labels, only_source)
+
+        return results
+
     def _set_qwe_html(self, html: str):
         self.sutta_tab.set_qwe_html(html)
 
@@ -423,13 +439,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._recent.insert(0, sutta)
 
         # Rebuild Qt recents list
-        self.recent_list.clear()
+        if self.enable_sidebar:
+            def _to_title(x: USutta):
+                return " - ".join([str(x.uid), str(x.title)])
 
-        def _to_title(x: USutta):
-            return " - ".join([str(x.uid), str(x.title)])
+            titles = list(map(lambda x: _to_title(x), self._recent))
 
-        titles = list(map(lambda x: _to_title(x), self._recent))
-        self.recent_list.insertItems(0, titles)
+            self.pw._set_recent_list(titles)
 
     def _sutta_from_result(self, x: SearchResult) -> Optional[USutta]:
         if x['schema_name'] == DbSchemaName.AppData.value:
@@ -453,59 +469,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         tab = self._get_active_tab()
         tab.qwe.findText(text, flag, callback)
 
-    def _handle_result_select(self):
-        selected_idx = self.fulltext_list.currentRow()
-        if selected_idx < len(self._results):
-            sutta = self._sutta_from_result(self._results[selected_idx])
-            if sutta is not None:
-                self._add_recent(sutta)
-                self._show_sutta(sutta)
-
-    def _handle_recent_select(self):
-        selected_idx = self.recent_list.currentRow()
-        sutta: USutta = self._recent[selected_idx]
-        self._show_sutta(sutta)
-
-    def _select_prev_recent(self):
-        selected_idx = self.recent_list.currentRow()
-        if selected_idx == -1:
-            self.recent_list.setCurrentRow(0)
-        elif selected_idx == 0:
-            return
-        else:
-            self.recent_list.setCurrentRow(selected_idx - 1)
-
-    def _select_next_recent(self):
-        selected_idx = self.recent_list.currentRow()
-        # List is empty or lost focus (no selected item)
-        if selected_idx == -1:
-            if len(self.recent_list) == 1:
-                # Only one viewed item, which is presently being shown, and no
-                # next item
-                return
-            else:
-                # The 0 index is already the presently show item
-                self.recent_list.setCurrentRow(1)
-
-        elif selected_idx + 1 < len(self.recent_list):
-            self.recent_list.setCurrentRow(selected_idx + 1)
-
-    def _select_prev_result(self):
-        selected_idx = self.fulltext_list.currentRow()
-        if selected_idx == -1:
-            self.fulltext_list.setCurrentRow(0)
-        elif selected_idx == 0:
-            return
-        else:
-            self.fulltext_list.setCurrentRow(selected_idx - 1)
-
-    def _select_next_result(self):
-        selected_idx = self.fulltext_list.currentRow()
-        if selected_idx == -1:
-            self.fulltext_list.setCurrentRow(0)
-        elif selected_idx + 1 < len(self.fulltext_list):
-            self.fulltext_list.setCurrentRow(selected_idx + 1)
-
     def _select_prev_tab(self):
         selected_idx = self.sutta_tabs.currentIndex()
         if selected_idx == -1:
@@ -521,9 +484,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.sutta_tabs.setCurrentIndex(0)
         elif selected_idx + 1 < len(self.sutta_tabs):
             self.sutta_tabs.setCurrentIndex(selected_idx + 1)
-
-    def _show_selected(self):
-        self._show_sutta_from_message(self.selected_info)
 
     def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
@@ -592,10 +552,45 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
 
-        self.update_memos_list_for_sutta(sutta)
-        self.show_network_graph(sutta)
-
         self._add_related_tabs(sutta)
+
+        if self.enable_sidebar:
+            self.pw.update_memos_list_for_sutta(sutta)
+            self.pw.show_network_graph(sutta)
+
+    def _show_next_recent(self):
+        if self._current_sutta is None or len(self._recent) < 2:
+            return
+
+        res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
+
+        if len(res) == 0:
+            return
+        else:
+            current_idx = res[0]
+
+        # This is already the last, no next item
+        if current_idx + 1 >= len(self._recent):
+            return
+
+        self._show_sutta(self._recent[current_idx + 1])
+
+    def _show_prev_recent(self):
+        if self._current_sutta is None or len(self._recent) < 2:
+            return
+
+        res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
+
+        if len(res) == 0:
+            return
+        else:
+            current_idx = res[0]
+
+        # This is already the first, no previous
+        if current_idx == 0:
+            return
+
+        self._show_sutta(self._recent[current_idx - 1])
 
     def _remove_related_tabs(self):
         n = 0
@@ -616,7 +611,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # read state from the window action, not from app_data.app_settings, b/c
         # that will be set from windows.py
-        if not self.action_Show_Related_Suttas.isChecked():
+        if not self.pw.action_Show_Related_Suttas.isChecked():
             return
 
         uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
@@ -648,48 +643,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
             self._add_new_tab(title, sutta)
 
-    def show_network_graph(self, sutta: Optional[USutta] = None):
-        if sutta is None:
-            if self._current_sutta is None:
-                return
-            else:
-                sutta = self._current_sutta
-
-        self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
-
-    def _sutta_search_query(self, query: str) -> List[SearchResult]:
-        idx = self.sutta_filter_dropdown.currentIndex()
-        source = self.sutta_filter_dropdown.itemText(idx)
-        if source == "Sources":
-            only_source = None
-        else:
-            only_source = source
-
-        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
-        results = self.search_query.new_query(query, disabled_labels, only_source)
-        hits = self.search_query.hits
-
-        if hits == 0:
-            self.fulltext_page_input.setMinimum(0)
-            self.fulltext_page_input.setMaximum(0)
-            self.fulltext_first_page_btn.setEnabled(False)
-            self.fulltext_last_page_btn.setEnabled(False)
-
-        elif hits <= self.page_len:
-            self.fulltext_page_input.setMinimum(1)
-            self.fulltext_page_input.setMaximum(1)
-            self.fulltext_first_page_btn.setEnabled(False)
-            self.fulltext_last_page_btn.setEnabled(False)
-
-        else:
-            pages = math.floor(hits / self.page_len) + 1
-            self.fulltext_page_input.setMinimum(1)
-            self.fulltext_page_input.setMaximum(pages)
-            self.fulltext_first_page_btn.setEnabled(True)
-            self.fulltext_last_page_btn.setEnabled(True)
-
-        return results
-
     def _handle_copy(self):
         text = self._get_selection()
         if text is not None:
@@ -717,12 +670,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         qwe.addAction(memoAction)
 
         lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
-        lookupSelectionInSuttas.triggered.connect(partial(self._lookup_selection_in_suttas))
+        lookupSelectionInSuttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
 
         qwe.addAction(lookupSelectionInSuttas)
 
         lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", qwe)
-        lookupSelectionInDictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
+        lookupSelectionInDictionary.triggered.connect(partial(self.pw._lookup_selection_in_dictionary))
 
         qwe.addAction(lookupSelectionInDictionary)
 
@@ -735,41 +688,262 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._find_panel.search_input.setFocus()
 
     def _connect_signals(self):
-        self.action_Close_Window \
-            .triggered.connect(partial(self.close))
-
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
         # NOTE search_input.returnPressed removes the selected completion and uses the typed query
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
-        self.sutta_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        if self.enable_sidebar:
+            self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
+            self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
+        else:
+            self.back_recent_button.clicked.connect(partial(self._show_next_recent))
+            self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
-        self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
+        if self.enable_search_extras:
+            self.sutta_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
-        self._find_panel.searched.connect(self.on_searched) # type: ignore
-        self._find_panel.closed.connect(self.find_toolbar.hide)
+        if self.enable_find_panel:
+            self._find_panel.searched.connect(self.on_searched) # type: ignore
+            self._find_panel.closed.connect(self.find_toolbar.hide)
 
-        self.add_memo_button \
-            .clicked.connect(partial(self.add_memo_for_sutta))
+            self.pw.action_Find_in_Page \
+                .triggered.connect(self._handle_show_find_panel)
+
+class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
+                        HasMemosSidebar, HasFulltextList):
+
+    searchbar_layout: QHBoxLayout
+    sutta_tabs_layout: QVBoxLayout
+    tabs_layout: QVBoxLayout
+    selected_info: Any
+    recent_list: QListWidget
+
+    def __init__(self, app_data: AppData, parent=None) -> None:
+        super().__init__(parent)
+        self.setupUi(self)
+        logger.info("SuttaSearchWindow()")
+
+        self._app_data = app_data
+
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.selected_info = {}
+
+        self.graph_path: Path = GRAPHS_DIR.joinpath(f"{self.queue_id}.html")
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(TIMER_SPEED)
+
+        self._ui_setup()
+
+        self.s = SuttaSearchWindowState(app_data,
+                                        self,
+                                        self.searchbar_layout,
+                                        self.sutta_tabs_layout,
+                                        self.tabs_layout)
+
+        self.page_len = self.s.page_len
+        self.search_query = self.s.search_query
+
+        self._connect_signals()
+
+        self.init_fulltext_list()
+        self.init_memos_sidebar()
+        self.init_links_sidebar()
+
+    def _ui_setup(self):
+        self.links_tab_idx = 1
+        self.memos_tab_idx = 2
+
+        show = self._app_data.app_settings.get('show_related_suttas', True)
+        self.action_Show_Related_Suttas.setChecked(show)
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        if self.graph_path.exists():
+            self.graph_path.unlink()
+
+        event.accept()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                msg: ApiMessage = json.loads(s)
+                if msg['action'] == ApiAction.show_sutta:
+                    info = json.loads(msg['data'])
+                    self.s._show_sutta_from_message(info)
+
+                elif msg['action'] == ApiAction.show_sutta_by_uid:
+                    info = json.loads(msg['data'])
+                    if 'uid' in info.keys():
+                        self.s._show_sutta_by_uid(info['uid'])
+
+                elif msg['action'] == ApiAction.show_word_by_uid:
+                    info = json.loads(msg['data'])
+                    if 'uid' in info.keys():
+                        self.s._show_word_by_uid(info['uid'])
+
+                elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
+                    self._lookup_clipboard_in_suttas()
+
+                elif msg['action'] == ApiAction.lookup_in_suttas:
+                    text = msg['data']
+                    self.s._set_query(text)
+                    self.s._handle_query()
+
+                elif msg['action'] == ApiAction.set_selected:
+                    info = json.loads(msg['data'])
+                    self.selected_info = info
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
+
+    def _lookup_clipboard_in_suttas(self):
+        self.activateWindow()
+        s = self._app_data.clipboard_getText()
+        if s is not None:
+            self.s._set_query(s)
+            self.s._handle_query()
+
+    def _lookup_clipboard_in_dictionary(self):
+        text = self._app_data.clipboard_getText()
+        if text is not None and self._app_data.actions_manager is not None:
+            self._app_data.actions_manager.lookup_in_dictionary(text)
+
+    def _lookup_selection_in_suttas(self):
+        self.activateWindow()
+        text = self.s._get_selection()
+        if text is not None:
+            self.s._set_query(text)
+            self.s._handle_query()
+
+    def _lookup_selection_in_dictionary(self):
+        text = self._get_selection()
+        if text is not None and self._app_data.actions_manager is not None:
+            self._app_data.actions_manager.lookup_in_dictionary(text)
+
+    def show_network_graph(self, sutta: Optional[USutta] = None):
+        if sutta is None:
+            if self.s._current_sutta is None:
+                return
+            else:
+                sutta = self.s._current_sutta
+
+        self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
+
+    def _update_sidebar_fulltext(self, hits: int):
+        if hits > 0:
+            self.rightside_tabs.setTabText(0, f"Fulltext ({hits})")
+        else:
+            self.rightside_tabs.setTabText(0, "Fulltext")
+
+        self.render_fulltext_page()
+
+        if hits == 0:
+            self.fulltext_page_input.setMinimum(0)
+            self.fulltext_page_input.setMaximum(0)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
+
+        elif hits <= self.page_len:
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(1)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
+
+        else:
+            pages = math.floor(hits / self.page_len) + 1
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(pages)
+            self.fulltext_first_page_btn.setEnabled(True)
+            self.fulltext_last_page_btn.setEnabled(True)
+
+    def _show_selected(self):
+        self.s._show_sutta_from_message(self.selected_info)
+
+    def _handle_result_select(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx < len(self._results):
+            sutta = self.s._sutta_from_result(self.s._results[selected_idx])
+            if sutta is not None:
+                self.s._add_recent(sutta)
+                self.s._show_sutta(sutta)
+
+    def _handle_recent_select(self):
+        selected_idx = self.recent_list.currentRow()
+        sutta: USutta = self.s._recent[selected_idx]
+        self.s._show_sutta(sutta)
+
+    def _set_recent_list(self, titles: List[str]):
+        self.recent_list.clear()
+        self.recent_list.insertItems(0, titles)
+
+    def _select_prev_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        if selected_idx == -1:
+            self.recent_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.recent_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_recent(self):
+        selected_idx = self.recent_list.currentRow()
+        # List is empty or lost focus (no selected item)
+        if selected_idx == -1:
+            if len(self.recent_list) == 1:
+                # Only one viewed item, which is presently being shown, and no
+                # next item
+                return
+            else:
+                # The 0 index is already the presently show item
+                self.recent_list.setCurrentRow(1)
+
+        elif selected_idx + 1 < len(self.recent_list):
+            self.recent_list.setCurrentRow(selected_idx + 1)
+
+    def _select_prev_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx == 0:
+            return
+        else:
+            self.fulltext_list.setCurrentRow(selected_idx - 1)
+
+    def _select_next_result(self):
+        selected_idx = self.fulltext_list.currentRow()
+        if selected_idx == -1:
+            self.fulltext_list.setCurrentRow(0)
+        elif selected_idx + 1 < len(self.fulltext_list):
+            self.fulltext_list.setCurrentRow(selected_idx + 1)
+
+    def _connect_signals(self):
+        self.action_Close_Window \
+            .triggered.connect(partial(self.close))
 
         self.action_Copy \
-            .triggered.connect(partial(self._handle_copy))
+            .triggered.connect(partial(self.s._handle_copy))
 
         self.action_Paste \
-            .triggered.connect(partial(self._handle_paste))
-
-        self.action_Find_in_Page \
-            .triggered.connect(self._handle_show_find_panel)
+            .triggered.connect(partial(self.s._handle_paste))
 
         self.action_Search_Query_Terms \
             .triggered.connect(partial(show_search_info, self))
 
         self.action_Select_Sutta_Authors \
-            .triggered.connect(partial(self._show_sutta_select_dialog))
+            .triggered.connect(partial(self.s._show_sutta_select_dialog))
 
         self.action_Show_Related_Suttas \
-            .triggered.connect(partial(self._handle_show_related_suttas))
+            .triggered.connect(partial(self.s._handle_show_related_suttas))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))
@@ -784,11 +958,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             .triggered.connect(partial(self._select_next_result))
 
         self.action_Previous_Tab \
-            .triggered.connect(partial(self._select_prev_tab))
+            .triggered.connect(partial(self.s._select_prev_tab))
 
         self.action_Next_Tab \
-            .triggered.connect(partial(self._select_next_tab))
+            .triggered.connect(partial(self.s._select_next_tab))
 
-        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+        self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
-        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
+        self.add_memo_button \
+            .clicked.connect(partial(self.add_memo_for_sutta))

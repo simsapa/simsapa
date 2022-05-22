@@ -384,6 +384,7 @@
      <string>&amp;Windows</string>
     </property>
     <addaction name="action_Sutta_Search"/>
+    <addaction name="action_Sutta_Study"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Dictionaries_Manager"/>
@@ -626,6 +627,18 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Up</string>
+   </property>
+  </action>
+  <action name="action_Sutta_Study">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>Sutta Study</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F5</string>
    </property>
   </action>
  </widget>

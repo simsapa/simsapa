@@ -17,6 +17,7 @@ from simsapa.layouts.words_window import WordsWindow
 from .types import AppData, AppMessage, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
+from ..layouts.sutta_study import SuttaStudyWindow
 from ..layouts.dictionary_search import DictionarySearchWindow
 # from ..layouts.dictionaries_manager import DictionariesManagerWindow
 # from ..layouts.document_reader import DocumentReaderWindow
@@ -145,6 +146,26 @@ class AppWindows:
 
     def _new_sutta_search_window(self) -> SuttaSearchWindow:
         view = SuttaSearchWindow(self._app_data)
+        self._set_size_and_maximize(view)
+        self._connect_signals(view)
+
+        if self._hotkeys_manager is not None:
+            try:
+                self._hotkeys_manager.setup_window(view)
+            except Exception as e:
+                logger.error(e)
+
+        view.show()
+
+        if self._app_data.sutta_to_open:
+            view._show_sutta(self._app_data.sutta_to_open)
+            self._app_data.sutta_to_open = None
+        self._windows.append(view)
+
+        return view
+
+    def _new_sutta_study_window(self) -> SuttaStudyWindow:
+        view = SuttaStudyWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
@@ -411,6 +432,8 @@ class AppWindows:
             .triggered.connect(partial(self._quit_app))
         view.action_Sutta_Search \
             .triggered.connect(partial(self._new_sutta_search_window))
+        view.action_Sutta_Study \
+            .triggered.connect(partial(self._new_sutta_study_window))
         view.action_Dictionary_Search \
             .triggered.connect(partial(self._new_dictionary_search_window))
         view.action_Memos \

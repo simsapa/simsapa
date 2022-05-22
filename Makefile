@@ -6,6 +6,7 @@ icons:
 
 ui:
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/sutta_search_window_ui.py simsapa/assets/ui/sutta_search_window.ui && \
+	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/sutta_study_window_ui.py simsapa/assets/ui/sutta_study_window.ui && \
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/dictionary_search_window_ui.py simsapa/assets/ui/dictionary_search_window.ui && \
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/memos_browser_window_ui.py simsapa/assets/ui/memos_browser_window.ui && \
 	pyuic5 --import-from=simsapa.assets -o simsapa/assets/ui/links_browser_window_ui.py simsapa/assets/ui/links_browser_window.ui
