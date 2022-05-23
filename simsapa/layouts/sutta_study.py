@@ -155,6 +155,17 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
             self.dictionary_state._handle_query()
             self.dictionary_state._handle_exact_query()
 
+    def _handle_copy(self):
+        text = self.sutta_one_state._get_selection()
+        if text is None:
+            text = self.sutta_two_state._get_selection()
+
+        if text is not None:
+            self._app_data.clipboard_setText(text)
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
+
+        self.action_Copy \
+            .triggered.connect(partial(self._handle_copy))

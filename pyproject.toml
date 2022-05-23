@@ -75,7 +75,7 @@ to = {format = "setuppy", path = "setup.py"}
 project_name = "Simsapa Dhamma Reader"
 bundle = "io.github"
 # briefcase requires PEP440 version strings
-version = "0.1.7a7"
+version = "0.1.7a8"
 url = "https://github.com/simsapa/simsapa"
 license = "MIT license"
 # Package will display this info
