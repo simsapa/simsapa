@@ -12,6 +12,8 @@ Short feature demo: <https://vimeo.com/677880749>
 
 ![Sutta Links](docs/sutta-links-screenshot.jpg)
 
+![Sutta Study](docs/sutta-study-screenshot.png)
+
 ## Development
 
 Install Poetry, clone this repo and run `poetry install` to install dependencies.
