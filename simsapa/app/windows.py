@@ -62,6 +62,9 @@ class AppWindows:
                     schemas_ids = json.loads(msg['data'])
                     self.open_words_new(schemas_ids)
 
+                elif msg['action'] == ApiAction.open_in_study_window:
+                    self._show_sutta_by_uid_in_side(msg)
+
                 elif msg['action'] == ApiAction.lookup_clipboard_in_suttas:
                     self._lookup_clipboard_in_suttas(msg)
 
@@ -87,6 +90,20 @@ class AppWindows:
         view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
         view.show()
+
+    def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
+        view = None
+        for w in self._windows:
+            if isinstance(w, SuttaStudyWindow) and w.isVisible():
+                view = w
+                break
+
+        if view is None:
+            view = self._new_sutta_study_window()
+
+        data = json.dumps(msg)
+        APP_QUEUES[view.queue_id].put_nowait(data)
+        view.handle_messages()
 
     def _lookup_clipboard_in_suttas(self, msg: ApiMessage):
         # Is there a sutta window to handle the message?
