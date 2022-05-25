@@ -458,6 +458,7 @@
     <addaction name="action_Paste"/>
     <addaction name="action_Find_in_Page"/>
     <addaction name="action_Focus_Search_Input"/>
+    <addaction name="action_Lookup_Selection_in_Dictionary"/>
     <addaction name="action_Lookup_Clipboard_in_Suttas"/>
     <addaction name="action_Lookup_Clipboard_in_Dictionary"/>
    </widget>
@@ -796,6 +797,14 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F5</string>
+   </property>
+  </action>
+  <action name="action_Lookup_Selection_in_Dictionary">
+   <property name="text">
+    <string>Lookup Selection in Dictionary</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+G</string>
    </property>
   </action>
  </widget>

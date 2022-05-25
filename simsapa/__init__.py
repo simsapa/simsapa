@@ -66,6 +66,7 @@ class ApiAction(str, Enum):
     lookup_clipboard_in_suttas = 'lookup_clipboard_in_suttas'
     lookup_in_dictionary = 'lookup_in_dictionary'
     lookup_in_suttas = 'lookup_in_suttas'
+    open_in_study_window = 'open_in_study_window'
     open_sutta_new = 'open_sutta_new'
     open_words_new = 'open_words_new'
     show_sutta_by_uid = 'show_sutta_by_uid'

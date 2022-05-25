@@ -132,6 +132,9 @@ class AppWindows:
         if window_type == WindowType.SuttaSearch:
             return self._new_sutta_search_window()
 
+        if window_type == WindowType.SuttaStudy:
+            return self._new_sutta_study_window()
+
         elif window_type == WindowType.DictionarySearch:
             return self._new_dictionary_search_window()
 
@@ -413,7 +416,10 @@ class AppWindows:
 
 
     def _focus_search_input(self, view: QMainWindow):
-        view.search_input.setFocus()
+        if hasattr(view, 'search_input'):
+            view.search_input.setFocus()
+        elif hasattr(view, '_focus_search_input'):
+            view._focus_search_input()
 
     def _connect_signals(self, view: QMainWindow):
         # view.action_Open \

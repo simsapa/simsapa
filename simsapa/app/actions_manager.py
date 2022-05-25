@@ -33,6 +33,12 @@ class ActionsManager:
                          data = query)
         self._send_to_all(msg)
 
+    def open_in_study_window(self, side: str, uid: str):
+        data = {'side': side, 'uid': uid}
+        msg = ApiMessage(action = ApiAction.open_in_study_window,
+                         data = json.dumps(obj=data))
+        self._send_to_all(msg)
+
     def open_sutta_new(self, uid: str):
         msg = ApiMessage(action = ApiAction.open_sutta_new,
                          data = uid)

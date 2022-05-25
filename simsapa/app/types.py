@@ -37,9 +37,10 @@ class Labels(TypedDict):
 
 class WindowType(int, Enum):
     SuttaSearch = 0
-    DictionarySearch = 1
-    Memos = 2
-    Links = 3
+    SuttaStudy = 1
+    DictionarySearch = 2
+    Memos = 3
+    Links = 4
 
 class WindowPosSize(TypedDict):
     x: int
@@ -49,6 +50,7 @@ class WindowPosSize(TypedDict):
 
 WindowNameToType = {
     "Sutta Search": WindowType.SuttaSearch,
+    "Sutta Study": WindowType.SuttaStudy,
     "Dictionary Search": WindowType.DictionarySearch,
     "Memos": WindowType.Memos,
     "Links": WindowType.Links,

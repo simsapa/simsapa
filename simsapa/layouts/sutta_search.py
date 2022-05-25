@@ -8,7 +8,7 @@ from functools import partial
 from typing import Any, List, Optional
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
+from PyQt5.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (QComboBox, QAction, QCompleter, QFrame, QLineEdit, QMainWindow, QVBoxLayout, QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
@@ -54,6 +54,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
                  searchbar_layout: Optional[QHBoxLayout],
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],
+                 focus_input: bool = True,
                  enable_search_extras: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True) -> None:
@@ -86,6 +87,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self._related_tabs: List[SuttaTabWidget] = []
 
         self._autocomplete_model = QStandardItemModel()
+
+        self.focus_input = focus_input
 
         self._ui_setup()
         self._connect_signals()
@@ -183,6 +186,9 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self.search_input.setClearButtonEnabled(True)
 
         self.searchbar_layout.addWidget(self.search_input)
+
+        if self.focus_input:
+            self.search_input.setFocus()
 
         self.search_button = QtWidgets.QPushButton()
 
@@ -648,26 +654,56 @@ QWidget:focus { border: 1px solid #1092C3; }
         if text is not None:
             self._app_data.clipboard_setText(text)
 
+    def _handle_copy_uid(self):
+        if self._current_sutta is None:
+            return
+
+        uid = 'uid:' + self._current_sutta.uid
+        self._app_data.clipboard_setText(uid)
+
     def _handle_paste(self):
         s = self._app_data.clipboard_getText()
         if s is not None:
             self._append_to_query(s)
             self._handle_query()
 
+    def _open_in_study_window(self, side: str):
+        tab = self._get_active_tab()
+        sutta = tab.sutta
+        if sutta is None or self._app_data.actions_manager is None:
+            return
+
+        uid: str = sutta.uid # type: ignore
+        self._app_data.actions_manager.open_in_study_window(side, uid)
+
     def _setup_qwe_context_menu(self, qwe: QWebEngineView):
         qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
-        copyAction = QAction("Copy", qwe)
+        copyAction = QAction("Copy Selection", qwe)
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
         copyAction.triggered.connect(partial(self._handle_copy))
 
         qwe.addAction(copyAction)
 
+        copyUidAction = QAction("Copy uid", qwe)
+        copyUidAction.triggered.connect(partial(self._handle_copy_uid))
+
+        qwe.addAction(copyUidAction)
+
         memoAction = QAction("Create Memo", qwe)
-        memoAction.setShortcut(QKeySequence("Ctrl+M"))
         memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))
 
         qwe.addAction(memoAction)
+
+        studyLeftAction = QAction("Open in Study Window: Left", qwe)
+        studyLeftAction.triggered.connect(partial(self._open_in_study_window, 'left'))
+
+        qwe.addAction(studyLeftAction)
+
+        studyRightAction = QAction("Open in Study Window: Right", qwe)
+        studyRightAction.triggered.connect(partial(self._open_in_study_window, 'right'))
+
+        qwe.addAction(studyRightAction)
 
         lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
         lookupSelectionInSuttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
@@ -826,7 +862,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
             self.s._handle_query()
 
     def _lookup_selection_in_dictionary(self):
-        text = self._get_selection()
+        text = self.s._get_selection()
         if text is not None and self._app_data.actions_manager is not None:
             self._app_data.actions_manager.lookup_in_dictionary(text)
 
@@ -871,7 +907,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
 
     def _handle_result_select(self):
         selected_idx = self.fulltext_list.currentRow()
-        if selected_idx < len(self._results):
+        if selected_idx < len(self.s._results):
             sutta = self.s._sutta_from_result(self.s._results[selected_idx])
             if sutta is not None:
                 self.s._add_recent(sutta)
@@ -926,6 +962,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         elif selected_idx + 1 < len(self.fulltext_list):
             self.fulltext_list.setCurrentRow(selected_idx + 1)
 
+    def _focus_search_input(self):
+        self.s.search_input.setFocus()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -944,6 +983,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
 
         self.action_Show_Related_Suttas \
             .triggered.connect(partial(self.s._handle_show_related_suttas))
+
+        self.action_Lookup_Selection_in_Dictionary \
+            .triggered.connect(partial(self._lookup_selection_in_dictionary))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))

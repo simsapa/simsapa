@@ -27,7 +27,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _clipboard: Optional[QClipboard]
     _autocomplete_model: QStandardItemModel
 
-    def __init__(self, app_data: AppData, wrap_layout: QBoxLayout) -> None:
+    def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
 
         self.wrap_layout = wrap_layout
@@ -47,6 +47,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._autocomplete_model = QStandardItemModel()
 
         self._clipboard = self._app_data.clipboard
+
+        self.focus_input = focus_input
 
         self._ui_setup()
         self._connect_signals()
@@ -82,7 +84,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.wrap_layout.addLayout(search_box)
 
-        self.search_input.setFocus()
+        if self.focus_input:
+            self.search_input.setFocus()
 
         self._setup_search_tabs()
 
@@ -300,7 +303,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         text = self._clipboard.text()
         text = text.strip(".,:;!? ")
-        if not text.startswith('http'):
+        if not text.startswith('http') and not text.startswith('uid:'):
             self.search_input.setText(text)
             self._handle_query(min_length=4)
             self._handle_exact_query(min_length=4)
@@ -320,7 +323,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
 class WordScanPopup(QDialog):
-    def __init__(self, app_data: AppData) -> None:
+    def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
         super().__init__()
 
         self._app_data: AppData = app_data
@@ -356,10 +359,12 @@ class WordScanPopup(QDialog):
         self.__init_position()
         self.oldPos = self.pos()
 
+        self.focus_input = focus_input
+
         self._ui_setup()
         self._connect_signals()
 
-        self.s = WordScanPopupState(app_data, self.wrap_layout)
+        self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
 
     def _ui_setup(self):
         top_buttons_box = QHBoxLayout()
@@ -476,8 +481,9 @@ class WordScanPopup(QDialog):
         # prevent accumulated cursor shape bug
         self.__set_cursor_shape_for_current_point(e.pos())
 
-        self.s.search_input.setFocus()
-        self.s.search_input.grabKeyboard()
+        if self.focus_input:
+            self.s.search_input.setFocus()
+            self.s.search_input.grabKeyboard()
 
         return super().enterEvent(e)
 

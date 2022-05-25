@@ -633,7 +633,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.qwe.addAction(copyAction)
 
         memoAction = QAction("Create Memo", self.qwe)
-        memoAction.setShortcut(QKeySequence("Ctrl+M"))
         memoAction.triggered.connect(partial(self.handle_create_memo_for_dict_word))
 
         self.qwe.addAction(memoAction)

@@ -329,6 +329,8 @@ class Ui_SuttaSearchWindow(object):
         self.action_Sutta_Study = QtWidgets.QAction(SuttaSearchWindow)
         self.action_Sutta_Study.setIcon(icon5)
         self.action_Sutta_Study.setObjectName("action_Sutta_Study")
+        self.action_Lookup_Selection_in_Dictionary = QtWidgets.QAction(SuttaSearchWindow)
+        self.action_Lookup_Selection_in_Dictionary.setObjectName("action_Lookup_Selection_in_Dictionary")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)
         self.menu_File.addAction(self.action_Re_index_database)
@@ -339,6 +341,7 @@ class Ui_SuttaSearchWindow(object):
         self.menu_Edit.addAction(self.action_Paste)
         self.menu_Edit.addAction(self.action_Find_in_Page)
         self.menu_Edit.addAction(self.action_Focus_Search_Input)
+        self.menu_Edit.addAction(self.action_Lookup_Selection_in_Dictionary)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Suttas)
         self.menu_Edit.addAction(self.action_Lookup_Clipboard_in_Dictionary)
         self.menu_Windows.addAction(self.action_Sutta_Search)
@@ -466,4 +469,6 @@ class Ui_SuttaSearchWindow(object):
         self.action_Next_Tab.setShortcut(_translate("SuttaSearchWindow", "Ctrl+PgDown"))
         self.action_Sutta_Study.setText(_translate("SuttaSearchWindow", "Sutta Study"))
         self.action_Sutta_Study.setShortcut(_translate("SuttaSearchWindow", "Ctrl+F5"))
+        self.action_Lookup_Selection_in_Dictionary.setText(_translate("SuttaSearchWindow", "Lookup Selection in Dictionary"))
+        self.action_Lookup_Selection_in_Dictionary.setShortcut(_translate("SuttaSearchWindow", "Ctrl+G"))
 from simsapa.assets import icons_rc

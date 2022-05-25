@@ -1,25 +1,20 @@
+import json
+import queue
+
 from functools import partial
-from ..app.db.search import SearchQuery, SearchResult, sutta_hit_to_search_result
+from ..app.db.search import SearchQuery, sutta_hit_to_search_result
 from simsapa.layouts.dictionary_queries import DictionaryQueries
-from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QIcon, QKeySequence, QPixmap
 from typing import List, Optional
 
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
-from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
-from simsapa import READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger, ApiAction, ApiMessage
-from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, UDictWord
+from ..app.types import AppData, USutta
 from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
-from .sutta_tab import SuttaTabWidget
-from .html_content import html_page
 from .word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
@@ -39,6 +34,14 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.features: List[str] = []
         self._app_data: AppData = app_data
 
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(TIMER_SPEED)
+
         self.page_len = 20
         self.search_query = SearchQuery(
             self._app_data.search_indexed.suttas_index,
@@ -50,6 +53,35 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
 
         self._ui_setup()
         self._connect_signals()
+
+    def handle_messages(self):
+        if self.queue_id in APP_QUEUES.keys():
+            try:
+                s = APP_QUEUES[self.queue_id].get_nowait()
+                msg: ApiMessage = json.loads(s)
+
+                if msg['action'] == ApiAction.open_in_study_window:
+                    info = json.loads(msg['data'])
+                    self._show_sutta_by_uid_in_side(uid = info['uid'],
+                                                    side = info['side'])
+
+                APP_QUEUES[self.queue_id].task_done()
+            except queue.Empty:
+                pass
+
+    def _show_sutta_by_uid_in_side(self, uid: str, side: str):
+        if side == 'left':
+            self.sutta_one_state._show_sutta_by_uid(uid)
+
+        if side == 'right':
+            self.sutta_two_state._show_sutta_by_uid(uid)
+
+    def _open_in_study_window(self, side: str, sutta: Optional[USutta]):
+        if sutta is None:
+            return
+
+        uid: str = sutta.uid # type: ignore
+        self._show_sutta_by_uid_in_side(side, uid)
 
     def _ui_setup(self):
         show = self._app_data.app_settings.get('show_related_suttas', True)
@@ -80,7 +112,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
                                                       self,
                                                       self.sutta_one_searchbar_layout,
                                                       self.sutta_one_tabs_layout,
-                                                      None, False, False, False)
+                                                      None, False, False, False, False)
 
         # Two
 
@@ -104,7 +136,11 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
                                                       self,
                                                       self.sutta_two_searchbar_layout,
                                                       self.sutta_two_tabs_layout,
-                                                      None, False, False, False)
+                                                      None, False, False, False, False)
+
+        # Focus the first input field
+
+        self.sutta_one_state.search_input.setFocus()
 
         # Setup the two sutta layouts.
 
@@ -118,7 +154,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         spacer = QSpacerItem(500, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
-        self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout)
+        self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
 
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
@@ -163,9 +199,15 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         if text is not None:
             self._app_data.clipboard_setText(text)
 
+    def _focus_search_input(self):
+        self.sutta_one_state.search_input.setFocus()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
 
         self.action_Copy \
             .triggered.connect(partial(self._handle_copy))
+
+        self.action_Lookup_Selection_in_Dictionary \
+            .triggered.connect(partial(self._lookup_selection_in_dictionary))
