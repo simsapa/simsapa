@@ -73,7 +73,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         if side == 'left':
             self.sutta_one_state._show_sutta_by_uid(uid)
 
-        if side == 'right':
+        if side == 'middle':
             self.sutta_two_state._show_sutta_by_uid(uid)
 
     def _open_in_study_window(self, side: str, sutta: Optional[USutta]):
@@ -99,13 +99,13 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.sutta_one_layout = QVBoxLayout(self.sutta_one_layout_widget)
         self.sutta_one_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(500, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.sutta_one_layout.addItem(spacer)
 
-        self.sutta_one_searchbar_layout = QHBoxLayout();
+        self.sutta_one_searchbar_layout = QHBoxLayout()
         self.sutta_one_layout.addLayout(self.sutta_one_searchbar_layout)
 
-        self.sutta_one_tabs_layout = QVBoxLayout();
+        self.sutta_one_tabs_layout = QVBoxLayout()
         self.sutta_one_layout.addLayout(self.sutta_one_tabs_layout)
 
         self.sutta_one_state = SuttaSearchWindowState(self._app_data,
@@ -121,15 +121,15 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.sutta_two_layout = QVBoxLayout(self.sutta_two_layout_widget)
         self.sutta_two_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(500, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.sutta_two_layout.addItem(spacer)
 
         self.main_layout.addWidget(self.splitter)
 
-        self.sutta_two_searchbar_layout = QHBoxLayout();
+        self.sutta_two_searchbar_layout = QHBoxLayout()
         self.sutta_two_layout.addLayout(self.sutta_two_searchbar_layout)
 
-        self.sutta_two_tabs_layout = QVBoxLayout();
+        self.sutta_two_tabs_layout = QVBoxLayout()
         self.sutta_two_layout.addLayout(self.sutta_two_tabs_layout)
 
         self.sutta_two_state = SuttaSearchWindowState(self._app_data,
@@ -151,7 +151,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.dictionary_layout = QVBoxLayout(self.dictionary_layout_widget)
         self.dictionary_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(500, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
         self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)

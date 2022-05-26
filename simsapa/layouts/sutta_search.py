@@ -182,7 +182,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
         self.search_input.setSizePolicy(sizePolicy)
 
-        self.search_input.setMinimumSize(QtCore.QSize(500, 35))
+        self.search_input.setMinimumSize(QtCore.QSize(250, 35))
         self.search_input.setClearButtonEnabled(True)
 
         self.searchbar_layout.addWidget(self.search_input)
@@ -700,10 +700,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         qwe.addAction(studyLeftAction)
 
-        studyRightAction = QAction("Open in Study Window: Right", qwe)
-        studyRightAction.triggered.connect(partial(self._open_in_study_window, 'right'))
+        studyMiddleAction = QAction("Open in Study Window: Middle", qwe)
+        studyMiddleAction.triggered.connect(partial(self._open_in_study_window, 'middle'))
 
-        qwe.addAction(studyRightAction)
+        qwe.addAction(studyMiddleAction)
 
         lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
         lookupSelectionInSuttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
