@@ -281,7 +281,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
-        self.palibuttons_frame.setVisible(show)
+        self.pw.palibuttons_frame.setVisible(show)
 
         self._app_data.app_settings['suttas_show_pali_buttons'] = show
         self._app_data._save_app_settings()
