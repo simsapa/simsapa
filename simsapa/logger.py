@@ -19,7 +19,11 @@ def _write_log(msg: Any, level: str = "INFO", start_new: bool = False):
     msg = str(msg).strip()
     t = datetime.now()
     logline = f"[{t}] {level}: {msg}\n"
-    print(logline.strip())
+    # ensure utf-8 unicode for print
+    s = u"%s" % logline.strip()
+    print(s)
+
+    # print(logline.encode('utf-8').strip())
 
     if start_new:
         mode = 'w'
