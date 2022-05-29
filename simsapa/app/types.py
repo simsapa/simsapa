@@ -66,6 +66,9 @@ class AppSettings(TypedDict):
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
     show_related_suttas: bool
+    sutta_font_size: int
+    sutta_max_width: int
+    dictionary_font_size: int
 
 # Message to show to the user.
 class AppMessage(TypedDict):
@@ -167,6 +170,9 @@ class AppData:
                     height = 500,
                 ),
                 show_related_suttas = True,
+                sutta_font_size = 22,
+                sutta_max_width = 75,
+                dictionary_font_size = 18,
             )
             self._save_app_settings()
 

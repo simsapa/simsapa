@@ -13,7 +13,7 @@ from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
 
-CSS_EXTRA = "html { font-size: 14px; }"
+CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
 class WordScanPopupState(QWidget, HasFulltextList):
 
@@ -26,6 +26,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _results: List[SearchResult]
     _clipboard: Optional[QClipboard]
     _autocomplete_model: QStandardItemModel
+    _current_words: List[UDictWord]
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -35,6 +36,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.features: List[str] = []
         self._app_data: AppData = app_data
         self._results: List[SearchResult] = []
+        self._current_words = []
 
         self.page_len = 20
         self.search_query = SearchQuery(
@@ -89,6 +91,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._setup_search_tabs()
 
+    def _get_css_extra(self) -> str:
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        css_extra = f"html {{ font-size: {font_size}px; }} " + CSS_EXTRA_BODY
+
+        return css_extra
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
         self.qwe.setPage(ReaderWebEnginePage(self))
@@ -101,7 +109,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     When the clipboard content changes, this window will display dictionary lookup results.
 </p>
 """
-        page_html = self.queries.render_html_page(body=msg, css_extra=CSS_EXTRA)
+        page_html = self.queries.render_html_page(body=msg, css_extra=self._get_css_extra())
         self._set_qwe_html(page_html)
 
         self.qwe.show()
@@ -113,17 +121,18 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
     def _show_temp_content_msg(self, html_body: str):
         self.tabs.setCurrentIndex(0)
-        page_html = self.queries.render_html_page(body=html_body, css_extra=CSS_EXTRA)
+        page_html = self.queries.render_html_page(body=html_body, css_extra=self._get_css_extra())
         self.qwe.setHtml(page_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_current_html(self):
         self.qwe.setHtml(self._current_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _render_words(self, words: List[UDictWord]):
+        self._current_words = words
         if len(words) == 0:
             return
 
-        page_html = self.queries.words_to_html_page(words, CSS_EXTRA)
+        page_html = self.queries.words_to_html_page(words, self._get_css_extra())
         self._set_qwe_html(page_html)
 
     def _setup_search_tabs(self):
@@ -198,12 +207,13 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_input.setText(s)
 
     def _show_word(self, word: UDictWord):
+        self._current_words = [word]
         word_html = self.queries.get_word_html(word)
 
         page_html = self.queries.render_html_page(
             body = word_html['body'],
             css_head = word_html['css'],
-            css_extra = CSS_EXTRA,
+            css_extra = self._get_css_extra(),
             js_head = word_html['js'])
 
         self._set_qwe_html(page_html)

@@ -202,6 +202,54 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
     def _focus_search_input(self):
         self.sutta_one_state.search_input.setFocus()
 
+    def _increase_text_size(self):
+        font_size = self._app_data.app_settings.get('sutta_font_size', 22)
+        self._app_data.app_settings['sutta_font_size'] = font_size + 2
+
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        self._app_data.app_settings['dictionary_font_size'] = font_size + 2
+
+        self._app_data._save_app_settings()
+
+        self.sutta_one_state._get_active_tab().render_sutta_content()
+        self.sutta_two_state._get_active_tab().render_sutta_content()
+        self.dictionary_state._render_words(self.dictionary_state._current_words)
+
+    def _decrease_text_size(self):
+        font_size = self._app_data.app_settings.get('sutta_font_size', 22)
+        if font_size >= 5:
+            self._app_data.app_settings['sutta_font_size'] = font_size - 2
+            self._app_data._save_app_settings()
+
+            self.sutta_one_state._get_active_tab().render_sutta_content()
+            self.sutta_two_state._get_active_tab().render_sutta_content()
+
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        if font_size >= 5:
+            self._app_data.app_settings['dictionary_font_size'] = font_size - 2
+            self._app_data._save_app_settings()
+            self.dictionary_state._render_words(self.dictionary_state._current_words)
+
+    def _increase_text_margins(self):
+        # increase margins = smaller max with
+        max_width = self._app_data.app_settings.get('sutta_max_width', 75)
+        if max_width < 10:
+            return
+        self._app_data.app_settings['sutta_max_width'] = max_width - 2
+        self._app_data._save_app_settings()
+
+        self.sutta_one_state._get_active_tab().render_sutta_content()
+        self.sutta_two_state._get_active_tab().render_sutta_content()
+
+    def _decrease_text_margins(self):
+        # decrease margins = greater max with
+        max_width = self._app_data.app_settings.get('sutta_max_width', 75)
+        self._app_data.app_settings['sutta_max_width'] = max_width + 2
+        self._app_data._save_app_settings()
+
+        self.sutta_one_state._get_active_tab().render_sutta_content()
+        self.sutta_two_state._get_active_tab().render_sutta_content()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -211,3 +259,15 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
 
         self.action_Lookup_Selection_in_Dictionary \
             .triggered.connect(partial(self._lookup_selection_in_dictionary))
+
+        self.action_Increase_Text_Size \
+            .triggered.connect(partial(self._increase_text_size))
+
+        self.action_Decrease_Text_Size \
+            .triggered.connect(partial(self._decrease_text_size))
+
+        self.action_Increase_Text_Margins \
+            .triggered.connect(partial(self._increase_text_margins))
+
+        self.action_Decrease_Text_Margins \
+            .triggered.connect(partial(self._decrease_text_margins))

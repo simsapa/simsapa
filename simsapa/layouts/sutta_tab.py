@@ -92,7 +92,12 @@ class SuttaTabWidget(QWidget):
         else:
             content = 'No content.'
 
-        html = html_page(content, self.api_url)
+        font_size = self._app_data.app_settings.get('sutta_font_size', 22)
+        max_width = self._app_data.app_settings.get('sutta_max_width', 75)
+
+        css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
+
+        html = html_page(content, self.api_url, css_extra)
 
         self.set_qwe_html(html)
 

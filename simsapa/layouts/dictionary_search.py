@@ -484,9 +484,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         word_html = self.queries.get_word_html(word)
 
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        css_extra = f"html {{ font-size: {font_size}px; }}"
+
         page_html = self.queries.render_html_page(
             body = word_html['body'],
             css_head = word_html['css'],
+            css_extra = css_extra,
             js_head = word_html['js'])
 
         self._set_qwe_html(page_html)
@@ -666,6 +670,20 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
 
+    def _increase_text_size(self):
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        self._app_data.app_settings['dictionary_font_size'] = font_size + 2
+        self._app_data._save_app_settings()
+        self._render_words(self._current_words)
+
+    def _decrease_text_size(self):
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        if font_size < 5:
+            return
+        self._app_data.app_settings['dictionary_font_size'] = font_size - 2
+        self._app_data._save_app_settings()
+        self._render_words(self._current_words)
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -723,3 +741,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.back_recent_button.clicked.connect(partial(self._select_next_recent))
 
         self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
+
+        self.action_Increase_Text_Size \
+            .triggered.connect(partial(self._increase_text_size))
+
+        self.action_Decrease_Text_Size \
+            .triggered.connect(partial(self._decrease_text_size))

@@ -108,6 +108,13 @@ class DictionaryQueries:
             if js_sum not in page_js.keys():
                 page_js[js_sum] = word_html['js']
 
+        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+        css = f"html {{ font-size: {font_size}px; }}"
+        if css_extra:
+            css_extra += css
+        else:
+            css_extra = css
+
         page_html = self.render_html_page(
             body = "\n\n".join(page_body.values()),
             css_head = "\n\n".join(page_css.values()),

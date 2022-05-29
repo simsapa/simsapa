@@ -99,8 +99,18 @@
     <addaction name="action_Previous_Tab"/>
     <addaction name="action_Next_Tab"/>
    </widget>
+   <widget class="QMenu" name="menu_View">
+    <property name="title">
+     <string>&amp;View</string>
+    </property>
+    <addaction name="action_Increase_Text_Size"/>
+    <addaction name="action_Decrease_Text_Size"/>
+    <addaction name="action_Increase_Text_Margins"/>
+    <addaction name="action_Decrease_Text_Margins"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
+   <addaction name="menu_View"/>
    <addaction name="menu_Go"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Suttas"/>
@@ -401,6 +411,38 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+G</string>
+   </property>
+  </action>
+  <action name="action_Increase_Text_Size">
+   <property name="text">
+    <string>&amp;Increase Text Size</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl++</string>
+   </property>
+  </action>
+  <action name="action_Decrease_Text_Size">
+   <property name="text">
+    <string>&amp;Decrease Text Size</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+-</string>
+   </property>
+  </action>
+  <action name="action_Increase_Text_Margins">
+   <property name="text">
+    <string>Increase Text Margins</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift++</string>
+   </property>
+  </action>
+  <action name="action_Decrease_Text_Margins">
+   <property name="text">
+    <string>Decrease Text Margins</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+-</string>
    </property>
   </action>
  </widget>
