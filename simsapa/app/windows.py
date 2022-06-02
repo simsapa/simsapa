@@ -114,12 +114,10 @@ class AppWindows:
                 break
 
         if view is None:
-            view = self._new_sutta_search_window()
-
-        if self._hotkeys_manager:
-            data = json.dumps(msg)
-            APP_QUEUES[view.queue_id].put_nowait(data)
-            view.handle_messages()
+            if len(msg['data']) > 0:
+                view = self._new_sutta_search_window(msg['data'])
+            else:
+                view = self._new_sutta_search_window()
 
     def _lookup_clipboard_in_dictionary(self, msg: ApiMessage):
         # Is there a dictionary window to handle the message?
@@ -130,7 +128,10 @@ class AppWindows:
                 break
 
         if view is None:
-            view = self._new_dictionary_search_window(query = msg['data'])
+            if len(msg['data']) > 0:
+                view = self._new_dictionary_search_window(msg['data'])
+            else:
+                view = self._new_dictionary_search_window()
 
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
@@ -159,7 +160,10 @@ class AppWindows:
         else:
             return self._new_sutta_search_window()
 
-    def _new_sutta_search_window(self) -> SuttaSearchWindow:
+    def _new_sutta_search_window(self, query: Optional[str] = None) -> SuttaSearchWindow:
+        if query is not None and not isinstance(query, str):
+            query = None
+
         view = SuttaSearchWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
@@ -175,6 +179,10 @@ class AppWindows:
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
             self._app_data.sutta_to_open = None
+        elif query is not None:
+            view.s._set_query(query)
+            view.s._handle_query()
+
         self._windows.append(view)
 
         return view
@@ -200,6 +208,9 @@ class AppWindows:
         return view
 
     def _new_dictionary_search_window(self, query: Optional[str] = None) -> DictionarySearchWindow:
+        if query is not None and not isinstance(query, str):
+            query = None
+
         view = DictionarySearchWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
@@ -216,6 +227,7 @@ class AppWindows:
             view._show_word(self._app_data.dict_word_to_open)
             self._app_data.dict_word_to_open = None
         elif query is not None:
+            print(query)
             view._set_query(query)
             view._handle_query()
             view._handle_exact_query()
