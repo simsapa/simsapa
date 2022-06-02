@@ -130,12 +130,7 @@ class AppWindows:
                 break
 
         if view is None:
-            view = self._new_dictionary_search_window()
-
-        if self._hotkeys_manager:
-            data = json.dumps(msg)
-            APP_QUEUES[view.queue_id].put_nowait(data)
-            view.handle_messages()
+            view = self._new_dictionary_search_window(query = msg['data'])
 
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
@@ -204,7 +199,7 @@ class AppWindows:
 
         return view
 
-    def _new_dictionary_search_window(self) -> DictionarySearchWindow:
+    def _new_dictionary_search_window(self, query: Optional[str] = None) -> DictionarySearchWindow:
         view = DictionarySearchWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
@@ -220,6 +215,11 @@ class AppWindows:
         if self._app_data.dict_word_to_open:
             view._show_word(self._app_data.dict_word_to_open)
             self._app_data.dict_word_to_open = None
+        elif query is not None:
+            view._set_query(query)
+            view._handle_query()
+            view._handle_exact_query()
+
         self._windows.append(view)
 
         return view
