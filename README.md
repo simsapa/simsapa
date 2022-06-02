@@ -32,6 +32,12 @@ Environment variables can be set with a `.env` file is in the project root.
 Recognized settings:
 
 ```
+ENABLE_PRINT_LOG=true
+```
+
+Print log messages as well as writing them to `~/.local/share/simsapa/log.txt`
+
+```
 USE_TEST_DATA=true
 ```
 
