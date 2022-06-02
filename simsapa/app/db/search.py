@@ -24,6 +24,8 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
+RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|khp|snp|thag|thig|ud|uda) *([\d\.]+)', re.IGNORECASE)
+
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)
     db_id = NUMERIC(stored = True)
@@ -207,6 +209,14 @@ class SearchQuery:
                   query: str,
                   disabled_labels: Optional[Labels] = None,
                   only_source: Optional[str] = None) -> List[SearchResult]:
+
+        # Replace user input sutta refs such as 'SN 56.11' with query language
+        matches = re.finditer(RE_SUTTA_REF, query)
+        for m in matches:
+            nikaya = m.group(1).lower()
+            number = m.group(2)
+            query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
+            print(query)
 
         self.all_results = self._search_field(field_name = 'content', query = query)
 

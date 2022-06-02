@@ -18,7 +18,7 @@ from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, A
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result
+from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
@@ -378,7 +378,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
 
-        if len(query) < min_length:
+        if re.search(RE_SUTTA_REF, query) is None and len(query) < min_length:
             return
 
         if self.enable_search_extras:
