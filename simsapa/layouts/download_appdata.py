@@ -225,7 +225,7 @@ class Worker(QRunnable):
                 Path(i).unlink()
 
         except Exception as e:
-            print("ERROR: %s" % e)
+            logger.error("%s" % e)
 
         finally:
             self.signals.finished.emit()

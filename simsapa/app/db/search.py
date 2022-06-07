@@ -216,7 +216,6 @@ class SearchQuery:
             nikaya = m.group(1).lower()
             number = m.group(2)
             query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
-            print(query)
 
         self.all_results = self._search_field(field_name = 'content', query = query)
 

@@ -16,7 +16,7 @@ from ..app.db import userdata_models as Um
 
 from ..app.types import AppData, USutta, UDictWord
 
-from simsapa import IS_LINUX, LOADING_HTML, ShowLabels
+from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
 from simsapa.app.helpers import get_db_engine_connection_session
 
 
@@ -107,7 +107,7 @@ class GraphGenerator(QRunnable):
             result = (self.graph_gen_timestamp, hits, self.graph_path)
 
         except Exception as e:
-            print("ERROR: %s" % e)
+            logger.error("%s" % e)
 
         else:
             self.signals.result.emit(result)

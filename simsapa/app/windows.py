@@ -227,7 +227,7 @@ class AppWindows:
             view._show_word(self._app_data.dict_word_to_open)
             self._app_data.dict_word_to_open = None
         elif query is not None:
-            print(query)
+            logger.info(f"Set and handle query: " + query)
             view._set_query(query)
             view._handle_query()
             view._handle_exact_query()
