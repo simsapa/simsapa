@@ -641,7 +641,22 @@ QWidget:focus { border: 1px solid #1092C3; }
                           .all()
         res.extend(r)
 
-        for sutta in res:
+        res_sorted: List[USutta] = []
+        res_remain: List[USutta] = []
+
+        # Pali first
+        for i in res:
+            if i.language == 'pli':
+                res_sorted.append(i)
+            else:
+                res_remain.append(i)
+
+        # sort the remaining items by language
+        res_remain.sort(key=lambda x: str(x.language))
+
+        res_sorted.extend(res_remain)
+
+        for sutta in res_sorted:
             if sutta.uid is not None:
                 title = str(sutta.uid)
             else:
