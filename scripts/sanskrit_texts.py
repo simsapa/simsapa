@@ -5,8 +5,7 @@ import sys
 import re
 from pathlib import Path
 import glob
-import json
-from typing import List, Optional
+from typing import List
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -15,6 +14,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
 from simsapa import logger
+from simsapa.app.helpers import gretil_header_to_footer
 from simsapa.app.db import appdata_models as Am
 
 import helpers
@@ -33,7 +33,6 @@ for p in [bootstrap_assets_dir, gretil_html_dir]:
     if not p.exists():
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
-
 
 def get_gretil_suttas() -> List[Am.Sutta]:
     suttas: List[Am.Sutta] = []
@@ -77,17 +76,7 @@ def get_gretil_suttas() -> List[Am.Sutta]:
 
         logger.info(f"{uid} -- {title}")
 
-        m = re.findall(r'(<h2>Header</h2>(.+?))<h2>Text</h2>', body, flags = re.DOTALL)
-        if len(m) > 0:
-            header_text = m[0][0]
-            main_text = re.sub(r'<h2>Header</h2>(.+?)<h2>Text</h2>', '', body, flags = re.DOTALL)
-
-            footer_text = header_text.replace('<h2>Header</h2>', '<h2>Footer</h2>').replace('<hr>', '')
-
-            main_text = main_text + '<footer class="noindex"><hr>' + footer_text + '</footer>'
-
-        else:
-            main_text = body
+        main_text = gretil_header_to_footer(body)
 
         content_html = '<div class="gretil lang-skr">' + main_text + '</div>'
 
