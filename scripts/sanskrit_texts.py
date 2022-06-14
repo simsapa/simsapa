@@ -89,7 +89,7 @@ def get_gretil_suttas() -> List[Am.Sutta]:
         else:
             main_text = body
 
-        content_html = '<div class="gretil">' + main_text + '</div>'
+        content_html = '<div class="gretil lang-skr">' + main_text + '</div>'
 
         sutta = Am.Sutta(
             title = title,

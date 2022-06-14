@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QComboBox, QAction, QCompleter, QFrame, QLineEdit, QMainWindow, QVBoxLayout, QHBoxLayout, QTabWidget, QToolBar, QPushButton, QSizePolicy, QListWidget, QWidget)
+from PyQt5.QtWidgets import (QComboBox, QAction, QCompleter, QFrame, QHBoxLayout, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from sqlalchemy.sql.elements import and_
 # from tomlkit import items
@@ -17,6 +17,7 @@ from sqlalchemy.sql.elements import and_
 from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
@@ -1010,6 +1011,57 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         self._app_data._save_app_settings()
         self.s._get_active_tab().render_sutta_content()
 
+    def _show_import_suttas_dialog(self):
+        d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
+        if d.exec():
+            logger.info("Finished importing suttas")
+            self._show_quit_and_restart()
+
+    def _remove_imported_suttas(self):
+        msg = """
+        <p>Remove all imported suttas from the user database?</p>
+        <p>(Suttas stored in the default application database will remain.)</p>
+        """
+
+        reply = QMessageBox.question(self,
+                                     "Remove Imported Suttas",
+                                     msg,
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            suttas = self._app_data.db_session.query(Um.Sutta).all()
+
+            uids = list(map(lambda x: x.uid, suttas))
+
+            for db_item in suttas:
+                self._app_data.db_session.delete(db_item)
+
+            self._app_data.db_session.commit()
+
+            w = self._app_data.search_indexed.suttas_index.writer()
+            for x in uids:
+                w.delete_by_term('uid', x)
+
+            w.commit()
+
+            self._show_quit_and_restart()
+
+    def _show_quit_and_restart(self):
+        msg = """
+        <p>Restart Simsapa for the changes to take effect.</p>
+        <p>Quit now?</p>
+        """
+
+        reply = QMessageBox.question(self,
+                                     "Restart Simsapa",
+                                     msg,
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.action_Quit.activate(QAction.ActionEvent.Trigger)
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -1066,3 +1118,9 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
 
         self.action_Decrease_Text_Margins \
             .triggered.connect(partial(self._decrease_text_margins))
+
+        self.action_Import_Suttas_with_Spreadsheet \
+            .triggered.connect(partial(self._show_import_suttas_dialog))
+
+        self.action_Remove_Imported_Suttas \
+            .triggered.connect(partial(self._remove_imported_suttas))

@@ -343,14 +343,17 @@ h4 {
   font-size: 1rem;
 }
 
+.lang-skr {
+  font-family: "DejaVu Serif", serif;
+}
+.lang-skr h1, .lang-skr h2, .lang-skr h3, .lang-skr h4, .lang-skr h5, .lang-skr h6 {
+  font-family: "DejaVu Serif", serif;
+}
+
 .gretil {
   font-size: 18px;
-  font-family: "DejaVu Serif", serif;
   margin-left: -5ex;
   margin-right: -5ex;
-}
-.gretil h1, .gretil h2, .gretil h3, .gretil h4, .gretil h5, .gretil h6 {
-  font-family: "DejaVu Serif", serif;
 }
 
 .gretil > footer {
