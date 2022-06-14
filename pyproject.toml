@@ -7,7 +7,7 @@ authors = ["Gambhiro <gambhiro.bhikkhu.85@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "~3.9"
+python = "3.9"
 PyQt5 = "~5.15.4"
 PyQtWebEngine = "~5.15.4"
 SQLAlchemy = "~1.4.6"

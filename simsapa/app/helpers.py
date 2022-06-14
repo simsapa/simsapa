@@ -297,3 +297,18 @@ def show_work_in_progress():
     d.setWindowTitle("Work in Progress")
     d.setText("Work in Progress")
     d.exec()
+
+def gretil_header_to_footer(body: str) -> str:
+    m = re.findall(r'(<h2>Header</h2>(.+?))<h2>Text</h2>', body, flags = re.DOTALL)
+    if len(m) > 0:
+        header_text = m[0][0]
+        main_text = re.sub(r'<h2>Header</h2>(.+?)<h2>Text</h2>', '', body, flags = re.DOTALL)
+
+        footer_text = header_text.replace('<h2>Header</h2>', '<h2>Footer</h2>').replace('<hr>', '')
+
+        main_text = main_text + '<footer class="noindex"><hr>' + footer_text + '</footer>'
+
+    else:
+        main_text = body
+
+    return main_text
