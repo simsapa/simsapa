@@ -58,7 +58,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
                  focus_input: bool = True,
                  enable_search_extras: bool = True,
                  enable_sidebar: bool = True,
-                 enable_find_panel: bool = True) -> None:
+                 enable_find_panel: bool = True,
+                 show_query_results_in_active_tab: bool = False) -> None:
         super().__init__()
 
         self.pw = parent_window
@@ -70,6 +71,9 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self.searchbar_layout = searchbar_layout
         self.sutta_tabs_layout = sutta_tabs_layout
         self.tabs_layout = tabs_layout
+
+        self.query_in_tab = show_query_results_in_active_tab
+        self.showing_query_in_tab = False
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
@@ -379,6 +383,12 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
 
+        # Re-render the current sutta, in case user is trying to restore sutta
+        # after a search in the Study Window with the clear input button.
+        if len(query) == 0 and self.showing_query_in_tab and self._current_sutta is not None:
+            self._show_sutta(self._current_sutta)
+            return
+
         if re.search(RE_SUTTA_REF, query) is None and len(query) < min_length:
             return
 
@@ -400,6 +410,16 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
             self._show_sutta_by_uid(self._results[0]['uid'])
+
+        elif self.query_in_tab:
+            self._render_results_in_active_tab(self.search_query.hits)
+
+    def _render_results_in_active_tab(self, hits: int):
+        if hits == 0:
+            return
+
+        self.showing_query_in_tab = True
+        self._get_active_tab().render_search_results(self._results)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -553,6 +573,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _show_sutta(self, sutta: USutta):
         logger.info(f"_show_sutta() : {sutta.uid}")
+        self.showing_query_in_tab = False
         self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
         self.sutta_tab.render_sutta_content()
@@ -566,7 +587,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.pw.show_network_graph(sutta)
 
     def _show_next_recent(self):
-        if self._current_sutta is None or len(self._recent) < 2:
+        if self._current_sutta is None:
             return
 
         res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
@@ -576,14 +597,18 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             current_idx = res[0]
 
-        # This is already the last, no next item
         if current_idx + 1 >= len(self._recent):
-            return
-
-        self._show_sutta(self._recent[current_idx + 1])
+            # This is already the last, no next item.
+            if self.showing_query_in_tab:
+                # Re-render it, in case user is trying to restore sutta after a search in the Study Window.
+                self._show_sutta(self._recent[current_idx])
+            else:
+                return
+        else:
+            self._show_sutta(self._recent[current_idx + 1])
 
     def _show_prev_recent(self):
-        if self._current_sutta is None or len(self._recent) < 2:
+        if self._current_sutta is None:
             return
 
         res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
@@ -593,11 +618,15 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             current_idx = res[0]
 
-        # This is already the first, no previous
         if current_idx == 0:
-            return
-
-        self._show_sutta(self._recent[current_idx - 1])
+            # This is already the first, no previous.
+            if self.showing_query_in_tab:
+                # Re-render it, in case user is trying to restore sutta after a search in the Study Window.
+                self._show_sutta(self._recent[current_idx])
+            else:
+                return
+        else:
+            self._show_sutta(self._recent[current_idx - 1])
 
     def _remove_related_tabs(self):
         n = 0

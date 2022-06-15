@@ -1,12 +1,13 @@
 from functools import partial
-from typing import Optional
+from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import QWidget, QAction, QVBoxLayout
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa.app.db.search import SearchResult
 from ..app.types import AppData, USutta
 from .html_content import html_page
 
@@ -29,6 +30,7 @@ class SuttaTabWidget(QWidget):
         self.qwe = qwe
         self.sutta = sutta
         self.api_url = self._app_data.api_url
+        self.current_html = ""
 
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -50,9 +52,14 @@ class SuttaTabWidget(QWidget):
 
         self.qwe.addAction(self.devToolsAction)
 
+    def get_current_html(self) -> str:
+        return self.current_html
+
     def set_qwe_html(self, html: str):
         # Around above this size, QWebEngineView doesn't display the HTML with .setHtml()
         size_limit = 0.8 * 1024 * 1024
+
+        self.current_html = html
 
         if len(html) < size_limit:
             try:
@@ -96,6 +103,51 @@ class SuttaTabWidget(QWidget):
         max_width = self._app_data.app_settings.get('sutta_max_width', 75)
 
         css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
+
+        html = html_page(content, self.api_url, css_extra)
+
+        self.set_qwe_html(html)
+
+    def render_search_results(self, results: List[SearchResult]):
+        content = ""
+        colors = ["#fdf6e2", "#fae6b2"]
+
+        for idx, r in enumerate(results):
+            if r['ref'] is not None:
+                title = f"{r['ref']} {r['title']}"
+            else:
+                title = r['title']
+
+            if len(title) > 70:
+                title = title[:70] + '...'
+
+            details = ''
+            href = ''
+
+            if r['uid'] is not None:
+                href = f"ssp://{r['uid']}"
+                details = r['uid']
+
+            if r['schema_name'] == DbSchemaName.UserData.value:
+                details += ' (u)'
+
+            n = idx % len(colors)
+
+            content += """
+            <div style="display: flex; background-color: %s; padding: 0.2em 2em;">
+              <div style="flex-grow: 1; text-align: left;">
+                <a href="%s">%s</a>
+              </div>
+              <div style="flex-grow: 1; text-align: right; font-size: 0.9em;">
+                %s
+              </div>
+            </div>
+            """ % (colors[n], href, title, details)
+
+        font_size = self._app_data.app_settings.get('sutta_font_size', 22) - 4
+        max_width = self._app_data.app_settings.get('sutta_max_width', 75) * 2
+
+        css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; padding: 0; }}"
 
         html = html_page(content, self.api_url, css_extra)
 

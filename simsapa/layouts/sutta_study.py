@@ -108,11 +108,16 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.sutta_one_tabs_layout = QVBoxLayout()
         self.sutta_one_layout.addLayout(self.sutta_one_tabs_layout)
 
-        self.sutta_one_state = SuttaSearchWindowState(self._app_data,
-                                                      self,
-                                                      self.sutta_one_searchbar_layout,
-                                                      self.sutta_one_tabs_layout,
-                                                      None, False, False, False, False)
+        self.sutta_one_state = SuttaSearchWindowState(app_data=self._app_data,
+                                                      parent_window=self,
+                                                      searchbar_layout=self.sutta_one_searchbar_layout,
+                                                      sutta_tabs_layout=self.sutta_one_tabs_layout,
+                                                      tabs_layout=None,
+                                                      focus_input=False,
+                                                      enable_search_extras=False,
+                                                      enable_sidebar=False,
+                                                      enable_find_panel=False,
+                                                      show_query_results_in_active_tab=True)
 
         # Two
 
