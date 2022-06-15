@@ -28,8 +28,9 @@ from simsapa.assets import icons_rc  # noqa: F401
 
 APPDATA_TAR_URL  = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/appdata.tar.bz2"
 INDEX_TAR_URL    = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/index.tar.bz2"
-SANSKRIT_TAR_URL = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/sanskrit-texts.tar.bz2"
 
+SANSKRIT_APPDATA_TAR_URL  = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/sanskrit-appdata.tar.bz2"
+SANSKRIT_INDEX_TAR_URL    = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/sanskrit-index.tar.bz2"
 
 class DownloadAppdataWindow(QMainWindow):
     def __init__(self) -> None:
@@ -107,9 +108,10 @@ class DownloadAppdataWindow(QMainWindow):
         self.chk_sanskrit_texts = chk
         self.text_select_layout.addWidget(self.chk_sanskrit_texts)
 
-        self.index_info = QLabel("(The search index will be generated on first-time\n start. This may take 30-60 mins.)")
-        self.index_info.setDisabled(True)
-        self.text_select_layout.addWidget(self.index_info)
+        # NOTE: At the moment, the Sanskrit texts also include the index. Will need this when downloading other languages.
+        # self.index_info = QLabel("(The search index will be generated on first-time\n start. This may take 30-60 mins.)")
+        # self.index_info.setDisabled(True)
+        # self.text_select_layout.addWidget(self.index_info)
 
 
     def _toggled_general_bundle(self):
@@ -118,7 +120,7 @@ class DownloadAppdataWindow(QMainWindow):
         self.general_info.setDisabled(not checked)
 
         self.chk_sanskrit_texts.setDisabled(checked)
-        self.index_info.setDisabled(checked)
+        # self.index_info.setDisabled(checked)
 
 
     def _setup_animation(self):
@@ -162,15 +164,17 @@ class DownloadAppdataWindow(QMainWindow):
 
 
     def _run_download(self):
+        # Default: General bundle
         urls = [
             APPDATA_TAR_URL,
+            INDEX_TAR_URL,
         ]
 
-        if self.sel_general_bundle.isChecked():
-            urls.append(INDEX_TAR_URL)
-
-        elif self.chk_sanskrit_texts.isChecked():
-            urls.append(SANSKRIT_TAR_URL)
+        if self.chk_sanskrit_texts.isChecked():
+            urls = [
+                SANSKRIT_APPDATA_TAR_URL,
+                SANSKRIT_INDEX_TAR_URL,
+            ]
 
         download_worker = Worker(urls)
 
@@ -238,6 +242,9 @@ class Worker(QRunnable):
         temp_dir = ASSETS_DIR.joinpath('extract_temp')
         tar.extractall(temp_dir)
         tar.close()
+
+        # FIXME on Mac, it downloads the extra database (i.e.
+        # sanskrit-texts.sqlite3) but then deletes it. Path name problems?
 
         os.remove(tar_file_path)
 
