@@ -54,3 +54,22 @@ echo "=== Reindex ==="
 
 ./run.py index reindex
 
+echo "=== Create sanskrit-appdata.tar.bz2 ==="
+
+cd ~/.local/share/simsapa/assets/
+
+tar cjf sanskrit-appdata.tar.bz2 appdata.sqlite3
+
+cd -
+
+mv ~/.local/share/simsapa/assets/sanskrit-appdata.tar.bz2 ../releases/
+
+echo "=== Create sanskrit-index.tar.bz2 ==="
+
+cd ~/.local/share/simsapa/assets/
+
+tar cjf sanskrit-index.tar.bz2 index/
+
+cd -
+
+mv ~/.local/share/simsapa/assets/sanskrit-index.tar.bz2 ../releases/

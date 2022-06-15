@@ -26,11 +26,13 @@ from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
-APPDATA_TAR_URL  = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/appdata.tar.bz2"
-INDEX_TAR_URL    = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/index.tar.bz2"
+ASSETS_VERSION = "v0.1.8-alpha.1"
 
-SANSKRIT_APPDATA_TAR_URL  = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/sanskrit-appdata.tar.bz2"
-SANSKRIT_INDEX_TAR_URL    = "https://github.com/simsapa/simsapa-assets/releases/download/v0.1.7-alpha.7/sanskrit-index.tar.bz2"
+APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/appdata.tar.bz2"
+INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/index.tar.bz2"
+
+SANSKRIT_APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-appdata.tar.bz2"
+SANSKRIT_INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-index.tar.bz2"
 
 class DownloadAppdataWindow(QMainWindow):
     def __init__(self) -> None:
@@ -170,7 +172,7 @@ class DownloadAppdataWindow(QMainWindow):
             INDEX_TAR_URL,
         ]
 
-        if self.chk_sanskrit_texts.isChecked():
+        if self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked():
             urls = [
                 SANSKRIT_APPDATA_TAR_URL,
                 SANSKRIT_INDEX_TAR_URL,
