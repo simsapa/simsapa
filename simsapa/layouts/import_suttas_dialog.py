@@ -76,13 +76,17 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         self.accept()
 
     def open_spreadsheet(self, path: Path):
+        logger.info("=== open_spreadsheet() ===")
         self.suttas_wb = load_workbook(filename=path, read_only=True)
         names: list[str] = self.suttas_wb.sheetnames
+        logger.info(f"names: {names}")
         if len(names) == 0:
             logger.warn(f"Empty spreadsheet: {path}")
             return
 
     def import_sutta_row_to_user_db(self, sutta_row: SuttaRow):
+        logger.info("=== import_sutta_row_to_user_db() ====")
+        logger.info("%s" % sutta_row)
         if self.sheet_file_path is None:
             return
 
@@ -92,6 +96,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             return
 
         with open(html_path, 'r', encoding='utf-8') as f:
+            logger.info("open file: %s" % html_path)
             if sutta_row['html_first_line'] == 0:
                 a = 0
             else:
@@ -200,6 +205,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         self._app_data.search_indexed.index_suttas(DbSchemaName.UserData.value, s)
 
     def import_sheet(self, sheet: Worksheet):
+        logger.info("=== import_sheet() ===")
         cols = next(sheet.values)
         col_to_idx = {}
         for idx, c in enumerate(cols):
@@ -264,18 +270,21 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         for row in sheet.iter_rows(min_row=2):
             sutta_rows.append(to_sutta_row(row))
 
+        logger.info(f"sutta_rows count: {len(sutta_rows)}")
         for r in sutta_rows:
             self.import_sutta_row_to_user_db(r)
 
     def import_pressed(self):
+        logger.info("=== import_pressed() ===")
         if self.suttas_wb is None:
             return
 
         names: list[str] = self.suttas_wb.sheetnames
+        logger.info(f"names: {names}")
         ws: Worksheet = self.suttas_wb[names[0]]
         self.status_msg.setText("Importing...")
 
-        QtWidgets.qApp.processEvents()
+        # QtWidgets.qApp.processEvents()
 
         self.import_sheet(ws)
         self.accept()
