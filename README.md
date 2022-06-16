@@ -14,8 +14,6 @@ Short feature demo: <https://vimeo.com/677880749>
 
 ![Sutta Study](docs/sutta-study-screenshot.png)
 
-## Install
-
 ### MacOS
 
 Download the latest `.dmg.zip` from [Releases](https://github.com/simsapa/simsapa/releases/).
