@@ -14,6 +14,79 @@ Short feature demo: <https://vimeo.com/677880749>
 
 ![Sutta Study](docs/sutta-study-screenshot.png)
 
+## Install
+
+### MacOS
+
+Download the latest `.dmg.zip` from [Releases](https://github.com/simsapa/simsapa/releases/).
+
+Extract and open the `.dmg` file.
+
+Drag the Simsapa icon to Applications.
+
+**Allow apps from third-party locations:**
+
+Open System Preferences > Security & Privacy > General tab
+
+Click on the lock icon in the bottom left and enter your admin password.
+
+Next to the message `"Simsapa" was blocked because...`, click `Open Anyway`.
+
+**Enable Rosetta:**
+
+Open Finder > Applications
+
+Right click on the Simsapa icon, and enable "Open using Rosetta"
+
+![Enable Rosetta](./docs/macos-open-using-rosetta_crop.png)
+
+### Linux
+
+Download the latest `.AppImage.zip` from [Releases](https://github.com/simsapa/simsapa/releases/).
+
+Extract and add executable permissions to the `.AppImage` file.
+
+**Ubuntu 22.04:** The HTML content pages will be blank, you have to start Simsapa with the following env variable:
+
+``` shell
+QTWEBENGINE_DISABLE_SANDBOX=1 ./Simsapa_Dhamma_Reader-0.1.8a1-x86_64.AppImage
+```
+
+For the app launcher, it can be useful to create a `simsapa.desktop` file in `~/.local/share/applications` such as:
+
+```
+[Desktop Entry]
+Encoding=UTF-8
+Name=Simsapa
+Terminal=false
+Type=Application
+Exec=env QTWEBENGINE_DISABLE_SANDBOX=1 /path/to/Simsapa_Dhamma_Reader-0.1.8a1-x86_64.AppImage
+```
+
+## Removing the Application Database
+
+The Simsapa application database (where the suttas, dictionaries, etc. are stored) is not removed when un-installing Simsapa.
+
+Use the terminal to remove the applications local data folder:
+
+**MacOS:**
+
+``` shell
+rm -r ~/Library/Application\ Support/simsapa
+```
+
+**Linux:**
+
+``` shell
+rm -r ~/.local/share/simsapa
+```
+
+**Windows:**
+
+``` shell
+rmdir /s /q C:\Users\%USERNAME%\AppData\Local\simsapa
+```
+
 ## Development
 
 Install Poetry, clone this repo and run `poetry install` to install dependencies.
