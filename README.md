@@ -2,7 +2,9 @@
 
 ## Install
 
-Download the [latest build](https://www.dropbox.com/sh/j26b8sb955hj5x6/AABh0SCsRA7bY1bTGhKA5x1Pa?dl=0) for Linux (.AppImage), Mac (.dmg) or Windows (.msi).
+Download the latest build from [Releases](https://github.com/simsapa/simsapa/releases/) for Linux (.AppImage), Mac (.dmg) or Windows (.msi).
+
+(**NOTE:** the Windows build is not working currently, but it should be back after fixing a certain issue.)
 
 On the first run, it downloads the application database and fulltext index.
 
