@@ -110,8 +110,8 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
                 if h is not None:
                     body = h.decode_contents() # type: ignore
                 else:
-                    logger.error("Missing <body> from html page in %s" % html_path)
-                    body = ""
+                    logger.info("Missing <body>, using the entire html from %s" % html_path)
+                    body = html_text
 
                 content_html = str(body)
 
