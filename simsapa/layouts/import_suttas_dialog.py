@@ -95,45 +95,54 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             logger.error(f"File doesn't exist: {html_path}")
             return
 
-        with open(html_path, 'r', encoding='utf-8') as f:
-            logger.info("open file: %s" % html_path)
-            if sutta_row['html_first_line'] == 0:
-                a = 0
-            else:
-                a = sutta_row['html_first_line']
-
-            if sutta_row['html_last_line'] > 0:
-                b = sutta_row['html_last_line'] + 1
-                lines = f.readlines()
-                content_html = "\n".join(lines[a:b])
-
-            else:
-                html_text = f.read()
-
-                soup = BeautifulSoup(html_text, 'html5lib')
-                h = soup.find(name = 'body')
-                if h is not None:
-                    body = h.decode_contents() # type: ignore
+        try:
+            with open(html_path, 'r', encoding='utf-8') as f:
+                logger.info("open file: %s" % html_path)
+                if sutta_row['html_first_line'] == 0:
+                    a = 0
                 else:
-                    logger.info("Missing <body>, using the entire html from %s" % html_path)
-                    body = html_text
+                    a = sutta_row['html_first_line']
 
-                content_html = str(body)
+                if sutta_row['html_last_line'] > 0:
+                    b = sutta_row['html_last_line'] + 1
+                    logger.info("Reading to lines")
+                    lines = f.readlines()
+                    content_html = "\n".join(lines[a:b])
 
-            content_classes = []
+                else:
+                    logger.info("Reading to string")
+                    html_text = f.read()
 
-            if sutta_row['author_uid'] == 'gretil':
-                content_classes.append('gretil')
+                    soup = BeautifulSoup(html_text, 'html5lib')
+                    h = soup.find(name = 'body')
+                    if h is not None:
+                        body = h.decode_contents() # type: ignore
+                    else:
+                        logger.info("Missing <body>, using the entire html from %s" % html_path)
+                        body = html_text
 
-                if sutta_row['html_last_line'] <= 0:
-                    content_html = gretil_header_to_footer(content_html)
+                    content_html = str(body)
 
-            if sutta_row['language'] == 'skr':
-                content_classes.append('lang-skr')
+        except Exception as e:
+            logger.error(e)
+            return
 
-            if len(content_classes) > 0:
-                s = " ".join(content_classes)
-                content_html = f'<div class="{s}">' + content_html + '</div>'
+        logger.info(f"Content length: {len(content_html)}")
+
+        content_classes = []
+
+        if sutta_row['author_uid'] == 'gretil':
+            content_classes.append('gretil')
+
+            if sutta_row['html_last_line'] <= 0:
+                content_html = gretil_header_to_footer(content_html)
+
+        if sutta_row['language'] == 'skr':
+            content_classes.append('lang-skr')
+
+        if len(content_classes) > 0:
+            s = " ".join(content_classes)
+            content_html = f'<div class="{s}">' + content_html + '</div>'
 
         # find or create author
 
@@ -148,6 +157,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
                 created_at = func.now(),
             )
             try:
+                logger.info(f"Creating new author: {author.uid}")
                 self._app_data.db_session.add(author)
                 self._app_data.db_session.commit()
             except Exception as e:
@@ -178,6 +188,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             sutta.author = author
 
             try:
+                logger.info(f"Creating new sutta: {sutta.uid}")
                 self._app_data.db_session.add(sutta)
                 self._app_data.db_session.commit()
             except Exception as e:
@@ -193,6 +204,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             sutta.updated_at = func.now()
 
             try:
+                logger.info(f"Updating sutta: {sutta.uid}")
                 self._app_data.db_session.commit()
             except Exception as e:
                 logger.error(e)

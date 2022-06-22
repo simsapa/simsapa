@@ -340,6 +340,7 @@ class SearchIndexed:
         return ix
 
     def index_suttas(self, schema_name: str, suttas: List[USutta]):
+        logger.info(f"index_suttas() len: {len(suttas)}")
         ix = self.suttas_index
 
         try:
