@@ -349,6 +349,7 @@ class SearchIndexed:
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
             for i in suttas:
+                logger.info(f"Indexing: {i.uid}")
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
                     # Remove content marked with 'noindex' class, such as footer material
@@ -365,10 +366,30 @@ class SearchIndexed:
                 else:
                     continue
 
+                logger.info(f"len(content) = {len(content)}")
+
+                sutta_ref = ""
+                if i.sutta_ref is not None:
+                    sutta_ref = i.sutta_ref
+
+                title = ""
+                if i.title is not None:
+                    title = i.title
+
+                title_pali = ""
+                if i.title_pali is not None:
+                    title_pali = i.title_pali
+
+                title_trans = ""
+                if i.title_trans is not None:
+                    title_trans = i.title_trans
+
                 # Add title and title_pali to content field so a single field query will match
                 # Db fields can be None
-                c = list(filter(lambda x: x is not None, [str(i.sutta_ref), str(i.title), str(i.title_pali)]))
+                c = list(filter(lambda x: len(str(x)) > 0, [str(sutta_ref), str(title), str(title_pali)]))
                 pre = " ".join(c)
+                logger.info(f"pre: {pre}")
+
                 if len(pre) > 0:
                     content = f"{pre} {content}"
 
@@ -377,12 +398,15 @@ class SearchIndexed:
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
-                    title = i.title,
-                    title_pali = i.title_pali,
-                    title_trans = i.title_trans,
+                    title = title,
+                    title_pali = title_pali,
+                    title_trans = title_trans,
                     content = content,
-                    ref = i.sutta_ref,
+                    ref = sutta_ref,
                 )
+
+                logger.info(f"updated: {i.uid}")
+
             writer.commit()
 
         except Exception as e:

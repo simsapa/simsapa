@@ -296,7 +296,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         ws: Worksheet = self.suttas_wb[names[0]]
         self.status_msg.setText("Importing...")
 
-        # QtWidgets.qApp.processEvents()
+        QtWidgets.qApp.processEvents()
 
         self.import_sheet(ws)
         self.accept()
