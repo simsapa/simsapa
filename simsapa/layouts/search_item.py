@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
+from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
 from simsapa import IS_MAC, DbSchemaName
 
 from simsapa.app.db.search import SearchResult
@@ -21,7 +21,7 @@ class SearchItemWidget(QWidget):
         self.details = QLabel()
         self.details.setMaximumHeight(20)
 
-        self.top_spacer = QSpacerItem(20, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.top_spacer = QSpacerItem(20, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.top_info.addWidget(self.title)
 
@@ -42,7 +42,7 @@ class SearchItemWidget(QWidget):
 
         self.snippet.setMinimumHeight(25)
         self.snippet.setMaximumHeight(60)
-        self.snippet.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.snippet.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.snippet.setContentsMargins(0, 0, 0, 0)
 

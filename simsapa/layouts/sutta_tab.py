@@ -1,10 +1,10 @@
 from functools import partial
 from typing import List, Optional
 
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5.QtWidgets import QWidget, QAction, QVBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QIcon, QPixmap, QAction
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult

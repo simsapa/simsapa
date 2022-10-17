@@ -1,6 +1,6 @@
 import re
 from typing import List, Union
-from PyQt5.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from simsapa import DbSchemaName
 
@@ -56,7 +56,7 @@ class SuttaSelectDialog(QDialog):
                 self._checks[schema].extend(pli_checks)
                 self._checks[schema].extend(en_checks)
 
-        buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        buttons = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.buttonBox = QDialogButtonBox(buttons)
 
         self.buttonBox.accepted.connect(self._ok_pressed)

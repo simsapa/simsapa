@@ -1,8 +1,8 @@
 from functools import partial
 from typing import Callable, List
-from PyQt5.QtGui import QColor
+from PyQt6.QtGui import QColor
 
-from PyQt5.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox
+from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox
 
 from simsapa.app.db.search import SearchResult, SearchQuery
 from simsapa.layouts.search_item import SearchItemWidget

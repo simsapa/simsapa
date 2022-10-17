@@ -3,9 +3,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
 
-from PyQt5.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
 from ..app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
                          dict_word_nodes_and_edges,
@@ -166,7 +166,7 @@ class HasLinksSidebar:
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
-        self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.content_graph.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.content_graph.setHtml('')
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)

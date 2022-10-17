@@ -6,12 +6,12 @@ from pathlib import Path
 import shutil
 import tarfile
 from typing import List
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
-from PyQt5.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
-from PyQt5.QtGui import QMovie
+from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
+from PyQt6.QtGui import QMovie
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -52,7 +52,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
         self._layout.addItem(spacerItem)
 
         self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
@@ -62,7 +62,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._setup_info_frame()
         self._setup_animation()
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
         self._layout.addItem(spacerItem)
 
         self._setup_buttons()
@@ -70,8 +70,8 @@ class DownloadAppdataWindow(QMainWindow):
 
     def _setup_info_frame(self):
         frame = QFrame()
-        frame.setFrameShape(QtWidgets.QFrame.NoFrame)
-        frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         frame.setLineWidth(0)
 
         self.info_frame = frame

@@ -4,13 +4,13 @@ import os
 import os.path
 from pathlib import Path
 from typing import List, Optional, TypedDict, Union
-from PyQt5.QtCore import QThreadPool
+from PyQt6.QtCore import QThreadPool
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.functions import func
 
-from PyQt5.QtGui import QClipboard
+from PyQt6.QtGui import QClipboard
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.actions_manager import ActionsManager

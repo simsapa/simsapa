@@ -23,8 +23,8 @@ from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
 import tomlkit
 
-from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um

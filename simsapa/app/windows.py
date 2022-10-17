@@ -5,8 +5,8 @@ from typing import List, Optional
 import queue
 import json
 
-from PyQt5.QtCore import QSize, QTimer, Qt
-from PyQt5.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
+from PyQt6.QtCore import QSize, QTimer, Qt
+from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
@@ -333,12 +333,12 @@ class AppWindows:
 
         box = QMessageBox(parent)
         if msg['kind'] == 'warning':
-            box.setIcon(QMessageBox.Warning)
+            box.setIcon(QMessageBox.Icon.Warning)
         else:
-            box.setIcon(QMessageBox.Information)
+            box.setIcon(QMessageBox.Icon.Information)
         box.setText(msg['text'])
         box.setWindowTitle("Message")
-        box.setStandardButtons(QMessageBox.Ok)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
         box.exec()
 
@@ -351,10 +351,10 @@ class AppWindows:
             return
 
         box = QMessageBox(parent)
-        box.setIcon(QMessageBox.Information)
+        box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
         box.setWindowTitle("Update Available")
-        box.setStandardButtons(QMessageBox.Ok)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
         box.exec()
 
@@ -371,10 +371,10 @@ class AppWindows:
         reply = QMessageBox.question(parent,
                                      "Re-index the database",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             shutil.rmtree(INDEX_DIR)
             self._quit_app()
         '''
@@ -389,10 +389,10 @@ class AppWindows:
         reply = QMessageBox.question(parent,
                                      "Re-download the database and index",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self._app_data.db_session.commit()
             self._app_data.db_session.close_all()
             self._app_data.db_conn.close()

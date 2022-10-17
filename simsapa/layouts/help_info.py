@@ -1,7 +1,7 @@
-from PyQt5.QtCore import QUrl
+from PyQt6.QtCore import QUrl
 from functools import partial
-from PyQt5.QtGui import QDesktopServices, QIcon, QPixmap
-from PyQt5.QtWidgets import QMessageBox, QPushButton
+from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
+from PyQt6.QtWidgets import QMessageBox, QPushButton
 from simsapa import SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
 
 from simsapa.app.helpers import get_app_version, get_sys_version
@@ -20,7 +20,7 @@ def setup_info_button(layout, parent=None):
 
 def show_search_info(parent=None):
     box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Information)
+    box.setIcon(QMessageBox.Icon.Information)
     msg = """
 <p>Search query terms are related as AND by default, <b>kamma vipāka</b> searches for entries containing <b>kamma</b> AND <b>vipāka</b>.</p>
 <p>Latin terms are expanded to include diacritics, <b>patipada</b> will match <b>paṭipadā</b>.</p>
@@ -53,13 +53,13 @@ Read more about queries at
 """
     box.setText(msg)
     box.setWindowTitle("Search query info")
-    box.setStandardButtons(QMessageBox.Ok)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
     box.exec()
 
 def show_about(parent=None):
     box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Information)
+    box.setIcon(QMessageBox.Icon.Information)
 
     app_version_par = ''
     sys_version_par = ''
@@ -83,7 +83,7 @@ def show_about(parent=None):
 """
     box.setText(msg)
     box.setWindowTitle("About Simsapa Dhamma Reader")
-    box.setStandardButtons(QMessageBox.Ok)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
     box.exec()
 
