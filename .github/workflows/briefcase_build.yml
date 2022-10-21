@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-11, windows-2022]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12, windows-2022]
         python-version: ["3.9"]
       fail-fast: false
     defaults:
@@ -29,14 +29,36 @@ jobs:
         with:
           python-version: 3.9
 
-      - name: Install Dependencies
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update && sudo apt install -y tzdata gnupg ca-certificates
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3B4FE6ACC0B21F32
+          echo "deb http://cz.archive.ubuntu.com/ubuntu bionic main" | sudo tee -a /etc/apt/sources.list.d/bionic.list
+          sudo apt-get update
+          sudo apt-get install libncurses5 libgdbm5 libffi6 libegl1 libpulse0 libpcsclite1
+
+      - name: Install Qt
+        if: runner.os == 'Linux'
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.4.0'
+
+      - name: Install Python libs
         run: |
           python -m pip install --upgrade pip
           python -m pip install briefcase
           python -m pip install MarkupSafe==2.1.1
           python -m pip freeze
 
-      - name: Create and Build Bundle
+      - name: Linux Create and Build Without Docker
+        if: runner.os == 'Linux'
+        run: |
+          briefcase create --no-docker
+          briefcase build --no-docker
+
+      - name: Windows / Mac Create and Build Bundle
+        if: runner.os != 'Linux'
         run: |
           briefcase create
           briefcase build
@@ -45,9 +67,13 @@ jobs:
         if: runner.os == 'macOS'
         run: briefcase package --no-sign
 
-      - name: Package Windows / Linux
-        if: runner.os != 'macOS'
+      - name: Package Windows
+        if: runner.os == 'Windows'
         run: briefcase package
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: briefcase package --no-docker
 
       - name: Upload Artifact for Linux
         uses: actions/upload-artifact@v2

@@ -1,0 +1,76 @@
+name: PyInstaller Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v[0-9].*'
+
+jobs:
+  briefcase:
+    name: Bundle on ${{ matrix.os }} / ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12, windows-2022]
+        python-version: ["3.9"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install Python libs
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Linux / Mac Install Poetry
+        if: runner.os != 'Windows'
+        run: curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Windows Install Poetry
+        if: runner.os == 'Windows'
+        run: (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
+
+      - name: Install Python deps, activate venv
+        run: |
+          poetry install
+          poetry shell
+
+      - name: Linux / Mac Build
+        if: runner.os != 'Windows'
+        run: ./pyinstaller-build.sh
+
+      - name: Windows Build
+        if: runner.os == 'Windows'
+        run: pyinstaller-build.bat
+
+      - name: Upload Artifact for Linux
+        uses: actions/upload-artifact@v2
+        if: runner.os == 'Linux'
+        with:
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.bin
+          path: 'dist/simsapa'
+
+      - name: Upload Artifact for MacOS
+        uses: actions/upload-artifact@v2
+        if: runner.os == 'MacOS'
+        with:
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.app
+          path: 'dist/simsapa'
+
+      - name: Upload Artifact for Windows
+        uses: actions/upload-artifact@v2
+        if: runner.os == 'Windows'
+        with:
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.exe
+          path: 'dist/simsapa.exe'

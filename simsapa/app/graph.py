@@ -23,6 +23,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql.elements import and_
 
 from simsapa import ShowLabels
+from simsapa.app.helpers import get_db_engine_connection_session
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
@@ -173,7 +174,11 @@ def get_related_suttas(db_session: Session, sutta: USutta) -> List[USutta]:
     return res
 
 
-def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1):
+def sutta_nodes_and_edges(sutta: USutta, distance: int = 1):
+    # NOTE: Don't pass Db Session in the argument. Db Session must remain within the same thread, otherwise causes exception:
+    # Exception closing connection <sqlite3.Connection object at 0x7f7b83c6a4e0>
+    _, _, db_session = get_db_engine_connection_session()
+
     links = {'appdata.suttas': [], 'userdata.suttas': []}
     sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
 
@@ -236,11 +241,15 @@ def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1)
 
     edges = list(map(to_edge, suttas))
 
+    # Close the session here, so that it's not the context manager in another
+    # thread that has to close it.
+    db_session.close()
+
     # Collect links from other nodes
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -250,7 +259,9 @@ def sutta_nodes_and_edges(db_session: Session, sutta: USutta, distance: int = 1)
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def dict_word_nodes_and_edges(db_session: Session, dict_word: UDictWord, distance: int = 1):
+def dict_word_nodes_and_edges(dict_word: UDictWord, distance: int = 1):
+    _, _, db_session = get_db_engine_connection_session()
+
     schema = dict_word.metadata.schema
 
     links = []
@@ -291,11 +302,13 @@ def dict_word_nodes_and_edges(db_session: Session, dict_word: UDictWord, distanc
 
     edges = list(map(to_edge, suttas))
 
+    db_session.close()
+
     # Collect links from other nodes
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -306,7 +319,9 @@ def dict_word_nodes_and_edges(db_session: Session, dict_word: UDictWord, distanc
     return (unique_nodes(nodes), unique_edges(edges))
 
 
-def document_page_nodes_and_edges(db_session: Session, db_doc: Am.Document, page_number: int, distance: int = 1):
+def document_page_nodes_and_edges(db_doc: Am.Document, page_number: int, distance: int = 1):
+    _, _, db_session = get_db_engine_connection_session()
+
     links = db_session \
         .query(Um.Link.to_id) \
         .filter(Um.Link.from_table == "userdata.documents") \
@@ -334,11 +349,13 @@ def document_page_nodes_and_edges(db_session: Session, db_doc: Am.Document, page
 
     edges = list(map(to_edge, suttas))
 
+    db_session.close()
+
     # Collect links from other nodes
 
     if distance > 1:
         for i in suttas:
-            (n, e) = sutta_nodes_and_edges(db_session=db_session, sutta=i, distance=distance - 1)
+            (n, e) = sutta_nodes_and_edges(sutta=i, distance=distance - 1)
             nodes.extend(n)
             edges.extend(e)
 
@@ -468,7 +485,8 @@ def _documents_and_pages_from_links(db_session: Session, links: List[Um.Link]) -
     return results
 
 
-def all_nodes_and_edges(db_session: Session):
+def all_nodes_and_edges():
+    _, _, db_session = get_db_engine_connection_session()
 
     links = []
     r = db_session.query(Am.Link).all()
@@ -479,6 +497,8 @@ def all_nodes_and_edges(db_session: Session):
     suttas = _suttas_from_links(db_session, links)
     words = _dict_words_from_links(db_session, links)
     documents_and_pages = _documents_and_pages_from_links(db_session, links)
+
+    db_session.close()
 
     nodes = []
     nodes.extend(list(map(sutta_to_node, suttas)))
@@ -704,7 +724,7 @@ def generate_graph(nodes,
 
     network_graph.node_renderer.data_source.selected.indices = selected_indices
 
-    network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code="""
+    js = """
 window.selected_info = [];
 
 var inds = cb_obj.indices;
@@ -734,7 +754,9 @@ if (window.selected_info.length > 0) {
     };
     fetch('%s', options);
 }
-""" % (messages_url,)))
+""" % (messages_url,)
+
+    network_graph.node_renderer.data_source.selected.js_on_change('indices', CustomJS(args=dict(source=source), code=js))
 
     text = """
 <style>

@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, Tuple
 
 from PyQt6.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
 from ..app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
@@ -17,7 +18,6 @@ from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, UDictWord
 
 from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
-from simsapa.app.helpers import get_db_engine_connection_session
 
 
 class GraphGenSignals(QObject):
@@ -69,11 +69,9 @@ class GraphGenerator(QRunnable):
     @pyqtSlot()
     def run(self):
         try:
-            _, _, self._db_session = get_db_engine_connection_session()
-
             if self.sutta is not None:
 
-                (nodes, edges) = sutta_nodes_and_edges(self._db_session, self.sutta, distance=self.distance)
+                (nodes, edges) = sutta_nodes_and_edges(self.sutta, distance=self.distance)
 
                 selected = []
                 for idx, n in enumerate(nodes):
@@ -81,7 +79,7 @@ class GraphGenerator(QRunnable):
                         selected.append(idx)
 
             elif self.dict_word is not None:
-                (nodes, edges) = dict_word_nodes_and_edges(self._db_session, self.dict_word, distance=self.distance)
+                (nodes, edges) = dict_word_nodes_and_edges(self.dict_word, distance=self.distance)
 
                 selected = []
                 for idx, n in enumerate(nodes):
@@ -89,7 +87,7 @@ class GraphGenerator(QRunnable):
                         selected.append(idx)
 
             else:
-                (nodes, edges) = all_nodes_and_edges(self._db_session)
+                (nodes, edges) = all_nodes_and_edges()
                 selected = []
 
             generate_graph(nodes,
@@ -145,7 +143,7 @@ class HasLinksSidebar:
         self.min_links_input.setMinimum(1)
         self.min_links_input.setValue(1)
 
-        def _show_graph(arg: Optional[Any] = None):
+        def _show_graph(_: Optional[Any] = None):
             # ignore the argument value, will read params somewhere else
             self.show_network_graph()
 
@@ -166,6 +164,12 @@ class HasLinksSidebar:
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
+
+        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+
         self.content_graph.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.content_graph.setHtml('')
         self.content_graph.show()
@@ -232,7 +236,6 @@ class HasLinksSidebar:
                                     messages_url: str):
 
         (nodes, edges) = document_page_nodes_and_edges(
-            db_session=self._app_data.db_session,
             db_doc=db_doc,
             page_number=file_doc._current_idx + 1,
             distance=3
