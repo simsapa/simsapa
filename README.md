@@ -18,7 +18,7 @@ On the first run, it downloads the application database and fulltext index.
 
 - [Install on Linux](docs/install-linux.md)
 - [Install on MacOS](docs/install-macos.md)
-- [Install on Windows](docs/install-macos.md)
+- [Install on Windows](docs/install-windows.md)
 - [Development: Running from Source](docs/development-running-from-source.md)
 
 ## Removing the Application Database

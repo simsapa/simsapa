@@ -20,5 +20,5 @@ Open Finder > Applications
 
 Right click on the Simsapa icon, and enable "Open using Rosetta"
 
-![Enable Rosetta](./macos-open-using-rosetta_crop.png)
+![Enable Rosetta](./images/macos-open-using-rosetta_crop.png)
 

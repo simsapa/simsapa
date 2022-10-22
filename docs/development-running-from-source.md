@@ -4,6 +4,9 @@
 - [Development: Running from Source](#development-running-from-source)
     - [Linux / MacOS Setup](#linux--macos-setup)
     - [Windows Setup](#windows-setup)
+        - [Install Python 3.9](#install-python-39)
+        - [Install Poetry](#install-poetry)
+        - [Download the Simsapa sources](#download-the-simsapa-sources)
     - [.env](#env)
     - [Editing application windows with Qt Designer](#editing-application-windows-with-qt-designer)
     - [Tests](#tests)
@@ -29,10 +32,6 @@ poetry shell
 
 ### Install Python 3.9
 
-![Windows Python Finished](images/windows-python-finished.png)
-
-Poetry shell doesn't work in Powershell
-
 Download the [Python 3.9.13 Windows Installer](https://www.python.org/downloads/release/python-3913/), use the link marked **Recommended** at the bottom of the page.
 
 Make sure to check **Add Python 3.9 to PATH**.
@@ -41,7 +40,7 @@ Make sure to check **Add Python 3.9 to PATH**.
 
 It is recommended to allow **Disable path length limit**.
 
-[Windows Python Finished](images/windows-python-finished.png)
+![Windows Python Finished](images/windows-python-finished.png)
 
 Open a **cmd.exe** terminal to test:
 
