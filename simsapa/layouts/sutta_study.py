@@ -4,7 +4,7 @@ import queue
 from functools import partial
 from ..app.db.search import SearchQuery, sutta_hit_to_search_result
 from simsapa.layouts.dictionary_queries import DictionaryQueries
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QTimer
@@ -25,6 +25,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
     sutta_one_layout: QVBoxLayout
     sutta_two_layout: QVBoxLayout
     dict_layout: QVBoxLayout
+    _show_sutta: Callable
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)

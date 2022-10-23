@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialo
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import get_update_info, show_work_in_progress
+from simsapa.app.helpers import get_app_update_info, get_db_update_info, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
@@ -342,21 +342,61 @@ class AppWindows:
 
         box.exec()
 
-    def show_update_message(self, parent = None):
+    def show_app_update_message(self, parent = None):
         if not self._app_data.app_settings.get('notify_about_updates'):
             return
 
-        update_info = get_update_info()
+        update_info = get_app_update_info()
         if update_info is None:
             return
 
         box = QMessageBox(parent)
         box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
-        box.setWindowTitle("Update Available")
+        box.setWindowTitle("Application Update Available")
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
         box.exec()
+
+    def show_db_update_message(self, parent = None):
+        if not self._app_data.app_settings.get('notify_about_updates'):
+            return
+
+        update_info = get_db_update_info()
+        if update_info is None:
+            return
+
+        # Db version must be compatible with app version.
+        # Major and minor version must agree, patch version means updated content.
+        #
+        # On first install, app should download latest compatible db version.
+        # On app startup, if obsolete db is found, delete it and show download window.
+        #
+        # An installed app should filter available db versions.
+        # Show db update notification only about compatible versions.
+        #
+        # App notifications will alert to new app version.
+        # When the new app is installed, it will remove old db and download a compatible version.
+
+        update_info['message'] += "<h3>This update is optional, and the download may take a while.</h3>"
+        update_info['message'] += "<h3>Download and update now?</h3>"
+
+        # Download update without deleting existing database.
+        # When the download is successful, delete old db and replace with new.
+        #
+        # Remove half-downloaded assets if download is cancelled.
+        # Remove half-downloaded assets if found on startup.
+
+        box = QMessageBox(parent)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(update_info['message'])
+        box.setWindowTitle("Database Update Available")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        reply = box.exec()
+
+        if reply == QMessageBox.StandardButton.Yes:
+            print("Go!")
 
     def _reindex_database_dialog(self, parent = None):
         show_work_in_progress()

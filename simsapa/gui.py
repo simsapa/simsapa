@@ -133,7 +133,8 @@ def start(splash_proc: Optional[Popen] = None):
 
     app_windows.show_startup_message()
 
-    app_windows.show_update_message()
+    app_windows.show_app_update_message()
+    app_windows.show_db_update_message()
 
     if splash_proc is not None:
         if splash_proc.poll() is None:

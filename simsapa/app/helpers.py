@@ -1,7 +1,7 @@
 from importlib import metadata
 from pathlib import Path
 import shutil
-from typing import Optional, Tuple, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 import requests
 import feedparser
 import semver
@@ -61,6 +61,35 @@ def download_file(url: str, folder_path: Path) -> Path:
 
     return file_path
 
+class Version(TypedDict):
+    major: int
+    minor: int
+    patch: int
+    alpha: Optional[int]
+
+def to_version(ver: str) -> Version:
+    # v0.1.7-alpha.5
+    m = re.match(r'^v*([0-9]+)\.([0-9]+)\.([0-9]+)', ver)
+    if m is None:
+        raise Exception('invalid version string')
+
+    major = int(m.group(1))
+    minor = int(m.group(2))
+    patch = int(m.group(3))
+
+    m = re.match(r'.*-alpha\.([0-9]+)$', ver)
+    if m is None:
+        alpha = None
+    else:
+        alpha = int(m.group(1))
+
+    return Version(
+        major=major,
+        minor=minor,
+        patch=patch,
+        alpha=alpha,
+    )
+
 def get_app_dev_version() -> Optional[str]:
 
     p = SIMSAPA_PACKAGE_DIR.joinpath('..').joinpath('pyproject.toml')
@@ -97,6 +126,16 @@ def get_app_version() -> Optional[str]:
 
     return ver
 
+def get_db_version() -> Optional[str]:
+    # TODO insert version to db when generating, and retreive here
+    # return a fixed value for now
+    ver = "v0.1.8-alpha.1"
+
+    # 'v' prefix is invalid semver string
+    # v0.1.7-alpha.1 -> 0.1.7-alpha.1
+    # ver = re.sub(r'^v', '', ver)
+    return ver
+
 def get_sys_version() -> str:
     return f"Python {sys.version}, Qt {QT_VERSION_STR}, PyQt {PYQT_VERSION_STR}"
 
@@ -104,7 +143,7 @@ class UpdateInfo(TypedDict):
     version: str
     message: str
 
-def get_update_info() -> Optional[UpdateInfo]:
+def get_app_update_info() -> Optional[UpdateInfo]:
     # Test if connection to github is working.
     try:
         requests.head("https://github.com/", timeout=5)
@@ -137,21 +176,132 @@ def get_update_info() -> Optional[UpdateInfo]:
         remote_version = _id_to_version(entry.id)
         content = entry.content[0]
 
-        app_version = get_app_version()
-        if app_version is None:
+        app_version_str = get_app_version()
+        if app_version_str is None:
             return None
 
         # if remote version is not greater, do nothing
-        if semver.compare(remote_version, app_version) != 1:
+        if semver.compare(remote_version, app_version_str) != 1:
             return None
 
-        message = f"<h1>An update is available</h1>"
-        message += f"<h2>{entry.title}</h2>"
+        message = f"<h1>An application update is available</h1>"
+        message += f"<h3>Current: {app_version_str}</h3>"
+        message += f"<h3>Available: {remote_version}</h3>"
         message += f"<p>Download from the <a href='{entry.link}'>Relases page</a></p>"
         message += f"<div>{content.value}</div>"
 
         return UpdateInfo(
             version = remote_version,
+            message = message,
+        )
+    except Exception as e:
+        logger.error(e)
+        return None
+
+def _id_to_version(id: str):
+    return re.sub(r'.*/([^/]+)$', r'\1', id).replace('v', '')
+
+def _is_version_stable(ver: str):
+    return not ('.dev' in ver or '.rc' in ver)
+
+def _is_entry_version_stable(x):
+    ver = _id_to_version(x.id)
+    return _is_version_stable(ver)
+
+class FeedEntry(TypedDict):
+    title: str
+    version: str
+    content: str
+
+def get_feed_entries(url: str, stable_only: bool = True) -> List[FeedEntry]:
+    try:
+        d = feedparser.parse(url)
+    except Exception as e:
+        raise e
+
+    if stable_only:
+        # filter entries with .dev or .rc version tags
+        a = list(filter(_is_entry_version_stable, d.entries))
+    else:
+        a = d.entries
+
+    def _to_entry(x) -> FeedEntry:
+        return FeedEntry(
+            title=x.title,
+            # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
+            version=_id_to_version(x.id),
+            content=x.content[0].value,
+        )
+
+    entries: List[FeedEntry] = list(map(_to_entry, a))
+
+    return entries
+
+def filter_compatible_db_entries(feed_entries: List[FeedEntry]) -> List[FeedEntry]:
+    s = get_app_version()
+    if s is None:
+        return []
+
+    app_version = to_version(s)
+
+    def _is_compat_entry(x: FeedEntry) -> bool:
+        v = to_version(x['version'])
+        return (v["major"] == app_version["major"] and v["minor"] == app_version["minor"])
+
+    compat_entries = list(filter(_is_compat_entry, feed_entries))
+
+    return compat_entries
+
+def get_db_update_info() -> Optional[UpdateInfo]:
+    # Test if connection to github is working.
+    try:
+        requests.head("https://github.com/", timeout=5)
+    except Exception as e:
+        logger.error("No Connection: Update info unavailable: %s" % e)
+        return None
+
+    try:
+        stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+
+        if len(stable_entries) == 0:
+            return None
+
+        db_version_str = get_db_version()
+        if db_version_str is None:
+            return None
+
+        db_version = to_version(db_version_str)
+
+        compat_entries = filter_compatible_db_entries(stable_entries)
+
+        if len(compat_entries) == 0:
+            return None
+
+        entry = compat_entries[0]
+
+        v = to_version(entry['version'])
+        # if patch number is less or equal, do nothing
+        if v['patch'] <= db_version['patch']:
+            # if remote has no alpha version, do nothing
+            if v['alpha'] is None:
+                return None
+            # if local does not have alpha version, that supersedes a remote alpha
+            # v0.1.8 > v0.1.8-alpha.1
+            if db_version['alpha'] is None:
+                return None
+            # if both local and remote has alpha version, but not greater, do nothing
+            if v['alpha'] <= db_version['alpha']:
+                return None
+
+        # Either patch number or alpha number is greater.
+
+        message = f"<h1>A database update is available</h1>"
+        message += f"<h3>Current: {db_version_str}</h3>"
+        message += f"<h3>Available: {entry['version']}</h3>"
+        message += f"<div>{entry['content']}</div>"
+
+        return UpdateInfo(
+            version = entry['version'],
             message = message,
         )
     except Exception as e:

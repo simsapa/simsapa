@@ -5,7 +5,7 @@ import queue
 import re
 
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
@@ -800,6 +800,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
     tabs_layout: QVBoxLayout
     selected_info: Any
     recent_list: QListWidget
+    _show_sutta: Callable
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)

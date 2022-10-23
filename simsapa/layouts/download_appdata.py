@@ -10,8 +10,9 @@ from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
 from PyQt6.QtGui import QMovie
+import requests
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -20,19 +21,12 @@ from sqlalchemy.orm.session import make_transient
 from simsapa.app.types import AppMessage
 
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import download_file, get_db_engine_connection_session
+from simsapa.app.helpers import download_file, filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
 
 from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
-ASSETS_VERSION = "v0.1.8-alpha.1"
-
-APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/appdata.tar.bz2"
-INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/index.tar.bz2"
-
-SANSKRIT_APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-appdata.tar.bz2"
-SANSKRIT_INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-index.tar.bz2"
 
 class DownloadAppdataWindow(QMainWindow):
     def __init__(self) -> None:
@@ -166,16 +160,61 @@ class DownloadAppdataWindow(QMainWindow):
 
 
     def _run_download(self):
+        # Retreive released asset versions from github.
+        # Filter for app-compatible db versions, major and minor version number must agree.
+
+        try:
+            requests.head("https://github.com/", timeout=5)
+        except Exception as e:
+            msg = "No connection, cannot download database: %s" % e
+            QMessageBox.information(self,
+                                    "No Connection",
+                                    msg,
+                                    QMessageBox.StandardButton.Ok)
+            logger.error(msg)
+            return
+
+        try:
+            stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+        except Exception as e:
+            msg = "Download failed: %s" % e
+            QMessageBox.information(self,
+                                    "Error",
+                                    msg,
+                                    QMessageBox.StandardButton.Ok)
+            logger.error(msg)
+            return
+
+        if len(stable_entries) == 0:
+            return
+
+        compat_entries = filter_compatible_db_entries(stable_entries)
+
+        if len(compat_entries) == 0:
+            return
+
+        version = compat_entries[0]["version"]
+
+        # ensure 'v' prefix
+        if version[0] != 'v':
+            version = 'v' + version
+
+        appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
+        index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
+
+        sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
+        sanskrit_index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-index.tar.bz2"
+
         # Default: General bundle
         urls = [
-            APPDATA_TAR_URL,
-            INDEX_TAR_URL,
+            appdata_tar_url,
+            index_tar_url,
         ]
 
         if self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked():
             urls = [
-                SANSKRIT_APPDATA_TAR_URL,
-                SANSKRIT_INDEX_TAR_URL,
+                sanskrit_appdata_tar_url,
+                sanskrit_index_tar_url,
             ]
 
         download_worker = Worker(urls)
