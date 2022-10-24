@@ -5,7 +5,8 @@ from functools import partial
 from pathlib import Path
 import shutil
 import tarfile
-from typing import List
+import threading
+from typing import List, Optional
 from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
@@ -21,7 +22,7 @@ from sqlalchemy.orm.session import make_transient
 from simsapa.app.types import AppMessage
 
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import download_file, filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
+from simsapa.app.helpers import filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
 
 from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
@@ -135,7 +136,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._quit_button.setFixedSize(100, 30)
 
         self._download_button.clicked.connect(partial(self._run_download))
-        self._quit_button.clicked.connect(partial(self.close))
+        self._quit_button.clicked.connect(partial(self._handle_quit))
 
         buttons_layout.addWidget(self._quit_button)
         buttons_layout.addWidget(self._download_button)
@@ -217,11 +218,11 @@ class DownloadAppdataWindow(QMainWindow):
                 sanskrit_index_tar_url,
             ]
 
-        download_worker = Worker(urls)
+        self.download_worker = Worker(urls)
 
-        download_worker.signals.finished.connect(self._download_finished)
+        self.download_worker.signals.finished.connect(self._download_finished)
 
-        self.thread_pool.start(download_worker)
+        self.thread_pool.start(self.download_worker)
 
         self.info_frame.hide()
 
@@ -235,6 +236,10 @@ class DownloadAppdataWindow(QMainWindow):
 
         self._msg.setText("Download completed.\n\nQuit and start the application again.")
 
+    def _handle_quit(self):
+        self.download_worker.download_stop.set()
+        self.close()
+
 
 class WorkerSignals(QObject):
     finished = pyqtSignal()
@@ -246,8 +251,9 @@ class Worker(QRunnable):
 
         self.signals = WorkerSignals()
 
-        self.urls = urls
+        self.download_stop = threading.Event()
 
+        self.urls = urls
 
     @pyqtSlot()
     def run(self):
@@ -275,9 +281,28 @@ class Worker(QRunnable):
         finally:
             self.signals.finished.emit()
 
+    def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
+
+        logger.info(f"download_file() : {url}, {folder_path}")
+        file_name = url.split('/')[-1]
+        file_path = folder_path.joinpath(file_name)
+
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(file_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    if self.download_stop.is_set():
+                        logger.info("Aborting download, removing partial file.")
+                        file_path.unlink()
+                        return None
+
+        return file_path
 
     def download_extract_tar_bz2(self, url) -> bool:
-        tar_file_path = download_file(url, ASSETS_DIR)
+        tar_file_path = self.download_file(url, ASSETS_DIR)
+        if tar_file_path is None:
+            return False
 
         tar = tarfile.open(tar_file_path, "r:bz2")
         temp_dir = ASSETS_DIR.joinpath('extract_temp')
