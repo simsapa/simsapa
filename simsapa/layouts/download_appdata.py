@@ -276,7 +276,9 @@ class Worker(QRunnable):
                 Path(i).unlink()
 
         except Exception as e:
-            logger.error("%s" % e)
+            # FIXME return error to download window and show the user
+            msg = "%s" % e
+            logger.error(msg)
 
         finally:
             self.signals.finished.emit()
@@ -287,20 +289,27 @@ class Worker(QRunnable):
         file_name = url.split('/')[-1]
         file_path = folder_path.joinpath(file_name)
 
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(file_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    if self.download_stop.is_set():
-                        logger.info("Aborting download, removing partial file.")
-                        file_path.unlink()
-                        return None
+        try:
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(file_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        if self.download_stop.is_set():
+                            logger.info("Aborting download, removing partial file.")
+                            file_path.unlink()
+                            return None
+        except Exception as e:
+            raise e
 
         return file_path
 
     def download_extract_tar_bz2(self, url) -> bool:
-        tar_file_path = self.download_file(url, ASSETS_DIR)
+        try:
+            tar_file_path = self.download_file(url, ASSETS_DIR)
+        except Exception as e:
+            raise e
+
         if tar_file_path is None:
             return False
 
