@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.functions import func
 
+from PyQt6 import QtWidgets
 from PyQt6.QtGui import QClipboard
 
 from simsapa import DbSchemaName, logger
@@ -23,6 +24,8 @@ from .db import userdata_models as Um
 from simsapa import APP_DB_PATH, USER_DB_PATH
 from simsapa.app.helpers import find_or_create_db
 
+QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
+QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]

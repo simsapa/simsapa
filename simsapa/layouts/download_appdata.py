@@ -5,21 +5,20 @@ from functools import partial
 from pathlib import Path
 import shutil
 import tarfile
+import requests
 import threading
 from typing import List, Optional
 from PyQt6 import QtWidgets
 
-from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
-from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
+from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
 from PyQt6.QtGui import QMovie
-import requests
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 
-from simsapa.app.types import AppMessage
+from simsapa.app.types import AppMessage, QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.helpers import filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
@@ -30,6 +29,8 @@ from simsapa.assets import icons_rc  # noqa: F401
 
 
 class DownloadAppdataWindow(QMainWindow):
+    _msg: QLabel
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Download Application Assets")
@@ -37,6 +38,8 @@ class DownloadAppdataWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self.thread_pool = QThreadPool()
+
+        self.download_worker = Worker()
 
         self._setup_ui()
 
@@ -47,17 +50,28 @@ class DownloadAppdataWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
-        self._layout.addItem(spacerItem)
+        spc1 = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc1)
+
+        self._setup_animation()
+
+        spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc2)
 
         self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
         self._setup_info_frame()
-        self._setup_animation()
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
+        spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc3)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.hide()
+        self._layout.addWidget(self._progress_bar)
+
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spacerItem)
 
         self._setup_buttons()
@@ -218,9 +232,17 @@ class DownloadAppdataWindow(QMainWindow):
                 sanskrit_index_tar_url,
             ]
 
-        self.download_worker = Worker(urls)
+        self.download_worker.urls = urls
 
-        self.download_worker.signals.finished.connect(self._download_finished)
+        self.download_worker.signals.msg_update.connect(partial(self._msg_update))
+
+        self.download_worker.signals.finished.connect(partial(self._download_finished))
+
+        self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
+        self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
+        self.download_worker.signals.download_max.connect(partial(self._download_max))
+
+        self._progress_bar.show()
 
         self.thread_pool.start(self.download_worker)
 
@@ -229,6 +251,11 @@ class DownloadAppdataWindow(QMainWindow):
         self.setup_animation()
         self.start_animation()
 
+    def _download_max(self):
+        self._progress_bar.setValue(self._progress_bar.maximum())
+
+    def _msg_update(self, msg: str):
+        self._msg.setText(msg)
 
     def _download_finished(self):
         self.stop_animation()
@@ -243,17 +270,23 @@ class DownloadAppdataWindow(QMainWindow):
 
 class WorkerSignals(QObject):
     finished = pyqtSignal()
+    msg_update = pyqtSignal(str)
+    set_total_progress = pyqtSignal(int)
+    set_current_progress = pyqtSignal(int)
+    download_max = pyqtSignal()
 
 
 class Worker(QRunnable):
-    def __init__(self, urls: List[str]):
+    urls: List[str]
+    signals: WorkerSignals
+    download_stop: threading.Event
+
+    def __init__(self):
         super(Worker, self).__init__()
 
         self.signals = WorkerSignals()
 
         self.download_stop = threading.Event()
-
-        self.urls = urls
 
     @pyqtSlot()
     def run(self):
@@ -291,10 +324,23 @@ class Worker(QRunnable):
 
         try:
             with requests.get(url, stream=True) as r:
+                chunk_size = 8192
+                read_bytes = 0
+                total_bytes = int(r.headers['Content-Length'])
+                self.signals.set_total_progress.emit(total_bytes)
+
+                total_mb = "%.2f" % (total_bytes / 1024 / 1024)
+
                 r.raise_for_status()
                 with open(file_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
+                    for chunk in r.iter_content(chunk_size=chunk_size):
                         f.write(chunk)
+                        read_bytes += chunk_size
+                        read_mb = "%.2f" % (read_bytes / 1024 / 1024)
+
+                        self.signals.set_current_progress.emit(read_bytes)
+                        self.signals.msg_update.emit(f"Downloading {file_name} ({read_mb} / {total_mb} MB) ...")
+
                         if self.download_stop.is_set():
                             logger.info("Aborting download, removing partial file.")
                             file_path.unlink()
@@ -302,6 +348,7 @@ class Worker(QRunnable):
         except Exception as e:
             raise e
 
+        self.signals.download_max.emit()
         return file_path
 
     def download_extract_tar_bz2(self, url) -> bool:
@@ -312,6 +359,9 @@ class Worker(QRunnable):
 
         if tar_file_path is None:
             return False
+
+        file_name = url.split('/')[-1]
+        self.signals.msg_update.emit(f"Extracting {file_name} ...")
 
         tar = tarfile.open(tar_file_path, "r:bz2")
         temp_dir = ASSETS_DIR.joinpath('extract_temp')
