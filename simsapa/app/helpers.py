@@ -142,6 +142,7 @@ def get_sys_version() -> str:
 class UpdateInfo(TypedDict):
     version: str
     message: str
+    visit_url: Optional[str]
 
 def get_app_update_info() -> Optional[UpdateInfo]:
     # Test if connection to github is working.
@@ -193,6 +194,7 @@ def get_app_update_info() -> Optional[UpdateInfo]:
         return UpdateInfo(
             version = remote_version,
             message = message,
+            visit_url = entry.link,
         )
     except Exception as e:
         logger.error(e)
@@ -303,6 +305,7 @@ def get_db_update_info() -> Optional[UpdateInfo]:
         return UpdateInfo(
             version = entry['version'],
             message = message,
+            visit_url = None,
         )
     except Exception as e:
         logger.error(e)

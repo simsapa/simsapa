@@ -1,9 +1,11 @@
 import os
+import sys
 from functools import partial
 import shutil
 from typing import List, Optional
 import queue
 import json
+import webbrowser
 
 from PyQt6.QtCore import QSize, QTimer, Qt
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
@@ -350,13 +352,17 @@ class AppWindows:
         if update_info is None:
             return
 
+        update_info['message'] += "<h3>Open page in the browser now?</h3>"
+
         box = QMessageBox(parent)
         box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
         box.setWindowTitle("Application Update Available")
-        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
-        box.exec()
+        reply = box.exec()
+        if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
+            webbrowser.open_new(update_info['visit_url'])
 
     def show_db_update_message(self, parent = None):
         if not self._app_data.app_settings.get('notify_about_updates'):
@@ -396,7 +402,7 @@ class AppWindows:
         reply = box.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            print("Go!")
+            self._redownload_database_dialog()
 
     def _reindex_database_dialog(self, parent = None):
         show_work_in_progress()
@@ -455,6 +461,9 @@ class AppWindows:
     def _quit_app(self):
         self._close_all_windows()
         self._app.quit()
+
+        logger.info("_quit_app() Exiting with status 0.")
+        sys.exit(0)
 
     def _set_notify_setting(self, view: QMainWindow):
         checked: bool = view.action_Notify_About_Updates.isChecked()
