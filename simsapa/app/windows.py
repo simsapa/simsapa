@@ -445,7 +445,7 @@ class AppWindows:
 
             # NOTE: Can't safely clear and remove indexes here. rmtree()
             # triggers an error on Windows about .seg files still being locked.
-            # The index will be removed when download_extract_appdata() runs on
+            # The index will be removed when download_extract_tar_bz2() runs on
             # the next run.
 
             self._quit_app()

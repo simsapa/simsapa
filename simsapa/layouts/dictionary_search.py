@@ -19,6 +19,7 @@ from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -685,6 +686,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data._save_app_settings()
         self._render_words(self._current_words)
 
+    def _show_search_result_sizes_dialog(self):
+        d = SearchResultSizesDialog(self._app_data, self)
+        if d.exec():
+            self.render_fulltext_page()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -748,3 +754,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Decrease_Text_Size \
             .triggered.connect(partial(self._decrease_text_size))
+
+        self.action_Search_Result_Sizes \
+            .triggered.connect(partial(self._show_search_result_sizes_dialog))

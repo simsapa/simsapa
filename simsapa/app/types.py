@@ -13,7 +13,7 @@ from sqlalchemy.sql.functions import func
 from PyQt6 import QtWidgets
 from PyQt6.QtGui import QClipboard
 
-from simsapa import DbSchemaName, logger
+from simsapa import IS_MAC, DbSchemaName, logger
 from simsapa.app.actions_manager import ActionsManager
 
 from .db.search import SearchIndexed
@@ -59,6 +59,22 @@ WindowNameToType = {
     "Links": WindowType.Links,
 }
 
+class SearchResultSizes(TypedDict):
+    header_height: int
+    snippet_length: int
+    snippet_font_size: int
+    snippet_min_height: int
+    snippet_max_height: int
+
+def default_search_result_sizes() -> SearchResultSizes:
+    return SearchResultSizes(
+        header_height = 20,
+        snippet_length = 500,
+        snippet_font_size = 10 if IS_MAC else 9,
+        snippet_min_height = 25,
+        snippet_max_height = 60,
+    )
+
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
@@ -72,6 +88,7 @@ class AppSettings(TypedDict):
     sutta_font_size: int
     sutta_max_width: int
     dictionary_font_size: int
+    search_result_sizes: SearchResultSizes
 
 # Message to show to the user.
 class AppMessage(TypedDict):
@@ -176,6 +193,7 @@ class AppData:
                 sutta_font_size = 22,
                 sutta_max_width = 75,
                 dictionary_font_size = 18,
+                search_result_sizes = default_search_result_sizes(),
             )
             self._save_app_settings()
 

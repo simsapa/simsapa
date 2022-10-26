@@ -20,6 +20,7 @@ from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
 from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -1042,6 +1043,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         self._app_data._save_app_settings()
         self.s._get_active_tab().render_sutta_content()
 
+    def _show_search_result_sizes_dialog(self):
+        d = SearchResultSizesDialog(self._app_data, self)
+        if d.exec() and self.s.enable_sidebar:
+            self._update_sidebar_fulltext(self.search_query.hits)
+
     def _show_import_suttas_dialog(self):
         d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
         if d.exec():
@@ -1155,3 +1161,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
 
         self.action_Remove_Imported_Suttas \
             .triggered.connect(partial(self._remove_imported_suttas))
+
+        self.action_Search_Result_Sizes \
+            .triggered.connect(partial(self._show_search_result_sizes_dialog))

@@ -1,11 +1,14 @@
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
-from simsapa import IS_MAC, DbSchemaName
+from simsapa import DbSchemaName
 
 from simsapa.app.db.search import SearchResult
+from simsapa.app.types import SearchResultSizes
 
 class SearchItemWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, sizes: SearchResultSizes, parent=None):
         super(SearchItemWidget, self).__init__(parent)
+
+        self.sizes = sizes
 
         self.layout: QVBoxLayout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -13,15 +16,15 @@ class SearchItemWidget(QWidget):
         self.top_info: QHBoxLayout = QHBoxLayout()
 
         self.title = QLabel()
-        self.title.setMaximumHeight(20)
+        self.title.setMaximumHeight(self.sizes["header_height"])
 
         self.author = QLabel()
-        self.author.setMaximumHeight(20)
+        self.author.setMaximumHeight(self.sizes["header_height"])
 
         self.details = QLabel()
-        self.details.setMaximumHeight(20)
+        self.details.setMaximumHeight(self.sizes["header_height"])
 
-        self.top_spacer = QSpacerItem(20, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.top_spacer = QSpacerItem(self.sizes["header_height"], 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.top_info.addWidget(self.title)
 
@@ -35,13 +38,10 @@ class SearchItemWidget(QWidget):
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
-        if IS_MAC:
-            self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 10pt;")
-        else:
-            self.snippet.setStyleSheet("font-family: DejaVu Sans; font-size: 9pt;")
+        self.snippet.setStyleSheet(f"font-family: DejaVu Sans; font-size: {sizes['snippet_font_size']}pt;")
 
-        self.snippet.setMinimumHeight(25)
-        self.snippet.setMaximumHeight(60)
+        self.snippet.setMinimumHeight(self.sizes["snippet_min_height"])
+        self.snippet.setMaximumHeight(self.sizes["snippet_max_height"])
         self.snippet.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.snippet.setContentsMargins(0, 0, 0, 0)
@@ -76,7 +76,8 @@ class SearchItemWidget(QWidget):
         snippet = r['snippet'].strip() \
                               .replace("\n", " ") \
                               .replace("  ", " ")
-        snippet = snippet[0:500]
+        n = self.sizes['snippet_length']
+        snippet = snippet[0:n]
         self.setSnippet(f"{style}<span class='wrap'>{snippet}</span>")
 
         details = ''
