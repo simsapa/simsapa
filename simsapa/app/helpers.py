@@ -145,6 +145,8 @@ class UpdateInfo(TypedDict):
     visit_url: Optional[str]
 
 def get_app_update_info() -> Optional[UpdateInfo]:
+    logger.info("get_app_update_info()")
+
     # Test if connection to github is working.
     try:
         requests.head("https://github.com/", timeout=5)
@@ -255,6 +257,8 @@ def filter_compatible_db_entries(feed_entries: List[FeedEntry]) -> List[FeedEntr
     return compat_entries
 
 def get_db_update_info() -> Optional[UpdateInfo]:
+    logger.info("get_db_update_info()")
+
     # Test if connection to github is working.
     try:
         requests.head("https://github.com/", timeout=5)

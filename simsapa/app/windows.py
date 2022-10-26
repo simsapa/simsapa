@@ -7,12 +7,12 @@ import queue
 import json
 import webbrowser
 
-from PyQt6.QtCore import QSize, QTimer, Qt
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import get_app_update_info, get_db_update_info, show_work_in_progress
+from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
@@ -44,6 +44,12 @@ class AppWindows:
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
+
+        self.thread_pool = QThreadPool()
+
+        self.check_updates_worker = CheckUpdatesWorker()
+        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
+        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
 
         self.word_scan_popup: Optional[WordScanPopup] = None
 
@@ -344,17 +350,14 @@ class AppWindows:
 
         box.exec()
 
-    def show_app_update_message(self, parent = None):
-        if not self._app_data.app_settings.get('notify_about_updates'):
-            return
+    def check_updates(self):
+        if self._app_data.app_settings.get('notify_about_updates'):
+            self.thread_pool.start(self.check_updates_worker)
 
-        update_info = get_app_update_info()
-        if update_info is None:
-            return
-
+    def show_app_update_message(self, update_info: UpdateInfo):
         update_info['message'] += "<h3>Open page in the browser now?</h3>"
 
-        box = QMessageBox(parent)
+        box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
         box.setWindowTitle("Application Update Available")
@@ -364,14 +367,7 @@ class AppWindows:
         if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
             webbrowser.open_new(update_info['visit_url'])
 
-    def show_db_update_message(self, parent = None):
-        if not self._app_data.app_settings.get('notify_about_updates'):
-            return
-
-        update_info = get_db_update_info()
-        if update_info is None:
-            return
-
+    def show_db_update_message(self, update_info: UpdateInfo):
         # Db version must be compatible with app version.
         # Major and minor version must agree, patch version means updated content.
         #
@@ -393,7 +389,7 @@ class AppWindows:
         # Remove half-downloaded assets if download is cancelled.
         # Remove half-downloaded assets if found on startup.
 
-        box = QMessageBox(parent)
+        box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
         box.setWindowTitle("Database Update Available")
@@ -582,3 +578,29 @@ class AppWindows:
             view.action_Dictionaries_Manager.setVisible(False)
             view.action_Document_Reader.setVisible(False)
             view.action_Library.setVisible(False)
+
+
+class WorkerSignals(QObject):
+    have_app_update = pyqtSignal(dict)
+    have_db_update = pyqtSignal(dict)
+
+class CheckUpdatesWorker(QRunnable):
+    signals: WorkerSignals
+
+    def __init__(self):
+        super(CheckUpdatesWorker, self).__init__()
+        self.signals = WorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            update_info = get_app_update_info()
+            if update_info is not None:
+                self.signals.have_app_update.emit(update_info)
+
+            update_info = get_db_update_info()
+            if update_info is not None:
+                self.signals.have_db_update.emit(update_info)
+
+        except Exception as e:
+            logger.error(e)
