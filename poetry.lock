@@ -162,11 +162,11 @@ colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
 [[package]]
 name = "colorama"
-version = "0.4.5"
+version = "0.4.6"
 description = "Cross-platform colored terminal text."
 category = "main"
 optional = false
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
 
 [[package]]
 name = "datetime"
@@ -212,7 +212,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "exceptiongroup"
-version = "1.0.0rc9"
+version = "1.0.0"
 description = "Backport of PEP 654 (exception groups)"
 category = "dev"
 optional = false
@@ -434,7 +434,7 @@ lingua = ["lingua"]
 
 [[package]]
 name = "marisa-trie"
-version = "0.7.7"
+version = "0.7.8"
 description = "Static memory-efficient and fast Trie-like structures for Python."
 category = "main"
 optional = false
@@ -607,7 +607,7 @@ full = ["PyICU", "PyYAML", "beautifulsoup4", "html5lib", "libzim", "lxml", "mari
 
 [[package]]
 name = "pyinstaller"
-version = "5.5"
+version = "5.6.1"
 description = "PyInstaller bundles a Python application and all its dependencies into a single package."
 category = "dev"
 optional = false
@@ -627,7 +627,7 @@ hook-testing = ["execnet (>=1.5.0)", "psutil", "pytest (>=2.7.3)"]
 
 [[package]]
 name = "pyinstaller-hooks-contrib"
-version = "2022.10"
+version = "2022.11"
 description = "Community maintained hooks for PyInstaller"
 category = "dev"
 optional = false
@@ -1137,7 +1137,7 @@ h11 = ">=0.9.0,<1"
 
 [[package]]
 name = "zipp"
-version = "3.9.0"
+version = "3.10.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
 category = "main"
 optional = false
@@ -1287,8 +1287,8 @@ click = [
     {file = "click-8.1.3.tar.gz", hash = "sha256:7682dc8afb30297001674575ea00d1814d808d6a36af415a82bd481d37ba7b8e"},
 ]
 colorama = [
-    {file = "colorama-0.4.5-py2.py3-none-any.whl", hash = "sha256:854bf444933e37f5824ae7bfc1e98d5bce2ebe4160d46b5edf346a89358e99da"},
-    {file = "colorama-0.4.5.tar.gz", hash = "sha256:e6c6b4334fc50988a639d9b98aa429a0b57da6e17b9a44f0451f930b6967b7a4"},
+    {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
+    {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
 ]
 datetime = [
     {file = "DateTime-4.7-py2.py3-none-any.whl", hash = "sha256:b8d2d605cfb5fed0da86f9ad64d0973c6f84b21939d49265e135811b33ee8113"},
@@ -1306,8 +1306,8 @@ et-xmlfile = [
     {file = "et_xmlfile-1.1.0.tar.gz", hash = "sha256:8eb9e2bc2f8c97e37a2dc85a09ecdcdec9d8a396530a6d5a33b30b9a92da0c5c"},
 ]
 exceptiongroup = [
-    {file = "exceptiongroup-1.0.0rc9-py3-none-any.whl", hash = "sha256:2e3c3fc1538a094aab74fad52d6c33fc94de3dfee3ee01f187c0e0c72aec5337"},
-    {file = "exceptiongroup-1.0.0rc9.tar.gz", hash = "sha256:9086a4a21ef9b31c72181c77c040a074ba0889ee56a7b289ff0afb0d97655f96"},
+    {file = "exceptiongroup-1.0.0-py3-none-any.whl", hash = "sha256:2ac84b496be68464a2da60da518af3785fff8b7ec0d090a581604bc870bdee41"},
+    {file = "exceptiongroup-1.0.0.tar.gz", hash = "sha256:affbabf13fb6e98988c38d9c5650e701569fe3c1de3233cfb61c5f33774690ad"},
 ]
 feedparser = [
     {file = "feedparser-6.0.10-py3-none-any.whl", hash = "sha256:79c257d526d13b944e965f6095700587f27388e50ea16fd245babe4dfae7024f"},
@@ -1512,42 +1512,69 @@ mako = [
     {file = "Mako-1.1.6.tar.gz", hash = "sha256:4e9e345a41924a954251b95b4b28e14a301145b544901332e658907a7464b6b2"},
 ]
 marisa-trie = [
-    {file = "marisa-trie-0.7.7.tar.gz", hash = "sha256:bbeafb7d92839dc221365340e79d012cb50ee48a1f3f30dd916eb35a8b93db00"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7732907dfc1cf954d840cd95e4f63a52c61a9f6e864a3104e0427c4845fcfe82"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:f86a718b4023904cf4a9e7ac1d967cb99b540ae05d081cf8b437129031f0845f"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:df23addeb641d3b6a80e4127a8f19074ebf1cbe9eb80206ee99e57da0f51e7f2"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:e1f51f814b81847eafc4b622188b453c9fae765ace812caf67da140a6d435f99"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:8863b9df15abd984d5faf11d129e626255468569ac2c7365519168d68f7dc7eb"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-win32.whl", hash = "sha256:5a53632478f839d2d02450ca2108350d983eb61319bb8da4c63d5f8e660ee8a0"},
-    {file = "marisa_trie-0.7.7-cp310-cp310-win_amd64.whl", hash = "sha256:65e9ae1c080587dffeec3dd2e7da88120ecb090e6cad2714a8da1a5a7e56ac4f"},
-    {file = "marisa_trie-0.7.7-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:62ca721b1be9aa2be1157b386be5dd55c0f78a7b92a25390a6fa663ed47ed222"},
-    {file = "marisa_trie-0.7.7-cp36-cp36m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:1c77def45f1daf6bec70af9667092e9d45457f15032a75b0921239792891faf7"},
-    {file = "marisa_trie-0.7.7-cp36-cp36m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:739178a8f98d7584d5613c59a0346273d8a95154b0bcb0eb0bd11d6514a61dff"},
-    {file = "marisa_trie-0.7.7-cp36-cp36m-win32.whl", hash = "sha256:64e76e9ed5c7b5929d9c598f343039f75ef4ae1881a8bb1b633d5fe624ae6b84"},
-    {file = "marisa_trie-0.7.7-cp36-cp36m-win_amd64.whl", hash = "sha256:8db8e511e2d3b42221de0ed95ed6288ad514df0f7f88d0813990ea871ccd0baf"},
-    {file = "marisa_trie-0.7.7-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:afa06ffe3a992de978582246550f3fe365cf3eaf0468b27e8cdf04ac2b5dbeeb"},
-    {file = "marisa_trie-0.7.7-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:55c99a3fd4025a5f428f83ba678912844014806f36684c8690deb59ca08c93af"},
-    {file = "marisa_trie-0.7.7-cp37-cp37m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:332ca107795dd67f21aafbc0141252dc33d1f8f1b4239cc7bb61b67cae33cf30"},
-    {file = "marisa_trie-0.7.7-cp37-cp37m-win32.whl", hash = "sha256:150bbc78b98135e9c43eee43ac548fe4393bd069213c5104555e5cc108df0546"},
-    {file = "marisa_trie-0.7.7-cp37-cp37m-win_amd64.whl", hash = "sha256:984ec658756a92d72e7bf664be02e6a1949a0e08658d5120e43fd26b9bd49187"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:e060334862ba425568478fdbae2ec6599a6e123ac2b4c946b50f5e3417ed2072"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:8ae6ef87610489f9b756916145550b99a1a87f672233111c20d7c9c91c3cf7b2"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:09bf4b0e2df7f07e5a59e2e07b6aa9ee781d48be7509eba11087bc2a8e1a94ad"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:8df910508422ea2b331d2ce41a2c96f26f110663efb4c318525eedccd7b103af"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:6a96100cc5cd6f50a1b02e20ece8dd05f476d1deb3062832259d87a6f4729ae4"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-win32.whl", hash = "sha256:d3d6e3174d9e9ed73ae9934b0c8e9c630a19a3182dca508825f44e3e5a1641cd"},
-    {file = "marisa_trie-0.7.7-cp38-cp38-win_amd64.whl", hash = "sha256:7c978f7959218610780770725eb5bd88451e42f97af47ee220c1ae802fb9e402"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:a0614aadb611e11c48d8d4d5710827e5b3a944ebfb4c51a999bfdde133dc4e9b"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:882ba0a90d961f93ec89b36c388dc0a6a7ffb871a6eb283a7a92485987212e22"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:9ab818dcd557a6d673bc1f12e1f2dc69e62dacfe7ad444e723410aa745882210"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:16e9147753f2a211f9674e7b866bc931566950a6695d89b0d92bab8f6f34fe2b"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:643fb52f6658ef9f77f66b736207acdd4d372272381a95b0ecdc20c98614f9ba"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-win32.whl", hash = "sha256:f2540463270999718dc434d733e172b0918541fe123460494e19bcc185dbaefe"},
-    {file = "marisa_trie-0.7.7-cp39-cp39-win_amd64.whl", hash = "sha256:a2638e9abd05b9b3cf19adfb30ac503e7fb32247b8defa97c9a5f09fa8330063"},
-    {file = "marisa_trie-0.7.7-pp37-pypy37_pp73-macosx_10_9_x86_64.whl", hash = "sha256:939c14a81c466ebbc0985d1ac2b8f167c52add5231789359e9262d6558be731c"},
-    {file = "marisa_trie-0.7.7-pp37-pypy37_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:197b41decda4865b9d6e24f3c0eccebf5804c89d7bbe35c77fee45dba3989c8a"},
-    {file = "marisa_trie-0.7.7-pp37-pypy37_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:b2e25ec564f51d67e4406cdb52cba4942ebce07cb93b959ddadafbbdcd8523b1"},
-    {file = "marisa_trie-0.7.7-pp37-pypy37_pp73-win_amd64.whl", hash = "sha256:37d121319813dbe9e9ff27f3a50ccff772d93296b27d6a8e32c08460827f477c"},
+    {file = "marisa-trie-0.7.8.tar.gz", hash = "sha256:aee3de5f2836074cfd803f1caf16f68390f262ef09cd7dc7d0e8aee9b6878643"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:2f1cf9d5ead4471b149fdb93a1c84eddaa941d23e67b0782091adc222d198a87"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:73296b4d6d8ce2f6bc3898fe84348756beddb10cb56442391d050bff135e9c4c"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:782c1515caa603656e15779bc61d5db3b079fa4270ad77f464908796e0d940aa"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:49131e51aad530e4d47c716cef1bbef15a4e5b8f75bddfcdd7903f5043ef2331"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:45b0a38e015d0149141f028b8892ab518946b828c7931685199549294f5893ca"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:a537e0efff1ec880bc212390e97f1d35832a44bd78c96807ddb685d538875096"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:5c2a33ede2655f1a6fb840729128cb4bc48829108711f79b7a645b6c0c54b5c2"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-win32.whl", hash = "sha256:7200cde8e2040811e98661a60463b296b76a6b224411f8899aa0850085e6af40"},
+    {file = "marisa_trie-0.7.8-cp310-cp310-win_amd64.whl", hash = "sha256:a432607bae139183c7251da7eb22f761440bc07d92eacc9e9f7dc0d87f70c495"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:a891d2841da153b98c6c7fbe0a89ea8edbc164bdc96a001f360bdcdd54e2070d"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:c9ab632c5caef23a59cd43c76ab59e325f9eadd1e9c8b1c34005b9756ae716ee"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:68087942e95acb5801f2a5e9a874aa57af27a4afb52aca81fe1cbe22b2a2fd38"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0ef2c4a5023bb6ddbaf1803187b7fb3108e9955aa9c60564504e5f622517c9e7"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:24e873619f61bef6a87c669ae459b79d98822270e8a10b21fc52dddf2acc9a46"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:34189c321f30cefb76a6b20c7f055b3f6cd0bc8378c16ba8b7283fd898bf4ac2"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:396555d5f52dc86c65717052573fa2875e10f9e5dd014f825677beadcaec8248"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-win32.whl", hash = "sha256:bfe649b02b6318bac572b86d9ddd8276c594411311f8e5ef2edc4bcd7285a06f"},
+    {file = "marisa_trie-0.7.8-cp311-cp311-win_amd64.whl", hash = "sha256:84991b52a187d09b269c4caefc8b857a81156c44997eec7eac0e2862d108cc20"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:0555104fe9f414abb12e967322a13df778b21958d1727470f4c8dedfde76a8f2"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f96531013252bca14f7665f67aa642be113b6c348ada5e167ebf8db27b1551b5"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:4ed76391b132c6261cfb402c1a08679e635d09a0a142dae2c1744d816f103c7f"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-musllinux_1_1_i686.whl", hash = "sha256:e6232506b4d66da932f70cf359a4c5ba9e086228ccd97b602159e90c6ea53dab"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-musllinux_1_1_x86_64.whl", hash = "sha256:34f927f2738d0b402b76821895254e6a164d5020042559f7d910f6632829cdfa"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-win32.whl", hash = "sha256:645908879ae8fcadfb51650fc176902b9e68eee9a8c4d4d8c682cf99ce3ff029"},
+    {file = "marisa_trie-0.7.8-cp36-cp36m-win_amd64.whl", hash = "sha256:a5bf2912810e135ce1e60a9b56a179ed62258306103bf5dd3186307f5c51b28f"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:bd86212d5037973deda057fc29d60e83dca05e68fa1e7ceaf014c513975c7a0d"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5f280f059be417cff81ac030db6a002f8a93093c7ca4555e570d43a24ed45514"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1ae35c696f3c5b57c5fe4f73725102f3fe884bc658b854d484dfe6d7e72c86f5"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-musllinux_1_1_i686.whl", hash = "sha256:524c02f398d361aaf85d8f7709b5ac6de68d020c588fb6c087fb171137643c13"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-musllinux_1_1_x86_64.whl", hash = "sha256:353113e811ccfa176fbb611b83671f0b3b40f46b3896b096c10e43f65d35916d"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-win32.whl", hash = "sha256:93172a7314d4d5993970dbafb746f23140d3abfa0d93cc174e766a302d125f7d"},
+    {file = "marisa_trie-0.7.8-cp37-cp37m-win_amd64.whl", hash = "sha256:579d69981b18f427bd8e540199c4de400a2bd4ae98e96c814a12cbf766e7029b"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:08858920d0e09ca07d239252884fd72db2abb56c35ff463145ffc9c1277a4f34"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:a1b4d07158a3f9b4e84ee709a1fa86b9e11f3dd3b1e6fc45493195105a029545"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:f0359f392679774d1ff014f12efdf48da5d661e6241531ff55a3ae5a72a1137e"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c1daaa8c38423fbd119db6654f92740d5ee40d1185a2bbc47afae6712b9ebfc"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:266bf4b6e00b4cff2b8618533919d38b883127f4e5c0af0e0bd78a042093dd99"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-musllinux_1_1_i686.whl", hash = "sha256:fd7e71d8d85d04d2a5d23611663b2d322b60c98c2edab7e9ef9a2019f7435c5b"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:66b13382be3c277f32143e6c814344118721c7954b2bfb57f5cfe93d17e63c9e"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-win32.whl", hash = "sha256:d75b5d642b3d1e47a0ab649fb5eb6bf3681a5e1d3793c8ea7546586ab72731fd"},
+    {file = "marisa_trie-0.7.8-cp38-cp38-win_amd64.whl", hash = "sha256:07c14c88fde8a0ac55139f9fe763dc0deabc4b7950047719ae986ca62135e1fb"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:c8df5238c7b29498f4ee24fd3ee25e0129b3c56beaed1dd1628bce0ebac8ec8c"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:db2bdc480d83a1a566b3a64027f9fb34eae98bfe45788c41a45e99d430cbf48a"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:80b22bdbebc3e6677e83db1352e4f6d478364107874c031a34a961437ead4e93"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6412c816be723a0f11dd41225a30a08182cf2b3b7b3c882c44335003bde47003"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6fcdb7f802db43857df3825c4c11acd14bb380deb961ff91e260950886531400"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:5cf04156f38dc46f0f14423f98559c5def7d83f3a30f8a580c27ad3b0311ce76"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:c53b1d02f4974ecb52c6e8c6f4f1dbf3a15e79bc3861f4ad48b14e4e77c82342"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-win32.whl", hash = "sha256:75317347f20bf05ab2ce5537a90989b1439b5e1752f558aad7b5d6b43194429b"},
+    {file = "marisa_trie-0.7.8-cp39-cp39-win_amd64.whl", hash = "sha256:82ba3caed5acfdff6a23d6881cc1927776b7320415261b6b24f48d0a190ab890"},
+    {file = "marisa_trie-0.7.8-pp37-pypy37_pp73-macosx_10_9_x86_64.whl", hash = "sha256:43abd082a21295b04859705b088d15acac8956587557680850e3149a79e36789"},
+    {file = "marisa_trie-0.7.8-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d0d891f0138e5aecc9c5afb7b0a57c758e22c5b5c7c0edb0a1f21ae933259815"},
+    {file = "marisa_trie-0.7.8-pp37-pypy37_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:9031184fe2215b591a6cdefe5d6d4901806fd7359e813c485a7ff25ea69d603c"},
+    {file = "marisa_trie-0.7.8-pp37-pypy37_pp73-win_amd64.whl", hash = "sha256:8ccb3ba8a2a589b8a7aed693d564f20a6d3bbbb552975f904ba311cea6b85706"},
+    {file = "marisa_trie-0.7.8-pp38-pypy38_pp73-macosx_10_9_x86_64.whl", hash = "sha256:f49a2cba047e643e5cd295d75de59f1df710c5e919cd376ac06ead513439881b"},
+    {file = "marisa_trie-0.7.8-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d37ea556bb99d9b0dfbe8fd6bdb17e91b91d04531be9e3b8b1b7b7f76ea55637"},
+    {file = "marisa_trie-0.7.8-pp38-pypy38_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:55a5aea422a4c0c9ef143d3703323f2a43b4a5315fc90bbb6e9ff18544b8d931"},
+    {file = "marisa_trie-0.7.8-pp38-pypy38_pp73-win_amd64.whl", hash = "sha256:d19f363b981fe9b4a302060a8088fd1f00906bc315db24f5d6726b5c309cc47e"},
+    {file = "marisa_trie-0.7.8-pp39-pypy39_pp73-macosx_10_9_x86_64.whl", hash = "sha256:e0d51c31fb41b6bc76c1abb7cf2d63a6e0ba7feffc96ea3d92b4d5084d71721a"},
+    {file = "marisa_trie-0.7.8-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:71ed6286e9d593dac035b8516e7ec35a1b54a7d9c6451a9319e918a8ef722714"},
+    {file = "marisa_trie-0.7.8-pp39-pypy39_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:cc1c1dca06c0fdcca5bb261a09eca2b3bcf41eaeb467caf600ac68e77d3ed2c0"},
+    {file = "marisa_trie-0.7.8-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:891be5569cd6e3a059c2de53d63251aaaef513d68e8d2181f71378f9cb69e1ab"},
 ]
 markupsafe = [
     {file = "MarkupSafe-2.1.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:86b1f75c4e7c2ac2ccdaec2b9022845dbb81880ca318bb7a0a01fbf7813e3812"},
@@ -1755,21 +1782,21 @@ pyglossary = [
     {file = "pyglossary-4.5.0.tar.gz", hash = "sha256:60314e89dc4b93a8293c115659ed4e09d384056509640d5ce01822bf9cf920be"},
 ]
 pyinstaller = [
-    {file = "pyinstaller-5.5-py3-none-macosx_10_13_universal2.whl", hash = "sha256:838e0a385355e55833f2ac62e75290f345d0b57bad53f08742c28a7cb96e91c8"},
-    {file = "pyinstaller-5.5-py3-none-manylinux2014_aarch64.whl", hash = "sha256:2a2fc8755b00cc1ea4d89bb81f8ada8c2afe0d13a7f7b35020e8a694d6882c9e"},
-    {file = "pyinstaller-5.5-py3-none-manylinux2014_i686.whl", hash = "sha256:94e947980c7d9b7e422f4af9885f12560cb546ee2017fb0f2c8af5a9a309c63f"},
-    {file = "pyinstaller-5.5-py3-none-manylinux2014_ppc64le.whl", hash = "sha256:5f8834af70a6e080ab4fe53ec2b8b4fdfcc0106bd8db7cc27da9a8973ecffe05"},
-    {file = "pyinstaller-5.5-py3-none-manylinux2014_s390x.whl", hash = "sha256:47a63d42ceb73355bf3afec51109ee3f5b3893f068be821a6735cada229ab680"},
-    {file = "pyinstaller-5.5-py3-none-manylinux2014_x86_64.whl", hash = "sha256:91c0947063f49b21476e374662f62b00d0cf5a97ad6851c12124280409aebbd1"},
-    {file = "pyinstaller-5.5-py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:9e8950c599847d15e7d7b8c18073fab267d7d3d41650a64c46278b97655076d3"},
-    {file = "pyinstaller-5.5-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:d902a9b669f90665a3abe5d0f176784fc3f2e1320d6c98df0bd1457c77ca706a"},
-    {file = "pyinstaller-5.5-py3-none-win32.whl", hash = "sha256:c7326298be50adcdf799e9b3f880543b925be7341cb1ac2a1e5b1a47b9dc3183"},
-    {file = "pyinstaller-5.5-py3-none-win_amd64.whl", hash = "sha256:d06378354b8d3d08309fddb230c813fc750848d71156274c15afdfedd56f57cf"},
-    {file = "pyinstaller-5.5.tar.gz", hash = "sha256:88993dfc6429dce8dd1f9a73c08e259af71dd3a227d3002ccb8e959151757dc3"},
+    {file = "pyinstaller-5.6.1-py3-none-macosx_10_13_universal2.whl", hash = "sha256:0465edb7a5b2bc74ac983d419fd980fd2e4c7d49f4c013edd4befb6ca70d3c2b"},
+    {file = "pyinstaller-5.6.1-py3-none-manylinux2014_aarch64.whl", hash = "sha256:556750250bba85cf7ede168994fe70fcdeeba8d22f51eaedfd94b3efb6faa6ce"},
+    {file = "pyinstaller-5.6.1-py3-none-manylinux2014_i686.whl", hash = "sha256:2abb74b008f01a8d9b54c27ea51aa6d59ea6137d507de9d580f79b934e0ca7b8"},
+    {file = "pyinstaller-5.6.1-py3-none-manylinux2014_ppc64le.whl", hash = "sha256:bb3faba1a29686e1c2d71a939bc6d1a57ca218d6968f43620591df42058635e0"},
+    {file = "pyinstaller-5.6.1-py3-none-manylinux2014_s390x.whl", hash = "sha256:b8dc59b00bc09053ed0476b47423373fafb8f4d57618e9eff7047cda8942e1c4"},
+    {file = "pyinstaller-5.6.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:14a0bb008966ba074e173f94b5bffd78a4d84e4a21fafc63c1b72851a40a918d"},
+    {file = "pyinstaller-5.6.1-py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:8c423556f0aac7651cda813db0d215c36c51717c4079e407136a4d9f730d38b0"},
+    {file = "pyinstaller-5.6.1-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:a64a5472ee36f63e773be63535817b6d8aea1c1cf9acd18858c22c66fe575043"},
+    {file = "pyinstaller-5.6.1-py3-none-win32.whl", hash = "sha256:fc734eb91e08c75fc7505170d765a49d781dad9e49dd641ebe4f8a82782f0be2"},
+    {file = "pyinstaller-5.6.1-py3-none-win_amd64.whl", hash = "sha256:ec9d9491681ac55e369a5226833694bf299ddeaeab6df4ef9d44758d4342f10a"},
+    {file = "pyinstaller-5.6.1.tar.gz", hash = "sha256:a7fac3fa8f75bce2839e0ab910baf0e935ff2b5f327c32aedade563e1b610967"},
 ]
 pyinstaller-hooks-contrib = [
-    {file = "pyinstaller-hooks-contrib-2022.10.tar.gz", hash = "sha256:e5edd4094175e78c178ef987b61be19efff6caa23d266ade456fc753e847f62e"},
-    {file = "pyinstaller_hooks_contrib-2022.10-py2.py3-none-any.whl", hash = "sha256:d1dd6ea059dc30e77813cc12a5efa8b1d228e7da8f5b884fe11775f946db1784"},
+    {file = "pyinstaller-hooks-contrib-2022.11.tar.gz", hash = "sha256:2e1870350bb9ef2e09c1c1bb30347eb3185c5ef38c040ed04190d6d0b4b5df62"},
+    {file = "pyinstaller_hooks_contrib-2022.11-py2.py3-none-any.whl", hash = "sha256:8db4064d9c127940455ec363bebbf74228be21cdafb44f7ea4f44cf434d9bcaa"},
 ]
 pykakasi = [
     {file = "pykakasi-2.2.1-py3-none-any.whl", hash = "sha256:f2d3d12a684314d7f317314499f5b0bec4a711eef4cfc963a2ca6f5c3d68f3b3"},
@@ -2142,8 +2169,8 @@ wsproto = [
     {file = "wsproto-1.2.0.tar.gz", hash = "sha256:ad565f26ecb92588a3e43bc3d96164de84cd9902482b130d0ddbaa9664a85065"},
 ]
 zipp = [
-    {file = "zipp-3.9.0-py3-none-any.whl", hash = "sha256:972cfa31bc2fedd3fa838a51e9bc7e64b7fb725a8c00e7431554311f180e9980"},
-    {file = "zipp-3.9.0.tar.gz", hash = "sha256:3a7af91c3db40ec72dd9d154ae18e008c69efe8ca88dde4f9a731bb82fe2f9eb"},
+    {file = "zipp-3.10.0-py3-none-any.whl", hash = "sha256:4fcb6f278987a6605757302a6e40e896257570d11c51628968ccb2a47e80c6c1"},
+    {file = "zipp-3.10.0.tar.gz", hash = "sha256:7a7262fd930bd3e36c50b9a64897aec3fafff3dfdeec9623ae22b40e93f99bb8"},
 ]
 zope-interface = [
     {file = "zope.interface-5.5.0-cp27-cp27m-macosx_10_14_x86_64.whl", hash = "sha256:2cb3003941f5f4fa577479ac6d5db2b940acb600096dd9ea9bf07007f5cab46f"},

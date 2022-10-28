@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12, windows-2022]
+        os: [windows-2022]
         python-version: ["3.9"]
       fail-fast: false
     defaults:
@@ -32,45 +32,17 @@ jobs:
       - name: Install Python libs
         run: |
           python -m pip install --upgrade pip
-
-      - name: Linux / Mac Install Poetry
-        if: runner.os != 'Windows'
-        run: curl -sSL https://install.python-poetry.org | python3 -
-
-      - name: Windows Install Poetry
-        if: runner.os == 'Windows'
-        run: (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
-
-      - name: Install Python deps, activate venv
-        run: |
-          poetry install
-          poetry shell
-
-      - name: Linux / Mac Build
-        if: runner.os != 'Windows'
-        run: ./pyinstaller-build.sh
+          pip install pyinstaller
+          pip install -r requirements.txt
 
       - name: Windows Build
         if: runner.os == 'Windows'
-        run: pyinstaller-build.bat
-
-      - name: Upload Artifact for Linux
-        uses: actions/upload-artifact@v2
-        if: runner.os == 'Linux'
-        with:
-          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.bin
-          path: 'dist/simsapa'
-
-      - name: Upload Artifact for MacOS
-        uses: actions/upload-artifact@v2
-        if: runner.os == 'MacOS'
-        with:
-          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.app
-          path: 'dist/simsapa'
+        run: |
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onefile -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.icns" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
 
       - name: Upload Artifact for Windows
         uses: actions/upload-artifact@v2
         if: runner.os == 'Windows'
         with:
           name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.exe
-          path: 'dist/simsapa.exe'
+          path: 'dist/Simsapa Dhamma Reader.exe'

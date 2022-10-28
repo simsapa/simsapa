@@ -23,7 +23,7 @@ from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
 import tomlkit
 
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QMessageBox
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 from .db import appdata_models as Am
@@ -469,3 +469,8 @@ def gretil_header_to_footer(body: str) -> str:
         main_text = body
 
     return main_text
+
+def make_active_window(view: QMainWindow):
+    view.show() # bring window to top on OSX
+    view.raise_() # bring window from minimized state on OSX
+    view.activateWindow() # bring window to front/unminimize on Windows

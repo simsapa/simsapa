@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialo
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, show_work_in_progress
+from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
@@ -92,12 +92,12 @@ class AppWindows:
     def open_sutta_new(self, uid: str):
         view = SuttaWindow(self._app_data, uid)
         self._windows.append(view)
-        view.show()
+        make_active_window(view)
 
     def open_words_new(self, schemas_ids: List[tuple[str, int]]):
         view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
-        view.show()
+        make_active_window(view)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -182,7 +182,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
@@ -206,7 +206,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
@@ -229,7 +229,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.dict_word_to_open:
             view._show_word(self._app_data.dict_word_to_open)
@@ -286,7 +286,7 @@ class AppWindows:
         view = MemosBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
-        view.show()
+        make_active_window(view)
         self._windows.append(view)
         return view
 
@@ -294,7 +294,7 @@ class AppWindows:
         view = LinksBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
-        view.show()
+        make_active_window(view)
         self._windows.append(view)
         return view
 
