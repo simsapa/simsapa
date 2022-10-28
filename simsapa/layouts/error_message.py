@@ -2,8 +2,8 @@ import sys
 from functools import partial
 import pyperclip
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
                              QPushButton, QLabel, QMainWindow, QSizePolicy)
 
 from simsapa import logger
@@ -69,7 +69,7 @@ class ErrorMessageWindow(QMainWindow):
 
             self._debug_info = QTextBrowser()
             self._debug_info.setText(debug_info)
-            self._debug_info.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self._debug_info.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             self._layout.addWidget(self._debug_info)
 
         buttons_layout = QHBoxLayout()

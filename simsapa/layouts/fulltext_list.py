@@ -1,10 +1,11 @@
 from functools import partial
 from typing import Callable, List
-from PyQt5.QtGui import QColor
+from PyQt6.QtGui import QColor
 
-from PyQt5.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox
+from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox
 
 from simsapa.app.db.search import SearchResult, SearchQuery
+from simsapa.app.types import AppData, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
 
 class HasFulltextList:
@@ -17,6 +18,7 @@ class HasFulltextList:
     fulltext_first_page_btn: QPushButton
     fulltext_page_input: QSpinBox
     search_query: SearchQuery
+    _app_data: AppData
     _results: List[SearchResult]
     _handle_query: Callable
     _handle_result_select: Callable
@@ -57,8 +59,10 @@ class HasFulltextList:
 
         colors = ["#ffffff", "#efefef"]
 
+        sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
+
         for idx, x in enumerate(self._results):
-            w = SearchItemWidget()
+            w = SearchItemWidget(sizes)
             w.setFromResult(x)
 
             item = QListWidgetItem(self.fulltext_list)

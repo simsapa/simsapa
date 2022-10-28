@@ -4,11 +4,11 @@ from pathlib import Path
 import queue
 import json
 
-from PyQt5.QtCore import Qt, QPoint, QRect, QUrl, QTimer
-from PyQt5.QtGui import QImage, QPixmap, QCloseEvent
-from PyQt5.QtWidgets import (QLabel, QMainWindow, QFileDialog, QInputDialog, QAction)
+from PyQt6.QtCore import Qt, QPoint, QRect, QUrl, QTimer
+from PyQt6.QtGui import QImage, QPixmap, QCloseEvent, QAction
+from PyQt6.QtWidgets import (QMainWindow, QFileDialog, QInputDialog)
 
-from simsapa import APP_QUEUES, GRAPHS_DIR, IS_WINDOWS, TIMER_SPEED, ApiAction, ApiMessage
+from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED, ApiAction, ApiMessage
 
 from ..app.file_doc import FileDoc, PageImage
 from ..app.db import appdata_models as Am

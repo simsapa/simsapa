@@ -7,12 +7,12 @@ import queue
 from functools import partial
 from typing import Any, List, Optional, Tuple
 
-from PyQt5.QtCore import QUrl, QTimer
-from PyQt5.QtGui import QCloseEvent, QColor
-from PyQt5.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
-                             QHBoxLayout, QPushButton, QSizePolicy, QAction, QMessageBox,
+from PyQt6.QtCore import QUrl, QTimer
+from PyQt6.QtGui import QCloseEvent, QColor, QAction
+from PyQt6.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
+                             QHBoxLayout, QPushButton, QSizePolicy, QMessageBox,
                              QComboBox, QSplitter, QVBoxLayout, QWidget)
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
@@ -139,7 +139,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
     def setup_content_graph(self):
         self.content_graph = QWebEngineView()
-        self.content_graph.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.content_graph.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.content_graph.setHtml(CLICK_GENERATE_HTML)
         self.content_graph.show()
         self.links_layout.addWidget(self.content_graph)
@@ -427,7 +427,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             QMessageBox.information(self,
                                     "Link Exists",
                                     "This link already exists.",
-                                    QMessageBox.Ok)
+                                    QMessageBox.StandardButton.Ok)
             return
 
         if self._current_from is None:
@@ -465,7 +465,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             QMessageBox.information(self,
                                     "Missing Information",
                                     "'From' and 'To' cannot be empty.",
-                                    QMessageBox.Ok)
+                                    QMessageBox.StandardButton.Ok)
             return False
 
         keys = ['table_name', 'db_id', 'page_number']
@@ -480,7 +480,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             QMessageBox.information(self,
                                     "Self-Reference",
                                     "'From' and 'To' cannot be the same.",
-                                    QMessageBox.Ok)
+                                    QMessageBox.StandardButton.Ok)
             return False
 
         return True
@@ -559,7 +559,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
             QMessageBox.information(self,
                                     "No Link Found",
                                     "No link was found with these properties.",
-                                    QMessageBox.Ok)
+                                    QMessageBox.StandardButton.Ok)
 
     def _select_prev_result(self):
         selected_idx = self.results_list.currentRow()

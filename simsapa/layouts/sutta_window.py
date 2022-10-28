@@ -1,7 +1,8 @@
 from typing import List, Optional
-from PyQt5.QtCore import QUrl
-from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
-from PyQt5.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtCore import QUrl
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineSettings
+from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa.layouts.html_content import html_page
@@ -87,10 +88,10 @@ class SuttaWindow(QMainWindow):
         qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Enable dev tools
-        qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
         return qwe
 

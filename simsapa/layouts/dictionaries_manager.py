@@ -10,9 +10,9 @@ import pandas
 from pyglossary import Glossary
 from sqlalchemy.sql import func
 
-from PyQt5.QtCore import QAbstractListModel, Qt
-from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtWidgets import (QLabel, QMainWindow,
+from PyQt6.QtCore import QAbstractListModel, Qt
+from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtWidgets import (QLabel, QMainWindow,
                              QMessageBox, QInputDialog, QFileDialog, QLineEdit)
 
 from simsapa import logger
@@ -306,9 +306,9 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         reply = QMessageBox.question(self,
                                      'Remove Dictionary Source...',
                                      'Remove this Dictionary source?',
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             self.remove_selected_dictionary_source()
 
     def _check_updates(self):

@@ -1,7 +1,6 @@
 from typing import List, Optional, TypedDict
-from PyQt5 import QtWidgets
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PyQt6.QtCore import pyqtSignal, QCoreApplication
+from PyQt6.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 import re
 from pathlib import Path
@@ -296,7 +295,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         ws: Worksheet = self.suttas_wb[names[0]]
         self.status_msg.setText("Importing...")
 
-        QtWidgets.qApp.processEvents()
+        QCoreApplication.processEvents()
 
         self.import_sheet(ws)
         self.accept()

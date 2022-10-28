@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-from PyQt5.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap
 import sys
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
 
 from simsapa import ICONS_DIR
 

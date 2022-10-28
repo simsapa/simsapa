@@ -2,11 +2,11 @@ from subprocess import Popen
 import sys
 import traceback
 from typing import Optional
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 import threading
 
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (QApplication, QSystemTrayIcon, QMenu, QAction)
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
 from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
@@ -46,7 +46,7 @@ def start(splash_proc: Optional[Popen] = None):
         dl_app = QApplication(sys.argv)
         w = DownloadAppdataWindow()
         w.show()
-        status = dl_app.exec_()
+        status = dl_app.exec()
         logger.info(f"main() Exiting with status {status}.")
         sys.exit(status)
 
@@ -82,7 +82,7 @@ def start(splash_proc: Optional[Popen] = None):
     if app_data.search_indexed.has_empty_index():
         w = CreateSearchIndexWindow()
         w.show()
-        status = app.exec_()
+        status = app.exec()
         logger.info(f"open_simsapa: {w.open_simsapa}")
         logger.info(f"app status: {status}")
         if not w.open_simsapa:
@@ -133,13 +133,13 @@ def start(splash_proc: Optional[Popen] = None):
 
     app_windows.show_startup_message()
 
-    app_windows.show_update_message()
+    app_windows.check_updates()
 
     if splash_proc is not None:
         if splash_proc.poll() is None:
             splash_proc.kill()
 
-    status = app.exec_()
+    status = app.exec()
 
     if hotkeys_manager is not None:
         hotkeys_manager.unregister_all_hotkeys()

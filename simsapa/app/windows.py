@@ -1,16 +1,18 @@
 import os
+import sys
 from functools import partial
 import shutil
 from typing import List, Optional
 import queue
 import json
+import webbrowser
 
-from PyQt5.QtCore import QSize, QTimer, Qt
-from PyQt5.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import get_update_info, show_work_in_progress
+from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
@@ -42,6 +44,12 @@ class AppWindows:
         self.timer = QTimer()
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
+
+        self.thread_pool = QThreadPool()
+
+        self.check_updates_worker = CheckUpdatesWorker()
+        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
+        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
 
         self.word_scan_popup: Optional[WordScanPopup] = None
 
@@ -84,12 +92,12 @@ class AppWindows:
     def open_sutta_new(self, uid: str):
         view = SuttaWindow(self._app_data, uid)
         self._windows.append(view)
-        view.show()
+        make_active_window(view)
 
     def open_words_new(self, schemas_ids: List[tuple[str, int]]):
         view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
-        view.show()
+        make_active_window(view)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -174,7 +182,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
@@ -198,7 +206,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.sutta_to_open:
             view._show_sutta(self._app_data.sutta_to_open)
@@ -221,7 +229,7 @@ class AppWindows:
             except Exception as e:
                 logger.error(e)
 
-        view.show()
+        make_active_window(view)
 
         if self._app_data.dict_word_to_open:
             view._show_word(self._app_data.dict_word_to_open)
@@ -278,7 +286,7 @@ class AppWindows:
         view = MemosBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
-        view.show()
+        make_active_window(view)
         self._windows.append(view)
         return view
 
@@ -286,7 +294,7 @@ class AppWindows:
         view = LinksBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
-        view.show()
+        make_active_window(view)
         self._windows.append(view)
         return view
 
@@ -333,30 +341,64 @@ class AppWindows:
 
         box = QMessageBox(parent)
         if msg['kind'] == 'warning':
-            box.setIcon(QMessageBox.Warning)
+            box.setIcon(QMessageBox.Icon.Warning)
         else:
-            box.setIcon(QMessageBox.Information)
+            box.setIcon(QMessageBox.Icon.Information)
         box.setText(msg['text'])
         box.setWindowTitle("Message")
-        box.setStandardButtons(QMessageBox.Ok)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
         box.exec()
 
-    def show_update_message(self, parent = None):
-        if not self._app_data.app_settings.get('notify_about_updates'):
-            return
+    def check_updates(self):
+        if self._app_data.app_settings.get('notify_about_updates'):
+            self.thread_pool.start(self.check_updates_worker)
 
-        update_info = get_update_info()
-        if update_info is None:
-            return
+    def show_app_update_message(self, update_info: UpdateInfo):
+        update_info['message'] += "<h3>Open page in the browser now?</h3>"
 
-        box = QMessageBox(parent)
-        box.setIcon(QMessageBox.Information)
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
-        box.setWindowTitle("Update Available")
-        box.setStandardButtons(QMessageBox.Ok)
+        box.setWindowTitle("Application Update Available")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
-        box.exec()
+        reply = box.exec()
+        if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
+            webbrowser.open_new(update_info['visit_url'])
+
+    def show_db_update_message(self, update_info: UpdateInfo):
+        # Db version must be compatible with app version.
+        # Major and minor version must agree, patch version means updated content.
+        #
+        # On first install, app should download latest compatible db version.
+        # On app startup, if obsolete db is found, delete it and show download window.
+        #
+        # An installed app should filter available db versions.
+        # Show db update notification only about compatible versions.
+        #
+        # App notifications will alert to new app version.
+        # When the new app is installed, it will remove old db and download a compatible version.
+
+        update_info['message'] += "<h3>This update is optional, and the download may take a while.</h3>"
+        update_info['message'] += "<h3>Download and update now?</h3>"
+
+        # Download update without deleting existing database.
+        # When the download is successful, delete old db and replace with new.
+        #
+        # Remove half-downloaded assets if download is cancelled.
+        # Remove half-downloaded assets if found on startup.
+
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(update_info['message'])
+        box.setWindowTitle("Database Update Available")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        reply = box.exec()
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self._redownload_database_dialog()
 
     def _reindex_database_dialog(self, parent = None):
         show_work_in_progress()
@@ -371,10 +413,10 @@ class AppWindows:
         reply = QMessageBox.question(parent,
                                      "Re-index the database",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             shutil.rmtree(INDEX_DIR)
             self._quit_app()
         '''
@@ -389,10 +431,10 @@ class AppWindows:
         reply = QMessageBox.question(parent,
                                      "Re-download the database and index",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self._app_data.db_session.commit()
             self._app_data.db_session.close_all()
             self._app_data.db_conn.close()
@@ -403,7 +445,7 @@ class AppWindows:
 
             # NOTE: Can't safely clear and remove indexes here. rmtree()
             # triggers an error on Windows about .seg files still being locked.
-            # The index will be removed when download_extract_appdata() runs on
+            # The index will be removed when download_extract_tar_bz2() runs on
             # the next run.
 
             self._quit_app()
@@ -415,6 +457,9 @@ class AppWindows:
     def _quit_app(self):
         self._close_all_windows()
         self._app.quit()
+
+        logger.info("_quit_app() Exiting with status 0.")
+        sys.exit(0)
 
     def _set_notify_setting(self, view: QMainWindow):
         checked: bool = view.action_Notify_About_Updates.isChecked()
@@ -533,3 +578,29 @@ class AppWindows:
             view.action_Dictionaries_Manager.setVisible(False)
             view.action_Document_Reader.setVisible(False)
             view.action_Library.setVisible(False)
+
+
+class WorkerSignals(QObject):
+    have_app_update = pyqtSignal(dict)
+    have_db_update = pyqtSignal(dict)
+
+class CheckUpdatesWorker(QRunnable):
+    signals: WorkerSignals
+
+    def __init__(self):
+        super(CheckUpdatesWorker, self).__init__()
+        self.signals = WorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            update_info = get_app_update_info()
+            if update_info is not None:
+                self.signals.have_app_update.emit(update_info)
+
+            update_info = get_db_update_info()
+            if update_info is not None:
+                self.signals.have_db_update.emit(update_info)
+
+        except Exception as e:
+            logger.error(e)

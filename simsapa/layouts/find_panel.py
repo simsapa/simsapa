@@ -1,9 +1,9 @@
 from functools import partial
-from PyQt5 import QtCore, QtWidgets, QtWebEngineWidgets
-from PyQt5.QtWebEngineWidgets import QWebEnginePage
+from PyQt6 import QtCore, QtWidgets, QtWebEngineCore
+from PyQt6.QtWebEngineCore import QWebEnginePage
 
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
 
 # Based on https://stackoverflow.com/a/54888872/195141
 
@@ -42,10 +42,10 @@ class FindPanel(QtWidgets.QWidget):
         self.search_input.returnPressed.connect(self.update_searching)
         self.closed.connect(self.search_input.clear)
 
-        ac_next = QShortcut(QKeySequence.FindNext, self)
+        ac_next = QShortcut(QKeySequence.StandardKey.FindNext, self)
         ac_next.activated.connect(partial(next_button.animateClick))
 
-        ac_prev = QShortcut(QKeySequence.FindPrevious, self)
+        ac_prev = QShortcut(QKeySequence.StandardKey.FindPrevious, self)
         ac_prev.activated.connect(partial(prev_button.animateClick))
 
         ac_esc = QShortcut(QKeySequence(QtCore.Qt.Key.Key_Escape), self.search_input)
@@ -56,10 +56,10 @@ class FindPanel(QtWidgets.QWidget):
         self.update_searching(QWebEnginePage.FindFlag.FindBackward) # type: ignore
 
     @QtCore.pyqtSlot()
-    def update_searching(self, direction=QtWebEngineWidgets.QWebEnginePage.FindFlag()):
+    def update_searching(self, direction=QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively):
         flag = direction
         if self.case_button.isChecked():
-            flag |= QtWebEngineWidgets.QWebEnginePage.FindFlag.FindCaseSensitively
+            flag |= QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively
         self.searched.emit(self.search_input.text(), flag)
 
     def showEvent(self, event):

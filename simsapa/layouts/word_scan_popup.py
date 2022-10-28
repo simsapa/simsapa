@@ -1,10 +1,10 @@
 from functools import partial
 import math
 from typing import List, Optional
-from PyQt5.QtCore import QPoint, QUrl, Qt
-from PyQt5.QtGui import QClipboard, QCloseEvent, QCursor, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import QCompleter, QDesktopWidget, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import QPoint, QUrl, Qt
+from PyQt6.QtGui import QClipboard, QCloseEvent, QCursor, QEnterEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -101,7 +101,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.qwe = QWebEngineView()
         self.qwe.setPage(ReaderWebEnginePage(self))
 
-        self.qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         msg = """
 <p>
@@ -198,7 +198,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
 
         self.fulltext_list = QListWidget(self.fulltext_tab)
-        self.fulltext_list.setFrameShape(QFrame.NoFrame)
+        self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
 
         self.fulltext_tab_layout.addLayout(self.fulltext_tab_inner_layout)
@@ -333,6 +333,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
 class WordScanPopup(QDialog):
+    oldPos: QPoint
+
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
         super().__init__()
 
@@ -448,12 +450,12 @@ class WordScanPopup(QDialog):
 
     def center(self):
         qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
+        cp = QScreen().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
     def mousePressEvent(self, e: QMouseEvent):
-        self.oldPos = e.globalPos()
+        self.oldPos = e.globalPosition().toPoint()
         self._left_pressed = (e.button() == Qt.MouseButton.LeftButton)
         # if e.button() == Qt.MouseButton.LeftButton:
         #     if self._resized:
@@ -487,9 +489,9 @@ class WordScanPopup(QDialog):
 
         return super().mouseMoveEvent(e)
 
-    def enterEvent(self, e):
+    def enterEvent(self, e: QEnterEvent):
         # prevent accumulated cursor shape bug
-        self.__set_cursor_shape_for_current_point(e.pos())
+        self.__set_cursor_shape_for_current_point(e.position().toPoint())
 
         if self.focus_input:
             self.s.search_input.setFocus()
@@ -497,11 +499,11 @@ class WordScanPopup(QDialog):
 
         return super().enterEvent(e)
 
-    def leaveEvent(self, e):
+    def leaveEvent(self, e: QEnterEvent):
         self.s.search_input.releaseKeyboard()
-        return super().enterEvent(e)
+        return super().leaveEvent(e)
 
-    def __set_cursor_shape_for_current_point(self, p):
+    def __set_cursor_shape_for_current_point(self, p: QPoint):
         # give the margin to reshape cursor shape
         rect = self.rect()
         rect.setX(self.rect().x() + self._margin)
@@ -552,16 +554,20 @@ class WordScanPopup(QDialog):
         self._resized = not self._resized
 
     def _resize(self, e: QMouseEvent):
-        delta = QPoint(e.globalPos() - self.oldPos)
+        p = e.globalPosition().toPoint()
+        p -= self.oldPos
+        delta = QPoint(p)
         size = self.rect()
         self.resize(size.width() + delta.x(),
                     size.height() + delta.y())
-        self.oldPos = e.globalPos()
+        self.oldPos = e.globalPosition().toPoint()
 
     def _move(self, e: QMouseEvent):
-        delta = QPoint(e.globalPos() - self.oldPos)
+        p = e.globalPosition().toPoint()
+        p -= self.oldPos
+        delta = QPoint(p)
         self.move(self.x() + delta.x(), self.y() + delta.y())
-        self.oldPos = e.globalPos()
+        self.oldPos = e.globalPosition().toPoint()
 
 
     def closeEvent(self, event: QCloseEvent):

@@ -608,6 +608,7 @@
     </property>
     <addaction name="action_Increase_Text_Size"/>
     <addaction name="action_Decrease_Text_Size"/>
+    <addaction name="action_Search_Result_Sizes"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
@@ -909,6 +910,11 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+-</string>
+   </property>
+  </action>
+  <action name="action_Search_Result_Sizes">
+   <property name="text">
+    <string>&amp;Search Result Sizes...</string>
    </property>
   </action>
  </widget>

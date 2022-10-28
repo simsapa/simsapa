@@ -6,18 +6,20 @@ import json
 import queue
 import re
 
-from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QUrl, QTimer
-from PyQt5.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QComboBox, QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow, QAction,
+from PyQt6 import QtCore
+from PyQt6.QtCore import Qt, QUrl, QTimer
+from PyQt6.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
-from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -224,16 +226,16 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.qwe = QWebEngineView()
         self.qwe.setPage(ReaderWebEnginePage(self))
 
-        self.qwe.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.qwe.setHtml(self.queries.render_html_page(body=''))
         self.qwe.show()
         self.content_layout.addWidget(self.qwe, 100)
 
         # Enable dev tools
-        self.qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -684,6 +686,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data._save_app_settings()
         self._render_words(self._current_words)
 
+    def _show_search_result_sizes_dialog(self):
+        d = SearchResultSizesDialog(self._app_data, self)
+        if d.exec():
+            self.render_fulltext_page()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -747,3 +754,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Decrease_Text_Size \
             .triggered.connect(partial(self._decrease_text_size))
+
+        self.action_Search_Result_Sizes \
+            .triggered.connect(partial(self._show_search_result_sizes_dialog))

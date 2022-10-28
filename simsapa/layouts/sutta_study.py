@@ -4,11 +4,11 @@ import queue
 from functools import partial
 from ..app.db.search import SearchQuery, sutta_hit_to_search_result
 from simsapa.layouts.dictionary_queries import DictionaryQueries
-from typing import List, Optional
+from typing import Callable, List, Optional
 
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QVBoxLayout, QWidget
+from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
@@ -25,6 +25,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
     sutta_one_layout: QVBoxLayout
     sutta_two_layout: QVBoxLayout
     dict_layout: QVBoxLayout
+    _show_sutta: Callable
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -99,7 +100,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.sutta_one_layout = QVBoxLayout(self.sutta_one_layout_widget)
         self.sutta_one_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.sutta_one_layout.addItem(spacer)
 
         self.sutta_one_searchbar_layout = QHBoxLayout()
@@ -126,7 +127,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.sutta_two_layout = QVBoxLayout(self.sutta_two_layout_widget)
         self.sutta_two_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.sutta_two_layout.addItem(spacer)
 
         self.main_layout.addWidget(self.splitter)
@@ -161,7 +162,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.dictionary_layout = QVBoxLayout(self.dictionary_layout_widget)
         self.dictionary_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
         self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)

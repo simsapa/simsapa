@@ -1,5 +1,5 @@
 from typing import Union
-from PyQt5.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from simsapa import DbSchemaName
 
@@ -40,7 +40,7 @@ class DictionarySelectDialog(QDialog):
             for i in self.appdata_checks:
                 self._layout.addWidget(i)
 
-        buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        buttons = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.buttonBox = QDialogButtonBox(buttons)
 
         self.buttonBox.accepted.connect(self._ok_pressed)

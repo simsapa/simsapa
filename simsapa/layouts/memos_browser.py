@@ -4,8 +4,8 @@ import requests
 from functools import partial
 from typing import List, Optional
 
-from PyQt5.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt5.QtWidgets import (QLabel, QLineEdit, QMainWindow,  QMessageBox)
+from PyQt6.QtCore import QAbstractListModel, Qt, QItemSelectionModel
+from PyQt6.QtWidgets import (QLabel, QLineEdit, QMainWindow,  QMessageBox)
 from sqlalchemy.sql import func
 
 from simsapa.assets import icons_rc  # noqa: F401
@@ -216,9 +216,9 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
         reply = QMessageBox.question(self,
                                      'Remove Memo...',
                                      'Remove this item?',
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             self.remove_selected_memo()
 
     def test_anki_live_or_notify(self) -> bool:
@@ -226,7 +226,7 @@ class MemosBrowserWindow(QMainWindow, Ui_MemosBrowserWindow):
             QMessageBox.information(self,
                                     "Anki is not connected",
                                     "Anki must be running with the AnkiConnect plugin.",
-                                    QMessageBox.Ok)
+                                    QMessageBox.StandardButton.Ok)
             return False
         return True
 

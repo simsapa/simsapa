@@ -1,11 +1,11 @@
 from functools import partial
 from typing import List, Optional
 import json
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
-from PyQt5.QtCore import Qt, QAbstractListModel, QItemSelectionModel
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
+from PyQt6.QtCore import Qt, QAbstractListModel, QItemSelectionModel
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
@@ -559,9 +559,9 @@ QListView::item:selected { background-color: %s; color: %s; }
         reply = QMessageBox.question(self, # type: ignore
                                      'Remove Memo...',
                                      'Remove this item?',
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             self.remove_selected_memo()
             self.update_memos_list()
 

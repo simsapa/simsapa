@@ -3,7 +3,7 @@ import epub_meta
 from PyPDF2 import PdfFileReader
 from typing import Optional, List
 
-from PyQt5.QtCore import QRect
+from PyQt6.QtCore import QRect
 
 try:
     import fitz

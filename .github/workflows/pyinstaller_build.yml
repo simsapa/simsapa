@@ -1,0 +1,48 @@
+name: PyInstaller Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v[0-9].*'
+
+jobs:
+  briefcase:
+    name: Bundle on ${{ matrix.os }} / ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-2022]
+        python-version: ["3.9"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install Python libs
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Windows Build
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onefile -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.icns" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
+
+      - name: Upload Artifact for Windows
+        uses: actions/upload-artifact@v2
+        if: runner.os == 'Windows'
+        with:
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.exe
+          path: 'dist/Simsapa Dhamma Reader.exe'

@@ -5,12 +5,13 @@ import queue
 import re
 
 from functools import partial
-from typing import Any, List, Optional
-from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import (QComboBox, QAction, QCompleter, QFrame, QHBoxLayout, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
-from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+from typing import Any, Callable, List, Optional
+from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from sqlalchemy.sql.elements import and_
 # from tomlkit import items
 
@@ -19,6 +20,7 @@ from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
 from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -147,7 +149,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
             return
 
         self.back_recent_button = QtWidgets.QPushButton()
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.back_recent_button.sizePolicy().hasHeightForWidth())
@@ -165,7 +167,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.forward_recent_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.forward_recent_button.sizePolicy().hasHeightForWidth())
@@ -181,7 +183,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.search_input = QtWidgets.QLineEdit()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
@@ -197,7 +199,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.search_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_button.sizePolicy().hasHeightForWidth())
@@ -214,7 +216,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self.search_extras = QtWidgets.QHBoxLayout()
         self.searchbar_layout.addLayout(self.search_extras)
 
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
 
         self.searchbar_layout.addItem(spacerItem)
 
@@ -259,10 +261,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Enable dev tools
-        qwe.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
         self._setup_qwe_context_menu(qwe)
 
@@ -799,6 +801,7 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
     tabs_layout: QVBoxLayout
     selected_info: Any
     recent_list: QListWidget
+    _show_sutta: Callable
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -1040,6 +1043,11 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         self._app_data._save_app_settings()
         self.s._get_active_tab().render_sutta_content()
 
+    def _show_search_result_sizes_dialog(self):
+        d = SearchResultSizesDialog(self._app_data, self)
+        if d.exec() and self.s.enable_sidebar:
+            self._update_sidebar_fulltext(self.search_query.hits)
+
     def _show_import_suttas_dialog(self):
         d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
         if d.exec():
@@ -1055,10 +1063,10 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         reply = QMessageBox.question(self,
                                      "Remove Imported Suttas",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             suttas = self._app_data.db_session.query(Um.Sutta).all()
 
             uids = list(map(lambda x: x.uid, suttas))
@@ -1085,10 +1093,10 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
         reply = QMessageBox.question(self,
                                      "Restart Simsapa",
                                      msg,
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self.action_Quit.activate(QAction.ActionEvent.Trigger)
 
     def _connect_signals(self):
@@ -1153,3 +1161,6 @@ class SuttaSearchWindow(QMainWindow, Ui_SuttaSearchWindow, HasLinksSidebar,
 
         self.action_Remove_Imported_Suttas \
             .triggered.connect(partial(self._remove_imported_suttas))
+
+        self.action_Search_Result_Sizes \
+            .triggered.connect(partial(self._show_search_result_sizes_dialog))

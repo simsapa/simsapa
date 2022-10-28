@@ -3,9 +3,9 @@ from functools import partial
 from typing import List, Optional
 from sqlalchemy.sql import func
 
-from PyQt5.QtCore import QAbstractListModel, Qt
-from PyQt5.QtGui import QIcon, QImage, QPixmap
-from PyQt5.QtWidgets import (QFileDialog, QLabel, QMainWindow,
+from PyQt6.QtCore import QAbstractListModel, Qt
+from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtWidgets import (QFileDialog, QLabel, QMainWindow,
                              QMessageBox)
 from simsapa.assets import icons_rc  # noqa: F401
 
@@ -255,9 +255,9 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         reply = QMessageBox.question(self,
                                      'Remove Document...',
                                      'Remove this item from the Library? (Files are NOT deleted.)',
-                                     QMessageBox.Yes | QMessageBox.No,
-                                     QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             self.remove_selected_document()
 
     def _connect_signals(self):

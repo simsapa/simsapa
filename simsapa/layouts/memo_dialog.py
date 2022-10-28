@@ -1,11 +1,11 @@
 import json
 from typing import Callable, List, Optional
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
-from PyQt5.QtCore import pyqtSignal, QItemSelectionModel
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtWidgets import (QHBoxLayout, QDialog, QListView, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget)
+from PyQt6.QtCore import pyqtSignal, QItemSelectionModel
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QListView, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget)
 
 from sqlalchemy.sql import func
 from simsapa.app.file_doc import FileDoc
@@ -137,7 +137,7 @@ class HasMemoDialog:
 
         d = MemoDialog(front_text, back_text)
         d.accepted.connect(self.set_memo_dialog_fields)
-        d.exec_()
+        d.exec()
 
         if self.memo_dialog_fields['Front'] == '' or self.memo_dialog_fields['Back'] == '':
             return
@@ -201,7 +201,7 @@ class HasMemoDialog:
 
         d = MemoDialog(text)
         d.accepted.connect(self.set_memo_dialog_fields)
-        d.exec_()
+        d.exec()
 
         if self.memo_dialog_fields['Front'] == '' or self.memo_dialog_fields['Back'] == '':
             return

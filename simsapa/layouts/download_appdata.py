@@ -5,36 +5,32 @@ from functools import partial
 from pathlib import Path
 import shutil
 import tarfile
-from typing import List
-from PyQt5 import QtWidgets
+import requests
+import threading
+from typing import List, Optional
+from PyQt6 import QtWidgets
 
-from PyQt5.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot
-from PyQt5.QtCore import QObject, pyqtSignal
-from PyQt5.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
-from PyQt5.QtGui import QMovie
+from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
+from PyQt6.QtGui import QMovie
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 
-from simsapa.app.types import AppMessage
+from simsapa.app.types import AppMessage, QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import download_file, get_db_engine_connection_session
+from simsapa.app.helpers import filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
 
 from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
 from simsapa.assets import icons_rc  # noqa: F401
 
-ASSETS_VERSION = "v0.1.8-alpha.1"
-
-APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/appdata.tar.bz2"
-INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/index.tar.bz2"
-
-SANSKRIT_APPDATA_TAR_URL  = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-appdata.tar.bz2"
-SANSKRIT_INDEX_TAR_URL    = f"https://github.com/simsapa/simsapa-assets/releases/download/{ASSETS_VERSION}/sanskrit-index.tar.bz2"
 
 class DownloadAppdataWindow(QMainWindow):
+    _msg: QLabel
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Download Application Assets")
@@ -42,6 +38,8 @@ class DownloadAppdataWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self.thread_pool = QThreadPool()
+
+        self.download_worker = Worker()
 
         self._setup_ui()
 
@@ -52,17 +50,28 @@ class DownloadAppdataWindow(QMainWindow):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
-        self._layout.addItem(spacerItem)
+        spc1 = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc1)
+
+        self._setup_animation()
+
+        spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc2)
 
         self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
         self._setup_info_frame()
-        self._setup_animation()
 
-        spacerItem = QtWidgets.QSpacerItem(20, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding)
+        spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(spc3)
+
+        self._progress_bar = QProgressBar()
+        self._progress_bar.hide()
+        self._layout.addWidget(self._progress_bar)
+
+        spacerItem = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spacerItem)
 
         self._setup_buttons()
@@ -70,8 +79,8 @@ class DownloadAppdataWindow(QMainWindow):
 
     def _setup_info_frame(self):
         frame = QFrame()
-        frame.setFrameShape(QtWidgets.QFrame.NoFrame)
-        frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         frame.setLineWidth(0)
 
         self.info_frame = frame
@@ -141,7 +150,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._quit_button.setFixedSize(100, 30)
 
         self._download_button.clicked.connect(partial(self._run_download))
-        self._quit_button.clicked.connect(partial(self.close))
+        self._quit_button.clicked.connect(partial(self._handle_quit))
 
         buttons_layout.addWidget(self._quit_button)
         buttons_layout.addWidget(self._download_button)
@@ -166,29 +175,87 @@ class DownloadAppdataWindow(QMainWindow):
 
 
     def _run_download(self):
+        # Retreive released asset versions from github.
+        # Filter for app-compatible db versions, major and minor version number must agree.
+
+        try:
+            requests.head("https://github.com/", timeout=5)
+        except Exception as e:
+            msg = "No connection, cannot download database: %s" % e
+            QMessageBox.information(self,
+                                    "No Connection",
+                                    msg,
+                                    QMessageBox.StandardButton.Ok)
+            logger.error(msg)
+            return
+
+        try:
+            stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+        except Exception as e:
+            msg = "Download failed: %s" % e
+            QMessageBox.information(self,
+                                    "Error",
+                                    msg,
+                                    QMessageBox.StandardButton.Ok)
+            logger.error(msg)
+            return
+
+        if len(stable_entries) == 0:
+            return
+
+        compat_entries = filter_compatible_db_entries(stable_entries)
+
+        if len(compat_entries) == 0:
+            return
+
+        version = compat_entries[0]["version"]
+
+        # ensure 'v' prefix
+        if version[0] != 'v':
+            version = 'v' + version
+
+        appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
+        index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
+
+        sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
+        sanskrit_index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-index.tar.bz2"
+
         # Default: General bundle
         urls = [
-            APPDATA_TAR_URL,
-            INDEX_TAR_URL,
+            appdata_tar_url,
+            index_tar_url,
         ]
 
         if self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked():
             urls = [
-                SANSKRIT_APPDATA_TAR_URL,
-                SANSKRIT_INDEX_TAR_URL,
+                sanskrit_appdata_tar_url,
+                sanskrit_index_tar_url,
             ]
 
-        download_worker = Worker(urls)
+        self.download_worker.urls = urls
 
-        download_worker.signals.finished.connect(self._download_finished)
+        self.download_worker.signals.msg_update.connect(partial(self._msg_update))
 
-        self.thread_pool.start(download_worker)
+        self.download_worker.signals.finished.connect(partial(self._download_finished))
+
+        self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
+        self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
+        self.download_worker.signals.download_max.connect(partial(self._download_max))
+
+        self._progress_bar.show()
+
+        self.thread_pool.start(self.download_worker)
 
         self.info_frame.hide()
 
         self.setup_animation()
         self.start_animation()
 
+    def _download_max(self):
+        self._progress_bar.setValue(self._progress_bar.maximum())
+
+    def _msg_update(self, msg: str):
+        self._msg.setText(msg)
 
     def _download_finished(self):
         self.stop_animation()
@@ -196,19 +263,30 @@ class DownloadAppdataWindow(QMainWindow):
 
         self._msg.setText("Download completed.\n\nQuit and start the application again.")
 
+    def _handle_quit(self):
+        self.download_worker.download_stop.set()
+        self.close()
+
 
 class WorkerSignals(QObject):
     finished = pyqtSignal()
+    msg_update = pyqtSignal(str)
+    set_total_progress = pyqtSignal(int)
+    set_current_progress = pyqtSignal(int)
+    download_max = pyqtSignal()
 
 
 class Worker(QRunnable):
-    def __init__(self, urls: List[str]):
+    urls: List[str]
+    signals: WorkerSignals
+    download_stop: threading.Event
+
+    def __init__(self):
         super(Worker, self).__init__()
 
         self.signals = WorkerSignals()
 
-        self.urls = urls
-
+        self.download_stop = threading.Event()
 
     @pyqtSlot()
     def run(self):
@@ -231,14 +309,59 @@ class Worker(QRunnable):
                 Path(i).unlink()
 
         except Exception as e:
-            logger.error("%s" % e)
+            # FIXME return error to download window and show the user
+            msg = "%s" % e
+            logger.error(msg)
 
         finally:
             self.signals.finished.emit()
 
+    def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
+
+        logger.info(f"download_file() : {url}, {folder_path}")
+        file_name = url.split('/')[-1]
+        file_path = folder_path.joinpath(file_name)
+
+        try:
+            with requests.get(url, stream=True) as r:
+                chunk_size = 8192
+                read_bytes = 0
+                total_bytes = int(r.headers['Content-Length'])
+                self.signals.set_total_progress.emit(total_bytes)
+
+                total_mb = "%.2f" % (total_bytes / 1024 / 1024)
+
+                r.raise_for_status()
+                with open(file_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        f.write(chunk)
+                        read_bytes += chunk_size
+                        read_mb = "%.2f" % (read_bytes / 1024 / 1024)
+
+                        self.signals.set_current_progress.emit(read_bytes)
+                        self.signals.msg_update.emit(f"Downloading {file_name} ({read_mb} / {total_mb} MB) ...")
+
+                        if self.download_stop.is_set():
+                            logger.info("Aborting download, removing partial file.")
+                            file_path.unlink()
+                            return None
+        except Exception as e:
+            raise e
+
+        self.signals.download_max.emit()
+        return file_path
 
     def download_extract_tar_bz2(self, url) -> bool:
-        tar_file_path = download_file(url, ASSETS_DIR)
+        try:
+            tar_file_path = self.download_file(url, ASSETS_DIR)
+        except Exception as e:
+            raise e
+
+        if tar_file_path is None:
+            return False
+
+        file_name = url.split('/')[-1]
+        self.signals.msg_update.emit(f"Extracting {file_name} ...")
 
         tar = tarfile.open(tar_file_path, "r:bz2")
         temp_dir = ASSETS_DIR.joinpath('extract_temp')
