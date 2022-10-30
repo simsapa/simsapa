@@ -51,11 +51,13 @@ Python 3.9.13
 
 ### Install Poetry
 
-Open a **Powershell** terminal, copy and run the [Poetry setup script](https://python-poetry.org/docs/).
+Open a terminal:
 
-The script will print the poetry bin folder location. Open the Windows **Environment Variables** menu and add this folder to the PATH variable.
+```
+python -m pip install poetry
+```
 
-Open a **cmd.exe** terminal to test:
+Test the command:
 
 ```
 poetry --version

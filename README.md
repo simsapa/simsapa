@@ -27,16 +27,16 @@ The Simsapa application database (where the suttas, dictionaries, etc. are store
 
 Use the terminal to remove the applications local data folder:
 
-**MacOS:**
-
-``` shell
-rm -r ~/Library/Application\ Support/simsapa
-```
-
 **Linux:**
 
 ``` shell
 rm -r ~/.local/share/simsapa
+```
+
+**MacOS:**
+
+``` shell
+rm -r ~/Library/Application\ Support/simsapa
 ```
 
 **Windows:**
