@@ -5,7 +5,7 @@ from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import Qt, QAbstractListModel, QItemSelectionModel
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
+from PyQt6.QtWidgets import QListView, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
@@ -30,7 +30,7 @@ class MemoPlainListModel(QAbstractListModel):
             text = text[0:150] + " ..."
             return text
 
-    def rowCount(self, index):
+    def rowCount(self, _):
         if self.memos:
             return len(self.memos)
         else:

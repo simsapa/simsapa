@@ -8,8 +8,8 @@ import re
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import Qt, QUrl, QTimer
-from PyQt6.QtGui import QIcon, QKeySequence, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLabel, QLineEdit, QListWidget, QMainWindow,
+from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget, QMainWindow,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
