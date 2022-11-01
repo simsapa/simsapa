@@ -1,12 +1,12 @@
 from functools import partial
 import math
 from typing import List, Optional
-from PyQt6.QtCore import QPoint, QUrl, Qt
+from PyQt6.QtCore import QPoint, QTimer, QUrl, Qt
 from PyQt6.QtGui import QClipboard, QCloseEvent, QCursor, QEnterEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -27,6 +27,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _clipboard: Optional[QClipboard]
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
+    _search_timer = QTimer()
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -318,13 +319,23 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self._handle_query(min_length=4)
             self._handle_exact_query(min_length=4)
 
+    def _user_typed(self):
+        if not self._search_timer.isActive():
+            self._search_timer = QTimer()
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
+            self._search_timer.setSingleShot(True)
+
+        self._search_timer.start(SEARCH_TIMER_SPEED)
+
     def _connect_signals(self):
         if self._clipboard is not None:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_input.textEdited.connect(partial(self._user_typed))
+
+        # FIXME is this useful? completion appears regardless.
+        #self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 

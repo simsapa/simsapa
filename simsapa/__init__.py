@@ -30,6 +30,8 @@ TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
 TIMER_SPEED = 50
 
+SEARCH_TIMER_SPEED = 500
+
 s = os.getenv('USE_TEST_DATA')
 if s is not None and s.lower() == 'true':
     ASSETS_DIR = TEST_ASSETS_DIR

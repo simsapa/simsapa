@@ -3,7 +3,7 @@ import json
 import os
 import os.path
 from pathlib import Path
-from typing import List, Optional, TypedDict, Union
+from typing import Callable, List, Optional, TypedDict, Union
 from PyQt6.QtCore import QThreadPool
 
 from sqlalchemy import create_engine
@@ -11,7 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.functions import func
 
 from PyQt6 import QtWidgets
-from PyQt6.QtGui import QClipboard
+from PyQt6.QtGui import QAction, QClipboard
+from PyQt6.QtWidgets import QFrame
 
 from simsapa import IS_MAC, DbSchemaName, logger
 from simsapa.app.actions_manager import ActionsManager
@@ -248,3 +249,19 @@ class AppData:
         find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
         return USER_DB_PATH
 
+
+class SuttaSearchWindowMeta():
+    addToolBar: Callable
+    _update_sidebar_fulltext: Callable
+    _set_recent_list: Callable
+    show_network_graph: Callable
+    update_memos_list_for_sutta: Callable
+    _lookup_selection_in_suttas: Callable
+    _lookup_selection_in_dictionary: Callable
+    _select_next_recent: Callable
+    _select_prev_recent: Callable
+
+    palibuttons_frame: QFrame
+    action_Dictionary_Search: QAction
+    action_Show_Related_Suttas: QAction
+    action_Find_in_Page: QAction

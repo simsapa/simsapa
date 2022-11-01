@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidg
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
+from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
@@ -49,6 +49,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
     selected_info: Any
+    _search_timer = QTimer()
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -691,13 +692,23 @@ QWidget:focus { border: 1px solid #1092C3; }
         if d.exec():
             self.render_fulltext_page()
 
+    def _user_typed(self):
+        if not self._search_timer.isActive():
+            self._search_timer = QTimer()
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
+            self._search_timer.setSingleShot(True)
+
+        self._search_timer.start(SEARCH_TIMER_SPEED)
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_input.textEdited.connect(partial(self._user_typed))
+
+        # FIXME is this useful? completion appears regardless.
+        # self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 

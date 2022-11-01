@@ -13,13 +13,13 @@ from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QV
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 
-from ..app.types import AppData, USutta
+from ..app.types import AppData, SuttaSearchWindowMeta, USutta
 from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 from .word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
+class SuttaStudyWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
     sutta_one_layout: QVBoxLayout

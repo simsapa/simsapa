@@ -3,7 +3,7 @@ import re
 from functools import partial
 from typing import Any, List, Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -11,19 +11,18 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from sqlalchemy.sql.elements import and_
 # from tomlkit import items
 
-from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db.search import SearchResult, SearchQuery, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, UDictWord
+from ..app.types import AppData, USutta, UDictWord, SuttaSearchWindowMeta
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
 from .help_info import setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
-from .sutta_search import SuttaSearchWindow
 
 class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
@@ -40,10 +39,11 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
     sutta_tabs: QTabWidget
     sutta_tab: SuttaTabWidget
     _related_tabs: List[SuttaTabWidget]
+    _search_timer = QTimer()
 
     def __init__(self,
                  app_data: AppData,
-                 parent_window: SuttaSearchWindow,
+                 parent_window: SuttaSearchWindowMeta,
                  searchbar_layout: Optional[QHBoxLayout],
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],
@@ -760,11 +760,21 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
 
+    def _user_typed(self):
+        if not self._search_timer.isActive():
+            self._search_timer = QTimer()
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
+            self._search_timer.setSingleShot(True)
+
+        self._search_timer.start(SEARCH_TIMER_SPEED)
+
     def _connect_signals(self):
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
+        self.search_input.textEdited.connect(partial(self._user_typed))
         # NOTE search_input.returnPressed removes the selected completion and uses the typed query
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+
+        # FIXME is this useful? completion appears regardless.
+        #self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         if self.enable_sidebar:
             self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
