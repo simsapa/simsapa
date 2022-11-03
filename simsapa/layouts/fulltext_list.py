@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, Q
 from simsapa.app.db.search import SearchResult, SearchQuery
 from simsapa.app.types import AppData, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
+from simsapa.layouts.sutta_search_window_state import SearchQueryWorker, SuttaSearchWindowState
 
 class HasFulltextList:
     features: List[str]
@@ -17,12 +18,13 @@ class HasFulltextList:
     fulltext_last_page_btn: QPushButton
     fulltext_first_page_btn: QPushButton
     fulltext_page_input: QSpinBox
-    search_query: SearchQuery
     _app_data: AppData
     _results: List[SearchResult]
     _handle_query: Callable
     _handle_result_select: Callable
     page_len: int
+    query_hits: Callable
+    highlight_results_page: Callable
 
     def init_fulltext_list(self):
         self.features.append('fulltext_list')
@@ -43,18 +45,18 @@ class HasFulltextList:
         page_start = page_num * self.page_len
 
         page_end = page_start + self.page_len
-        if page_end > self.search_query.hits:
-            page_end = self.search_query.hits
+        if page_end > self.query_hits():
+            page_end = self.query_hits()
 
         self.fulltext_list.clear()
 
-        if self.search_query.hits == 0:
+        if self.query_hits() == 0:
             self.fulltext_label.clear()
             return
 
-        self._results = self.search_query.highlight_results_page(page_num)
+        self._results = self.highlight_results_page(page_num)
 
-        msg = f"Showing {page_start+1}-{page_end} out of {self.search_query.hits} results"
+        msg = f"Showing {page_start+1}-{page_end} out of {self.query_hits()} results"
         self.fulltext_label.setText(msg)
 
         colors = ["#ffffff", "#efefef"]

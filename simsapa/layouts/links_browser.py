@@ -11,7 +11,7 @@ from PyQt6.QtCore import QUrl, QTimer
 from PyQt6.QtGui import QCloseEvent, QColor, QAction
 from PyQt6.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QMessageBox,
-                             QComboBox, QSplitter, QVBoxLayout, QWidget)
+                             QComboBox, QSplitter, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
@@ -23,7 +23,7 @@ from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
-from ..app.types import AppData, USutta, UDictWord, UDocument
+from ..app.types import AppData, USutta, UDictWord, UDocument, default_search_result_sizes
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
@@ -121,7 +121,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.min_links_input.setMinimum(1)
         self.min_links_input.setValue(3)
 
-        def _show_graph(arg: Optional[Any] = None):
+        def _show_graph(_: Optional[Any] = None):
             # ignore the argument value, will read params somewhere else
             self.show_network_graph()
 
@@ -224,8 +224,10 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         colors = ["#ffffff", "#efefef"]
 
+        sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
+
         for idx, x in enumerate(self._results):
-            w = SearchItemWidget()
+            w = SearchItemWidget(sizes)
             w.setFromResult(x)
 
             item = QListWidgetItem(self.results_list)

@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import partial
 import math
 from typing import Any, List, Optional
@@ -6,8 +7,8 @@ import json
 import queue
 import re
 
-from PyQt6 import QtCore
-from PyQt6.QtCore import Qt, QUrl, QTimer
+from PyQt6 import QtCore, QtGui
+from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget, QMainWindow,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
@@ -32,6 +33,8 @@ from .fulltext_list import HasFulltextList
 from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import show_search_info, setup_info_button
 from .dictionary_select_dialog import DictionarySelectDialog
+from .search_query_worker import SearchQueryWorker, SearchRet
+
 
 class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,
@@ -50,6 +53,8 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
     _current_words: List[UDictWord]
     selected_info: Any
     _search_timer = QTimer()
+    _last_query_time = datetime.now()
+    search_query_worker: SearchQueryWorker
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -66,11 +71,13 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         self._current_words: List[UDictWord] = []
 
         self.page_len = 20
-        self.search_query = SearchQuery(
+
+        self.thread_pool = QThreadPool()
+
+        self.search_query_worker = SearchQueryWorker(
             self._app_data.search_indexed.dict_words_index,
             self.page_len,
-            dict_word_hit_to_search_result,
-        )
+            dict_word_hit_to_search_result)
 
         self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
@@ -134,6 +141,12 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
         else:
             return None
 
+    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        return self.search_query_worker.search_query.highlight_results_page(page_num)
+
+    def query_hits(self) -> int:
+        return self.search_query_worker.search_query.hits
+
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
@@ -145,7 +158,7 @@ class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDial
 
     def reinit_index(self):
         self._app_data.search_indexed = SearchIndexed()
-        self.search_query = SearchQuery(
+        self.search_query_worker.search_query = SearchQuery(
             self._app_data.search_indexed.dict_words_index,
             self.page_len,
             dict_word_hit_to_search_result,
@@ -340,23 +353,69 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setCursorPosition(n + len(s))
         self.search_input.setFocus()
 
+    def _search_query_finished(self, ret: SearchRet):
+        if self._last_query_time != ret['query_started']:
+            return
+
+        self._results = ret['results']
+
+        # Restore the search icon, processing finished
+        icon_search = QtGui.QIcon()
+        icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.search_button.setIcon(icon_search)
+
+        if self.search_query_worker.search_query.hits > 0:
+            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query_worker.search_query.hits})")
+        else:
+            self.rightside_tabs.setTabText(0, "Fulltext")
+
+        self.render_fulltext_page()
+
+        if self.search_query_worker.search_query.hits == 1 and self._results[0]['uid'] is not None:
+            self._show_word_by_uid(self._results[0]['uid'])
+
+        self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
+
+    def _start_query_worker(self, query: str):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        self._last_query_time = datetime.now()
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           only_source)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+
+        self.thread_pool.start(self.search_query_worker)
+
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
 
         if len(query) < min_length:
             return
 
-        self._results = self._word_search_query(query)
+        # Not aborting, show the user that the app started processsing
+        icon_processing = QtGui.QIcon()
+        icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self.search_button.setIcon(icon_processing)
 
-        if self.search_query.hits > 0:
-            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query.hits})")
-        else:
-            self.rightside_tabs.setTabText(0, "Fulltext")
+        self._handle_autocomplete_query(min_length)
 
-        self.render_fulltext_page()
-
-        if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
-            self._show_word_by_uid(self._results[0]['uid'])
+        self._start_query_worker(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -507,18 +566,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
-    def _word_search_query(self, query: str) -> List[SearchResult]:
-        idx = self.dict_filter_dropdown.currentIndex()
-        source = self.dict_filter_dropdown.itemText(idx)
-        if source == "Dictionaries":
-            only_source = None
-        else:
-            only_source = source
-
-        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
-        results = self.search_query.new_query(query, disabled_labels, only_source)
-        hits = self.search_query.hits
-
+    def _update_fulltext_page_btn(self, hits: int):
         if hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
@@ -537,8 +585,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.fulltext_page_input.setMaximum(pages)
             self.fulltext_first_page_btn.setEnabled(True)
             self.fulltext_last_page_btn.setEnabled(True)
-
-        return results
 
     def _show_selected(self):
         self._show_sutta_from_message(self.selected_info)

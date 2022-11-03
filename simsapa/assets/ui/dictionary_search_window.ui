@@ -90,7 +90,7 @@
           </property>
           <property name="minimumSize">
            <size>
-            <width>500</width>
+            <width>250</width>
             <height>35</height>
            </size>
           </property>
@@ -112,7 +112,7 @@
           </property>
           <property name="minimumSize">
            <size>
-            <width>0</width>
+            <width>40</width>
             <height>40</height>
            </size>
           </property>
@@ -120,7 +120,7 @@
            <string>Search</string>
           </property>
           <property name="text">
-           <string>Search</string>
+           <string/>
           </property>
           <property name="icon">
            <iconset resource="../icons.qrc">

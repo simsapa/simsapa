@@ -8,10 +8,10 @@ from typing import Any, Callable, List, Optional
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMainWindow, QMessageBox, QVBoxLayout)
-# from tomlkit import items
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.app.db.search import SearchResult
 from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
 from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import userdata_models as Um
@@ -33,6 +33,7 @@ class SuttaSearchWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaSearchWindow
     selected_info: Any
     recent_list: QListWidget
     _show_sutta: Callable
+    s: SuttaSearchWindowState
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -62,7 +63,7 @@ class SuttaSearchWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaSearchWindow
                                         self.tabs_layout)
 
         self.page_len = self.s.page_len
-        self.search_query = self.s.search_query
+        self.search_query = self.s.search_query_worker.search_query
 
         self._connect_signals()
 
@@ -144,6 +145,12 @@ class SuttaSearchWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaSearchWindow
         text = self.s._get_selection()
         if text is not None and self._app_data.actions_manager is not None:
             self._app_data.actions_manager.lookup_in_dictionary(text)
+
+    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        return self.s.search_query_worker.search_query.highlight_results_page(page_num)
+
+    def query_hits(self) -> int:
+        return self.s.search_query_worker.search_query.hits
 
     def show_network_graph(self, sutta: Optional[USutta] = None):
         if sutta is None:

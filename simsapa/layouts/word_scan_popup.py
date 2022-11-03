@@ -1,17 +1,20 @@
+from datetime import datetime
 from functools import partial
 import math
 from typing import List, Optional
-from PyQt6.QtCore import QPoint, QTimer, QUrl, Qt
+from PyQt6 import QtGui
+from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt
 from PyQt6.QtGui import QClipboard, QCloseEvent, QCursor, QEnterEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
-from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
+from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
+from .search_query_worker import SearchQueryWorker, SearchRet
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
@@ -28,6 +31,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
     _search_timer = QTimer()
+    _last_query_time = datetime.now()
+    search_query_worker: SearchQueryWorker
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -40,11 +45,13 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._current_words = []
 
         self.page_len = 20
-        self.search_query = SearchQuery(
+
+        self.thread_pool = QThreadPool()
+
+        self.search_query_worker = SearchQueryWorker(
             self._app_data.search_indexed.dict_words_index,
             self.page_len,
-            dict_word_hit_to_search_result,
-        )
+            dict_word_hit_to_search_result)
 
         self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
@@ -233,10 +240,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(results) > 0:
             self._show_word(results[0])
 
-    def _word_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
-        hits = self.search_query.hits
-
+    def _update_fulltext_page_btn(self, hits: int):
         if hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
@@ -256,7 +260,46 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.fulltext_first_page_btn.setEnabled(True)
             self.fulltext_last_page_btn.setEnabled(True)
 
-        return results
+    def _search_query_finished(self, ret: SearchRet):
+        if self._last_query_time != ret['query_started']:
+            return
+
+        self._results = ret['results']
+
+        icon_search = QtGui.QIcon()
+        icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.search_button.setIcon(icon_search)
+
+        if self.search_query_worker.search_query.hits > 0:
+            self.tabs.setTabText(1, f"Fulltext ({self.search_query_worker.search_query.hits})")
+        else:
+            self.tabs.setTabText(1, "Fulltext")
+
+        self.render_fulltext_page()
+
+        if self.search_query_worker.search_query.hits == 1 and self._results[0]['uid'] is not None:
+            self._show_word_by_uid(self._results[0]['uid'])
+
+        self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
+
+    def _start_query_worker(self, query: str):
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        self._last_query_time = datetime.now()
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           None)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+
+        self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -264,17 +307,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(query) < min_length:
             return
 
-        self._results = self._word_search_query(query)
+        # Not aborting, show the user that the app started processsing
+        icon_processing = QtGui.QIcon()
+        icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self.search_button.setIcon(icon_processing)
 
-        if self.search_query.hits > 0:
-            self.tabs.setTabText(1, f"Fulltext ({self.search_query.hits})")
-        else:
-            self.tabs.setTabText(1, "Fulltext")
-
-        self.render_fulltext_page()
-
-        if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
-            self._show_word_by_uid(self._results[0]['uid'])
+        self._start_query_worker(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -326,6 +364,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self._search_timer.setSingleShot(True)
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
+
+    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        return self.search_query_worker.search_query.highlight_results_page(page_num)
+
+    def query_hits(self) -> int:
+        return self.search_query_worker.search_query.hits
 
     def _connect_signals(self):
         if self._clipboard is not None:

@@ -2,6 +2,10 @@
   <qresource>
     <file alias="search">icons/32x32/bx_search_alt_2.png</file>
     <file alias="fa-search">icons/32x32/fa_magnifying-glass-solid.png</file>
+    <file alias="gear">icons/32x32/fa_gear-solid.png</file>
+    <file alias="gears">icons/32x32/fa_gears-solid.png</file>
+    <file alias="hourglass-half">icons/32x32/fa_hourglass-half-solid.png</file>
+    <file alias="stopwatch">icons/32x32/fa_stopwatch-solid.png</file>
     <file alias="close">icons/32x32/fa_times-circle.png</file>
     <file alias="sync">icons/32x32/fa_sync.png</file>
     <file alias="reload">icons/32x32/fa_redo.png</file>

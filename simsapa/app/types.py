@@ -265,3 +265,4 @@ class SuttaSearchWindowMeta():
     action_Dictionary_Search: QAction
     action_Show_Related_Suttas: QAction
     action_Find_in_Page: QAction
+
