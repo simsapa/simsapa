@@ -167,6 +167,11 @@ class SuttaStudyWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaStudyWindow):
 
         self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
 
+        # Tab order for input fields
+
+        self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
+        self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
+
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
         s = self._app_data.clipboard_getText()
