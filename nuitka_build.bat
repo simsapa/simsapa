@@ -6,6 +6,7 @@ python -m nuitka ^
   --standalone ^
   --follow-imports ^
   --enable-plugin=numpy ^
+  --plugin-enable=pyqt6 ^
   --include-package-data="bokeh" ^
   --include-module="sqlalchemy.sql.default_comparator" ^
   --windows-icon-from-ico="simsapa\assets\icons\appicons\simsapa.ico" ^
