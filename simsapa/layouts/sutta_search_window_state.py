@@ -19,7 +19,7 @@ from simsapa.layouts.search_query_worker import SearchQueryWorker, SearchRet
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, UDictWord, SuttaSearchWindowMeta
+from ..app.types import AppData, USutta, UDictWord, SuttaSearchWindowInterface
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -48,7 +48,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
     def __init__(self,
                  app_data: AppData,
-                 parent_window: SuttaSearchWindowMeta,
+                 parent_window: SuttaSearchWindowInterface,
                  searchbar_layout: Optional[QHBoxLayout],
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],

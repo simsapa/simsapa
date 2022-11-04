@@ -7,7 +7,7 @@ from functools import partial
 from typing import Any, Callable, List, Optional
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCloseEvent, QAction
-from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMainWindow, QMessageBox, QVBoxLayout)
+from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QVBoxLayout)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
@@ -15,7 +15,7 @@ from simsapa.app.db.search import SearchResult
 from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
 from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, SuttaSearchWindowMeta
+from ..app.types import AppData, USutta, SuttaSearchWindowInterface
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 from .memos_sidebar import HasMemosSidebar
 from .links_sidebar import HasLinksSidebar
@@ -24,7 +24,7 @@ from .help_info import show_search_info
 from .sutta_search_window_state import SuttaSearchWindowState
 
 
-class SuttaSearchWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaSearchWindow, HasLinksSidebar,
+class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLinksSidebar,
                         HasMemosSidebar, HasFulltextList):
 
     searchbar_layout: QHBoxLayout

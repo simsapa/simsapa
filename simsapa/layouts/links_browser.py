@@ -9,27 +9,25 @@ from typing import Any, List, Optional, Tuple
 
 from PyQt6.QtCore import QUrl, QTimer
 from PyQt6.QtGui import QCloseEvent, QColor, QAction
-from PyQt6.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
+from PyQt6.QtWidgets import (QLineEdit, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QMessageBox,
                              QComboBox, QSplitter, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import LOADING_HTML, PACKAGE_ASSETS_DIR, logger, ApiAction, ApiMessage
+from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.helpers import compactRichText
 from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
-from ..app.types import AppData, USutta, UDictWord, UDocument, default_search_result_sizes
+from ..app.types import AppData, AppWindowInterface, USutta, UDictWord, UDocument, default_search_result_sizes
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
-CLICK_GENERATE_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/click_generate.html'), 'r').read()
-
-class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
+class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
 
     splitter: QSplitter
     tabs_layout: QVBoxLayout

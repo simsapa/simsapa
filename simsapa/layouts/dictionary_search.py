@@ -10,7 +10,7 @@ import re
 from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget, QMainWindow,
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
@@ -24,7 +24,7 @@ from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
-from ..app.types import AppData, USutta, UDictWord
+from ..app.types import AppData, DictionarySearchWindowInterface, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
@@ -36,7 +36,7 @@ from .dictionary_select_dialog import DictionarySelectDialog
 from .search_query_worker import SearchQueryWorker, SearchRet
 
 
-class DictionarySearchWindow(QMainWindow, Ui_DictionarySearchWindow, HasMemoDialog,
+class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,
                              HasFulltextList, HasImportStarDictDialog):
 

@@ -2,17 +2,17 @@ from typing import List
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from ..app.types import AppData, UDictWord
+from ..app.types import AppData, AppWindowInterface, UDictWord
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-class WordsWindow(QMainWindow):
+class WordsWindow(AppWindowInterface):
     def __init__(self, app_data: AppData, word_ids: List[tuple[str, int]], parent=None) -> None:
         super().__init__(parent)
         logger.info("WordsWindow()")

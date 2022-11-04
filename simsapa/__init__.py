@@ -67,6 +67,13 @@ if b is None:
 else:
     LOADING_HTML = b.decode("utf-8")
 
+b =  pkgutil.get_data(__name__, "assets/templates/click_generate.html")
+if b is None:
+    CLICK_GENERATE_HTML = "<b>Missing click_generate.html</b>"
+else:
+    CLICK_GENERATE_HTML = b.decode("utf-8")
+
+
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
     UserData = 'userdata'

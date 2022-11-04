@@ -8,18 +8,18 @@ from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 
-from ..app.types import AppData, SuttaSearchWindowMeta, USutta
+from ..app.types import AppData, SuttaSearchWindowInterface, USutta
 from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 from .word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaStudyWindow(QMainWindow, SuttaSearchWindowMeta, Ui_SuttaStudyWindow):
+class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
     sutta_one_layout: QVBoxLayout

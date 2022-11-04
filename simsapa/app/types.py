@@ -12,7 +12,7 @@ from sqlalchemy.sql.functions import func
 
 from PyQt6 import QtWidgets
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QFrame
+from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QToolBar
 
 from simsapa import IS_MAC, DbSchemaName, logger
 from simsapa.app.actions_manager import ActionsManager
@@ -249,8 +249,34 @@ class AppData:
         find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
         return USER_DB_PATH
 
+class AppWindowInterface(QMainWindow):
+    action_Notify_About_Updates: QAction
+    action_Show_Toolbar: QAction
+    action_Show_Word_Scan_Popup: QAction
+    action_Show_Related_Suttas: QAction
+    action_Re_index_database: QAction
+    action_Re_download_database: QAction
+    action_Focus_Search_Input: QAction
+    action_Quit: QAction
+    action_Sutta_Search: QAction
+    action_Sutta_Study: QAction
+    action_Dictionary_Search: QAction
+    action_Memos: QAction
+    action_Links: QAction
+    action_First_Window_on_Startup: QAction
+    action_Website: QAction
+    action_About: QAction
+    action_Open: QAction
+    action_Dictionaries_Manager: QAction
+    action_Document_Reader: QAction
+    action_Library: QAction
 
-class SuttaSearchWindowMeta():
+    toolBar: QToolBar
+    search_input: QLineEdit
+
+    _focus_search_input: Callable
+
+class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
     _update_sidebar_fulltext: Callable
     _set_recent_list: Callable
@@ -266,3 +292,5 @@ class SuttaSearchWindowMeta():
     action_Show_Related_Suttas: QAction
     action_Find_in_Page: QAction
 
+class DictionarySearchWindowInterface(AppWindowInterface):
+    palibuttons_frame: QFrame

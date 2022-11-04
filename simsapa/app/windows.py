@@ -16,7 +16,7 @@ from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_i
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
-from .types import AppData, AppMessage, WindowNameToType, WindowType
+from .types import AppData, AppMessage, AppWindowInterface, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
 from ..layouts.sutta_study import SuttaStudyWindow
@@ -36,7 +36,7 @@ class AppWindows:
         self._app = app
         self._app_data = app_data
         self._hotkeys_manager = hotkeys_manager
-        self._windows: List[QMainWindow] = []
+        self._windows: List[AppWindowInterface] = []
 
         self.queue_id = 'app_windows'
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -428,6 +428,9 @@ class AppWindows:
         <p>When you start the application again, the download will begin.</p>
         <p>Start now?</p>"""
 
+        if parent is None:
+            parent = QWidget()
+
         reply = QMessageBox.question(parent,
                                      "Re-download the database and index",
                                      msg,
@@ -461,12 +464,12 @@ class AppWindows:
         logger.info("_quit_app() Exiting with status 0.")
         sys.exit(0)
 
-    def _set_notify_setting(self, view: QMainWindow):
+    def _set_notify_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Notify_About_Updates.isChecked()
         self._app_data.app_settings['notify_about_updates'] = checked
         self._app_data._save_app_settings()
 
-    def _set_show_toolbar_setting(self, view: QMainWindow):
+    def _set_show_toolbar_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Show_Toolbar.isChecked()
         self._app_data.app_settings['show_toolbar'] = checked
         self._app_data._save_app_settings()
@@ -475,7 +478,7 @@ class AppWindows:
             if hasattr(w,'toolBar'):
                 w.toolBar.setVisible(checked)
 
-    def _first_window_on_startup_dialog(self, view: QMainWindow):
+    def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
         item, ok = QInputDialog.getItem(view,
@@ -489,13 +492,13 @@ class AppWindows:
             self._app_data._save_app_settings()
 
 
-    def _focus_search_input(self, view: QMainWindow):
+    def _focus_search_input(self, view: AppWindowInterface):
         if hasattr(view, 'search_input'):
             view.search_input.setFocus()
         elif hasattr(view, '_focus_search_input'):
             view._focus_search_input()
 
-    def _connect_signals(self, view: QMainWindow):
+    def _connect_signals(self, view: AppWindowInterface):
         # view.action_Open \
         #     .triggered.connect(partial(self._open_file_dialog, view))
 
