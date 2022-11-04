@@ -6,10 +6,12 @@ from queue import Queue
 from dotenv import load_dotenv
 import appdirs
 import platform
+import importlib.resources
+import pkgutil
 
 load_dotenv()
 
-SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
+SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets')
 
@@ -32,11 +34,13 @@ TIMER_SPEED = 50
 
 SEARCH_TIMER_SPEED = 300
 
-s = os.getenv('USE_TEST_DATA')
-if s is not None and s.lower() == 'true':
-    ASSETS_DIR = TEST_ASSETS_DIR
-else:
-    ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
+#s = os.getenv('USE_TEST_DATA')
+#if s is not None and s.lower() == 'true':
+#    ASSETS_DIR = TEST_ASSETS_DIR
+#else:
+#    ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
+
+ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
 
 INDEX_DIR = ASSETS_DIR.joinpath('index')
 
@@ -57,7 +61,11 @@ READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
 
-LOADING_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/loading.html'), 'r').read()
+b = pkgutil.get_data(__name__, "assets/templates/loading.html")
+if b is None:
+    LOADING_HTML = "<b>Loading...</b>"
+else:
+    LOADING_HTML = b.decode("utf-8")
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
