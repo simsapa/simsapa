@@ -1,19 +1,14 @@
 from typing import Optional
-from simsapa import PACKAGE_ASSETS_DIR, logger
+from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS
 from mako.template import Template
 
 open_sutta_links_js_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/open_sutta_links.js')))
 page_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/page.html')))
 
 def html_page(content: str, api_url: Optional[str] = None, css_extra = None):
-    try:
-        with open(PACKAGE_ASSETS_DIR.joinpath('css/suttas.css'), 'r') as f:
-            css = f.read()
-            if api_url is not None:
-                css = css.replace("http://localhost:8000", api_url)
-    except Exception as e:
-        logger.error(f"Can't read suttas.css: {e}")
-        css = ""
+    css = SUTTAS_CSS
+    if api_url is not None:
+        css = css.replace("http://localhost:8000", api_url)
 
     # NOTE not using this atm
     # js = str(open_sutta_links_js_tmpl.render(api_url=api_url))

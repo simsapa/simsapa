@@ -13,7 +13,8 @@ load_dotenv()
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
-PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets')
+PACKAGE_ASSETS_RSC_DIR = Path('assets')
+PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
 
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
@@ -61,17 +62,24 @@ READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
 
-b = pkgutil.get_data(__name__, "assets/templates/loading.html")
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/loading.html")))
 if b is None:
     LOADING_HTML = "<b>Loading...</b>"
 else:
     LOADING_HTML = b.decode("utf-8")
 
-b =  pkgutil.get_data(__name__, "assets/templates/click_generate.html")
+b =  pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/click_generate.html")))
 if b is None:
     CLICK_GENERATE_HTML = "<b>Missing click_generate.html</b>"
 else:
     CLICK_GENERATE_HTML = b.decode("utf-8")
+
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/suttas.css')))
+if b is None:
+    SUTTAS_CSS = ""
+else:
+    SUTTAS_CSS = b.decode("utf-8")
 
 
 class DbSchemaName(str, Enum):
