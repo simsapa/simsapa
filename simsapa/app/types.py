@@ -3,7 +3,7 @@ import json
 import os
 import os.path
 from pathlib import Path
-from typing import Callable, List, Optional, TypedDict, Union
+from typing import Callable, List, Optional, Tuple, TypedDict, Union
 from PyQt6.QtCore import QThreadPool
 
 from sqlalchemy import create_engine
@@ -14,7 +14,7 @@ from PyQt6 import QtWidgets
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QToolBar
 
-from simsapa import IS_MAC, DbSchemaName, logger
+from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger
 from simsapa.app.actions_manager import ActionsManager
 
 from .db.search import SearchIndexed
@@ -23,7 +23,6 @@ from .db import appdata_models as Am
 from .db import userdata_models as Um
 
 from simsapa import APP_DB_PATH, USER_DB_PATH
-from simsapa.app.helpers import find_or_create_db
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
@@ -114,8 +113,7 @@ class AppData:
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
 
-        if user_db_path is None:
-            user_db_path = self._find_user_data_or_create()
+        user_db_path = USER_DB_PATH
 
         self.graph_gen_pool = QThreadPool()
 
@@ -245,9 +243,6 @@ class AppData:
         else:
             return APP_DB_PATH
 
-    def _find_user_data_or_create(self) -> Path:
-        find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
-        return USER_DB_PATH
 
 class AppWindowInterface(QMainWindow):
     action_Notify_About_Updates: QAction
@@ -294,3 +289,17 @@ class SuttaSearchWindowInterface(AppWindowInterface):
 
 class DictionarySearchWindowInterface(AppWindowInterface):
     palibuttons_frame: QFrame
+
+
+class GraphRequest(TypedDict):
+    sutta_uid: Optional[str]
+    dict_word_uid: Optional[str]
+    distance: int
+    queue_id: str
+    graph_gen_timestamp: float
+    graph_path: str
+    messages_url: str
+    labels: Optional[ShowLabels]
+    min_links: Optional[int]
+    width: int
+    height: int

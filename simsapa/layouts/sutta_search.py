@@ -12,8 +12,6 @@ from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QVBoxLayout)
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.db.search import SearchResult
-from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
-from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, SuttaSearchWindowInterface
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
@@ -282,11 +280,13 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.s._get_active_tab().render_sutta_content()
 
     def _show_search_result_sizes_dialog(self):
+        from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
         d = SearchResultSizesDialog(self._app_data, self)
         if d.exec() and self.s.enable_sidebar:
             self._update_sidebar_fulltext(self.search_query.hits)
 
     def _show_import_suttas_dialog(self):
+        from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
         d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
         if d.exec():
             logger.info("Finished importing suttas")

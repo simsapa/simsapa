@@ -21,7 +21,8 @@ from sqlalchemy.orm.session import make_transient
 from simsapa.app.types import AppMessage, QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries
 
 from simsapa import INDEX_DIR, logger
 from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH

@@ -64,6 +64,8 @@ simsapa = 'simsapa.runner:main'
 pyinstaller = "^5.5"
 nuitka = "^1.1.7"
 orderedset = "^2.0.3"
+scalene = "^1.5.14"
+tuna = "^0.5.11"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

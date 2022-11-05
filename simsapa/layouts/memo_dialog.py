@@ -4,11 +4,10 @@ from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import pyqtSignal, QItemSelectionModel
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QListView, QPushButton, QPlainTextEdit, QFormLayout, QTabWidget)
 
 from sqlalchemy.sql import func
-from simsapa.app.file_doc import FileDoc
+# from simsapa.app.file_doc import FileDoc
 from simsapa import logger
 
 from simsapa.app.types import AppData, UDictWord
@@ -95,7 +94,8 @@ class HasMemoDialog:
     features: List[str] = []
     memos_list: QListView
     _current_words: List[UDictWord]
-    file_doc: Optional[FileDoc]
+    # file_doc: Optional[FileDoc]
+    file_doc = None
     db_doc: Optional[Um.Document]
     clear_memo_button: QtWidgets.QPushButton
     remove_memo_button: QtWidgets.QPushButton

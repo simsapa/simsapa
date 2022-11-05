@@ -1,6 +1,10 @@
 import sys
 from enum import Enum
 import typer
+import threading
+
+from simsapa import logger
+from simsapa.app.api import start_server, find_available_port
 
 app = typer.Typer()
 index_app = typer.Typer()
@@ -16,8 +20,21 @@ def gui():
     #     print(str(e))
     #     sys.exit(2)
 
+    try:
+        port = find_available_port()
+        logger.info(f"Available port: {port}")
+        daemon = threading.Thread(name='daemon_server',
+                                target=start_server,
+                                args=(port,))
+        daemon.setDaemon(True)
+        daemon.start()
+    except Exception as e:
+        logger.error(e)
+        # FIXME show error to user
+        port = 6789
+
     from simsapa.gui import start
-    start()
+    start(port)
 
 class QueryType(str, Enum):
     suttas = "suttas"

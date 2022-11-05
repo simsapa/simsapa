@@ -169,7 +169,11 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
 
         graph_gen_timestamp = time.time()
         self._last_graph_gen_timestamp = graph_gen_timestamp
-        graph_gen = GraphGenerator(graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
+
+        if self._app_data.api_url is None:
+            return
+
+        graph_gen = GraphGenerator(self._app_data.api_url, graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
 
         graph_gen.signals.result.connect(self._graph_finished)
 

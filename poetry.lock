@@ -161,12 +161,31 @@ python-versions = ">=3.7"
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
 [[package]]
+name = "cloudpickle"
+version = "2.2.0"
+description = "Extended pickling support for Python objects"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
 category = "main"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
+
+[[package]]
+name = "commonmark"
+version = "0.9.1"
+description = "Python parser for the CommonMark Markdown spec"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[package.extras]
+test = ["flake8 (==3.7.8)", "hypothesis (==3.55.3)"]
 
 [[package]]
 name = "datetime"
@@ -622,6 +641,17 @@ python-versions = ">=3.7.0"
 full = ["PyICU", "PyYAML", "beautifulsoup4", "html5lib", "libzim", "lxml", "marisa-trie", "python-lzo"]
 
 [[package]]
+name = "pygments"
+version = "2.13.0"
+description = "Pygments is a syntax highlighting package written in Python."
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[package.extras]
+plugins = ["importlib-metadata"]
+
+[[package]]
 name = "pyinstaller"
 version = "5.6.1"
 description = "PyInstaller bundles a Python application and all its dependencies into a single package."
@@ -673,6 +703,14 @@ description = "Python bindings for the PDF toolkit and renderer MuPDF"
 category = "main"
 optional = false
 python-versions = ">=3.7"
+
+[[package]]
+name = "pynvml"
+version = "11.4.1"
+description = "Python Bindings for the NVIDIA Management Library"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
 
 [[package]]
 name = "pyparsing"
@@ -850,6 +888,34 @@ urllib3 = ">=1.21.1,<1.27"
 [package.extras]
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
+
+[[package]]
+name = "rich"
+version = "12.6.0"
+description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
+category = "dev"
+optional = false
+python-versions = ">=3.6.3,<4.0.0"
+
+[package.dependencies]
+commonmark = ">=0.9.0,<0.10.0"
+pygments = ">=2.6.0,<3.0.0"
+
+[package.extras]
+jupyter = ["ipywidgets (>=7.5.1,<8.0.0)"]
+
+[[package]]
+name = "scalene"
+version = "1.5.14"
+description = "Scalene: A high-resolution, low-overhead CPU, GPU, and memory profiler for Python"
+category = "dev"
+optional = false
+python-versions = ">=3.8"
+
+[package.dependencies]
+cloudpickle = ">=1.5.0"
+pynvml = ">=11.0.0"
+rich = ">=9.2.0"
 
 [[package]]
 name = "scipy"
@@ -1062,6 +1128,14 @@ trio = ">=0.11"
 wsproto = ">=0.14"
 
 [[package]]
+name = "tuna"
+version = "0.5.11"
+description = "Visualize Python performance profiles"
+category = "dev"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
 name = "typer"
 version = "0.4.2"
 description = "Typer, build great CLIs. Easy to code. Based on Python type hints."
@@ -1182,7 +1256,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.9"
-content-hash = "49cd287e9c9da3e028a171f61198d0717d2cd195a851b3e0695bd4ab5ecdbe6b"
+content-hash = "77ac9a7fcbee8ba0c0b007583142b01568bbbe94d33156c26eedca2cc3c6676c"
 
 [metadata.files]
 aksharamukha = [
@@ -1302,9 +1376,17 @@ click = [
     {file = "click-8.1.3-py3-none-any.whl", hash = "sha256:bb4d8133cb15a609f44e8213d9b391b0809795062913b383c62be0ee95b1db48"},
     {file = "click-8.1.3.tar.gz", hash = "sha256:7682dc8afb30297001674575ea00d1814d808d6a36af415a82bd481d37ba7b8e"},
 ]
+cloudpickle = [
+    {file = "cloudpickle-2.2.0-py3-none-any.whl", hash = "sha256:7428798d5926d8fcbfd092d18d01a2a03daf8237d8fcdc8095d256b8490796f0"},
+    {file = "cloudpickle-2.2.0.tar.gz", hash = "sha256:3f4219469c55453cfe4737e564b67c2a149109dabf7f242478948b895f61106f"},
+]
 colorama = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
+]
+commonmark = [
+    {file = "commonmark-0.9.1-py2.py3-none-any.whl", hash = "sha256:da2f38c92590f83de410ba1a3cbceafbc74fee9def35f9251ba9a971d6d66fd9"},
+    {file = "commonmark-0.9.1.tar.gz", hash = "sha256:452f9dc859be7f06631ddcb328b6919c67984aca654e5fefb3914d54691aed60"},
 ]
 datetime = [
     {file = "DateTime-4.7-py2.py3-none-any.whl", hash = "sha256:b8d2d605cfb5fed0da86f9ad64d0973c6f84b21939d49265e135811b33ee8113"},
@@ -1803,6 +1885,10 @@ pyglossary = [
     {file = "pyglossary-4.5.0-py3-none-any.whl", hash = "sha256:d38561dd374fedb2f9cf54256339ea3d9d70cbe3f1b8fd99e6b76988ed683b22"},
     {file = "pyglossary-4.5.0.tar.gz", hash = "sha256:60314e89dc4b93a8293c115659ed4e09d384056509640d5ce01822bf9cf920be"},
 ]
+pygments = [
+    {file = "Pygments-2.13.0-py3-none-any.whl", hash = "sha256:f643f331ab57ba3c9d89212ee4a2dabc6e94f117cf4eefde99a0574720d14c42"},
+    {file = "Pygments-2.13.0.tar.gz", hash = "sha256:56a8508ae95f98e2b9bdf93a6be5ae3f7d8af858b43e02c5a2ff083726be40c1"},
+]
 pyinstaller = [
     {file = "pyinstaller-5.6.1-py3-none-macosx_10_13_universal2.whl", hash = "sha256:0465edb7a5b2bc74ac983d419fd980fd2e4c7d49f4c013edd4befb6ca70d3c2b"},
     {file = "pyinstaller-5.6.1-py3-none-manylinux2014_aarch64.whl", hash = "sha256:556750250bba85cf7ede168994fe70fcdeeba8d22f51eaedfd94b3efb6faa6ce"},
@@ -1846,6 +1932,10 @@ pymupdf = [
     {file = "PyMuPDF-1.20.2-cp39-cp39-win32.whl", hash = "sha256:e7214cf1870238d39ca008eda7c612b1db7228d7e913cb1a028e7a28175bef41"},
     {file = "PyMuPDF-1.20.2-cp39-cp39-win_amd64.whl", hash = "sha256:e9cb960e234498a4e91e4b56e2e71f4c56fd0045c7a71315df8e03a33212dbeb"},
     {file = "PyMuPDF-1.20.2.tar.gz", hash = "sha256:02eedf01f57c6bafb5e8667cea0088a2d2522643c47100f1908bec3a68a84888"},
+]
+pynvml = [
+    {file = "pynvml-11.4.1-py3-none-any.whl", hash = "sha256:d27be542cd9d06558de18e2deffc8022ccd7355bc7382255d477038e7e424c6c"},
+    {file = "pynvml-11.4.1.tar.gz", hash = "sha256:b2e4a33b80569d093b513f5804db0c7f40cfc86f15a013ae7a8e99c5e175d5dd"},
 ]
 pyparsing = [
     {file = "pyparsing-3.0.9-py3-none-any.whl", hash = "sha256:5026bae9a10eeaefb61dab2f09052b9f4307d44aee4eda64b309723d8d206bbc"},
@@ -1959,6 +2049,23 @@ pyyaml = [
 requests = [
     {file = "requests-2.28.1-py3-none-any.whl", hash = "sha256:8fefa2a1a1365bf5520aac41836fbee479da67864514bdb821f31ce07ce65349"},
     {file = "requests-2.28.1.tar.gz", hash = "sha256:7c5599b102feddaa661c826c56ab4fee28bfd17f5abca1ebbe3e7f19d7c97983"},
+]
+rich = [
+    {file = "rich-12.6.0-py3-none-any.whl", hash = "sha256:a4eb26484f2c82589bd9a17c73d32a010b1e29d89f1604cd9bf3a2097b81bb5e"},
+    {file = "rich-12.6.0.tar.gz", hash = "sha256:ba3a3775974105c221d31141f2c116f4fd65c5ceb0698657a11e9f295ec93fd0"},
+]
+scalene = [
+    {file = "scalene-1.5.14-cp310-cp310-macosx_10_15_universal2.whl", hash = "sha256:c9c122158a53d04231cab3dd45af2ba368aca2c8f5e14bf5e203355856005b70"},
+    {file = "scalene-1.5.14-cp310-cp310-manylinux_2_24_x86_64.whl", hash = "sha256:8b84f9b21ee2bfba64998da1581abd7021a6456e9719c5890e1708d390bb0995"},
+    {file = "scalene-1.5.14-cp310-cp310-win_amd64.whl", hash = "sha256:2e12c80d9a9e6601648ce8e9db7f9fe632003997196630c68851d4e8b72710f9"},
+    {file = "scalene-1.5.14-cp37-cp37m-macosx_10_15_universal2.whl", hash = "sha256:1801a1031e1303ec58a3e315fdb89fb559f02bbf79345e07c7369dc94daa2ac4"},
+    {file = "scalene-1.5.14-cp37-cp37m-manylinux_2_24_x86_64.whl", hash = "sha256:30242d4955998aee1a82c0d9a73ccdd2aa15d447cdc91bc6ec3b52abf87fe54e"},
+    {file = "scalene-1.5.14-cp38-cp38-macosx_10_15_universal2.whl", hash = "sha256:adf5c573c5025acfb84f709b11bb0a4d31ebdb7309c3904c36bc654115a11147"},
+    {file = "scalene-1.5.14-cp38-cp38-manylinux_2_24_x86_64.whl", hash = "sha256:8da7fdd4a816d9c0a701e4036e8274fd9c3cb7baa8488cd3978cfb83c29bb053"},
+    {file = "scalene-1.5.14-cp38-cp38-win_amd64.whl", hash = "sha256:4736133b90a1168becd09f743119c232df43b5c9081dbe5ce6da6fcec203b89c"},
+    {file = "scalene-1.5.14-cp39-cp39-manylinux_2_24_x86_64.whl", hash = "sha256:a3d0fb20b5a4bb66fae8c46b5436567aea4bb0f0867a10b3338db00a516da574"},
+    {file = "scalene-1.5.14-cp39-cp39-win_amd64.whl", hash = "sha256:c6b02b3fd20111373e5af7f858e8c9e2294612cc9ef759cd83163195ef52b974"},
+    {file = "scalene-1.5.14.tar.gz", hash = "sha256:51ce9a83e46f1879fd9782feb459b3279133c00ff45b2b34e93c45ca3f4b3783"},
 ]
 scipy = [
     {file = "scipy-1.8.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:65b77f20202599c51eb2771d11a6b899b97989159b7975e9b5259594f1d35ef4"},
@@ -2094,6 +2201,10 @@ trio = [
 trio-websocket = [
     {file = "trio-websocket-0.9.2.tar.gz", hash = "sha256:a3d34de8fac26023eee701ed1e7bf4da9a8326b61a62934ec9e53b64970fd8fe"},
     {file = "trio_websocket-0.9.2-py3-none-any.whl", hash = "sha256:5b558f6e83cc20a37c3b61202476c5295d1addf57bd65543364e0337e37ed2bc"},
+]
+tuna = [
+    {file = "tuna-0.5.11-py3-none-any.whl", hash = "sha256:ab352a6d836014ace585ecd882148f1f7c68be9ea4bf9e9298b7127594dab2ef"},
+    {file = "tuna-0.5.11.tar.gz", hash = "sha256:d47f3e39e80af961c8df016ac97d1643c3c60b5eb451299da0ab5fe411d8866c"},
 ]
 typer = [
     {file = "typer-0.4.2-py3-none-any.whl", hash = "sha256:023bae00d1baf358a6cc7cea45851639360bb716de687b42b0a4641cd99173f1"},

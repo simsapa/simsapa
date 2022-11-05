@@ -20,7 +20,6 @@ from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
@@ -32,7 +31,6 @@ from .links_sidebar import HasLinksSidebar
 from .fulltext_list import HasFulltextList
 from .import_stardict_dialog import HasImportStarDictDialog
 from .help_info import show_search_info, setup_info_button
-from .dictionary_select_dialog import DictionarySelectDialog
 from .search_query_worker import SearchQueryWorker, SearchRet
 
 
@@ -336,6 +334,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_extras.addWidget(self.dict_select_btn)
 
     def _show_dict_select_dialog(self):
+        from .dictionary_select_dialog import DictionarySelectDialog
         d = DictionarySelectDialog(self._app_data, self)
 
         if d.exec():
@@ -734,6 +733,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._render_words(self._current_words)
 
     def _show_search_result_sizes_dialog(self):
+        from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
         d = SearchResultSizesDialog(self._app_data, self)
         if d.exec():
             self.render_fulltext_page()

@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
-from simsapa.app.helpers import find_or_create_db
+from simsapa.app.db_helpers import find_or_create_db
 from simsapa import DbSchemaName, logger
 
 def get_appdata_db(db_path: Path, remove_if_exists: bool) -> Session:

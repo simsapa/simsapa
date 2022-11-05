@@ -3,7 +3,6 @@ import sys
 import traceback
 from typing import Optional
 from PyQt6 import QtCore
-import threading
 
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
@@ -14,7 +13,6 @@ from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
 from .app.types import AppData
 from .app.windows import AppWindows
-from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 from simsapa.layouts.create_search_index import CreateSearchIndexWindow
@@ -33,7 +31,7 @@ sys.excepthook = excepthook
 
 create_app_dirs()
 
-def start(splash_proc: Optional[Popen] = None):
+def start(port: int, splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
 
     ensure_empty_graphs_cache()
@@ -51,19 +49,6 @@ def start(splash_proc: Optional[Popen] = None):
         sys.exit(status)
 
     app = QApplication(sys.argv)
-
-    try:
-        port = find_available_port()
-        logger.info(f"Available port: {port}")
-        daemon = threading.Thread(name='daemon_server',
-                                target=start_server,
-                                args=(port,))
-        daemon.setDaemon(True)
-        daemon.start()
-    except Exception as e:
-        logger.error(e)
-        # FIXME show error to user
-        port = 6789
 
     actions_manager = ActionsManager(port)
 
