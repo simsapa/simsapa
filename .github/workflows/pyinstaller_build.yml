@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-2022]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-12, windows-2022]
         python-version: ["3.9"]
       fail-fast: false
     defaults:
@@ -22,10 +22,10 @@ jobs:
         shell: bash
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.9
 
@@ -35,14 +35,18 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
+      - name: Linux / Mac Build
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
+
       - name: Windows Build
         if: runner.os == 'Windows'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onefile -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.icns" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
 
-      - name: Upload Artifact for Windows
-        uses: actions/upload-artifact@v2
-        if: runner.os == 'Windows'
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-pyinstaller.exe
-          path: 'dist/Simsapa Dhamma Reader.exe'
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}
+          path: 'dist/Simsapa Dhamma Reader/'

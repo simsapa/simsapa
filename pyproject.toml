@@ -18,12 +18,12 @@ appdirs = "~1.4.4"
 PyPDF2 = "~1.26.0"
 epub_meta = "~0.0.7"
 PyMuPDF = "~1"
-#Pillow = "~9.0.0"
-Pillow = [
-  { version = "7.2.0", platform = "linux"},
-  { version = "~9.0.0", platform = "win32" },
-  { version = "~9.0.0", platform = "darwin" },
-]
+Pillow = "~9.3.0"
+#Pillow = [
+#  { version = "7.2.0", platform = "linux"},
+#  { version = "~9.3.0", platform = "win32" },
+#  { version = "~9.3.0", platform = "darwin" },
+#]
 pandas = "~1"
 openpyxl = "~3.0.7"
 semver = "~2.13.0"
@@ -33,7 +33,7 @@ python-dotenv = "~0.17.1"
 pyperclip = "~1.8.2"
 networkx = "~2"
 bokeh = "~2"
-scipy = "~1.8.0"
+scipy = "~1.9.0"
 alembic = "~1.7.5"
 sqlalchemy2-stubs = "^0.0.2-alpha.20"
 python-idzip = "~0.3.7"
@@ -116,7 +116,7 @@ requires = [
 "pyperclip          >= 1.8.2,    < 1.9.0",
 "networkx           >= 2.5.0,    < 3.0.0",
 "bokeh              >= 2.4.0,    < 3.0.0",
-"scipy              >= 1.8.0,    < 1.9.0",
+"scipy              >= 1.9.0,    < 2.0.0",
 "alembic            >= 1.7.5,    < 1.8.0",
 "sqlalchemy2-stubs  >= 0.0.2a20, < 0.1.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
@@ -135,12 +135,13 @@ requires = [
 
 [tool.briefcase.app.simsapa.macOS]
 requires = [
-"Pillow >= 9.0.0, < 9.1.0",
+"Pillow >= 9.3.0, < 9.4.0",
 ]
 
 [tool.briefcase.app.simsapa.linux]
 requires = [
-"Pillow == 7.2.0",
+"Pillow >= 9.3.0, < 9.4.0",
+#"Pillow == 7.2.0",
 #"pyqtkeybind >= 0.0.9, < 0.1.0",
 ]
 
@@ -148,7 +149,7 @@ system_requires = ["libtiff-dev"]
 
 [tool.briefcase.app.simsapa.windows]
 requires = [
-"Pillow >= 9.0.0, < 9.1.0",
+"Pillow >= 9.3.0, < 9.4.0",
 ]
 
 # Mobile deployments
