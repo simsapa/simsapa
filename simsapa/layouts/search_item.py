@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
-from simsapa import DbSchemaName
+from simsapa import IS_MAC, DbSchemaName
 
 from simsapa.app.db.search import SearchResult
 from simsapa.app.types import SearchResultSizes
@@ -38,7 +38,10 @@ class SearchItemWidget(QWidget):
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
 
-        self.snippet.setStyleSheet(f"font-family: DejaVu Sans; font-size: {sizes['snippet_font_size']}pt;")
+        if IS_MAC:
+            self.snippet.setStyleSheet(f"font-family: Helvetica; font-size: {sizes['snippet_font_size']}pt;")
+        else:
+            self.snippet.setStyleSheet(f"font-family: DejaVu Sans; font-size: {sizes['snippet_font_size']}pt;")
 
         self.snippet.setMinimumHeight(self.sizes["snippet_min_height"])
         self.snippet.setMaximumHeight(self.sizes["snippet_max_height"])

@@ -344,10 +344,10 @@ h4 {
 }
 
 .lang-skr {
-  font-family: "DejaVu Serif", serif;
+  font-family: "DejaVu Serif", "Georgia", serif;
 }
 .lang-skr h1, .lang-skr h2, .lang-skr h3, .lang-skr h4, .lang-skr h5, .lang-skr h6 {
-  font-family: "DejaVu Serif", serif;
+  font-family: "DejaVu Serif", "Georgia", serif;
 }
 
 .gretil {
