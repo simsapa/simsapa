@@ -32,7 +32,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _current_words: List[UDictWord]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: SearchQueryWorker
+    search_query_worker: Optional[SearchQueryWorker] = None
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -47,11 +47,6 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.page_len = 20
 
         self.thread_pool = QThreadPool()
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result)
 
         self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
@@ -98,6 +93,22 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.search_input.setFocus()
 
         self._setup_search_tabs()
+
+    def _init_search_query_worker(self, query: str = ""):
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        self._last_query_time = datetime.now()
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           None)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
 
     def _get_css_extra(self) -> str:
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
@@ -261,6 +272,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.fulltext_last_page_btn.setEnabled(True)
 
     def _search_query_finished(self, ret: SearchRet):
+        if self.search_query_worker is None:
+            return
+
         if self._last_query_time != ret['query_started']:
             return
 
@@ -284,22 +298,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
-        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
-        self._last_query_time = datetime.now()
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result)
-
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           None)
-
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
-
-        self.thread_pool.start(self.search_query_worker)
+        self._init_search_query_worker(query)
+        if self.search_query_worker is not None:
+            self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -366,10 +367,16 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._search_timer.start(SEARCH_TIMER_SPEED)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        return self.search_query_worker.search_query.highlight_results_page(page_num)
+        if self.search_query_worker is None:
+            return []
+        else:
+            return self.search_query_worker.search_query.highlight_results_page(page_num)
 
     def query_hits(self) -> int:
-        return self.search_query_worker.search_query.hits
+        if self.search_query_worker is None:
+            return 0
+        else:
+            return self.search_query_worker.search_query.hits
 
     def _connect_signals(self):
         if self._clipboard is not None:

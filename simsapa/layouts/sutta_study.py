@@ -44,11 +44,6 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         self.timer.start(TIMER_SPEED)
 
         self.page_len = 20
-        self.search_query = SearchQuery(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            sutta_hit_to_search_result,
-        )
 
         self.queries = DictionaryQueries(self._app_data)
 

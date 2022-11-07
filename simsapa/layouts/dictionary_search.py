@@ -5,7 +5,6 @@ from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
-import re
 
 from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer
@@ -22,7 +21,7 @@ from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.db.search import SearchIndexed, SearchQuery, SearchResult, dict_word_hit_to_search_result
+from ..app.db.search import SearchIndexed, SearchResult, dict_word_hit_to_search_result
 from ..app.types import AppData, DictionarySearchWindowInterface, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
@@ -52,7 +51,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     selected_info: Any
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: SearchQueryWorker
+    search_query_worker: Optional[SearchQueryWorker] = None
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -71,11 +70,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.page_len = 20
 
         self.thread_pool = QThreadPool()
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result)
 
         self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
@@ -102,6 +96,29 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.init_stardict_import_dialog()
 
         self._setup_qwe_context_menu()
+
+    def _init_search_query_worker(self, query: str = ""):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        self._last_query_time = datetime.now()
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            dict_word_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           only_source)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
 
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
@@ -140,10 +157,16 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             return None
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        return self.search_query_worker.search_query.highlight_results_page(page_num)
+        if self.search_query_worker is None:
+            return []
+        else:
+            return self.search_query_worker.search_query.highlight_results_page(page_num)
 
     def query_hits(self) -> int:
-        return self.search_query_worker.search_query.hits
+        if self.search_query_worker is None:
+            return 0
+        else:
+            return self.search_query_worker.search_query.hits
 
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
@@ -156,11 +179,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     def reinit_index(self):
         self._app_data.search_indexed = SearchIndexed()
-        self.search_query_worker.search_query = SearchQuery(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result,
-        )
+        self._init_search_query_worker()
 
     def handle_messages(self):
         if self.queue_id in APP_QUEUES.keys():
@@ -350,6 +369,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def _search_query_finished(self, ret: SearchRet):
+        if self.search_query_worker is None:
+            return
+
         if self._last_query_time != ret['query_started']:
             return
 
@@ -374,29 +396,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
-        idx = self.dict_filter_dropdown.currentIndex()
-        source = self.dict_filter_dropdown.itemText(idx)
-        if source == "Dictionaries":
-            only_source = None
-        else:
-            only_source = source
-
-        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
-        self._last_query_time = datetime.now()
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result)
-
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           only_source)
-
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
-
-        self.thread_pool.start(self.search_query_worker)
+        self._init_search_query_worker(query)
+        if self.search_query_worker is not None:
+            self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()

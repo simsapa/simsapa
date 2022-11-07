@@ -44,7 +44,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
     _related_tabs: List[SuttaTabWidget]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: SearchQueryWorker
+    search_query_worker: Optional[SearchQueryWorker] = None
 
     def __init__(self,
                  app_data: AppData,
@@ -79,11 +79,6 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.thread_pool = QThreadPool()
 
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            sutta_hit_to_search_result)
-
         self._results: List[SearchResult] = []
         self._recent: List[USutta] = []
 
@@ -98,6 +93,33 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self._connect_signals()
 
         self.init_memo_dialog()
+
+    def _init_search_query_worker(self, query: str = ""):
+        if self.enable_search_extras:
+            idx = self.sutta_filter_dropdown.currentIndex()
+            source = self.sutta_filter_dropdown.itemText(idx)
+            if source == "Sources":
+                only_source = None
+            else:
+                only_source = source
+        else:
+            only_source = None
+
+        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
+        self._last_query_time = datetime.now()
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.suttas_index,
+            self.page_len,
+            sutta_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           only_source)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+
 
     def _get_active_tab(self) -> SuttaTabWidget:
         current_idx = self.sutta_tabs.currentIndex()
@@ -323,18 +345,38 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.pw.palibuttons_frame.setVisible(show)
 
     def _get_filter_labels(self):
-        res = []
+        # res = []
 
-        r = self._app_data.db_session.query(Am.Sutta.uid).all()
-        res.extend(r)
+        # r = self._app_data.db_session.query(Am.Sutta.uid).all()
+        # res.extend(r)
 
-        r = self._app_data.db_session.query(Um.Sutta.uid).all()
-        res.extend(r)
+        # r = self._app_data.db_session.query(Um.Sutta.uid).all()
+        # res.extend(r)
 
-        def _uid_to_label(x):
-            return re.sub(r'[^/]+/([^/]+/.*)', r'\1', x['uid'])
+        # def _uid_to_label(x):
+        #     return re.sub(r'[^/]+/([^/]+/.*)', r'\1', x['uid'])
 
-        labels = sorted(set(map(_uid_to_label, res)))
+        # labels = sorted(set(map(_uid_to_label, res)))
+
+        # FIXME replace hard-coded labels list
+        labels = ['en/agganyani', 'en/amaravati', 'en/anandajoti',
+        'en/aung-rhysdavids', 'en/beal', 'en/bingenheimer', 'en/bodhi',
+        'en/brahmali', 'en/btc', 'en/buddharakkhita', 'en/caf_rhysdavids',
+        'en/chalmers', 'en/cheng', 'en/cowell-rouse', 'en/daw',
+        'en/dhammadinna', 'en/dhammajoti', 'en/feldmeier', 'en/francis',
+        'en/francis-neil', 'en/guang', 'en/hare', 'en/hecker-khema',
+        'en/horner', 'en/horner-brahmali', 'en/huyenvi-boinwebb-pasadika',
+        'en/ireland', 'en/jayarava', 'en/kelly-sawyer-yareham',
+        'en/kiribathgoda', 'en/kumara', 'en/law', 'en/mills', 'en/mills-sujato',
+        'en/munindo', 'en/nanamoli', 'en/narada', 'en/narada-mahinda',
+        'en/nhat_hanh-laity', 'en/nizamis', 'en/nyanamoli', 'en/olendzki',
+        'en/pierquet', 'en/piyadassi', 'en/rhysdavids-brasington',
+        'en/rhysdavids_litt', 'en/rockhill', 'en/rouse', 'en/silacara',
+        'en/soma', 'en/soni', 'en/suddhaso', 'en/sujato', 'en/thanissaro',
+        'en/thittila', 'en/tw-caf_rhysdavids', 'en/tw_rhysdavids',
+        'en/ukumarabhivamsa', 'en/unandamedha', 'en/unarada', 'en/unknown',
+        'en/vaidya', 'en/vidyabhusana', 'en/walters', 'en/woodward', 'en/ypg',
+        'pli/cst4', 'pli/ms', 'pli/user', 'pli/vri', 'skr/gretil']
 
         return labels
 
@@ -380,6 +422,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def _search_query_finished(self, ret: SearchRet):
+        if self.search_query_worker is None:
+            return
+
         if self._last_query_time != ret['query_started']:
             return
 
@@ -401,32 +446,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._render_results_in_active_tab(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
-        if self.enable_search_extras:
-            idx = self.sutta_filter_dropdown.currentIndex()
-            source = self.sutta_filter_dropdown.itemText(idx)
-            if source == "Sources":
-                only_source = None
-            else:
-                only_source = source
-        else:
-            only_source = None
-
-        disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
-        self._last_query_time = datetime.now()
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            sutta_hit_to_search_result)
-
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           only_source)
-
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
-
-        self.thread_pool.start(self.search_query_worker)
+        self._init_search_query_worker(query)
+        if self.search_query_worker is not None:
+            self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -488,8 +510,14 @@ QWidget:focus { border: 1px solid #1092C3; }
         # TODO This is a synchronous version of _start_query_worker(), still
         # used in links_browser.py. Update and use the background thread worker.
 
+        if self.search_query_worker is None:
+            self._init_search_query_worker(query)
+
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
-        results = self.search_query_worker.search_query.new_query(query, disabled_labels, only_source)
+
+        results = []
+        if self.search_query_worker is not None:
+            results = self.search_query_worker.search_query.new_query(query, disabled_labels, only_source)
 
         return results
 

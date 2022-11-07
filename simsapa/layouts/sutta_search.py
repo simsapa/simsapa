@@ -61,7 +61,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
                                         self.tabs_layout)
 
         self.page_len = self.s.page_len
-        self.search_query = self.s.search_query_worker.search_query
 
         self._connect_signals()
 
@@ -145,10 +144,16 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self._app_data.actions_manager.lookup_in_dictionary(text)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        return self.s.search_query_worker.search_query.highlight_results_page(page_num)
+        if self.s.search_query_worker is None:
+            return []
+        else:
+            return self.s.search_query_worker.search_query.highlight_results_page(page_num)
 
     def query_hits(self) -> int:
-        return self.s.search_query_worker.search_query.hits
+        if self.s.search_query_worker is None:
+            return 0
+        else:
+            return self.s.search_query_worker.search_query.hits
 
     def show_network_graph(self, sutta: Optional[USutta] = None):
         if sutta is None:
@@ -283,7 +288,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
         d = SearchResultSizesDialog(self._app_data, self)
         if d.exec() and self.s.enable_sidebar:
-            self._update_sidebar_fulltext(self.search_query.hits)
+            self._update_sidebar_fulltext(self.query_hits())
 
     def _show_import_suttas_dialog(self):
         from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
