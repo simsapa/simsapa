@@ -297,16 +297,13 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _get_filter_labels(self):
         res = []
 
-        r = self._app_data.db_session.query(Am.DictWord.uid).all()
+        r = self._app_data.db_session.query(Am.Dictionary.label.distinct()).all()
         res.extend(r)
 
-        r = self._app_data.db_session.query(Um.DictWord.uid).all()
+        r = self._app_data.db_session.query(Um.Dictionary.label.distinct()).all()
         res.extend(r)
 
-        def _uid_to_label(x):
-            return re.sub(r'.*/([^/]+)', r'\1', x['uid'])
-
-        labels = sorted(set(map(_uid_to_label, res)))
+        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
 
         return labels
 
