@@ -77,6 +77,8 @@ def _get_sutta_by_uid(uid: str) -> Optional[USutta]:
         .all()
     results.extend(res)
 
+    db_session.close()
+
     if len(results) == 0:
         logger.warn("No Sutta found with uid: %s" % uid)
         return None
@@ -99,6 +101,8 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
         .filter(Um.DictWord.uid == uid) \
         .all()
     results.extend(res)
+
+    db_session.close()
 
     if len(results) == 0:
         logger.warn("No DictWord found with uid: %s" % uid)

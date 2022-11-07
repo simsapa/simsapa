@@ -55,6 +55,8 @@ def find_or_create_db(db_path: Path, schema_name: str):
                 except Exception as e:
                     logger.error("Failed to run migrations: %s" % e)
                     exit(1)
+
+        db_conn.close()
     else:
         logger.error("Can't create in-memory database")
 
