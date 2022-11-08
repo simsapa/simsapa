@@ -127,6 +127,11 @@ class AppWindows:
             else:
                 view = self._new_sutta_search_window()
 
+        else:
+            data = json.dumps(msg)
+            APP_QUEUES[view.queue_id].put_nowait(data)
+            view.handle_messages()
+
     def _lookup_clipboard_in_dictionary(self, msg: ApiMessage):
         # Is there a dictionary window to handle the message?
         view = None
@@ -140,6 +145,11 @@ class AppWindows:
                 view = self._new_dictionary_search_window(msg['data'])
             else:
                 view = self._new_dictionary_search_window()
+
+        else:
+            data = json.dumps(msg)
+            APP_QUEUES[view.queue_id].put_nowait(data)
+            view.handle_messages()
 
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
@@ -176,6 +186,22 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
+        def _lookup(query: str):
+            msg = ApiMessage(action = ApiAction.lookup_in_dictionary,
+                            data = query)
+            self._lookup_clipboard_in_dictionary(msg)
+
+        def _study(side: str, uid: str):
+            data = {'side': side, 'uid': uid}
+            print(data)
+            msg = ApiMessage(action = ApiAction.open_in_study_window,
+                            data = json.dumps(obj=data))
+            self._show_sutta_by_uid_in_side(msg)
+
+        view.lookup_in_dictionary_signal.connect(partial(_lookup))
+        view.s.open_in_study_window_signal.connect(partial(_study))
+        view.s.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -200,6 +226,18 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
+        def _study(side: str, uid: str):
+            data = {'side': side, 'uid': uid}
+            print(data)
+            msg = ApiMessage(action = ApiAction.open_in_study_window,
+                            data = json.dumps(obj=data))
+            self._show_sutta_by_uid_in_side(msg)
+
+        view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
+        view.sutta_one_state.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
+        view.sutta_two_state.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -222,6 +260,14 @@ class AppWindows:
         view = DictionarySearchWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
+
+        def _lookup_in_suttas(query: str):
+            msg = ApiMessage(action = ApiAction.lookup_in_suttas,
+                            data = query)
+            self._lookup_clipboard_in_suttas(msg)
+
+        view.lookup_in_suttas_signal.connect(partial(_lookup_in_suttas))
+        view.open_words_new_signal.connect(partial(self.open_words_new))
 
         if self._hotkeys_manager is not None:
             try:

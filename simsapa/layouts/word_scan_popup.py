@@ -458,7 +458,3 @@ class WordScanPopup(QDialog):
             self.s._clipboard.dataChanged.connect(partial(self._noop))
 
         event.accept()
-
-    def _handle_close_button(self):
-        if self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.show_word_scan_popup()

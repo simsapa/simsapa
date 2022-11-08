@@ -7,7 +7,7 @@ import json
 import queue
 
 from PyQt6 import QtCore, QtGui
-from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer
+from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
@@ -52,6 +52,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+
+    lookup_in_suttas_signal = pyqtSignal(str)
+    open_words_new_signal = pyqtSignal(list)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -122,8 +125,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_suttas(text)
+        if text is not None:
+            self.lookup_in_suttas_signal.emit(text)
 
     def _lookup_clipboard_in_dictionary(self):
         self.activateWindow()
@@ -135,8 +138,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     def _lookup_selection_in_suttas(self):
         text = self._get_selection()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_suttas(text)
+        if text is not None:
+            self.lookup_in_suttas_signal.emit(text)
 
     def _lookup_selection_in_dictionary(self):
         self.activateWindow()
@@ -662,17 +665,16 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.dev_view.deleteLater()
 
     def _handle_open_content_new(self):
-        if self._app_data.actions_manager is not None \
-           and len(self._current_words) > 0:
+        if len(self._current_words) > 0:
 
             def _f(x: UDictWord):
                 return (str(x.metadata.schema), int(str(x.id)))
 
             schemas_ids = list(map(_f, self._current_words))
 
-            self._app_data.actions_manager.open_words_new(schemas_ids)
+            self.open_words_new_signal.emit(schemas_ids)
         else:
-            logger.warn("Sutta is not set")
+            logger.warn("No current words")
 
     def _setup_qwe_context_menu(self):
         self.qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)

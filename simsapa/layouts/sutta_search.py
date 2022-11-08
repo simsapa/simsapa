@@ -5,7 +5,7 @@ import queue
 
 from functools import partial
 from typing import Any, Callable, List, Optional
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QVBoxLayout)
 
@@ -32,6 +32,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     recent_list: QListWidget
     _show_sutta: Callable
     s: SuttaSearchWindowState
+
+    lookup_in_dictionary_signal = pyqtSignal(str)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -128,8 +130,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     def _lookup_clipboard_in_dictionary(self):
         text = self._app_data.clipboard_getText()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_dictionary(text)
+        if text is not None:
+            self.lookup_in_dictionary_signal.emit(text)
 
     def _lookup_selection_in_suttas(self):
         self.activateWindow()
@@ -140,8 +142,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     def _lookup_selection_in_dictionary(self):
         text = self.s._get_selection()
-        if text is not None and self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.lookup_in_dictionary(text)
+        if text is not None:
+            self.lookup_in_dictionary_signal.emit(text)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
         if self.s.search_query_worker is None:

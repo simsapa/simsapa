@@ -1,7 +1,7 @@
 from functools import partial
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QAction
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -12,6 +12,9 @@ from ..app.types import AppData, USutta
 from .html_content import html_page
 
 class SuttaTabWidget(QWidget):
+
+    open_sutta_new_signal = pyqtSignal(str)
+
     def __init__(self,
                  app_data: AppData,
                  title: str,
@@ -163,8 +166,7 @@ class SuttaTabWidget(QWidget):
             self.dev_view.deleteLater()
 
     def _handle_open_content_new(self):
-        if self._app_data.actions_manager is not None \
-           and self.sutta is not None:
-            self._app_data.actions_manager.open_sutta_new(str(self.sutta.uid))
+        if self.sutta is not None:
+            self.open_sutta_new_signal.emit(str(self.sutta.uid))
         else:
             logger.warn("Sutta is not set")

@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import partial
 from typing import Any, List, Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtCore import QThreadPool, QTimer, Qt
+from PyQt6.QtCore import QThreadPool, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -45,6 +45,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+
+    open_in_study_window_signal = pyqtSignal([str, str])
 
     def __init__(self,
                  app_data: AppData,
@@ -781,11 +783,11 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _open_in_study_window(self, side: str):
         tab = self._get_active_tab()
         sutta = tab.sutta
-        if sutta is None or self._app_data.actions_manager is None:
+        if sutta is None:
             return
 
         uid: str = sutta.uid # type: ignore
-        self._app_data.actions_manager.open_in_study_window(side, uid)
+        self.open_in_study_window_signal.emit(side, uid)
 
     def _setup_qwe_context_menu(self, qwe: QWebEngineView):
         qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
