@@ -31,9 +31,9 @@ SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
-TIMER_SPEED = 50
+TIMER_SPEED = 30
 
-SEARCH_TIMER_SPEED = 300
+SEARCH_TIMER_SPEED = 500
 
 #s = os.getenv('USE_TEST_DATA')
 #if s is not None and s.lower() == 'true':

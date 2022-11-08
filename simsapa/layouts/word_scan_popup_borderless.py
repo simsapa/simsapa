@@ -4,11 +4,11 @@ import math
 from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt
-from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtGui import QClipboard, QCloseEvent, QCursor, QEnterEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -408,22 +408,98 @@ class WordScanPopup(QDialog):
 
         self.setWindowTitle("Clipboard Scanning Word Lookup")
         self.setMinimumSize(50, 50)
+        self.setMouseTracking(True)
 
         self._restore_size_pos()
 
         flags = Qt.WindowType.Dialog | \
-            Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.CustomizeWindowHint | \
+            Qt.WindowType.WindowStaysOnTopHint | \
+            Qt.WindowType.FramelessWindowHint | \
+            Qt.WindowType.BypassWindowManagerHint | \
+            Qt.WindowType.X11BypassWindowManagerHint
 
         self.setWindowFlags(Qt.WindowType(flags))
 
         self.setObjectName("WordScanPopup")
-        self.setStyleSheet("#WordScanPopup { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.setStyleSheet("#WordScanPopup { background-color: %s; border: 1px solid #ababab; }" % READING_BACKGROUND_COLOR)
 
+        self._resized = False
+        self._left_pressed = False
         self._margin = 8
+        self._cursor = QCursor()
+        self._dragMenuBarOnlyWayToMoveWindowFlag = False
+
+        self.__init_position()
+        self.oldPos = self.pos()
 
         self.focus_input = focus_input
 
+        self._ui_setup()
+        self._connect_signals()
+
         self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
+
+    def _ui_setup(self):
+        top_buttons_box = QHBoxLayout()
+        self.wrap_layout.addLayout(top_buttons_box)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/close"))
+
+        button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+
+        self.close_button = QPushButton()
+        self.close_button.setFixedSize(20, 20)
+        self.close_button.setStyleSheet(button_style)
+        self.close_button.setIcon(icon)
+
+        self.close_button.setShortcut(QKeySequence("Ctrl+F6"))
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/drag"))
+
+        self.drag_button = QPushButton()
+        self.drag_button.setCheckable(True)
+        self.drag_button.setFixedSize(20, 20)
+        self.drag_button.setStyleSheet(button_style)
+        self.drag_button.setIcon(icon)
+
+        # FIXME tooltip doesn't activate, show in window content
+        self.drag_button.setToolTip("Move the window: check move button, left-click, hold and drag, uncheck move button.")
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/resize"))
+
+        self.resize_button = QPushButton()
+        self.resize_button.setCheckable(True)
+        self.resize_button.setFixedSize(20, 20)
+        self.resize_button.setStyleSheet(button_style)
+        self.resize_button.setIcon(icon)
+
+        spacer = QSpacerItem(100, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        if IS_MAC:
+            top_buttons_box.addWidget(self.close_button)
+            top_buttons_box.addItem(spacer)
+            top_buttons_box.addWidget(self.resize_button)
+            top_buttons_box.addWidget(self.drag_button)
+        else:
+            top_buttons_box.addWidget(self.drag_button)
+            top_buttons_box.addWidget(self.resize_button)
+            top_buttons_box.addItem(spacer)
+            top_buttons_box.addWidget(self.close_button)
+
+    def _connect_signals(self):
+        self.drag_button.clicked.connect(partial(self._handle_drag_button))
+        self.resize_button.clicked.connect(partial(self._handle_resize_button))
+        self.close_button.clicked.connect(partial(self._handle_close_button))
+
+    def __init_position(self):
+        self.__top = False
+        self.__bottom = False
+        self.__left = False
+        self.__right = False
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
@@ -440,8 +516,121 @@ class WordScanPopup(QDialog):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def _noop(self):
-        pass
+    def mousePressEvent(self, e: QMouseEvent):
+        self.oldPos = e.globalPosition().toPoint()
+        self._left_pressed = (e.button() == Qt.MouseButton.LeftButton)
+        # if e.button() == Qt.MouseButton.LeftButton:
+        #     if self._resized:
+        #         self._resize()
+        #     else:
+        #         if self._dragMenuBarOnlyWayToMoveWindowFlag:
+        #             pass
+        #         else:
+        #             self._move()
+        return super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e: QMouseEvent):
+        self._left_pressed = not (e.button() == Qt.MouseButton.LeftButton)
+        return super().mouseReleaseEvent(e)
+
+    def mouseMoveEvent(self, e: QMouseEvent):
+        self.__set_cursor_shape_for_current_point(e.pos())
+
+        is_resizing_cursor_shape = (self._cursor.shape() == Qt.CursorShape.SizeBDiagCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeFDiagCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeHorCursor \
+                                    or self._cursor.shape() == Qt.CursorShape.SizeVerCursor)
+
+        if self.drag_button.isChecked() \
+           or (not self.resize_button.isChecked() and self._left_pressed and self._cursor.shape() == Qt.CursorShape.ClosedHandCursor):
+            self._move(e)
+
+        elif self.resize_button.isChecked() \
+           or (not self.drag_button.isChecked() and self._left_pressed and is_resizing_cursor_shape):
+            self._resize(e)
+
+        return super().mouseMoveEvent(e)
+
+    def enterEvent(self, e: QEnterEvent):
+        # prevent accumulated cursor shape bug
+        self.__set_cursor_shape_for_current_point(e.position().toPoint())
+
+        if self.focus_input:
+            self.s.search_input.setFocus()
+            self.s.search_input.grabKeyboard()
+
+        return super().enterEvent(e)
+
+    def leaveEvent(self, e: QEnterEvent):
+        self.s.search_input.releaseKeyboard()
+        return super().leaveEvent(e)
+
+    def __set_cursor_shape_for_current_point(self, p: QPoint):
+        # give the margin to reshape cursor shape
+        rect = self.rect()
+        rect.setX(self.rect().x() + self._margin)
+        rect.setY(self.rect().y() + self._margin)
+        rect.setWidth(self.rect().width() - self._margin * 2)
+        rect.setHeight(self.rect().height() - self._margin * 2)
+
+        self._resized = rect.contains(p)
+        if self._resized:
+            # resize end
+            self.unsetCursor()
+            self._cursor = self.cursor()
+            self.__init_position()
+        else:
+            # resize start
+            x = p.x()
+            y = p.y()
+
+            x1 = self.rect().x()
+            y1 = self.rect().y()
+            x2 = self.rect().width()
+            y2 = self.rect().height()
+
+            self.__left = abs(x - x1) <= self._margin # if mouse cursor is at the almost far left
+            self.__top = abs(y - y1) <= self._margin # far top
+            self.__right = abs(x - (x2 + x1)) <= self._margin # far right
+            self.__bottom = abs(y - (y2 + y1)) <= self._margin # far bottom
+
+            # set the cursor shape based on flag above
+            if self.__top and self.__left:
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
+            elif self.__top and self.__right:
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
+            elif self.__bottom and self.__left:
+                self._cursor.setShape(Qt.CursorShape.SizeBDiagCursor)
+            elif self.__bottom and self.__right:
+                self._cursor.setShape(Qt.CursorShape.SizeFDiagCursor)
+            elif self.__left:
+                self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
+            elif self.__top:
+                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
+            elif self.__right:
+                self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
+            elif self.__bottom:
+                self._cursor.setShape(Qt.CursorShape.SizeVerCursor)
+            self.setCursor(self._cursor)
+
+        self._resized = not self._resized
+
+    def _resize(self, e: QMouseEvent):
+        p = e.globalPosition().toPoint()
+        p -= self.oldPos
+        delta = QPoint(p)
+        size = self.rect()
+        self.resize(size.width() + delta.x(),
+                    size.height() + delta.y())
+        self.oldPos = e.globalPosition().toPoint()
+
+    def _move(self, e: QMouseEvent):
+        p = e.globalPosition().toPoint()
+        p -= self.oldPos
+        delta = QPoint(p)
+        self.move(self.x() + delta.x(), self.y() + delta.y())
+        self.oldPos = e.globalPosition().toPoint()
+
 
     def closeEvent(self, event: QCloseEvent):
         qr = self.frameGeometry()
@@ -454,10 +643,49 @@ class WordScanPopup(QDialog):
         self._app_data.app_settings['word_scan_popup_pos'] = p
         self._app_data._save_app_settings()
 
-        if self.s._clipboard is not None:
-            self.s._clipboard.dataChanged.connect(partial(self._noop))
-
         event.accept()
+
+    def _handle_drag_button(self):
+        if self.drag_button.isChecked():
+            self.drag_button.grabMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+
+            msg = """
+            <h2>Moving the window</h2>
+            <ol>
+                <li>Check the move button.</li>
+                <li>Left-click, hold and drag.</li>
+                <li>Uncheck the move button.</li>
+            </ol>
+            """
+            self.s._show_temp_content_msg(msg)
+        else:
+            self.drag_button.releaseMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+            self.s._show_current_html()
+
+        self.drag_button.setStyleSheet(button_style)
+
+    def _handle_resize_button(self):
+        if self.resize_button.isChecked():
+            self.resize_button.grabMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
+
+            msg = """
+            <h2>Resizing the window</h2>
+            <ol>
+                <li>Check the resize button.</li>
+                <li>Left-click, hold and drag.</li>
+                <li>Uncheck the resize button.</li>
+            </ol>
+            """
+            self.s._show_temp_content_msg(msg)
+        else:
+            self.resize_button.releaseMouse()
+            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
+            self.s._show_current_html()
+
+        self.resize_button.setStyleSheet(button_style)
 
     def _handle_close_button(self):
         if self._app_data.actions_manager is not None:
