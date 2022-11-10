@@ -375,6 +375,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self._handle_exact_query(min_length=4)
 
     def _user_typed(self):
+        if not self._app_data.app_settings.get('incremental_search', True):
+            return
+
         if not self._search_timer.isActive():
             self._search_timer = QTimer()
             self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))

@@ -89,6 +89,36 @@ class AppSettings(TypedDict):
     sutta_max_width: int
     dictionary_font_size: int
     search_result_sizes: SearchResultSizes
+    incremental_search: bool
+
+def default_app_settings() -> AppSettings:
+    return AppSettings(
+        disabled_sutta_labels = Labels(
+            appdata = [],
+            userdata = [],
+        ),
+        disabled_dict_labels = Labels(
+            appdata = [],
+            userdata = [],
+        ),
+        notify_about_updates = True,
+        suttas_show_pali_buttons = True,
+        dictionary_show_pali_buttons = True,
+        show_toolbar = False,
+        first_window_on_startup = WindowType.SuttaSearch,
+        word_scan_popup_pos = WindowPosSize(
+            x = 100,
+            y = 100,
+            width = 400,
+            height = 500,
+        ),
+        show_related_suttas = True,
+        sutta_font_size = 22,
+        sutta_max_width = 75,
+        dictionary_font_size = 18,
+        search_result_sizes = default_search_result_sizes(),
+        incremental_search = True,
+    )
 
 # Message to show to the user.
 class AppMessage(TypedDict):
@@ -168,32 +198,7 @@ class AppData:
         if x is not None:
             self.app_settings: AppSettings = json.loads(x.value)
         else:
-            self.app_settings = AppSettings(
-                disabled_sutta_labels = Labels(
-                    appdata = [],
-                    userdata = [],
-                ),
-                disabled_dict_labels = Labels(
-                    appdata = [],
-                    userdata = [],
-                ),
-                notify_about_updates = True,
-                suttas_show_pali_buttons = True,
-                dictionary_show_pali_buttons = True,
-                show_toolbar = False,
-                first_window_on_startup = WindowType.SuttaSearch,
-                word_scan_popup_pos = WindowPosSize(
-                    x = 100,
-                    y = 100,
-                    width = 400,
-                    height = 500,
-                ),
-                show_related_suttas = True,
-                sutta_font_size = 22,
-                sutta_max_width = 75,
-                dictionary_font_size = 18,
-                search_result_sizes = default_search_result_sizes(),
-            )
+            self.app_settings = default_app_settings()
             self._save_app_settings()
 
     def _save_app_settings(self):
@@ -248,6 +253,7 @@ class AppWindowInterface(QMainWindow):
     action_Notify_About_Updates: QAction
     action_Show_Toolbar: QAction
     action_Show_Word_Scan_Popup: QAction
+    action_Incremental_Search: QAction
     action_Show_Related_Suttas: QAction
     action_Re_index_database: QAction
     action_Re_download_database: QAction

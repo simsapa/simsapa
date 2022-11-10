@@ -515,14 +515,30 @@ class AppWindows:
         self._app_data.app_settings['notify_about_updates'] = checked
         self._app_data._save_app_settings()
 
+        for w in self._windows:
+            if hasattr(w,'action_Notify_About_Updates'):
+                w.action_Notify_About_Updates.setChecked(checked)
+
     def _set_show_toolbar_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Show_Toolbar.isChecked()
         self._app_data.app_settings['show_toolbar'] = checked
         self._app_data._save_app_settings()
 
         for w in self._windows:
+            if hasattr(w,'action_Show_Toolbar'):
+                w.action_Show_Toolbar.setChecked(checked)
+
             if hasattr(w,'toolBar'):
                 w.toolBar.setVisible(checked)
+
+    def _set_incremental_search_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Incremental_Search.isChecked()
+        self._app_data.app_settings['incremental_search'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w,'action_Incremental_Search'):
+                w.action_Incremental_Search.setChecked(checked)
 
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
@@ -604,6 +620,13 @@ class AppWindows:
 
         if hasattr(view, 'toolBar') and not show_toolbar:
             view.toolBar.setVisible(False)
+
+        if hasattr(view, 'action_Incremental_Search'):
+            view.action_Incremental_Search \
+                .triggered.connect(partial(self._set_incremental_search_setting, view))
+
+            incremental_search = self._app_data.app_settings.get('incremental_search', True)
+            view.action_Incremental_Search.setChecked(incremental_search)
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':

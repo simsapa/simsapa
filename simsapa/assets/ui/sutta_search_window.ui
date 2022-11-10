@@ -535,6 +535,7 @@
     <property name="title">
      <string>&amp;Go</string>
     </property>
+    <addaction name="action_Incremental_Search"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
     <addaction name="action_Previous_Tab"/>
@@ -900,6 +901,23 @@
   <action name="action_Search_Result_Sizes">
    <property name="text">
     <string>&amp;Search Result Sizes...</string>
+   </property>
+  </action>
+  <action name="action_Incremental_Search">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Incremental Search</string>
+   </property>
+   <property name="toolTip">
+    <string>Run search query immediately when stopped typing</string>
+   </property>
+   <property name="statusTip">
+    <string/>
    </property>
   </action>
  </widget>

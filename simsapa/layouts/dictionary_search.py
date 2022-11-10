@@ -745,6 +745,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.render_fulltext_page()
 
     def _user_typed(self):
+        if not self.action_Incremental_Search.isChecked():
+            return
+
         if not self._search_timer.isActive():
             self._search_timer = QTimer()
             self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
