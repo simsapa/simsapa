@@ -167,6 +167,12 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
         self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
 
+    def start_loading_animation(self):
+        pass
+
+    def stop_loading_animation(self):
+        pass
+
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
         s = self._app_data.clipboard_getText()

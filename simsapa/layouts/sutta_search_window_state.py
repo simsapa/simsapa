@@ -424,6 +424,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def _search_query_finished(self, ret: SearchRet):
+        self.pw.stop_loading_animation()
+
         if self.search_query_worker is None:
             return
 
@@ -448,6 +450,8 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._render_results_in_active_tab(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
+        self.pw.start_loading_animation()
+
         self._init_search_query_worker(query)
         if self.search_query_worker is not None:
             self.thread_pool.start(self.search_query_worker)

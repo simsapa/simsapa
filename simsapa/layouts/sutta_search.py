@@ -7,7 +7,7 @@ from functools import partial
 from typing import Any, Callable, List, Optional
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QAction
-from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QVBoxLayout)
+from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, QVBoxLayout)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
@@ -32,6 +32,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     recent_list: QListWidget
     _show_sutta: Callable
     s: SuttaSearchWindowState
+    fulltext_results_tab_idx: int = 0
+    rightside_tabs: QTabWidget
 
     lookup_in_dictionary_signal = pyqtSignal(str)
 
@@ -168,9 +170,9 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     def _update_sidebar_fulltext(self, hits: int):
         if hits > 0:
-            self.rightside_tabs.setTabText(0, f"Fulltext ({hits})")
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
         else:
-            self.rightside_tabs.setTabText(0, "Fulltext")
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
         self.render_fulltext_page()
 

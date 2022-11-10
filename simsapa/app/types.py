@@ -12,7 +12,7 @@ from sqlalchemy.sql.functions import func
 
 from PyQt6 import QtWidgets
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QToolBar
+from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger
 from simsapa.app.actions_manager import ActionsManager
@@ -268,6 +268,8 @@ class AppWindowInterface(QMainWindow):
 
     toolBar: QToolBar
     search_input: QLineEdit
+    start_loading_animation: Callable
+    stop_loading_animation: Callable
 
     _focus_search_input: Callable
 
@@ -282,12 +284,14 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _select_next_recent: Callable
     _select_prev_recent: Callable
 
+    rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
     action_Dictionary_Search: QAction
     action_Show_Related_Suttas: QAction
     action_Find_in_Page: QAction
 
 class DictionarySearchWindowInterface(AppWindowInterface):
+    rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
 
 

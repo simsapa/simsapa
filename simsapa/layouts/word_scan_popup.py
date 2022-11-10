@@ -3,6 +3,7 @@ from functools import partial
 import math
 from typing import List, Optional
 from PyQt6 import QtGui
+from PyQt6 import QtCore
 from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt
 from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -166,6 +167,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._setup_words_tab()
         self._setup_fulltext_tab()
+        self.fulltext_results_tab_idx = 1
 
     def _setup_words_tab(self):
         self.tab_word = QWidget()
@@ -181,10 +183,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
     def _setup_fulltext_tab(self):
         self.fulltext_tab = QWidget()
-        self.fulltext_tab.setObjectName("Fulltext")
-        self.fulltext_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.fulltext_tab.setObjectName("Results")
+        self.fulltext_tab.setStyleSheet("QWidget#Results { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self.tabs.addTab(self.fulltext_tab, "Fulltext")
+        self.tabs.addTab(self.fulltext_tab, "Results")
 
         self.fulltext_tab_layout = QVBoxLayout(self.fulltext_tab)
         self.fulltext_tab_inner_layout = QVBoxLayout()
@@ -216,6 +218,14 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.fulltext_label = QLabel(self.fulltext_tab)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
 
+        self.fulltext_loading_bar = QLabel(self.fulltext_tab)
+        self.fulltext_loading_bar.setMinimumSize(QtCore.QSize(0, 5))
+        self.fulltext_loading_bar.setMaximumSize(QtCore.QSize(16777215, 5))
+        self.fulltext_loading_bar.setText("")
+        self.fulltext_loading_bar.setObjectName("fulltext_loading_bar")
+
+        self.fulltext_tab_inner_layout.addWidget(self.fulltext_loading_bar)
+
         self.fulltext_list = QListWidget(self.fulltext_tab)
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
@@ -226,6 +236,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_input.setText(s)
 
     def _show_word(self, word: UDictWord):
+        self.tabs.setTabText(0, str(word.uid))
+
         self._current_words = [word]
         word_html = self.queries.get_word_html(word)
 
@@ -272,6 +284,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.fulltext_last_page_btn.setEnabled(True)
 
     def _search_query_finished(self, ret: SearchRet):
+        self.stop_loading_animation()
+
         if self.search_query_worker is None:
             return
 
@@ -286,9 +300,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_button.setIcon(icon_search)
 
         if self.search_query_worker.search_query.hits > 0:
-            self.tabs.setTabText(1, f"Fulltext ({self.search_query_worker.search_query.hits})")
+            self.tabs.setTabText(1, f"Results ({self.search_query_worker.search_query.hits})")
         else:
-            self.tabs.setTabText(1, "Fulltext")
+            self.tabs.setTabText(1, "Results")
 
         self.render_fulltext_page()
 
@@ -298,6 +312,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
+        self.start_loading_animation()
         self._init_search_query_worker(query)
         if self.search_query_worker is not None:
             self.thread_pool.start(self.search_query_worker)
@@ -338,6 +353,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         res = self.queries.word_exact_matches(query)
 
+        self.tabs.setTabText(0, query)
         self._render_words(res)
 
     def _handle_result_select(self):

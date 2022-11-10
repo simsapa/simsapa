@@ -91,8 +91,12 @@
                <height>0</height>
               </size>
              </property>
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/search</normaloff>:/search</iconset>
+             </attribute>
              <attribute name="title">
-              <string>Fulltext</string>
+              <string>Results</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout">
               <item>
@@ -188,6 +192,25 @@
                  </layout>
                 </item>
                 <item>
+                 <widget class="QLabel" name="fulltext_loading_bar">
+                  <property name="minimumSize">
+                   <size>
+                    <width>0</width>
+                    <height>5</height>
+                   </size>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>5</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string/>
+                  </property>
+                 </widget>
+                </item>
+                <item>
                  <widget class="QListWidget" name="fulltext_list">
                   <property name="frameShape">
                    <enum>QFrame::NoFrame</enum>
@@ -202,6 +225,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="links_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/diagram</normaloff>:/diagram</iconset>
+             </attribute>
              <attribute name="title">
               <string>Links</string>
              </attribute>
@@ -311,6 +338,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="memos_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/pen-fancy</normaloff>:/pen-fancy</iconset>
+             </attribute>
              <attribute name="title">
               <string>Memos</string>
              </attribute>
@@ -403,6 +434,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="recent_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/history-icon</normaloff>:/history-icon</iconset>
+             </attribute>
              <attribute name="title">
               <string>History</string>
              </attribute>

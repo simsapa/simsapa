@@ -9,6 +9,7 @@
     <file alias="close">icons/32x32/fa_times-circle.png</file>
     <file alias="sync">icons/32x32/fa_sync.png</file>
     <file alias="reload">icons/32x32/fa_redo.png</file>
+    <file alias="history-icon">icons/32x32/fa_clock-rotate-left-solid.png</file>
     <file alias="book">icons/32x32/bxs_book_bookmark.png</file>
     <file alias="dictionary">icons/32x32/bxs_book_content.png</file>
     <file alias="info">icons/32x32/fa_circle-info-solid.png</file>
@@ -20,6 +21,8 @@
     <file alias="resize">icons/32x32/fa_down-left-and-up-right-to-center-solid.png</file>
     <file alias="simsapa-tray">icons/32x32/simsapa-tray.png</file>
     <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
+    <file alias="loading-bar">icons/gif/loading-bar.gif</file>
+    <file alias="loading-bar-empty">icons/gif/loading-bar-empty.gif</file>
     <file alias="arrow-down">icons/32x32/fa_arrow-down-solid.png</file>
     <file alias="arrow-left">icons/32x32/fa_arrow-left-solid.png</file>
     <file alias="arrow-right">icons/32x32/fa_arrow-right-solid.png</file>

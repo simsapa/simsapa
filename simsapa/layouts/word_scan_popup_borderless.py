@@ -181,10 +181,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
     def _setup_fulltext_tab(self):
         self.fulltext_tab = QWidget()
-        self.fulltext_tab.setObjectName("Fulltext")
-        self.fulltext_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.fulltext_tab.setObjectName("Results")
+        self.fulltext_tab.setStyleSheet("QWidget#Results { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self.tabs.addTab(self.fulltext_tab, "Fulltext")
+        self.tabs.addTab(self.fulltext_tab, "Results")
 
         self.fulltext_tab_layout = QVBoxLayout(self.fulltext_tab)
         self.fulltext_tab_inner_layout = QVBoxLayout()
@@ -286,9 +286,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_button.setIcon(icon_search)
 
         if self.search_query_worker.search_query.hits > 0:
-            self.tabs.setTabText(1, f"Fulltext ({self.search_query_worker.search_query.hits})")
+            self.tabs.setTabText(1, f"Results ({self.search_query_worker.search_query.hits})")
         else:
-            self.tabs.setTabText(1, "Fulltext")
+            self.tabs.setTabText(1, "Results")
 
         self.render_fulltext_page()
 

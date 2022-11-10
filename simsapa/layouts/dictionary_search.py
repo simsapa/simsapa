@@ -10,7 +10,7 @@ from PyQt6 import QtCore, QtGui
 from PyQt6.QtCore import QThreadPool, Qt, QUrl, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget,
-                             QHBoxLayout, QPushButton, QSizePolicy, QToolBar, QVBoxLayout)
+                             QHBoxLayout, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
@@ -52,6 +52,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+    fulltext_results_tab_idx: int = 0
+    rightside_tabs: QTabWidget
 
     lookup_in_suttas_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
@@ -372,6 +374,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def _search_query_finished(self, ret: SearchRet):
+        self.stop_loading_animation()
+
         if self.search_query_worker is None:
             return
 
@@ -387,9 +391,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.setIcon(icon_search)
 
         if self.search_query_worker.search_query.hits > 0:
-            self.rightside_tabs.setTabText(0, f"Fulltext ({self.search_query_worker.search_query.hits})")
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({self.search_query_worker.search_query.hits})")
         else:
-            self.rightside_tabs.setTabText(0, "Fulltext")
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
         self.render_fulltext_page()
 
@@ -399,6 +403,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
 
     def _start_query_worker(self, query: str):
+        self.start_loading_animation()
         self._init_search_query_worker(query)
         if self.search_query_worker is not None:
             self.thread_pool.start(self.search_query_worker)
