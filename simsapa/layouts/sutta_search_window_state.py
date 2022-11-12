@@ -15,11 +15,11 @@ from sqlalchemy.sql.elements import and_
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from simsapa.layouts.search_query_worker import SearchQueryWorker, SearchRet
+from simsapa.layouts.search_query_worker import SearchQueryWorker
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, UDictWord, SuttaSearchWindowInterface
+from ..app.types import AppData, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -45,6 +45,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+    search_mode_dropdown: QComboBox
 
     open_in_study_window_signal = pyqtSignal([str, str])
 
@@ -81,7 +82,6 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.thread_pool = QThreadPool()
 
-        self._results: List[SearchResult] = []
         self._recent: List[USutta] = []
 
         self._current_sutta: Optional[USutta] = None
@@ -110,9 +110,14 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
         self._last_query_time = datetime.now()
 
+        idx = self.search_mode_dropdown.currentIndex()
+        s = self.search_mode_dropdown.itemText(idx)
+        mode = SuttaSearchModeNameToType[s]
+
         self.search_query_worker = SearchQueryWorker(
             self._app_data.search_indexed.suttas_index,
             self.page_len,
+            mode,
             sutta_hit_to_search_result)
 
         self.search_query_worker.set_query(query,
@@ -233,6 +238,18 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
 
         self.search_button.setIcon(icon2)
         self.searchbar_layout.addWidget(self.search_button)
+
+        self.search_mode_dropdown = QComboBox()
+        items = SuttaSearchModeNameToType.keys()
+        self.search_mode_dropdown.addItems(items)
+        self.search_mode_dropdown.setFixedHeight(40)
+
+        mode = self._app_data.app_settings.get('sutta_search_mode', SearchMode.FulltextMatch)
+        values = list(map(lambda x: x[1], SuttaSearchModeNameToType.items()))
+        idx = values.index(mode)
+        self.search_mode_dropdown.setCurrentIndex(idx)
+
+        self.searchbar_layout.addWidget(self.search_mode_dropdown)
 
         self.search_extras = QtWidgets.QHBoxLayout()
         self.searchbar_layout.addLayout(self.search_extras)
@@ -423,16 +440,27 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setCursorPosition(n + len(s))
         self.search_input.setFocus()
 
-    def _search_query_finished(self, ret: SearchRet):
+    def query_hits(self) -> int:
+        if self.search_query_worker is None:
+            return 0
+        else:
+            return self.search_query_worker.query_hits()
+
+    def results_page(self, page_num: int) -> List[SearchResult]:
+        if self.search_query_worker is None:
+            return []
+        else:
+            return self.search_query_worker.results_page(page_num)
+
+    def _search_query_finished(self):
+        logger.info("_search_query_finished()")
         self.pw.stop_loading_animation()
 
         if self.search_query_worker is None:
             return
 
-        if self._last_query_time != ret['query_started']:
+        if self._last_query_time != self.search_query_worker.query_started:
             return
-
-        self._results = ret['results']
 
         # Restore the search icon, processing finished
         icon_search = QtGui.QIcon()
@@ -441,15 +469,18 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.setIcon(icon_search)
 
         if self.enable_sidebar:
-            self.pw._update_sidebar_fulltext(self.search_query_worker.search_query.hits)
+            self.pw._update_sidebar_fulltext(self.query_hits())
 
-        if self.search_query_worker.search_query.hits == 1 and self._results[0]['uid'] is not None:
-            self._show_sutta_by_uid(self._results[0]['uid'])
+        results = self.search_query_worker.results_page(0)
+
+        if self.query_hits() == 1 and results[0]['uid'] is not None:
+            self._show_sutta_by_uid(results[0]['uid'])
 
         elif self.query_in_tab:
-            self._render_results_in_active_tab(self.search_query_worker.search_query.hits)
+            self._render_results_in_active_tab(self.query_hits())
 
     def _start_query_worker(self, query: str):
+        logger.info("_start_query_worker()")
         self.pw.start_loading_animation()
 
         self._init_search_query_worker(query)
@@ -458,6 +489,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
+        logger.info(f"_handle_query(): {query}, {min_length}")
 
         # Re-render the current sutta, in case user is trying to restore sutta
         # after a search in the Study Window with the clear input button.
@@ -482,7 +514,8 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         self.showing_query_in_tab = True
-        self._get_active_tab().render_search_results(self._results)
+        if self.search_query_worker is not None:
+            self._get_active_tab().render_search_results(self.search_query_worker.all_results())
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -521,11 +554,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
 
-        results = []
+        first_page_results = []
         if self.search_query_worker is not None:
-            results = self.search_query_worker.search_query.new_query(query, disabled_labels, only_source)
+            self.search_query_worker.search_query.new_query(query, disabled_labels, only_source)
+            first_page_results = self.search_query_worker.search_query.highlight_results_page(0)
 
-        return results
+        return first_page_results
 
     def _set_qwe_html(self, html: str):
         self.sutta_tab.set_qwe_html(html)
@@ -851,6 +885,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
 
+    def _handle_search_mode_changed(self):
+        idx = self.search_mode_dropdown.currentIndex()
+        s = self.search_mode_dropdown.itemText(idx)
+
+        self._app_data.app_settings['sutta_search_mode'] = SuttaSearchModeNameToType[s]
+        self._app_data._save_app_settings()
+
     def _connect_signals(self):
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._user_typed))
@@ -876,3 +917,4 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.pw.action_Find_in_Page \
                 .triggered.connect(self._handle_show_find_panel)
 
+        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))

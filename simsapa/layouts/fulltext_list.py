@@ -5,8 +5,8 @@ from PyQt6 import QtGui
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QMovie
 from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTabWidget
+from simsapa import logger
 
-from simsapa.app.db.search import SearchResult
 from simsapa.app.types import AppData, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
 
@@ -22,7 +22,6 @@ class HasFulltextList:
     fulltext_page_input: QSpinBox
     fulltext_results_tab_idx: int
     _app_data: AppData
-    _results: List[SearchResult]
     _handle_query: Callable
     _handle_result_select: Callable
     page_len: int
@@ -80,6 +79,10 @@ class HasFulltextList:
 
     def render_fulltext_page(self):
         page_num = self.fulltext_page_input.value() - 1
+        logger.info(f"render_fulltext_page(), page_num: {page_num}")
+        if page_num < 0:
+            return
+
         page_start = page_num * self.page_len
 
         page_end = page_start + self.page_len
@@ -92,7 +95,7 @@ class HasFulltextList:
             self.fulltext_label.clear()
             return
 
-        self._results = self.highlight_results_page(page_num)
+        results = self.highlight_results_page(page_num)
 
         msg = f"Showing {page_start+1}-{page_end} out of {self.query_hits()} results"
         self.fulltext_label.setText(msg)
@@ -101,7 +104,7 @@ class HasFulltextList:
 
         sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
 
-        for idx, x in enumerate(self._results):
+        for idx, x in enumerate(results):
             w = SearchItemWidget(sizes)
             w.setFromResult(x)
 

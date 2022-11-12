@@ -59,6 +59,24 @@ WindowNameToType = {
     "Links": WindowType.Links,
 }
 
+class SearchMode(int, Enum):
+    FulltextMatch = 0
+    ExactMatch = 1
+    HeadwordMatch = 2
+    TitleMatch = 3
+
+SuttaSearchModeNameToType = {
+    "Fulltext Match": SearchMode.FulltextMatch,
+    "Exact Match": SearchMode.ExactMatch,
+    "Title Match": SearchMode.TitleMatch,
+}
+
+DictionarySearchModeNameToType = {
+    "Fulltext Match": SearchMode.FulltextMatch,
+    "Exact Match": SearchMode.ExactMatch,
+    "Headword Match": SearchMode.HeadwordMatch,
+}
+
 class SearchResultSizes(TypedDict):
     header_height: int
     snippet_length: int
@@ -90,6 +108,8 @@ class AppSettings(TypedDict):
     dictionary_font_size: int
     search_result_sizes: SearchResultSizes
     incremental_search: bool
+    sutta_search_mode: SearchMode
+    dictionary_search_mode: SearchMode
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -118,6 +138,8 @@ def default_app_settings() -> AppSettings:
         dictionary_font_size = 18,
         search_result_sizes = default_search_result_sizes(),
         incremental_search = True,
+        sutta_search_mode = SearchMode.FulltextMatch,
+        dictionary_search_mode = SearchMode.FulltextMatch,
     )
 
 # Message to show to the user.

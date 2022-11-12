@@ -151,13 +151,10 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if self.s.search_query_worker is None:
             return []
         else:
-            return self.s.search_query_worker.search_query.highlight_results_page(page_num)
+            return self.s.search_query_worker.highlight_results_page(page_num)
 
     def query_hits(self) -> int:
-        if self.s.search_query_worker is None:
-            return 0
-        else:
-            return self.s.search_query_worker.search_query.hits
+        return self.s.query_hits()
 
     def show_network_graph(self, sutta: Optional[USutta] = None):
         if sutta is None:
@@ -199,9 +196,21 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.s._show_sutta_from_message(self.selected_info)
 
     def _handle_result_select(self):
+        logger.info("_handle_result_select()")
+
+        if len(self.fulltext_list.selectedItems()) == 0:
+            # .itemSelectionChanged was triggered by changing the page, but no
+            # new item is selected.
+            return
+
+        page_num = self.fulltext_page_input.value() - 1
+        results = self.s.results_page(page_num)
+
         selected_idx = self.fulltext_list.currentRow()
-        if selected_idx < len(self.s._results):
-            sutta = self.s._sutta_from_result(self.s._results[selected_idx])
+        logger.info(f"selected_idx: {selected_idx}")
+
+        if selected_idx < len(results):
+            sutta = self.s._sutta_from_result(results[selected_idx])
             if sutta is not None:
                 self.s._add_recent(sutta)
                 self.s._show_sutta(sutta)

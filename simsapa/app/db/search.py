@@ -73,8 +73,21 @@ def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'suttas',
         uid = x['uid'],
-        title = x['title'],
-        ref = x['ref'],
+        title = x['title'] if 'title' in x.keys() else '',
+        ref = x['ref'] if 'ref' in x.keys() else '',
+        author = None,
+        snippet = snippet,
+        page_number = None,
+    )
+
+def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
+    return SearchResult(
+        db_id = int(str(x.id)),
+        schema_name = x.metadata.schema,
+        table_name = 'suttas',
+        uid = str(x.uid),
+        title = str(x.title) if x.title else '',
+        ref = str(x.sutta_ref) if x.sutta_ref else '',
         author = None,
         snippet = snippet,
         page_number = None,
@@ -86,14 +99,14 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'dict_words',
         uid = x['uid'],
-        title = x['word'],
+        title = x['word'] if 'word' in x.keys() else '',
         ref = None,
         author = None,
         snippet = snippet,
         page_number = None,
     )
 
-def dict_word_to_search_result(x: UDictWord) -> SearchResult:
+def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
     return SearchResult(
         db_id = int(str(x.id)),
         schema_name = x.metadata.schema,
@@ -102,7 +115,7 @@ def dict_word_to_search_result(x: UDictWord) -> SearchResult:
         title = str(x.word),
         ref = None,
         author = None,
-        snippet = '',
+        snippet = snippet,
         page_number = None,
     )
 
@@ -201,6 +214,7 @@ class SearchQuery:
         return self.searcher.search(q, limit=None)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        logger.info(f"highlight_results_page({page_num})")
         page_start = page_num * self.page_len
         page_end = page_start + self.page_len
         return list(map(self._result_with_snippet_highlight, self.filtered[page_start:page_end]))
@@ -208,7 +222,8 @@ class SearchQuery:
     def new_query(self,
                   query: str,
                   disabled_labels: Optional[Labels] = None,
-                  only_source: Optional[str] = None) -> List[SearchResult]:
+                  only_source: Optional[str] = None):
+        logger.info("SearchQuery::new_query()")
 
         # Replace user input sutta refs such as 'SN 56.11' with query language
         matches = re.finditer(RE_SUTTA_REF, query)
@@ -248,7 +263,7 @@ class SearchQuery:
         self.hits = len(self.filtered)
 
         if self.hits == 0:
-            return []
+            return
 
         # may slow down highlighting with many results
         # r.fragmenter.charlimit = None
@@ -259,11 +274,6 @@ class SearchQuery:
         # SCORE Show highest scoring fragments first.
         self.all_results.order = SCORE
         self.all_results.formatter = HtmlFormatter(tagname='span', classname='match')
-
-        # NOTE: highlighting the matched fragments is slow, so only do
-        # highlighting on the first page of results.
-
-        return self.highlight_results_page(0)
 
     def get_all_results(self, highlight: bool = False) -> List[SearchResult]:
         if highlight:

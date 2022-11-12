@@ -285,17 +285,17 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.search_button.setIcon(icon_search)
 
-        if self.search_query_worker.search_query.hits > 0:
-            self.tabs.setTabText(1, f"Results ({self.search_query_worker.search_query.hits})")
+        if self.query_hits() > 0:
+            self.tabs.setTabText(1, f"Results ({self.query_hits()})")
         else:
             self.tabs.setTabText(1, "Results")
 
         self.render_fulltext_page()
 
-        if self.search_query_worker.search_query.hits == 1 and self._results[0]['uid'] is not None:
+        if self.query_hits() == 1 and self._results[0]['uid'] is not None:
             self._show_word_by_uid(self._results[0]['uid'])
 
-        self._update_fulltext_page_btn(self.search_query_worker.search_query.hits)
+        self._update_fulltext_page_btn(self.query_hits())
 
     def _start_query_worker(self, query: str):
         self._init_search_query_worker(query)
@@ -376,7 +376,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if self.search_query_worker is None:
             return 0
         else:
-            return self.search_query_worker.search_query.hits
+            return self.query_hits()
 
     def _connect_signals(self):
         if self._clipboard is not None:
