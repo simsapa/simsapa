@@ -538,7 +538,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         for i in a:
             self._autocomplete_model.appendRow(QStandardItem(i))
 
-        self._autocomplete_model.sort(0)
+        # NOTE: completion cache is already sorted.
+        # self._autocomplete_model.sort(0)
 
     def _handle_exact_query(self, add_recent: bool = False, min_length: int = 4):
         query = self.search_input.text()

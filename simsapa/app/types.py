@@ -1,10 +1,12 @@
 from enum import Enum
+from functools import partial
+import re
 import json
 import os
 import os.path
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, TypedDict, Union
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,6 +18,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger
 from simsapa.app.actions_manager import ActionsManager
+from simsapa.app.db_helpers import get_db_engine_connection_session
 
 from .db.search import SearchIndexed
 
@@ -144,6 +147,10 @@ def default_app_settings() -> AppSettings:
         dictionary_search_mode = SearchMode.FulltextMatch,
     )
 
+class CompletionCache(TypedDict):
+    sutta_titles: List[str]
+    dict_words: List[str]
+
 # Message to show to the user.
 class AppMessage(TypedDict):
     kind: str
@@ -152,6 +159,7 @@ class AppMessage(TypedDict):
 class AppData:
 
     app_settings: AppSettings
+    completion_cache: CompletionCache
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -169,6 +177,17 @@ class AppData:
 
         user_db_path = USER_DB_PATH
 
+        self.completion_cache = CompletionCache(
+            sutta_titles=[],
+            dict_words=[],
+        )
+
+        self.thread_pool = QThreadPool()
+
+        self.completion_cache_worker = CompletionCacheWorker()
+        self.completion_cache_worker.signals.finished.connect(partial(self._set_completion_cache))
+        self.thread_pool.start(self.completion_cache_worker)
+
         self.graph_gen_pool = QThreadPool()
 
         self.api_url: Optional[str] = None
@@ -185,6 +204,9 @@ class AppData:
 
         self._read_app_settings()
         self._ensure_user_memo_deck()
+
+    def _set_completion_cache(self, values: CompletionCache):
+        self.completion_cache = values
 
     def _connect_to_db(self, app_db_path, user_db_path):
         if not os.path.isfile(app_db_path):
@@ -338,3 +360,52 @@ class GraphRequest(TypedDict):
     min_links: Optional[int]
     width: int
     height: int
+
+class CompletionCacheWorkerSignals(QObject):
+    finished = pyqtSignal(dict)
+
+class CompletionCacheWorker(QRunnable):
+    signals: CompletionCacheWorkerSignals
+
+    def __init__(self):
+        super().__init__()
+        self.signals = CompletionCacheWorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            _, _, db_session = get_db_engine_connection_session()
+
+            res = []
+            r = db_session.query(Am.Sutta.title).all()
+            res.extend(r)
+
+            r = db_session.query(Um.Sutta.title).all()
+            res.extend(r)
+
+            a: List[str] = list(map(lambda x: x[0] or 'none', res))
+            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
+            b.sort()
+            titles = list(set(b))
+
+            res = []
+            r = db_session.query(Am.DictWord.word).all()
+            res.extend(r)
+
+            r = db_session.query(Um.DictWord.word).all()
+            res.extend(r)
+
+            a: List[str] = list(map(lambda x: x[0] or 'none', res))
+            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
+            b.sort()
+            words = list(set(b))
+
+            db_session.close()
+
+            self.signals.finished.emit(CompletionCache(
+                sutta_titles=titles,
+                dict_words=words,
+            ))
+
+        except Exception as e:
+            logger.error(e)

@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
+from simsapa.app.graph import sutta_graph_id
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
@@ -526,25 +527,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._autocomplete_model.clear()
 
-        res: List[USutta] = []
-        r = self._app_data.db_session \
-                            .query(Am.Sutta.title) \
-                            .filter(Am.Sutta.title.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                            .query(Um.Sutta.title) \
-                            .filter(Um.Sutta.title.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        a = set(map(lambda x: x[0], res))
+        a = set(filter(lambda x: x.lower().startswith(query.lower()), self._app_data.completion_cache['sutta_titles']))
 
         for i in a:
             self._autocomplete_model.appendRow(QStandardItem(i))
 
-        self._autocomplete_model.sort(0)
+        # NOTE: completion cache is already sorted.
+        # self._autocomplete_model.sort(0)
 
     def _sutta_search_query(self, query: str, only_source: Optional[str] = None) -> List[SearchResult]:
         # TODO This is a synchronous version of _start_query_worker(), still

@@ -239,19 +239,5 @@ class DictionaryQueries:
         )
 
     def autocomplete_hits(self, query: str) -> set[str]:
-        res: List[UDictWord] = []
-        r = self._app_data.db_session \
-                            .query(Am.DictWord.word) \
-                            .filter(Am.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                            .query(Um.DictWord.word) \
-                            .filter(Um.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
-
+        a = set(filter(lambda x: x.lower().startswith(query.lower()), self._app_data.completion_cache['dict_words']))
         return a

@@ -668,16 +668,16 @@ class AppWindows:
             view.action_Library.setVisible(False)
 
 
-class WorkerSignals(QObject):
+class UpdatesWorkerSignals(QObject):
     have_app_update = pyqtSignal(dict)
     have_db_update = pyqtSignal(dict)
 
 class CheckUpdatesWorker(QRunnable):
-    signals: WorkerSignals
+    signals: UpdatesWorkerSignals
 
     def __init__(self):
-        super(CheckUpdatesWorker, self).__init__()
-        self.signals = WorkerSignals()
+        super().__init__()
+        self.signals = UpdatesWorkerSignals()
 
     @pyqtSlot()
     def run(self):
