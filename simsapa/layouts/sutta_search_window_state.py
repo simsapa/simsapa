@@ -891,6 +891,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
+        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
+
         if self.enable_sidebar:
             self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
             self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
@@ -907,5 +909,3 @@ QWidget:focus { border: 1px solid #1092C3; }
 
             self.pw.action_Find_in_Page \
                 .triggered.connect(self._handle_show_find_panel)
-
-        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))

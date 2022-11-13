@@ -880,17 +880,20 @@ QWidget:focus { border: 1px solid #1092C3; }
             .triggered.connect(partial(self.close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
+        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
+
         self.search_input.textEdited.connect(partial(self._user_typed))
-
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 
-        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
-        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
+        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+
         self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+
+        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
@@ -942,5 +945,3 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Search_Result_Sizes \
             .triggered.connect(partial(self._show_search_result_sizes_dialog))
-
-        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))

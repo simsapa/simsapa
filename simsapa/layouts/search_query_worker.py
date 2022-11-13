@@ -72,12 +72,12 @@ class SearchQueryWorker(QRunnable):
         return self.results_page(page_num)
 
     def _db_sutta_to_result(self, x: USutta) -> SearchResult:
-        # if x.content_plain is not None and len(str(x.content_plain)) > 0:
-        #     snippet = compactPlainText(str(x.content_plain))
-        # else:
-        #     snippet = compactRichText(str(x.content_html))
+        if x.content_plain is not None and len(str(x.content_plain)) > 0:
+            snippet = compactPlainText(str(x.content_plain))
+        else:
+            snippet = compactRichText(str(x.content_html))
 
-        return sutta_to_search_result(x, '')
+        return sutta_to_search_result(x, snippet)
 
     def _db_word_to_result(self, x: UDictWord) -> SearchResult:
         if x.summary is not None and len(str(x.summary)) > 0:
