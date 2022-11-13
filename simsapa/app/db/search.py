@@ -124,7 +124,7 @@ class SearchQuery:
         self.ix = ix
         self.searcher = ix.searcher()
         self.all_results: Results
-        self.filtered: List[Hit]
+        self.filtered: List[Hit] = []
         self.hits: int = 0
         self.page_len = page_len
         self.hit_to_result_fn = hit_to_result_fn
