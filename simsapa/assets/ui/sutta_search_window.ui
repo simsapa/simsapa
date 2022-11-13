@@ -536,6 +536,7 @@
      <string>&amp;Go</string>
     </property>
     <addaction name="action_Search_As_You_Type"/>
+    <addaction name="action_Search_Completion"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
     <addaction name="action_Previous_Tab"/>
@@ -918,6 +919,17 @@
    </property>
    <property name="statusTip">
     <string/>
+   </property>
+  </action>
+  <action name="action_Search_Completion">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search &amp;Completion</string>
    </property>
   </action>
  </widget>

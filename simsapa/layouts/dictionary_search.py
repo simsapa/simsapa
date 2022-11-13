@@ -520,11 +520,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.search_button.setIcon(icon_processing)
 
-        self._handle_autocomplete_query(min_length)
-
         self._start_query_worker(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
+        if not self.action_Search_Completion.isChecked():
+            return
+
         query = self.search_input.text()
 
         if len(query) < min_length:
@@ -854,6 +855,8 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.render_fulltext_page()
 
     def _user_typed(self):
+        self._handle_autocomplete_query(min_length=4)
+
         if not self.action_Search_As_You_Type.isChecked():
             return
 
@@ -878,8 +881,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._user_typed))
 
-        # FIXME is this useful? completion appears regardless.
-        # self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 

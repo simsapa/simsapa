@@ -540,6 +540,15 @@ class AppWindows:
             if hasattr(w,'action_Search_As_You_Type'):
                 w.action_Search_As_You_Type.setChecked(checked)
 
+    def _set_search_completion_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Search_Completion.isChecked()
+        self._app_data.app_settings['search_completion'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w,'action_Search_Completion'):
+                w.action_Search_Completion.setChecked(checked)
+
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
@@ -627,6 +636,13 @@ class AppWindows:
 
             search_as_you_type = self._app_data.app_settings.get('search_as_you_type', True)
             view.action_Search_As_You_Type.setChecked(search_as_you_type)
+
+        if hasattr(view, 'action_Search_Completion'):
+            view.action_Search_Completion \
+                .triggered.connect(partial(self._set_search_completion_setting, view))
+
+            search_completion = self._app_data.app_settings.get('search_completion', True)
+            view.action_Search_Completion.setChecked(search_completion)
 
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':

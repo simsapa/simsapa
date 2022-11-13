@@ -108,6 +108,7 @@ class AppSettings(TypedDict):
     dictionary_font_size: int
     search_result_sizes: SearchResultSizes
     search_as_you_type: bool
+    search_completion: bool
     sutta_search_mode: SearchMode
     dictionary_search_mode: SearchMode
 
@@ -138,6 +139,7 @@ def default_app_settings() -> AppSettings:
         dictionary_font_size = 18,
         search_result_sizes = default_search_result_sizes(),
         search_as_you_type = True,
+        search_completion = True,
         sutta_search_mode = SearchMode.FulltextMatch,
         dictionary_search_mode = SearchMode.FulltextMatch,
     )
@@ -276,6 +278,7 @@ class AppWindowInterface(QMainWindow):
     action_Show_Toolbar: QAction
     action_Show_Word_Scan_Popup: QAction
     action_Search_As_You_Type: QAction
+    action_Search_Completion: QAction
     action_Show_Related_Suttas: QAction
     action_Re_index_database: QAction
     action_Re_download_database: QAction

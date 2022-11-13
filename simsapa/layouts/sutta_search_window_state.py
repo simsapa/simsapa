@@ -505,8 +505,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.search_button.setIcon(icon_processing)
 
-        self._handle_autocomplete_query(min_length)
-
         self._start_query_worker(query)
 
     def _render_results_in_active_tab(self, hits: int):
@@ -518,6 +516,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._get_active_tab().render_search_results(self.search_query_worker.all_results())
 
     def _handle_autocomplete_query(self, min_length: int = 4):
+        if not self.pw.action_Search_Completion.isChecked():
+            return
+
         query = self.search_input.text()
 
         if len(query) < min_length:
@@ -875,6 +876,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._find_panel.search_input.setFocus()
 
     def _user_typed(self):
+        self._handle_autocomplete_query(min_length=4)
+
         if not self.pw.action_Search_As_You_Type.isChecked():
             return
 
@@ -895,10 +898,9 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _connect_signals(self):
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textEdited.connect(partial(self._user_typed))
-        # NOTE search_input.returnPressed removes the selected completion and uses the typed query
 
-        # FIXME is this useful? completion appears regardless.
-        #self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
         if self.enable_sidebar:
             self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
