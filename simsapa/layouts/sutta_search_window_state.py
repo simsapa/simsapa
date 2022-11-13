@@ -875,7 +875,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._find_panel.search_input.setFocus()
 
     def _user_typed(self):
-        if not self.pw.action_Incremental_Search.isChecked():
+        if not self.pw.action_Search_As_You_Type.isChecked():
             return
 
         if not self._search_timer.isActive():

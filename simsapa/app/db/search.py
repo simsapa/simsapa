@@ -206,7 +206,7 @@ class SearchQuery:
         q = parser.parse(query)
 
         # NOTE: limit=None is fast enough (~1700 hits for 'dhamma'), doesn't
-        # hang when doing incremental search while typing.
+        # hang when search_as_you_type setting is enabled.
         #
         # The highlighting _is_ slow, that has to be only done on the
         # displayed results page.
