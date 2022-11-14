@@ -59,34 +59,81 @@ class SearchQueryWorker(QRunnable):
         else:
             return self._all_results
 
+    def _highlight_query_in_content(self, query: str, content: str) -> str:
+        l = len(query)
+        n = 0
+        a = content.lower().find(query.lower(), n)
+        while a != -1:
+            highlight = "<span class='match'>" + content[a:a+l] + "</span>"
+            content = content[0:a] + highlight + content[a+l:-1]
+
+            n = a+len(highlight)
+            a = content.lower().find(query.lower(), n)
+
+        return content
+
     def results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_mode == SearchMode.FulltextMatch:
-            if page_num not in self._highlighted_result_pages:
+        if page_num not in self._highlighted_result_pages:
+            if self.search_mode == SearchMode.FulltextMatch:
                 self._highlighted_result_pages[page_num] = self.search_query.highlight_results_page(page_num)
-            return self._highlighted_result_pages[page_num]
-        else:
-            page_start = page_num * self._page_len
-            page_end = page_start + self._page_len
-            return self._all_results[page_start:page_end]
+            else:
+                page_start = page_num * self._page_len
+                page_end = page_start + self._page_len
+
+                def _add_highlight(x: SearchResult) -> SearchResult:
+                    x['snippet'] = self._highlight_query_in_content(self.query, x['snippet'])
+                    return x
+
+                page = list(map(_add_highlight, self._all_results[page_start:page_end]))
+
+                self._highlighted_result_pages[page_num] = page
+
+        return self._highlighted_result_pages[page_num]
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
         return self.results_page(page_num)
 
+    def _fragment_around_query(self, query: str, content: str) -> str:
+        n = content.lower().find(query.lower())
+        if n == -1:
+            return content
+
+        prefix = ""
+        postfix = ""
+
+        if n <= 20:
+            a = 0
+        else:
+            a = n - 20
+            prefix = "... "
+
+        if len(content) <= a+500:
+            b = len(content) - 1
+        else:
+            b = a+500
+            postfix = " ..."
+
+        return prefix + content[a:b] + postfix
+
     def _db_sutta_to_result(self, x: USutta) -> SearchResult:
         if x.content_plain is not None and len(str(x.content_plain)) > 0:
-            snippet = compactPlainText(str(x.content_plain))
+            content = str(x.content_plain)
         else:
-            snippet = compactRichText(str(x.content_html))
+            content = str(x.content_html)
+
+        snippet = self._fragment_around_query(self.query, content)
 
         return sutta_to_search_result(x, snippet)
 
     def _db_word_to_result(self, x: UDictWord) -> SearchResult:
         if x.summary is not None and len(str(x.summary)) > 0:
-            snippet = str(x.summary)
+            content = str(x.summary)
         elif x.definition_plain is not None and len(str(x.definition_plain)) > 0:
-            snippet = compactPlainText(str(x.definition_plain))
+            content = str(x.definition_plain)
         else:
-            snippet = compactRichText(str(x.definition_html))
+            content = str(x.definition_html)
+
+        snippet = self._fragment_around_query(self.query, content)
 
         return dict_word_to_search_result(x, snippet)
 
