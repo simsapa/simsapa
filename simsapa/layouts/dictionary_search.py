@@ -17,7 +17,7 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.layouts.dictionary_queries import DictionaryQueries
+from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
@@ -52,6 +52,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+    exact_query_worker: Optional[ExactQueryWorker] = None
     fulltext_results_tab_idx: int = 0
     rightside_tabs: QTabWidget
 
@@ -541,18 +542,59 @@ QWidget:focus { border: 1px solid #1092C3; }
         # NOTE: completion cache is already sorted.
         # self._autocomplete_model.sort(0)
 
+    def _exact_query_finished(self, q_res: ExactQueryResult):
+        logger.info("_exact_query_finished()")
+
+        if len(q_res['appdata_ids']) > 0 and q_res['add_recent']:
+            word = self._app_data.db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.id == q_res['appdata_ids'][0]) \
+                .first()
+            if word is not None:
+                self._add_recent(word)
+
+        res: List[UDictWord] = []
+
+        r = self._app_data.db_session \
+            .query(Am.DictWord) \
+            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        self._render_words(res)
+
+    def _init_exact_query_worker(self, query: str, add_recent: bool):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+
+        self.exact_query_worker = ExactQueryWorker(query, only_source, disabled_labels, add_recent)
+
+        self.exact_query_worker.signals.finished.connect(partial(self._exact_query_finished))
+
+    def _start_exact_query_worker(self, query: str, add_recent: bool):
+        self._init_exact_query_worker(query, add_recent)
+        if self.exact_query_worker is not None:
+            self.thread_pool.start(self.exact_query_worker)
+
     def _handle_exact_query(self, add_recent: bool = False, min_length: int = 4):
         query = self.search_input.text()
 
         if len(query) < min_length:
             return
 
-        res = self.queries.word_exact_matches(query)
-
-        if len(res) > 0 and add_recent:
-            self._add_recent(res[0])
-
-        self._render_words(res)
+        self._start_exact_query_worker(query, add_recent)
 
     def _set_qwe_html(self, html: str):
         self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
@@ -892,6 +934,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
 
         self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
 
         self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 

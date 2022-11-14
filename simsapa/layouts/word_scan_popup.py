@@ -4,15 +4,19 @@ import math
 from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
+from PyQt6 import QtWidgets
 from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt
 from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+
+from ..app.db import appdata_models as Am
+from ..app.db import userdata_models as Um
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
-from simsapa.app.types import AppData, SearchMode, UDictWord, WindowPosSize
-from simsapa.layouts.dictionary_queries import DictionaryQueries
+from simsapa.app.types import AppData, DictionarySearchModeNameToType, SearchMode, UDictWord, WindowPosSize
+from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
 from .search_query_worker import SearchQueryWorker
@@ -33,6 +37,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _search_timer = QTimer()
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
+    exact_query_worker: Optional[ExactQueryWorker] = None
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -86,6 +91,23 @@ class WordScanPopupState(QWidget, HasFulltextList):
         search_box.addWidget(self.search_input)
         search_box.addWidget(self.search_button)
 
+        self.search_mode_dropdown = QComboBox()
+        items = DictionarySearchModeNameToType.keys()
+        self.search_mode_dropdown.addItems(items)
+        self.search_mode_dropdown.setFixedHeight(35)
+
+        mode = self._app_data.app_settings.get('dictionary_search_mode', SearchMode.FulltextMatch)
+        values = list(map(lambda x: x[1], DictionarySearchModeNameToType.items()))
+        idx = values.index(mode)
+        self.search_mode_dropdown.setCurrentIndex(idx)
+
+        search_box.addWidget(self.search_mode_dropdown)
+
+        self.search_extras = QtWidgets.QHBoxLayout()
+        search_box.addLayout(self.search_extras)
+
+        self._setup_dict_filter_dropdown()
+
         self.wrap_layout.addLayout(search_box)
 
         if self.focus_input:
@@ -93,11 +115,43 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._setup_search_tabs()
 
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.Dictionary.label.distinct()).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Dictionary.label.distinct()).all()
+        res.extend(r)
+
+        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+
+        return labels
+
+    def _setup_dict_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Dictionaries",]
+        items.extend(self._get_filter_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(35)
+        self.dict_filter_dropdown = cmb
+        self.search_extras.addWidget(self.dict_filter_dropdown)
+
     def _init_search_query_worker(self, query: str = ""):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
         disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
         self._last_query_time = datetime.now()
 
-        mode = self._app_data.app_settings.get('dictionary_search_mode', SearchMode.FulltextMatch)
+        idx = self.search_mode_dropdown.currentIndex()
+        s = self.search_mode_dropdown.itemText(idx)
+        mode = DictionarySearchModeNameToType[s]
 
         self.search_query_worker = SearchQueryWorker(
             self._app_data.search_indexed.dict_words_index,
@@ -108,7 +162,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_query_worker.set_query(query,
                                            self._last_query_time,
                                            disabled_labels,
-                                           None)
+                                           only_source)
 
         self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
 
@@ -348,16 +402,54 @@ class WordScanPopupState(QWidget, HasFulltextList):
         # NOTE: completion cache is already sorted.
         # self._autocomplete_model.sort(0)
 
+    def _exact_query_finished(self, q_res: ExactQueryResult):
+        logger.info("_exact_query_finished()")
+
+        res: List[UDictWord] = []
+
+        r = self._app_data.db_session \
+            .query(Am.DictWord) \
+            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        query = self.search_input.text()
+        self.tabs.setTabText(0, query)
+
+        self._render_words(res)
+
+    def _init_exact_query_worker(self, query: str):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+
+        self.exact_query_worker = ExactQueryWorker(query, only_source, disabled_labels)
+
+        self.exact_query_worker.signals.finished.connect(partial(self._exact_query_finished))
+
+    def _start_exact_query_worker(self, query: str):
+        self._init_exact_query_worker(query)
+        if self.exact_query_worker is not None:
+            self.thread_pool.start(self.exact_query_worker)
+
     def _handle_exact_query(self, min_length: int = 4):
         query = self.search_input.text()
 
         if len(query) < min_length:
             return
 
-        res = self.queries.word_exact_matches(query)
-
-        self.tabs.setTabText(0, query)
-        self._render_words(res)
+        self._start_exact_query_worker(query)
 
     def _handle_result_select(self):
         logger.info("_handle_result_select()")
@@ -414,21 +506,33 @@ class WordScanPopupState(QWidget, HasFulltextList):
         else:
             return self.search_query_worker.results_page(page_num)
 
+    def _handle_search_mode_changed(self):
+        idx = self.search_mode_dropdown.currentIndex()
+        m = self.search_mode_dropdown.itemText(idx)
+
+        self._app_data.app_settings['dictionary_search_mode'] = DictionarySearchModeNameToType[m]
+        self._app_data._save_app_settings()
+
     def _connect_signals(self):
         if self._clipboard is not None:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
+        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
+
         self.search_input.textEdited.connect(partial(self._user_typed))
-
-        # FIXME is this useful? completion appears regardless.
-        #self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 
-        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
-        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
+
+        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
 class WordScanPopup(QDialog):
     oldPos: QPoint

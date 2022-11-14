@@ -1,13 +1,15 @@
 import re
 from typing import List, Optional, TypedDict
 from binascii import crc32
+from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import SearchResult
-from ..app.types import AppData, UDictWord
+from simsapa.app.db.search import SearchResult, dict_word_to_search_result
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from ..app.types import AppData, Labels, UDictWord
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from .html_content import page_tmpl
@@ -50,42 +52,6 @@ class DictionaryQueries:
                                  .filter(Um.DictWord.id == x['db_id']) \
                                  .first()
         return word
-
-    def word_exact_matches(self, query: str) -> List[UDictWord]:
-        res: List[UDictWord] = []
-
-        r = self._app_data.db_session \
-                          .query(Am.DictWord) \
-                          .filter(or_(
-                              Am.DictWord.word.like(f"{query}%"),
-                              Am.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                          .query(Um.DictWord) \
-                          .filter(or_(
-                              Um.DictWord.word.like(f"{query}%"),
-                              Um.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        ch = "." * len(query)
-        # for 'dhamma' also match 'dhammā'
-        # for 'akata' also match 'akaṭa'
-        # for 'kondanna' also match 'koṇḍañña'
-        p_query = re.compile(f"^{ch}$")
-        # for 'dhamma' also match 'dhamma 1'
-        p_num = re.compile(f"^{ch}[ 0-9]+$")
-
-        def _is_match(x: UDictWord):
-            return re.match(p_query, str(x.word)) or re.match(p_num, str(x.word))
-
-        res = list(filter(_is_match, res))
-
-        return res
 
     def words_to_html_page(self, words: List[UDictWord], css_extra: Optional[str] = None) -> str:
         # avoid multiple copies of the same content with a crc32 checksum
@@ -241,3 +207,110 @@ class DictionaryQueries:
     def autocomplete_hits(self, query: str) -> set[str]:
         a = set(filter(lambda x: x.lower().startswith(query.lower()), self._app_data.completion_cache['dict_words']))
         return a
+
+class ExactQueryResult(TypedDict):
+    appdata_ids: List[int]
+    userdata_ids: List[int]
+    add_recent: bool
+
+class ExactQueryWorkerSignals(QObject):
+    finished = pyqtSignal(dict)
+
+class ExactQueryWorker(QRunnable):
+    signals: ExactQueryWorkerSignals
+
+    def __init__(self,
+                 query: str,
+                 only_source: Optional[str] = None,
+                 disabled_labels: Optional[Labels] = None,
+                 add_recent: bool = True):
+
+        super().__init__()
+        self.signals = ExactQueryWorkerSignals()
+        self.query = query
+        self.only_source = only_source
+        self.disabled_labels = disabled_labels
+        self.add_recent = add_recent
+
+    @pyqtSlot()
+    def run(self):
+        logger.info("ExactQueryWorker::run()")
+        try:
+            _, _, db_session = get_db_engine_connection_session()
+
+            res: List[UDictWord] = []
+
+            r = db_session \
+                .query(Am.DictWord) \
+                .filter(or_(
+                    Am.DictWord.word.like(f"{self.query}%"),
+                    Am.DictWord.synonyms.like(f"%{self.query}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            r = db_session \
+                .query(Um.DictWord) \
+                .filter(or_(
+                    Um.DictWord.word.like(f"{self.query}%"),
+                    Um.DictWord.synonyms.like(f"%{self.query}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            def _only_in_source(x: UDictWord):
+                if self.only_source is not None:
+                    return str(x.uid).endswith(f'/{self.only_source.lower()}')
+                else:
+                    return True
+
+            def _not_in_disabled(x: UDictWord):
+                if self.disabled_labels is not None:
+                    for schema in self.disabled_labels.keys():
+                        for label in self.disabled_labels[schema]:
+                            if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
+                                return False
+                    return True
+                else:
+                    return True
+
+            if self.only_source is not None:
+                res = list(filter(_only_in_source, res))
+
+            elif self.disabled_labels is not None:
+                res = list(filter(_not_in_disabled, res))
+
+            ch = "." * len(self.query)
+            # for 'dhamma' also match 'dhammā'
+            # for 'akata' also match 'akaṭa'
+            # for 'kondanna' also match 'koṇḍañña'
+            p_query = re.compile(f"^{ch}$")
+            # for 'dhamma' also match 'dhamma 1'
+            p_num = re.compile(f"^{ch}[ 0-9]+$")
+
+            def _is_match(x: UDictWord):
+                if x.word is None:
+                    return False
+                else:
+                    return re.match(p_query, str(x.word)) or re.match(p_num, str(x.word))
+
+            res = list(filter(_is_match, res))
+
+            a = filter(lambda x: x.metadata.schema == DbSchemaName.AppData.value, res)
+            appdata_ids = list(map(lambda x: x.id, a))
+
+            a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
+            userdata_ids = list(map(lambda x: x.id, a))
+
+            db_session.close()
+
+            ret = ExactQueryResult(
+                appdata_ids = appdata_ids,
+                userdata_ids = userdata_ids,
+                add_recent = self.add_recent,
+            )
+
+            self.signals.finished.emit(ret)
+
+        except Exception as e:
+            logger.error(e)

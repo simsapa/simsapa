@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
@@ -89,6 +90,38 @@ class SearchQueryWorker(QRunnable):
 
         return dict_word_to_search_result(x, snippet)
 
+    def _sutta_only_in_source(self, x: USutta):
+        if self.only_source is not None:
+            return str(x.uid).endswith(f'/{self.only_source.lower()}')
+        else:
+            return True
+
+    def _sutta_not_in_disabled(self, x: USutta):
+        if self.disabled_labels is not None:
+            for schema in self.disabled_labels.keys():
+                for label in self.disabled_labels[schema]:
+                    if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
+                        return False
+            return True
+        else:
+            return True
+
+    def _word_only_in_source(self, x: UDictWord):
+        if self.only_source is not None:
+            return str(x.uid).endswith(f'/{self.only_source.lower()}')
+        else:
+            return True
+
+    def _word_not_in_disabled(self, x: UDictWord):
+        if self.disabled_labels is not None:
+            for schema in self.disabled_labels.keys():
+                for label in self.disabled_labels[schema]:
+                    if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
+                        return False
+            return True
+        else:
+            return True
+
     @pyqtSlot()
     def run(self):
         logger.info("SearchQueryWorker::run()")
@@ -119,6 +152,12 @@ class SearchQueryWorker(QRunnable):
                         .all()
                     res_suttas.extend(r)
 
+                    if self.only_source is not None:
+                        res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+
+                    elif self.disabled_labels is not None:
+                        res_suttas = list(filter(self._sutta_not_in_disabled, res_suttas))
+
                     self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
                 elif self.search_query.ix.indexname == 'dict_words':
@@ -136,6 +175,12 @@ class SearchQueryWorker(QRunnable):
                         .filter(Um.DictWord.definition_html.like(f"%{self.query}%")) \
                         .all()
                     res.extend(r)
+
+                    if self.only_source is not None:
+                        res = list(filter(self._word_only_in_source, res))
+
+                    elif self.disabled_labels is not None:
+                        res = list(filter(self._word_not_in_disabled, res))
 
                     self._all_results = list(map(self._db_word_to_result, res))
 
@@ -179,6 +224,12 @@ class SearchQueryWorker(QRunnable):
                     .all()
                 res_suttas.extend(r)
 
+                if self.only_source is not None:
+                    res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+
+                elif self.disabled_labels is not None:
+                    res_suttas = list(filter(self._sutta_not_in_disabled, res_suttas))
+
                 self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
                 db_session.close()
@@ -201,6 +252,12 @@ class SearchQueryWorker(QRunnable):
                     .all()
                 res.extend(r)
 
+                # Sort 'dhamma 01' etc. without the numbers.
+
+                a = list(map(lambda x: (re.sub(r"[ 0-9]+$", "", str(x.word).lower()), x), res))
+                b = sorted(a, key=lambda x: x[0])
+                res = list(map(lambda x: x[1], b))
+
                 ids = list(map(lambda x: x.id, res))
 
                 r = db_session \
@@ -220,6 +277,12 @@ class SearchQueryWorker(QRunnable):
                     )) \
                     .all()
                 res.extend(r)
+
+                if self.only_source is not None:
+                    res = list(filter(self._word_only_in_source, res))
+
+                elif self.disabled_labels is not None:
+                    res = list(filter(self._word_not_in_disabled, res))
 
                 self._all_results = list(map(self._db_word_to_result, res))
 
