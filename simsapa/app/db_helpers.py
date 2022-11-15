@@ -20,6 +20,33 @@ from .db import userdata_models as Um
 from simsapa import APP_DB_PATH, USER_DB_PATH, DbSchemaName, logger
 from simsapa import ALEMBIC_INI, ALEMBIC_DIR
 
+def upgrade_db(db_path: Path, schema_name: str):
+    # Create an in-memory database
+    engine = create_engine("sqlite+pysqlite://", echo=False)
+
+    if isinstance(engine, Engine):
+        db_conn = engine.connect()
+        db_url = f"sqlite+pysqlite:///{db_path}"
+
+        alembic_cfg = Config(f"{ALEMBIC_INI}")
+        alembic_cfg.set_main_option('script_location', f"{ALEMBIC_DIR}")
+        alembic_cfg.set_main_option('sqlalchemy.url', db_url)
+
+        if not is_db_revision_at_head(alembic_cfg, engine):
+            logger.info(f"{db_url} is stale, running migrations")
+
+            if db_conn is not None:
+                alembic_cfg.attributes['connection'] = db_conn
+                try:
+                    command.upgrade(alembic_cfg, "head")
+                except Exception as e:
+                    logger.error("Failed to run migrations: %s" % e)
+                    exit(1)
+
+        db_conn.close()
+    else:
+        logger.error("Can't create in-memory database")
+
 def find_or_create_db(db_path: Path, schema_name: str):
     # Create an in-memory database
     engine = create_engine("sqlite+pysqlite://", echo=False)

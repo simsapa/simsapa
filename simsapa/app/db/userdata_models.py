@@ -97,6 +97,7 @@ class Sutta(Base):
 
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
+    bookmarks = relationship("Bookmark", back_populates="sutta", passive_deletes=True)
 
 
 class Dictionary(Base):
@@ -272,6 +273,20 @@ class Tag(Base):
     dict_words = relationship("DictWord", secondary=assoc_dict_word_tags, back_populates="tags")
     documents = relationship("Document", secondary=assoc_document_tags, back_populates="tags")
     memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
+
+
+class Bookmark(Base):
+    __tablename__ = "bookmarks"
+
+    id = Column(Integer, primary_key=True)
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String)
+    quote = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="bookmarks")
 
 
 class Link(Base):

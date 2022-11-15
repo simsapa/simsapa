@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_helpers import get_db_engine_connection_session, upgrade_db
 
 from .db.search import SearchIndexed
 
@@ -213,9 +213,13 @@ class AppData:
             logger.error(f"Database file doesn't exist: {app_db_path}")
             exit(1)
 
+        upgrade_db(app_db_path, DbSchemaName.AppData.value)
+
         if not os.path.isfile(user_db_path):
             logger.error(f"Database file doesn't exist: {user_db_path}")
             exit(1)
+
+        upgrade_db(user_db_path, DbSchemaName.UserData.value)
 
         try:
             # Create an in-memory database
