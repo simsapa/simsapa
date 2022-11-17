@@ -19,9 +19,13 @@ depends_on = None
 def upgrade():
     op.create_table('bookmarks',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('sutta_id', sa.Integer(), nullable=False),
-    sa.Column('name', sa.String(), nullable=True),
+    sa.Column('name', sa.String(), nullable=False),
     sa.Column('quote', sa.String(), nullable=True),
+    sa.Column('sutta_id', sa.Integer(), nullable=True),
+    sa.Column('sutta_uid', sa.String(), nullable=True),
+    sa.Column('sutta_schema', sa.String(), nullable=True),
+    sa.Column('sutta_ref', sa.String(), nullable=True),
+    sa.Column('sutta_title', sa.String(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['sutta_id'], ['suttas.id'], ondelete='CASCADE'),
@@ -30,4 +34,4 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table('bookmarks', schema='userdata')
+    op.drop_table('bookmarks')

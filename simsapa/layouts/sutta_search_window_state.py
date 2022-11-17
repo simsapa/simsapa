@@ -14,6 +14,7 @@ from sqlalchemy.sql.elements import and_
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.app.graph import sutta_graph_id
+from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
@@ -28,7 +29,7 @@ from .help_info import setup_info_button
 from .sutta_select_dialog import SuttaSelectDialog
 
 
-class SuttaSearchWindowState(QWidget, HasMemoDialog):
+class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
     searchbar_layout: Optional[QHBoxLayout]
     sutta_tabs_layout: Optional[QVBoxLayout]
@@ -95,6 +96,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog):
         self._ui_setup()
         self._connect_signals()
 
+        self.init_bookmark_dialog()
         self.init_memo_dialog()
 
     def _init_search_query_worker(self, query: str = ""):
@@ -830,6 +832,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         copyUidAction.triggered.connect(partial(self._handle_copy_uid))
 
         qwe.addAction(copyUidAction)
+
+        bookmark_Action = QAction("Create Bookmark", qwe)
+        bookmark_Action.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
+
+        qwe.addAction(bookmark_Action)
 
         memoAction = QAction("Create Memo", qwe)
         memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))

@@ -24,6 +24,7 @@ from ..layouts.dictionary_search import DictionarySearchWindow
 # from ..layouts.dictionaries_manager import DictionariesManagerWindow
 # from ..layouts.document_reader import DocumentReaderWindow
 # from ..layouts.library_browser import LibraryBrowserWindow
+from ..layouts.bookmarks_browser import BookmarksBrowserWindow
 from ..layouts.memos_browser import MemosBrowserWindow
 from ..layouts.links_browser import LinksBrowserWindow
 from simsapa.layouts.word_scan_popup import WordScanPopup
@@ -98,6 +99,18 @@ class AppWindows:
         view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
         make_active_window(view)
+
+    def _show_sutta_by_uid_in_search(self, uid: str):
+        view = None
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindow) and w.isVisible():
+                view = w
+                break
+
+        if view is None:
+            view = self._new_sutta_search_window()
+
+        view.s._show_sutta_by_uid(uid)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -201,6 +214,8 @@ class AppWindows:
         view.lookup_in_dictionary_signal.connect(partial(_lookup))
         view.s.open_in_study_window_signal.connect(partial(_study))
         view.s.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+
+        view.s.bookmark_created.connect(partial(self._reload_bookmarks))
 
         if self._hotkeys_manager is not None:
             try:
@@ -327,6 +342,28 @@ class AppWindows:
     #     self._connect_signals(view)
     #     view.show()
     #     self._windows.append(view)
+
+    def _reload_bookmarks(self):
+        view = None
+        for w in self._windows:
+            if isinstance(w, BookmarksBrowserWindow) and w.isVisible():
+                view = w
+                break
+
+        if view is not None:
+            view.reload_bookmarks()
+            view.reload_table()
+
+    def _new_bookmarks_browser_window(self) -> BookmarksBrowserWindow:
+        view = BookmarksBrowserWindow(self._app_data)
+        # self._set_size_and_maximize(view)
+        # self._connect_signals(view)
+
+        view.open_sutta_by_uid.connect(partial(self._show_sutta_by_uid_in_search))
+
+        make_active_window(view)
+        self._windows.append(view)
+        return view
 
     def _new_memos_browser_window(self) -> MemosBrowserWindow:
         view = MemosBrowserWindow(self._app_data)
@@ -594,6 +631,10 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window))
+
+        if hasattr(view, 'action_Bookmarks'):
+            view.action_Bookmarks \
+                .triggered.connect(partial(self._new_bookmarks_browser_window))
 
         if hasattr(view, 'action_Show_Related_Suttas'):
             is_on = self._app_data.app_settings.get('show_related_suttas', True)

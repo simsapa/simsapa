@@ -11,6 +11,7 @@
     <file alias="reload">icons/32x32/fa_redo.png</file>
     <file alias="history-icon">icons/32x32/fa_clock-rotate-left-solid.png</file>
     <file alias="book">icons/32x32/bxs_book_bookmark.png</file>
+    <file alias="bookmark">icons/32x32/fa_bookmark-solid.png</file>
     <file alias="dictionary">icons/32x32/bxs_book_content.png</file>
     <file alias="info">icons/32x32/fa_circle-info-solid.png</file>
     <file alias="keyboard">icons/32x32/fa_keyboard-solid.png</file>

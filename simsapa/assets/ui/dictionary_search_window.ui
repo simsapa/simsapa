@@ -490,6 +490,7 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Bookmarks"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -636,16 +637,10 @@
    <property name="toolTip">
     <string>Document Reader</string>
    </property>
-   <property name="shortcut">
-    <string>F7</string>
-   </property>
   </action>
   <action name="action_Library">
    <property name="text">
     <string>&amp;Library</string>
-   </property>
-   <property name="shortcut">
-    <string>F8</string>
    </property>
   </action>
   <action name="action_Memos">
@@ -864,6 +859,18 @@
    </property>
    <property name="text">
     <string>Search &amp;Completion</string>
+   </property>
+  </action>
+  <action name="action_Bookmarks">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Bookmarks</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
    </property>
   </action>
  </widget>

@@ -35,6 +35,7 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 ULink = Union[Am.Link, Um.Link]
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
+UBookmark = Union[Am.Bookmark, Um.Bookmark]
 UDocument = Union[Am.Document, Um.Document]
 
 class Labels(TypedDict):
@@ -313,6 +314,7 @@ class AppWindowInterface(QMainWindow):
     action_Sutta_Search: QAction
     action_Sutta_Study: QAction
     action_Dictionary_Search: QAction
+    action_Bookmarks: QAction
     action_Memos: QAction
     action_Links: QAction
     action_First_Window_on_Startup: QAction
