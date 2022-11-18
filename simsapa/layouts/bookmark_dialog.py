@@ -59,6 +59,7 @@ class BookmarkDialog(QDialog):
         self._app_data = app_data
 
         self.name_input = QLineEdit(self.init_name)
+        self.name_input.setPlaceholderText("e.g. bhavana/solitude/delights in")
         self.name_input.setMinimumSize(QtCore.QSize(250, 35))
         self.name_input.setClearButtonEnabled(True)
 

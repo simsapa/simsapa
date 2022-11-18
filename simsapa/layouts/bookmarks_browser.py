@@ -1,4 +1,5 @@
 import re
+import csv
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
@@ -10,14 +11,14 @@ from typing import Dict, List, Optional
 from sqlalchemy.sql.elements import and_, or_, not_
 
 from PyQt6.QtCore import QAbstractTableModel, Qt
-from PyQt6.QtWidgets import (QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import logger
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, USutta
+from ..app.types import AppData, AppWindowInterface, UBookmark, USutta
 
 class SuttaModel(QAbstractTableModel):
     def __init__(self, data = []):
@@ -148,14 +149,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.action_Close_Window = QAction("&Close Window")
         self.menu_File.addAction(self.action_Close_Window)
 
-        self.action_Import = QAction("&Import...")
+        self.action_Import = QAction("&Import from CSV...")
         self.menu_File.addAction(self.action_Import)
 
-        self.action_Export = QAction("&Export...")
+        self.action_Export = QAction("&Export as CSV...")
         self.menu_File.addAction(self.action_Export)
 
     def _setup_tree_search(self):
         self.tree_search_input = QLineEdit()
+        self.tree_search_input.setPlaceholderText("Filter bookmark tree...")
 
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -211,6 +213,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
     def _setup_table_search(self):
         self.table_search_input = QLineEdit()
+        self.table_search_input.setPlaceholderText("Filter bookmarks...")
 
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -616,6 +619,103 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.reload_bookmarks()
         self.reload_table()
 
+    def _handle_import(self):
+        file_path, _ = QFileDialog \
+            .getOpenFileName(self,
+                             "Import from CSV...",
+                             "",
+                             "CSV Files (*.csv)")
+
+        if len(file_path) == 0:
+            return
+
+        rows = []
+
+        with open(file_path) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+
+        def _to_bookmark(x: Dict[str, str]) -> UBookmark:
+            return Um.Bookmark(
+                name          = x['name']          if x['name']          != 'None' else None,
+                quote         = x['quote']         if x['quote']         != 'None' else None,
+                sutta_id      = int(x['sutta_id']) if x['sutta_id']      != 'None' else None,
+                sutta_uid     = x['sutta_uid']     if x['sutta_uid']     != 'None' else None,
+                sutta_schema  = x['sutta_schema']  if x['sutta_schema']  != 'None' else None,
+                sutta_ref     = x['sutta_ref']     if x['sutta_ref']     != 'None' else None,
+                sutta_title   = x['sutta_title']   if x['sutta_title']   != 'None' else None,
+            )
+
+        bookmarks = list(map(_to_bookmark, rows))
+
+        try:
+            for i in bookmarks:
+                self._app_data.db_session.add(i)
+            self._app_data.db_session.commit()
+
+            self.reload_bookmarks()
+            self.reload_table()
+
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(f"Imported {len(bookmarks)} bookmarks.")
+            box.setWindowTitle("Import Completed")
+            box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            box.exec()
+
+        except Exception as e:
+            logger.error(e)
+
+    def _handle_export(self):
+        file_path, _ = QFileDialog \
+            .getSaveFileName(self,
+                             "Export as CSV...",
+                             "",
+                             "CSV Files (*.csv)")
+
+        if len(file_path) == 0:
+            return
+
+        res = self._app_data.db_session \
+                            .query(Um.Bookmark) \
+                            .filter(Um.Bookmark.sutta_uid != '') \
+                            .all()
+
+        if not res:
+            return
+
+        def _to_row(x: UBookmark) -> Dict[str, str]:
+            return {
+                "name": str(x.name),
+                "quote": str(x.quote),
+                "sutta_id": str(x.sutta_id),
+                "sutta_uid": str(x.sutta_uid),
+                "sutta_schema": str(x.sutta_schema),
+                "sutta_ref": str(x.sutta_ref),
+                "sutta_title": str(x.sutta_title),
+            }
+
+        a = list(map(_to_row, res))
+        rows = sorted(a, key=lambda x: x['name'])
+
+        try:
+            with open(file_path, 'w') as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                for r in rows:
+                    w.writerow(r)
+
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(f"Exported {len(rows)} bookmarks.")
+            box.setWindowTitle("Export Completed")
+            box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            box.exec()
+
+        except Exception as e:
+            logger.error(e)
+
     def _connect_signals(self):
         self.tree_view.clicked.connect(self._handle_tree_clicked)
 
@@ -643,3 +743,8 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
 
+        self.action_Import \
+            .triggered.connect(partial(self._handle_import))
+
+        self.action_Export \
+            .triggered.connect(partial(self._handle_export))

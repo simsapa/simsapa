@@ -833,7 +833,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         qwe.addAction(copyUidAction)
 
-        bookmark_Action = QAction("Create Bookmark", qwe)
+        bookmark_Action = QAction("Create Bookmark from Selection", qwe)
         bookmark_Action.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
 
         qwe.addAction(bookmark_Action)
