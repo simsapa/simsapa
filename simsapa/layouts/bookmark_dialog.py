@@ -2,9 +2,9 @@ import re
 from typing import Callable, Optional
 from PyQt6 import QtCore
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QAbstractListModel, Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QLineEdit, QPushButton, QPlainTextEdit, QFormLayout)
+from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QLabel, QLineEdit, QListView, QPushButton, QPlainTextEdit, QFormLayout)
 
 from sqlalchemy.sql import func
 # from simsapa.app.file_doc import FileDoc
@@ -16,24 +16,63 @@ from simsapa.layouts.sutta_tab import SuttaTabWidget
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
+
+class SuggestModel(QAbstractListModel):
+    def __init__(self):
+        super().__init__()
+        self.items = []
+
+    def data(self, index, role):
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self.items[index.row()]
+
+    def rowCount(self, _):
+        if self.items:
+            return len(self.items)
+        else:
+            return 0
+
+
 class BookmarkDialog(QDialog):
 
     accepted = pyqtSignal(dict) # type: ignore
 
-    def __init__(self, quote: str = '', show_quote: bool = True):
-        super().__init__()
-        self.setWindowTitle("Create Bookmark")
+    def __init__(self,
+                 app_data: AppData,
+                 name: str = '',
+                 quote: str = '',
+                 show_quote: bool = True,
+                 db_id: Optional[int] = None,
+                 creating_new: bool = True):
 
-        self.name_input = QLineEdit()
+        super().__init__()
+
+        self.creating_new = creating_new
+        self.init_name = name
+        self.db_id = db_id
+
+        if self.creating_new:
+            self.setWindowTitle("Create Bookmark")
+        else:
+            self.setWindowTitle("Edit Bookmark")
+
+        self._app_data = app_data
+
+        self.name_input = QLineEdit(self.init_name)
         self.name_input.setMinimumSize(QtCore.QSize(250, 35))
         self.name_input.setClearButtonEnabled(True)
 
         self.name_input.textChanged.connect(self.unlock)
+        self.name_input.textChanged.connect(self._suggest_names)
 
         self.quote_input = QPlainTextEdit(quote)
         self.quote_input.setMinimumSize(400, 200)
 
-        self.add_btn = QPushButton('Add')
+        if self.creating_new:
+            self.add_btn = QPushButton('Add')
+        else:
+            self.add_btn = QPushButton('Save')
+
         self.add_btn.setDisabled(True)
         self.add_btn.setShortcut(QKeySequence("Ctrl+Return"))
         self.add_btn.setToolTip("Ctrl+Return")
@@ -44,15 +83,53 @@ class BookmarkDialog(QDialog):
 
         form = QFormLayout(self)
 
-        form.addRow('Name', self.name_input)
+        form.addRow(QLabel("Bookmark name:"))
+        form.addRow(self.name_input)
+
+        self.suggest_list = QListView(self)
+        self.suggest_list.setMinimumHeight(200)
+        self.suggest_model = SuggestModel()
+        self.suggest_list.setModel(self.suggest_model)
+
+        self.suggest_sel = self.suggest_list.selectionModel()
+        self.suggest_sel.selectionChanged.connect(self._handle_suggest_select)
+
+        form.addRow(self.suggest_list)
+
         if show_quote:
-            form.addRow('Quote', self.quote_input)
+            form.addRow(QLabel("Quote:"))
+            form.addRow(self.quote_input)
 
         self.buttons_layout = QHBoxLayout()
         self.buttons_layout.addWidget(self.add_btn)
         self.buttons_layout.addWidget(self.close_btn)
 
         form.addRow(self.buttons_layout)
+
+    def _handle_suggest_select(self):
+        a = self.suggest_list.selectedIndexes()
+        if not a:
+            return
+
+        idx = a[0]
+        name = self.suggest_model.items[idx.row()]
+
+        self.name_input.setText(name)
+
+    def _suggest_names(self):
+        query = self.name_input.text()
+
+        res = self._app_data.db_session \
+            .query(Um.Bookmark.name) \
+            .filter(Um.Bookmark.name.like(f"%{query}%")) \
+            .all()
+
+        names = list(set(map(lambda x: x[0], res)))
+        names.sort()
+
+        self.suggest_model.items = names
+
+        self.suggest_model.layoutChanged.emit()
 
     def not_blanks(self) -> bool:
         name = self.name_input.text()
@@ -66,12 +143,22 @@ class BookmarkDialog(QDialog):
 
     def add_pressed(self):
         # strip space around the separator /
-        path = re.sub(r' */ *', '/', self.name_input.text())
+        name = re.sub(r' */ *', '/', self.name_input.text())
 
-        values = {
-            'name': path,
-            'quote': self.quote_input.toPlainText(),
-        }
+        if self.creating_new:
+            values = {
+                'name': name,
+                'quote': self.quote_input.toPlainText(),
+            }
+
+        else:
+            values = {
+                'old_name': self.init_name,
+                'new_name': name,
+                'db_id': self.db_id,
+                'quote': self.quote_input.toPlainText(),
+            }
+
         self.accepted.emit(values)
         self.accept()
 
@@ -87,7 +174,7 @@ class HasBookmarkDialog:
     bookmark_created = pyqtSignal()
 
     def init_bookmark_dialog(self):
-        self.new_bookmark_values = {}
+        self.new_bookmark_values = {'name': '', 'quote': ''}
 
     def set_new_bookmark(self, values: dict):
         self.new_bookmark_values = values
@@ -156,7 +243,7 @@ class HasBookmarkDialog:
 
         quote = str(tab.qwe.selectedText()).replace("\n", " ").strip()
 
-        d = BookmarkDialog(quote)
+        d = BookmarkDialog(self._app_data, quote=quote)
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 

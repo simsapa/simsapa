@@ -449,13 +449,45 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             logger.error(e)
 
     def _handle_node_new(self):
-        d = BookmarkDialog(show_quote=False)
+        d = BookmarkDialog(self._app_data, show_quote=False)
         d.accepted.connect(self._create_new_bookmark_folder)
         d.exec()
 
+    def _edit_node(self, values: dict):
+        old_name = re.sub(r'/+$', '', values['old_name']) + '/'
+        new_name = re.sub(r'/+$', '', values['new_name']) + '/'
+
+        res = self._app_data.db_session \
+            .query(Um.Bookmark) \
+            .filter(Um.Bookmark.name.like(f"{old_name}%")) \
+            .all()
+
+        for i in res:
+            p = re.compile('^' + old_name)
+            name = re.sub(p, new_name, i.name)
+            i.name = name
+
+        self._app_data.db_session.commit()
+
+        self.reload_bookmarks()
+        self.reload_table()
+
     def _handle_node_edit(self):
-        # FIXME
-        pass
+        a = self.tree_view.selectedIndexes()
+        if not a:
+            return
+
+        idx = a[0]
+        item: BookmarkItem = self.tree_model.itemFromIndex(idx) # type: ignore
+
+
+        d = BookmarkDialog(self._app_data,
+                           name=item.path,
+                           show_quote=False,
+                           creating_new=False)
+
+        d.accepted.connect(self._edit_node)
+        d.exec()
 
     def _handle_node_delete(self):
         a = self.tree_view.selectedIndexes()
@@ -498,9 +530,58 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.reload_table()
 
+    def _edit_row(self, values: dict):
+        if not values['db_id']:
+            return
+
+        item = self._app_data.db_session \
+                            .query(Um.Bookmark) \
+                            .filter(Um.Bookmark.id == values['db_id']) \
+                            .first()
+
+        if not item:
+            return
+
+        old_name = re.sub(r'/+$', '', values['old_name']) + '/'
+        new_name = re.sub(r'/+$', '', values['new_name']) + '/'
+        quote = values['quote']
+
+        p = re.compile('^' + old_name)
+        name = re.sub(p, new_name, item.name)
+
+        item.name = name
+        item.quote = quote
+
+        self._app_data.db_session.commit()
+
+        self.reload_bookmarks()
+        self.reload_table()
+
     def _handle_row_edit(self):
-        # FIXME
-        pass
+        a = self.suttas_table.selectedIndexes()
+        if not a:
+            return
+
+        # only edit the top selection
+        idx = a[0]
+        db_id = self.suttas_model._data[idx.row()][-1]
+
+        item = self._app_data.db_session \
+                            .query(Um.Bookmark) \
+                            .filter(Um.Bookmark.id == db_id) \
+                            .first()
+
+        if item is None:
+            return
+
+        d = BookmarkDialog(self._app_data,
+                           name=str(item.name),
+                           quote=str(item.quote),
+                           db_id=db_id,
+                           creating_new=False)
+
+        d.accepted.connect(self._edit_row)
+        d.exec()
 
     def _handle_row_delete(self):
         a = self.suttas_table.selectedIndexes()
