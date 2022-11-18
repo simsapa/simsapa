@@ -246,6 +246,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.table_search_box.addItem(spacer)
 
     def _setup_table_buttons(self):
+        self.open_row_btn = QPushButton("Open")
+        self.open_row_btn.setFixedSize(QSize(80, 40))
+        self.table_buttons_box.addWidget(self.open_row_btn)
+
         self.edit_row_btn = QPushButton("Edit")
         self.edit_row_btn.setFixedSize(QSize(80, 40))
         self.table_buttons_box.addWidget(self.edit_row_btn)
@@ -411,6 +415,11 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         data = val.model().data(val, Qt.ItemDataRole.UserRole)
         uid = data[val.row()][2]
         self.open_sutta_by_uid.emit(uid)
+
+    def _handle_row_open(self):
+        a = self.suttas_table.selectedIndexes()
+        if len(a) != 0:
+            self._handle_sutta_open(a[0])
 
     def _handle_tree_query(self):
         query = self.tree_search_input.text()
@@ -737,6 +746,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.edit_node_btn.clicked.connect(partial(self._handle_node_edit))
         self.delete_node_btn.clicked.connect(partial(self._handle_node_delete))
 
+        self.open_row_btn.clicked.connect(partial(self._handle_row_open))
         self.edit_row_btn.clicked.connect(partial(self._handle_row_edit))
         self.delete_row_btn.clicked.connect(partial(self._handle_row_delete))
 
