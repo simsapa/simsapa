@@ -10,7 +10,6 @@ from sqlalchemy.sql.elements import and_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import compactPlainText, compactRichText
 from ..app.db.search import SearchQuery, SearchResult, dict_word_to_search_result, sutta_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um

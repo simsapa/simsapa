@@ -84,8 +84,10 @@ class Sutta(Base):
     description = Column(String)
     content_plain = Column(String) # content in plain text
     content_html = Column(String) # content in HTML
+    content_json = Column(String) # content in Bilara JSON
 
     # --- Source ---
+    source_uid = Column(String) # ms, bodhi, than
     source_info = Column(String)
     source_language = Column(String)
     message = Column(String)

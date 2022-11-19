@@ -14,6 +14,9 @@ import tomlkit
 from PyQt6.QtWidgets import QMainWindow, QMessageBox
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db import appdata_models as Am
+
 from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
 
 def create_app_dirs():
@@ -111,13 +114,25 @@ def get_app_version() -> Optional[str]:
     return ver
 
 def get_db_version() -> Optional[str]:
-    # TODO insert version to db when generating, and retreive here
-    # return a fixed value for now
-    ver = "v0.1.8-alpha.1"
+    _, _, db_session = get_db_engine_connection_session()
+
+    res = db_session \
+        .query(Am.AppSetting.value) \
+        .filter(Am.AppSetting.key == 'db_version') \
+        .first()
+
+    db_session.close()
+
+    if res is None:
+        # An old version number before db_version was stored.
+        ver = "v0.1.8-alpha.1"
+    else:
+        ver = str(res[0])
 
     # 'v' prefix is invalid semver string
     # v0.1.7-alpha.1 -> 0.1.7-alpha.1
-    # ver = re.sub(r'^v', '', ver)
+    ver = re.sub(r'^v', '', ver)
+
     return ver
 
 def get_sys_version() -> str:
