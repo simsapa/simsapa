@@ -31,7 +31,7 @@ sys.excepthook = excepthook
 
 create_app_dirs()
 
-def start(port: int, splash_proc: Optional[Popen] = None):
+def start(port: int, uid: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
 
     ensure_empty_graphs_cache()
@@ -114,7 +114,10 @@ def start(port: int, splash_proc: Optional[Popen] = None):
 
     # === Create first window ===
 
-    app_windows.open_first_window()
+    if uid:
+        app_windows._show_sutta_by_uid_in_search(uid)
+    else:
+        app_windows.open_first_window()
 
     app_windows.show_startup_message()
 

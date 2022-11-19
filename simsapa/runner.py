@@ -1,5 +1,6 @@
 import sys
 from enum import Enum
+from typing import Optional
 import typer
 import threading
 
@@ -11,7 +12,7 @@ index_app = typer.Typer()
 app.add_typer(index_app, name="index")
 
 @app.command()
-def gui():
+def gui(uid: Optional[str] = None):
     # import subprocess
     # from simsapa import SIMSAPA_PACKAGE_DIR
     # try:
@@ -34,7 +35,7 @@ def gui():
         port = 6789
 
     from simsapa.gui import start
-    start(port)
+    start(port=port, uid=uid)
 
 class QueryType(str, Enum):
     suttas = "suttas"
@@ -95,6 +96,15 @@ def index_reindex():
 def main():
     if len(sys.argv) == 1:
         gui()
+    elif len(sys.argv) == 2:
+        s = sys.argv[1]
+
+        if s.startswith("ssp://"):
+            uid = s.replace('ssp://', '')
+            gui(uid)
+
+        else:
+            app()
     else:
         app()
 
