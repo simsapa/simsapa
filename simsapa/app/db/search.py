@@ -31,6 +31,8 @@ class SuttasIndexSchema(SchemaClass):
     db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
+    language = ID(stored = True)
+    source_uid = ID(stored = True)
     title = TEXT(stored = True, analyzer = folding_analyzer)
     title_pali = TEXT(stored = True, analyzer = folding_analyzer)
     title_trans = TEXT(stored = True, analyzer = folding_analyzer)
@@ -222,6 +224,7 @@ class SearchQuery:
     def new_query(self,
                   query: str,
                   disabled_labels: Optional[Labels] = None,
+                  only_lang: Optional[str] = None,
                   only_source: Optional[str] = None):
         logger.info("SearchQuery::new_query()")
 
@@ -234,12 +237,6 @@ class SearchQuery:
 
         self.all_results = self._search_field(field_name = 'content', query = query)
 
-        def _only_in_source(x: Hit):
-            if only_source is not None:
-                return x['uid'].endswith(f'/{only_source.lower()}')
-            else:
-                return True
-
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
                 for schema in disabled_labels.keys():
@@ -250,14 +247,31 @@ class SearchQuery:
             else:
                 return True
 
+        self.filtered = list(self.all_results)
+        print(len(self.filtered))
+
+        if only_lang == "Language":
+            only_lang = None
+
+        if only_source == "Source":
+            only_source = None
+
+        if only_lang is not None:
+            self.filtered = list(filter(lambda x: x['language'] == only_lang, self.filtered))
+
+        print(len(self.filtered))
+        print(only_lang)
+
         if only_source is not None:
-            self.filtered = list(filter(_only_in_source, self.all_results))
+            self.filtered = list(filter(lambda x: x['source_uid'] == only_source, self.filtered))
 
-        elif disabled_labels is not None:
-            self.filtered = list(filter(_not_in_disabled, self.all_results))
+        print(len(self.filtered))
+        print(only_source)
 
-        else:
-            self.filtered = list(self.all_results)
+        if disabled_labels is not None:
+            self.filtered = list(filter(_not_in_disabled, self.filtered))
+
+        print(len(self.filtered))
 
         # NOTE: r.estimated_min_length() errors on some searches
         self.hits = len(self.filtered)
@@ -358,8 +372,10 @@ class SearchIndexed:
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
-            for i in suttas:
-                logger.info(f"Indexing: {i.uid}")
+            total = len(suttas)
+            for idx, i in enumerate(suttas):
+                percent = idx/(total/100)
+                logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
                     # Remove content marked with 'noindex' class, such as footer material
@@ -374,9 +390,18 @@ class SearchIndexed:
                     content = compactPlainText(str(i.content_plain))
 
                 else:
+                    logger.warn(f"Skipping, no content in {i.uid}")
                     continue
 
                 logger.info(f"len(content) = {len(content)}")
+
+                language = ""
+                if i.language is not None:
+                    language = i.language
+
+                source_uid = ""
+                if i.source_uid is not None:
+                    source_uid = i.source_uid
 
                 sutta_ref = ""
                 if i.sutta_ref is not None:
@@ -408,6 +433,8 @@ class SearchIndexed:
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
+                    language = language,
+                    source_uid = source_uid,
                     title = title,
                     title_pali = title_pali,
                     title_trans = title_trans,
@@ -430,7 +457,12 @@ class SearchIndexed:
             # NOTE: Only use multisegment=True when indexing from scratch.
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
-            for i in words:
+
+            total = len(words)
+            for idx, i in enumerate(words):
+                percent = idx/(total/100)
+                logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
+
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
                     content = compactRichText(str(i.definition_html))
@@ -439,6 +471,7 @@ class SearchIndexed:
                     content = compactPlainText(str(i.definition_plain))
 
                 else:
+                    logger.warn(f"Skipping, no content in {i.word}")
                     continue
 
                 # Add word and synonyms to content field so a single query will match

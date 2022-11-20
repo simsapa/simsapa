@@ -162,6 +162,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_query_worker.set_query(query,
                                            self._last_query_time,
                                            disabled_labels,
+                                           None,
                                            only_source)
 
         self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))

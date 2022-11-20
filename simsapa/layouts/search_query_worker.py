@@ -38,10 +38,17 @@ class SearchQueryWorker(QRunnable):
 
         self.search_query = SearchQuery(ix, self._page_len, hit_to_result_fn)
 
-    def set_query(self, query: str, query_started: datetime, disabled_labels: Labels, only_source: Optional[str] = None):
+    def set_query(self,
+                  query: str,
+                  query_started: datetime,
+                  disabled_labels: Labels,
+                  only_lang: Optional[str] = None,
+                  only_source: Optional[str] = None):
+
         self.query = query
         self.query_started = query_started
         self.disabled_labels = disabled_labels
+        self.only_lang = only_lang
         self.only_source = only_source
         self._all_results = []
         self._highlighted_result_pages = dict()
@@ -176,7 +183,7 @@ class SearchQueryWorker(QRunnable):
             self._highlighted_result_pages = dict()
 
             if self.search_mode == SearchMode.FulltextMatch:
-                 self.search_query.new_query(self.query, self.disabled_labels, self.only_source)
+                 self.search_query.new_query(self.query, self.disabled_labels, self.only_lang, self.only_source)
                  self._highlighted_result_pages[0] = self.search_query.highlight_results_page(0)
 
             elif self.search_mode == SearchMode.ExactMatch:

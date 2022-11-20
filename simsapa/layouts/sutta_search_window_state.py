@@ -101,13 +101,21 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
     def _init_search_query_worker(self, query: str = ""):
         if self.enable_search_extras:
-            idx = self.sutta_filter_dropdown.currentIndex()
-            source = self.sutta_filter_dropdown.itemText(idx)
-            if source == "Sources":
+            idx = self.sutta_language_filter_dropdown.currentIndex()
+            language = self.sutta_language_filter_dropdown.itemText(idx)
+            if language == "Language":
+                only_lang = None
+            else:
+                only_lang = language
+
+            idx = self.sutta_source_filter_dropdown.currentIndex()
+            source = self.sutta_source_filter_dropdown.itemText(idx)
+            if source == "Source":
                 only_source = None
             else:
                 only_source = source
         else:
+            only_lang = None
             only_source = None
 
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
@@ -126,6 +134,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.search_query_worker.set_query(query,
                                            self._last_query_time,
                                            disabled_labels,
+                                           only_lang,
                                            only_source)
 
         self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
@@ -158,7 +167,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         if self.enable_search_extras:
             self._setup_sutta_filter_dropdown()
-            self._setup_sutta_select_button()
+            # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             self._setup_toggle_pali_button()
             setup_info_button(self.search_extras, self)
 
@@ -366,8 +375,20 @@ QWidget:focus { border: 1px solid #1092C3; }
         show = self._app_data.app_settings.get('suttas_show_pali_buttons', False)
         self.pw.palibuttons_frame.setVisible(show)
 
-    def _get_filter_labels(self):
-        # FIXME currently doesn't return lang, only source uid
+    def _get_language_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.Sutta.language.distinct()).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Sutta.language.distinct()).all()
+        res.extend(r)
+
+        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+
+        return labels
+
+    def _get_source_uid_labels(self):
         res = []
 
         r = self._app_data.db_session.query(Am.Sutta.source_uid.distinct()).all()
@@ -382,15 +403,25 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _setup_sutta_filter_dropdown(self):
         cmb = QComboBox()
-        items = ["Sources",]
-        items.extend(self._get_filter_labels())
+        items = ["Language",]
+        items.extend(self._get_language_labels())
 
         cmb.addItems(items)
         cmb.setFixedHeight(40)
-        self.sutta_filter_dropdown = cmb
-        self.search_extras.addWidget(self.sutta_filter_dropdown)
+        self.sutta_language_filter_dropdown = cmb
+        self.search_extras.addWidget(self.sutta_language_filter_dropdown)
+
+        cmb = QComboBox()
+        items = ["Source",]
+        items.extend(self._get_source_uid_labels())
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(40)
+        self.sutta_source_filter_dropdown = cmb
+        self.search_extras.addWidget(self.sutta_source_filter_dropdown)
 
     def _setup_sutta_select_button(self):
+        # TODO create a better layout, this is too long to use like this.
         icon = QIcon()
         icon.addPixmap(QPixmap(":/book"))
 
@@ -515,7 +546,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         # NOTE: completion cache is already sorted.
         # self._autocomplete_model.sort(0)
 
-    def _sutta_search_query(self, query: str, only_source: Optional[str] = None) -> List[SearchResult]:
+    def _sutta_search_query(self, query: str, only_lang: Optional[str] = None, only_source: Optional[str] = None) -> List[SearchResult]:
         # TODO This is a synchronous version of _start_query_worker(), still
         # used in links_browser.py. Update and use the background thread worker.
 
@@ -526,7 +557,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         first_page_results = []
         if self.search_query_worker is not None:
-            self.search_query_worker.search_query.new_query(query, disabled_labels, only_source)
+            self.search_query_worker.search_query.new_query(query, disabled_labels, only_lang, only_source)
             first_page_results = self.search_query_worker.search_query.highlight_results_page(0)
 
         return first_page_results
@@ -886,7 +917,8 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
         if self.enable_search_extras:
-            self.sutta_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+            self.sutta_language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+            self.sutta_source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:
             self._find_panel.searched.connect(self.on_searched) # type: ignore
