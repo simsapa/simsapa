@@ -85,6 +85,7 @@ class Sutta(Base):
     content_plain = Column(String) # content in plain text
     content_html = Column(String) # content in HTML
     content_json = Column(String) # content in Bilara JSON
+    content_json_tmpl = Column(String) # HTML template to wrap around JSON
 
     # --- Source ---
     source_uid = Column(String) # ms, bodhi, than
@@ -100,6 +101,44 @@ class Sutta(Base):
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
     bookmarks = relationship("Bookmark", back_populates="sutta", passive_deletes=True)
+
+    variants = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True)
+    comments = relationship("SuttaComment", back_populates="sutta", passive_deletes=True)
+
+
+class SuttaVariant(Base):
+    __tablename__ = "sutta_variants"
+
+    id = Column(Integer, primary_key=True)
+
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+
+    language = Column(String) # pli / en
+    source_uid = Column(String) # ms, bodhi, than
+    content_json = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="variants")
+
+
+class SuttaComment(Base):
+    __tablename__ = "sutta_comments"
+
+    id = Column(Integer, primary_key=True)
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+
+    language = Column(String) # pli / en
+    source_uid = Column(String) # ms, bodhi, than
+    content_json = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="comments")
 
 
 class Dictionary(Base):

@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 import json
+import tomlkit
 from bs4 import BeautifulSoup
 from typing import List, Optional
 from dotenv import load_dotenv
@@ -21,6 +22,7 @@ from pyArango.database import DBHandle
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
+from simsapa.app.helpers import compactRichText
 
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
@@ -111,29 +113,38 @@ def html_post_process(body: str) -> str:
 
     return html
 
-def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
+def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_json: Optional[str]) -> Am.Sutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
     body = get_sutta_page_body(page)
     body = html_post_process(body)
     content_html = '<div class="suttacentral html-text">' + body + '</div>'
+    content_plain = compactRichText(content_html)
+
+    uid = html_text_uid(x)
+    source_uid = uid.split('/')[-1]
 
     return Am.Sutta(
+        source_uid = source_uid,
         source_info = x['_id'],
         # The All-embracing Net of Views
         title = title,
         # dn1/en/bodhi
-        uid = html_text_uid(x),
+        uid = uid,
         # SN 12.23
         sutta_ref = helpers.uid_to_ref(x['uid']),
         # en
         language = x['lang'],
         content_html = content_html,
+        content_plain = content_plain,
         created_at = func.now(),
     )
 
-def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Sutta:
+def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_json: Optional[str]) -> Am.Sutta:
+    content_json = x['text']
+    content_json_tmpl = tmpl_json
+
     a = json.loads(x['text'])
 
     if tmpl is None:
@@ -154,19 +165,25 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]]) -> Am.Su
         body = get_sutta_page_body(page)
         body = html_post_process(body)
         content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
-        content_plain = null()
+        content_plain = compactRichText(body)
+
+    uid = bilara_text_uid(x)
+    source_uid = uid.split('/')[-1]
 
     return Am.Sutta(
+        source_uid = source_uid,
         source_info = x['_id'],
         title = title,
         # mn123/pli/ms
-        uid = bilara_text_uid(x),
+        uid = uid,
         # SN 12.23
         sutta_ref = helpers.uid_to_ref(x['uid']),
         # pli
         language = x['lang'],
         content_plain = content_plain,
         content_html = content_html,
+        content_json = content_json,
+        content_json_tmpl = content_json_tmpl,
         created_at = func.now(),
     )
 
@@ -204,6 +221,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
 
     suttas: dict[str, Am.Sutta] = {}
     suttas_html_tmpl: dict[str, dict] = {}
+    suttas_html_tmpl_json: dict[str, str] = {}
 
     get_html_text_aql = '''
     LET docs = (
@@ -243,6 +261,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             text_uid_ref = r['uid']
             if text_uid_ref not in suttas_html_tmpl.keys():
                 suttas_html_tmpl[text_uid_ref] = json.loads(r['text'])
+                suttas_html_tmpl_json[text_uid_ref] = r['text']
 
     titles = get_titles(db, language)
 
@@ -298,6 +317,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             uid = f_uid(r)
             title = f_title(r, titles)
             tmpl = suttas_html_tmpl.get(r['uid'], None)
+            tmpl_json = suttas_html_tmpl_json.get(r['uid'], None)
 
             if uid.endswith('/than') or uid.endswith('/thanissaro'):
                 # We'll use Aj Thanissaro's translations from dhammatalks.org
@@ -305,7 +325,7 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
                 continue
 
             if uid not in suttas.keys():
-                suttas[uid] = f_to_sutta(r, title, tmpl)
+                suttas[uid] = f_to_sutta(r, title, tmpl, tmpl_json)
 
             elif 'muids' in r.keys() and ('reference' in r['muids'] or 'variant' in r['muids']):
                 # keeping only the 'root' version
@@ -315,12 +335,12 @@ def get_suttas(db: DBHandle, language = 'en') -> dict[str, Am.Sutta]:
             elif 'muids' in r.keys() and 'root' in r['muids']:
                 # keeping only the 'root' version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title, tmpl)
+                suttas[uid] = f_to_sutta(r, title, tmpl, tmpl_json)
 
             elif r['_id'].startswith('sc_bilara_texts/') and suttas[uid].source_info.startswith('html_text/'):
                 # keeping the Bilara version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title, tmpl)
+                suttas[uid] = f_to_sutta(r, title, tmpl, tmpl_json)
 
             else:
                 unknown_dup += 1
@@ -379,6 +399,117 @@ def get_legacy_db(db_path: Path) -> Session:
 
     return db_session
 
+
+def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, language: str):
+    get_bilara_text_variant_aql = '''
+    LET docs = (
+        FOR x IN sc_bilara_texts
+            FILTER x.lang == @language && POSITION(x.muids, 'variant')
+            RETURN x
+    )
+    RETURN docs
+    '''
+
+    q = sc_db.AQLQuery(
+        get_bilara_text_variant_aql,
+        bindVars={'language': language}
+    )
+
+    results = []
+
+    for r in q.result[0]:
+        convert_paths_to_content(r)
+
+        sutta_uid = bilara_text_uid(r)
+        source_uid = sutta_uid.split('/')[-1]
+
+        res = appdata_db \
+            .query(Am.Sutta.id) \
+            .filter(Am.Sutta.uid == sutta_uid) \
+            .first()
+
+        if res is None:
+            logger.error(f"Can't find sutta uid: {sutta_uid}")
+            continue
+
+        sutta_id = int(res[0])
+
+        item = Am.SuttaVariant(
+            sutta_id = sutta_id,
+            sutta_uid = sutta_uid,
+            language = language,
+            source_uid = source_uid,
+            content_json = r['text'],
+        )
+
+        results.append(item)
+
+    logger.info(f"Adding {len(results)} sutta variants ...")
+
+    try:
+        for i in results:
+            appdata_db.add(i)
+            appdata_db.commit()
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
+
+def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, language: str):
+    get_bilara_text_comment_aql = '''
+    LET docs = (
+        FOR x IN sc_bilara_texts
+            FILTER x.lang == @language && POSITION(x.muids, 'comment')
+            RETURN x
+    )
+    RETURN docs
+    '''
+
+    q = sc_db.AQLQuery(
+        get_bilara_text_comment_aql,
+        bindVars={'language': language}
+    )
+
+    results = []
+
+    for r in q.result[0]:
+        convert_paths_to_content(r)
+
+        sutta_uid = bilara_text_uid(r)
+        source_uid = sutta_uid.split('/')[-1]
+
+        res = appdata_db \
+            .query(Am.Sutta.id) \
+            .filter(Am.Sutta.uid == sutta_uid) \
+            .first()
+
+        if res is None:
+            logger.error(f"Can't find sutta uid: {sutta_uid}")
+            continue
+
+        sutta_id = int(res[0])
+
+        item = Am.SuttaComment(
+            sutta_id = sutta_id,
+            sutta_uid = sutta_uid,
+            language = language,
+            source_uid = source_uid,
+            content_json = r['text'],
+        )
+
+        results.append(item)
+
+    logger.info(f"Adding {len(results)} sutta comments ...")
+
+    try:
+        for i in results:
+            appdata_db.add(i)
+            appdata_db.commit()
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
+
 def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
     for lang in ['en', 'pli']:
         suttas = get_suttas(sc_db, lang)
@@ -394,6 +525,12 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle):
         except Exception as e:
             logger.error(e)
             exit(1)
+
+        add_sutta_variants(appdata_db, sc_db, lang)
+
+        add_sutta_comments(appdata_db, sc_db, lang)
+
+        logger.info(f"DONE: {lang}")
 
 def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: Session):
     logger.info("Adding Nyanatiloka DictWords from legacy dict_words")
@@ -528,6 +665,35 @@ def populate_dict_words_from_stardict(appdata_db: Session, stardict_base_path: P
         logger.info(f"Importing {ifo['bookname']} ...")
         import_stardict_as_new(appdata_db, DbSchemaName.AppData.value, None, paths, label, 10000, ignore_synonyms)
 
+def insert_db_version(appdata_db: Session):
+    p = Path('pyproject.toml')
+    if not p.exists():
+        logger.error("pyproject.toml not found")
+        sys.exit(1)
+
+    with open(p) as f:
+        s = f.read()
+
+    try:
+        t = tomlkit.parse(s)
+        v = t['simsapa']['db_version'] # type: ignore
+        ver = f"{v}"
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
+    item = Am.AppSetting(
+        key = "db_version",
+        value = ver,
+    )
+
+    try:
+        appdata_db.add(item)
+        appdata_db.commit()
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
 def main():
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
     appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = True)
@@ -538,6 +704,8 @@ def main():
     sc_db = get_suttacentral_db()
 
     stardict_base_path = bootstrap_assets_dir.joinpath("dict")
+
+    insert_db_version(appdata_db)
 
     # NOTE: Deprecated. Use the suttacentral db.
     # populate_suttas_from_legacy(appdata_db, legacy_db)

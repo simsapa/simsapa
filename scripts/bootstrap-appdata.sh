@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Activate poetry venv
+DIR=$(poetry env list --full-path)
+source "$DIR/bin/activate"
+
+# Ensure latest local simsapa is in the venv, this is what ./scripts/*.py will import.
+poetry install
+
 echo "=== Bootstrap Appdata DB ==="
 
 ./scripts/bootstrap-appdata-db.py

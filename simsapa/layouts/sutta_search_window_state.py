@@ -367,38 +367,16 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.pw.palibuttons_frame.setVisible(show)
 
     def _get_filter_labels(self):
-        # res = []
+        # FIXME currently doesn't return lang, only source uid
+        res = []
 
-        # r = self._app_data.db_session.query(Am.Sutta.uid).all()
-        # res.extend(r)
+        r = self._app_data.db_session.query(Am.Sutta.source_uid.distinct()).all()
+        res.extend(r)
 
-        # r = self._app_data.db_session.query(Um.Sutta.uid).all()
-        # res.extend(r)
+        r = self._app_data.db_session.query(Um.Sutta.source_uid.distinct()).all()
+        res.extend(r)
 
-        # def _uid_to_label(x):
-        #     return re.sub(r'[^/]+/([^/]+/.*)', r'\1', x['uid'])
-
-        # labels = sorted(set(map(_uid_to_label, res)))
-
-        # FIXME replace hard-coded labels list
-        labels = ['en/agganyani', 'en/amaravati', 'en/anandajoti',
-        'en/aung-rhysdavids', 'en/beal', 'en/bingenheimer', 'en/bodhi',
-        'en/brahmali', 'en/btc', 'en/buddharakkhita', 'en/caf_rhysdavids',
-        'en/chalmers', 'en/cheng', 'en/cowell-rouse', 'en/daw',
-        'en/dhammadinna', 'en/dhammajoti', 'en/feldmeier', 'en/francis',
-        'en/francis-neil', 'en/guang', 'en/hare', 'en/hecker-khema',
-        'en/horner', 'en/horner-brahmali', 'en/huyenvi-boinwebb-pasadika',
-        'en/ireland', 'en/jayarava', 'en/kelly-sawyer-yareham',
-        'en/kiribathgoda', 'en/kumara', 'en/law', 'en/mills', 'en/mills-sujato',
-        'en/munindo', 'en/nanamoli', 'en/narada', 'en/narada-mahinda',
-        'en/nhat_hanh-laity', 'en/nizamis', 'en/nyanamoli', 'en/olendzki',
-        'en/pierquet', 'en/piyadassi', 'en/rhysdavids-brasington',
-        'en/rhysdavids_litt', 'en/rockhill', 'en/rouse', 'en/silacara',
-        'en/soma', 'en/soni', 'en/suddhaso', 'en/sujato', 'en/thanissaro',
-        'en/thittila', 'en/tw-caf_rhysdavids', 'en/tw_rhysdavids',
-        'en/ukumarabhivamsa', 'en/unandamedha', 'en/unarada', 'en/unknown',
-        'en/vaidya', 'en/vidyabhusana', 'en/walters', 'en/woodward', 'en/ypg',
-        'pli/cst4', 'pli/ms', 'pli/user', 'pli/vri', 'skr/gretil']
+        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
 
         return labels
 

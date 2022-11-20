@@ -1,10 +1,15 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.11-alpha.1"
+version = "0.2.0-alpha.1"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 # pypi identification
 authors = ["Gambhiro <profound.labs@gmail.com>"]
 license = "MIT"
+
+# NOTE: Adjust tool.briefcase.version below.
+
+[simsapa]
+db_version = "0.2.0-alpha.1"
 
 [tool.poetry.dependencies]
 python = "~3.9"
@@ -84,7 +89,7 @@ to = {format = "setuppy", path = "setup.py"}
 project_name = "Simsapa Dhamma Reader"
 bundle = "io.github"
 # briefcase requires PEP440 version strings
-version = "0.1.11a1"
+version = "0.2.0a1"
 url = "https://github.com/simsapa/simsapa"
 license = "MIT license"
 # Package will display this info

@@ -20,6 +20,7 @@ import idzip
 
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
+from simsapa.app.helpers import compactRichText
 
 class DictError(Exception):
     """Error in the dictionary."""
@@ -314,6 +315,7 @@ def parse_dict(paths: StarDictPaths,
 
             if types == "h":
                 definition_html = data_str
+                definition_plain = compactRichText(data_str)
 
             synonyms = []
             if syn_entries is not None:
