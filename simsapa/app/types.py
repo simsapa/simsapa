@@ -107,6 +107,7 @@ class AppSettings(TypedDict):
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
     show_related_suttas: bool
+    show_translation_and_pali_line_by_line: bool
     show_all_variant_readings: bool
     sutta_font_size: int
     sutta_max_width: int
@@ -139,6 +140,7 @@ def default_app_settings() -> AppSettings:
             height = 500,
         ),
         show_related_suttas = True,
+        show_translation_and_pali_line_by_line = False,
         show_all_variant_readings = True,
         sutta_font_size = 22,
         sutta_max_width = 75,
@@ -348,6 +350,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     palibuttons_frame: QFrame
     action_Dictionary_Search: QAction
     action_Show_Related_Suttas: QAction
+    action_Show_Translation_and_Pali_Line_by_Line: QAction
     action_Show_All_Variant_Readings: QAction
     action_Find_in_Page: QAction
 

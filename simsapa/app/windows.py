@@ -329,6 +329,16 @@ class AppWindows:
             if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Related_Suttas'):
                 w.action_Show_Related_Suttas.setChecked(is_on)
 
+    def _toggle_show_line_by_line(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Show_Translation_and_Pali_Line_by_Line.isChecked()
+        self._app_data.app_settings['show_translation_and_pali_line_by_line'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
+                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                w.s._get_active_tab().render_sutta_content()
+
     def _toggle_show_all_variant_readings(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_All_Variant_Readings.isChecked()
         self._app_data.app_settings['show_all_variant_readings'] = is_on
@@ -654,6 +664,13 @@ class AppWindows:
 
                 view.action_Show_Related_Suttas \
                     .triggered.connect(partial(self._toggle_show_related_suttas, view))
+
+            if hasattr(view, 'action_Show_Translation_and_Pali_Line_by_Line'):
+                is_on = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
+                view.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+
+                view.action_Show_Translation_and_Pali_Line_by_Line \
+                    .triggered.connect(partial(self._toggle_show_line_by_line, view))
 
             if hasattr(view, 'action_Show_All_Variant_Readings'):
                 is_on = self._app_data.app_settings.get('show_all_variant_readings', True)

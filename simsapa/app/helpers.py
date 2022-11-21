@@ -1,7 +1,7 @@
 from importlib import metadata
 from pathlib import Path
 import shutil
-from typing import List, Optional, TypedDict
+from typing import Dict, List, Optional, TypedDict
 from bs4 import BeautifulSoup
 import json
 import requests
@@ -428,14 +428,18 @@ def bilara_html_post_process(body: str) -> str:
 
     return html
 
-def bilara_text_to_html(content: str,
-                        tmpl: str,
-                        variant: Optional[str] = None,
-                        comment: Optional[str] = None,
-                        show_variant_readings: bool = False) -> str:
+def bilara_text_to_segments(
+        content: str,
+        tmpl: Optional[str],
+        variant: Optional[str] = None,
+        comment: Optional[str] = None,
+        show_variant_readings: bool = False) -> Dict[str, str]:
 
     content_json = json.loads(content)
-    tmpl_json = json.loads(tmpl)
+    if tmpl:
+        tmpl_json = json.loads(tmpl)
+    else:
+        tmpl_json = None
 
     if variant:
         variant_json = json.loads(variant)
@@ -483,9 +487,12 @@ def bilara_text_to_html(content: str,
 
                 content_json[i] += s
 
-        if i in tmpl_json.keys():
+        if tmpl_json and i in tmpl_json.keys():
             content_json[i] = tmpl_json[i].replace('{}', content_json[i])
 
+    return content_json
+
+def bilara_content_json_to_html(content_json: Dict[str, str]) -> str:
     page = "\n\n".join(content_json.values())
 
     body = html_get_sutta_page_body(page)
@@ -494,3 +501,45 @@ def bilara_text_to_html(content: str,
     content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
 
     return content_html
+
+def bilara_line_by_line_html(translated_json: Dict[str, str],
+                             pali_json: Dict[str, str],
+                             tmpl_json: Dict[str, str]) -> str:
+
+    content_json: Dict[str, str] = dict()
+
+    for i in translated_json.keys():
+        translated_segment = translated_json[i]
+        if i in pali_json:
+            pali_segment = pali_json[i]
+        else:
+            pali_segment = ""
+
+        content_json[i] = """
+        <span class='segment'>
+          <span class='translated'>%s</span>
+          <span class='pali'>%s</span>
+        </span>
+        """ % (translated_segment, pali_segment)
+
+        if tmpl_json and i in tmpl_json.keys():
+            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+
+    return bilara_content_json_to_html(content_json)
+
+def bilara_text_to_html(
+        content: str,
+        tmpl: str,
+        variant: Optional[str] = None,
+        comment: Optional[str] = None,
+        show_variant_readings: bool = False) -> str:
+
+    content_json = bilara_text_to_segments(
+        content,
+        tmpl,
+        variant,
+        comment,
+        show_variant_readings,
+    )
+
+    return bilara_content_json_to_html(content_json)
