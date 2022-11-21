@@ -107,6 +107,7 @@ class AppSettings(TypedDict):
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
     show_related_suttas: bool
+    show_all_variant_readings: bool
     sutta_font_size: int
     sutta_max_width: int
     dictionary_font_size: int
@@ -138,6 +139,7 @@ def default_app_settings() -> AppSettings:
             height = 500,
         ),
         show_related_suttas = True,
+        show_all_variant_readings = True,
         sutta_font_size = 22,
         sutta_max_width = 75,
         dictionary_font_size = 18,
@@ -306,7 +308,6 @@ class AppWindowInterface(QMainWindow):
     action_Show_Word_Scan_Popup: QAction
     action_Search_As_You_Type: QAction
     action_Search_Completion: QAction
-    action_Show_Related_Suttas: QAction
     action_Re_index_database: QAction
     action_Re_download_database: QAction
     action_Focus_Search_Input: QAction
@@ -347,6 +348,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     palibuttons_frame: QFrame
     action_Dictionary_Search: QAction
     action_Show_Related_Suttas: QAction
+    action_Show_All_Variant_Readings: QAction
     action_Find_in_Page: QAction
 
 class DictionarySearchWindowInterface(AppWindowInterface):

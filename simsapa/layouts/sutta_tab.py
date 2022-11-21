@@ -109,11 +109,14 @@ class SuttaTabWidget(QWidget):
             else:
                 comment = str(res.content_json)
 
+            show_variants = self._app_data.app_settings.get('show_all_variant_readings', True)
+
             content = bilara_text_to_html(
                 str(self.sutta.content_json),
                 str(self.sutta.content_json_tmpl),
                 variant,
                 comment,
+                show_variants,
             )
 
         elif self.sutta.content_html is not None and self.sutta.content_html != '':

@@ -431,7 +431,8 @@ def bilara_html_post_process(body: str) -> str:
 def bilara_text_to_html(content: str,
                         tmpl: str,
                         variant: Optional[str] = None,
-                        comment: Optional[str] = None) -> str:
+                        comment: Optional[str] = None,
+                        show_variant_readings: bool = False) -> str:
 
     content_json = json.loads(content)
     tmpl_json = json.loads(tmpl)
@@ -453,12 +454,17 @@ def bilara_text_to_html(content: str,
                 if len(txt) == 0:
                     continue
 
+                classes = ['variant',]
+
+                if not show_variant_readings:
+                    classes.append('hide')
+
                 s = """
                 <span class='variant-wrap'>
                   <span class='mark'>⧫</span>
-                  <span class='variant hide'>(%s)</span>
+                  <span class='%s'>(%s)</span>
                 </span>
-                """ % txt
+                """ % (' '.join(classes), txt)
 
                 content_json[i] += s
 

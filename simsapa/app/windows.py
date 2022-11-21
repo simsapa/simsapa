@@ -16,7 +16,7 @@ from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_i
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
-from .types import AppData, AppMessage, AppWindowInterface, WindowNameToType, WindowType
+from .types import AppData, AppMessage, AppWindowInterface, SuttaSearchWindowInterface, WindowNameToType, WindowType
 
 from ..layouts.sutta_search import SuttaSearchWindow
 from ..layouts.sutta_study import SuttaStudyWindow
@@ -326,8 +326,19 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if hasattr(w, 'action_Show_Related_Suttas'):
+            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Related_Suttas'):
                 w.action_Show_Related_Suttas.setChecked(is_on)
+
+    def _toggle_show_all_variant_readings(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Show_All_Variant_Readings.isChecked()
+        self._app_data.app_settings['show_all_variant_readings'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_All_Variant_Readings'):
+                w.action_Show_All_Variant_Readings.setChecked(is_on)
+                w.s._get_active_tab().render_sutta_content()
+
 
     # def _new_dictionaries_manager_window(self):
     #     view = DictionariesManagerWindow(self._app_data)
@@ -636,12 +647,20 @@ class AppWindows:
             view.action_Bookmarks \
                 .triggered.connect(partial(self._new_bookmarks_browser_window))
 
-        if hasattr(view, 'action_Show_Related_Suttas'):
-            is_on = self._app_data.app_settings.get('show_related_suttas', True)
-            view.action_Show_Word_Scan_Popup.setChecked(is_on)
+        if isinstance(view, SuttaSearchWindow):
+            if hasattr(view, 'action_Show_Related_Suttas'):
+                is_on = self._app_data.app_settings.get('show_related_suttas', True)
+                view.action_Show_Related_Suttas.setChecked(is_on)
 
-            view.action_Show_Related_Suttas \
-                .triggered.connect(partial(self._toggle_show_related_suttas, view))
+                view.action_Show_Related_Suttas \
+                    .triggered.connect(partial(self._toggle_show_related_suttas, view))
+
+            if hasattr(view, 'action_Show_All_Variant_Readings'):
+                is_on = self._app_data.app_settings.get('show_all_variant_readings', True)
+                view.action_Show_All_Variant_Readings.setChecked(is_on)
+
+                view.action_Show_All_Variant_Readings \
+                    .triggered.connect(partial(self._toggle_show_all_variant_readings, view))
 
         if hasattr(view, 'action_Show_Word_Scan_Popup'):
             view.action_Show_Word_Scan_Popup \
