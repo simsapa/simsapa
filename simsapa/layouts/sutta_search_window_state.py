@@ -405,18 +405,22 @@ QWidget:focus { border: 1px solid #1092C3; }
         cmb = QComboBox()
         items = ["Language",]
         items.extend(self._get_language_labels())
+        idx = self._app_data.app_settings.get('sutta_language_filter_idx', 0)
 
         cmb.addItems(items)
         cmb.setFixedHeight(40)
+        cmb.setCurrentIndex(idx)
         self.sutta_language_filter_dropdown = cmb
         self.search_extras.addWidget(self.sutta_language_filter_dropdown)
 
         cmb = QComboBox()
         items = ["Source",]
         items.extend(self._get_source_uid_labels())
+        idx = self._app_data.app_settings.get('sutta_source_filter_idx', 0)
 
         cmb.addItems(items)
         cmb.setFixedHeight(40)
+        cmb.setCurrentIndex(idx)
         self.sutta_source_filter_dropdown = cmb
         self.search_extras.addWidget(self.sutta_source_filter_dropdown)
 
@@ -502,6 +506,14 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
         logger.info(f"_handle_query(): {query}, {min_length}")
+
+        idx = self.sutta_language_filter_dropdown.currentIndex()
+        self._app_data.app_settings['sutta_language_filter_idx'] = idx
+
+        idx = self.sutta_source_filter_dropdown.currentIndex()
+        self._app_data.app_settings['sutta_source_filter_idx'] = idx
+
+        self._app_data._save_app_settings()
 
         # Re-render the current sutta, in case user is trying to restore sutta
         # after a search in the Study Window with the clear input button.

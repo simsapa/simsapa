@@ -96,7 +96,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_mode_dropdown.addItems(items)
         self.search_mode_dropdown.setFixedHeight(35)
 
-        mode = self._app_data.app_settings.get('dictionary_search_mode', SearchMode.FulltextMatch)
+        mode = self._app_data.app_settings.get('word_scan_search_mode', SearchMode.FulltextMatch)
         values = list(map(lambda x: x[1], DictionarySearchModeNameToType.items()))
         idx = values.index(mode)
         self.search_mode_dropdown.setCurrentIndex(idx)
@@ -132,9 +132,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
         cmb = QComboBox()
         items = ["Dictionaries",]
         items.extend(self._get_filter_labels())
+        idx = self._app_data.app_settings.get('word_scan_dict_filter_idx', 0)
 
         cmb.addItems(items)
         cmb.setFixedHeight(35)
+        cmb.setCurrentIndex(idx)
         self.dict_filter_dropdown = cmb
         self.search_extras.addWidget(self.dict_filter_dropdown)
 
@@ -380,6 +382,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(query) < min_length:
             return
 
+        idx = self.dict_filter_dropdown.currentIndex()
+        self._app_data.app_settings['word_scan_dict_filter_idx'] = idx
+        self._app_data._save_app_settings()
+
         # Not aborting, show the user that the app started processsing
         icon_processing = QtGui.QIcon()
         icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
@@ -511,7 +517,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
 
-        self._app_data.app_settings['dictionary_search_mode'] = DictionarySearchModeNameToType[m]
+        self._app_data.app_settings['word_scan_search_mode'] = DictionarySearchModeNameToType[m]
         self._app_data._save_app_settings()
 
     def _connect_signals(self):

@@ -437,9 +437,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         cmb = QComboBox()
         items = ["Dictionaries",]
         items.extend(self._get_filter_labels())
+        idx = self._app_data.app_settings.get('dict_filter_idx', 0)
 
         cmb.addItems(items)
         cmb.setFixedHeight(40)
+        cmb.setCurrentIndex(idx)
         self.dict_filter_dropdown = cmb
         self.search_extras.addWidget(self.dict_filter_dropdown)
 
@@ -516,6 +518,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if len(query) < min_length:
             return
+
+        idx = self.dict_filter_dropdown.currentIndex()
+        self._app_data.app_settings['dict_filter_idx'] = idx
+        self._app_data._save_app_settings()
 
         # Not aborting, show the user that the app started processsing
         icon_processing = QtGui.QIcon()

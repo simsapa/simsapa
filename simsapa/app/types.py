@@ -117,6 +117,11 @@ class AppSettings(TypedDict):
     search_completion: bool
     sutta_search_mode: SearchMode
     dictionary_search_mode: SearchMode
+    word_scan_search_mode: SearchMode
+    sutta_language_filter_idx: int
+    sutta_source_filter_idx: int
+    dict_filter_idx: int
+    word_scan_dict_filter_idx: int
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -150,6 +155,11 @@ def default_app_settings() -> AppSettings:
         search_completion = True,
         sutta_search_mode = SearchMode.FulltextMatch,
         dictionary_search_mode = SearchMode.FulltextMatch,
+        word_scan_search_mode = SearchMode.FulltextMatch,
+        sutta_language_filter_idx = 0,
+        sutta_source_filter_idx = 0,
+        dict_filter_idx = 0,
+        word_scan_dict_filter_idx = 0,
     )
 
 class CompletionCache(TypedDict):
