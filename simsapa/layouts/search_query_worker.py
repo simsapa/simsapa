@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from whoosh.index import FileIndex
 
-from sqlalchemy.sql.elements import and_, not_
+from sqlalchemy.sql.elements import and_, or_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
@@ -295,13 +295,27 @@ class SearchQueryWorker(QRunnable):
 
                 r = db_session \
                     .query(Am.DictWord) \
-                    .filter(Am.DictWord.word.like(f"{self.query}%")) \
+                    .filter(or_(
+                        Am.DictWord.word.like(f"{self.query}%"),
+                        Am.DictWord.word_nom_sg.like(f"{self.query}%"),
+                        Am.DictWord.inflections.like(f"{self.query}%"),
+                        Am.DictWord.phonetic.like(f"{self.query}%"),
+                        Am.DictWord.transliteration.like(f"{self.query}%"),
+                        Am.DictWord.also_written_as.like(f"{self.query}%"),
+                    )) \
                     .all()
                 res.extend(r)
 
                 r = db_session \
                     .query(Um.DictWord) \
-                    .filter(Um.DictWord.word.like(f"{self.query}%")) \
+                    .filter(or_(
+                        Um.DictWord.word.like(f"{self.query}%"),
+                        Um.DictWord.word_nom_sg.like(f"{self.query}%"),
+                        Um.DictWord.inflections.like(f"{self.query}%"),
+                        Um.DictWord.phonetic.like(f"{self.query}%"),
+                        Um.DictWord.transliteration.like(f"{self.query}%"),
+                        Um.DictWord.also_written_as.like(f"{self.query}%"),
+                    )) \
                     .all()
                 res.extend(r)
 
