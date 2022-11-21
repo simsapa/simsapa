@@ -1,5 +1,5 @@
 from typing import Optional
-from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS
+from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS, SUTTAS_JS
 from mako.template import Template
 
 open_sutta_links_js_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/open_sutta_links.js')))
@@ -18,7 +18,7 @@ def html_page(content: str, api_url: Optional[str] = None, css_extra = None):
 
     html = str(page_tmpl.render(content=content,
                                 css_head=css,
-                                js_head='',
+                                js_head=SUTTAS_JS,
                                 js_body='',
                                 api_url=api_url))
 

@@ -2,6 +2,8 @@ from importlib import metadata
 from pathlib import Path
 import shutil
 from typing import List, Optional, TypedDict
+from bs4 import BeautifulSoup
+import json
 import requests
 import feedparser
 import semver
@@ -396,3 +398,93 @@ def make_active_window(view: QMainWindow):
     view.show() # bring window to top on OSX
     view.raise_() # bring window from minimized state on OSX
     view.activateWindow() # bring window to front/unminimize on Windows
+
+def html_get_sutta_page_body(html_page: str):
+    if '<html' in html_page or '<HTML' in html_page:
+        soup = BeautifulSoup(html_page, 'html.parser')
+        h = soup.find(name = 'body')
+        if h is None:
+            logger.error("HTML document is missing a <body>")
+            body = html_page
+        else:
+            body = h.decode_contents() # type: ignore
+    else:
+        body = html_page
+
+    return body
+
+
+def bilara_html_post_process(body: str) -> str:
+    # add .noindex to <footer> in suttacentral
+
+    # soup = BeautifulSoup(body, 'html.parser')
+    # h = soup.find(name = 'footer')
+    # if h is not None:
+    #     h['class'] = h.get('class', []) + ['noindex'] # type: ignore
+    #
+    # html = str(soup)
+
+    html = body.replace('<footer>', '<footer class="noindex">')
+
+    return html
+
+def bilara_text_to_html(content: str,
+                        tmpl: str,
+                        variant: Optional[str] = None,
+                        comment: Optional[str] = None) -> str:
+
+    content_json = json.loads(content)
+    tmpl_json = json.loads(tmpl)
+
+    if variant:
+        variant_json = json.loads(variant)
+    else:
+        variant_json = None
+
+    if comment:
+        comment_json = json.loads(comment)
+    else:
+        comment_json = None
+
+    for i in content_json.keys():
+        if variant_json:
+            if i in variant_json.keys():
+                txt = variant_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                s = """
+                <span class='variant-wrap'>
+                  <span class='mark'>⧫</span>
+                  <span class='variant hide'>(%s)</span>
+                </span>
+                """ % txt
+
+                content_json[i] += s
+
+        if comment_json:
+            if i in comment_json.keys():
+                txt = comment_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                s = """
+                <span class='comment-wrap'>
+                  <span class='mark'>✱</span>
+                  <span class='comment hide'>(%s)</span>
+                </span>
+                """ % txt
+
+                content_json[i] += s
+
+        if i in tmpl_json.keys():
+            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+
+    page = "\n\n".join(content_json.values())
+
+    body = html_get_sutta_page_body(page)
+    body = bilara_html_post_process(body)
+
+    content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
+
+    return content_html

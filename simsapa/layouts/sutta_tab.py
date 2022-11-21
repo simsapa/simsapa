@@ -7,7 +7,10 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 from simsapa.app.db.search import SearchResult
+from simsapa.app.helpers import bilara_text_to_html
 from ..app.types import AppData, USutta
 from .html_content import html_page
 
@@ -93,7 +96,27 @@ class SuttaTabWidget(QWidget):
         if self.sutta is None:
             return
 
-        if self.sutta.content_html is not None and self.sutta.content_html != '':
+        if self.sutta.content_json is not None and self.sutta.content_json != '':
+            res = self.sutta.variant
+            if res is None:
+                variant = None
+            else:
+                variant = str(res.content_json)
+
+            res = self.sutta.comment
+            if res is None:
+                comment = None
+            else:
+                comment = str(res.content_json)
+
+            content = bilara_text_to_html(
+                str(self.sutta.content_json),
+                str(self.sutta.content_json_tmpl),
+                variant,
+                comment,
+            )
+
+        elif self.sutta.content_html is not None and self.sutta.content_html != '':
             content = str(self.sutta.content_html)
 
         elif self.sutta.content_plain is not None and self.sutta.content_plain != '':

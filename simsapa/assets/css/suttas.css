@@ -104,6 +104,10 @@ a {
   vertical-align: -0.125em;
 }
 
+.hide {
+  display: none;
+}
+
 .suttacentral header {
   text-align: center;
 }
@@ -172,6 +176,18 @@ a {
 }
 .suttacentral footer span.publication-date {
   font-style: italic;
+}
+.suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
+  font-size: 0.6rem;
+  position: relative;
+  top: -0.1rem;
+  padding: 3px;
+}
+.suttacentral .variant-wrap .mark:hover, .suttacentral .comment-wrap .mark:hover {
+  border-bottom: 2px solid black;
+}
+.suttacentral .variant, .suttacentral .comment {
+  font-size: 0.8rem;
 }
 
 .cst4 .note {

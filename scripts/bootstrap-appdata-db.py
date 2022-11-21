@@ -5,11 +5,9 @@ import sys
 from pathlib import Path
 import json
 import tomlkit
-from bs4 import BeautifulSoup
 from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
-from bs4 import BeautifulSoup
 
 from sqlalchemy import create_engine, null
 from sqlalchemy.orm import sessionmaker
@@ -22,7 +20,7 @@ from pyArango.database import DBHandle
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import compactRichText
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, compactRichText, html_get_sutta_page_body
 
 from simsapa.app.stardict import parse_ifo, parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
@@ -85,40 +83,12 @@ def bilara_text_uid(x) -> str:
 
     return f"{x['uid']}/{x['lang']}/{author}"
 
-def get_sutta_page_body(html_page: str):
-    if '<html' in html_page or '<HTML' in html_page:
-        soup = BeautifulSoup(html_page, 'html.parser')
-        h = soup.find(name = 'body')
-        if h is None:
-            logger.error("HTML document is missing a <body>")
-            body = html_page
-        else:
-            body = h.decode_contents() # type: ignore
-    else:
-        body = html_page
-
-    return body
-
-def html_post_process(body: str) -> str:
-    # add .noindex to <footer> in suttacentral
-
-    # soup = BeautifulSoup(body, 'html.parser')
-    # h = soup.find(name = 'footer')
-    # if h is not None:
-    #     h['class'] = h.get('class', []) + ['noindex'] # type: ignore
-    #
-    # html = str(soup)
-
-    html = body.replace('<footer>', '<footer class="noindex">')
-
-    return html
-
-def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_json: Optional[str]) -> Am.Sutta:
+def html_text_to_sutta(x, title: str, tmpl: Optional[str]) -> Am.Sutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
-    body = get_sutta_page_body(page)
-    body = html_post_process(body)
+    body = html_get_sutta_page_body(page)
+    body = bilara_html_post_process(body)
     content_html = '<div class="suttacentral html-text">' + body + '</div>'
     content_plain = compactRichText(content_html)
 
@@ -141,31 +111,21 @@ def html_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_json:
         created_at = func.now(),
     )
 
-def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_json: Optional[str]) -> Am.Sutta:
-    content_json = x['text']
-    content_json_tmpl = tmpl_json
-
-    a = json.loads(x['text'])
+def bilara_text_to_sutta(x, title: str, tmpl: Optional[str]) -> Am.Sutta:
+    content = x['text']
 
     if tmpl is None:
         logger.warn(f"No template: {x['uid']} {title} {x['file_path']}")
-    else:
-        for i in a.keys():
-            if i in tmpl.keys():
-                a[i] = tmpl[i].replace('{}', a[i])
-            # else:
-            #     logger.warn(f"No template key: {i} {x['uid']} {title} {x['file_path']}")
 
-    page = "\n\n".join(a.values())
+        a = json.loads(content)
+        page = "\n\n".join(a.values())
 
-    if tmpl is None:
         content_html = null()
         content_plain = page
+
     else:
-        body = get_sutta_page_body(page)
-        body = html_post_process(body)
-        content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
-        content_plain = compactRichText(body)
+        content_html = bilara_text_to_html(content, tmpl)
+        content_plain = compactRichText(content_html)
 
     uid = bilara_text_uid(x)
     source_uid = uid.split('/')[-1]
@@ -182,8 +142,8 @@ def bilara_text_to_sutta(x, title: str, tmpl: Optional[dict[str, str]], tmpl_jso
         language = x['lang'],
         content_plain = content_plain,
         content_html = content_html,
-        content_json = content_json,
-        content_json_tmpl = content_json_tmpl,
+        content_json = content,
+        content_json_tmpl = tmpl,
         created_at = func.now(),
     )
 

@@ -104,6 +104,10 @@ a {
   vertical-align: -0.125em;
 }
 
+.hide {
+  display: none;
+}
+
 .cologne {
   /* selectors for webtc2 not in webtc */
 }

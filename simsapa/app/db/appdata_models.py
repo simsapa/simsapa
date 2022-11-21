@@ -102,8 +102,8 @@ class Sutta(Base):
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
     bookmarks = relationship("Bookmark", back_populates="sutta", passive_deletes=True)
 
-    variants = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True)
-    comments = relationship("SuttaComment", back_populates="sutta", passive_deletes=True)
+    variant = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
+    comment = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
 
 
 class SuttaVariant(Base):
@@ -121,7 +121,7 @@ class SuttaVariant(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    sutta = relationship("Sutta", back_populates="variants")
+    sutta = relationship("Sutta", back_populates="variant", uselist=False)
 
 
 class SuttaComment(Base):
@@ -138,7 +138,7 @@ class SuttaComment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    sutta = relationship("Sutta", back_populates="comments")
+    sutta = relationship("Sutta", back_populates="comment", uselist=False)
 
 
 class Dictionary(Base):

@@ -81,6 +81,11 @@ if b is None:
 else:
     SUTTAS_CSS = b.decode("utf-8")
 
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/suttas.js')))
+if b is None:
+    SUTTAS_JS = ""
+else:
+    SUTTAS_JS = b.decode("utf-8")
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
