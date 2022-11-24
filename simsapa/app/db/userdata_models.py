@@ -361,3 +361,66 @@ class AppSetting(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class ChallengeCourse(Base):
+    __tablename__ = "challenge_courses"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String)
+
+    sort_index = Column(Integer, nullable=False)
+
+    groups = relationship("ChallengeGroup", back_populates="course")
+
+
+class ChallengeGroup(Base):
+    __tablename__ = "challenge_groups"
+
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="NO ACTION"))
+
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String)
+
+    sort_index = Column(Integer, nullable=False)
+
+    course = relationship("ChallengeCourse", back_populates="groups", uselist=False)
+    challenges = relationship("Challenge", back_populates="group")
+
+
+class Challenge(Base):
+    __tablename__ = "challenges"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="NO ACTION"))
+
+    title = Column(String, nullable=False, unique=True)
+
+    sort_index = Column(Integer, nullable=False)
+    challenge_type = Column(String) # Explanation / Vocabulary / Sentence
+
+    explanation_text_md = Column(String)
+
+    question_gfx_path = Column(String)
+    question_mp3_path = Column(String)
+    question_text_md = Column(String)
+
+    answer_gfx_path = Column(String)
+    answer_mp3_path = Column(String)
+    answers_json = Column(String) # A JSON list of accepted answers, first as default.
+
+    score = Column(Integer)
+
+    studied_at = Column(DateTime(timezone=True))
+    due_at = Column(DateTime(timezone=True))
+
+    anki_model_name = Column(String) # Basic, Cloze
+    anki_note_id = Column(Integer)
+    anki_synced_at = Column(DateTime)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)
