@@ -43,5 +43,9 @@
     <file alias="angle-right">icons/32x32/fa_angle-right-solid.png</file>
     <file alias="angle-up">icons/32x32/fa_angle-up-solid.png</file>
     <file alias="maximize">icons/32x32/fa_maximize-solid.png</file>
+    <file alias="play-regular">icons/32x32/fa_circle-play-regular.png</file>
+    <file alias="play-solid">icons/32x32/fa_circle-play-solid.png</file>
+    <file alias="volume-high">icons/32x32/fa_volume-high-solid.png</file>
+    <file alias="volume-xmark">icons/32x32/fa_volume-xmark-solid.png</file>
   </qresource>
 </RCC>

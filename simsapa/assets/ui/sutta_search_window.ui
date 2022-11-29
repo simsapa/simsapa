@@ -506,6 +506,7 @@
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Bookmarks"/>
+    <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -958,6 +959,18 @@
    </property>
    <property name="text">
     <string>Show Translation and Pali &amp;Line by Line</string>
+   </property>
+  </action>
+  <action name="action_Pali_Courses">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Pali Courses</string>
+   </property>
+   <property name="shortcut">
+    <string>F8</string>
    </property>
   </action>
  </widget>

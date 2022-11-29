@@ -19,7 +19,7 @@ from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
 
 def create_app_dirs():
     if not SIMSAPA_DIR.exists():
@@ -30,6 +30,9 @@ def create_app_dirs():
 
     if not GRAPHS_DIR.exists():
         GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not COURSES_DIR.exists():
+        COURSES_DIR.mkdir(parents=True, exist_ok=True)
 
 def ensure_empty_graphs_cache():
     if GRAPHS_DIR.exists():

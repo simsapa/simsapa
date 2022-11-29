@@ -55,6 +55,7 @@ Mako = "~1.1.6"
 Flask = "~2.2.2"
 Flask-Cors = "~3.0.10"
 aksharamukha = "~1.9.7"
+markdown = "^3.4.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "~6.2.5"
@@ -138,6 +139,7 @@ requires = [
 "Flask              >= 2.2.2,    < 2.3.0",
 "Flask-Cors         >= 3.0.10,   < 3.1.0",
 "aksharamukha       >= 1.9.7,    < 1.10.0",
+"markdown           >= 3.4.1,    < 3.5.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

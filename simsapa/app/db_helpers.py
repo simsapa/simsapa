@@ -1,3 +1,4 @@
+import sys
 import os
 from pathlib import Path
 from typing import Tuple
@@ -41,7 +42,8 @@ def upgrade_db(db_path: Path, schema_name: str):
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
                     logger.error("Failed to run migrations: %s" % e)
-                    exit(1)
+                    db_conn.close()
+                    sys.exit(1)
 
         db_conn.close()
     else:
@@ -81,7 +83,8 @@ def find_or_create_db(db_path: Path, schema_name: str):
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
                     logger.error("Failed to run migrations: %s" % e)
-                    exit(1)
+                    db_conn.close()
+                    sys.exit(1)
 
         db_conn.close()
     else:

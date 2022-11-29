@@ -50,6 +50,8 @@ GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
+COURSES_DIR = ASSETS_DIR.joinpath('courses')
+
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
 APP_QUEUES: Dict[str, Queue] = {}
@@ -61,6 +63,7 @@ IS_MAC = (platform.system() == 'Darwin')
 READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
+BUTTON_BG_COLOR = "#007564"
 
 b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/loading.html")))
 if b is None:

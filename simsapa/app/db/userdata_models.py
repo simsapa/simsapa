@@ -379,7 +379,7 @@ class ChallengeGroup(Base):
     __tablename__ = "challenge_groups"
 
     id = Column(Integer, primary_key=True)
-    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="NO ACTION"))
+    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
 
     name = Column(String, nullable=False, unique=True)
     description = Column(String)
@@ -387,6 +387,7 @@ class ChallengeGroup(Base):
     sort_index = Column(Integer, nullable=False)
 
     course = relationship("ChallengeCourse", back_populates="groups", uselist=False)
+
     challenges = relationship("Challenge", back_populates="group")
 
 
@@ -396,22 +397,16 @@ class Challenge(Base):
     id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="NO ACTION"))
 
-    title = Column(String, nullable=False, unique=True)
+    challenge_type = Column(String, nullable=False)
 
     sort_index = Column(Integer, nullable=False)
-    challenge_type = Column(String) # Explanation / Vocabulary / Sentence
 
-    explanation_text_md = Column(String)
+    explanation_md = Column(String)
 
-    question_gfx_path = Column(String)
-    question_mp3_path = Column(String)
-    question_text_md = Column(String)
+    question_json = Column(String)
+    answers_json = Column(String)
 
-    answer_gfx_path = Column(String)
-    answer_mp3_path = Column(String)
-    answers_json = Column(String) # A JSON list of accepted answers, first as default.
-
-    score = Column(Integer)
+    level = Column(Integer)
 
     studied_at = Column(DateTime(timezone=True))
     due_at = Column(DateTime(timezone=True))

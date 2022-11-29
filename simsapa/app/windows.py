@@ -14,22 +14,23 @@ from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
+from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, SuttaSearchWindowInterface, WindowNameToType, WindowType
+
+from simsapa.layouts.sutta_search import SuttaSearchWindow
+from simsapa.layouts.sutta_study import SuttaStudyWindow
+from simsapa.layouts.dictionary_search import DictionarySearchWindow
+# from simsapa.layouts.dictionaries_manager import DictionariesManagerWindow
+# from simsapa.layouts.document_reader import DocumentReaderWindow
+# from simsapa.layouts.library_browser import LibraryBrowserWindow
+from simsapa.layouts.bookmarks_browser import BookmarksBrowserWindow
+from simsapa.layouts.pali_courses_browser import CoursesBrowserWindow
+from simsapa.layouts.pali_course_practice import CoursePracticeWindow
 from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
-from .types import AppData, AppMessage, AppWindowInterface, SuttaSearchWindowInterface, WindowNameToType, WindowType
-
-from ..layouts.sutta_search import SuttaSearchWindow
-from ..layouts.sutta_study import SuttaStudyWindow
-from ..layouts.dictionary_search import DictionarySearchWindow
-# from ..layouts.dictionaries_manager import DictionariesManagerWindow
-# from ..layouts.document_reader import DocumentReaderWindow
-# from ..layouts.library_browser import LibraryBrowserWindow
-from ..layouts.bookmarks_browser import BookmarksBrowserWindow
-from ..layouts.memos_browser import MemosBrowserWindow
-from ..layouts.links_browser import LinksBrowserWindow
+from simsapa.layouts.memos_browser import MemosBrowserWindow
+from simsapa.layouts.links_browser import LinksBrowserWindow
 from simsapa.layouts.word_scan_popup import WordScanPopup
-
-from ..layouts.help_info import open_simsapa_website, show_about
+from simsapa.layouts.help_info import open_simsapa_website, show_about
 
 
 class AppWindows:
@@ -377,10 +378,27 @@ class AppWindows:
 
     def _new_bookmarks_browser_window(self) -> BookmarksBrowserWindow:
         view = BookmarksBrowserWindow(self._app_data)
-        # self._set_size_and_maximize(view)
-        # self._connect_signals(view)
 
         view.open_sutta_by_uid.connect(partial(self._show_sutta_by_uid_in_search))
+
+        make_active_window(view)
+        self._windows.append(view)
+        return view
+
+    def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
+        view = CoursePracticeWindow(self._app_data, group)
+
+        make_active_window(view)
+        self._windows.append(view)
+        return view
+
+    def _start_challenge_group(self, group: PaliCourseGroup):
+        self._new_course_practice_window(group)
+
+    def _new_courses_browser_window(self) -> CoursesBrowserWindow:
+        view = CoursesBrowserWindow(self._app_data)
+
+        view.start_group.connect(partial(self._start_challenge_group))
 
         make_active_window(view)
         self._windows.append(view)
@@ -656,6 +674,10 @@ class AppWindows:
         if hasattr(view, 'action_Bookmarks'):
             view.action_Bookmarks \
                 .triggered.connect(partial(self._new_bookmarks_browser_window))
+
+        if hasattr(view, 'action_Pali_Courses'):
+            view.action_Pali_Courses \
+                .triggered.connect(partial(self._new_courses_browser_window))
 
         if isinstance(view, SuttaSearchWindow):
             if hasattr(view, 'action_Show_Related_Suttas'):

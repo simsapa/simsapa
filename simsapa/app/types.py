@@ -5,7 +5,7 @@ import json
 import os
 import os.path
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, TypedDict, Union
+from typing import Callable, List, Optional, TypedDict, Union
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 from sqlalchemy import create_engine
@@ -33,10 +33,17 @@ QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
 ULink = Union[Am.Link, Um.Link]
+
 UDeck = Union[Am.Deck, Um.Deck]
 UMemo = Union[Am.Memo, Um.Memo]
+
 UBookmark = Union[Am.Bookmark, Um.Bookmark]
 UDocument = Union[Am.Document, Um.Document]
+
+UChallengeCourse = Union[Am.ChallengeCourse, Um.ChallengeCourse]
+UChallengeGroup = Union[Am.ChallengeGroup, Um.ChallengeGroup]
+UChallenge = Union[Am.Challenge, Um.Challenge]
+
 
 class Labels(TypedDict):
     appdata: List[str]
@@ -122,6 +129,7 @@ class AppSettings(TypedDict):
     sutta_source_filter_idx: int
     dict_filter_idx: int
     word_scan_dict_filter_idx: int
+    audio_volume: float
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -160,6 +168,7 @@ def default_app_settings() -> AppSettings:
         sutta_source_filter_idx = 0,
         dict_filter_idx = 0,
         word_scan_dict_filter_idx = 0,
+        audio_volume = 1.0,
     )
 
 class CompletionCache(TypedDict):
@@ -328,6 +337,7 @@ class AppWindowInterface(QMainWindow):
     action_Sutta_Study: QAction
     action_Dictionary_Search: QAction
     action_Bookmarks: QAction
+    action_Pali_Courses: QAction
     action_Memos: QAction
     action_Links: QAction
     action_First_Window_on_Startup: QAction
@@ -430,3 +440,32 @@ class CompletionCacheWorker(QRunnable):
 
         except Exception as e:
             logger.error(e)
+
+
+QExpanding = QtWidgets.QSizePolicy.Policy.Expanding
+QMinimum = QtWidgets.QSizePolicy.Policy.Minimum
+
+
+class PaliItem(TypedDict):
+    text: str
+    audio: Optional[str]
+    gfx: Optional[str]
+    uuid: Optional[str]
+
+
+class PaliCourseGroup(TypedDict):
+    db_schema: str
+    db_id: int
+
+
+class PaliListItem(TypedDict):
+    db_model: str
+    db_schema: str
+    db_id: int
+
+
+class PaliChallengeType(str, Enum):
+    Explanation = 'Explanation'
+    Vocabulary = 'Vocabulary'
+    TranslateFromEnglish = 'Translate from English'
+    TranslateFromPali = 'Translate from Pali'
