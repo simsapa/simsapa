@@ -253,7 +253,7 @@ class Memo(Base):
     __tablename__ = "memos"
 
     id = Column(Integer, primary_key=True)
-    deck_id = Column(Integer, ForeignKey("decks.id", ondelete="NO ACTION"))
+    deck_id = Column(Integer, ForeignKey("decks.id", ondelete="CASCADE"))
 
     # --- Content ---
     fields_json = Column(String) # Front, Back
@@ -369,10 +369,12 @@ class ChallengeCourse(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
     description = Column(String)
+    course_dirname = Column(String)
 
     sort_index = Column(Integer, nullable=False)
 
     groups = relationship("ChallengeGroup", back_populates="course")
+    challenges = relationship("Challenge", back_populates="course")
 
 
 class ChallengeGroup(Base):
@@ -387,7 +389,6 @@ class ChallengeGroup(Base):
     sort_index = Column(Integer, nullable=False)
 
     course = relationship("ChallengeCourse", back_populates="groups", uselist=False)
-
     challenges = relationship("Challenge", back_populates="group")
 
 
@@ -395,7 +396,8 @@ class Challenge(Base):
     __tablename__ = "challenges"
 
     id = Column(Integer, primary_key=True)
-    group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="NO ACTION"))
+    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
+    group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="CASCADE"))
 
     challenge_type = Column(String, nullable=False)
 
@@ -418,4 +420,5 @@ class Challenge(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
     group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)

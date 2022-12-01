@@ -21,6 +21,7 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('description', sa.String(), nullable=True),
+    sa.Column('course_dirname', sa.String(), nullable=True),
     sa.Column('sort_index', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name'),
@@ -39,6 +40,7 @@ def upgrade():
 
     op.create_table('challenges',
     sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('course_id', sa.Integer(), nullable=True),
     sa.Column('group_id', sa.Integer(), nullable=True),
     sa.Column('challenge_type', sa.String(), nullable=False),
     sa.Column('sort_index', sa.Integer(), nullable=False),
@@ -53,7 +55,8 @@ def upgrade():
     sa.Column('anki_synced_at', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.ForeignKeyConstraint(['group_id'], ['challenge_groups.id'], ondelete='NO ACTION'),
+    sa.ForeignKeyConstraint(['course_id'], ['challenge_courses.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['group_id'], ['challenge_groups.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     )
 

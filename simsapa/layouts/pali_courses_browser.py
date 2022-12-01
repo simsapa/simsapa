@@ -7,13 +7,13 @@ from typing import List, Optional, TypedDict
 
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from PyQt6.QtCore import QModelIndex, QSize, pyqtSignal
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 
 import tomlkit
 import markdown
 
-from sqlalchemy import func
+from sqlalchemy import func, null
 
 from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTreeView, QVBoxLayout, QWidget)
 from tomlkit.toml_document import TOMLDocument
@@ -23,7 +23,7 @@ from simsapa import COURSES_DIR, DbSchemaName, logger
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, PaliListItem, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
+from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
 
 
 class TomlCourseChallenge(TypedDict):
@@ -46,7 +46,7 @@ class ListItem(QStandardItem):
     name: str
     data: PaliListItem
 
-    def __init__(self, name: str, db_model: str, db_schema: str, db_id: int):
+    def __init__(self, name: str, db_model: PaliListModel, db_schema: DbSchemaName, db_id: int):
         super().__init__()
 
         self.name = name
@@ -137,8 +137,12 @@ class CoursesBrowserWindow(AppWindowInterface):
         self.action_Close_Window = QAction("&Close Window")
         self.menu_File.addAction(self.action_Close_Window)
 
-        self.action_Import_Toml = QAction("&Import from TOML...")
+        self.action_Import_Toml = QAction("&Import a Course from TOML...")
         self.menu_File.addAction(self.action_Import_Toml)
+
+        self.action_Start_Course = QAction("&Start Selected Course")
+        self.action_Start_Course.setShortcut("Return")
+        self.menu_File.addAction(self.action_Start_Course)
 
 
     def _setup_course_buttons(self):
@@ -146,8 +150,16 @@ class CoursesBrowserWindow(AppWindowInterface):
         self.start_btn.setFixedSize(QSize(80, 40))
         self.course_buttons_box.addWidget(self.start_btn)
 
+        self.reset_btn = QPushButton("Reset Progress")
+        self.reset_btn.setFixedSize(QSize(120, 40))
+        self.course_buttons_box.addWidget(self.reset_btn)
+
         spacer = QSpacerItem(0, 0, QExpanding, QMinimum)
         self.course_buttons_box.addItem(spacer)
+
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setFixedSize(QSize(80, 40))
+        self.course_buttons_box.addWidget(self.delete_btn)
 
 
     def _setup_courses_tree(self):
@@ -166,6 +178,16 @@ class CoursesBrowserWindow(AppWindowInterface):
         self.tree_view.setModel(self.tree_model)
 
         self._create_tree_items(self.tree_model)
+
+        idx = self.tree_model.index(0, 0)
+        self.tree_view.selectionModel() \
+                      .select(idx,
+                              QItemSelectionModel.SelectionFlag.ClearAndSelect | \
+                              QItemSelectionModel.SelectionFlag.Rows)
+
+        self._handle_tree_clicked(idx)
+
+        self.tree_view.setFocus()
 
         self.tree_view.expandAll()
 
@@ -188,10 +210,10 @@ class CoursesBrowserWindow(AppWindowInterface):
         root_node = model.invisibleRootItem()
 
         for r in res:
-            course = ListItem(r.name, "ChallengeCourse", r.metadata.schema, r.id)
+            course = ListItem(r.name, PaliListModel.ChallengeCourse, r.metadata.schema, r.id)
 
             for g in r.groups:
-                group = ListItem(g.name, "ChallengeGroup", r.metadata.schema, r.id)
+                group = ListItem(g.name, PaliListModel.ChallengeGroup, r.metadata.schema, r.id)
                 course.appendRow(group)
 
             root_node.appendRow(course)
@@ -218,9 +240,9 @@ class CoursesBrowserWindow(AppWindowInterface):
     def _find_course(self, data: PaliListItem) -> Optional[UChallengeCourse]:
         a: Optional[UChallengeCourse] = None
 
-        if data['db_model'] == "ChallengeCourse":
+        if data['db_model'] == PaliListModel.ChallengeCourse:
 
-            if data['db_schema'] == DbSchemaName.AppData.value:
+            if data['db_schema'] == DbSchemaName.AppData:
                 a = self._app_data.db_session \
                     .query(Am.ChallengeCourse) \
                     .filter(Am.ChallengeCourse.id == data['db_id']) \
@@ -236,12 +258,12 @@ class CoursesBrowserWindow(AppWindowInterface):
         return a
 
 
-    def _find_group(self, data: PaliListItem) -> Optional[UChallengeCourse]:
-        a: Optional[UChallengeCourse] = None
+    def _find_group(self, data: PaliListItem) -> Optional[UChallengeGroup]:
+        a: Optional[UChallengeGroup] = None
 
-        if data['db_model'] == "ChallengeGroup":
+        if data['db_model'] == PaliListModel.ChallengeGroup:
 
-            if data['db_schema'] == DbSchemaName.AppData.value:
+            if data['db_schema'] == DbSchemaName.AppData:
                 a = self._app_data.db_session \
                     .query(Am.ChallengeGroup) \
                     .filter(Am.ChallengeGroup.id == data['db_id']) \
@@ -258,17 +280,29 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _handle_start(self):
-        if self.current_item is not None:
-            a = self._find_course(self.current_item.data)
-            if a is not None and a.groups is not None:
-                g: UChallengeGroup = a.groups[0] # type: ignore
+        if self.current_item is None:
+            return
 
-                msg = PaliCourseGroup(
-                    db_schema=g.metadata.schema,
-                    db_id=int(str(g.id)),
-                )
+        a = self._find_course(self.current_item.data)
+        if a is not None and a.groups is not None:
+            g: Optional[UChallengeGroup] = a.groups[0] # type: ignore
 
-                self.start_group.emit(msg)
+        else:
+            g = self._find_group(self.current_item.data)
+
+        if g is not None:
+            msg = PaliCourseGroup(
+                db_schema=g.metadata.schema,
+                db_id=int(str(g.id)),
+            )
+
+            self.start_group.emit(msg)
+
+
+    def _start_selected(self, val: QModelIndex):
+        item: ListItem = self.tree_model.itemFromIndex(val) # type: ignore
+        self.current_item = item
+        self._handle_start()
 
 
     def parse_toml(self, path: Path) -> Optional[TOMLDocument]:
@@ -318,20 +352,21 @@ class CoursesBrowserWindow(AppWindowInterface):
 
         course_name = t.get('name') or 'Unknown'
 
-        c = Um.ChallengeCourse(
-            name = course_name,
-            description = t['description'],
-            sort_index = courses_count + 1,
-        )
-
-        self._app_data.db_session.add(c)
-        self._app_data.db_session.commit()
-
         course_base = self._course_base_from_name(course_name)
         if not course_base.exists():
             course_base.mkdir(parents=True, exist_ok=True)
 
         shutil.copy(toml_path, course_base)
+
+        c = Um.ChallengeCourse(
+            name = course_name,
+            description = t['description'],
+            course_dirname = course_base.name,
+            sort_index = courses_count + 1,
+        )
+
+        self._app_data.db_session.add(c)
+        self._app_data.db_session.commit()
 
         groups: List[TomlCourseGroup] = t.get('groups') or []
 
@@ -365,7 +400,8 @@ class CoursesBrowserWindow(AppWindowInterface):
 
                     if j.get('gfx', False):
                         self._copy_to_courses(toml_path, Path(j['gfx']), course_base)
-                        gfx = str(course_base.joinpath(j['gfx']))
+                        # Challenge asset paths are relative to course dir
+                        gfx = j['gfx']
                     else:
                         gfx = None
 
@@ -373,7 +409,7 @@ class CoursesBrowserWindow(AppWindowInterface):
 
                     if j.get('audio', False):
                         self._copy_to_courses(toml_path, Path(j['audio']), course_base)
-                        audio = str(course_base.joinpath(j['audio']))
+                        audio = j['audio']
                     else:
                         audio = None
 
@@ -387,6 +423,7 @@ class CoursesBrowserWindow(AppWindowInterface):
                     )
 
                 if ch is not None:
+                    ch.course = c
                     ch.group = g
                     self._app_data.db_session.add(ch)
                     self._app_data.db_session.commit()
@@ -411,10 +448,114 @@ class CoursesBrowserWindow(AppWindowInterface):
             self._reload_courses_tree()
 
 
-    def _connect_signals(self):
-        self.tree_view.clicked.connect(self._handle_tree_clicked)
+    def _handle_reset(self):
+        if self.current_item is None:
+            return
 
-        self.start_btn.clicked.connect(self._handle_start)
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Reset Progress")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        course = self._find_course(self.current_item.data)
+
+        if course is not None:
+            box.setText(f"Reset progress in {course.name}?")
+            if box.exec() != QMessageBox.StandardButton.Yes:
+                return
+
+            for i in course.challenges: # type: ignore
+                i.level = null()
+                i.studied_at = null()
+                i.due_at = null()
+
+            self._app_data.db_session.commit()
+
+            self._reload_courses_tree()
+
+            return
+
+        group = self._find_group(self.current_item.data)
+
+        if group is not None:
+            box.setText(f"Reset progress in {group.name}?")
+            if box.exec() != QMessageBox.StandardButton.Yes:
+                return
+
+            for i in group.challenges: # type: ignore
+                i.level = null()
+                i.studied_at = null()
+                i.due_at = null()
+
+            self._app_data.db_session.commit()
+
+            self._reload_courses_tree()
+
+
+    def _handle_delete(self):
+        if self.current_item is None:
+            return
+
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Delete")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        course = self._find_course(self.current_item.data)
+
+        if course is not None:
+            box.setText(f"Delete {course.name}?")
+            if box.exec() != QMessageBox.StandardButton.Yes:
+                return
+
+            for i in course.challenges: # type: ignore
+                self._app_data.db_session.delete(i)
+
+            for i in course.groups: # type: ignore
+                self._app_data.db_session.delete(i)
+
+            self._app_data.db_session.delete(course)
+            self._app_data.db_session.commit()
+
+            if course.course_dirname is not None:
+                p = COURSES_DIR.joinpath(str(course.course_dirname))
+                if p.exists():
+                    shutil.rmtree(p)
+
+            self._reload_courses_tree()
+
+            return
+
+        group = self._find_group(self.current_item.data)
+
+        if group is not None:
+            box.setText(f"Delete {group.name}?")
+            if box.exec() != QMessageBox.StandardButton.Yes:
+                return
+
+            for i in group.challenges: # type: ignore
+                self._app_data.db_session.delete(i)
+
+            self._app_data.db_session.delete(group)
+            self._app_data.db_session.commit()
+            self._reload_courses_tree()
+
+
+    def _handle_selection_changed(self, selected: QItemSelection, _: QItemSelection):
+        self._handle_tree_clicked(selected.indexes()[0])
+
+
+    def _connect_signals(self):
+        self.tree_view.clicked.connect(partial(self._handle_tree_clicked))
+        self.tree_view.doubleClicked.connect(partial(self._start_selected))
+        self.tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
+
+        self.start_btn.clicked.connect(partial(self._handle_start))
+        self.action_Start_Course.triggered.connect(partial(self._handle_start))
+
+        self.reset_btn.clicked.connect(partial(self._handle_reset))
+
+        self.delete_btn.clicked.connect(partial(self._handle_delete))
 
         self.action_Close_Window \
             .triggered.connect(partial(self.close))

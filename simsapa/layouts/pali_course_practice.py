@@ -3,20 +3,20 @@ import uuid
 from pathlib import Path
 import random
 import json
-from typing import List, Optional
+from typing import Dict, List, Optional
 from functools import partial
 import markdown
 
 from PyQt6 import QtWidgets
 from PyQt6.QtMultimedia import QAudioDevice, QSoundEffect
-from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QSize, QTimer, QUrl, pyqtSignal, Qt
 from PyQt6.QtGui import QEnterEvent, QIcon, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QVBoxLayout
 
-from simsapa import ASSETS_DIR, BUTTON_BG_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
@@ -36,15 +36,25 @@ class ChoiceButton(QPushButton):
 
     _play_timer = QTimer()
 
-    def __init__(self, pali_item: PaliItem, parent=None):
+    def __init__(self, pali_item: PaliItem, course_dir: Optional[Path] = None, enable_audio = True, parent=None):
         self.pali_item = pali_item
 
         super().__init__(text=self.pali_item['text'], parent=parent)
 
         self.setMinimumSize(8*len(self.pali_item['text']), 40)
 
-        if self.pali_item['audio']:
-            self.audio_path = ASSETS_DIR.joinpath(self.pali_item['audio'])
+        # Challenge asset paths are relative to course dir
+        if course_dir and self.pali_item['audio'] and enable_audio:
+            p = course_dir.joinpath(self.pali_item['audio'])
+            if p.exists():
+                self.audio_path = p
+
+                icon = QIcon()
+                icon.addPixmap(QPixmap(":/volume-high"))
+                self.setIcon(icon)
+                self.setIconSize(QSize(12, 12))
+            else:
+                logger.info(f"Audio missing: {p}")
 
         self.clicked.connect(partial(self._handle_clicked))
 
@@ -55,6 +65,13 @@ class ChoiceButton(QPushButton):
 
     def _emit_play(self):
         self.play_audio.emit(self.audio_path)
+
+
+    def do_remove(self):
+        if self._play_timer.isActive():
+            self._play_timer.stop()
+        self.deleteLater()
+
 
     def enterEvent(self, e: QEnterEvent):
         if self.isEnabled():
@@ -67,6 +84,7 @@ class ChoiceButton(QPushButton):
             self._play_timer.start(500)
 
         return super().enterEvent(e)
+
 
     def leaveEvent(self, e):
         if self._play_timer.isActive():
@@ -118,14 +136,24 @@ class CoursePracticeWindow(AppWindowInterface):
         self.player.setAudioDevice(self.audio_device)
 
         volume = self._app_data.app_settings.get('audio_volume', 1.0)
-        self.player.setVolume(volume)
+        if volume == 0.0:
+            self.player.setMuted(True)
+        else:
+            self.player.setMuted(False)
+            self.player.setVolume(volume)
 
 
     def _play_audio(self, audio_path: Path):
-        self.player.stop()
+        if audio_path.exists() and not self.player.isMuted():
+            # FIXME When a source hasn't finished playing, and a new play is
+            # requested, it makes a loud noise, even if .stop() is called before
+            # playing.
+            #
+            # A way to test this problem is when a ChoiceButton started playing
+            # a word, then we check to finish while it's playing, and the
+            # _play_answer() will try to start playing.
 
-        if audio_path.exists():
-            if self.player.volume() != 0.0:
+            if not self.player.isPlaying():
                 self.player.setSource(QUrl.fromLocalFile(str(audio_path)))
                 self.player.play()
 
@@ -267,15 +295,29 @@ class CoursePracticeWindow(AppWindowInterface):
         self.question_box.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
         self.question_text = QLabel()
+        self.question_text.setMinimumWidth(400)
+        self.question_text.setSizePolicy(QExpanding, QMinimum)
+        self.question_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.question_text.setStyleSheet(text_style)
         self.question_text.setWordWrap(True)
+
         self.question_box.addWidget(self.question_text)
 
         self.question_box.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
+        self._layout.addItem(QSpacerItem(0, 20, QMinimum, QMinimum))
+
+        # === Horizontal Line ===
+
+        self.question_sep_line = QFrame()
+        self.question_sep_line.setFrameShape(QFrame.Shape.HLine)
+        self.question_sep_line.setFrameShadow(QFrame.Shadow.Sunken)
+        self.question_sep_line.setLineWidth(1)
+        self._layout.addWidget(self.question_sep_line)
+
         # === Answer Text ===
 
-        self.answer_top_spacer = QSpacerItem(0, 50, QMinimum, QMinimum)
+        self.answer_top_spacer = QSpacerItem(0, 20, QMinimum, QMinimum)
         self._layout.addItem(self.answer_top_spacer)
 
         self.answer_text_box = QHBoxLayout()
@@ -317,8 +359,15 @@ class CoursePracticeWindow(AppWindowInterface):
         self.choices_top_spacer = QSpacerItem(0, 50, QMinimum, QMinimum)
         self._layout.addItem(self.choices_top_spacer)
 
+        self.choices_wrap = QHBoxLayout()
+        self._layout.addLayout(self.choices_wrap)
+
+        self.choices_wrap.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
+
         self.choices_box = QHBoxLayout()
-        self._layout.addLayout(self.choices_box)
+        self.choices_wrap.addLayout(self.choices_box)
+
+        self.choices_wrap.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
         # === Footer ===
 
@@ -393,8 +442,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _remove_choice_buttons(self):
         for i in self.choice_buttons:
-            i._play_timer.stop()
-            i.deleteLater()
+            i.do_remove()
 
         while True:
             item = self.choices_box.takeAt(0)
@@ -408,8 +456,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _remove_answer_buttons(self):
         for i in self.answer_buttons:
-            i._play_timer.stop()
-            i.deleteLater()
+            i.do_remove()
 
         while True:
             item = self.answer_sentence_box.takeAt(0)
@@ -426,7 +473,8 @@ class CoursePracticeWindow(AppWindowInterface):
         self.message.setText("")
         self.gfx_label.setHidden(True)
         self.question_text.setText("")
-        self.answer_top_spacer.changeSize(0, 50)
+        self.question_sep_line.setHidden(False)
+        self.answer_top_spacer.changeSize(0, 20)
         self.answer_text.setText("")
         self.answer_text.setHidden(False)
         self.answer_listen.setHidden(True)
@@ -465,6 +513,7 @@ class CoursePracticeWindow(AppWindowInterface):
             self._load_answer(ch)
 
         elif ch.challenge_type == PaliChallengeType.Explanation.value:
+            self.question_sep_line.setHidden(True)
             self.answer_text.setHidden(True)
             self.answer_top_spacer.changeSize(0, 0)
             self.choices_top_spacer.changeSize(0, 0)
@@ -475,23 +524,38 @@ class CoursePracticeWindow(AppWindowInterface):
             self._load_explanation(ch)
 
 
-    def _vocab_from_current_group(self, except_word: Optional[str] = None) -> List[PaliItem]:
+    def _vocab_from_current_course(self, except_words: Optional[List[str]] = None) -> Dict[str, PaliItem]:
         def _is_vocab(x: UChallenge) -> bool:
             return (str(x.challenge_type) == PaliChallengeType.Vocabulary.value)
 
-        vocab = list(filter(_is_vocab, self.current_group.challenges)) # type: ignore
+        course = self.current_challenge.course
 
-        def _to_item(x: UChallenge) -> PaliItem:
-            r: List[PaliItem] = json.loads(str(x.answers_json))
-            return r[0]
+        vocab = list(filter(_is_vocab, course.challenges)) # type: ignore
 
-        vocab = list(map(_to_item, vocab))
+        ret: Dict[str, PaliItem] = dict()
 
-        if except_word:
-            vocab = list(filter(lambda x: x['text'] != except_word, vocab))
+        for i in vocab:
+            r: List[PaliItem] = json.loads(str(i.answers_json))
+            r[0]['uuid'] = str(uuid.uuid4())
+            word = r[0]["text"].strip().lower()
+            if except_words and word in except_words:
+                continue
+            ret[word] = r[0]
 
-        return vocab
+        return ret
 
+
+    def _current_course_dir(self) -> Optional[Path]:
+        if self.current_challenge is None:
+            return None
+
+        d = self.current_challenge.course.course_dirname
+        if d is not None:
+            course_dir = COURSES_DIR.joinpath(d)
+        else:
+            course_dir = None
+
+        return course_dir
 
     def _load_explanation(self, ch: UChallenge):
         self.qwe.setHidden(False)
@@ -501,10 +565,16 @@ class CoursePracticeWindow(AppWindowInterface):
     def _load_question(self, ch: UChallenge):
         question: PaliItem = json.loads(str(ch.question_json))
 
+        d = ch.course.course_dirname
+        if d is not None:
+            course_dir = COURSES_DIR.joinpath(d)
+        else:
+            course_dir = None
+
         self.question_text.setText(question['text'])
 
-        if question['gfx']:
-            gfx_path = ASSETS_DIR.joinpath(question['gfx'])
+        if course_dir and question['gfx']:
+            gfx_path = course_dir.joinpath(question['gfx'])
             if not gfx_path.exists():
                 logger.warn("Gfx missing: " + str(gfx_path))
                 return
@@ -521,6 +591,15 @@ class CoursePracticeWindow(AppWindowInterface):
 
         choices: List[PaliItem] = []
 
+        d = ch.course.course_dirname
+        if d is not None:
+            course_dir = COURSES_DIR.joinpath(d)
+        else:
+            course_dir = None
+
+        vocab = self._vocab_from_current_course()
+        except_words = []
+
         if ch.challenge_type == PaliChallengeType.Vocabulary.value:
             choices.append(answers[0])
 
@@ -528,31 +607,38 @@ class CoursePracticeWindow(AppWindowInterface):
              ch.challenge_type == PaliChallengeType.TranslateFromPali.value:
 
             for i in answers[0]['text'].split("|"):
-                # FIXME lookup vocab audio for sentence words
-                choices.append(PaliItem(text=i, audio=None, gfx=None, uuid=None))
+                w = i.strip().lower()
+                if w in vocab.keys() and vocab[w]['audio']:
+                    audio = vocab[w]['audio']
+                else:
+                    audio = None
 
-        if len(choices) > 0:
-            except_word = choices[0]['text']
-        else:
-            except_word = None
+                choices.append(PaliItem(text=i.strip(), audio=audio, gfx=None, uuid=str(uuid.uuid4())))
+                except_words.append(w)
 
-        vocab = self._vocab_from_current_group(except_word)
+        for i in except_words:
+            if i in vocab.keys():
+                del vocab[i]
 
         used = []
-        for _ in range(0, 3):
-            n = random.randrange(0, len(vocab))
+        tries = 0
+        added = 0
+        words = list(vocab.keys())
+
+        while added < 3 and tries < 5:
+            n = random.randrange(0, len(words))
             if n in used:
+                tries += 1
                 continue
             used.append(n)
-            choices.append(vocab[n])
+            choices.append(vocab[words[n]])
+            added += 1
+            tries = 0
 
         random.shuffle(choices)
 
-        spacer = QSpacerItem(10, 0, QExpanding, QMinimum)
-        self.choices_box.addItem(spacer)
-
         for i in choices:
-            btn = ChoiceButton(i)
+            btn = ChoiceButton(i, course_dir)
 
             btn.choice_clicked.connect(partial(self._handle_choice_clicked))
             btn.play_audio.connect(partial(self._play_audio))
@@ -560,17 +646,19 @@ class CoursePracticeWindow(AppWindowInterface):
             self.choice_buttons.append(btn)
             self.choices_box.addWidget(btn)
 
-        spacer = QSpacerItem(10, 0, QExpanding, QMinimum)
-        self.choices_box.addItem(spacer)
 
     def _play_answer(self, pali_item: PaliItem):
         if pali_item['audio'] is None:
             return
 
-        audio_path = ASSETS_DIR.joinpath(pali_item['audio'])
+        course_dir = self._current_course_dir()
+        if course_dir is None:
+            return
+
+        audio_path = course_dir.joinpath(pali_item['audio'])
         if audio_path.exists():
             self.answer_listen.setHidden(False)
-            self.answer_listen.clicked.connect(partial(self.player.play))
+            self.answer_listen.clicked.connect(partial(self._play_audio, audio_path))
             self._play_audio(audio_path)
 
 
@@ -599,16 +687,38 @@ class CoursePracticeWindow(AppWindowInterface):
             self.continue_btn.setEnabled(False)
 
 
+    def _handle_remove_choice(self, item: PaliItem):
+        if item['uuid'] is None:
+            return
+
+        idx: Optional[int] = None
+        for n, i in enumerate(self.choice_buttons):
+            if i.pali_item['uuid'] == item['uuid']:
+                idx = n
+                i.do_remove()
+                break
+
+        if idx is None:
+            return
+
+        a = self.choices_box.takeAt(idx)
+
+        if a is not None:
+            self.choices_box.removeItem(a)
+
+        del self.choice_buttons[idx]
+
+
     def _handle_remove_answer(self, item: PaliItem):
         if item['uuid'] is None:
             return
 
         idx: Optional[int] = None
         for n, i in enumerate(self.answer_buttons):
-            print(f"{n}, {i.pali_item['uuid']}, {item['uuid']}")
             if i.pali_item['uuid'] == item['uuid']:
                 idx = n
-                i.deleteLater()
+                i.do_remove()
+                break
 
         if idx is None:
             return
@@ -673,26 +783,50 @@ class CoursePracticeWindow(AppWindowInterface):
         self.close()
 
 
-    def _handle_choice_clicked(self, item: PaliItem):
+    def _handle_answer_clicked(self, answer_item: PaliItem):
+        choice_item = PaliItem(
+            text = answer_item['text'],
+            audio = answer_item['audio'],
+            gfx = None,
+            uuid = str(uuid.uuid4()),
+        )
+
+        course_dir = self._current_course_dir()
+        btn = ChoiceButton(pali_item = choice_item, course_dir = course_dir, enable_audio = True)
+        btn.choice_clicked.connect(partial(self._handle_choice_clicked))
+        btn.play_audio.connect(partial(self._play_audio))
+
+        self.choice_buttons.append(btn)
+        self.choices_box.addWidget(btn)
+
+        self._handle_remove_answer(answer_item)
+
+
+    def _handle_choice_clicked(self, choice_item: PaliItem):
         if self.current_challenge.challenge_type == PaliChallengeType.Vocabulary:
 
-            self._check_answer_vocabulary(item)
+            self._check_answer_vocabulary(choice_item)
 
         elif self.current_challenge.challenge_type == PaliChallengeType.TranslateFromEnglish or \
              self.current_challenge.challenge_type == PaliChallengeType.TranslateFromPali:
 
-            item['uuid'] = str(uuid.uuid4())
-            item['audio'] = None
+            answer_item = PaliItem(
+                text = choice_item['text'],
+                audio = choice_item['audio'],
+                gfx = None,
+                uuid = str(uuid.uuid4()),
+            )
 
-            btn = ChoiceButton(pali_item=item)
-            btn.choice_clicked.connect(partial(self._handle_remove_answer))
-            btn.play_audio.connect(partial(self._play_audio))
+            btn = ChoiceButton(pali_item = answer_item, enable_audio = False)
+            btn.choice_clicked.connect(partial(self._handle_answer_clicked))
 
             self.answer_buttons.append(btn)
             self.answer_sentence_box.addWidget(btn)
 
+            self._handle_remove_choice(choice_item)
+
         else:
-            logger.info(item['text'])
+            logger.info(f"Unknown challange type: {choice_item}")
 
 
     def _handle_continue(self):
@@ -713,11 +847,12 @@ class CoursePracticeWindow(AppWindowInterface):
 
         if volume == 1.0:
             volume = 0.0
-            self.player.setVolume(volume)
+            self.player.setMuted(True)
             icon.addPixmap(QPixmap(":/volume-xmark"), QIcon.Mode.Normal, QIcon.State.Off)
 
         else:
             volume = 1.0
+            self.player.setMuted(False)
             self.player.setVolume(volume)
             icon.addPixmap(QPixmap(":/volume-high"), QIcon.Mode.Normal, QIcon.State.Off)
 

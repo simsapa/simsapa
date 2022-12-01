@@ -458,9 +458,14 @@ class PaliCourseGroup(TypedDict):
     db_id: int
 
 
+class PaliListModel(str, Enum):
+    ChallengeCourse = "ChallengeCourse"
+    ChallengeGroup = "ChallengeGroup"
+
+
 class PaliListItem(TypedDict):
-    db_model: str
-    db_schema: str
+    db_model: PaliListModel
+    db_schema: DbSchemaName
     db_id: int
 
 
