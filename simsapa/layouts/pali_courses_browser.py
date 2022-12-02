@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, 
 from tomlkit.toml_document import TOMLDocument
 
 from simsapa import COURSES_DIR, DbSchemaName, logger
+from simsapa.layouts.pali_course_helpers import get_groups_in_course, get_remaining_challenges_in_group
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -213,7 +214,7 @@ class CoursesBrowserWindow(AppWindowInterface):
             course = ListItem(r.name, PaliListModel.ChallengeCourse, r.metadata.schema, r.id)
 
             for g in r.groups:
-                group = ListItem(g.name, PaliListModel.ChallengeGroup, r.metadata.schema, r.id)
+                group = ListItem(g.name, PaliListModel.ChallengeGroup, g.metadata.schema, g.id)
                 course.appendRow(group)
 
             root_node.appendRow(course)
@@ -279,24 +280,75 @@ class CoursesBrowserWindow(AppWindowInterface):
         return a
 
 
+    def _start_course(self, course: UChallengeCourse):
+        group = None
+
+        for g in get_groups_in_course(self._app_data.db_session, course): # type: ignore
+            if len(get_remaining_challenges_in_group(self._app_data.db_session, g)) > 0:
+                group = g
+                break
+
+        if group is None:
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Message")
+            box.setText(f"<p>The challenges in <b>{course.name}</b> are already completed. Reset progress and study again?</p>")
+            box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+            reply = box.exec()
+            if reply == QMessageBox.StandardButton.Yes:
+                self.reset_course(course)
+
+            else:
+                return
+
+        else:
+            msg = PaliCourseGroup(
+                db_schema=group.metadata.schema,
+                db_id=int(str(group.id)),
+            )
+
+            self.start_group.emit(msg)
+
+
+    def _start_group(self, group: UChallengeGroup):
+        challenges = get_remaining_challenges_in_group(self._app_data.db_session, group)
+        if len(challenges) == 0:
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Message")
+            box.setText(f"<p>The challenges in <b>{group.name}</b> are already completed. Reset progress and study again?</p>")
+            box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+            reply = box.exec()
+            if reply == QMessageBox.StandardButton.Yes:
+                self.reset_group(group)
+
+            else:
+                return
+
+        msg = PaliCourseGroup(
+            db_schema=group.metadata.schema,
+            db_id=int(str(group.id)),
+        )
+
+        self.start_group.emit(msg)
+
+
     def _handle_start(self):
         if self.current_item is None:
             return
 
-        a = self._find_course(self.current_item.data)
-        if a is not None and a.groups is not None:
-            g: Optional[UChallengeGroup] = a.groups[0] # type: ignore
+        group = None
+        course = self._find_course(self.current_item.data)
+        if course is not None and course.groups is not None:
+            self._start_course(course)
 
         else:
-            g = self._find_group(self.current_item.data)
+            group = self._find_group(self.current_item.data)
 
-        if g is not None:
-            msg = PaliCourseGroup(
-                db_schema=g.metadata.schema,
-                db_id=int(str(g.id)),
-            )
-
-            self.start_group.emit(msg)
+        if group is not None:
+            self._start_group(group)
 
 
     def _start_selected(self, val: QModelIndex):
@@ -448,6 +500,24 @@ class CoursesBrowserWindow(AppWindowInterface):
             self._reload_courses_tree()
 
 
+    def reset_course(self, course: UChallengeCourse):
+        for i in course.challenges: # type: ignore
+            i.level = null()
+            i.studied_at = null()
+            i.due_at = null()
+
+        self._app_data.db_session.commit()
+
+
+    def reset_group(self, group: UChallengeGroup):
+        for i in group.challenges: # type: ignore
+            i.level = null()
+            i.studied_at = null()
+            i.due_at = null()
+
+        self._app_data.db_session.commit()
+
+
     def _handle_reset(self):
         if self.current_item is None:
             return
@@ -464,13 +534,7 @@ class CoursesBrowserWindow(AppWindowInterface):
             if box.exec() != QMessageBox.StandardButton.Yes:
                 return
 
-            for i in course.challenges: # type: ignore
-                i.level = null()
-                i.studied_at = null()
-                i.due_at = null()
-
-            self._app_data.db_session.commit()
-
+            self.reset_course(course)
             self._reload_courses_tree()
 
             return
@@ -482,13 +546,7 @@ class CoursesBrowserWindow(AppWindowInterface):
             if box.exec() != QMessageBox.StandardButton.Yes:
                 return
 
-            for i in group.challenges: # type: ignore
-                i.level = null()
-                i.studied_at = null()
-                i.due_at = null()
-
-            self._app_data.db_session.commit()
-
+            self.reset_group(group)
             self._reload_courses_tree()
 
 
@@ -542,7 +600,9 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _handle_selection_changed(self, selected: QItemSelection, _: QItemSelection):
-        self._handle_tree_clicked(selected.indexes()[0])
+        indexes = selected.indexes()
+        if len(indexes) > 0:
+            self._handle_tree_clicked(indexes[0])
 
 
     def _connect_signals(self):

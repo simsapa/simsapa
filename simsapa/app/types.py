@@ -16,7 +16,7 @@ from PyQt6 import QtWidgets
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
-from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger
+from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_helpers import get_db_engine_connection_session, upgrade_db
 
@@ -24,8 +24,6 @@ from .db.search import SearchIndexed
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
-
-from simsapa import APP_DB_PATH, USER_DB_PATH
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding

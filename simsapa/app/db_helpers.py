@@ -18,8 +18,7 @@ from alembic.runtime.migration import MigrationContext
 from .db import appdata_models as Am
 from .db import userdata_models as Um
 
-from simsapa import APP_DB_PATH, USER_DB_PATH, DbSchemaName, logger
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR
+from simsapa import APP_DB_PATH, USER_DB_PATH, DbSchemaName, logger, ALEMBIC_INI, ALEMBIC_DIR
 
 def upgrade_db(db_path: Path, schema_name: str):
     # Create an in-memory database

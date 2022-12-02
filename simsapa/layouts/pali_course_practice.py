@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 from functools import partial
 import markdown
 
+from sqlalchemy.sql import func
+
 from PyQt6 import QtWidgets
 from PyQt6.QtMultimedia import QAudioDevice, QSoundEffect
 from PyQt6.QtCore import QSize, QTimer, QUrl, pyqtSignal, Qt
@@ -19,6 +21,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QMessageBo
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -54,7 +57,7 @@ class ChoiceButton(QPushButton):
                 self.setIcon(icon)
                 self.setIconSize(QSize(12, 12))
             else:
-                logger.info(f"Audio missing: {p}")
+                logger.warn(f"Audio missing: {p}")
 
         self.clicked.connect(partial(self._handle_clicked))
 
@@ -97,6 +100,7 @@ class ChoiceButton(QPushButton):
 class CoursePracticeWindow(AppWindowInterface):
 
     current_group: UChallengeGroup
+    progress_in_remaining: int = 1
     challenges: List[UChallenge] = []
 
     current_challenge: UChallenge
@@ -117,7 +121,7 @@ class CoursePracticeWindow(AppWindowInterface):
         if g:
             self.current_group = g
             self.current_challenge_idx = 0
-            self.challenges = self._get_sorted_challenges()
+            self.challenges = get_remaining_challenges_in_group(self._app_data.db_session, self.current_group)
             self._set_current_challenge()
 
         else:
@@ -144,7 +148,13 @@ class CoursePracticeWindow(AppWindowInterface):
 
 
     def _play_audio(self, audio_path: Path):
-        if audio_path.exists() and not self.player.isMuted():
+        if audio_path.exists():
+            if self.player.isMuted():
+                return
+
+            if self.player.isPlaying():
+                return
+
             # FIXME When a source hasn't finished playing, and a new play is
             # requested, it makes a loud noise, even if .stop() is called before
             # playing.
@@ -153,33 +163,11 @@ class CoursePracticeWindow(AppWindowInterface):
             # a word, then we check to finish while it's playing, and the
             # _play_answer() will try to start playing.
 
-            if not self.player.isPlaying():
-                self.player.setSource(QUrl.fromLocalFile(str(audio_path)))
-                self.player.play()
+            self.player.setSource(QUrl.fromLocalFile(str(audio_path)))
+            self.player.play()
 
         else:
             logger.warn(f"Audio missing: {audio_path}")
-
-
-    def _get_sorted_challenges(self) -> List[UChallenge]:
-        if self.current_group.metadata.schema == DbSchemaName.AppData.value:
-            res = self._app_data.db_session \
-                .query(Am.Challenge) \
-                .filter(Am.Challenge.group_id == self.current_group.id) \
-                .order_by(Am.Challenge.sort_index.asc()) \
-                .all()
-
-        else:
-            res = self._app_data.db_session \
-                .query(Um.Challenge) \
-                .filter(Um.Challenge.group_id == self.current_group.id) \
-                .order_by(Um.Challenge.sort_index.asc()) \
-                .all()
-
-        if res is None:
-            return []
-        else:
-            return res
 
 
     def _set_current_challenge(self):
@@ -188,7 +176,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
 
     def _set_next_challenge(self) -> bool:
-        if self.current_challenge_idx < len(self.current_group.challenges) - 1: # type: ignore
+        if self.current_challenge_idx < len(self.challenges) - 1: # type: ignore
             self.current_challenge_idx += 1
             self._set_current_challenge()
             return True
@@ -225,7 +213,7 @@ class CoursePracticeWindow(AppWindowInterface):
         else:
             font_family = "DejaVu Sans"
 
-        title_style = f"font-family: {font_family}; font-weight: normal; font-size: 15pt;"
+        title_style = f"font-family: {font_family}; font-weight: bold; font-size: 14pt;"
         text_style = f"font-family: {font_family}; font-weight: normal; font-size: 12pt;"
 
         self._central_widget = QtWidgets.QWidget(self)
@@ -238,18 +226,29 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self._layout.addItem(QSpacerItem(0, 10, QMinimum, QMinimum))
 
-        self.title_box = QHBoxLayout()
-        self._layout.addLayout(self.title_box)
+        # use Vbox and show group (x/y)
+
+        self.title_wrap = QHBoxLayout()
+        self._layout.addLayout(self.title_wrap)
 
         self._layout.addItem(QSpacerItem(0, 10, QMinimum, QExpanding))
 
-        self.title_box.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
+        self.title_wrap.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
-        self.title = QLabel()
-        self.title.setStyleSheet(title_style)
-        self.title_box.addWidget(self.title)
+        self.title_box = QVBoxLayout()
+        self.title_wrap.addLayout(self.title_box)
 
-        self.title_box.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
+        self.group_title = QLabel()
+        self.group_title.setStyleSheet(title_style)
+        self.group_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_box.addWidget(self.group_title)
+
+        self.challenge_title = QLabel()
+        self.challenge_title.setStyleSheet(text_style)
+        self.challenge_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_box.addWidget(self.challenge_title)
+
+        self.title_wrap.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
         self.volume_btn = QPushButton()
         self.volume_btn.setFixedSize(40, 40)
@@ -263,9 +262,9 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self.volume_btn.setIcon(icon)
 
-        self.title_box.addWidget(self.volume_btn)
+        self.title_wrap.addWidget(self.volume_btn)
 
-        self._layout.addItem(QSpacerItem(0, 100, QMinimum, QExpanding))
+        self._layout.addItem(QSpacerItem(0, 10, QMinimum, QMinimum))
 
         # === Explanation ===
 
@@ -305,7 +304,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self.question_box.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
-        self._layout.addItem(QSpacerItem(0, 20, QMinimum, QMinimum))
+        self._layout.addItem(QSpacerItem(0, 20, QMinimum, QExpanding))
 
         # === Horizontal Line ===
 
@@ -371,6 +370,8 @@ class CoursePracticeWindow(AppWindowInterface):
 
         # === Footer ===
 
+        # Double spacer helps spacing proportions
+        self._layout.addItem(QSpacerItem(0, 10, QMinimum, QExpanding))
         self._layout.addItem(QSpacerItem(0, 10, QMinimum, QExpanding))
 
         self.footer_box = QHBoxLayout()
@@ -469,7 +470,8 @@ class CoursePracticeWindow(AppWindowInterface):
 
 
     def _reset_challenge_content(self):
-        self.title.setText("")
+        self.group_title.setText("")
+        self.challenge_title.setText("")
         self.message.setText("")
         self.gfx_label.setHidden(True)
         self.question_text.setText("")
@@ -488,12 +490,19 @@ class CoursePracticeWindow(AppWindowInterface):
         self._remove_answer_buttons()
 
 
+    def _set_current_group_title(self):
+        group_title = str(self.current_challenge.group.name)
+        self.group_title.setText(f"{group_title} ({self.progress_in_remaining}/{len(self.challenges)})")
+
+
     def _load_challenge_content(self):
         self._reset_challenge_content()
 
+        self._set_current_group_title()
+
         ch = self.current_challenge
 
-        self.title.setText(str(ch.challenge_type))
+        self.challenge_title.setText(str(ch.challenge_type))
 
         if ch.challenge_type == PaliChallengeType.TranslateFromEnglish.value or \
            ch.challenge_type == PaliChallengeType.TranslateFromPali:
@@ -581,7 +590,10 @@ class CoursePracticeWindow(AppWindowInterface):
 
             self.gfx_label.setHidden(False)
             pixmap = QPixmap(str(gfx_path))
-            self.gfx_label.setFixedSize(100, 100)
+            # Scale to fixed height
+            h = 150
+            w = int((h/pixmap.height()) * pixmap.width())
+            self.gfx_label.setFixedSize(w, h)
             self.gfx_label.setScaledContents(True)
             self.gfx_label.setPixmap(pixmap)
 
@@ -662,6 +674,25 @@ class CoursePracticeWindow(AppWindowInterface):
             self._play_audio(audio_path)
 
 
+    def _current_challenge_success(self):
+        self.current_challenge.studied_at = func.now() # type: ignore
+        if self.current_challenge.level is None:
+            self.current_challenge.level = 1 # type: ignore
+        else:
+            n = int(self.current_challenge.level) # type: ignore
+            self.current_challenge.level = n+1 # type: ignore
+
+        self._app_data.db_session.commit()
+
+        self.progress_in_remaining += 1
+
+
+    def _current_challenge_fail(self):
+        self.current_challenge.studied_at = func.now() # type: ignore
+        self.current_challenge.level = 0 # type: ignore
+        self._app_data.db_session.commit()
+
+
     def _answer_success(self, answer: str, pali_item: PaliItem):
         self.answer_text.setText(answer)
 
@@ -676,6 +707,8 @@ class CoursePracticeWindow(AppWindowInterface):
             self.continue_btn.setText("Continue")
 
         self.continue_btn.setEnabled(True)
+
+        self._current_challenge_success()
 
         for i in self.choice_buttons:
             i.setEnabled(False)
@@ -765,22 +798,21 @@ class CoursePracticeWindow(AppWindowInterface):
             self._answer_fail()
 
 
-    def _group_completed(self):
+    def _show_info_message(self, msg: str, title: str = "Message"):
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("Completed")
-
-        msg = """
-        <p>Completed: %s</p>
-        """ % str(self.current_group.name)
-
+        box.setWindowTitle(title)
         box.setText(msg)
-
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
         _ = box.exec()
 
         self.close()
+
+
+    def _group_completed(self):
+        msg = "<p>Completed: %s</p>" % str(self.current_group.name)
+        self._show_info_message(msg, "Completed")
 
 
     def _handle_answer_clicked(self, answer_item: PaliItem):
@@ -831,6 +863,9 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _handle_continue(self):
         if self.continue_btn.text() == "Continue":
+            if self.current_challenge.challenge_type == PaliChallengeType.Explanation:
+                self._current_challenge_success()
+
             if self._set_next_challenge():
                 self._load_challenge_content()
 
@@ -845,9 +880,12 @@ class CoursePracticeWindow(AppWindowInterface):
         volume = self.player.volume()
         icon = QIcon()
 
+        print(volume)
+
         if volume == 1.0:
             volume = 0.0
             self.player.setMuted(True)
+            self.player.setVolume(volume)
             icon.addPixmap(QPixmap(":/volume-xmark"), QIcon.Mode.Normal, QIcon.State.Off)
 
         else:
