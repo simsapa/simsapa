@@ -807,12 +807,11 @@ class CoursePracticeWindow(AppWindowInterface):
 
         _ = box.exec()
 
-        self.close()
-
 
     def _group_completed(self):
         msg = "<p>Completed: %s</p>" % str(self.current_group.name)
         self._show_info_message(msg, "Completed")
+        self.close()
 
 
     def _handle_answer_clicked(self, answer_item: PaliItem):

@@ -7,7 +7,7 @@ from typing import List, Optional, TypedDict
 
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, pyqtSignal
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 
 import tomlkit
@@ -174,8 +174,9 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _init_tree_model(self):
-        self.tree_model = QStandardItemModel(0, 1, self)
+        self.tree_model = QStandardItemModel(0, 4, self)
 
+        self.tree_view.setHeaderHidden(False)
         self.tree_view.setModel(self.tree_model)
 
         self._create_tree_items(self.tree_model)
@@ -194,6 +195,8 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _create_tree_items(self, model: QStandardItemModel):
+        model.setHorizontalHeaderLabels(["Course", "Completed", "Remaining", "Total"])
+
         res = []
 
         r = self._app_data.db_session \
@@ -213,12 +216,43 @@ class CoursesBrowserWindow(AppWindowInterface):
         for r in res:
             course = ListItem(r.name, PaliListModel.ChallengeCourse, r.metadata.schema, r.id)
 
+            c_tot = 0
+            c_comp = 0
+            c_rem = 0
+
             for g in r.groups:
                 group = ListItem(g.name, PaliListModel.ChallengeGroup, g.metadata.schema, g.id)
-                course.appendRow(group)
 
-            root_node.appendRow(course)
+                g_remaining = QStandardItem()
+                g_rem = len(get_remaining_challenges_in_group(self._app_data.db_session, g))
+                c_rem += g_rem
 
+                g_total = QStandardItem()
+                g_tot = len(g.challenges)
+                c_tot += g_tot
+
+                g_completed = QStandardItem()
+                g_comp = g_tot - g_rem
+                c_comp += g_comp
+
+                g_completed.setText(str(g_comp))
+                g_remaining.setText(str(g_rem))
+                g_total.setText(str(g_tot))
+
+                course.appendRow([group, g_completed, g_remaining, g_total])
+
+            c_remaining = QStandardItem()
+            c_remaining.setText(str(c_rem))
+
+            c_total = QStandardItem()
+            c_total.setText(str(c_tot))
+
+            c_completed = QStandardItem()
+            c_completed.setText(str(c_tot - c_rem))
+
+            root_node.appendRow([course, c_completed, c_remaining, c_total])
+
+        self.tree_view.resizeColumnToContents(0)
 
     def _show_item_content(self, item: ListItem):
         r = self._find_course(item.data)
