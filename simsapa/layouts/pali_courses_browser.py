@@ -7,7 +7,7 @@ from typing import List, Optional, TypedDict
 
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 
 import tomlkit
@@ -49,6 +49,8 @@ class ListItem(QStandardItem):
 
     def __init__(self, name: str, db_model: PaliListModel, db_schema: DbSchemaName, db_id: int):
         super().__init__()
+
+        self.setEditable(False)
 
         self.name = name
         self.data = PaliListItem(
@@ -254,6 +256,7 @@ class CoursesBrowserWindow(AppWindowInterface):
 
         self.tree_view.resizeColumnToContents(0)
 
+
     def _show_item_content(self, item: ListItem):
         r = self._find_course(item.data)
         if r is None:
@@ -385,9 +388,9 @@ class CoursesBrowserWindow(AppWindowInterface):
             self._start_group(group)
 
 
-    def _start_selected(self, val: QModelIndex):
-        item: ListItem = self.tree_model.itemFromIndex(val) # type: ignore
-        self.current_item = item
+    def _start_selected(self, _: QModelIndex):
+        # Item selection changed event will set self.current_item, just have to
+        # start it.
         self._handle_start()
 
 
@@ -640,7 +643,6 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _connect_signals(self):
-        self.tree_view.clicked.connect(partial(self._handle_tree_clicked))
         self.tree_view.doubleClicked.connect(partial(self._start_selected))
         self.tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
 

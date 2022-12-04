@@ -99,6 +99,8 @@ class ChoiceButton(QPushButton):
 
 class CoursePracticeWindow(AppWindowInterface):
 
+    completed = pyqtSignal()
+
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
     challenges: List[UChallenge] = []
@@ -811,6 +813,7 @@ class CoursePracticeWindow(AppWindowInterface):
     def _group_completed(self):
         msg = "<p>Completed: %s</p>" % str(self.current_group.name)
         self._show_info_message(msg, "Completed")
+        self.completed.emit()
         self.close()
 
 

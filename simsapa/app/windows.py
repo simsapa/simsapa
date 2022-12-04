@@ -388,6 +388,10 @@ class AppWindows:
     def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
         view = CoursePracticeWindow(self._app_data, group)
 
+        for w in self._windows:
+            if isinstance(w, CoursesBrowserWindow):
+                view.completed.connect(partial(w._reload_courses_tree))
+
         make_active_window(view)
         self._windows.append(view)
         return view
