@@ -388,6 +388,8 @@ class AppWindows:
     def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
         view = CoursePracticeWindow(self._app_data, group)
 
+        view.show_sutta_by_uid.connect(partial(self._show_sutta_by_uid_in_search))
+
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):
                 view.finished.connect(partial(w._reload_courses_tree))
