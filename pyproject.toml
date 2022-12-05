@@ -12,10 +12,10 @@ license = "MIT"
 db_version = "0.2.0-alpha.1"
 
 [tool.poetry.dependencies]
-python = "~3.9"
+python = "~3.11"
 PyQt6 = "~6.4.0"
 PyQt6-WebEngine = "~6.4.0"
-PyYAML = "~5.4.1"
+PyYAML = "~6.0.0"
 SQLAlchemy = "~1.4.44"
 SQLAlchemy-Utils = "~0.38.3"
 types-sqlalchemy-utils = "~1.0.1"
@@ -33,46 +33,45 @@ Pillow = "~9.3.0"
 #  { version = "~9.3.0", platform = "darwin" },
 #]
 pandas = "~1"
-openpyxl = "~3.0.7"
+openpyxl = "~3.0.10"
 semver = "~2.13.0"
 pyglossary = "~4"
 lxml = "~4"
-python-dotenv = "~0.17.1"
+python-dotenv = "~0.21.0"
 pyperclip = "~1.8.2"
 networkx = "~2"
 bokeh = "~2"
 scipy = "~1.9.0"
 python-idzip = "~0.3.7"
-bleach = "~4.1.0"
+bleach = "~5.0.1"
 Whoosh = "~2.7.4"
-typer = "~0.4.0"
-tomlkit = "~0.8.0"
-feedparser = "~6.0.8"
+typer = "~0.7.0"
+tomlkit = "~0.11.6"
+feedparser = "~6.0.10"
 #pyqtkeybind = [{ version = "~0.0.9", platform = "linux" },]
-beautifulsoup4 = "~4.10.0"
+beautifulsoup4 = "~4.11.1"
 MarkupSafe = "~2.1.1"
-Mako = "~1.1.6"
+Mako = "~1.2.4"
 Flask = "~2.2.2"
 Flask-Cors = "~3.0.10"
-aksharamukha = "~1.9.7"
+aksharamukha = "~2.0.4"
 markdown = "^3.4.1"
-
-[tool.poetry.dev-dependencies]
-pytest = "~6.2.5"
-pyArango = "~1.3.5"
-selenium = "^4.1.1"
-lxml = "^4.8.0"
-html5lib = "^1.1"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = "^5.5"
-nuitka = "^1.2"
-orderedset = "^2.0.3"
-scalene = "^1.5.14"
-tuna = "^0.5.11"
+pyinstaller = "^5.7"
+tuna = { git = "https://github.com/nschloe/tuna.git" }
+
+# nuitka = "^1.2"
+# orderedset = "^2.0.3"
+# scalene = "^1.5.14"
+
+pytest = "~7.2.0"
+pyArango = "~2.0.0"
+# selenium = "^4.1.1"
+html5lib = "^1.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -106,7 +105,7 @@ sources = ['simsapa']
 requires = [
 "PyQt6              >= 6.4.0,    < 6.5.0",
 "PyQt6-WebEngine    >= 6.4.0,    < 6.5.0",
-"PyYAML             >= 5.4.1,    < 5.5.0",
+"PyYAML             >= 6.0.0,    < 6.1.0",
 "SQLAlchemy         >= 1.4.44,   < 1.5.0",
 "SQLAlchemy-Utils   >= 0.38.3,   < 0.39.0",
 "types-sqlalchemy-utils >= 1.0.1, < 1.1.0",
@@ -118,27 +117,27 @@ requires = [
 "epub_meta          >= 0.0.7,    < 0.1.0",
 "PyMuPDF            >= 1.18.0,   < 2.0.0",
 "pandas             >= 1.2.0,    < 2.0.0",
-"openpyxl           >= 3.0.7,    < 3.1.0",
+"openpyxl           >= 3.0.10,   < 3.1.0",
 "semver             >= 2.13.0,   < 2.14.0",
 "pyglossary         >= 4.0.0,    < 5.0.0",
 "lxml               >= 4.6.0,    < 5.0.0",
-"python-dotenv      >= 0.17.1,   < 0.18.0",
+"python-dotenv      >= 0.21.0,   < 0.22.0",
 "pyperclip          >= 1.8.2,    < 1.9.0",
 "networkx           >= 2.5.0,    < 3.0.0",
 "bokeh              >= 2.4.0,    < 3.0.0",
 "scipy              >= 1.9.0,    < 2.0.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
-"bleach             >= 4.1.0,    < 4.2.0",
+"bleach             >= 5.0.1,    < 5.1.0",
 "Whoosh             >= 2.7.4,    < 2.8.0",
-"typer              >= 0.4.0,    < 0.5.0",
-"tomlkit            >= 0.8.0,    < 0.9.0",
-"feedparser         >= 6.0.8,    < 6.1.0",
-"beautifulsoup4     >= 4.10.0,   < 4.11.0",
+"typer              >= 0.7.0,    < 0.8.0",
+"tomlkit            >= 0.11.0,   < 0.12.0",
+"feedparser         >= 6.0.10,   < 6.1.0",
+"beautifulsoup4     >= 4.11.1,   < 4.12.0",
 "MarkupSafe         == 2.1.1",
-"Mako               >= 1.1.6,    < 1.2.0",
+"Mako               >= 1.2.4,    < 1.3.0",
 "Flask              >= 2.2.2,    < 2.3.0",
 "Flask-Cors         >= 3.0.10,   < 3.1.0",
-"aksharamukha       >= 1.9.7,    < 1.10.0",
+"aksharamukha       >= 2.0.4,    < 2.1.0",
 "markdown           >= 3.4.1,    < 3.5.0",
 ]
 
