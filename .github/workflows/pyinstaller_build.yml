@@ -29,10 +29,15 @@ jobs:
         with:
           python-version: 3.11
 
+      - name: Install Python pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install Lxml
+        if: runner.os == 'Windows'
+        run: python -m pip install https://github.com/simsapa/simsapa-assets/releases/download/v0.2.0-dev.1/lxml-4.9.0-cp311-cp311-win_amd64.whl
+
       - name: Install Python libs
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install https://github.com/simsapa/simsapa-assets/releases/download/v0.2.0-dev.1/lxml-4.9.0-cp311-cp311-win_amd64.whl
           pip install pyinstaller
           pip install -r requirements.txt
 
