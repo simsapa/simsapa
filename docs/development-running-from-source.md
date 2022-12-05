@@ -4,7 +4,7 @@
 - [Development: Running from Source](#development-running-from-source)
     - [Linux / MacOS Setup](#linux--macos-setup)
     - [Windows Setup](#windows-setup)
-        - [Install Python 3.9](#install-python-39)
+        - [Install Python 3.11](#install-python-311)
         - [Install Poetry](#install-poetry)
         - [Download the Simsapa sources](#download-the-simsapa-sources)
     - [.env](#env)
@@ -17,7 +17,7 @@
 
 ## Linux / MacOS Setup
 
-- Install Python 3.9
+- Install Python 3.11
 - Install [Poetry](https://python-poetry.org/docs/)
 - Clone this repo and run `poetry install` to install dependencies
 
@@ -30,11 +30,11 @@ poetry shell
 
 ## Windows Setup
 
-### Install Python 3.9
+### Install Python 3.11
 
-Download the [Python 3.9.13 Windows Installer](https://www.python.org/downloads/release/python-3913/), use the link marked **Recommended** at the bottom of the page.
+Download the [Python 3.11.0 Windows Installer](https://www.python.org/downloads/release/python-3110/), use the link marked **Recommended** at the bottom of the page.
 
-Make sure to check **Add Python 3.9 to PATH**.
+Make sure to check **Add Python 3.11 to PATH**.
 
 ![Windows Install Python](images/windows-install-python.png)
 
@@ -46,7 +46,7 @@ Open a **cmd.exe** terminal to test:
 
 ```
 python --version
-Python 3.9.13
+Python 3.11.0
 ```
 
 ### Install Poetry
