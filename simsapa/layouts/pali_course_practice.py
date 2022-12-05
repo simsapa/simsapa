@@ -99,7 +99,7 @@ class ChoiceButton(QPushButton):
 
 class CoursePracticeWindow(AppWindowInterface):
 
-    completed = pyqtSignal()
+    finished = pyqtSignal()
 
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
@@ -123,7 +123,7 @@ class CoursePracticeWindow(AppWindowInterface):
         if g:
             self.current_group = g
             self.current_challenge_idx = 0
-            self.challenges = get_remaining_challenges_in_group(self._app_data.db_session, self.current_group)
+            self.challenges = get_remaining_challenges_in_group(self._app_data, self.current_group)
             self._set_current_challenge()
 
         else:
@@ -688,6 +688,9 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self.progress_in_remaining += 1
 
+        group = self.current_group
+        self._app_data.pali_groups_stats[group.metadata.schema][group.id]['completed'] += 1
+
 
     def _current_challenge_fail(self):
         self.current_challenge.studied_at = func.now() # type: ignore
@@ -813,8 +816,8 @@ class CoursePracticeWindow(AppWindowInterface):
     def _group_completed(self):
         msg = "<p>Completed: %s</p>" % str(self.current_group.name)
         self._show_info_message(msg, "Completed")
-        self.completed.emit()
-        self.close()
+
+        self._handle_close()
 
 
     def _handle_answer_clicked(self, answer_item: PaliItem):
@@ -903,7 +906,9 @@ class CoursePracticeWindow(AppWindowInterface):
 
 
     def _handle_close(self):
+        self._app_data._save_pali_groups_stats(self.current_group.metadata.schema)
         self.player.stop()
+        self.finished.emit()
         self.close()
 
 

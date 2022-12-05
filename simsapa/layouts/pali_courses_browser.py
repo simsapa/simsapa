@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, 
 from tomlkit.toml_document import TOMLDocument
 
 from simsapa import COURSES_DIR, DbSchemaName, logger
-from simsapa.layouts.pali_course_helpers import get_groups_in_course, get_remaining_challenges_in_group
+from simsapa.layouts.pali_course_helpers import count_remaining_challenges_in_group, get_groups_in_course
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -226,7 +226,7 @@ class CoursesBrowserWindow(AppWindowInterface):
                 group = ListItem(g.name, PaliListModel.ChallengeGroup, g.metadata.schema, g.id)
 
                 g_remaining = QStandardItem()
-                g_rem = len(get_remaining_challenges_in_group(self._app_data.db_session, g))
+                g_rem = count_remaining_challenges_in_group(self._app_data, g)
                 c_rem += g_rem
 
                 g_total = QStandardItem()
@@ -321,7 +321,7 @@ class CoursesBrowserWindow(AppWindowInterface):
         group = None
 
         for g in get_groups_in_course(self._app_data.db_session, course): # type: ignore
-            if len(get_remaining_challenges_in_group(self._app_data.db_session, g)) > 0:
+            if count_remaining_challenges_in_group(self._app_data, g) > 0:
                 group = g
                 break
 
@@ -349,8 +349,7 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _start_group(self, group: UChallengeGroup):
-        challenges = get_remaining_challenges_in_group(self._app_data.db_session, group)
-        if len(challenges) == 0:
+        if count_remaining_challenges_in_group(self._app_data, group) == 0:
             box = QMessageBox()
             box.setIcon(QMessageBox.Icon.Information)
             box.setWindowTitle("Message")
@@ -543,7 +542,10 @@ class CoursesBrowserWindow(AppWindowInterface):
             i.studied_at = null()
             i.due_at = null()
 
+            self._app_data.pali_groups_stats[course.metadata.schema][i.group.id]['completed'] = 0
+
         self._app_data.db_session.commit()
+        self._app_data._save_pali_groups_stats(course.metadata.schema)
 
 
     def reset_group(self, group: UChallengeGroup):
@@ -552,7 +554,10 @@ class CoursesBrowserWindow(AppWindowInterface):
             i.studied_at = null()
             i.due_at = null()
 
+        self._app_data.pali_groups_stats[group.metadata.schema][group.id]['completed'] = 0
+
         self._app_data.db_session.commit()
+        self._app_data._save_pali_groups_stats(group.metadata.schema)
 
 
     def _handle_reset(self):

@@ -390,7 +390,7 @@ class AppWindows:
 
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):
-                view.completed.connect(partial(w._reload_courses_tree))
+                view.finished.connect(partial(w._reload_courses_tree))
 
         make_active_window(view)
         self._windows.append(view)

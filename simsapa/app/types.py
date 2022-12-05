@@ -5,7 +5,7 @@ import json
 import os
 import os.path
 from pathlib import Path
-from typing import Callable, List, Optional, TypedDict, Union
+from typing import Callable, Dict, List, Optional, TypedDict, Union
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 from sqlalchemy import create_engine
@@ -92,6 +92,14 @@ class SearchResultSizes(TypedDict):
     snippet_font_size: int
     snippet_min_height: int
     snippet_max_height: int
+
+class PaliListModel(str, Enum):
+    ChallengeCourse = "ChallengeCourse"
+    ChallengeGroup = "ChallengeGroup"
+
+class PaliGroupStats(TypedDict):
+    completed: int
+    total: int
 
 def default_search_result_sizes() -> SearchResultSizes:
     return SearchResultSizes(
@@ -182,6 +190,8 @@ class AppData:
 
     app_settings: AppSettings
     completion_cache: CompletionCache
+    # Keys are db schema, and course group id
+    pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -225,6 +235,7 @@ class AppData:
         self.search_indexed = SearchIndexed()
 
         self._read_app_settings()
+        self._read_pali_groups_stats()
         self._ensure_user_memo_deck()
 
     def _set_completion_cache(self, values: CompletionCache):
@@ -291,6 +302,45 @@ class AppData:
                     created_at = func.now(),
                 )
                 self.db_session.add(x)
+                self.db_session.commit()
+        except Exception as e:
+            logger.error(e)
+
+    def _read_pali_groups_stats(self):
+        schemas = [DbSchemaName.AppData, DbSchemaName.UserData]
+
+        for sc in schemas:
+            key = f"{sc}_pali_groups_stats"
+            r = self.db_session \
+                    .query(Um.AppSetting) \
+                    .filter(Um.AppSetting.key == key) \
+                    .first()
+
+            if r is not None:
+                self.pali_groups_stats[sc] = json.loads(r.value)
+            else:
+                self.pali_groups_stats[sc] = dict()
+                self._save_pali_groups_stats(sc)
+
+    def _save_pali_groups_stats(self, schema: DbSchemaName):
+        key = f"{schema}_pali_groups_stats"
+        r = self.db_session \
+                .query(Um.AppSetting) \
+                .filter(Um.AppSetting.key == key) \
+                .first()
+
+        try:
+            if r is not None:
+                r.value = json.dumps(self.pali_groups_stats[schema])
+                r.updated_at = func.now()
+                self.db_session.commit()
+            else:
+                r = Um.AppSetting(
+                    key = key,
+                    value = json.dumps(self.pali_groups_stats[schema]),
+                    created_at = func.now(),
+                )
+                self.db_session.add(r)
                 self.db_session.commit()
         except Exception as e:
             logger.error(e)
@@ -454,11 +504,6 @@ class PaliItem(TypedDict):
 class PaliCourseGroup(TypedDict):
     db_schema: str
     db_id: int
-
-
-class PaliListModel(str, Enum):
-    ChallengeCourse = "ChallengeCourse"
-    ChallengeGroup = "ChallengeGroup"
 
 
 class PaliListItem(TypedDict):

@@ -7,7 +7,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
 from simsapa import DbSchemaName
-from simsapa.app.types import UChallengeCourse, UChallengeGroup, UChallenge
+from simsapa.app.types import AppData, PaliGroupStats, UChallengeCourse, UChallengeGroup, UChallenge
 
 
 def get_groups_in_course(db_session: Session, course: UChallengeCourse) -> List[UChallengeGroup]:
@@ -31,9 +31,34 @@ def get_groups_in_course(db_session: Session, course: UChallengeCourse) -> List[
         return res
 
 
-def get_remaining_challenges_in_group(db_session: Session, group: UChallengeGroup) -> List[UChallenge]:
+def count_remaining_challenges_in_group(app_data: AppData, group: UChallengeGroup) -> int:
+    schema = group.metadata.schema
+
+    if group.id in app_data.pali_groups_stats[schema].keys():
+
+        total = app_data.pali_groups_stats[schema][group.id]['total']
+        completed = app_data.pali_groups_stats[schema][group.id]['completed']
+
+        return total - completed
+
+    else:
+        total = len(group.challenges) # type: ignore
+        remaining = len(get_remaining_challenges_in_group(app_data, group))
+        completed = total - remaining
+
+        app_data.pali_groups_stats[schema][group.id] = PaliGroupStats(
+            total = total,
+            completed = completed,
+        )
+
+        app_data._save_pali_groups_stats(schema)
+
+        return remaining
+
+
+def get_remaining_challenges_in_group(app_data: AppData, group: UChallengeGroup) -> List[UChallenge]:
     if group.metadata.schema == DbSchemaName.AppData.value:
-        res = db_session \
+        res = app_data.db_session \
             .query(Am.Challenge) \
             .filter(and_(
                 Am.Challenge.group_id == group.id,
@@ -44,7 +69,7 @@ def get_remaining_challenges_in_group(db_session: Session, group: UChallengeGrou
             .all()
 
     else:
-        res = db_session \
+        res = app_data.db_session \
             .query(Um.Challenge) \
             .filter(and_(
                 Um.Challenge.group_id == group.id,
