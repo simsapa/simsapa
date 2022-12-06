@@ -1,10 +1,11 @@
 import re
 from datetime import datetime
+from urllib.parse import parse_qs
 
 from functools import partial
 from typing import Any, List, Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtCore import QThreadPool, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -20,7 +21,7 @@ from simsapa.layouts.search_query_worker import SearchQueryWorker
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
+from ..app.types import AppData, QueryType, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -662,7 +663,19 @@ QWidget:focus { border: 1px solid #1092C3; }
         if sutta:
             self._show_sutta(sutta)
 
-    def _show_sutta_by_uid(self, uid: str):
+    def _show_sutta_by_url(self, url: QUrl):
+        if url.host() != QueryType.suttas:
+            return False
+
+        uid = re.sub(r"^/", "", url.path())
+        query = parse_qs(url.query())
+        quote = None
+        if 'q' in query.keys():
+            quote = query['q'][0]
+
+        self._show_sutta_by_uid(uid, quote)
+
+    def _show_sutta_by_uid(self, uid: str, highlight_text: Optional[str] = None):
         results: List[USutta] = []
 
         res = self._app_data.db_session \
@@ -678,7 +691,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         results.extend(res)
 
         if len(results) > 0:
-            self._show_sutta(results[0])
+            self._show_sutta(results[0], highlight_text)
             self._add_recent(results[0])
 
     def _show_word_by_uid(self, uid: str):
@@ -700,12 +713,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._app_data.dict_word_to_open = results[0]
             self.pw.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
-    def _show_sutta(self, sutta: USutta):
+    def _show_sutta(self, sutta: USutta, highlight_text: Optional[str] = None):
         logger.info(f"_show_sutta() : {sutta.uid}")
         self.showing_query_in_tab = False
         self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
-        self.sutta_tab.render_sutta_content()
+        self.sutta_tab.render_sutta_content(highlight_text)
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
 

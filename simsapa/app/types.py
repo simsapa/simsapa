@@ -517,3 +517,7 @@ class PaliChallengeType(str, Enum):
     Vocabulary = 'Vocabulary'
     TranslateFromEnglish = 'Translate from English'
     TranslateFromPali = 'Translate from Pali'
+
+class QueryType(str, Enum):
+    suttas = "suttas"
+    words = "words"

@@ -161,9 +161,11 @@ class SuttaTabWidget(QWidget):
         else:
             return None
 
-    def render_sutta_content(self):
+    def render_sutta_content(self, highlight_text: Optional[str] = None):
         if self.sutta is None:
             return
+
+        logger.info(f"render_sutta_content(): {self.sutta.uid}, highlight_text: {highlight_text}")
 
         if self.sutta.content_json is not None and self.sutta.content_json != '':
             line_by_line = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
@@ -194,7 +196,14 @@ class SuttaTabWidget(QWidget):
 
         css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
 
-        html = html_page(content, self.api_url, css_extra)
+        js_extra = None
+
+        if highlight_text:
+            text = highlight_text.replace('"', '[\\"“”]')
+            text = text.replace("'", "[\\'‘’]")
+            js_extra = """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });""" % text
+
+        html = html_page(content, self.api_url, css_extra, js_extra)
 
         self.set_qwe_html(html)
 

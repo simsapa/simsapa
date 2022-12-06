@@ -3,7 +3,7 @@ import csv
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
-from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QSize, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 from functools import partial
 from typing import Dict, List, Optional
@@ -76,7 +76,7 @@ class BookmarkItem(QStandardItem):
 
 class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
-    open_sutta_by_uid = pyqtSignal(str)
+    show_sutta_by_url = pyqtSignal(QUrl)
     current_bookmark_item: Optional[BookmarkItem] = None
 
     def __init__(self, app_data: AppData, parent=None) -> None:
@@ -414,7 +414,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
     def _handle_sutta_open(self, val: QModelIndex):
         data = val.model().data(val, Qt.ItemDataRole.UserRole)
         uid = data[val.row()][2]
-        self.open_sutta_by_uid.emit(uid)
+        url = QUrl(f"ssp://suttas/{uid}")
+
+        quote = data[val.row()][3]
+        if quote is not None and len(quote) > 0:
+            url.setQuery(f"q={quote}")
+
+        print(url.toString())
+
+        self.show_sutta_by_url.emit(url)
 
     def _handle_row_open(self):
         a = self.suttas_table.selectedIndexes()

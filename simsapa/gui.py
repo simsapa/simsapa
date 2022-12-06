@@ -4,6 +4,7 @@ import traceback
 from typing import Optional
 from PyQt6 import QtCore
 
+from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
@@ -11,7 +12,7 @@ from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
-from .app.types import AppData
+from .app.types import AppData, QueryType
 from .app.windows import AppWindows
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
@@ -31,7 +32,7 @@ sys.excepthook = excepthook
 
 create_app_dirs()
 
-def start(port: int, uid: Optional[str] = None, splash_proc: Optional[Popen] = None):
+def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.info("start()", start_new=True)
 
     ensure_empty_graphs_cache()
@@ -114,9 +115,14 @@ def start(port: int, uid: Optional[str] = None, splash_proc: Optional[Popen] = N
 
     # === Create first window ===
 
-    if uid:
-        app_windows._show_sutta_by_uid_in_search(uid)
-    else:
+    ok = False
+    if url and url.startswith(f"ssp://{QueryType.suttas.value}/"):
+        ok = app_windows._show_sutta_by_url_in_search(QUrl(url))
+
+    elif url and url.startswith(f"ssp://{QueryType.words.value}/"):
+        ok = app_windows._show_words_by_url(QUrl(url))
+
+    if not ok:
         app_windows.open_first_window()
 
     app_windows.show_startup_message()

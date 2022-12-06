@@ -5,6 +5,8 @@ from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
+import re
+from urllib.parse import parse_qs
 
 from PyQt6 import QtCore, QtGui
 from PyQt6 import QtWidgets
@@ -23,7 +25,7 @@ from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchResult, dict_word_hit_to_search_result
-from ..app.types import AppData, DictionarySearchWindowInterface, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
+from ..app.types import AppData, DictionarySearchWindowInterface, QueryType, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
@@ -56,6 +58,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     fulltext_results_tab_idx: int = 0
     rightside_tabs: QTabWidget
 
+    show_sutta_by_url = pyqtSignal(QUrl)
     lookup_in_suttas_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
 
@@ -775,6 +778,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
+
+    def _show_sutta_by_url(self, url: QUrl):
+        if url.host() != QueryType.suttas:
+            return
+
+        self.show_sutta_by_url.emit(url)
 
     def _show_sutta_by_uid(self, uid: str):
         results: List[USutta] = []

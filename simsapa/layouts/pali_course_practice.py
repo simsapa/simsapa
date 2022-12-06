@@ -100,7 +100,7 @@ class ChoiceButton(QPushButton):
 class CoursePracticeWindow(AppWindowInterface):
 
     finished = pyqtSignal()
-    show_sutta_by_uid = pyqtSignal(str)
+    show_sutta_by_url = pyqtSignal(QUrl)
 
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
@@ -414,8 +414,8 @@ class CoursePracticeWindow(AppWindowInterface):
         return qwe
 
 
-    def _show_sutta_by_uid(self, uid: str):
-        self.show_sutta_by_uid.emit(uid)
+    def _show_sutta_by_url(self, url: QUrl):
+        self.show_sutta_by_url.emit(url)
 
 
     def _render_content(self, md_text: str):

@@ -1,20 +1,22 @@
 import os
 import sys
+import re
 from functools import partial
 import shutil
 from typing import List, Optional
 import queue
 import json
 import webbrowser
+from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, SuttaSearchWindowInterface, WindowNameToType, WindowType
+from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaSearchWindowInterface, WindowNameToType, WindowType
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -101,7 +103,30 @@ class AppWindows:
         self._windows.append(view)
         make_active_window(view)
 
-    def _show_sutta_by_uid_in_search(self, uid: str):
+    def _show_words_by_url(self, url: QUrl) -> bool:
+        if url.host() != QueryType.words:
+            return False
+
+        query = re.sub(r"^/", "", url.path())
+        self._new_dictionary_search_window(query)
+
+        return True
+
+    def _show_sutta_by_url_in_search(self, url: QUrl) -> bool:
+        if url.host() != QueryType.suttas:
+            return False
+
+        uid = re.sub(r"^/", "", url.path())
+        query = parse_qs(url.query())
+        quote = None
+        if 'q' in query.keys():
+            quote = query['q'][0]
+
+        self._show_sutta_by_uid_in_search(uid, quote)
+
+        return True
+
+    def _show_sutta_by_uid_in_search(self, uid: str, highlight_text: Optional[str] = None):
         view = None
         for w in self._windows:
             if isinstance(w, SuttaSearchWindow) and w.isVisible():
@@ -111,7 +136,7 @@ class AppWindows:
         if view is None:
             view = self._new_sutta_search_window()
 
-        view.s._show_sutta_by_uid(uid)
+        view.s._show_sutta_by_uid(uid, highlight_text)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -280,6 +305,11 @@ class AppWindows:
                             data = query)
             self._lookup_clipboard_in_suttas(msg)
 
+        def _show_url(url: QUrl):
+            self._show_sutta_by_url_in_search(url)
+
+        view.show_sutta_by_url.connect(partial(_show_url))
+
         view.lookup_in_suttas_signal.connect(partial(_lookup_in_suttas))
         view.open_words_new_signal.connect(partial(self.open_words_new))
 
@@ -377,7 +407,10 @@ class AppWindows:
     def _new_bookmarks_browser_window(self) -> BookmarksBrowserWindow:
         view = BookmarksBrowserWindow(self._app_data)
 
-        view.open_sutta_by_uid.connect(partial(self._show_sutta_by_uid_in_search))
+        def _show_url(url: QUrl):
+            self._show_sutta_by_url_in_search(url)
+
+        view.show_sutta_by_url.connect(partial(_show_url))
 
         make_active_window(view)
         self._windows.append(view)
@@ -386,7 +419,10 @@ class AppWindows:
     def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
         view = CoursePracticeWindow(self._app_data, group)
 
-        view.show_sutta_by_uid.connect(partial(self._show_sutta_by_uid_in_search))
+        def _show_url(url: QUrl):
+            self._show_sutta_by_url_in_search(url)
+
+        view.show_sutta_by_url.connect(partial(_show_url))
 
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):

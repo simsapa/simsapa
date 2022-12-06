@@ -1,10 +1,10 @@
 import sys
-from enum import Enum
 from typing import Optional
 import typer
 import threading
 
 from simsapa import logger
+from simsapa.app.types import QueryType
 from simsapa.app.api import start_server, find_available_port
 
 app = typer.Typer()
@@ -12,7 +12,7 @@ index_app = typer.Typer()
 app.add_typer(index_app, name="index")
 
 @app.command()
-def gui(uid: Optional[str] = None):
+def gui(url: Optional[str] = None):
     # import subprocess
     # from simsapa import SIMSAPA_PACKAGE_DIR
     # try:
@@ -35,11 +35,7 @@ def gui(uid: Optional[str] = None):
         port = 6789
 
     from simsapa.gui import start
-    start(port=port, uid=uid)
-
-class QueryType(str, Enum):
-    suttas = "suttas"
-    dict_words = "dict_words"
+    start(port=port, url=url)
 
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
@@ -56,7 +52,7 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
             20,
             search.sutta_hit_to_search_result,
         )
-    elif query_type == QueryType.dict_words:
+    elif query_type == QueryType.words:
         search_query = search.SearchQuery(
             app_data.search_indexed.dict_words_index,
             20,
@@ -100,8 +96,7 @@ def main():
         s = sys.argv[1]
 
         if s.startswith("ssp://"):
-            uid = s.replace('ssp://', '')
-            gui(uid)
+            gui(s)
 
         else:
             app()

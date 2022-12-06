@@ -1,8 +1,11 @@
+import re
+from urllib.parse import parse_qs
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtGui import QDesktopServices
 
 from simsapa import logger
+from simsapa.app.types import QueryType
 
 class ReaderWebEnginePage(QWebEnginePage):
     """ Custom WebEnginePage to customize how we handle link navigation """
@@ -29,14 +32,14 @@ class ReaderWebEnginePage(QWebEnginePage):
                 except Exception as e:
                     logger.error("Can't open %s : %s" % (url, e))
 
-            elif url.scheme() == 'ssp':
+            # ssp://suttas/ud3.10/en/sujato?q=text
+            elif url.scheme() == 'ssp' and url.host() == QueryType.suttas:
 
                 if self._parent_window is None:
                     return
 
-                if hasattr(self._parent_window, '_show_sutta_by_uid'):
-                    uid = url.toString().replace('ssp://', '')
-                    self._parent_window._show_sutta_by_uid(uid)
+                if hasattr(self._parent_window, '_show_sutta_by_url'):
+                    self._parent_window._show_sutta_by_url(url)
 
             elif url.scheme() == 'bword':
 
