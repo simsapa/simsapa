@@ -2,7 +2,6 @@ import json
 import queue
 
 from functools import partial
-from ..app.db.search import SearchQuery, sutta_hit_to_search_result
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from typing import Callable, List, Optional
 
@@ -110,6 +109,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       sutta_tabs_layout=self.sutta_one_tabs_layout,
                                                       tabs_layout=None,
                                                       focus_input=False,
+                                                      enable_language_filter=True,
                                                       enable_search_extras=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
@@ -139,6 +139,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       sutta_tabs_layout=self.sutta_two_tabs_layout,
                                                       tabs_layout=None,
                                                       focus_input=False,
+                                                      enable_language_filter=True,
                                                       enable_search_extras=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,

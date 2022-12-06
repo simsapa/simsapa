@@ -207,7 +207,6 @@ class AppWindows:
 
         def _study(side: str, uid: str):
             data = {'side': side, 'uid': uid}
-            print(data)
             msg = ApiMessage(action = ApiAction.open_in_study_window,
                             data = json.dumps(obj=data))
             self._show_sutta_by_uid_in_side(msg)
@@ -244,7 +243,6 @@ class AppWindows:
 
         def _study(side: str, uid: str):
             data = {'side': side, 'uid': uid}
-            print(data)
             msg = ApiMessage(action = ApiAction.open_in_study_window,
                             data = json.dumps(obj=data))
             self._show_sutta_by_uid_in_side(msg)
@@ -685,7 +683,7 @@ class AppWindows:
             view.action_Pali_Courses \
                 .triggered.connect(partial(self._new_courses_browser_window))
 
-        if isinstance(view, SuttaSearchWindow):
+        if isinstance(view, SuttaSearchWindow) or isinstance(view, SuttaStudyWindow):
             if hasattr(view, 'action_Show_Related_Suttas'):
                 is_on = self._app_data.app_settings.get('show_related_suttas', True)
                 view.action_Show_Related_Suttas.setChecked(is_on)

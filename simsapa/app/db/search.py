@@ -248,7 +248,6 @@ class SearchQuery:
                 return True
 
         self.filtered = list(self.all_results)
-        print(len(self.filtered))
 
         if only_lang == "Language":
             only_lang = None
@@ -259,19 +258,11 @@ class SearchQuery:
         if only_lang is not None:
             self.filtered = list(filter(lambda x: x['language'] == only_lang, self.filtered))
 
-        print(len(self.filtered))
-        print(only_lang)
-
         if only_source is not None:
             self.filtered = list(filter(lambda x: x['source_uid'] == only_source, self.filtered))
 
-        print(len(self.filtered))
-        print(only_source)
-
         if disabled_labels is not None:
             self.filtered = list(filter(_not_in_disabled, self.filtered))
-
-        print(len(self.filtered))
 
         # NOTE: r.estimated_min_length() errors on some searches
         self.hits = len(self.filtered)

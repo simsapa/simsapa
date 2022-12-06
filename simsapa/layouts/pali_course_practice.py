@@ -12,7 +12,7 @@ from sqlalchemy.sql import func
 from PyQt6 import QtWidgets
 from PyQt6.QtMultimedia import QAudioDevice, QSoundEffect
 from PyQt6.QtCore import QSize, QTimer, QUrl, pyqtSignal, Qt
-from PyQt6.QtGui import QEnterEvent, QIcon, QPixmap
+from PyQt6.QtGui import QCloseEvent, QEnterEvent, QIcon, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
@@ -289,7 +289,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
         # === Question ===
 
-        self._layout.addItem(QSpacerItem(0, 10, QMinimum, QMinimum))
+        self._layout.addItem(QSpacerItem(0, 40, QMinimum, QMinimum))
 
         self.question_box = QHBoxLayout()
         self._layout.addLayout(self.question_box)
@@ -822,7 +822,7 @@ class CoursePracticeWindow(AppWindowInterface):
         msg = "<p>Completed: %s</p>" % str(self.current_group.name)
         self._show_info_message(msg, "Completed")
 
-        self._handle_close()
+        self.close()
 
 
     def _handle_answer_clicked(self, answer_item: PaliItem):
@@ -890,8 +890,6 @@ class CoursePracticeWindow(AppWindowInterface):
         volume = self.player.volume()
         icon = QIcon()
 
-        print(volume)
-
         if volume == 1.0:
             volume = 0.0
             self.player.setMuted(True)
@@ -910,15 +908,16 @@ class CoursePracticeWindow(AppWindowInterface):
         self._app_data._save_app_settings()
 
 
-    def _handle_close(self):
+    def closeEvent(self, event: QCloseEvent):
         self._app_data._save_pali_groups_stats(self.current_group.metadata.schema)
         self.player.stop()
         self.finished.emit()
-        self.close()
+
+        event.accept()
 
 
     def _connect_signals(self):
-        self.close_btn.clicked.connect(self._handle_close)
+        self.close_btn.clicked.connect(self.close)
 
         self.continue_btn.clicked.connect(partial(self._handle_continue))
 

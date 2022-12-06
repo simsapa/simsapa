@@ -13,7 +13,6 @@ from sqlalchemy.sql.elements import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
-from simsapa.app.graph import sutta_graph_id
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -58,6 +57,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],
                  focus_input: bool = True,
+                 enable_language_filter: bool = True,
                  enable_search_extras: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
@@ -66,6 +66,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.pw = parent_window
 
+        self.enable_language_filter = enable_language_filter
         self.enable_search_extras = enable_search_extras
         self.enable_sidebar = enable_sidebar
         self.enable_find_panel = enable_find_panel
@@ -108,12 +109,16 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
             else:
                 only_lang = language
 
-            idx = self.sutta_source_filter_dropdown.currentIndex()
-            source = self.sutta_source_filter_dropdown.itemText(idx)
-            if source == "Source":
-                only_source = None
+            if hasattr(self, 'sutta_source_filter_dropdown'):
+                idx = self.sutta_source_filter_dropdown.currentIndex()
+                source = self.sutta_source_filter_dropdown.itemText(idx)
+                if source == "Source":
+                    only_source = None
+                else:
+                    only_source = source
             else:
-                only_source = source
+                only_source = None
+
         else:
             only_lang = None
             only_source = None
@@ -165,8 +170,11 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self._setup_sutta_tabs()
 
+        if self.enable_language_filter:
+            self._setup_language_filter()
+
         if self.enable_search_extras:
-            self._setup_sutta_filter_dropdown()
+            self._setup_source_filter()
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             self._setup_toggle_pali_button()
             setup_info_button(self.search_extras, self)
@@ -401,7 +409,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         return labels
 
-    def _setup_sutta_filter_dropdown(self):
+    def _setup_language_filter(self):
         cmb = QComboBox()
         items = ["Language",]
         items.extend(self._get_language_labels())
@@ -413,6 +421,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.sutta_language_filter_dropdown = cmb
         self.search_extras.addWidget(self.sutta_language_filter_dropdown)
 
+    def _setup_source_filter(self):
         cmb = QComboBox()
         items = ["Source",]
         items.extend(self._get_source_uid_labels())
@@ -510,8 +519,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         idx = self.sutta_language_filter_dropdown.currentIndex()
         self._app_data.app_settings['sutta_language_filter_idx'] = idx
 
-        idx = self.sutta_source_filter_dropdown.currentIndex()
-        self._app_data.app_settings['sutta_source_filter_idx'] = idx
+        if hasattr(self, 'sutta_source_filter_dropdown'):
+            idx = self.sutta_source_filter_dropdown.currentIndex()
+            self._app_data.app_settings['sutta_source_filter_idx'] = idx
 
         self._app_data._save_app_settings()
 
@@ -928,8 +938,10 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.back_recent_button.clicked.connect(partial(self._show_next_recent))
             self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
-        if self.enable_search_extras:
+        if self.enable_language_filter and hasattr(self, 'sutta_language_filter_dropdown'):
             self.sutta_language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+
+        if self.enable_search_extras and hasattr(self, 'sutta_source_filter_dropdown'):
             self.sutta_source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:

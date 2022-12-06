@@ -197,7 +197,24 @@ class CoursesBrowserWindow(AppWindowInterface):
 
 
     def _create_tree_items(self, model: QStandardItemModel):
-        model.setHorizontalHeaderLabels(["Course", "Completed", "Remaining", "Total"])
+        item = QStandardItem()
+        item.setText("Course")
+        model.setHorizontalHeaderItem(0, item)
+
+        item = QStandardItem()
+        item.setText("✓")
+        item.setToolTip("Completed")
+        model.setHorizontalHeaderItem(1, item)
+
+        item = QStandardItem()
+        item.setText("x")
+        item.setToolTip("Remaining")
+        model.setHorizontalHeaderItem(2, item)
+
+        item = QStandardItem()
+        item.setText("∑")
+        item.setToolTip("Total")
+        model.setHorizontalHeaderItem(3, item)
 
         res = []
 
@@ -255,6 +272,9 @@ class CoursesBrowserWindow(AppWindowInterface):
             root_node.appendRow([course, c_completed, c_remaining, c_total])
 
         self.tree_view.resizeColumnToContents(0)
+        self.tree_view.resizeColumnToContents(1)
+        self.tree_view.resizeColumnToContents(2)
+        self.tree_view.resizeColumnToContents(3)
 
 
     def _show_item_content(self, item: ListItem):

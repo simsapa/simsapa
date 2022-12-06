@@ -91,11 +91,15 @@
     </property>
     <addaction name="action_Select_Sutta_Authors"/>
     <addaction name="action_Show_Related_Suttas"/>
+    <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
+    <addaction name="action_Show_All_Variant_Readings"/>
    </widget>
    <widget class="QMenu" name="menu_Go">
     <property name="title">
      <string>&amp;Go</string>
     </property>
+    <addaction name="action_Search_As_You_Type"/>
+    <addaction name="action_Search_Completion"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
     <addaction name="action_Previous_Tab"/>
@@ -469,6 +473,53 @@
    </property>
    <property name="shortcut">
     <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Search_As_You_Type">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search As You &amp;Type</string>
+   </property>
+   <property name="toolTip">
+    <string>Run search query when you stop typing</string>
+   </property>
+   <property name="statusTip">
+    <string/>
+   </property>
+  </action>
+  <action name="action_Search_Completion">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search &amp;Completion</string>
+   </property>
+  </action>
+  <action name="action_Show_All_Variant_Readings">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Show All &amp;Variant Readings</string>
+   </property>
+  </action>
+  <action name="action_Show_Translation_and_Pali_Line_by_Line">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Translation and Pali &amp;Line by Line</string>
    </property>
   </action>
  </widget>
