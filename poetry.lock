@@ -1062,7 +1062,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.11"
-content-hash = "db6c08d5a98c0df27cfd6f7df2145c741acf04ff36ee70abf1c78b98ab098cdf"
+content-hash = "b7576599560976bb35573d1f15ef39d9795d92cb15775dcc55b3e690401a22f0"
 
 [metadata.files]
 aksharamukha = [
