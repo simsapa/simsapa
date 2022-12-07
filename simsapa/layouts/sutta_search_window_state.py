@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from functools import partial
 from typing import Any, List, Optional
@@ -841,6 +841,18 @@ QWidget:focus { border: 1px solid #1092C3; }
         if text is not None:
             self._app_data.clipboard_setText(text)
 
+    def _handle_copy_link_to_sutta(self):
+        if self._current_sutta is None:
+            return
+
+        url = QUrl(f"ssp://{QueryType.suttas.value}/{self._current_sutta.uid}")
+
+        quote = self._get_selection()
+        if quote is not None:
+            url.setQuery(urlencode({'q': quote}))
+
+        self._app_data.clipboard_setText(url.toString())
+
     def _handle_copy_uid(self):
         if self._current_sutta is None:
             return
@@ -871,6 +883,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         copyAction.triggered.connect(partial(self._handle_copy))
 
         qwe.addAction(copyAction)
+
+        copy_link_to_sutta = QAction("Copy Link to Sutta and Selection", qwe)
+        copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
+        qwe.addAction(copy_link_to_sutta)
 
         copyUidAction = QAction("Copy uid", qwe)
         copyUidAction.triggered.connect(partial(self._handle_copy_uid))

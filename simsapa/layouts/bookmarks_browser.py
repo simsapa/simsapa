@@ -18,7 +18,7 @@ from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, UBookmark, USutta
+from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark, USutta
 
 class SuttaModel(QAbstractTableModel):
     def __init__(self, data = []):
@@ -414,13 +414,11 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
     def _handle_sutta_open(self, val: QModelIndex):
         data = val.model().data(val, Qt.ItemDataRole.UserRole)
         uid = data[val.row()][2]
-        url = QUrl(f"ssp://suttas/{uid}")
+        url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
 
         quote = data[val.row()][3]
         if quote is not None and len(quote) > 0:
             url.setQuery(f"q={quote}")
-
-        print(url.toString())
 
         self.show_sutta_by_url.emit(url)
 
