@@ -14,6 +14,21 @@ function toggle_comment (event) {
     })
 }
 
+function highlight_list (quotes) {
+    let body = document.querySelector('body');
+    let text = body.innerHTML;
+
+    quotes.forEach((s) => {
+        s = s.replaceAll('"', '["“”]');
+        s = s.replaceAll("'", "['‘’]");
+        let regex = new RegExp(s, 'gi');
+
+        text = text.replace(regex, '<mark class="highlight">$&</mark>');
+    })
+
+    body.innerHTML = text;
+}
+
 function highlight_and_scroll_to (highlight_text) {
     let s = highlight_text;
     s = s.replaceAll('"', '["“”]');
@@ -23,14 +38,13 @@ function highlight_and_scroll_to (highlight_text) {
     let body = document.querySelector('body');
     let text = body.innerHTML;
 
-    text = text.replace(/(<span class="highlight" id="highlight_text">|<\/span>)/gim, '');
-
-    const new_text = text.replace(regex, '<mark class="highlight" id="highlight_text">$&</mark>');
+    const new_text = text.replace(regex, '<mark class="scrollto_highlight">$&</mark>');
 
     body.innerHTML = new_text;
 
-    el = document.getElementById('highlight_text');
-    el.scrollIntoView();
+    // only need the first result
+    el = document.querySelector('mark.scrollto_highlight');
+    el.scrollIntoView({behavior: "auto", block: "center", inline: "nearest"});
 }
 
 document.addEventListener("DOMContentLoaded", function(event) {

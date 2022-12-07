@@ -110,6 +110,12 @@ a {
 
 .highlight {
   padding: 0.2rem 0pt;
+  background: #027f55;
+  color: white;
+}
+
+.scrollto_highlight {
+  padding: 0.2rem 0pt;
   background: #027f85;
   color: white;
 }

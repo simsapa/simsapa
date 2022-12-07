@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.sql.elements import and_, or_, not_
 
 from PyQt6.QtCore import QAbstractTableModel, Qt
-from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import logger
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
@@ -266,6 +266,8 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.left_box_layout.addWidget(self.tree_view)
 
         self.tree_view.setHeaderHidden(True)
+        self.tree_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tree_view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.tree_view.setRootIsDecorated(True)
 
         self._init_tree_model()
@@ -285,6 +287,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.suttas_table.setShowGrid(False)
         self.suttas_table.setWordWrap(False)
+        self.suttas_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+
         self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.suttas_table.horizontalHeader().setStretchLastSection(True)
 
