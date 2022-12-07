@@ -21,7 +21,7 @@ from simsapa.layouts.search_query_worker import SearchQueryWorker
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, QueryType, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
+from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -196,7 +196,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
             return
 
         self.back_recent_button = QtWidgets.QPushButton()
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.back_recent_button.sizePolicy().hasHeightForWidth())
@@ -214,7 +214,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.forward_recent_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.forward_recent_button.sizePolicy().hasHeightForWidth())
@@ -230,7 +230,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.search_input = QtWidgets.QLineEdit()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
@@ -246,7 +246,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.search_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_button.sizePolicy().hasHeightForWidth())
@@ -275,9 +275,20 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.search_extras = QtWidgets.QHBoxLayout()
         self.searchbar_layout.addLayout(self.search_extras)
 
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
 
         self.searchbar_layout.addItem(spacerItem)
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.show_sidebar_btn = QPushButton()
+        self.show_sidebar_btn.setIcon(icon)
+        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
+        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
+
+        if self.enable_sidebar:
+            self.searchbar_layout.addWidget(self.show_sidebar_btn)
 
         style = """
 QWidget { border: 1px solid #272727; }
@@ -963,6 +974,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self.enable_sidebar:
             self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
             self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
+
+            def _handle_sidebar():
+                self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+
+            self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
+
         else:
             self.back_recent_button.clicked.connect(partial(self._show_next_recent))
             self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))

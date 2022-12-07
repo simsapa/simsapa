@@ -25,7 +25,7 @@ from simsapa.layouts.reader_web import ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchResult, dict_word_hit_to_search_result
-from ..app.types import AppData, DictionarySearchWindowInterface, QueryType, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
+from ..app.types import AppData, DictionarySearchWindowInterface, QExpanding, QFixed, QMinimum, QueryType, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
 from .memos_sidebar import HasMemosSidebar
@@ -243,6 +243,14 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self._setup_search_bar()
 
+        show = self._app_data.app_settings.get('show_dictionary_sidebar', True)
+        self.action_Show_Sidebar.setChecked(show)
+
+        if show:
+            self.splitter.setSizes([2000, 2000])
+        else:
+            self.splitter.setSizes([2000, 0])
+
         self._setup_dict_filter_dropdown()
         self._setup_dict_select_button()
         self._setup_toggle_pali_button()
@@ -266,7 +274,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             return
 
         self.back_recent_button = QtWidgets.QPushButton()
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.back_recent_button.sizePolicy().hasHeightForWidth())
@@ -284,7 +292,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.forward_recent_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.forward_recent_button.sizePolicy().hasHeightForWidth())
@@ -300,7 +308,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.search_input = QtWidgets.QLineEdit()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
@@ -315,7 +323,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.search_button = QtWidgets.QPushButton()
 
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.search_button.sizePolicy().hasHeightForWidth())
@@ -344,9 +352,19 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.search_extras = QtWidgets.QHBoxLayout()
         self.searchbar_layout.addLayout(self.search_extras)
 
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
 
         self.searchbar_layout.addItem(spacerItem)
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.show_sidebar_btn = QPushButton()
+        self.show_sidebar_btn.setIcon(icon)
+        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
+        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
+
+        self.searchbar_layout.addWidget(self.show_sidebar_btn)
 
         style = """
 QWidget { border: 1px solid #272727; }
@@ -933,6 +951,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.app_settings['dictionary_search_mode'] = DictionarySearchModeNameToType[m]
         self._app_data._save_app_settings()
 
+    def _toggle_sidebar(self):
+        is_on = self.action_Show_Sidebar.isChecked()
+        if is_on:
+            self.splitter.setSizes([2000, 2000])
+        else:
+            self.splitter.setSizes([2000, 0])
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -958,6 +983,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._find_panel.searched.connect(self.on_searched) # type: ignore
         self._find_panel.closed.connect(self.find_toolbar.hide)
+
+        def _handle_sidebar():
+            self.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+
+        self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_dict_word))
@@ -1004,3 +1034,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.action_Search_Result_Sizes \
             .triggered.connect(partial(self._show_search_result_sizes_dialog))
+
+        self.action_Show_Sidebar \
+            .triggered.connect(partial(self._toggle_sidebar))

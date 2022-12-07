@@ -349,6 +349,16 @@ class AppWindows:
             if hasattr(w, 'action_Show_Word_Scan_Popup'):
                 w.action_Show_Word_Scan_Popup.setChecked(is_on)
 
+    def _toggle_show_dictionary_sidebar(self, view):
+        is_on = view.action_Show_Sidebar.isChecked()
+        self._app_data.app_settings['show_dictionary_sidebar'] = is_on
+        self._app_data._save_app_settings()
+
+    def _toggle_show_sutta_sidebar(self, view):
+        is_on = view.action_Show_Sidebar.isChecked()
+        self._app_data.app_settings['show_sutta_sidebar'] = is_on
+        self._app_data._save_app_settings()
+
     def _toggle_show_related_suttas(self, view):
         is_on = view.action_Show_Related_Suttas.isChecked()
         self._app_data.app_settings['show_related_suttas'] = is_on
@@ -719,7 +729,22 @@ class AppWindows:
             view.action_Pali_Courses \
                 .triggered.connect(partial(self._new_courses_browser_window))
 
+        if isinstance(view, DictionarySearchWindow):
+            if hasattr(view, 'action_Show_Sidebar'):
+                is_on = self._app_data.app_settings.get('show_dictionary_sidebar', True)
+                view.action_Show_Sidebar.setChecked(is_on)
+
+                view.action_Show_Sidebar \
+                    .triggered.connect(partial(self._toggle_show_dictionary_sidebar, view))
+
         if isinstance(view, SuttaSearchWindow) or isinstance(view, SuttaStudyWindow):
+            if hasattr(view, 'action_Show_Sidebar'):
+                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
+                view.action_Show_Sidebar.setChecked(is_on)
+
+                view.action_Show_Sidebar \
+                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
+
             if hasattr(view, 'action_Show_Related_Suttas'):
                 is_on = self._app_data.app_settings.get('show_related_suttas', True)
                 view.action_Show_Related_Suttas.setChecked(is_on)

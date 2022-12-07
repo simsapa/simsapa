@@ -119,6 +119,8 @@ class AppSettings(TypedDict):
     show_toolbar: bool
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
+    show_sutta_sidebar: bool
+    show_dictionary_sidebar: bool
     show_related_suttas: bool
     show_translation_and_pali_line_by_line: bool
     show_all_variant_readings: bool
@@ -158,6 +160,8 @@ def default_app_settings() -> AppSettings:
             width = 400,
             height = 500,
         ),
+        show_sutta_sidebar = True,
+        show_dictionary_sidebar = True,
         show_related_suttas = True,
         show_translation_and_pali_line_by_line = False,
         show_all_variant_readings = True,
@@ -413,18 +417,22 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _lookup_selection_in_dictionary: Callable
     _select_next_recent: Callable
     _select_prev_recent: Callable
+    _toggle_sidebar: Callable
 
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
     action_Dictionary_Search: QAction
+    action_Show_Sidebar: QAction
     action_Show_Related_Suttas: QAction
     action_Show_Translation_and_Pali_Line_by_Line: QAction
     action_Show_All_Variant_Readings: QAction
     action_Find_in_Page: QAction
 
 class DictionarySearchWindowInterface(AppWindowInterface):
+    action_Show_Sidebar: QAction
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
+    _toggle_sidebar: Callable
 
 
 class GraphRequest(TypedDict):
@@ -490,8 +498,13 @@ class CompletionCacheWorker(QRunnable):
             logger.error(e)
 
 
-QExpanding = QtWidgets.QSizePolicy.Policy.Expanding
+QFixed = QtWidgets.QSizePolicy.Policy.Fixed
 QMinimum = QtWidgets.QSizePolicy.Policy.Minimum
+QMaximum = QtWidgets.QSizePolicy.Policy.Maximum
+QPreferred = QtWidgets.QSizePolicy.Policy.Preferred
+QMinimumExpanding = QtWidgets.QSizePolicy.Policy.MinimumExpanding
+QExpanding = QtWidgets.QSizePolicy.Policy.Expanding
+QIgnored = QtWidgets.QSizePolicy.Policy.Ignored
 
 
 class PaliItem(TypedDict):

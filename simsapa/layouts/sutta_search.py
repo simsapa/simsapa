@@ -62,7 +62,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
                                         self,
                                         self.searchbar_layout,
                                         self.sutta_tabs_layout,
-                                        self.tabs_layout)
+                                        self.tabs_layout,
+                                        enable_sidebar = True)
 
         self.page_len = self.s.page_len
 
@@ -75,6 +76,14 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     def _ui_setup(self):
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
+
+        show = self._app_data.app_settings.get('show_sutta_sidebar', True)
+        self.action_Show_Sidebar.setChecked(show)
+
+        if show:
+            self.splitter.setSizes([2000, 2000])
+        else:
+            self.splitter.setSizes([2000, 0])
 
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
@@ -355,6 +364,13 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if reply == QMessageBox.StandardButton.Yes:
             self.action_Quit.activate(QAction.ActionEvent.Trigger)
 
+    def _toggle_sidebar(self):
+        is_on = self.action_Show_Sidebar.isChecked()
+        if is_on:
+            self.splitter.setSizes([2000, 2000])
+        else:
+            self.splitter.setSizes([2000, 0])
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -420,3 +436,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.action_Search_Result_Sizes \
             .triggered.connect(partial(self._show_search_result_sizes_dialog))
+
+        self.action_Show_Sidebar \
+            .triggered.connect(partial(self._toggle_sidebar))
