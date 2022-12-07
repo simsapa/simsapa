@@ -14,7 +14,7 @@ from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db.search import SearchResult
-from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, bilara_text_to_html, bilara_text_to_segments
+from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, bilara_text_to_segments
 from ..app.types import AppData, USutta
 from .html_content import html_page
 
@@ -199,8 +199,7 @@ class SuttaTabWidget(QWidget):
         js_extra = None
 
         if highlight_text:
-            text = highlight_text.replace('"', '[\\"“”]')
-            text = text.replace("'", "[\\'‘’]")
+            text = highlight_text.replace('"', '\\"')
             js_extra = """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });""" % text
 
         html = html_page(content, self.api_url, css_extra, js_extra)

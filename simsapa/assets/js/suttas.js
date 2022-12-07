@@ -14,8 +14,11 @@ function toggle_comment (event) {
     })
 }
 
-function highlight_and_scroll_to (highligh_text) {
-    const regex = new RegExp(highligh_text, 'gi');
+function highlight_and_scroll_to (highlight_text) {
+    let s = highlight_text;
+    s = s.replaceAll('"', '["“”]');
+    s = s.replaceAll("'", "['‘’]");
+    const regex = new RegExp(s, 'gi');
 
     let body = document.querySelector('body');
     let text = body.innerHTML;
