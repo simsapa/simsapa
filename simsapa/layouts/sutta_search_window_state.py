@@ -848,7 +848,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         url = QUrl(f"ssp://{QueryType.suttas.value}/{self._current_sutta.uid}")
 
         quote = self._get_selection()
-        if quote is not None:
+        if quote is not None and len(quote) > 0:
             url.setQuery(urlencode({'q': quote}))
 
         self._app_data.clipboard_setText(url.toString())

@@ -7,6 +7,7 @@ from PyQt6.QtCore import QModelIndex, QSize, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 from functools import partial
 from typing import Dict, List, Optional
+from urllib.parse import urlencode
 
 from sqlalchemy.sql.elements import and_, or_, not_
 
@@ -204,6 +205,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.edit_node_btn.setFixedSize(QSize(80, 40))
         self.tree_buttons_box.addWidget(self.edit_node_btn)
 
+        spacer = QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.tree_buttons_box.addItem(spacer)
+
         self.delete_node_btn = QPushButton("Delete")
         self.delete_node_btn.setFixedSize(QSize(80, 40))
         self.tree_buttons_box.addWidget(self.delete_node_btn)
@@ -254,6 +258,13 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.edit_row_btn.setFixedSize(QSize(80, 40))
         self.table_buttons_box.addWidget(self.edit_row_btn)
 
+        self.copy_link_btn = QPushButton("Copy Link")
+        self.copy_link_btn.setFixedSize(QSize(80, 40))
+        self.table_buttons_box.addWidget(self.copy_link_btn)
+
+        spacer = QSpacerItem(20, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.table_buttons_box.addItem(spacer)
+
         self.delete_row_btn = QPushButton("Delete")
         self.delete_row_btn.setFixedSize(QSize(80, 40))
         self.table_buttons_box.addWidget(self.delete_row_btn)
@@ -293,8 +304,32 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.suttas_table.horizontalHeader().setStretchLastSection(True)
 
+        self.suttas_table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+
+        copy_link_to_sutta = QAction("Copy Link to Sutta and Selection", self.suttas_table)
+        copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
+        self.suttas_table.addAction(copy_link_to_sutta)
+
         self.suttas_model = SuttaModel()
         self.suttas_table.setModel(self.suttas_model)
+
+    def _handle_copy_link_to_sutta(self):
+        sel = self.suttas_table.selectedIndexes()
+        if len(sel) == 0:
+            return
+
+        idx = sel[0]
+
+        data = self.suttas_model._data
+
+        uid = data[idx.row()][2]
+        url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
+
+        quote = data[idx.row()][3]
+        if quote is not None and len(quote) > 0:
+            url.setQuery(urlencode({'q': quote}))
+
+        self._app_data.clipboard_setText(url.toString())
 
     def _add_nodes_from_names(self, model: QStandardItemModel, bookmark_names: List[str]):
         root_node = model.invisibleRootItem()
@@ -759,6 +794,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.open_row_btn.clicked.connect(partial(self._handle_row_open))
         self.edit_row_btn.clicked.connect(partial(self._handle_row_edit))
+        self.copy_link_btn.clicked.connect(partial(self._handle_copy_link_to_sutta))
         self.delete_row_btn.clicked.connect(partial(self._handle_row_delete))
 
         self.action_Close_Window \
