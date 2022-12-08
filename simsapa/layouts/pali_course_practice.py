@@ -10,13 +10,13 @@ import markdown
 from sqlalchemy.sql import func
 
 from PyQt6 import QtWidgets
-from PyQt6.QtMultimedia import QAudioDevice, QSoundEffect
-from PyQt6.QtCore import QSize, QTimer, QUrl, pyqtSignal, Qt
-from PyQt6.QtGui import QCloseEvent, QEnterEvent, QIcon, QPixmap
+from PyQt6.QtMultimedia import QAudioDevice, QMediaDevices, QSoundEffect
+from PyQt6.QtCore import QMessageAuthenticationCode, QSize, QTimer, QUrl, pyqtSignal, Qt
+from PyQt6.QtGui import QAction, QCloseEvent, QEnterEvent, QIcon, QPicture, QPixmap, QPlatformSurfaceEvent
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolBar, QToolButton, QVBoxLayout
 
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.html_content import html_page
@@ -105,6 +105,7 @@ class CoursePracticeWindow(AppWindowInterface):
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
     challenges: List[UChallenge] = []
+    audio_devices_map: Dict[str, QAudioDevice] = dict()
 
     current_challenge: UChallenge
     current_challenge_idx = 0
@@ -139,7 +140,21 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _setup_audio(self):
         self.player = QSoundEffect()
-        self.audio_device = QAudioDevice()
+
+        for i in QMediaDevices().audioOutputs():
+            self.audio_devices_map[i.description()] = i
+
+        desc = self._app_data.app_settings.get('audio_device_desc', '')
+        names = list(self.audio_devices_map.keys())
+
+        if desc != '' and desc in names:
+            self.audio_device = self.audio_devices_map[desc]
+
+        else:
+            self.audio_device = self.audio_devices_map[names[0]]
+            self._app_data.app_settings['audio_device_desc'] = names[0]
+            self._app_data._save_app_settings()
+
         self.player.setAudioDevice(self.audio_device)
 
         volume = self._app_data.app_settings.get('audio_volume', 1.0)
@@ -171,6 +186,18 @@ class CoursePracticeWindow(AppWindowInterface):
 
         else:
             logger.warn(f"Audio missing: {audio_path}")
+
+
+    def _handle_audio_select(self, ac: QAction):
+        desc = ac.text()
+        if desc not in self.audio_devices_map.keys():
+            return
+
+        self._app_data.app_settings['audio_device_desc'] = desc
+        self._app_data._save_app_settings()
+
+        self._setup_audio()
+        self.device_menu.setDefaultAction(ac)
 
 
     def _set_current_challenge(self):
@@ -209,7 +236,6 @@ class CoursePracticeWindow(AppWindowInterface):
     def _ui_setup(self):
         self.setWindowTitle("Pali Courses Browser")
         self.resize(850, 650)
-
 
         if IS_MAC:
             font_family = "Helvetica"
@@ -253,17 +279,30 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self.title_wrap.addItem(QSpacerItem(10, 0, QExpanding, QMinimum))
 
-        self.volume_btn = QPushButton()
-        self.volume_btn.setFixedSize(40, 40)
+        self.volume_btn = QToolButton()
+        self.volume_btn.setFixedSize(50, 40)
+        self.volume_btn.setIconSize(QSize(16, 16))
+        self.volume_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
 
         icon = QIcon()
-
         if self.player.volume() == 1.0:
             icon.addPixmap(QPixmap(":/volume-high"), QIcon.Mode.Normal, QIcon.State.Off)
         else:
             icon.addPixmap(QPixmap(":/volume-xmark"), QIcon.Mode.Normal, QIcon.State.Off)
 
         self.volume_btn.setIcon(icon)
+
+        self.device_menu = QMenu()
+
+        desc = self.audio_device.description()
+        for i in self.audio_devices_map.keys():
+            ac = QAction(i, self)
+            self.device_menu.addAction(ac)
+            ac.triggered.connect(partial(self._handle_audio_select, ac))
+            if desc == i:
+                self.device_menu.setDefaultAction(ac)
+
+        self.volume_btn.setMenu(self.device_menu)
 
         self.title_wrap.addWidget(self.volume_btn)
 
