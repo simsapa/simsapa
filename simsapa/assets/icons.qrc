@@ -46,6 +46,17 @@
     <file alias="play-regular">icons/32x32/fa_circle-play-regular.png</file>
     <file alias="play-solid">icons/32x32/fa_circle-play-solid.png</file>
     <file alias="volume-high">icons/32x32/fa_volume-high-solid.png</file>
+    <file alias="volume-low">icons/32x32/fa_volume-low-solid.png</file>
+    <file alias="volume-off">icons/32x32/fa_volume-off-solid.png</file>
     <file alias="volume-xmark">icons/32x32/fa_volume-xmark-solid.png</file>
+    <file alias="bars-solid">icons/32x32/fa_bars-solid.png</file>
+    <file alias="note-sticky-regular">icons/32x32/fa_note-sticky-regular.png</file>
+    <file alias="note-sticky-solid">icons/32x32/fa_note-sticky-solid.png</file>
+    <file alias="pen-to-square-solid">icons/32x32/fa_pen-to-square-solid.png</file>
+    <file alias="rectangle-xmark-regular">icons/32x32/fa_rectangle-xmark-regular.png</file>
+    <file alias="rectangle-xmark-solid">icons/32x32/fa_rectangle-xmark-solid.png</file>
+    <file alias="square-check-regular">icons/32x32/fa_square-check-regular.png</file>
+    <file alias="square-check-solid">icons/32x32/fa_square-check-solid.png</file>
+    <file alias="square-pen-solid">icons/32x32/fa_square-pen-solid.png</file>
   </qresource>
 </RCC>

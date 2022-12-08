@@ -492,7 +492,7 @@
   <action name="action_Bookmarks">
    <property name="icon">
     <iconset resource="../icons.qrc">
-     <normaloff>:/book</normaloff>:/book</iconset>
+     <normaloff>:/bookmark</normaloff>:/bookmark</iconset>
    </property>
    <property name="text">
     <string>&amp;Bookmarks</string>

@@ -53,7 +53,7 @@ class ChoiceButton(QPushButton):
                 self.audio_path = p
 
                 icon = QIcon()
-                icon.addPixmap(QPixmap(":/volume-high"))
+                icon.addPixmap(QPixmap(":/volume-low"))
                 self.setIcon(icon)
                 self.setIconSize(QSize(12, 12))
             else:
