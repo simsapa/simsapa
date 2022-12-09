@@ -5,7 +5,7 @@ import sys
 import re
 from pathlib import Path
 import glob
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -34,10 +34,22 @@ for p in [bootstrap_assets_dir, gretil_html_dir]:
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
 
-def get_gretil_suttas() -> List[Am.Sutta]:
+s = os.getenv('BOOTSTRAP_LIMIT')
+if s is None or s == "":
+    BOOTSTRAP_LIMIT = None
+else:
+    BOOTSTRAP_LIMIT = int(s)
+
+def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
     suttas: List[Am.Sutta] = []
 
-    for html_path in glob.glob(f"{gretil_html_dir}/*.htm"):
+    paths = glob.glob(f"{gretil_html_dir}/*.htm")
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
+
+    for html_path in paths:
         if 'pAda-index_sa-dharma.htm' in html_path:
             continue
 
@@ -95,8 +107,8 @@ def get_gretil_suttas() -> List[Am.Sutta]:
     return suttas
 
 
-def populate_sanskrit_from_gretil(db_session: Session):
-    suttas = get_gretil_suttas()
+def populate_sanskrit_from_gretil(db_session: Session, limit: Optional[int] = None):
+    suttas = get_gretil_suttas(limit)
 
     logger.info(f"Adding GRETIL, count {len(suttas)} ...")
 
@@ -131,7 +143,9 @@ def main():
     sanskrit_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("sanskrit-texts.sqlite3")
     sanskrit_db = helpers.get_appdata_db(sanskrit_db_path, remove_if_exists = True)
 
-    populate_sanskrit_from_gretil(sanskrit_db)
+    limit = BOOTSTRAP_LIMIT
+
+    populate_sanskrit_from_gretil(sanskrit_db, limit)
 
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
     appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = False)

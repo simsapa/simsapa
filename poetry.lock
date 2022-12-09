@@ -86,6 +86,7 @@ python-versions = ">=3.7"
 
 [package.dependencies]
 six = ">=1.9.0"
+tinycss2 = {version = ">=1.1.0,<1.2", optional = true, markers = "extra == \"css\""}
 webencodings = "*"
 
 [package.extras]
@@ -111,7 +112,7 @@ typing-extensions = ">=3.10.0"
 
 [[package]]
 name = "certifi"
-version = "2022.9.24"
+version = "2022.12.7"
 description = "Python package for providing Mozilla's CA Bundle."
 category = "main"
 optional = false
@@ -482,14 +483,11 @@ et-xmlfile = "*"
 
 [[package]]
 name = "packaging"
-version = "21.3"
+version = "22.0"
 description = "Core utilities for Python packages"
 category = "main"
 optional = false
-python-versions = ">=3.6"
-
-[package.dependencies]
-pyparsing = ">=2.0.2,<3.0.5 || >3.0.5"
+python-versions = ">=3.7"
 
 [[package]]
 name = "pandas"
@@ -621,17 +619,6 @@ description = "Python bindings for the PDF toolkit and renderer MuPDF"
 category = "main"
 optional = false
 python-versions = ">=3.7"
-
-[[package]]
-name = "pyparsing"
-version = "3.0.9"
-description = "pyparsing module - Classes and methods to define and execute parsing grammars"
-category = "main"
-optional = false
-python-versions = ">=3.6.8"
-
-[package.extras]
-diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pypdf2"
@@ -926,6 +913,21 @@ python-versions = ">=3.6"
 typing-extensions = ">=3.7.4"
 
 [[package]]
+name = "tinycss2"
+version = "1.1.1"
+description = "A tiny CSS parser"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+webencodings = ">=0.4"
+
+[package.extras]
+doc = ["sphinx", "sphinx_rtd_theme"]
+test = ["coverage[toml]", "pytest", "pytest-cov", "pytest-flake8", "pytest-isort"]
+
+[[package]]
 name = "tomlkit"
 version = "0.11.6"
 description = "Style preserving TOML library"
@@ -1062,7 +1064,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.11"
-content-hash = "b7576599560976bb35573d1f15ef39d9795d92cb15775dcc55b3e690401a22f0"
+content-hash = "575c95e9fb8550901d2c966a744ff5141a5008cd074c53414a8de528defd7441"
 
 [metadata.files]
 aksharamukha = [
@@ -1098,8 +1100,8 @@ bokeh = [
     {file = "bokeh-2.4.3.tar.gz", hash = "sha256:ef33801161af379665ab7a34684f2209861e3aefd5c803a21fbbb99d94874b03"},
 ]
 certifi = [
-    {file = "certifi-2022.9.24-py3-none-any.whl", hash = "sha256:90c1a32f1d68f940488354e36370f6cca89f0f106db09518524c88d6ed83f382"},
-    {file = "certifi-2022.9.24.tar.gz", hash = "sha256:0d9c601124e5a6ba9712dbc60d9c53c21e34f5f641fe83002317394311bdce14"},
+    {file = "certifi-2022.12.7-py3-none-any.whl", hash = "sha256:4ad3232f5e926d6718ec31cfc1fcadfde020920e278684144551c91769c7bc18"},
+    {file = "certifi-2022.12.7.tar.gz", hash = "sha256:35824b4c3a97115964b408844d64aa14db1cc518f6562e8d7261699d1350a9e3"},
 ]
 charset-normalizer = [
     {file = "charset-normalizer-2.1.1.tar.gz", hash = "sha256:5a3d016c7c547f69d6f81fb0db9449ce888b418b5b9952cc5e6e66843e9dd845"},
@@ -1533,8 +1535,8 @@ openpyxl = [
     {file = "openpyxl-3.0.10.tar.gz", hash = "sha256:e47805627aebcf860edb4edf7987b1309c1b3632f3750538ed962bbcc3bd7449"},
 ]
 packaging = [
-    {file = "packaging-21.3-py3-none-any.whl", hash = "sha256:ef103e05f519cdc783ae24ea4e2e0f508a9c99b2d4969652eed6a2e1ea5bd522"},
-    {file = "packaging-21.3.tar.gz", hash = "sha256:dd47c42927d89ab911e606518907cc2d3a1f38bbd026385970643f9c5b8ecfeb"},
+    {file = "packaging-22.0-py3-none-any.whl", hash = "sha256:957e2148ba0e1a3b282772e791ef1d8083648bc131c8ab0c1feba110ce1146c3"},
+    {file = "packaging-22.0.tar.gz", hash = "sha256:2198ec20bd4c017b8f9717e00f0c8714076fc2fd93816750ab48e2c41de2cfd3"},
 ]
 pandas = [
     {file = "pandas-1.5.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:e9dbacd22555c2d47f262ef96bb4e30880e5956169741400af8b306bbb24a273"},
@@ -1695,10 +1697,6 @@ pymupdf = [
     {file = "PyMuPDF-1.21.0-cp39-cp39-win32.whl", hash = "sha256:2ab85a283ea602aafde3c8cf41c30928e17e4aea91f64057181aa4ba2eb591e7"},
     {file = "PyMuPDF-1.21.0-cp39-cp39-win_amd64.whl", hash = "sha256:e6ff3388396396a12b54a117bde5196938fa1f2b2871f383f6975f34648cf2a7"},
     {file = "PyMuPDF-1.21.0.tar.gz", hash = "sha256:a63dfc289e127a16ab60310ee6005fe83121c7a97f7c120db688f9281c9e5d0f"},
-]
-pyparsing = [
-    {file = "pyparsing-3.0.9-py3-none-any.whl", hash = "sha256:5026bae9a10eeaefb61dab2f09052b9f4307d44aee4eda64b309723d8d206bbc"},
-    {file = "pyparsing-3.0.9.tar.gz", hash = "sha256:2b020ecf7d21b687f219b71ecad3631f644a47f01403fa1d1036b0c6416d70fb"},
 ]
 pypdf2 = [
     {file = "PyPDF2-1.26.0.tar.gz", hash = "sha256:e28f902f2f0a1603ea95ebe21dff311ef09be3d0f0ef29a3e44a932729564385"},
@@ -1997,6 +1995,10 @@ sqlalchemy-utils = [
 sqlalchemy2-stubs = [
     {file = "sqlalchemy2-stubs-0.0.2a29.tar.gz", hash = "sha256:1bbc6aebd76db7c0351a9f45cc1c4e8ac335ba150094c2af091e8b87b9118419"},
     {file = "sqlalchemy2_stubs-0.0.2a29-py3-none-any.whl", hash = "sha256:ece266cdabf3797b13ddddba27561b67ae7dedc038942bf66e045e978a5e3a66"},
+]
+tinycss2 = [
+    {file = "tinycss2-1.1.1-py3-none-any.whl", hash = "sha256:fe794ceaadfe3cf3e686b22155d0da5780dd0e273471a51846d0a02bc204fec8"},
+    {file = "tinycss2-1.1.1.tar.gz", hash = "sha256:b2e44dd8883c360c35dd0d1b5aad0b610e5156c2cb3b33434634e539ead9d8bf"},
 ]
 tomlkit = [
     {file = "tomlkit-0.11.6-py3-none-any.whl", hash = "sha256:07de26b0d8cfc18f871aec595fda24d95b08fef89d147caa861939f37230bf4b"},

@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
 
+START_TIME=$(date --iso-8601=seconds)
+
 # Activate poetry venv
-DIR=$(poetry env list --full-path)
-source "$DIR/bin/activate"
+# DIR=$(poetry env list --full-path)
+# source "$DIR/bin/activate"
 
 # Ensure latest local simsapa is in the venv, this is what ./scripts/*.py will import.
-poetry install
+# poetry install
+
+echo "=== Clean and Create Folders ==="
+
+mkdir -p ~/.local/share/simsapa/assets/
+
+rm -r ~/.local/share/simsapa/unzipped_stardict
+
+rm ~/.local/share/simsapa/*.tar.bz2
+
+rm ../releases/*.tar.bz2
+
+rm ../bootstrap-assets-resources/dist/*
+
+./scripts/remove_log.py
 
 echo "=== Bootstrap Appdata DB ==="
 
-./scripts/bootstrap-appdata-db.py
+./scripts/bootstrap_appdata_db.py
 
 echo "=== Create appdata.tar.bz2 ==="
 
@@ -80,3 +96,16 @@ tar cjf sanskrit-index.tar.bz2 index/
 cd -
 
 mv ~/.local/share/simsapa/assets/sanskrit-index.tar.bz2 ../releases/
+
+END_TIME=$(date --iso-8601=seconds)
+
+src="from dateutil import parser
+started = parser.parse('$START_TIME')
+finished = parser.parse('$END_TIME')
+d = finished - started
+print(d)"
+
+echo "======"
+echo "Bootstrap started: $START_TIME"
+echo "Bootstrap ended:   $END_TIME"
+echo "Duration:          $(echo "$src" | python3)"

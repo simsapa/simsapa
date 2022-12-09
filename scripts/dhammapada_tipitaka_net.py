@@ -5,7 +5,7 @@ import sys
 import glob
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -89,7 +89,7 @@ def parse_sutta(ref: str, content_html: str) -> Am.Sutta:
 
     return sutta
 
-def get_suttas() -> List[Am.Sutta]:
+def get_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
 
     suttas: List[Am.Sutta] = []
 
@@ -98,7 +98,13 @@ def get_suttas() -> List[Am.Sutta]:
     chapters: dict[str, str] = {}
     toc_links: dict[str, str] = {}
 
-    for p in glob.glob(f"{HTML_DIR.joinpath('verseload*.html')}"):
+    paths = glob.glob(f"{HTML_DIR.joinpath('verseload*.html')}")
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
+
+    for p in paths:
         p = Path(p)
 
         dhp_num, content_html, title_li = parse_chapter(p)
@@ -129,9 +135,10 @@ def get_suttas() -> List[Am.Sutta]:
 
     return suttas
 
-def populate_suttas_from_dhammapada_tipitaka_net(appdata_db: Session):
+def populate_suttas_from_dhammapada_tipitaka_net(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_dhammapada_tipitaka_net() ===")
 
-    suttas = get_suttas()
+    suttas = get_suttas(limit)
 
     try:
         for i in suttas:

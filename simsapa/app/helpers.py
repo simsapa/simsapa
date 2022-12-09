@@ -2,6 +2,7 @@ from importlib import metadata
 from pathlib import Path
 import shutil
 from typing import Dict, List, Optional, TypedDict
+from bleach.css_sanitizer import CSSSanitizer
 from bs4 import BeautifulSoup
 import json
 import requests
@@ -362,7 +363,9 @@ def compactRichText(text: str) -> str:
     text = text.replace('</', ' </')
     text = text.replace('>', '> ')
 
-    text = bleach.clean(text, tags=[], styles=[], strip=True)
+    css_sanitizer = CSSSanitizer(allowed_css_properties=[])
+
+    text = bleach.clean(text, tags=[], strip=True, css_sanitizer=css_sanitizer)
     text = compactPlainText(text)
 
     return text

@@ -10,6 +10,7 @@ Support functions:
 https://github.com/codito/stargaze/blob/master/stargaze.py
 """
 
+import re
 from pathlib import Path
 import datetime
 from typing import List, TypedDict, Optional
@@ -21,6 +22,7 @@ import idzip
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
 from simsapa.app.helpers import compactRichText
+from simsapa.app.types import QueryType
 
 class DictError(Exception):
     """Error in the dictionary."""
@@ -215,12 +217,12 @@ def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
 
         return ifo_from_opts(opts)
 
-def stardict_to_dict_entries(paths: StarDictPaths) -> List[DictEntry]:
+def stardict_to_dict_entries(paths: StarDictPaths, limit: Optional[int] = None) -> List[DictEntry]:
 
     idx = parse_idx(paths)
     ifo = parse_ifo(paths)
     syn = parse_syn(paths)
-    words = parse_dict(paths, ifo, idx, syn)
+    words = parse_dict(paths, ifo, idx, syn, limit)
 
     return words
 
@@ -262,10 +264,20 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
 
     return words_index
 
+def parse_bword_links_to_ssp(definition: str) -> str:
+    words_path = QueryType.words.value
+
+    definition = definition \
+        .replace('bword://localhost/', f'ssp://{words_path}/') \
+        .replace('bword://', f'ssp://{words_path}/')
+
+    return definition
+
 def parse_dict(paths: StarDictPaths,
                ifo: StarDictIfo,
                idx_entries: List[IdxEntry],
-               syn_entries: Optional[SynEntries]) -> List[DictEntry]:
+               syn_entries: Optional[SynEntries],
+               limit: Optional[int] = None) -> List[DictEntry]:
     """Parse a .dict file."""
 
     dict_path = paths['dic_path']
@@ -291,11 +303,19 @@ def parse_dict(paths: StarDictPaths,
     else:
         types = "m"
 
+    if limit:
+        n = limit if len(idx_entries) >= limit else len(idx_entries)
+        idx_entries = idx_entries[0:n]
+
     with open_dict(dict_path, "rb") as f:
+        total = len(idx_entries)
         for idx, i in enumerate(idx_entries):
 
             dict_word = i['word']
-            logger.info(dict_word)
+
+            percent = idx/(total/100)
+            logger.info(f"Parsing {percent:.2f}% {idx}/{total}: {dict_word}")
+
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")
@@ -314,7 +334,7 @@ def parse_dict(paths: StarDictPaths,
                 definition_plain = data_str
 
             if types == "h":
-                definition_html = data_str
+                definition_html = parse_bword_links_to_ssp(data_str)
                 definition_plain = compactRichText(data_str)
 
             synonyms = []

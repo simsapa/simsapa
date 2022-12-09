@@ -5,7 +5,7 @@ import sys
 import glob
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -16,6 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
+from simsapa.app.types import QueryType
 
 load_dotenv()
 
@@ -59,7 +60,7 @@ def href_sutta_html_to_ssp(href: str) -> str:
 
     ref = ref_notation_convert(ref)
 
-    ssp_uid = f"ssp://{ref}/en/thanissaro{anchor}"
+    ssp_uid = f"ssp://{QueryType.suttas.value}/{ref}/en/thanissaro{anchor}"
 
     return ssp_uid
 
@@ -159,7 +160,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     return sutta
 
-def get_suttas() -> List[Am.Sutta]:
+def get_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
 
     suttas: List[Am.Sutta] = []
 
@@ -169,6 +170,10 @@ def get_suttas() -> List[Am.Sutta]:
 
     for folder in ['Dhp', 'Iti', 'Khp', 'StNp', 'Thag', 'Thig', 'Ud']:
         paths.extend(glob.glob(f"{HTML_DIR.joinpath('KN').joinpath(folder).joinpath('*.html')}"))
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
 
     for p in paths:
         p = Path(p)
@@ -181,9 +186,10 @@ def get_suttas() -> List[Am.Sutta]:
 
     return suttas
 
-def populate_suttas_from_dhammatalks_org(appdata_db: Session):
+def populate_suttas_from_dhammatalks_org(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_dhammatalks_org() ===")
 
-    suttas = get_suttas()
+    suttas = get_suttas(limit)
 
     try:
         for i in suttas:

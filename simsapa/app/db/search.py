@@ -344,9 +344,10 @@ class SearchIndexed:
             ix = open_dir(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
             return ix
         except Exception as e:
-            logger.info(f"Can't open the index: {index_name}, {e}")
+            logger.warn(f"Can't open the index: {index_name}, {e}")
 
         try:
+            logger.info(f"Creating the index: {index_name}")
             ix = create_in(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
         except Exception as e:
             logger.error(f"Can't create the index: {index_name}, {e}")

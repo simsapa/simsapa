@@ -25,7 +25,7 @@ tests:
 	USE_TEST_DATA=true pytest tests/
 
 bootstrap-appdata:
-	./scripts/bootstrap-appdata.sh
+	./scripts/bootstrap_appdata.sh
 
 count-code:
 	tokei --type Python --exclude simsapa/layouts/word_scan_popup_borderless.py --exclude simsapa/assets/ --exclude simsapa/keyboard/ . | grep -vE '===|Total'

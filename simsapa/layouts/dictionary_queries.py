@@ -9,7 +9,7 @@ from sqlalchemy import or_
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.db.search import SearchResult, dict_word_to_search_result
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from ..app.types import AppData, Labels, UDictWord
+from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from .html_content import page_tmpl
@@ -140,18 +140,13 @@ class DictionaryQueries:
             for m in matches:
                 name = m[0].replace('{', '').replace('}', '')
                 name = re.sub(r'[\n ]+', ' ', name)
-                url = "bword://localhost/" + name.replace(' ', '%20')
+                url = f"ssp://{QueryType.words.value}/{name.replace(' ', '%20')}"
                 text = text.replace(m[0], f'<a href="{url}">{name}</a>')
 
             definition = style + '<pre>' + text + '</pre>'
+
         else:
             definition = '<p>No definition.</p>'
-
-        # Ensure localhost in bword:// urls, otherwise they are invalid and lookup content is empty
-        # First remove possibly correct cases, to then replace all cases
-        definition = definition \
-            .replace('bword://localhost/', 'bword://') \
-            .replace('bword://', 'bword://localhost/')
 
         # We'll remove CSS and JS from 'definition' before assigning it to 'body'
         body = ""

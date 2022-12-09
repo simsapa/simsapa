@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.db_helpers import get_db_engine_connection_session, upgrade_db
+from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, upgrade_db
 
 from .db.search import SearchIndexed
 
@@ -138,6 +138,7 @@ class AppSettings(TypedDict):
     dict_filter_idx: int
     word_scan_dict_filter_idx: int
     audio_volume: float
+    audio_device_desc: str
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -179,6 +180,7 @@ def default_app_settings() -> AppSettings:
         dict_filter_idx = 0,
         word_scan_dict_filter_idx = 0,
         audio_volume = 1.0,
+        audio_device_desc = '',
     )
 
 class CompletionCache(TypedDict):
@@ -211,7 +213,12 @@ class AppData:
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
 
-        user_db_path = USER_DB_PATH
+        if user_db_path is None:
+            user_db_path = USER_DB_PATH
+        else:
+            user_db_path = user_db_path
+
+        find_or_create_db(user_db_path, DbSchemaName.UserData.value)
 
         self.completion_cache = CompletionCache(
             sutta_titles=[],

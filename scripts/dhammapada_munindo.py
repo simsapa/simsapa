@@ -5,7 +5,7 @@ import sys
 import glob
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -48,13 +48,15 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     lang = "en"
     author = "munindo"
-    uid = f"{ref}/{lang}/{author}"
+    source_uid = author
+    uid = f"{ref}/{lang}/{source_uid}"
 
     logger.info(f"{ref} -- {title}")
 
     content_html = '<div class="dhammapada_munindo">' + html_text + '</div>'
 
     sutta = Am.Sutta(
+        source_uid = source_uid,
         title = title,
         title_pali = '',
         uid = uid,
@@ -66,11 +68,17 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     return sutta
 
-def get_suttas() -> List[Am.Sutta]:
+def get_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
 
     suttas: List[Am.Sutta] = []
 
-    for p in glob.glob(f"{HTML_DIR.joinpath('dhp-*.html')}"):
+    paths = glob.glob(f"{HTML_DIR.joinpath('dhp-*.html')}")
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
+
+    for p in paths:
         p = Path(p)
         if not re.search(r'^dhp-\d+.html', p.name):
             continue
@@ -81,9 +89,10 @@ def get_suttas() -> List[Am.Sutta]:
 
     return suttas
 
-def populate_suttas_from_dhammapada_munindo(appdata_db: Session):
+def populate_suttas_from_dhammapada_munindo(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_dhammapada_munindo() ===")
 
-    suttas = get_suttas()
+    suttas = get_suttas(limit)
 
     try:
         for i in suttas:

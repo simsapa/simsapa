@@ -1253,9 +1253,15 @@ def group_to_sutta(g: Group) -> Am.Sutta:
         created_at = func.now(),
     )
 
-def populate_suttas_from_cst4(appdata_db: Session):
+def populate_suttas_from_cst4(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_cst4() ===")
 
     sutta_groups = get_mula_suttas()
+
+    if limit:
+        n = limit if len(sutta_groups) >= limit else len(sutta_groups)
+        sutta_groups = sutta_groups[0:n]
+
     suttas = list(map(group_to_sutta, sutta_groups))
 
     logger.info(f"Adding CST4 mula, count {len(suttas)} ...")
@@ -1282,6 +1288,10 @@ def populate_suttas_from_cst4(appdata_db: Session):
         exit(1)
 
     suttas = get_other_texts_body()
+
+    if limit:
+        n = limit if len(suttas) >= limit else len(suttas)
+        suttas = suttas[0:n]
 
     logger.info(f"Adding CST4 remaining texts as html <body>, count {len(suttas)} ...")
 

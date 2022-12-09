@@ -139,7 +139,9 @@ def import_stardict_as_new(db_session,
                            paths: StarDictPaths,
                            label: Optional[str] = None,
                            batch_size = 1000,
-                           ignore_synonyms = False):
+                           ignore_synonyms = False,
+                           limit: Optional[int] = None):
+    logger.info("=== import_stardict_as_new() ===")
 
     if ignore_synonyms:
         paths['syn_path'] = None
@@ -148,11 +150,13 @@ def import_stardict_as_new(db_session,
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
     # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
 
-    words: List[DictEntry] = stardict_to_dict_entries(paths)
+    words: List[DictEntry] = stardict_to_dict_entries(paths, limit)
     ifo = parse_ifo(paths)
     title = ifo['bookname']
     if label is None:
         label = title
+
+    logger.info(f"Importing {ifo['bookname']} ...")
 
     # create a dictionary, commit to get its ID
     if schema_name == DbSchemaName.UserData.value:
