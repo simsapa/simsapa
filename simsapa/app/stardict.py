@@ -314,7 +314,7 @@ def parse_dict(paths: StarDictPaths,
             dict_word = i['word']
 
             percent = idx/(total/100)
-            logger.info(f"Parsing {percent:.2f}% {idx}/{total}: {dict_word}")
+            logger.info(f"Parsing {ifo['bookname']} {percent:.2f}% {idx}/{total}: {dict_word}")
 
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])

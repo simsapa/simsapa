@@ -2,6 +2,12 @@
 
 START_TIME=$(date --iso-8601=seconds)
 
+SIMSAPA_DIR="$HOME/.local/share/simsapa"
+ASSETS_DIR="$SIMSAPA_DIR/assets"
+DIST_DIR="$(pwd)/../bootstrap-assets-resources/dist"
+
+RELEASE_DIR="$(pwd)/../releases/$(date --iso-8601=date)-dev"
+
 # Activate poetry venv
 # DIR=$(poetry env list --full-path)
 # source "$DIR/bin/activate"
@@ -11,17 +17,20 @@ START_TIME=$(date --iso-8601=seconds)
 
 echo "=== Clean and Create Folders ==="
 
-mkdir -p ~/.local/share/simsapa/assets/
+mkdir -p "$ASSETS_DIR"
+mkdir -p "$RELEASE_DIR"
 
-rm -r ~/.local/share/simsapa/unzipped_stardict
+d="$SIMSAPA_DIR/unzipped_stardict"
+if [ -e "$d" ]; then rm -r "$d"; fi
 
-rm ~/.local/share/simsapa/*.tar.bz2
+rm "$SIMSAPA_DIR"/*.tar.bz2
 
-rm ../releases/*.tar.bz2
+rm "$RELEASE_DIR"/*.tar.bz2
 
-rm ../bootstrap-assets-resources/dist/*
+rm "$DIST_DIR"/*
 
-./scripts/remove_log.py
+f="$SIMSAPA_DIR/log.txt"
+if [ -e "$f" ]; then rm "$f"; fi
 
 echo "=== Bootstrap Appdata DB ==="
 
@@ -29,17 +38,17 @@ echo "=== Bootstrap Appdata DB ==="
 
 echo "=== Create appdata.tar.bz2 ==="
 
-cd ../bootstrap-assets-resources/dist/
+cd "$DIST_DIR" || exit
 
 tar cjf appdata.tar.bz2 appdata.sqlite3
 
-mv appdata.tar.bz2 ../../releases/
+mv appdata.tar.bz2 "$RELEASE_DIR"
 
-cd -
+cd - || exit
 
 echo "=== Copy Appdata DB to user folder ==="
 
-cp ../bootstrap-assets-resources/dist/appdata.sqlite3 ~/.local/share/simsapa/assets/appdata.sqlite3
+cp "$DIST_DIR"/appdata.sqlite3 "$ASSETS_DIR"/appdata.sqlite3
 
 echo "=== Reindex ==="
 
@@ -47,13 +56,13 @@ echo "=== Reindex ==="
 
 echo "=== Create index.tar.bz2 ==="
 
-cd ~/.local/share/simsapa/assets/
+cd "$ASSETS_DIR" || exit
 
 tar cjf index.tar.bz2 index/
 
-cd -
+cd - || exit
 
-mv ~/.local/share/simsapa/assets/index.tar.bz2 ../releases/
+mv "$ASSETS_DIR"/index.tar.bz2 "$RELEASE_DIR"
 
 echo "=== Bootstrap Sanskrit Texts DB and Import to Appdata ==="
 
@@ -61,17 +70,17 @@ echo "=== Bootstrap Sanskrit Texts DB and Import to Appdata ==="
 
 echo "=== Create sanskrit-texts.tar.bz2 ==="
 
-cd ../bootstrap-assets-resources/dist/
+cd "$DIST_DIR" || exit
 
 tar cjf sanskrit-texts.tar.bz2 sanskrit-texts.sqlite3
 
-mv sanskrit-texts.tar.bz2 ../../releases/
+mv sanskrit-texts.tar.bz2 "$RELEASE_DIR"
 
-cd -
+cd - || exit
 
 echo "=== Copy Appdata DB to user folder ==="
 
-cp ../bootstrap-assets-resources/dist/appdata.sqlite3 ~/.local/share/simsapa/assets/appdata.sqlite3
+cp "$DIST_DIR"/appdata.sqlite3 "$ASSETS_DIR"
 
 echo "=== Reindex ==="
 
@@ -79,23 +88,29 @@ echo "=== Reindex ==="
 
 echo "=== Create sanskrit-appdata.tar.bz2 ==="
 
-cd ~/.local/share/simsapa/assets/
+cd "$ASSETS_DIR" || exit
 
 tar cjf sanskrit-appdata.tar.bz2 appdata.sqlite3
 
-cd -
+cd - || exit
 
-mv ~/.local/share/simsapa/assets/sanskrit-appdata.tar.bz2 ../releases/
+mv "$ASSETS_DIR"/sanskrit-appdata.tar.bz2 "$RELEASE_DIR"
 
 echo "=== Create sanskrit-index.tar.bz2 ==="
 
-cd ~/.local/share/simsapa/assets/
+cd "$ASSETS_DIR" || exit
 
 tar cjf sanskrit-index.tar.bz2 index/
 
-cd -
+cd - || exit
 
-mv ~/.local/share/simsapa/assets/sanskrit-index.tar.bz2 ../releases/
+mv "$ASSETS_DIR"/sanskrit-index.tar.bz2 "$RELEASE_DIR"
+
+echo "=== Copy log.txt ==="
+
+cp "$SIMSAPA_DIR/log.txt" "$RELEASE_DIR"
+
+echo "=== Bootstrap DB finished ==="
 
 END_TIME=$(date --iso-8601=seconds)
 
