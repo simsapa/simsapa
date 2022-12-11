@@ -291,8 +291,9 @@ class CoursesBrowserWindow(AppWindowInterface):
 
     def _handle_tree_clicked(self, val: QModelIndex):
         item: ListItem = self.tree_model.itemFromIndex(val) # type: ignore
-        self.current_item = item
-        self._show_item_content(item)
+        if item is not None:
+            self.current_item = item
+            self._show_item_content(item)
 
 
     def _find_course(self, data: PaliListItem) -> Optional[UChallengeCourse]:
