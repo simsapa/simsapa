@@ -29,8 +29,7 @@ rm "$RELEASE_DIR"/*.tar.bz2
 
 rm "$DIST_DIR"/*
 
-f="$SIMSAPA_DIR/log.txt"
-if [ -e "$f" ]; then rm "$f"; fi
+echo "" > "$SIMSAPA_DIR/log.txt"
 
 echo "=== Bootstrap Appdata DB ==="
 
@@ -109,6 +108,11 @@ mv "$ASSETS_DIR"/sanskrit-index.tar.bz2 "$RELEASE_DIR"
 echo "=== Copy log.txt ==="
 
 cp "$SIMSAPA_DIR/log.txt" "$RELEASE_DIR"
+
+echo "=== Clean up ==="
+
+d="$SIMSAPA_DIR/unzipped_stardict"
+if [ -e "$d" ]; then rm -r "$d"; fi
 
 echo "=== Bootstrap DB finished ==="
 

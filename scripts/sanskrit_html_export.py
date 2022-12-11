@@ -7,6 +7,7 @@ from typing import List, Tuple
 from dotenv import load_dotenv
 import sqlite3
 import multiprocessing
+import psutil
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -87,7 +88,7 @@ def export_word(word_key: str) -> Tuple[str, str]:
 
     driver.find_element(By.ID, 'searchbtn').click()
 
-    wait = ui.WebDriverWait(driver, 10)
+    wait = ui.WebDriverWait(driver, 10) # type: ignore
 
     wait.until(lambda driver: driver.find_element(By.ID, 'CologneBasic'))
 
@@ -145,6 +146,7 @@ def process_word(word_key: str) -> Tuple[str, str]:
         logger.error(f"All attempts failed for {word_key}. Exiting.")
         sys.exit(1)
 
+
 def main():
     if len(sys.argv) == 1:
         word_keys = get_word_keys()
@@ -171,7 +173,13 @@ def main():
         if item[1] != "":
             logger.info(f"{done_count:05d} / {total}: {item[0]} - {item[1]}")
 
-    pool = multiprocessing.Pool(processes=8)
+    n = psutil.cpu_count()-4
+    if n > 0:
+        processes = n
+    else:
+        processes = 1
+
+    pool = multiprocessing.Pool(processes = processes)
 
     results = []
     for w in word_keys:

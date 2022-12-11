@@ -7,6 +7,18 @@ from simsapa.app.helpers import create_app_dirs
 
 create_app_dirs()
 
+s = os.getenv('DISABLE_LOG')
+if s is not None and s.lower() == 'true':
+    DISABLE_LOG = True
+else:
+    DISABLE_LOG = False
+
+s = os.getenv('ENABLE_PRINT_LOG')
+if s is not None and s.lower() == 'true':
+    ENABLE_PRINT_LOG = True
+else:
+    ENABLE_PRINT_LOG = False
+
 def info(msg: Any, start_new = False):
     _write_log(msg, "INFO", start_new)
 
@@ -17,12 +29,14 @@ def error(msg: Any, start_new = False):
     _write_log(msg, "ERROR", start_new)
 
 def _write_log(msg: Any, level: str = "INFO", start_new: bool = False):
+    if DISABLE_LOG:
+        return
+
     msg = str(msg).strip()
     t = datetime.now()
     logline = f"[{t}] {level}: {msg}\n"
 
-    s = os.getenv('ENABLE_PRINT_LOG')
-    if s is not None and s.lower() == 'true':
+    if ENABLE_PRINT_LOG:
         if IS_MAC:
             # Avoid MacOS encoding error
             # UnicodeEncodeError: 'ascii' codec can't encode character '\u0101' in position 169: ordinal not in range(128)
@@ -31,7 +45,6 @@ def _write_log(msg: Any, level: str = "INFO", start_new: bool = False):
             # ensure utf-8 unicode for print
             s = u"%s" % logline.strip()
             print(s)
-
 
     if start_new:
         mode = 'w'

@@ -56,6 +56,7 @@ Flask = "~2.2.2"
 Flask-Cors = "~3.0.10"
 aksharamukha = "~2.0.4"
 markdown = "^3.4.1"
+psutil = "^5.9.4"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -70,8 +71,8 @@ tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 pytest = "~7.2.0"
 pyArango = "~2.0.0"
-# selenium = "^4.1.1"
 html5lib = "^1.1"
+selenium = "^4.7.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -140,6 +141,7 @@ requires = [
 "Flask-Cors         >= 3.0.10,   < 3.1.0",
 "aksharamukha       >= 2.0.4,    < 2.1.0",
 "markdown           >= 3.4.1,    < 3.5.0",
+"psutil             >= 5.9.4,    < 5.10.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

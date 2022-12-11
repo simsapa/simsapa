@@ -10,7 +10,8 @@ Support functions:
 https://github.com/codito/stargaze/blob/master/stargaze.py
 """
 
-import re
+import multiprocessing
+import psutil
 from pathlib import Path
 import datetime
 from typing import List, TypedDict, Optional
@@ -148,6 +149,25 @@ def new_stardict_paths(zip_path: Path):
         syn_path = None,
     )
 
+class DictSegment(TypedDict):
+    bookname: str
+    dict_word: str
+    idx: int
+    data_str: str
+
+
+class ParseResult(TypedDict):
+    segment: DictSegment
+    dict_entry: DictEntry
+
+
+global TOTAL_SEGMENTS
+TOTAL_SEGMENTS = 0
+
+global DONE_COUNT
+DONE_COUNT = 0
+
+
 def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
 
     stardict_paths = new_stardict_paths(zip_path)
@@ -192,6 +212,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
     return stardict_paths
 
 def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
+    logger.info("=== parse_ifo() ===")
     if paths['ifo_path'] is None:
         msg = f"ifo file is None"
         logger.error(msg)
@@ -218,6 +239,7 @@ def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
         return ifo_from_opts(opts)
 
 def stardict_to_dict_entries(paths: StarDictPaths, limit: Optional[int] = None) -> List[DictEntry]:
+    logger.info("=== stardict_to_dict_entries() ===")
 
     idx = parse_idx(paths)
     ifo = parse_ifo(paths)
@@ -228,6 +250,7 @@ def stardict_to_dict_entries(paths: StarDictPaths, limit: Optional[int] = None) 
 
 def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
     """Parse an .idx file."""
+    logger.info("=== parse_idx() ===")
 
     if paths['idx_path'] is None:
         msg = f"idx file is None"
@@ -273,12 +296,66 @@ def parse_bword_links_to_ssp(definition: str) -> str:
 
     return definition
 
+
+def _word_done(res: ParseResult):
+    global TOTAL_SEGMENTS
+    global DONE_COUNT
+    DONE_COUNT += 1
+
+    segment = res['segment']
+
+    percent = DONE_COUNT/(TOTAL_SEGMENTS/100)
+    logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
+
+
+def _parse_word(segment: DictSegment, types: str, syn_entries: Optional[SynEntries]) -> ParseResult:
+    dict_word = segment['dict_word']
+    idx = segment['idx']
+    data_str = segment['data_str']
+
+    definition_plain = ""
+    definition_html = ""
+    # Only accept sametypesequence = m, h
+    if types == "m":
+        # NOTE: it doesn't seem to be necessary to strip the 'm'
+        #
+        # if data_str[0] == "m":
+        #     definition_plain = data_str[1:]
+        # else:
+        #     definition_plain = data_str
+
+        definition_plain = data_str
+
+    if types == "h":
+        definition_html = parse_bword_links_to_ssp(data_str)
+        definition_plain = compactRichText(data_str)
+
+    synonyms = []
+    if syn_entries is not None:
+        for k, v in syn_entries.items():
+            if v[0] == idx:
+                synonyms.append(k)
+
+    dict_entry = DictEntry(
+        word = dict_word,
+        definition_plain = definition_plain,
+        definition_html = definition_html,
+        synonyms = synonyms,
+    )
+
+    return ParseResult(
+        segment = segment,
+        dict_entry = dict_entry,
+    )
+
+
 def parse_dict(paths: StarDictPaths,
                ifo: StarDictIfo,
                idx_entries: List[IdxEntry],
                syn_entries: Optional[SynEntries],
                limit: Optional[int] = None) -> List[DictEntry]:
     """Parse a .dict file."""
+    logger.info("=== parse_dict() ===")
 
     dict_path = paths['dic_path']
 
@@ -291,8 +368,6 @@ def parse_dict(paths: StarDictPaths,
         msg = f"dict file not found: {dict_path}"
         logger.error(msg)
         raise DictError(msg)
-
-    words: List[DictEntry] = []
 
     open_dict = open
     if f"{dict_path}".endswith(".dz"):
@@ -307,50 +382,58 @@ def parse_dict(paths: StarDictPaths,
         n = limit if len(idx_entries) >= limit else len(idx_entries)
         idx_entries = idx_entries[0:n]
 
+    dict_segments: List[DictSegment] = []
+
     with open_dict(dict_path, "rb") as f:
-        total = len(idx_entries)
+        global TOTAL_SEGMENTS
+        global DONE_COUNT
+        TOTAL_SEGMENTS = len(idx_entries)
+        DONE_COUNT = 0
+
+        logger.info(f"Reading segments from {dict_path}")
+
         for idx, i in enumerate(idx_entries):
-
-            dict_word = i['word']
-
-            percent = idx/(total/100)
-            logger.info(f"Parsing {ifo['bookname']} {percent:.2f}% {idx}/{total}: {dict_word}")
-
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")
 
-            definition_plain = ""
-            definition_html = ""
-            # Only accept sametypesequence = m, h
-            if types == "m":
-                # NOTE: it doesn't seem to be necessary to strip the 'm'
-                #
-                # if data_str[0] == "m":
-                #     definition_plain = data_str[1:]
-                # else:
-                #     definition_plain = data_str
+            dict_word = i['word']
 
-                definition_plain = data_str
+            dict_segments.append(
+                DictSegment(
+                    bookname=ifo['bookname'],
+                    dict_word=dict_word,
+                    idx=idx,
+                    data_str=data_str,
+                ))
 
-            if types == "h":
-                definition_html = parse_bword_links_to_ssp(data_str)
-                definition_plain = compactRichText(data_str)
+    results = []
+    dict_entries: List[DictEntry] = []
 
-            synonyms = []
-            if syn_entries is not None:
-                for k, v in syn_entries.items():
-                    if v[0] == idx:
-                        synonyms.append(k)
+    n = psutil.cpu_count()-4
+    if n > 0:
+        processes = n
+    else:
+        processes = 1
 
-            words.append(DictEntry(
-                word = dict_word,
-                definition_plain = definition_plain,
-                definition_html = definition_html,
-                synonyms = synonyms,
-            ))
+    pool = multiprocessing.Pool(processes = processes)
 
-    return words
+    for segment in dict_segments:
+        r = pool.apply_async(
+            _parse_word,
+            (segment, types, syn_entries),
+            callback = _word_done,
+        )
+
+        results.append(r)
+
+    for r in results:
+        d = r.get()
+        dict_entries.append(d['dict_entry'])
+
+    logger.info(f"parse_dict() {ifo['bookname']} finished")
+
+    return dict_entries
 
 def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
     """Parse a .syn file with synonyms.
@@ -372,6 +455,7 @@ def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
     or more items may have the same "synonym_word" with different
     original_word_index.
     """
+    logger.info("=== parse_syn() ===")
 
     if paths['syn_path'] is None:
         # Syn file is optional
