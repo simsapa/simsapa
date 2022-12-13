@@ -1,7 +1,6 @@
 function toggle_variant (event) {
     let el = event.target;
     el.parentNode.querySelectorAll(".variant").forEach((i) => {
-        console.log(i);
         i.classList.toggle("hide");
     })
 }
@@ -9,7 +8,6 @@ function toggle_variant (event) {
 function toggle_comment (event) {
     let el = event.target;
     el.parentNode.querySelectorAll(".comment").forEach((i) => {
-        console.log(i);
         i.classList.toggle("hide");
     })
 }
@@ -53,5 +51,32 @@ document.addEventListener("DOMContentLoaded", function(event) {
     });
     document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_comment);
+    });
+
+    new QWebChannel(qt.webChannelTransport, function (channel) {
+        let arr = document.querySelectorAll("a");
+        arr.forEach((el) => {
+            let href = el.getAttribute('href');
+            if (href !== null && href.startsWith('ssp://')) {
+                el.addEventListener("mouseover", function(i_el) {
+                    coords = i_el.target.getBoundingClientRect();
+
+                    data = {
+                        href: href,
+                        x: coords.x + window.screenX,
+                        y: coords.y + window.screenY,
+                        width: coords.width,
+                        height: coords.height,
+                    };
+
+                    channel.objects.link_hover_helper.link_mouseover(JSON.stringify(data));
+                });
+
+                el.addEventListener("mouseleave", function(i_el) {
+                    coords = i_el.target.getBoundingClientRect();
+                    channel.objects.link_hover_helper.link_mouseleave(href);
+                });
+            }
+        });
     });
 });

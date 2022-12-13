@@ -21,7 +21,7 @@ from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, 
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.find_panel import FindPanel
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchIndexed, SearchResult, dict_word_hit_to_search_result
@@ -61,6 +61,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     show_sutta_by_url = pyqtSignal(QUrl)
     lookup_in_suttas_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -381,9 +383,22 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setCompleter(completer)
 
 
+    def _link_mouseover(self, hover_data: LinkHoverData):
+        self.link_mouseover.emit(hover_data)
+
+
+    def _link_mouseleave(self, href: str):
+        self.link_mouseleave.emit(href)
+
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
-        self.qwe.setPage(ReaderWebEnginePage(self))
+
+        page = ReaderWebEnginePage(self)
+        page.link_hover_helper.mouseover.connect(partial(self._link_mouseover))
+        page.link_hover_helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        self.qwe.setPage(page)
 
         self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.qwe.setHtml(self.queries.render_html_page(body=''))

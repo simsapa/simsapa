@@ -6,7 +6,7 @@ import os
 import os.path
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, TypedDict, Union
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, pyqtSignal, pyqtSlot
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -195,6 +195,7 @@ class AppMessage(TypedDict):
 class AppData:
 
     app_settings: AppSettings
+    screen_size: Optional[QSize] = None
     completion_cache: CompletionCache
     # Keys are db schema, and course group id
     pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()

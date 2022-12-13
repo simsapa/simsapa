@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMe
 
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.html_content import html_page
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
 
 from ..app.db import appdata_models as Am
@@ -101,6 +101,8 @@ class CoursePracticeWindow(AppWindowInterface):
 
     finished = pyqtSignal()
     show_sutta_by_url = pyqtSignal(QUrl)
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
 
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
@@ -440,7 +442,12 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
-        qwe.setPage(ReaderWebEnginePage(self))
+
+        page = ReaderWebEnginePage(self)
+        page.link_hover_helper.mouseover.connect(partial(self._link_mouseover))
+        page.link_hover_helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        qwe.setPage(page)
 
         qwe.setMinimumHeight(500)
         qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -451,6 +458,14 @@ class CoursePracticeWindow(AppWindowInterface):
         qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
         return qwe
+
+
+    def _link_mouseover(self, hover_data: LinkHoverData):
+        self.link_mouseover.emit(hover_data)
+
+
+    def _link_mouseleave(self, href: str):
+        self.link_mouseleave.emit(href)
 
 
     def _show_sutta_by_url(self, url: QUrl):

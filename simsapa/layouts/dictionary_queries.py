@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.db.search import SearchResult, dict_word_to_search_result
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from ..app.types import AppData, Labels, QueryType, UDictWord
@@ -109,6 +109,8 @@ class DictionaryQueries:
 
         if css_extra is not None:
             css_head += css_extra
+
+        js_head += DICTIONARY_JS
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,

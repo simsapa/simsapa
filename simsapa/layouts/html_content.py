@@ -1,9 +1,12 @@
 from typing import Optional
+
+from PyQt6.QtCore import QFile
 from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS, SUTTAS_JS
 from mako.template import Template
 
 open_sutta_links_js_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/open_sutta_links.js')))
 page_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/page.html')))
+
 
 def html_page(content: str,
               api_url: Optional[str] = None,

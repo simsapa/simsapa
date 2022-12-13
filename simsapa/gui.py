@@ -33,7 +33,7 @@ sys.excepthook = excepthook
 create_app_dirs()
 
 def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
-    logger.info("start()", start_new=True)
+    logger.info("gui::start()")
 
     ensure_empty_graphs_cache()
 
@@ -46,7 +46,7 @@ def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = N
         w = DownloadAppdataWindow()
         w.show()
         status = dl_app.exec()
-        logger.info(f"main() Exiting with status {status}.")
+        logger.info(f"gui::start() Exiting with status {status}.")
         sys.exit(status)
 
     app = QApplication(sys.argv)
@@ -64,6 +64,9 @@ def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = N
         hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
+
+    if len(app.screens()) > 0:
+        app_data.screen_size = app.primaryScreen().size()
 
     if app_data.search_indexed.has_empty_index():
         w = CreateSearchIndexWindow()

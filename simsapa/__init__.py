@@ -90,6 +90,12 @@ if b is None:
 else:
     SUTTAS_JS = b.decode("utf-8")
 
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/dictionary.js')))
+if b is None:
+    DICTIONARY_JS = ""
+else:
+    DICTIONARY_JS = b.decode("utf-8")
+
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
     UserData = 'userdata'

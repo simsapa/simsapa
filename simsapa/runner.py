@@ -90,6 +90,8 @@ def index_reindex():
     search_indexed.index_all(app_data.db_session)
 
 def main():
+    logger.info("runner::main()", start_new=True)
+
     if len(sys.argv) == 1:
         gui()
     elif len(sys.argv) == 2:

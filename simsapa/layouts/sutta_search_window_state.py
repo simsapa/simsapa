@@ -4,19 +4,22 @@ from urllib.parse import parse_qs, urlencode
 
 from functools import partial
 from typing import Any, List, Optional
+
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+
 from sqlalchemy.sql.elements import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindPanel
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.preview_window import PreviewWindow
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
@@ -50,6 +53,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     search_mode_dropdown: QComboBox
 
     open_in_study_window_signal = pyqtSignal([str, str])
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
 
     def __init__(self,
                  app_data: AppData,
@@ -324,9 +329,20 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.sutta_tabs_layout.addWidget(self.sutta_tabs)
 
+    def _link_mouseover(self, hover_data: LinkHoverData):
+        self.link_mouseover.emit(hover_data)
+
+    def _link_mouseleave(self, href: str):
+        self.link_mouseleave.emit(href)
+
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
-        qwe.setPage(ReaderWebEnginePage(self))
+
+        page = ReaderWebEnginePage(self)
+        page.link_hover_helper.mouseover.connect(partial(self._link_mouseover))
+        page.link_hover_helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        qwe.setPage(page)
 
         qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 

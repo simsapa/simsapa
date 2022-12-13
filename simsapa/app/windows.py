@@ -17,6 +17,8 @@ from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TI
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaSearchWindowInterface, WindowNameToType, WindowType
+from simsapa.layouts.preview_window import PreviewWindow
+from simsapa.layouts.reader_web import LinkHoverData
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -41,6 +43,7 @@ class AppWindows:
         self._app_data = app_data
         self._hotkeys_manager = hotkeys_manager
         self._windows: List[AppWindowInterface] = []
+        self._preview_window = PreviewWindow(self._app_data)
 
         self.queue_id = 'app_windows'
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -242,6 +245,9 @@ class AppWindows:
 
         view.s.bookmark_created.connect(partial(self._reload_bookmarks))
 
+        view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -313,6 +319,9 @@ class AppWindows:
         view.lookup_in_suttas_signal.connect(partial(_lookup_in_suttas))
         view.open_words_new_signal.connect(partial(self.open_words_new))
 
+        view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -333,6 +342,7 @@ class AppWindows:
         self._windows.append(view)
 
         return view
+
 
     def _toggle_word_scan_popup(self):
         if self.word_scan_popup is None:
@@ -433,6 +443,9 @@ class AppWindows:
             self._show_sutta_by_url_in_search(url)
 
         view.show_sutta_by_url.connect(partial(_show_url))
+
+        view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):
