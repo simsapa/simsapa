@@ -1,13 +1,15 @@
 import re
 from typing import List, Optional, TypedDict
 from binascii import crc32
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
+from urllib.parse import urlencode
+from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
+import bleach
 from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import SearchResult, dict_word_to_search_result
+from simsapa.app.db.search import RE_SUTTA_REF, SearchResult, dict_word_to_search_result
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
@@ -89,6 +91,71 @@ class DictionaryQueries:
 
         return page_html
 
+    def _add_grammar_links(self, html_page: str) -> str:
+        """
+        <tr>
+        <td><b>noun</b></td>
+        <td>nt loc sg</td>
+        <td>of</td>
+        <td>dhammacakkhu</td>
+        </tr>
+        """
+
+        grammar_rows = re.findall(r'(<td>([^>]+)</td>\s*</tr>)', html_page)
+
+        for m in grammar_rows:
+            dict_word = m[1].lower().strip()
+            url = QUrl(f"ssp://{QueryType.words.value}/{dict_word}")
+            link = f'<a href="{url.toString()}">{m[1]}</a>'
+
+            html_page = html_page.replace(m[0], f'<td>{link}</td></tr>')
+
+        return html_page
+
+    def _add_example_links(self, html_page: str) -> str:
+        example_ids: List[str] = re.findall(r'id="(example__[^"]+)"', html_page)
+        if len(example_ids) == 0:
+            return html_page
+
+        soup = BeautifulSoup(html_page, 'html.parser')
+        for idx, div_id in enumerate(example_ids):
+            h = soup.find(id = div_id)
+            if h is None:
+                logger.error(f"Can't find #{div_id}")
+            else:
+                example_content = h.decode_contents() # type: ignore
+
+                # FIXME: DPD dict. exmple text <p> tags are not closed before the sutta <p>.
+                # FIXME: DPD dict. sutta refs format doesn't match.
+                """
+                <p>atthi nu kho bhante kiñci rūpaṃ yaṃ rūpaṃ niccaṃ dhuvaṃ sassataṃ avipariṇāma<b>dhammaṃ</b> sassatisamaṃ tath'eva ṭhassati<p class="sutta">SN 22.97 nakhasikhāsuttaṃ</p><p>gāth'ābhigītaṃ me abhojaneyyaṃ,<br/>sampassataṃ brāhmaṇa n'esa dhammo,<br/>gāth'ābhigītaṃ panudanti buddhā,<br/><b>dhamme</b> satī brāhmaṇa vutti'r'esā.<p class="sutta">SNP 4 kasibhāradvājasuttaṃ<br/>uragavaggo 4</p><p>Can you think of a better example? <a class="link" href="https://docs.google.com/forms/d/e/1FAIpQLSf9boBe7k5tCwq7LdWgBHHGIPVc4ROO5yjVDo1X5LDAxkmGWQ/viewform?usp=pp_url&amp;entry.438735500=dhamma 01&amp;entry.326955045=Example1&amp;entry.1433863141=GoldenDict 2022-11-08" target="_blank">Add it here.</a></p></p></p>
+                """
+
+                linked_content = example_content
+
+                for m in re.findall(r'<p>(.*?)\s*(<p class="sutta">([^>]+)</p>)', example_content, flags = re.DOTALL | re.MULTILINE):
+                    quote = bleach.clean(m[0], tags=[], strip=True)
+                    n = 50 if len(quote) > 50 else len(quote)
+                    quote = quote[0:n]
+
+                    text = m[2].strip()
+                    ref = re.search(RE_SUTTA_REF, text)
+                    if not ref:
+                        continue
+
+                    sutta_uid = f"{ref.group(1)}{ref.group(2)}/pli/cst4".lower()
+
+                    url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
+                    url.setQuery(urlencode({'q': quote}))
+
+                    link = f'<a href="{url.toString()}">{m[2]}</a>'
+
+                    linked_content = re.sub(m[1], f'<p class="sutta">{link}</p>', linked_content)
+
+                html_page = html_page.replace(example_content, linked_content)
+
+        return html_page
+
     def render_html_page(self,
                           body: str,
                           css_head: str = '',
@@ -111,6 +178,11 @@ class DictionaryQueries:
             css_head += css_extra
 
         js_head += DICTIONARY_JS
+
+        if 'id="example__' in body:
+            body = self._add_example_links(body)
+
+        # body = self._add_grammar_links(body)
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,
