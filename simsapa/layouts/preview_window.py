@@ -1,7 +1,7 @@
 from functools import partial
 from urllib.parse import parse_qs
 
-from typing import Optional
+from typing import List, Optional
 from PyQt6.QtCore import QTimer, QUrl, Qt
 from PyQt6.QtGui import QEnterEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
@@ -9,7 +9,8 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
 from simsapa import READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
-from simsapa.app.types import AppData, QExpanding, USutta
+from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
+from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.sutta_queries import SuttaQueries
@@ -27,6 +28,7 @@ class PreviewWindow(QDialog):
         self._mouseover = False
 
         self.sutta_queries = SuttaQueries(self._app_data)
+        self.dict_queries = DictionaryQueries(self._app_data)
 
         self._hide_timer = QTimer()
         self._hide_timer.timeout.connect(partial(self.hide))
@@ -105,19 +107,38 @@ class PreviewWindow(QDialog):
 
         self._hover_data = hover_data
 
-        sutta = self.sutta_queries.get_sutta_by_url(QUrl(hover_data['href']))
+        url = QUrl(hover_data['href'])
 
-        if sutta is None:
+        if url.host() == QueryType.suttas:
+
+            sutta = self.sutta_queries.get_sutta_by_url(url)
+
+            if sutta is None:
+                return
+
+            query = parse_qs(url.query())
+            quote = None
+            if 'q' in query.keys():
+                quote = query['q'][0]
+
+            self._render_sutta(sutta, quote)
+
+        elif url.host() == QueryType.words:
+
+            word_uid = url.path().strip("/")
+
+            words = self.dict_queries.get_words_by_uid(word_uid)
+
+            if len(words) == 0:
+                return
+
+            self._render_words(words)
+
+        else:
+            # It's not a sutta or dictionary word link.
             return
 
-        url = QUrl(hover_data['href'])
-        query = parse_qs(url.query())
-        quote = None
-        if 'q' in query.keys():
-            quote = query['q'][0]
-
         self._move_window_from_hover()
-        self._render_sutta(sutta, quote)
         self.show()
 
 
@@ -153,6 +174,20 @@ class PreviewWindow(QDialog):
             self.move(x, y)
         else:
             self.move(10, 10)
+
+
+    def _render_words(self, words: List[UDictWord]):
+        self.setWindowTitle("Words")
+
+        css_extra = """
+        html { font-size: 18px; }
+        body { padding: 0.5rem; max-width: 100%; }
+        h1 { font-size: 22px; margin-top: 0pt; }
+        """
+
+        html = self.dict_queries.words_to_html_page(words, css_extra)
+
+        self.set_qwe_html(html)
 
 
     def _render_sutta(self, sutta: USutta, highlight_text: Optional[str] = None):

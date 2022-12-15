@@ -849,7 +849,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
-        query = url.path().replace('/', '')
+        query = url.path().strip('/')
         logger.info(f"Show Word: {query}")
         self._set_query(query)
         self._handle_query()

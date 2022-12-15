@@ -25,20 +25,41 @@ class DictionaryQueries:
     def __init__(self, app_data: AppData):
         self._app_data = app_data
 
+    def is_complete_uid(self, uid: str) -> bool:
+        # Check if uid contains a /, i.e. if it specifies the dictionary
+        # (dhammacakkhu/dpd).
+        return ("/" in uid.strip("/"))
+
     def get_words_by_uid(self, uid: str) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        res = self._app_data.db_session \
-            .query(Am.DictWord) \
-            .filter(Am.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
+        if self.is_complete_uid(uid):
 
-        res = self._app_data.db_session \
-            .query(Um.DictWord) \
-            .filter(Um.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
+            res = self._app_data.db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid == uid) \
+                .all()
+            results.extend(res)
+
+            res = self._app_data.db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid == uid) \
+                .all()
+            results.extend(res)
+
+        else:
+
+            res = self._app_data.db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
+
+            res = self._app_data.db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
 
         return results
 
@@ -185,7 +206,9 @@ class DictionaryQueries:
         if 'id="example__' in body:
             body = self._add_example_links(body)
 
-        # body = self._add_grammar_links(body)
+        if 'id="declension__' not in body:
+            # dpd-grammar doesn't have a declension div.
+            body = self._add_grammar_links(body)
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,
