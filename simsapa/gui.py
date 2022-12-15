@@ -119,11 +119,13 @@ def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = N
     # === Create first window ===
 
     ok = False
-    if url and url.startswith(f"ssp://{QueryType.suttas.value}/"):
-        ok = app_windows._show_sutta_by_url_in_search(QUrl(url))
+    if url:
+        open_url = QUrl(url)
+        if open_url.scheme() == 'ssp' and open_url.host() == QueryType.suttas:
+            ok = app_windows._show_sutta_by_url_in_search(open_url)
 
-    elif url and url.startswith(f"ssp://{QueryType.words.value}/"):
-        ok = app_windows._show_words_by_url(QUrl(url))
+        elif open_url.scheme() == 'ssp' and open_url.host() == QueryType.words:
+            ok = app_windows._show_words_by_url(open_url)
 
     if not ok:
         app_windows.open_first_window()

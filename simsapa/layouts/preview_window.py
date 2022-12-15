@@ -1,21 +1,18 @@
 from functools import partial
-import re
 from urllib.parse import parse_qs
 
-from typing import List, Optional
+from typing import Optional
 from PyQt6.QtCore import QTimer, QUrl, Qt
-from PyQt6.QtGui import QCloseEvent, QEnterEvent, QMouseEvent, QScreen
+from PyQt6.QtGui import QEnterEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa.app.db import appdata_models as Am
-from simsapa.app.db import userdata_models as Um
-
 from simsapa import READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
-from simsapa.app.types import AppData, QExpanding, QueryType, USutta
+from simsapa.app.types import AppData, QExpanding, USutta
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa.layouts.sutta_queries import SuttaQueries
 
 
 class PreviewWindow(QDialog):
@@ -29,42 +26,14 @@ class PreviewWindow(QDialog):
         self._link_mouseleave = False
         self._mouseover = False
 
+        self.sutta_queries = SuttaQueries(self._app_data)
+
         self._hide_timer = QTimer()
         self._hide_timer.timeout.connect(partial(self.hide))
         self._hide_timer.setSingleShot(True)
 
         self._ui_setup()
         self._connect_signals()
-
-
-    def _get_sutta_by_url(self, url: QUrl) -> Optional[USutta]:
-        if url.host() != QueryType.suttas:
-            return None
-
-        uid = re.sub(r"^/", "", url.path())
-
-        return self._get_sutta_by_uid(uid)
-
-
-    def _get_sutta_by_uid(self, uid: str) -> Optional[USutta]:
-        results: List[USutta] = []
-
-        res = self._app_data.db_session \
-            .query(Am.Sutta) \
-            .filter(Am.Sutta.uid == uid) \
-            .all()
-        results.extend(res)
-
-        res = self._app_data.db_session \
-            .query(Um.Sutta) \
-            .filter(Um.Sutta.uid == uid) \
-            .all()
-        results.extend(res)
-
-        if len(results) > 0:
-            return results[0]
-        else:
-            return None
 
 
     def _ui_setup(self):
@@ -136,7 +105,7 @@ class PreviewWindow(QDialog):
 
         self._hover_data = hover_data
 
-        sutta = self._get_sutta_by_url(QUrl(hover_data['href']))
+        sutta = self.sutta_queries.get_sutta_by_url(QUrl(hover_data['href']))
 
         if sutta is None:
             return

@@ -18,9 +18,9 @@ from sqlalchemy.sql.elements import and_
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindPanel
-from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
+from simsapa.layouts.sutta_queries import SuttaQueries
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -38,6 +38,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     sutta_tabs_layout: Optional[QVBoxLayout]
     tabs_layout: Optional[QVBoxLayout]
 
+    queries: SuttaQueries
     search_extras: QHBoxLayout
     palibuttons_frame: QFrame
     search_input: QLineEdit
@@ -86,6 +87,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
+
+        self.queries = SuttaQueries(self._app_data)
 
         self.page_len = 20
 
@@ -702,24 +705,52 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._show_sutta_by_uid(uid, quote)
 
-    def _show_sutta_by_uid(self, uid: str, highlight_text: Optional[str] = None):
-        results: List[USutta] = []
+    def _show_sutta_by_quote(self, highlight_text: str):
+        if len(highlight_text) == 0:
+            return
 
-        res = self._app_data.db_session \
-            .query(Am.Sutta) \
-            .filter(Am.Sutta.uid == uid) \
-            .all()
-        results.extend(res)
+        self._set_query(highlight_text)
+        self._start_query_worker(highlight_text)
 
-        res = self._app_data.db_session \
-            .query(Um.Sutta) \
-            .filter(Um.Sutta.uid == uid) \
-            .all()
-        results.extend(res)
+        results = self.queries.get_suttas_by_quote(highlight_text)
 
         if len(results) > 0:
             self._show_sutta(results[0], highlight_text)
             self._add_recent(results[0])
+
+    def _show_sutta_by_partial_uid(self, part_uid: str, highlight_text: Optional[str] = None):
+        res_sutta = self.queries.get_sutta_by_partial_uid(part_uid, highlight_text)
+        if not res_sutta:
+            return
+
+        if highlight_text:
+            self._set_query(highlight_text)
+            self._start_query_worker(highlight_text)
+
+        self._show_sutta(res_sutta, highlight_text)
+        self._add_recent(res_sutta)
+
+    def _show_sutta_by_uid(self, uid: str, highlight_text: Optional[str] = None):
+        if len(uid) == 0 and highlight_text is None:
+            return
+
+        if len(uid) == 0 and highlight_text is not None:
+            self._show_sutta_by_quote(highlight_text)
+            return
+
+        if len(uid) > 0 and not self.queries.is_complete_uid(uid):
+            self._show_sutta_by_partial_uid(uid, highlight_text)
+            return
+
+        if highlight_text:
+            self._set_query(highlight_text)
+            self._start_query_worker(highlight_text)
+
+        sutta = self.queries.get_sutta_by_uid(uid, highlight_text)
+
+        if sutta:
+            self._show_sutta(sutta, highlight_text)
+            self._add_recent(sutta)
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []

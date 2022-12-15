@@ -138,12 +138,15 @@ class DictionaryQueries:
                     n = 50 if len(quote) > 50 else len(quote)
                     quote = quote[0:n]
 
+                    # DPD uses ṃ, but ms and cst4 uses ṁ
+                    quote = quote.replace('ṃ', 'ṁ')
+
                     text = m[2].strip()
                     ref = re.search(RE_SUTTA_REF, text)
                     if not ref:
                         continue
 
-                    sutta_uid = f"{ref.group(1)}{ref.group(2)}/pli/cst4".lower()
+                    sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
 
                     url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
                     url.setQuery(urlencode({'q': quote}))
