@@ -28,6 +28,12 @@ def show_search_info(parent=None):
 
 <p><b>Exact Match:</b> the content is searched for exact matches.</p>
 
+<p>Joining terms with 'AND' creates filtered queries.</p>
+
+<p>kamma vipāka: will match texts which contain the exact expression 'kamma vipāka' (including the space).</p>
+
+<p>kamma AND vipāka: will match texts which contain both 'kamma' and 'vipāka', anywhere in the text (including 'kammavipāka').</p>
+
 <p><b>Title / Headword Match:</b> the title / headword is searched for exact matches.</p>
 
 <h3>Fulltext Match Queries</h3>

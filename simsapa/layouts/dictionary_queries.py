@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import or_
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import RE_SUTTA_REF, SearchResult, dict_word_to_search_result
+from simsapa.app.db.search import RE_SUTTA_REF, SearchResult
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
@@ -118,7 +118,7 @@ class DictionaryQueries:
             return html_page
 
         soup = BeautifulSoup(html_page, 'html.parser')
-        for idx, div_id in enumerate(example_ids):
+        for div_id in example_ids:
             h = soup.find(id = div_id)
             if h is None:
                 logger.error(f"Can't find #{div_id}")
@@ -166,12 +166,12 @@ class DictionaryQueries:
                           js_head: str = '',
                           js_body: str = '') -> str:
         try:
-            with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f:
+            with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f: # type: ignore
                 css = f.read()
                 if self._app_data.api_url is not None:
                     css = css.replace("http://localhost:8000", self._app_data.api_url)
         except Exception as e:
-            logger.error("Can't read dictionary.css")
+            logger.error(f"Can't read dictionary.css: {e}")
             css = ""
 
         css_head = re.sub(r'font-family[^;]+;', '', css_head)

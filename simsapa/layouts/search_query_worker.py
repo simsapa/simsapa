@@ -193,17 +193,35 @@ class SearchQueryWorker(QRunnable):
 
                     res_suttas: List[USutta] = []
 
-                    r = db_session \
-                        .query(Am.Sutta) \
-                        .filter(Am.Sutta.content_html.like(f"%{self.query}%")) \
-                        .all()
-                    res_suttas.extend(r)
+                    if 'AND' in self.query:
 
-                    r = db_session \
-                        .query(Um.Sutta) \
-                        .filter(Um.Sutta.content_html.like(f"%{self.query}%")) \
-                        .all()
-                    res_suttas.extend(r)
+                        and_terms = list(map(lambda x: x.strip(), self.query.split('AND')))
+
+                        q = db_session.query(Am.Sutta)
+                        for i in and_terms:
+                            q = q.filter(Am.Sutta.content_plain.like(f"%{i}%"))
+                        r = q.all()
+                        res_suttas.extend(r)
+
+                        q = db_session.query(Um.Sutta)
+                        for i in and_terms:
+                            q = q.filter(Um.Sutta.content_plain.like(f"%{i}%"))
+                        r = q.all()
+                        res_suttas.extend(r)
+
+                    else:
+
+                        r = db_session \
+                            .query(Am.Sutta) \
+                            .filter(Am.Sutta.content_plain.like(f"%{self.query}%")) \
+                            .all()
+                        res_suttas.extend(r)
+
+                        r = db_session \
+                            .query(Um.Sutta) \
+                            .filter(Um.Sutta.content_plain.like(f"%{self.query}%")) \
+                            .all()
+                        res_suttas.extend(r)
 
                     if self.only_source is not None:
                         res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
@@ -217,17 +235,35 @@ class SearchQueryWorker(QRunnable):
 
                     res: List[UDictWord] = []
 
-                    r = db_session \
-                        .query(Am.DictWord) \
-                        .filter(Am.DictWord.definition_html.like(f"%{self.query}%")) \
-                        .all()
-                    res.extend(r)
+                    if 'AND' in self.query:
 
-                    r = db_session \
-                        .query(Um.DictWord) \
-                        .filter(Um.DictWord.definition_html.like(f"%{self.query}%")) \
-                        .all()
-                    res.extend(r)
+                        and_terms = list(map(lambda x: x.strip(), self.query.split('AND')))
+
+                        q = db_session.query(Am.DictWord)
+                        for i in and_terms:
+                            q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                        r = q.all()
+                        res.extend(r)
+
+                        q = db_session.query(Um.DictWord)
+                        for i in and_terms:
+                            q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                        r = q.all()
+                        res.extend(r)
+
+                    else:
+
+                        r = db_session \
+                            .query(Am.DictWord) \
+                            .filter(Am.DictWord.definition_plain.like(f"%{self.query}%")) \
+                            .all()
+                        res.extend(r)
+
+                        r = db_session \
+                            .query(Um.DictWord) \
+                            .filter(Um.DictWord.definition_plain.like(f"%{self.query}%")) \
+                            .all()
+                        res.extend(r)
 
                     if self.only_source is not None:
                         res = list(filter(self._word_only_in_source, res))
