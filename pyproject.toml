@@ -31,12 +31,7 @@ pandas = "~1"
 openpyxl = "~3.0.10"
 semver = "~2.13.0"
 pyglossary = "~4"
-# lxml = "4.9.0"
-lxml = [
-  { version = "~4.9.1", platform = "linux"},
-  { version = "4.9.0", platform = "win32" },
-  { version = "~4.9.1", platform = "darwin" },
-]
+lxml = "~4.9.2"
 python-dotenv = "~0.21.0"
 pyperclip = "~1.8.2"
 networkx = "~2"
@@ -122,7 +117,7 @@ requires = [
 "openpyxl           >= 3.0.10,   < 3.1.0",
 "semver             >= 2.13.0,   < 2.14.0",
 "pyglossary         >= 4.0.0,    < 5.0.0",
-"lxml               >= 4.9.1,    < 5.0.0",
+"lxml               >= 4.9.2,    < 5.0.0",
 "python-dotenv      >= 0.21.0,   < 0.22.0",
 "pyperclip          >= 1.8.2,    < 1.9.0",
 "networkx           >= 2.5.0,    < 3.0.0",
