@@ -17,11 +17,12 @@ class SuttaQueries:
         if url.host() != QueryType.suttas:
             return None
 
-        uid = re.sub(r"^/", "", url.path())
         query = parse_qs(url.query())
         quote = None
         if 'q' in query.keys():
             quote = query['q'][0]
+
+        uid = url.path().strip("/")
 
         return self.get_sutta_by_uid(uid, quote)
 
@@ -80,6 +81,14 @@ class SuttaQueries:
         else:
             sutta_ref = part_uid.split("/")[0]
 
+        if re.match(r'^dhp[0-9]+$', sutta_ref) is not None:
+            verse_num = int(sutta_ref.replace('dhp', ''))
+            ch = self.dhp_verse_to_chapter(verse_num)
+            if ch:
+                sutta_ref = ch
+            else:
+                return None
+
         results: List[USutta] = []
 
         res = self._app_data.db_session \
@@ -98,7 +107,8 @@ class SuttaQueries:
             return None
 
         if highlight_text:
-            a = list(filter(lambda x: highlight_text in str(x.content_plain), results))
+            # FIXME bootstrap: commit content_plain as .lower()
+            a = list(filter(lambda x: highlight_text.lower() in str(x.content_plain).lower(), results))
             if len(a) > 0:
                 res_sutta = a[0]
             else:
@@ -128,3 +138,42 @@ class SuttaQueries:
         results.extend(res)
 
         return results
+
+    def dhp_verse_to_chapter(self, verse_num: int) -> Optional[str]:
+        chapters = [
+            [1, 20],
+            [21, 32],
+            [33, 43],
+            [44, 59],
+            [44, 59],
+            [60, 75],
+            [60, 75],
+            [76, 89],
+            [100, 115],
+            [116, 128],
+            [129, 145],
+            [146, 156],
+            [157, 166],
+            [167, 178],
+            [179, 196],
+            [197, 208],
+            [209, 220],
+            [221, 234],
+            [235, 255],
+            [256, 272],
+            [273, 289],
+            [290, 305],
+            [306, 319],
+            [320, 333],
+            [334, 359],
+            [360, 382],
+            [383, 423],
+        ]
+
+        for lim in chapters:
+            a = lim[0]
+            b = lim[1]
+            if verse_num >= a and verse_num <= b:
+                return f"dhp{a}-{b}"
+
+        return None

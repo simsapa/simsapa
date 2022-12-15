@@ -155,8 +155,14 @@ class DictionaryQueries:
                 linked_content = example_content
 
                 for m in re.findall(r'<p>(.*?)\s*(<p class="sutta">([^>]+)</p>)', example_content, flags = re.DOTALL | re.MULTILINE):
-                    quote = bleach.clean(m[0], tags=[], strip=True)
-                    n = 50 if len(quote) > 50 else len(quote)
+                    # Replace linebreaks with space, otherwise punctuation gets joined with the next line.
+                    s = m[0]
+                    s = s.replace("<br>", " ")
+                    s = s.replace("<br/>", " ")
+
+                    # Convert to plain text.
+                    quote = bleach.clean(s, tags=[], strip=True)
+                    n = 30 if len(quote) > 30 else len(quote)
                     quote = quote[0:n]
 
                     # DPD uses ṃ, but ms and cst4 uses ṁ
