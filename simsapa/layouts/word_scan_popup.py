@@ -307,7 +307,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._set_qwe_html(page_html)
 
-    def _show_word_by_bword_url(self, url: QUrl):
+    def _show_word_by_url(self, url: QUrl):
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
         query = url.path().replace('/', '')

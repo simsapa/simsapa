@@ -59,6 +59,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     rightside_tabs: QTabWidget
 
     show_sutta_by_url = pyqtSignal(QUrl)
+    show_words_by_url = pyqtSignal(QUrl)
     lookup_in_suttas_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
     link_mouseover = pyqtSignal(dict)
@@ -812,6 +813,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.show_words_by_url.emit(url)
+
     def _show_sutta_by_url(self, url: QUrl):
         if url.host() != QueryType.suttas:
             return
@@ -837,7 +844,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._app_data.sutta_to_open = results[0]
             self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
-    def _show_word_by_bword_url(self, url: QUrl):
+    def _show_word_by_url(self, url: QUrl):
+        # ssp://words/dhammacakkhu
+        # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
         query = url.path().replace('/', '')

@@ -85,26 +85,38 @@ class ReaderWebEnginePage(QWebEnginePage):
                     logger.error("Can't open %s : %s" % (url, e))
 
             # ssp://suttas/ud3.10/en/sujato?q=text
-            elif url.scheme() == 'ssp' and url.host() == QueryType.suttas:
+            # ssp://words/dhammacakkhu
+            elif url.scheme() == 'ssp':
 
                 if self._parent_window is None:
                     return
 
-                if hasattr(self._parent_window, '_show_sutta_by_url'):
-                    self._parent_window._show_sutta_by_url(url)
+                if url.host() == QueryType.suttas:
+
+                    if hasattr(self._parent_window, '_show_sutta_by_url'):
+                        self._parent_window._show_sutta_by_url(url)
+
+                elif url.host() == QueryType.words:
+
+                    if hasattr(self._parent_window, '_show_words_by_url'):
+                        self._parent_window._show_words_by_url(url)
+
+                else:
+                    logger.info("Unrecognized host: %s" % url)
+                    return False
 
             elif url.scheme() == 'bword':
 
                 if self._parent_window is not None and \
-                   hasattr(self._parent_window, '_show_word_by_bword_url'):
+                   hasattr(self._parent_window, '_show_word_by_url'):
 
-                    self._parent_window._show_word_by_bword_url(url)
+                    self._parent_window._show_word_by_url(url)
 
                 else:
                     logger.warn("Can't handle: %s" % url)
 
             else:
-                logger.info("Unrecognized sheme: %s" % url)
+                logger.info("Unrecognized scheme: %s" % url)
 
             return False
 

@@ -110,8 +110,18 @@ class AppWindows:
         if url.host() != QueryType.words:
             return False
 
+        view = None
+        for w in self._windows:
+            if isinstance(w, DictionarySearchWindow) and w.isVisible():
+                view = w
+                break
+
         query = re.sub(r"^/", "", url.path())
-        self._new_dictionary_search_window(query)
+
+        if view is None:
+            self._new_dictionary_search_window(query)
+        else:
+            view._show_word_by_url(url)
 
         return True
 
@@ -311,10 +321,14 @@ class AppWindows:
                             data = query)
             self._lookup_clipboard_in_suttas(msg)
 
-        def _show_url(url: QUrl):
+        def _show_sutta_url(url: QUrl):
             self._show_sutta_by_url_in_search(url)
 
-        view.show_sutta_by_url.connect(partial(_show_url))
+        def _show_words_url(url: QUrl):
+            self._show_words_by_url(url)
+
+        view.show_sutta_by_url.connect(partial(_show_sutta_url))
+        view.show_words_by_url.connect(partial(_show_words_url))
 
         view.lookup_in_suttas_signal.connect(partial(_lookup_in_suttas))
         view.open_words_new_signal.connect(partial(self.open_words_new))
