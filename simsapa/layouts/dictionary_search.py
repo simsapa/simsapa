@@ -5,8 +5,6 @@ from typing import Any, List, Optional
 from pathlib import Path
 import json
 import queue
-import re
-from urllib.parse import parse_qs
 
 from PyQt6 import QtCore, QtGui
 from PyQt6 import QtWidgets

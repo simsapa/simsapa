@@ -16,6 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
 
 load_dotenv()
 
@@ -53,16 +54,17 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     logger.info(f"{ref} -- {title}")
 
-    content_html = '<div class="dhammapada_munindo">' + html_text + '</div>'
+    content_html = '<div class="dhammapada_munindo">' + consistent_nasal_m(html_text) + '</div>'
 
     sutta = Am.Sutta(
         source_uid = source_uid,
-        title = title,
+        title = consistent_nasal_m(title),
         title_pali = '',
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
         language = lang,
         content_html = content_html,
+        content_plain = compact_rich_text(content_html),
         created_at = func.now(),
     )
 
@@ -97,13 +99,13 @@ def populate_suttas_from_dhammapada_munindo(appdata_db: Session, limit: Optional
     try:
         for i in suttas:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
 
 def main():
-    logger.info(f"Parsing suttas from {HTML_DIR}", start_new=True)
+    logger.info(f"Parsing suttas from {HTML_DIR}")
 
     suttas = get_suttas()
 

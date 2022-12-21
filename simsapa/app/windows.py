@@ -19,6 +19,7 @@ from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaSearchWindowInterface, WindowNameToType, WindowType
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import LinkHoverData
+from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -131,15 +132,26 @@ class AppWindows:
 
         uid = re.sub(r"^/", "", url.path())
         query = parse_qs(url.query())
+
         quote = None
         if 'q' in query.keys():
             quote = query['q'][0]
 
-        self._show_sutta_by_uid_in_search(uid, quote)
+        quote_scope = QuoteScope.Sutta
+        if 'quote_scope' in query.keys():
+            sc = query['quote_scope'][0]
+            if sc in QuoteScopeValues.keys():
+                quote_scope = QuoteScopeValues[sc]
+
+        self._show_sutta_by_uid_in_search(uid, quote, quote_scope)
 
         return True
 
-    def _show_sutta_by_uid_in_search(self, uid: str, highlight_text: Optional[str] = None):
+    def _show_sutta_by_uid_in_search(self,
+                                     uid: str,
+                                     highlight_text: Optional[str] = None,
+                                     quote_scope = QuoteScope.Sutta):
+
         view = None
         for w in self._windows:
             if isinstance(w, SuttaSearchWindow) and w.isVisible():
@@ -149,7 +161,7 @@ class AppWindows:
         if view is None:
             view = self._new_sutta_search_window()
 
-        view.s._show_sutta_by_uid(uid, highlight_text)
+        view.s._show_sutta_by_uid(uid, highlight_text, quote_scope)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None

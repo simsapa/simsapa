@@ -64,7 +64,7 @@ def populate_links(appdata_db: Session):
     try:
         for i in links:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -102,7 +102,7 @@ def _connect_to_db() -> Session:
     return db_session
 
 def main():
-    logger.info(f"Creating links", start_new=True)
+    logger.info(f"Creating links")
 
     appdata_db = _connect_to_db()
     links = get_links(appdata_db)
@@ -112,7 +112,7 @@ def main():
     try:
         for i in links:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)

@@ -32,7 +32,7 @@ DEST_HTML_DIR.mkdir()
 
 
 def main():
-    logger.info("Convert CST4 from Devanagari to Roman (ISO Pali)", start_new=True)
+    logger.info("Convert CST4 from Devanagari to Roman (ISO Pali)")
 
     xslt = etree.parse(SRC_XML_DIR.joinpath('tipitaka-deva.xsl'))
     transform = etree.XSLT(xslt)

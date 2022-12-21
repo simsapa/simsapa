@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import sys
 import re
 from typing import Optional
@@ -11,6 +9,7 @@ from sqlalchemy.orm.session import Session
 
 from simsapa.app.db_helpers import find_or_create_db
 from simsapa import DbSchemaName, logger
+
 
 def get_appdata_db(db_path: Path, remove_if_exists: bool) -> Session:
     # remove previously generated db
@@ -84,6 +83,7 @@ DHP_CHAPTERS_TO_RANGE = {
     25: (360, 382),
     26: (383, 423),
 }
+
 
 def dhp_chapter_ref_for_verse_num(num: int) -> Optional[str]:
     for v in DHP_CHAPTERS_TO_RANGE.values():

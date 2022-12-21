@@ -16,6 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
 from simsapa.app.types import QueryType
 
 load_dotenv()
@@ -36,6 +37,7 @@ def ref_notation_convert(ref: str) -> str:
     ref = ref.replace('.html', '').lower()
     ref = ref.replace('stnp', 'snp')
     ref = re.sub(r'ud(\d)', r'uda\1', ref)
+    ref = re.sub(r'khp(\d)', r'kp\1', ref)
 
     # remove leading zeros, dn02
     ref = re.sub(r'([a-z])0+', r'\1', ref)
@@ -124,6 +126,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     title = m[0].strip()
     title = title.replace('&nbsp;', '')
     title = title.replace('&amp;', 'and')
+    title = consistent_nasal_m(title)
 
     if '/Ud/' in f"{p}":
         # 2 Appāyuka Sutta | Short-lived
@@ -134,7 +137,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     if len(m) == 0:
         title_pali = ''
     else:
-        title_pali = m[0]
+        title_pali = consistent_nasal_m(m[0])
 
     ref = re.sub(r'([^0-9])0*', r'\1', p.stem).lower()
 
@@ -146,15 +149,17 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     logger.info(f"{ref} -- {title} -- {title_pali}")
 
-    content_html = '<div class="dhammatalks_org">' + content_html + '</div>'
+    content_html = '<div class="dhammatalks_org">' + consistent_nasal_m(content_html) + '</div>'
 
     sutta = Am.Sutta(
+        source_uid = author,
         title = title,
         title_pali = title_pali,
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
         language = lang,
         content_html = content_html,
+        content_plain = compact_rich_text(content_html),
         created_at = func.now(),
     )
 
@@ -194,13 +199,13 @@ def populate_suttas_from_dhammatalks_org(appdata_db: Session, limit: Optional[in
     try:
         for i in suttas:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
 
 def main():
-    logger.info("Extract suttas from dhammatalks.org mirror", start_new=True)
+    logger.info("Extract suttas from dhammatalks.org mirror")
 
     suttas = get_suttas()
 

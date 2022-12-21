@@ -18,7 +18,7 @@ from sqlalchemy import or_
 
 from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.helpers import compactRichText
+from simsapa.app.helpers import compact_rich_text
 from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -219,7 +219,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         self._results = self._results[0:100]
 
         def _compact_snippet(x: SearchResult) -> SearchResult:
-            x['snippet'] = compactRichText(x['snippet'])
+            x['snippet'] = compact_rich_text(x['snippet'])
             return x
 
         self._results = list(map(_compact_snippet, self._results))
@@ -304,7 +304,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         def to_search_result(x: UDictWord):
             snippet = ''
             if x.definition_html:
-                snippet = compactRichText(str(x.definition_html))
+                snippet = compact_rich_text(str(x.definition_html))
                 snippet = snippet[0:400]
             elif x.definition_plain:
                 snippet = x.definition_plain[0:400].strip()

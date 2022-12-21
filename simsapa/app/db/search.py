@@ -13,7 +13,7 @@ from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import compactPlainText, compactRichText
+from simsapa.app.helpers import compact_rich_text, compact_plain_text
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa import INDEX_DIR
@@ -24,7 +24,7 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|khp|snp|thag|thig|ud|uda|dhp) *([\d\.]+)', re.IGNORECASE)
+RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|kp|khp|snp|thag|thig|ud|uda|dhp) *([\d\.]+)', re.IGNORECASE)
 
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)
@@ -44,6 +44,7 @@ class DictWordsIndexSchema(SchemaClass):
     db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
+    source_uid = ID(stored = True)
     word = TEXT(stored = True, analyzer = folding_analyzer)
     synonyms = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
@@ -61,6 +62,7 @@ class SearchResult(TypedDict):
     # database table name (e.g. suttas or dict_words)
     table_name: str
     uid: Optional[str]
+    source_uid: Optional[str]
     title: str
     ref: Optional[str]
     author: Optional[str]
@@ -75,6 +77,7 @@ def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'suttas',
         uid = x['uid'],
+        source_uid = x['source_uid'],
         title = x['title'] if 'title' in x.keys() else '',
         ref = x['ref'] if 'ref' in x.keys() else '',
         author = None,
@@ -88,6 +91,7 @@ def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
         schema_name = x.metadata.schema,
         table_name = 'suttas',
         uid = str(x.uid),
+        source_uid = str(x.source_uid),
         title = str(x.title) if x.title else '',
         ref = str(x.sutta_ref) if x.sutta_ref else '',
         author = None,
@@ -101,6 +105,7 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'dict_words',
         uid = x['uid'],
+        source_uid = x['source_uid'],
         title = x['word'] if 'word' in x.keys() else '',
         ref = None,
         author = None,
@@ -114,6 +119,7 @@ def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
         schema_name = x.metadata.schema,
         table_name = 'dict_words',
         uid = str(x.uid),
+        source_uid = str(x.source_uid),
         title = str(x.word),
         ref = None,
         author = None,
@@ -228,12 +234,13 @@ class SearchQuery:
                   only_source: Optional[str] = None):
         logger.info("SearchQuery::new_query()")
 
-        # Replace user input sutta refs such as 'SN 56.11' with query language
-        matches = re.finditer(RE_SUTTA_REF, query)
-        for m in matches:
-            nikaya = m.group(1).lower()
-            number = m.group(2)
-            query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
+        if 'uid:' not in query:
+            # Replace user input sutta refs such as 'SN 56.11' with query language
+            matches = re.finditer(RE_SUTTA_REF, query)
+            for m in matches:
+                nikaya = m.group(1).lower()
+                number = m.group(2)
+                query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
 
         self.all_results = self._search_field(field_name = 'content', query = query)
 
@@ -251,15 +258,19 @@ class SearchQuery:
 
         if only_lang == "Language":
             only_lang = None
+        elif only_lang:
+            only_lang = only_lang.lower()
 
-        if only_source == "Source":
+        if only_source == "Source" or only_source == "Dictionaries":
             only_source = None
+        elif only_source:
+            only_source = only_source.lower()
 
         if only_lang is not None:
-            self.filtered = list(filter(lambda x: x['language'] == only_lang, self.filtered))
+            self.filtered = list(filter(lambda x: x['language'].lower() == only_lang, self.filtered))
 
         if only_source is not None:
-            self.filtered = list(filter(lambda x: x['source_uid'] == only_source, self.filtered))
+            self.filtered = list(filter(lambda x: x['source_uid'].lower() == only_source, self.filtered))
 
         if disabled_labels is not None:
             self.filtered = list(filter(_not_in_disabled, self.filtered))
@@ -317,8 +328,8 @@ class SearchIndexed:
             self.index_dict_words(DbSchemaName.UserData.value, words)
 
     def open_all(self):
-        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
-        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema)
+        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema) # type: ignore
+        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema) # type: ignore
 
     def clear_all(self):
         w = self.suttas_index.writer()
@@ -376,16 +387,14 @@ class SearchIndexed:
                     for x in h:
                         x.decompose()
 
-                    content = compactRichText(str(soup))
+                    content = compact_rich_text(str(soup))
 
                 elif i.content_plain is not None:
-                    content = compactPlainText(str(i.content_plain))
+                    content = compact_plain_text(str(i.content_plain))
 
                 else:
                     logger.warn(f"Skipping, no content in {i.uid}")
                     continue
-
-                logger.info(f"len(content) = {len(content)}")
 
                 language = ""
                 if i.language is not None:
@@ -415,7 +424,7 @@ class SearchIndexed:
                 # Db fields can be None
                 c = list(filter(lambda x: len(str(x)) > 0, [str(sutta_ref), str(title), str(title_pali)]))
                 pre = " ".join(c)
-                logger.info(f"pre: {pre}")
+                # logger.info(f"pre: {pre}")
 
                 if len(pre) > 0:
                     content = f"{pre} {content}"
@@ -434,7 +443,7 @@ class SearchIndexed:
                     ref = sutta_ref,
                 )
 
-                logger.info(f"updated: {i.uid}")
+                # logger.info(f"updated: {i.uid}")
 
             writer.commit()
 
@@ -457,10 +466,10 @@ class SearchIndexed:
 
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    content = compactRichText(str(i.definition_html))
+                    content = compact_rich_text(str(i.definition_html))
 
                 elif i.definition_plain is not None:
-                    content = compactPlainText(str(i.definition_plain))
+                    content = compact_plain_text(str(i.definition_plain))
 
                 else:
                     logger.warn(f"Skipping, no content in {i.word}")
@@ -478,6 +487,7 @@ class SearchIndexed:
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
+                    source_uid = i.source_uid,
                     word = i.word,
                     synonyms = i.synonyms,
                     content = content,

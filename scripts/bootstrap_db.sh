@@ -29,6 +29,15 @@ rm "$RELEASE_DIR"/*.tar.bz2
 
 rm "$DIST_DIR"/*
 
+dotenv="SIMSAPA_DIR=/home/yume/.local/share/simsapa
+BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources
+USE_TEST_DATA=false
+DISABLE_LOG=false
+ENABLE_PRINT_LOG=true
+ENABLE_WIP_FEATURES=false"
+
+echo "$dotenv" > .env
+
 echo "" > "$SIMSAPA_DIR/log.txt"
 
 echo "=== Bootstrap Appdata DB ==="

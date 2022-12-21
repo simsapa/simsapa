@@ -48,8 +48,8 @@ class SearchQueryWorker(QRunnable):
         self.query = query
         self.query_started = query_started
         self.disabled_labels = disabled_labels
-        self.only_lang = only_lang
-        self.only_source = only_source
+        self.only_lang = None if only_lang is None else only_lang.lower()
+        self.only_source = None if only_source is None else only_source.lower()
         self._all_results = []
         self._highlighted_result_pages = dict()
 

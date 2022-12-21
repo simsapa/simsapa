@@ -3,7 +3,6 @@ from typing import List, Optional, TypedDict
 from binascii import crc32
 from urllib.parse import urlencode
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
-import bleach
 from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
@@ -11,6 +10,8 @@ from sqlalchemy import or_
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.db.search import RE_SUTTA_REF, SearchResult
 from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.helpers import strip_html
+from simsapa.layouts.sutta_queries import QuoteScope
 from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -154,16 +155,25 @@ class DictionaryQueries:
 
                 linked_content = example_content
 
-                for m in re.findall(r'<p>(.*?)\s*(<p class="sutta">([^>]+)</p>)', example_content, flags = re.DOTALL | re.MULTILINE):
+                for m in re.findall(r'<p>(.*?)\s*(<p class="sutta">(.*?)</p>)', example_content, flags = re.DOTALL | re.MULTILINE):
                     # Replace linebreaks with space, otherwise punctuation gets joined with the next line.
                     s = m[0]
                     s = s.replace("<br>", " ")
                     s = s.replace("<br/>", " ")
 
                     # Convert to plain text.
-                    quote = bleach.clean(s, tags=[], strip=True)
-                    n = 30 if len(quote) > 30 else len(quote)
-                    quote = quote[0:n]
+                    quote = strip_html(s)
+
+                    # End the quote on a word boundary.
+                    if len(quote) > 100:
+                        words = quote.split(" ")
+                        q = ""
+                        for i in words:
+                            q += i + " "
+                            if len(q) > 100:
+                                break
+
+                        quote = q.strip()
 
                     # DPD uses ṃ, but ms and cst4 uses ṁ
                     quote = quote.replace('ṃ', 'ṁ')
@@ -176,11 +186,12 @@ class DictionaryQueries:
                     sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
 
                     url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
-                    url.setQuery(urlencode({'q': quote}))
+                    url.setQuery(urlencode({'q': quote, 'quote_scope': QuoteScope.Nikaya.value}))
 
                     link = f'<a href="{url.toString()}">{m[2]}</a>'
 
-                    linked_content = re.sub(m[1], f'<p class="sutta">{link}</p>', linked_content)
+                    # count=1 so that two links to the same sutta doesn't get overwritten by the first
+                    linked_content = re.sub(m[1], f'<p class="sutta">{link}</p>', linked_content, count=1)
 
                 html_page = html_page.replace(example_content, linked_content)
 
@@ -336,10 +347,9 @@ class ExactQueryWorker(QRunnable):
     @pyqtSlot()
     def run(self):
         logger.info("ExactQueryWorker::run()")
+        res: List[UDictWord] = []
         try:
             _, _, db_session = get_db_engine_connection_session()
-
-            res: List[UDictWord] = []
 
             r = db_session \
                 .query(Am.DictWord) \
@@ -359,6 +369,12 @@ class ExactQueryWorker(QRunnable):
                 .all()
             res.extend(r)
 
+            db_session.close()
+
+        except Exception as e:
+            logger.error(f"DB query failed: {e}")
+
+        try:
             def _only_in_source(x: UDictWord):
                 if self.only_source is not None:
                     return str(x.uid).endswith(f'/{self.only_source.lower()}')
@@ -402,8 +418,6 @@ class ExactQueryWorker(QRunnable):
 
             a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
             userdata_ids = list(map(lambda x: x.id, a))
-
-            db_session.close()
 
             ret = ExactQueryResult(
                 appdata_ids = appdata_ids,

@@ -11,7 +11,6 @@ https://github.com/codito/stargaze/blob/master/stargaze.py
 """
 
 import multiprocessing
-import psutil
 from pathlib import Path
 import datetime
 from typing import List, TypedDict, Optional
@@ -19,10 +18,11 @@ import shutil
 from zipfile import ZipFile
 import struct
 import idzip
+import re
 
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
-from simsapa.app.helpers import compactRichText
+from simsapa.app.helpers import compact_rich_text, consistent_nasal_m
 from simsapa.app.types import QueryType
 
 class DictError(Exception):
@@ -174,7 +174,13 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
     unzipped_dir = stardict_paths['unzipped_dir']
 
     # Find the .ifo, .idx, .dic, .syn
-    hits = {'*.ifo': [], '*.idx': [], '*.dic*': [], '*.syn*': []}
+    pat = {
+        'ifo_path': r'\.ifo$',
+        'idx_path': r'\.idx$',
+        'dic_path': r'(\.dic|\.dict)(\.dz)?$',
+        'syn_path': r'\.syn(\.dz)?$',
+    }
+
     try:
         # delete and re-create to make sure it's an empty directory
         if unzipped_dir.exists():
@@ -187,27 +193,28 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
         # NOTE: The zip file may or may not have a top-level folder. A
         # dictionary may be compressed as '*.dict.dz'.
 
-        for ext in hits.keys():
-            a = list(unzipped_dir.glob(f"**/{ext}"))
-            if len(a) == 0:
+        for name, pat_name in pat.items():
+
+            file_path = None
+            for p in list(unzipped_dir.glob(f"**/*")):
+                if re.search(pat_name, str(p)) is not None:
+                    file_path = p
+                    break
+
+            stardict_paths[name] = file_path
+
+            if file_path is None:
                 # .syn is optional
-                if ext == '*.syn*':
-                    hits[ext] = [None]
+                if name == 'syn_path':
+                    stardict_paths[name] = None
                 else:
-                    msg = f"ERROR: Can't find this type of file in the .zip: {ext}"
+                    msg = f"ERROR: Can't find this type of file in the .zip: {name}"
                     logger.error(msg)
                     raise DictError(msg)
-            else:
-                hits[ext] = [a[0]]
 
     except Exception as e:
         logger.error(e)
         raise e
-
-    stardict_paths['ifo_path'] = hits['*.ifo'][0]
-    stardict_paths['idx_path'] = hits['*.idx'][0]
-    stardict_paths['dic_path'] = hits['*.dic*'][0]
-    stardict_paths['syn_path'] = hits['*.syn*'][0]
 
     return stardict_paths
 
@@ -308,10 +315,22 @@ def _word_done(res: ParseResult):
     logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
 
 
+def _add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
+    if syn_entries is None:
+        return []
+
+    synonyms = []
+    for k, v in syn_entries.items():
+        if v[0] == idx:
+            synonyms.append(consistent_nasal_m(k))
+
+    return synonyms
+
+
 def _parse_word(segment: DictSegment, types: str, syn_entries: Optional[SynEntries]) -> ParseResult:
-    dict_word = segment['dict_word']
+    dict_word = consistent_nasal_m(segment['dict_word'])
     idx = segment['idx']
-    data_str = segment['data_str']
+    data_str = consistent_nasal_m(segment['data_str'])
 
     definition_plain = ""
     definition_html = ""
@@ -326,15 +345,19 @@ def _parse_word(segment: DictSegment, types: str, syn_entries: Optional[SynEntri
 
         definition_plain = data_str
 
-    if types == "h":
+    elif types == "h":
         definition_html = parse_bword_links_to_ssp(data_str)
-        definition_plain = compactRichText(data_str)
+        definition_plain = compact_rich_text(data_str)
 
+    else:
+        logger.warn(f"Entry type {types} is not handled, definition will be empty for {dict_word}")
+
+    if definition_plain == "" and definition_html == "":
+        logger.warn(f"Definition type {types} is empty: {dict_word}")
+
+    # FIXME very slow for DPD's long synonym lists.
+    # synonyms = _add_synonyms(syn_entries, idx)
     synonyms = []
-    if syn_entries is not None:
-        for k, v in syn_entries.items():
-            if v[0] == idx:
-                synonyms.append(k)
 
     dict_entry = DictEntry(
         word = dict_word,
@@ -382,20 +405,23 @@ def parse_dict(paths: StarDictPaths,
         n = limit if len(idx_entries) >= limit else len(idx_entries)
         idx_entries = idx_entries[0:n]
 
+    global TOTAL_SEGMENTS
+    global DONE_COUNT
+    TOTAL_SEGMENTS = len(idx_entries)
+    DONE_COUNT = 0
+
     dict_segments: List[DictSegment] = []
 
     with open_dict(dict_path, "rb") as f:
-        global TOTAL_SEGMENTS
-        global DONE_COUNT
-        TOTAL_SEGMENTS = len(idx_entries)
-        DONE_COUNT = 0
-
         logger.info(f"Reading segments from {dict_path}")
 
         for idx, i in enumerate(idx_entries):
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")
+
+            if len(data_str) == 0:
+                logger.warn(f"data_str empty: {i}")
 
             dict_word = i['word']
 
@@ -410,13 +436,15 @@ def parse_dict(paths: StarDictPaths,
     results = []
     dict_entries: List[DictEntry] = []
 
-    n = psutil.cpu_count()-4
-    if n > 0:
-        processes = n
-    else:
-        processes = 1
+    # NOTE: More than 4 threads don't improve performance.
+    #
+    # n = psutil.cpu_count()-4
+    # if n > 0:
+    #     processes = n
+    # else:
+    #     processes = 1
 
-    pool = multiprocessing.Pool(processes = processes)
+    pool = multiprocessing.Pool(processes = 4)
 
     for segment in dict_segments:
         r = pool.apply_async(
@@ -430,6 +458,8 @@ def parse_dict(paths: StarDictPaths,
     for r in results:
         d = r.get()
         dict_entries.append(d['dict_entry'])
+
+    pool.close()
 
     logger.info(f"parse_dict() {ifo['bookname']} finished")
 

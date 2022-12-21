@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
 from simsapa import logger
-from simsapa.app.helpers import gretil_header_to_footer
+from simsapa.app.helpers import compact_rich_text, gretil_header_to_footer
 from simsapa.app.db import appdata_models as Am
 
 import helpers
@@ -93,12 +93,14 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
         content_html = '<div class="gretil lang-skr">' + main_text + '</div>'
 
         sutta = Am.Sutta(
+            source_uid = author,
             title = title,
             title_pali = "",
             uid = uid,
             sutta_ref = "",
             language = lang,
             content_html = content_html,
+            content_plain = compact_rich_text(content_html),
             created_at = func.now(),
         )
 
@@ -115,7 +117,7 @@ def populate_sanskrit_from_gretil(db_session: Session, limit: Optional[int] = No
     try:
         for i in suttas:
             db_session.add(i)
-            db_session.commit()
+        db_session.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -133,7 +135,7 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
             i.id = None
 
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(f"Import problem: {e}")
         exit(1)

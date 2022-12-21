@@ -161,7 +161,7 @@ def main():
     global total
     total = len(word_keys)
 
-    logger.info(f"Total words: {total}", start_new = True)
+    logger.info(f"Total words: {total}")
 
     global done_count
     done_count = 0
@@ -173,13 +173,15 @@ def main():
         if item[1] != "":
             logger.info(f"{done_count:05d} / {total}: {item[0]} - {item[1]}")
 
-    n = psutil.cpu_count()-4
-    if n > 0:
-        processes = n
-    else:
-        processes = 1
+    # NOTE: More than 4 threads don't improve performance.
+    #
+    # n = psutil.cpu_count()-4
+    # if n > 0:
+    #     processes = n
+    # else:
+    #     processes = 1
 
-    pool = multiprocessing.Pool(processes = processes)
+    pool = multiprocessing.Pool(processes = 4)
 
     results = []
     for w in word_keys:
@@ -187,6 +189,8 @@ def main():
         results.append(r)
     for r in results:
         r.wait()
+
+    pool.close()
 
     logger.info("Done")
 

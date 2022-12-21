@@ -21,6 +21,7 @@ class DbDictEntry(TypedDict):
     definition_html: str
     synonyms: str
     uid: str
+    source_uid: str
     dictionary_id: int
 
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
@@ -42,6 +43,7 @@ def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDic
         synonyms = ", ".join(syn),
         # add missing data
         uid = uid,
+        source_uid = dictionary_label.lower(),
         dictionary_id = dictionary_id,
     )
 
@@ -72,6 +74,7 @@ def insert_db_words(db_session,
             stmt = stmt.on_conflict_do_update(
                 index_elements = [Um.DictWord.uid],
                 set_ = dict(
+                    source_uid = stmt.excluded.source_uid,
                     word = stmt.excluded.word,
                     word_nom_sg = stmt.excluded.word_nom_sg,
                     inflections = stmt.excluded.inflections,

@@ -38,7 +38,6 @@ networkx = "~2"
 bokeh = "~2"
 scipy = "~1.9.0"
 python-idzip = "~0.3.7"
-bleach = {extras = ["css"], version = "~5.0.1"}
 Whoosh = "~2.7.4"
 typer = "~0.7.0"
 tomlkit = "~0.11.6"
@@ -124,7 +123,6 @@ requires = [
 "bokeh              >= 2.4.0,    < 3.0.0",
 "scipy              >= 1.9.0,    < 2.0.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
-"bleach[css]        >= 5.0.1,    < 5.1.0",
 "Whoosh             >= 2.7.4,    < 2.8.0",
 "typer              >= 0.7.0,    < 0.8.0",
 "tomlkit            >= 0.11.0,   < 0.12.0",

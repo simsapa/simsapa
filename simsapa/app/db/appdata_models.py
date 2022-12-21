@@ -170,6 +170,7 @@ class DictWord(Base):
     id = Column(Integer, primary_key=True)
     dictionary_id = Column(Integer, ForeignKey("dictionaries.id", ondelete="CASCADE"), nullable=False)
     uid = Column(String, nullable=False, unique=True)
+    source_uid = Column(String) # pts, dpd, mw
     word = Column(String, nullable=False)
     word_nom_sg = Column(String)
     inflections = Column(String)

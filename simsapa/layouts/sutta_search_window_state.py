@@ -20,7 +20,7 @@ from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
-from simsapa.layouts.sutta_queries import SuttaQueries
+from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -718,8 +718,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._show_sutta(results[0], highlight_text)
             self._add_recent(results[0])
 
-    def _show_sutta_by_partial_uid(self, part_uid: str, highlight_text: Optional[str] = None):
-        res_sutta = self.queries.get_sutta_by_partial_uid(part_uid, highlight_text)
+    def _show_sutta_by_partial_uid(self,
+                                   part_uid: str,
+                                   highlight_text: Optional[str] = None,
+                                   quote_scope = QuoteScope.Sutta):
+
+        res_sutta = self.queries.get_sutta_by_partial_uid(part_uid, highlight_text, quote_scope)
         if not res_sutta:
             return
 
@@ -730,7 +734,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._show_sutta(res_sutta, highlight_text)
         self._add_recent(res_sutta)
 
-    def _show_sutta_by_uid(self, uid: str, highlight_text: Optional[str] = None):
+    def _show_sutta_by_uid(self,
+                           uid: str,
+                           highlight_text: Optional[str] = None,
+                           quote_scope = QuoteScope.Sutta):
+
         if len(uid) == 0 and highlight_text is None:
             return
 
@@ -739,14 +747,14 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         if len(uid) > 0 and not self.queries.is_complete_uid(uid):
-            self._show_sutta_by_partial_uid(uid, highlight_text)
+            self._show_sutta_by_partial_uid(uid, highlight_text, quote_scope)
             return
 
         if highlight_text:
             self._set_query(highlight_text)
             self._start_query_worker(highlight_text)
 
-        sutta = self.queries.get_sutta_by_uid(uid, highlight_text)
+        sutta = self.queries.get_sutta_by_uid(uid, highlight_text, quote_scope)
 
         if sutta:
             self._show_sutta(sutta, highlight_text)

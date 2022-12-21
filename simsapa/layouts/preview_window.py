@@ -9,6 +9,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
 from simsapa import READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
+from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
 from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from simsapa.layouts.html_content import html_page
@@ -195,8 +196,14 @@ class PreviewWindow(QDialog):
 
         if sutta.content_html is not None and sutta.content_html != '':
             content = str(sutta.content_html)
+
+        if sutta.content_json is not None and sutta.content_json != '':
+            segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))
+            content = bilara_content_json_to_html(segments_json)
+
         elif sutta.content_plain is not None and sutta.content_plain != '':
             content = '<pre>' + str(sutta.content_plain) + '</pre>'
+
         else:
             content = 'No content.'
 

@@ -2,7 +2,7 @@ from importlib import metadata
 from pathlib import Path
 import shutil
 from typing import Dict, List, Optional, TypedDict
-from bleach.css_sanitizer import CSSSanitizer
+import html
 from bs4 import BeautifulSoup
 import json
 import requests
@@ -10,7 +10,6 @@ import feedparser
 import semver
 import sys
 import re
-import bleach
 
 import tomlkit
 
@@ -86,10 +85,10 @@ def to_version(ver: str) -> Version:
 def get_app_dev_version() -> Optional[str]:
 
     p = SIMSAPA_PACKAGE_DIR.joinpath('..').joinpath('pyproject.toml')
-    if not p.exists():
+    if not p.exists(): # type: ignore
         return None
 
-    with open(p) as pyproject:
+    with open(p) as pyproject: # type: ignore
         s = pyproject.read()
 
     try:
@@ -320,25 +319,96 @@ def get_db_update_info() -> Optional[UpdateInfo]:
         logger.error(e)
         return None
 
-def compactPlainText(text: str) -> str:
+
+def normalize_sutta_ref(ref: str) -> str:
+    ref = re.sub(r'ud(\d)', r'uda\1', ref)
+    ref = re.sub(r'khp(\d)', r'kp\1', ref)
+
+    return ref
+
+
+def consistent_nasal_m(text: Optional[str] = None) -> str:
+    if text is None:
+        return ''
+
+    # Use only ṁ, both in content and query strings.
+    #
+    # CST4 uses ṁ
+    # SuttaCentral MS uses ṁ
+    # Aj Thanissaro's BMC uses ṁ
+    # Uncommon Wisdom uses ṁ
+    #
+    # Digital Pali Reader MS uses ṃ
+    # Bodhirasa DPD uses ṃ
+    # Bhikkhu Bodhi uses ṃ
+    # Forest Sangha Pubs uses ṃ
+    # Buddhadhamma uses ṃ
+
+    return text.replace('ṃ', 'ṁ')
+
+
+def expand_quote_to_pattern(text: str) -> re.Pattern:
+    s = text
+    # Normalize quote marks to '
+    s = s.replace('"', "'");
+    # Quote mark should match all types, and may not be present
+    s = s.replace("'", '[\'"“”‘’]*');
+    # Normalize spaces
+    s = re.sub(r' +', " ", s)
+    # Common spelling variations
+    s = re.sub(r'[iī]', '[iī]', s)
+    # Punctuation may not be present
+    # Space may have punctuation in the text, but not in the link quote param
+    s = re.sub(r'[ \.,;\?\!…—-]', '[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s);
+
+    return re.compile(s)
+
+
+def remove_punct(text: Optional[str] = None) -> str:
+    if text is None:
+        return ''
+
+    # Replace punctuation marks with space. Removing them can join lines or words.
+    text = re.sub(r'[\.,;\?\!“”‘’…—-]', '', text)
+
+    # Newline and tab to space
+    text = text.replace("\n", " ")
+    text = text.replace("\t", " ")
+
+    # Remove quote marks.
+    #
+    # 'ti is sometimes not punctuated with an apostrophe. Remove the ' both from
+    # plain text content and from query strings.
+    #
+    # Sometimes people add quote marks in compounds: manopubbaṅ'gamā dhammā
+
+    text = text.replace("'", '')
+    text = text.replace('"', '')
+
+    # Normalize double spaces to single
+    text = re.sub(r'  +', ' ', text)
+
+    return text
+
+
+def compact_plain_text(text: str) -> str:
     # NOTE: Don't remove new lines here, useful for matching beginning of lines when setting snippets.
     # Replace multiple spaces to one.
     text = re.sub(r"  +", ' ', text)
     text = text.replace('{', '').replace('}', '')
 
+    # Make lowercase and remove punctuation to help matching query strings.
+    text = text.lower()
+    text = remove_punct(text)
+    text = consistent_nasal_m(text)
+    text = text.strip()
+
     return text
 
-def compactRichText(text: str) -> str:
+def compact_rich_text(text: str) -> str:
     # All on one line
     text = text.replace("\n", " ")
-    # Some CSS is not removed by bleach when syntax is malformed
-    text = re.sub(r'<style.*</style>', '', text)
-    # No JS here
-    text = re.sub(r'<script.*</script>', '', text)
-    # escaped html tags
-    text = re.sub(r'&lt;[^&]+&gt;', '', text)
-    text = text.replace('&nbsp;', ' ')
-    text = text.replace('&amp;', '&')
+
     # remove SuttaCentral ref links
     text = re.sub(r"<a class=.ref\b[^>]+>[^<]*</a>", '', text)
 
@@ -363,12 +433,26 @@ def compactRichText(text: str) -> str:
     text = text.replace('</', ' </')
     text = text.replace('>', '> ')
 
-    css_sanitizer = CSSSanitizer(allowed_css_properties=[])
+    text = strip_html(text)
 
-    text = bleach.clean(text, tags=[], strip=True, css_sanitizer=css_sanitizer)
-    text = compactPlainText(text)
+    text = compact_plain_text(text)
 
     return text
+
+
+def strip_html(text: str) -> str:
+    text = html.unescape(text)
+
+    text = re.sub(r'<head(.*?)</head>', '', text)
+    text = re.sub(r'<style(.*?)</style>', '', text)
+    text = re.sub(r'<script(.*?)</script>', '', text)
+    text = re.sub(r'<!--(.*?)-->', '', text)
+    text = re.sub(r'</*\w[^>]*>', '', text)
+
+    text = re.sub(r'  +', ' ', text)
+
+    return text
+
 
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')

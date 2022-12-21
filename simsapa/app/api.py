@@ -54,10 +54,10 @@ def queues(queue_id):
 
 @app.route('/assets/<path:path>', methods=['GET'])
 def assets(path):
-    if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, path)):
+    if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, path)): # type: ignore
         abort(404)
 
-    return send_from_directory(PACKAGE_ASSETS_DIR, path)
+    return send_from_directory(PACKAGE_ASSETS_DIR, path) # type: ignore
 
 
 def _get_sutta_by_uid(uid: str) -> Optional[USutta]:

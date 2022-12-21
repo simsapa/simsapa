@@ -3,9 +3,6 @@ from datetime import datetime
 from typing import Any
 
 from simsapa import IS_MAC, SIMSAPA_LOG_PATH
-from simsapa.app.helpers import create_app_dirs
-
-create_app_dirs()
 
 s = os.getenv('DISABLE_LOG')
 if s is not None and s.lower() == 'true':

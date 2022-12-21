@@ -20,9 +20,9 @@ from pyArango.database import DBHandle
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, compactRichText, html_get_sutta_page_body
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, create_app_dirs, html_get_sutta_page_body, compact_rich_text
 
-from simsapa.app.stardict import parse_ifo, parse_stardict_zip
+from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
 
 import helpers
@@ -93,14 +93,14 @@ def bilara_text_uid(x) -> str:
     return f"{x['uid']}/{x['lang']}/{author}"
 
 
-def html_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
+def html_text_to_sutta(x, title: str, _: Optional[str]) -> Am.Sutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
     body = html_get_sutta_page_body(page)
     body = bilara_html_post_process(body)
-    content_html = '<div class="suttacentral html-text">' + body + '</div>'
-    content_plain = compactRichText(content_html)
+    content_html = '<div class="suttacentral html-text">' + consistent_nasal_m(body) + '</div>'
+    content_plain = compact_rich_text(content_html)
 
     uid = html_text_uid(x)
     source_uid = uid.split('/')[-1]
@@ -109,7 +109,7 @@ def html_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
         source_uid = source_uid,
         source_info = x['_id'],
         # The All-embracing Net of Views
-        title = title,
+        title = consistent_nasal_m(title),
         # dn1/en/bodhi
         uid = uid,
         # SN 12.23
@@ -136,7 +136,7 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
 
     else:
         content_html = bilara_text_to_html(content, tmpl_json)
-        content_plain = compactRichText(content_html)
+        content_plain = compact_rich_text(content_html)
 
     uid = bilara_text_uid(x)
     source_uid = uid.split('/')[-1]
@@ -144,7 +144,7 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
     return Am.Sutta(
         source_uid = source_uid,
         source_info = x['_id'],
-        title = title,
+        title = consistent_nasal_m(title),
         # mn123/pli/ms
         uid = uid,
         # SN 12.23
@@ -155,7 +155,7 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
         # Not saving the html to reduce DB size. content_plain is used for
         # indexing and search. Re-generate HTML from JSON is needed.
         content_html = null(),
-        content_json = content,
+        content_json = consistent_nasal_m(content),
         content_json_tmpl = tmpl_json,
         created_at = func.now(),
     )
@@ -288,7 +288,7 @@ def get_suttas(db: DBHandle, language = 'en', limit: Optional[int] = None) -> di
 
     titles = get_titles(db, language)
 
-    def _html_title(x, titles):
+    def _html_title(x, _):
         return x['name']
 
     def _bilara_title(x, titles):
@@ -467,7 +467,7 @@ def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, language: str, limi
             sutta_uid = sutta_uid,
             language = language,
             source_uid = source_uid,
-            content_json = r['text'],
+            content_json = consistent_nasal_m(r['text']),
         )
 
         results.append(item)
@@ -477,7 +477,7 @@ def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, language: str, limi
     try:
         for i in results:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         sys.exit(1)
@@ -536,7 +536,7 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, language: str, limi
             sutta_uid = sutta_uid,
             language = language,
             source_uid = source_uid,
-            content_json = r['text'],
+            content_json = consistent_nasal_m(r['text']),
         )
 
         results.append(item)
@@ -546,7 +546,7 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, language: str, limi
     try:
         for i in results:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         sys.exit(1)
@@ -563,7 +563,7 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle, limi
             # NOTE: this is slow but works
             for i in suttas.values():
                 appdata_db.add(i)
-                appdata_db.commit()
+            appdata_db.commit()
         except Exception as e:
             logger.error(e)
             exit(1)
@@ -608,11 +608,12 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
         uid = f"{x.word}/{label}".lower()
         return Am.DictWord(
             dictionary_id = dictionary.id,
-            word = x.word,
+            word = consistent_nasal_m(x.word),
             uid = uid,
-            definition_plain = x.definition_plain,
-            definition_html = x.definition_html,
-            summary = x.summary,
+            source_uid = label,
+            definition_plain = compact_rich_text(x.definition_plain),
+            definition_html = consistent_nasal_m(x.definition_html),
+            summary = consistent_nasal_m(x.summary),
             created_at = func.now(),
         )
 
@@ -621,7 +622,7 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
     try:
         for i in dict_words:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -666,7 +667,7 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
         # NOTE: this is slow but works
         for i in suttas:
             new_db_session.add(i)
-            new_db_session.commit()
+        new_db_session.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -695,7 +696,7 @@ def populate_suttas_from_legacy(new_db_session, legacy_db_session):
     try:
         for i in suttas:
             new_db_session.add(i)
-            new_db_session.commit()
+        new_db_session.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -754,6 +755,8 @@ def insert_db_version(appdata_db: Session):
 
 
 def main():
+    create_app_dirs()
+
     appdata_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("appdata.sqlite3")
     appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = True)
 
@@ -783,7 +786,8 @@ def main():
 
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db, limit)
 
-    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=False, limit=limit)
+    # FIXME improve synonym parsing
+    populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 
     # Create db links from ssp:// links after all suttas have been added.
     create_links.populate_links(appdata_db)
