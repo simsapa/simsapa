@@ -627,81 +627,6 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: 
         logger.error(e)
         exit(1)
 
-def populate_suttas_from_legacy(new_db_session, legacy_db_session):
-    a = new_db_session.query(Am.Sutta).all()
-
-    logger.info("Adding Suttas from root_texts")
-
-    a = legacy_db_session.execute("SELECT * from root_texts;")
-
-    # Convert the results into namedtuple
-    # https://stackoverflow.com/a/22084672/195141
-
-    RootText = namedtuple('RootText', a.keys())
-    records = [RootText(*r) for r in a.fetchall()]
-
-    def root_text_to_sutta(x: RootText) -> Am.Sutta:
-        return Am.Sutta(
-            title = x.title,
-            uid = x.uid,
-            sutta_ref = x.acronym,
-            language = x.content_language,
-            content_plain = x.content_plain,
-            content_html = x.content_html,
-            created_at = func.now(),
-        )
-
-    suttas: List[Am.Sutta] = list(map(root_text_to_sutta, records))
-
-    try:
-        # TODO: bulk insert errors out
-        """
-        (builtins.TypeError) SQLite DateTime type only accepts Python datetime and date objects as input.
-        [SQL: INSERT INTO appdata.suttas (id, uid, group_path, group_index, sutta_ref, sutta_ref_pts, language, order_index, title, title_pali, title_trans, description, content_plain, content_html, source_info, source_language, message, copyright, license, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]
-        [parameters: [{}]]
-        """
-
-        # stmt = insert(Am.Sutta).values(suttas)
-        # new_db_session.execute(stmt)
-
-        # NOTE: this is slow but works
-        for i in suttas:
-            new_db_session.add(i)
-        new_db_session.commit()
-    except Exception as e:
-        logger.error(e)
-        exit(1)
-
-    logger.info("Adding Suttas from traslated_texts")
-
-    a = legacy_db_session.execute("SELECT * from translated_texts;")
-
-    TranslatedText = namedtuple('TranslatedText', a.keys())
-    records = [TranslatedText(*r) for r in a.fetchall()]
-
-    def translated_text_to_sutta(x: TranslatedText) -> Am.Sutta:
-        return Am.Sutta(
-            title = x.title,
-            title_pali = x.root_title,
-            uid = x.uid,
-            sutta_ref = x.acronym,
-            language = x.content_language,
-            content_plain = x.content_plain,
-            content_html = x.content_html,
-            created_at = func.now(),
-        )
-
-    suttas: List[Am.Sutta] = list(map(translated_text_to_sutta, records))
-
-    try:
-        for i in suttas:
-            new_db_session.add(i)
-        new_db_session.commit()
-    except Exception as e:
-        logger.error(e)
-        exit(1)
-
-
 def populate_dict_words_from_stardict(appdata_db: Session,
                                       stardict_base_path: Path,
                                       ignore_synonyms = False,
@@ -770,9 +695,6 @@ def main():
     stardict_base_path = BOOTSTRAP_ASSETS_DIR.joinpath("dict")
 
     insert_db_version(appdata_db)
-
-    # NOTE: Deprecated. Use the suttacentral db.
-    # populate_suttas_from_legacy(appdata_db, legacy_db)
 
     populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db, limit)
 
