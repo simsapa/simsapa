@@ -3,13 +3,15 @@ from pathlib import Path
 from typing import Dict, TypedDict
 from enum import Enum
 from queue import Queue
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 import appdirs
 import platform
 import importlib.resources
 import pkgutil
 
-load_dotenv()
+p = find_dotenv() or find_dotenv('.env.txt')
+if p != '':
+    load_dotenv(p)
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
