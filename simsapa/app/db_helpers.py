@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 from typing import Tuple
+from PyQt6.QtWidgets import QMessageBox
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -20,7 +21,10 @@ from .db import userdata_models as Um
 
 from simsapa import APP_DB_PATH, USER_DB_PATH, DbSchemaName, logger, ALEMBIC_INI, ALEMBIC_DIR
 
-def upgrade_db(db_path: Path, schema_name: str):
+
+def upgrade_db(db_path: Path, _: str):
+    # NOTE: argument not used: schema_name: str
+
     # Create an in-memory database
     engine = create_engine("sqlite+pysqlite://", echo=False)
 
@@ -40,9 +44,19 @@ def upgrade_db(db_path: Path, schema_name: str):
                 try:
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
-                    logger.error("Failed to run migrations: %s" % e)
+                    msg = "Failed to run migrations: %s" % e
+                    logger.error(msg)
                     db_conn.close()
-                    sys.exit(1)
+
+                    box = QMessageBox()
+                    box.setIcon(QMessageBox.Icon.Warning)
+                    box.setWindowTitle("Warning")
+                    box.setText("<p>" + msg + "</p><p>Start the application anyway?</p>")
+                    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+                    reply = box.exec()
+                    if reply == QMessageBox.StandardButton.No:
+                        sys.exit(1)
 
         db_conn.close()
     else:
@@ -81,9 +95,19 @@ def find_or_create_db(db_path: Path, schema_name: str):
                 try:
                     command.upgrade(alembic_cfg, "head")
                 except Exception as e:
-                    logger.error("Failed to run migrations: %s" % e)
+                    msg = "Failed to run migrations: %s" % e
+                    logger.error(msg)
                     db_conn.close()
-                    sys.exit(1)
+
+                    box = QMessageBox()
+                    box.setIcon(QMessageBox.Icon.Warning)
+                    box.setWindowTitle("Warning")
+                    box.setText("<p>" + msg + "</p><p>Start the application anyway?</p>")
+                    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+                    reply = box.exec()
+                    if reply == QMessageBox.StandardButton.No:
+                        sys.exit(1)
 
         db_conn.close()
     else:
