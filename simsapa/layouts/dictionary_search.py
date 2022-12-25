@@ -394,8 +394,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
-        page.link_hover_helper.mouseover.connect(partial(self._link_mouseover))
-        page.link_hover_helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.mouseover.connect(partial(self._link_mouseover))
+        page.helper.mouseleave.connect(partial(self._link_mouseleave))
 
         self.qwe.setPage(page)
 

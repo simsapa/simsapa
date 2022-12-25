@@ -15,7 +15,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db.search import SearchResult
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, bilara_text_to_segments
-from ..app.types import AppData, UBookmark, USutta
+from ..app.types import AppData, SuttaQuote, USutta
 from .html_content import html_page
 
 class SuttaTabWidget(QWidget):
@@ -161,11 +161,11 @@ class SuttaTabWidget(QWidget):
         else:
             return None
 
-    def render_sutta_content(self, highlight_text: Optional[str] = None):
+    def render_sutta_content(self, sutta_quote: Optional[SuttaQuote] = None):
         if self.sutta is None:
             return
 
-        logger.info(f"render_sutta_content(): {self.sutta.uid}, highlight_text: {highlight_text}")
+        logger.info(f"render_sutta_content(): {self.sutta.uid}, sutta_quote: {sutta_quote}")
 
         if self.sutta.content_json is not None and self.sutta.content_json != '':
             line_by_line = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
@@ -196,53 +196,16 @@ class SuttaTabWidget(QWidget):
 
         css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
 
-        js_extra = ""
+        js_extra = f"const SUTTA_UID = '{self.sutta.uid}';";
 
-        bookmarks = self._get_bookmarks_with_quotes_for_sutta(self.sutta, highlight_text or "")
-
-        def _to_quote(x: UBookmark) -> str:
-            s = str(x.quote).replace('"', '\\"')
-            return f'"{s}"'
-
-        quotes = ", ".join(list(map(_to_quote, bookmarks)))
-        highlight_list = f"[{quotes}]"
-
-        js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_list(%s); });""" % highlight_list
-
-        if highlight_text:
-            text = highlight_text.replace('"', '\\"')
-            js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });""" % text
+        if sutta_quote:
+            text = sutta_quote['quote'].replace('"', '\\"')
+            selection_range = sutta_quote['selection_range'] if sutta_quote['selection_range'] is not None else 0
+            js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s", "%s"); });""" % (text, selection_range)
 
         html = html_page(content, self.api_url, css_extra, js_extra)
 
         self.set_qwe_html(html)
-
-    def _get_bookmarks_with_quotes_for_sutta(self, sutta: USutta, except_quote: str = "") -> List[UBookmark]:
-        res = []
-
-        r = self._app_data.db_session \
-            .query(Am.Bookmark) \
-            .filter(and_(
-                Am.Bookmark.sutta_uid == sutta.uid,
-                Am.Bookmark.quote.is_not(None),
-                Am.Bookmark.quote != "",
-                Am.Bookmark.quote != except_quote,
-            )) \
-            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-            .query(Um.Bookmark) \
-            .filter(and_(
-                Um.Bookmark.sutta_uid == sutta.uid,
-                Um.Bookmark.quote.is_not(None),
-                Um.Bookmark.quote != "",
-                Um.Bookmark.quote != except_quote,
-            )) \
-            .all()
-        res.extend(r)
-
-        return res
 
     def render_search_results(self, results: List[SearchResult]):
         content = ""

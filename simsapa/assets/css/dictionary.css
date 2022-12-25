@@ -114,10 +114,78 @@ a {
   color: white;
 }
 
-.scrollto_highlight {
+.scrollto-highlight {
   padding: 0.2rem 0pt;
   background: #027f85;
   color: white;
+}
+
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  stroke-width: 0;
+  stroke: currentColor;
+  fill: currentColor;
+}
+
+div.btn {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+}
+div.btn a {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.open-button {
+  font-size: 15px;
+}
+.open-button .icon {
+  color: #027f55;
+  opacity: 0.5;
+}
+
+.pull-left {
+  float: left;
+}
+
+.pull-right {
+  float: right;
+}
+
+.bookmark-comment {
+  border: 1px solid #1f936d;
+  border-radius: 5px;
+  background-color: #57dbaf;
+}
+.bookmark-comment .bookmark-title {
+  background-color: #1f936d;
+  height: 30px;
+  font-size: 20px;
+}
+.bookmark-comment .bookmark-title .btn {
+  margin: 2.5px 5px;
+}
+.bookmark-comment .bookmark-title .btn a {
+  color: white;
+}
+.bookmark-comment .bookmark-content {
+  color: #1a1a1a;
+  font-size: 0.8rem;
+  padding: 0.5rem;
+}
+.bookmark-comment .bookmark-content p {
+  margin-block-start: 0;
+  margin-block-end: 0;
+  padding-top: 0.4rem;
+}
+.bookmark-comment .bookmark-content p:first-child {
+  padding-top: 0;
+}
+.bookmark-comment .bookmark-content a {
+  color: #700909;
 }
 
 .cologne {

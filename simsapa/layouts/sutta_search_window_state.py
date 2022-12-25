@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import urlencode
 
 from functools import partial
 from typing import Any, List, Optional
@@ -24,7 +24,7 @@ from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface
+from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -56,6 +56,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     open_in_study_window_signal = pyqtSignal([str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    bookmark_edit = pyqtSignal(str)
 
     def __init__(self,
                  app_data: AppData,
@@ -338,12 +339,17 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
+    def _bookmark_edit(self, schema_and_id: str):
+        self.bookmark_edit.emit(schema_and_id)
+
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
-        page.link_hover_helper.mouseover.connect(partial(self._link_mouseover))
-        page.link_hover_helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.mouseover.connect(partial(self._link_mouseover))
+        page.helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        page.helper.bookmark_edit.connect(partial(self._bookmark_edit))
 
         qwe.setPage(page)
 
@@ -698,66 +704,62 @@ QWidget:focus { border: 1px solid #1092C3; }
             return False
 
         uid = re.sub(r"^/", "", url.path())
-        query = parse_qs(url.query())
-        quote = None
-        if 'q' in query.keys():
-            quote = query['q'][0]
 
-        self._show_sutta_by_uid(uid, quote)
+        self._show_sutta_by_uid(uid, sutta_quote_from_url(url))
 
-    def _show_sutta_by_quote(self, highlight_text: str):
-        if len(highlight_text) == 0:
+    def _show_sutta_by_quote(self, sutta_quote: SuttaQuote):
+        if len(sutta_quote['quote']) == 0:
             return
 
-        self._set_query(highlight_text)
-        self._start_query_worker(highlight_text)
+        self._set_query(sutta_quote['quote'])
+        self._start_query_worker(sutta_quote['quote'])
 
-        results = self.queries.get_suttas_by_quote(highlight_text)
+        results = self.queries.get_suttas_by_quote(sutta_quote['quote'])
 
         if len(results) > 0:
-            self._show_sutta(results[0], highlight_text)
+            self._show_sutta(results[0], sutta_quote)
             self._add_recent(results[0])
 
     def _show_sutta_by_partial_uid(self,
                                    part_uid: str,
-                                   highlight_text: Optional[str] = None,
+                                   sutta_quote: Optional[SuttaQuote] = None,
                                    quote_scope = QuoteScope.Sutta):
 
-        res_sutta = self.queries.get_sutta_by_partial_uid(part_uid, highlight_text, quote_scope)
+        res_sutta = self.queries.get_sutta_by_partial_uid(part_uid, sutta_quote, quote_scope)
         if not res_sutta:
             return
 
-        if highlight_text:
-            self._set_query(highlight_text)
-            self._start_query_worker(highlight_text)
+        if sutta_quote:
+            self._set_query(sutta_quote['quote'])
+            self._start_query_worker(sutta_quote['quote'])
 
-        self._show_sutta(res_sutta, highlight_text)
+        self._show_sutta(res_sutta, sutta_quote)
         self._add_recent(res_sutta)
 
     def _show_sutta_by_uid(self,
                            uid: str,
-                           highlight_text: Optional[str] = None,
+                           sutta_quote: Optional[SuttaQuote] = None,
                            quote_scope = QuoteScope.Sutta):
 
-        if len(uid) == 0 and highlight_text is None:
+        if len(uid) == 0 and sutta_quote is None:
             return
 
-        if len(uid) == 0 and highlight_text is not None:
-            self._show_sutta_by_quote(highlight_text)
+        if len(uid) == 0 and sutta_quote is not None:
+            self._show_sutta_by_quote(sutta_quote)
             return
 
         if len(uid) > 0 and not self.queries.is_complete_uid(uid):
-            self._show_sutta_by_partial_uid(uid, highlight_text, quote_scope)
+            self._show_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
             return
 
-        if highlight_text:
-            self._set_query(highlight_text)
-            self._start_query_worker(highlight_text)
+        if sutta_quote:
+            self._set_query(sutta_quote['quote'])
+            self._start_query_worker(sutta_quote['quote'])
 
-        sutta = self.queries.get_sutta_by_uid(uid, highlight_text, quote_scope)
+        sutta = self.queries.get_sutta_by_uid(uid, sutta_quote, quote_scope)
 
         if sutta:
-            self._show_sutta(sutta, highlight_text)
+            self._show_sutta(sutta, sutta_quote)
             self._add_recent(sutta)
 
     def _show_word_by_uid(self, uid: str):
@@ -779,12 +781,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._app_data.dict_word_to_open = results[0]
             self.pw.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
-    def _show_sutta(self, sutta: USutta, highlight_text: Optional[str] = None):
+    def _show_sutta(self, sutta: USutta, sutta_quote: Optional[SuttaQuote] = None):
         logger.info(f"_show_sutta() : {sutta.uid}")
         self.showing_query_in_tab = False
         self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
-        self.sutta_tab.render_sutta_content(highlight_text)
+        self.sutta_tab.render_sutta_content(sutta_quote)
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
 

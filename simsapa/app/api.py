@@ -1,7 +1,7 @@
 from pathlib import Path
 import socket
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
@@ -10,7 +10,9 @@ from simsapa import APP_QUEUES, PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
 from simsapa import logger
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session
 
-from .types import GraphRequest, USutta, UDictWord
+from .types import GraphRequest, UBookmark, USutta, UDictWord
+
+from sqlalchemy.sql.elements import and_, or_
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
@@ -169,6 +171,108 @@ def api_generate_graph():
         logger.error(msg)
 
         return msg, 503
+
+
+def _bm_to_res(x: UBookmark) -> Dict[str, str]:
+    return {
+        'quote': str(x.quote) if x.quote is not None else '',
+        'selection_range': str(x.selection_range) if x.selection_range is not None else '',
+        'comment_text': str(x.comment_text) if x.comment_text is not None else '',
+        'comment_attr_json': str(x.comment_attr_json) if x.comment_attr_json is not None else '',
+        'bookmark_schema_id': f"{x.metadata.schema}-{x.id}",
+    }
+
+
+@app.route('/get_bookmarks_with_range_for_sutta', methods=['POST'])
+def get_bookmarks_with_range_for_sutta():
+    data = request.get_json()
+    if not data or 'sutta_uid' not in data.keys():
+        return "Missing sutta_uid", 400
+
+    sutta_uid = data['sutta_uid']
+    result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
+    return jsonify(result), 200
+
+
+@app.route('/get_bookmarks_with_quote_only_for_sutta', methods=['POST'])
+def get_bookmarks_with_quote_only_for_sutta():
+    data = request.get_json()
+    if not data or 'sutta_uid' not in data.keys():
+        return "Missing sutta_uid", 400
+
+    sutta_uid = data['sutta_uid']
+    result = list(map(_bm_to_res, _get_bookmarks_with_quote_only_for_sutta(sutta_uid)))
+    return jsonify(result), 200
+
+
+def _get_bookmarks_with_quote_only_for_sutta(sutta_uid: str, except_quote: str = "") -> List[UBookmark]:
+    _, _, db_session = get_db_engine_connection_session()
+    res = []
+
+    r = db_session \
+        .query(Am.Bookmark) \
+        .filter(and_(
+            Am.Bookmark.sutta_uid == sutta_uid,
+            or_(Am.Bookmark.selection_range.is_(None),
+                Am.Bookmark.selection_range == ""),
+            Am.Bookmark.quote.is_not(None),
+            Am.Bookmark.quote != "",
+            Am.Bookmark.quote != except_quote,
+        )) \
+        .all()
+    res.extend(r)
+
+    r = db_session \
+        .query(Um.Bookmark) \
+        .filter(and_(
+            Um.Bookmark.sutta_uid == sutta_uid,
+            or_(Um.Bookmark.selection_range.is_(None),
+                Um.Bookmark.selection_range == ""),
+            Um.Bookmark.quote.is_not(None),
+            Um.Bookmark.quote != "",
+            Um.Bookmark.quote != except_quote,
+        )) \
+        .all()
+    res.extend(r)
+
+    db_session.close()
+
+    return res
+
+
+def _get_bookmarks_with_range_for_sutta(sutta_uid: str, except_quote = "") -> List[UBookmark]:
+    _, _, db_session = get_db_engine_connection_session()
+    res = []
+
+    r = db_session \
+        .query(Am.Bookmark) \
+        .filter(and_(
+            Am.Bookmark.sutta_uid == sutta_uid,
+            Am.Bookmark.selection_range.is_not(None),
+            Am.Bookmark.selection_range != "",
+            Am.Bookmark.quote.is_not(None),
+            Am.Bookmark.quote != "",
+            Am.Bookmark.quote != except_quote,
+        )) \
+        .all()
+    res.extend(r)
+
+    r = db_session \
+        .query(Um.Bookmark) \
+        .filter(and_(
+            Um.Bookmark.sutta_uid == sutta_uid,
+            Um.Bookmark.selection_range.is_not(None),
+            Um.Bookmark.selection_range != "",
+            Um.Bookmark.quote.is_not(None),
+            Um.Bookmark.quote != "",
+            Um.Bookmark.quote != except_quote,
+        )) \
+        .all()
+    res.extend(r)
+
+    db_session.close()
+
+    return res
 
 @app.errorhandler(400)
 def resp_bad_request(e):

@@ -1,5 +1,4 @@
 import json
-from functools import partial
 from typing import TypedDict
 from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWebEngineCore import QWebEnginePage
@@ -18,10 +17,12 @@ class LinkHoverData(TypedDict):
     height: int
 
 
-class LinkHoverHelper(QObject):
+class Helper(QObject):
 
     mouseover = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
+
+    bookmark_edit = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,19 +48,24 @@ class LinkHoverHelper(QObject):
         self.mouseleave.emit(msg)
 
 
+    @pyqtSlot(str)
+    def send_bookmark_edit(self, schema_and_id: str):
+        self.bookmark_edit.emit(schema_and_id)
+
+
 class ReaderWebEnginePage(QWebEnginePage):
     """ Custom WebEnginePage to customize how we handle link navigation """
 
-    link_hover_helper: LinkHoverHelper
+    helper: Helper
 
     def __init__(self, parent=None):
         super(ReaderWebEnginePage, self).__init__(parent)
         self._parent_window = parent
 
-        self.link_hover_helper = LinkHoverHelper()
+        self.helper = Helper()
 
         self.event_channel = QWebChannel()
-        self.event_channel.registerObject("link_hover_helper", self.link_hover_helper)
+        self.event_channel.registerObject("helper", self.helper)
 
         self.setWebChannel(self.event_channel)
 
@@ -124,7 +130,7 @@ class ReaderWebEnginePage(QWebEnginePage):
 
 
     # called when clicking a link with target="_blank" attribute
-    def createWindow(self, _type):
+    def createWindow(self, _):
         page = ReaderWebEnginePage(self)
         # this will be passed to acceptNavigationRequest, which will open the url
         return page

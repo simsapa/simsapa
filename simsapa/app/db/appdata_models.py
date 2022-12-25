@@ -17,41 +17,41 @@ Base = declarative_base(metadata=metadata)
 
 assoc_sutta_authors = Table(
     'sutta_authors',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('author_id', Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_sutta_tags = Table(
     'sutta_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_dict_word_tags = Table(
     'dict_word_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('dict_word_id', Integer, ForeignKey("dict_words.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_document_tags = Table(
     'document_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('document_id', Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_memo_tags = Table(
     'memo_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('memo_id', Integer, ForeignKey("memos.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 
-class Author(Base):
+class Author(Base): # type: ignore
     __tablename__ = "authors"
 
     id = Column(Integer, primary_key=True)
@@ -65,7 +65,7 @@ class Author(Base):
     suttas = relationship("Sutta", secondary=assoc_sutta_authors, back_populates="authors")
 
 
-class Sutta(Base):
+class Sutta(Base): # type: ignore
     __tablename__ = "suttas"
 
     id = Column(Integer, primary_key=True)
@@ -106,7 +106,7 @@ class Sutta(Base):
     comment = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
 
 
-class SuttaVariant(Base):
+class SuttaVariant(Base): # type: ignore
     __tablename__ = "sutta_variants"
 
     id = Column(Integer, primary_key=True)
@@ -124,7 +124,7 @@ class SuttaVariant(Base):
     sutta = relationship("Sutta", back_populates="variant", uselist=False)
 
 
-class SuttaComment(Base):
+class SuttaComment(Base): # type: ignore
     __tablename__ = "sutta_comments"
 
     id = Column(Integer, primary_key=True)
@@ -141,7 +141,7 @@ class SuttaComment(Base):
     sutta = relationship("Sutta", back_populates="comment", uselist=False)
 
 
-class Dictionary(Base):
+class Dictionary(Base): # type: ignore
     __tablename__ = "dictionaries"
 
     id = Column(Integer, primary_key=True)
@@ -164,7 +164,7 @@ class Dictionary(Base):
     dict_words = relationship("DictWord", back_populates="dictionary", passive_deletes=True)
 
 
-class DictWord(Base):
+class DictWord(Base): # type: ignore
     __tablename__ = "dict_words"
 
     id = Column(Integer, primary_key=True)
@@ -198,7 +198,7 @@ class DictWord(Base):
     tags = relationship("Tag", secondary=assoc_dict_word_tags, back_populates="dict_words")
 
 
-class Example(Base):
+class Example(Base): # type: ignore
     __tablename__ = "examples"
 
     id = Column(Integer, primary_key=True)
@@ -218,7 +218,7 @@ class Example(Base):
     dict_word = relationship("DictWord", back_populates="examples")
 
 
-class Document(Base):
+class Document(Base): # type: ignore
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True)
@@ -238,7 +238,7 @@ class Document(Base):
     tags = relationship("Tag", secondary=assoc_document_tags, back_populates="documents")
 
 
-class Deck(Base):
+class Deck(Base): # type: ignore
     __tablename__ = "decks"
 
     id = Column(Integer, primary_key=True)
@@ -250,7 +250,7 @@ class Deck(Base):
     memos = relationship("Memo", back_populates="deck")
 
 
-class Memo(Base):
+class Memo(Base): # type: ignore
     __tablename__ = "memos"
 
     id = Column(Integer, primary_key=True)
@@ -270,7 +270,7 @@ class Memo(Base):
     tags = relationship("Tag", secondary=assoc_memo_tags, back_populates="memos")
 
 
-class MemoAssociation(Base):
+class MemoAssociation(Base): # type: ignore
     __tablename__ = "memo_associations"
 
     id = Column(Integer, primary_key=True)
@@ -282,7 +282,7 @@ class MemoAssociation(Base):
     location = Column(String)
 
 
-class Annotation(Base):
+class Annotation(Base): # type: ignore
     __tablename__ = "annotations"
 
     id = Column(Integer, primary_key=True)
@@ -293,7 +293,7 @@ class Annotation(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
-class AnnotationAssociation(Base):
+class AnnotationAssociation(Base): # type: ignore
     __tablename__ = "annotation_associations"
 
     id = Column(Integer, primary_key=True)
@@ -305,7 +305,7 @@ class AnnotationAssociation(Base):
     location = Column(Integer)
 
 
-class Tag(Base):
+class Tag(Base): # type: ignore
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True)
@@ -317,12 +317,13 @@ class Tag(Base):
     memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
 
 
-class Bookmark(Base):
+class Bookmark(Base): # type: ignore
     __tablename__ = "bookmarks"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     quote = Column(String)
+    selection_range = Column(String)
 
     sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=True)
     sutta_uid = Column(String, nullable=True)
@@ -330,13 +331,18 @@ class Bookmark(Base):
     sutta_ref = Column(String, nullable=True)
     sutta_title = Column(String, nullable=True)
 
+    comment_text = Column(String)
+    comment_attr_json = Column(String)
+
+    read_only = Column(Boolean)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     sutta = relationship("Sutta", back_populates="bookmarks")
 
 
-class Link(Base):
+class Link(Base): # type: ignore
     __tablename__ = "links"
 
     id = Column(Integer, primary_key=True)
@@ -353,7 +359,7 @@ class Link(Base):
     to_target = Column(String)
 
 
-class AppSetting(Base):
+class AppSetting(Base): # type: ignore
     __tablename__ = "app_settings"
 
     id = Column(Integer, primary_key=True)
@@ -364,7 +370,7 @@ class AppSetting(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
-class ChallengeCourse(Base):
+class ChallengeCourse(Base): # type: ignore
     __tablename__ = "challenge_courses"
 
     id = Column(Integer, primary_key=True)
@@ -378,7 +384,7 @@ class ChallengeCourse(Base):
     challenges = relationship("Challenge", back_populates="course")
 
 
-class ChallengeGroup(Base):
+class ChallengeGroup(Base): # type: ignore
     __tablename__ = "challenge_groups"
 
     id = Column(Integer, primary_key=True)
@@ -393,7 +399,7 @@ class ChallengeGroup(Base):
     challenges = relationship("Challenge", back_populates="group")
 
 
-class Challenge(Base):
+class Challenge(Base): # type: ignore
     __tablename__ = "challenges"
 
     id = Column(Integer, primary_key=True)

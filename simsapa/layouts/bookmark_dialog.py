@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QLabel, QLineEdit, QListView,
 
 from sqlalchemy.sql import func
 # from simsapa.app.file_doc import FileDoc
-from simsapa import DbSchemaName, logger
+from simsapa import logger
 
 from simsapa.app.types import AppData
 from simsapa.layouts.sutta_tab import SuttaTabWidget
@@ -41,7 +41,10 @@ class BookmarkDialog(QDialog):
                  app_data: AppData,
                  name: str = '',
                  quote: str = '',
+                 selection_range: str = '',
+                 comment: str = '',
                  show_quote: bool = True,
+                 show_comment: bool = True,
                  db_id: Optional[int] = None,
                  creating_new: bool = True):
 
@@ -50,6 +53,8 @@ class BookmarkDialog(QDialog):
         self.creating_new = creating_new
         self.init_name = name
         self.db_id = db_id
+
+        self.selection_range = selection_range
 
         if self.creating_new:
             self.setWindowTitle("Create Bookmark")
@@ -67,7 +72,12 @@ class BookmarkDialog(QDialog):
         self.name_input.textChanged.connect(self._suggest_names)
 
         self.quote_input = QPlainTextEdit(quote)
-        self.quote_input.setMinimumSize(400, 200)
+        self.quote_input.setPlaceholderText("quote from the text")
+        self.quote_input.setMinimumSize(400, 100)
+
+        self.comment_input = QPlainTextEdit(comment)
+        self.comment_input.setPlaceholderText("comment notes")
+        self.comment_input.setMinimumSize(400, 100)
 
         if self.creating_new:
             self.add_btn = QPushButton('Add')
@@ -88,7 +98,7 @@ class BookmarkDialog(QDialog):
         form.addRow(self.name_input)
 
         self.suggest_list = QListView(self)
-        self.suggest_list.setMinimumHeight(200)
+        self.suggest_list.setMinimumHeight(100)
         self.suggest_model = SuggestModel()
         self.suggest_list.setModel(self.suggest_model)
 
@@ -100,6 +110,10 @@ class BookmarkDialog(QDialog):
         if show_quote:
             form.addRow(QLabel("Quote:"))
             form.addRow(self.quote_input)
+
+        if show_comment:
+            form.addRow(QLabel("Comment:"))
+            form.addRow(self.comment_input)
 
         self.buttons_layout = QHBoxLayout()
         self.buttons_layout.addWidget(self.add_btn)
@@ -150,6 +164,8 @@ class BookmarkDialog(QDialog):
             values = {
                 'name': name,
                 'quote': self.quote_input.toPlainText(),
+                'selection_range': self.selection_range,
+                'comment_text': self.comment_input.toPlainText(),
             }
 
         else:
@@ -158,6 +174,8 @@ class BookmarkDialog(QDialog):
                 'new_name': name,
                 'db_id': self.db_id,
                 'quote': self.quote_input.toPlainText(),
+                'selection_range': self.selection_range,
+                'comment_text': self.comment_input.toPlainText(),
             }
 
         self.accepted.emit(values)
@@ -171,11 +189,12 @@ class HasBookmarkDialog:
     _get_active_tab: Callable
     _get_selection: Callable
     sutta_tab: SuttaTabWidget
+    _active_tab: SuttaTabWidget
 
     bookmark_created = pyqtSignal()
 
     def init_bookmark_dialog(self):
-        self.new_bookmark_values = {'name': '', 'quote': ''}
+        self.new_bookmark_values = {'name': '', 'quote': '', 'selection_range': '', 'comment_text': ''}
 
     def set_new_bookmark(self, values: dict):
         self.new_bookmark_values = values
@@ -183,6 +202,8 @@ class HasBookmarkDialog:
     def _create_bookmark(self,
                          bookmark_name: str,
                          bookmark_quote: Optional[str] = None,
+                         bookmark_selection_range: Optional[str] = None,
+                         bookmark_comment_text: Optional[str] = None,
                          sutta_id: Optional[int] = None,
                          sutta_uid: Optional[str] = None,
                          sutta_schema: Optional[str] = None,
@@ -218,6 +239,8 @@ class HasBookmarkDialog:
         bookmark = Um.Bookmark(
             name = bookmark_name,
             quote = bookmark_quote,
+            selection_range = bookmark_selection_range,
+            comment_text = bookmark_comment_text,
             sutta_id = sutta_id,
             sutta_uid = sutta_uid,
             sutta_schema = sutta_schema,
@@ -235,39 +258,45 @@ class HasBookmarkDialog:
         except Exception as e:
             logger.error(e)
 
-    def handle_create_bookmark_for_sutta(self):
-        tab = self._get_active_tab()
+    def _bookmark_with_range(self, selection_range: str):
+        logger.info(f"_bookmark_with_range(): {selection_range}")
 
-        if tab.sutta is None:
+        if self._active_tab.sutta is None:
             logger.error("Sutta is not set")
             return
 
-        quote = str(tab.qwe.selectedText()).replace("\n", " ").strip()
+        quote = str(self._active_tab.qwe.selectedText()).replace("\n", " ").strip()
 
-        d = BookmarkDialog(self._app_data, quote=quote)
+        d = BookmarkDialog(self._app_data, quote=quote, selection_range=selection_range)
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 
         if self.new_bookmark_values['name'] == '':
             return
 
-        if tab.sutta.metadata.schema == DbSchemaName.AppData.value:
-            sutta_id = None
-        else:
-            sutta_id = tab.sutta.id
-
         try:
             self._create_bookmark(
                 bookmark_name = self.new_bookmark_values['name'],
                 bookmark_quote = self.new_bookmark_values['quote'],
-                sutta_id = sutta_id,
-                sutta_uid = tab.sutta.uid,
-                sutta_schema = tab.sutta.metadata.schema,
-                sutta_ref = tab.sutta.sutta_ref,
-                sutta_title = tab.sutta.title,
+                bookmark_selection_range = self.new_bookmark_values['selection_range'],
+                bookmark_comment_text = self.new_bookmark_values['comment_text'],
+                sutta_id = int(str(self._active_tab.sutta.id)),
+                sutta_uid = str(self._active_tab.sutta.uid),
+                sutta_schema = self._active_tab.sutta.metadata.schema,
+                sutta_ref = str(self._active_tab.sutta.sutta_ref),
+                sutta_title = str(self._active_tab.sutta.title),
             )
 
             self.bookmark_created.emit() # type: ignore
 
         except Exception as e:
             logger.error(e)
+
+    def handle_create_bookmark_for_sutta(self):
+        self._active_tab = self._get_active_tab()
+
+        if self._active_tab.sutta is None:
+            logger.error("Sutta is not set")
+            return
+
+        self._active_tab.qwe.page().runJavaScript("rangy.serializeSelection(null, true)", self._bookmark_with_range)

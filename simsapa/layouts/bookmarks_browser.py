@@ -3,11 +3,11 @@ import csv
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
-from PyQt6.QtCore import QModelIndex, QSize, QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QSize, QUrl, QUrlQuery, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 from functools import partial
 from typing import Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import quote_plus
 
 from sqlalchemy.sql.elements import and_, or_, not_
 
@@ -19,19 +19,29 @@ from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark, USutta
+from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark
+
+# Keys with underscore prefix will not be shown in table columns.
+SuttaModelColToIdx = {
+    "Ref": 0,
+    "Title": 1,
+    "uid": 2,
+    "Quote": 3,
+    "Comment": 4,
+    "_selection_range": 5,
+    "_db_id": 6,
+}
 
 class SuttaModel(QAbstractTableModel):
     def __init__(self, data = []):
         super().__init__()
         self._data = data
-        # NOTE: data will also include db row id as the last item
-        self._columns = ["Ref", "Title", "uid", "Quote"]
+        self._columns = list(filter(lambda x: not x.startswith("_"), SuttaModelColToIdx.keys()))
 
     def data(self, index: QModelIndex, role: Qt.ItemDataRole):
         if role == Qt.ItemDataRole.DisplayRole:
             if len(self._data) == 0:
-                return ["", "", "", ""]
+                return list(map(lambda _: "", self._columns))
             else:
                 return self._data[index.row()][index.column()]
         elif role == Qt.ItemDataRole.UserRole:
@@ -299,7 +309,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.suttas_table.setShowGrid(False)
         self.suttas_table.setWordWrap(False)
         self.suttas_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
 
         self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.suttas_table.horizontalHeader().setStretchLastSection(True)
@@ -322,12 +332,20 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         data = self.suttas_model._data
 
-        uid = data[idx.row()][2]
+        uid = data[idx.row()][SuttaModelColToIdx['uid']]
         url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
 
-        quote = data[idx.row()][3]
+        query = QUrlQuery()
+
+        quote = data[idx.row()][SuttaModelColToIdx['Quote']]
         if quote is not None and len(quote) > 0:
-            url.setQuery(urlencode({'q': quote}))
+            query.addQueryItem('q', quote_plus(quote))
+
+        sel_range = data[idx.row()][SuttaModelColToIdx['_selection_range']]
+        if sel_range is not None and len(sel_range) > 0:
+            query.addQueryItem('sel', quote_plus(sel_range))
+
+        url.setQuery(query)
 
         self._app_data.clipboard_setText(url.toString())
 
@@ -435,8 +453,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         if len(res) == 0:
             return []
 
-        def _model_data_item(x: USutta) -> List[str]:
-            return [str(x.sutta_ref), str(x.sutta_title), str(x.sutta_uid), str(x.quote), str(x.id)]
+        def _model_data_item(x: UBookmark) -> List[str]:
+            # Return values ordered as in SuttaModelColToIdx
+            return ["" if x.sutta_ref is None else str(x.sutta_ref),
+                    "" if x.sutta_title is None else str(x.sutta_title),
+                    "" if x.sutta_uid is None else str(x.sutta_uid),
+                    "" if x.quote is None else str(x.quote),
+                    "" if x.comment_text is None else str(x.comment_text),
+                    "" if x.selection_range is None else str(x.selection_range),
+                    str(x.id)]
 
         data = list(map(_model_data_item, res))
 
@@ -453,12 +478,20 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
     def _handle_sutta_open(self, val: QModelIndex):
         data = val.model().data(val, Qt.ItemDataRole.UserRole)
-        uid = data[val.row()][2]
+        uid = data[val.row()][SuttaModelColToIdx['uid']]
         url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
 
-        quote = data[val.row()][3]
+        query = QUrlQuery()
+
+        quote = data[val.row()][SuttaModelColToIdx['Quote']]
         if quote is not None and len(quote) > 0:
-            url.setQuery(f"q={quote}")
+            query.addQueryItem('q', quote_plus(quote))
+
+        sel_range = data[val.row()][SuttaModelColToIdx['_selection_range']]
+        if sel_range is not None and len(sel_range) > 0:
+            query.addQueryItem('sel', sel_range)
+
+        url.setQuery(query)
 
         self.show_sutta_by_url.emit(url)
 
@@ -507,7 +540,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             logger.error(e)
 
     def _handle_node_new(self):
-        d = BookmarkDialog(self._app_data, show_quote=False)
+        d = BookmarkDialog(self._app_data, show_quote=False, show_comment=False)
         d.accepted.connect(self._create_new_bookmark_folder)
         d.exec()
 
@@ -542,6 +575,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         d = BookmarkDialog(self._app_data,
                            name=item.path,
                            show_quote=False,
+                           show_comment=False,
                            creating_new=False)
 
         d.accepted.connect(self._edit_node)
@@ -564,7 +598,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             .filter(Um.Bookmark.name.like(f"{path}%")) \
             .all()
 
-        n = self.suttas_model.rowCount(None)
+        # bookmarks which point to a sutta, i.e. are not placeholder nodes
+        bm = list(filter(lambda x: x.sutta_id is not None, bookmarks))
+        n = len(bm)
         if n > 1:
             box = QMessageBox()
             box.setIcon(QMessageBox.Icon.Warning)
@@ -609,6 +645,8 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         item.name = name
         item.quote = quote
+        item.selection_range = str(values['selection_range'])
+        item.comment_text = str(values['comment_text'])
 
         self._app_data.db_session.commit()
 
@@ -622,7 +660,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         # only edit the top selection
         idx = a[0]
-        db_id = self.suttas_model._data[idx.row()][-1]
+        db_id = self.suttas_model._data[idx.row()][SuttaModelColToIdx['_db_id']]
 
         item = self._app_data.db_session \
                             .query(Um.Bookmark) \
@@ -634,7 +672,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         d = BookmarkDialog(self._app_data,
                            name=str(item.name),
-                           quote=str(item.quote),
+                           quote=str(item.quote) if item.quote is not None else '',
+                           selection_range=str(item.selection_range) if item.selection_range is not None else '',
+                           comment=str(item.comment_text) if item.comment_text is not None else '',
                            db_id=db_id,
                            creating_new=False)
 
@@ -646,7 +686,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         if not a:
             return
 
-        n = len(a)
+        db_ids = set(map(lambda idx: self.suttas_model._data[idx.row()][SuttaModelColToIdx['_db_id']], a))
+
+        n = len(db_ids)
         if n > 1:
             box = QMessageBox()
             box.setIcon(QMessageBox.Icon.Warning)
@@ -657,9 +699,6 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             reply = box.exec()
             if reply != QMessageBox.StandardButton.Yes:
                 return
-
-        # _model_data_item() adds db id as last item
-        db_ids = list(map(lambda idx: self.suttas_model._data[idx.row()][-1], a))
 
         bookmarks = self._app_data.db_session \
             .query(Um.Bookmark) \
@@ -695,11 +734,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             return Um.Bookmark(
                 name          = x['name']          if x['name']          != 'None' else None,
                 quote         = x['quote']         if x['quote']         != 'None' else None,
+                selection_range = x['selection_range'] if x['selection_range'] != 'None' else None,
                 sutta_id      = int(x['sutta_id']) if x['sutta_id']      != 'None' else None,
                 sutta_uid     = x['sutta_uid']     if x['sutta_uid']     != 'None' else None,
                 sutta_schema  = x['sutta_schema']  if x['sutta_schema']  != 'None' else None,
                 sutta_ref     = x['sutta_ref']     if x['sutta_ref']     != 'None' else None,
                 sutta_title   = x['sutta_title']   if x['sutta_title']   != 'None' else None,
+                comment_text  = x['comment_text']  if x['comment_text']  != 'None' else None,
+                comment_attr_json = x['comment_attr_json'] if x['comment_attr_json'] != 'None' else None,
+                read_only     = x['read_only']     if x['read_only']     != 'None' else None,
             )
 
         bookmarks = list(map(_to_bookmark, rows))
@@ -744,11 +787,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             return {
                 "name": str(x.name),
                 "quote": str(x.quote),
+                "selection_range": str(x.selection_range),
                 "sutta_id": str(x.sutta_id),
                 "sutta_uid": str(x.sutta_uid),
                 "sutta_schema": str(x.sutta_schema),
                 "sutta_ref": str(x.sutta_ref),
                 "sutta_title": str(x.sutta_title),
+                "comment_text": str(x.comment_text),
+                "comment_attr_json": str(x.comment_attr_json),
+                "read_only": str(x.read_only),
             }
 
         a = list(map(_to_row, res))

@@ -6,7 +6,8 @@ import os
 import os.path
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, TypedDict, Union
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, pyqtSignal, pyqtSlot
+from urllib.parse import parse_qs
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -542,3 +543,27 @@ class PaliChallengeType(str, Enum):
 class QueryType(str, Enum):
     suttas = "suttas"
     words = "words"
+
+class SuttaQuote(TypedDict):
+    quote: str
+    selection_range: Optional[str]
+
+def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
+    query = parse_qs(url.query())
+
+    sutta_quote = None
+    quote = None
+    if 'q' in query.keys():
+        quote = query['q'][0]
+
+    if quote:
+        selection_range = None
+        if 'sel' in query.keys():
+            selection_range = query['sel'][0]
+
+        sutta_quote = SuttaQuote(
+            quote = quote,
+            selection_range = selection_range,
+        )
+
+    return sutta_quote

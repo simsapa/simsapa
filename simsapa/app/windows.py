@@ -2,24 +2,25 @@ import os
 import sys
 import re
 from functools import partial
-import shutil
 from typing import List, Optional
 import queue
 import json
 import webbrowser
 from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QFileDialog, QMessageBox, QWidget)
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
-from simsapa import APP_DB_PATH, APP_QUEUES, INDEX_DIR, STARTUP_MESSAGE_PATH, TIMER_SPEED
+from simsapa import APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaSearchWindowInterface, WindowNameToType, WindowType
+from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.layouts.bookmark_dialog import BookmarkDialog
 from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.reader_web import LinkHoverData
 from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
+
+from simsapa.app.db import userdata_models as Um
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -133,23 +134,19 @@ class AppWindows:
         uid = re.sub(r"^/", "", url.path())
         query = parse_qs(url.query())
 
-        quote = None
-        if 'q' in query.keys():
-            quote = query['q'][0]
-
         quote_scope = QuoteScope.Sutta
         if 'quote_scope' in query.keys():
             sc = query['quote_scope'][0]
             if sc in QuoteScopeValues.keys():
                 quote_scope = QuoteScopeValues[sc]
 
-        self._show_sutta_by_uid_in_search(uid, quote, quote_scope)
+        self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
 
         return True
 
     def _show_sutta_by_uid_in_search(self,
                                      uid: str,
-                                     highlight_text: Optional[str] = None,
+                                     sutta_quote: Optional[SuttaQuote] = None,
                                      quote_scope = QuoteScope.Sutta):
 
         view = None
@@ -161,7 +158,7 @@ class AppWindows:
         if view is None:
             view = self._new_sutta_search_window()
 
-        view.s._show_sutta_by_uid(uid, highlight_text, quote_scope)
+        view.s._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -269,6 +266,8 @@ class AppWindows:
 
         view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
+        view.s.bookmark_edit.connect(partial(self._new_bookmark_edit_dialog))
 
         if self._hotkeys_manager is not None:
             try:
@@ -462,6 +461,28 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_bookmark_edit_dialog(self, schema_and_id: str):
+        _, db_id = schema_and_id.split("-")
+
+        item = self._app_data.db_session \
+                            .query(Um.Bookmark) \
+                            .filter(Um.Bookmark.id == int(db_id)) \
+                            .first()
+
+        if item is None:
+            return
+
+        d = BookmarkDialog(self._app_data,
+                           name=str(item.name),
+                           quote=str(item.quote) if item.quote is not None else '',
+                           selection_range=str(item.selection_range) if item.selection_range is not None else '',
+                           comment=str(item.comment_text) if item.comment_text is not None else '',
+                           db_id=int(db_id),
+                           creating_new=False)
+
+        # d.accepted.connect(self._edit_row)
+        d.exec()
+
     def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
         view = CoursePracticeWindow(self._app_data, group)
 
@@ -611,7 +632,7 @@ class AppWindows:
         if reply == QMessageBox.StandardButton.Yes:
             self._redownload_database_dialog()
 
-    def _reindex_database_dialog(self, parent = None):
+    def _reindex_database_dialog(self, _ = None):
         show_work_in_progress()
 
         '''

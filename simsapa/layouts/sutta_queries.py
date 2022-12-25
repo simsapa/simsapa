@@ -9,7 +9,7 @@ from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern, normalize_sutta_ref, remove_punct
-from simsapa.app.types import AppData, QueryType, USutta
+from simsapa.app.types import AppData, QueryType, SuttaQuote, USutta, sutta_quote_from_url
 
 
 class QuoteScope(str, Enum):
@@ -35,9 +35,6 @@ class SuttaQueries:
             return None
 
         query = parse_qs(url.query())
-        quote = None
-        if 'q' in query.keys():
-            quote = query['q'][0]
 
         quote_scope = QuoteScope.Sutta
         if 'quote_scope' in query.keys():
@@ -47,7 +44,7 @@ class SuttaQueries:
 
         uid = url.path().strip("/")
 
-        return self.get_sutta_by_uid(uid, quote, quote_scope)
+        return self.get_sutta_by_uid(uid, sutta_quote_from_url(url), quote_scope)
 
 
     def find_quote_in_suttas(self, suttas: List[USutta], quote: Optional[str] = None) -> Optional[USutta]:
@@ -77,15 +74,15 @@ class SuttaQueries:
 
     def get_sutta_by_uid(self,
                          uid: str,
-                         highlight_text: Optional[str] = None,
+                         sutta_quote: Optional[SuttaQuote] = None,
                          quote_scope = QuoteScope.Sutta) -> Optional[USutta]:
 
-        logger.info(f"get_sutta_by_uid(): {uid}, {highlight_text}")
-        if len(uid) == 0 and highlight_text is None:
+        logger.info(f"get_sutta_by_uid(): {uid}, {sutta_quote}")
+        if len(uid) == 0 and sutta_quote is None:
             return None
 
-        if len(uid) == 0 and highlight_text is not None:
-            a = self.get_suttas_by_quote(highlight_text)
+        if len(uid) == 0 and sutta_quote is not None:
+            a = self.get_suttas_by_quote(sutta_quote['quote'])
             if len(a) > 0:
                 return a[0]
             else:
@@ -97,7 +94,7 @@ class SuttaQueries:
         res_sutta = None
 
         if len(uid) > 0 and not self.is_complete_uid(uid):
-            res_sutta = self.get_sutta_by_partial_uid(uid, highlight_text, quote_scope)
+            res_sutta = self.get_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
 
         if res_sutta is not None:
             return res_sutta
@@ -136,12 +133,15 @@ class SuttaQueries:
                     .all()
                 results.extend(res)
 
-            elif quote_scope == QuoteScope.All:
+            elif sutta_quote and quote_scope == QuoteScope.All:
 
-                res = self.get_suttas_by_quote(highlight_text)
+                res = self.get_suttas_by_quote(sutta_quote['quote'])
                 results.extend(res)
 
-        res_sutta = self.find_quote_in_suttas(results, highlight_text) or results[0]
+        if sutta_quote:
+            res_sutta = self.find_quote_in_suttas(results, sutta_quote['quote']) or results[0]
+        else:
+            res_sutta = results[0]
 
         return res_sutta
 
@@ -160,10 +160,10 @@ class SuttaQueries:
 
     def get_sutta_by_partial_uid(self,
                                  part_uid: str,
-                                 highlight_text: Optional[str] = None,
+                                 sutta_quote: Optional[SuttaQuote] = None,
                                  quote_scope = QuoteScope.Sutta) -> Optional[USutta]:
 
-        logger.info(f"get_sutta_by_partial_uid(): {part_uid}, {highlight_text}")
+        logger.info(f"get_sutta_by_partial_uid(): {part_uid}, {sutta_quote}")
         part_uid = part_uid.strip("/")
 
         res_sutta = None
@@ -213,12 +213,15 @@ class SuttaQueries:
                     .all()
                 results.extend(res)
 
-            elif quote_scope == QuoteScope.All:
+            elif sutta_quote and quote_scope == QuoteScope.All:
 
-                res = self.get_suttas_by_quote(highlight_text)
+                res = self.get_suttas_by_quote(sutta_quote['quote'])
                 results.extend(res)
 
-        res_sutta = self.find_quote_in_suttas(results, highlight_text) or results[0]
+        if sutta_quote:
+            res_sutta = self.find_quote_in_suttas(results, sutta_quote['quote']) or results[0]
+        else:
+            res_sutta = results[0]
 
         return res_sutta
 
