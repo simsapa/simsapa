@@ -531,7 +531,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             return
 
         try:
-            self._create_bookmark(bookmark_name)
+            self._create_or_update_bookmark(bookmark_name)
 
             self.reload_bookmarks()
             self.reload_table()

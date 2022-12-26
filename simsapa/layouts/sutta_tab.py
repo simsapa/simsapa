@@ -198,7 +198,6 @@ class SuttaTabWidget(QWidget):
 
         js_extra = f"const SUTTA_UID = '{self.sutta.uid}';";
 
-
         is_on = self._app_data.app_settings.get('show_bookmarks', True)
         if is_on:
             js_extra += f"const SHOW_BOOKMARKS = true;";

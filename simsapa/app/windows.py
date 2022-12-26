@@ -16,11 +16,8 @@ from simsapa import APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
-from simsapa.layouts.bookmark_dialog import BookmarkDialog
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
-
-from simsapa.app.db import userdata_models as Um
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -264,10 +261,11 @@ class AppWindows:
 
         view.s.bookmark_created.connect(partial(self._reload_bookmarks))
 
+        view.s.bookmark_created.connect(partial(view.s.reload_page))
+        view.s.bookmark_updated.connect(partial(view.s.reload_page))
+
         view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-
-        view.s.bookmark_edit.connect(partial(self._new_bookmark_edit_dialog))
 
         if self._hotkeys_manager is not None:
             try:
@@ -481,28 +479,6 @@ class AppWindows:
         make_active_window(view)
         self._windows.append(view)
         return view
-
-    def _new_bookmark_edit_dialog(self, schema_and_id: str):
-        _, db_id = schema_and_id.split("-")
-
-        item = self._app_data.db_session \
-                            .query(Um.Bookmark) \
-                            .filter(Um.Bookmark.id == int(db_id)) \
-                            .first()
-
-        if item is None:
-            return
-
-        d = BookmarkDialog(self._app_data,
-                           name=str(item.name),
-                           quote=str(item.quote) if item.quote is not None else '',
-                           selection_range=str(item.selection_range) if item.selection_range is not None else '',
-                           comment=str(item.comment_text) if item.comment_text is not None else '',
-                           db_id=int(db_id),
-                           creating_new=False)
-
-        # d.accepted.connect(self._edit_row)
-        d.exec()
 
     def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
         view = CoursePracticeWindow(self._app_data, group)

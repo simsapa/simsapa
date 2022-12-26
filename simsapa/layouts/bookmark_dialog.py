@@ -192,6 +192,7 @@ class HasBookmarkDialog:
     _active_tab: SuttaTabWidget
 
     bookmark_created = pyqtSignal()
+    bookmark_updated = pyqtSignal()
 
     def init_bookmark_dialog(self):
         self.new_bookmark_values = {'name': '', 'quote': '', 'selection_range': '', 'comment_text': ''}
@@ -199,16 +200,17 @@ class HasBookmarkDialog:
     def set_new_bookmark(self, values: dict):
         self.new_bookmark_values = values
 
-    def _create_bookmark(self,
-                         bookmark_name: str,
-                         bookmark_quote: Optional[str] = None,
-                         bookmark_selection_range: Optional[str] = None,
-                         bookmark_comment_text: Optional[str] = None,
-                         sutta_id: Optional[int] = None,
-                         sutta_uid: Optional[str] = None,
-                         sutta_schema: Optional[str] = None,
-                         sutta_ref: Optional[str] = None,
-                         sutta_title: Optional[str] = None):
+    def _create_or_update_bookmark(self,
+                                   bookmark_name: str,
+                                   bookmark_id: Optional[int] = None,
+                                   bookmark_quote: Optional[str] = None,
+                                   bookmark_selection_range: Optional[str] = None,
+                                   bookmark_comment_text: Optional[str] = None,
+                                   sutta_id: Optional[int] = None,
+                                   sutta_uid: Optional[str] = None,
+                                   sutta_schema: Optional[str] = None,
+                                   sutta_ref: Optional[str] = None,
+                                   sutta_title: Optional[str] = None):
 
         # ensure no trailing / before split
         bookmark_name = re.sub(r'/+$', '', bookmark_name)
@@ -231,32 +233,63 @@ class HasBookmarkDialog:
                 self._app_data.db_session.add(b)
                 self._app_data.db_session.commit()
 
-        # create the new Bookmark
+        # create or update the new Bookmark
 
         # append trailing / for db value
         bookmark_name += "/"
 
-        bookmark = Um.Bookmark(
-            name = bookmark_name,
-            quote = bookmark_quote,
-            selection_range = bookmark_selection_range,
-            comment_text = bookmark_comment_text,
-            sutta_id = sutta_id,
-            sutta_uid = sutta_uid,
-            sutta_schema = sutta_schema,
-            sutta_ref = sutta_ref,
-            sutta_title = sutta_title,
-            created_at = func.now(),
-        )
+        if bookmark_id:
 
-        try:
-            self._app_data.db_session.add(bookmark)
-            self._app_data.db_session.commit()
+            bookmark = self._app_data.db_session \
+                .query(Um.Bookmark) \
+                .filter(Um.Bookmark.id == bookmark_id) \
+                .first()
 
-            self.bookmark_created.emit() # type: ignore
+            if not bookmark:
+                logger.error(f"Bookmark not found: {bookmark_id}")
+                return
 
-        except Exception as e:
-            logger.error(e)
+            bookmark.name = bookmark_name
+            bookmark.updated_at = func.now()
+
+            if bookmark_quote:
+                bookmark.quote = bookmark_quote
+            if bookmark_selection_range:
+                bookmark.selection_range = bookmark_selection_range
+            if bookmark_comment_text:
+                bookmark.comment_text = bookmark_comment_text
+
+            try:
+                self._app_data.db_session.commit()
+
+                self.bookmark_updated.emit() # type: ignore
+
+            except Exception as e:
+                logger.error(e)
+
+        else:
+
+            bookmark = Um.Bookmark(
+                name = bookmark_name,
+                quote = bookmark_quote,
+                selection_range = bookmark_selection_range,
+                comment_text = bookmark_comment_text,
+                sutta_id = sutta_id,
+                sutta_uid = sutta_uid,
+                sutta_schema = sutta_schema,
+                sutta_ref = sutta_ref,
+                sutta_title = sutta_title,
+                created_at = func.now(),
+            )
+
+            try:
+                self._app_data.db_session.add(bookmark)
+                self._app_data.db_session.commit()
+
+                self.bookmark_created.emit() # type: ignore
+
+            except Exception as e:
+                logger.error(e)
 
     def _bookmark_with_range(self, selection_range: str):
         logger.info(f"_bookmark_with_range(): {selection_range}")
@@ -275,7 +308,7 @@ class HasBookmarkDialog:
             return
 
         try:
-            self._create_bookmark(
+            self._create_or_update_bookmark(
                 bookmark_name = self.new_bookmark_values['name'],
                 bookmark_quote = self.new_bookmark_values['quote'],
                 bookmark_selection_range = self.new_bookmark_values['selection_range'],
@@ -286,8 +319,6 @@ class HasBookmarkDialog:
                 sutta_ref = str(self._active_tab.sutta.sutta_ref),
                 sutta_title = str(self._active_tab.sutta.title),
             )
-
-            self.bookmark_created.emit() # type: ignore
 
         except Exception as e:
             logger.error(e)
@@ -300,3 +331,40 @@ class HasBookmarkDialog:
             return
 
         self._active_tab.qwe.page().runJavaScript("rangy.serializeSelection(null, true)", self._bookmark_with_range)
+
+    def handle_edit_bookmark(self, schema_and_id: str):
+        _, db_id = schema_and_id.split("-")
+
+        item = self._app_data.db_session \
+                            .query(Um.Bookmark) \
+                            .filter(Um.Bookmark.id == int(db_id)) \
+                            .first()
+
+        if item is None:
+            return
+
+        d = BookmarkDialog(self._app_data,
+                           name=str(item.name),
+                           quote=str(item.quote) if item.quote is not None else '',
+                           selection_range=str(item.selection_range) if item.selection_range is not None else '',
+                           comment=str(item.comment_text) if item.comment_text is not None else '',
+                           db_id=int(db_id),
+                           creating_new=False)
+
+        d.accepted.connect(self.set_new_bookmark)
+        d.exec()
+
+        if self.new_bookmark_values['new_name'] == '':
+            return
+
+        try:
+            self._create_or_update_bookmark(
+                bookmark_name = self.new_bookmark_values['new_name'],
+                bookmark_id = int(self.new_bookmark_values['db_id']),
+                bookmark_quote = self.new_bookmark_values['quote'],
+                bookmark_selection_range = self.new_bookmark_values['selection_range'],
+                bookmark_comment_text = self.new_bookmark_values['comment_text'],
+            )
+
+        except Exception as e:
+            logger.error(e)

@@ -339,9 +339,6 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
-    def _bookmark_edit(self, schema_and_id: str):
-        self.bookmark_edit.emit(schema_and_id)
-
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
 
@@ -349,7 +346,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
 
-        page.helper.bookmark_edit.connect(partial(self._bookmark_edit))
+        page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 
         qwe.setPage(page)
 
