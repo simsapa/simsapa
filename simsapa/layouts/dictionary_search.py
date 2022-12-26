@@ -933,6 +933,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
 
+    def reload_page(self):
+        self._render_words(self._current_words)
+
     def _increase_text_size(self):
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         self._app_data.app_settings['dictionary_font_size'] = font_size + 2
@@ -1047,6 +1050,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.back_recent_button.clicked.connect(partial(self._select_next_recent))
 
         self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
+
+        self.action_Reload_Page \
+            .triggered.connect(partial(self.reload_page))
 
         self.action_Increase_Text_Size \
             .triggered.connect(partial(self._increase_text_size))

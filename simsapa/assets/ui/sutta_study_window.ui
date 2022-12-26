@@ -93,6 +93,7 @@
     <addaction name="action_Show_Related_Suttas"/>
     <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
     <addaction name="action_Show_All_Variant_Readings"/>
+    <addaction name="action_Show_Bookmarks"/>
    </widget>
    <widget class="QMenu" name="menu_Go">
     <property name="title">
@@ -109,6 +110,7 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <addaction name="action_Reload_Page"/>
     <addaction name="action_Increase_Text_Size"/>
     <addaction name="action_Decrease_Text_Size"/>
     <addaction name="action_Increase_Text_Margins"/>
@@ -520,6 +522,25 @@
    </property>
    <property name="text">
     <string>Show Translation and Pali &amp;Line by Line</string>
+   </property>
+  </action>
+  <action name="action_Reload_Page">
+   <property name="text">
+    <string>&amp;Reload Page</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="action_Show_Bookmarks">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show &amp;Bookmarks</string>
    </property>
   </action>
  </widget>

@@ -904,6 +904,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
             self._add_new_tab(title, sutta)
 
+    def reload_page(self):
+        self._get_active_tab().render_sutta_content()
+
     def _handle_copy(self):
         text = self._get_selection()
         if text is not None:

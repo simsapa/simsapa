@@ -220,6 +220,10 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
     def _focus_search_input(self):
         self.sutta_one_state.search_input.setFocus()
 
+    def reload_sutta_pages(self):
+        self.sutta_one_state.reload_page()
+        self.sutta_two_state.reload_page()
+
     def _increase_text_size(self):
         font_size = self._app_data.app_settings.get('sutta_font_size', 22)
         self._app_data.app_settings['sutta_font_size'] = font_size + 2
@@ -277,6 +281,9 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.action_Lookup_Selection_in_Dictionary \
             .triggered.connect(partial(self._lookup_selection_in_dictionary))
+
+        self.action_Reload_Page \
+            .triggered.connect(partial(self.reload_sutta_pages))
 
         self.action_Increase_Text_Size \
             .triggered.connect(partial(self._increase_text_size))

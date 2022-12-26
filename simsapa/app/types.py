@@ -125,6 +125,7 @@ class AppSettings(TypedDict):
     show_related_suttas: bool
     show_translation_and_pali_line_by_line: bool
     show_all_variant_readings: bool
+    show_bookmarks: bool
     sutta_font_size: int
     sutta_max_width: int
     dictionary_font_size: int
@@ -167,6 +168,7 @@ def default_app_settings() -> AppSettings:
         show_related_suttas = True,
         show_translation_and_pali_line_by_line = False,
         show_all_variant_readings = True,
+        show_bookmarks = True,
         sutta_font_size = 22,
         sutta_max_width = 75,
         dictionary_font_size = 18,
@@ -430,17 +432,20 @@ class SuttaSearchWindowInterface(AppWindowInterface):
 
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
+    action_Reload_Page: QAction
     action_Dictionary_Search: QAction
     action_Show_Sidebar: QAction
     action_Show_Related_Suttas: QAction
     action_Show_Translation_and_Pali_Line_by_Line: QAction
     action_Show_All_Variant_Readings: QAction
+    action_Show_Bookmarks: QAction
     action_Find_in_Page: QAction
 
 class DictionarySearchWindowInterface(AppWindowInterface):
     action_Show_Sidebar: QAction
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
+    action_Reload_Page: QAction
     _toggle_sidebar: Callable
 
 

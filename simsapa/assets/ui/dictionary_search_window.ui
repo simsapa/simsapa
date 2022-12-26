@@ -530,6 +530,7 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <addaction name="action_Reload_Page"/>
     <addaction name="action_Increase_Text_Size"/>
     <addaction name="action_Decrease_Text_Size"/>
     <addaction name="action_Search_Result_Sizes"/>
@@ -899,6 +900,14 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F9</string>
+   </property>
+  </action>
+  <action name="action_Reload_Page">
+   <property name="text">
+    <string>&amp;Reload Page</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
    </property>
   </action>
  </widget>

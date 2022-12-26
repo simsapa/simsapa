@@ -416,6 +416,9 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_sutta))
 
+        self.action_Reload_Page \
+            .triggered.connect(partial(self.s.reload_page))
+
         self.action_Increase_Text_Size \
             .triggered.connect(partial(self._increase_text_size))
 

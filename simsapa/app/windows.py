@@ -413,6 +413,10 @@ class AppWindows:
                 w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
                 w.s._get_active_tab().render_sutta_content()
 
+            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
+                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                w.reload_sutta_pages()
+
     def _toggle_show_all_variant_readings(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_All_Variant_Readings.isChecked()
         self._app_data.app_settings['show_all_variant_readings'] = is_on
@@ -423,6 +427,23 @@ class AppWindows:
                 w.action_Show_All_Variant_Readings.setChecked(is_on)
                 w.s._get_active_tab().render_sutta_content()
 
+            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_All_Variant_Readings'):
+                w.action_Show_All_Variant_Readings.setChecked(is_on)
+                w.reload_sutta_pages()
+
+    def _toggle_show_bookmarks(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Show_Bookmarks.isChecked()
+        self._app_data.app_settings['show_bookmarks'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Bookmarks'):
+                w.action_Show_Bookmarks.setChecked(is_on)
+                w.s._get_active_tab().render_sutta_content()
+
+            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_Bookmarks'):
+                w.action_Show_Bookmarks.setChecked(is_on)
+                w.reload_sutta_pages()
 
     # def _new_dictionaries_manager_window(self):
     #     view = DictionariesManagerWindow(self._app_data)
@@ -825,6 +846,13 @@ class AppWindows:
 
                 view.action_Show_All_Variant_Readings \
                     .triggered.connect(partial(self._toggle_show_all_variant_readings, view))
+
+            if hasattr(view, 'action_Show_Bookmarks'):
+                is_on = self._app_data.app_settings.get('show_bookmarks', True)
+                view.action_Show_Bookmarks.setChecked(is_on)
+
+                view.action_Show_Bookmarks \
+                    .triggered.connect(partial(self._toggle_show_bookmarks, view))
 
         if hasattr(view, 'action_Show_Word_Scan_Popup'):
             view.action_Show_Word_Scan_Popup \

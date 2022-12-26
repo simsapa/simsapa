@@ -193,7 +193,7 @@ function get_bookmarks_with_quote_only(sutta_uid) {
 }
 
 function get_bookmarks_and_highlight() {
-    if (SUTTA_UID) {
+    if (SHOW_BOOKMARKS && SUTTA_UID) {
         get_bookmarks_with_range(SUTTA_UID);
         // NOTE: disable because the DOM change breaks applying ranges.
         // get_bookmarks_with_quote_only(SUTTA_UID);

@@ -198,6 +198,13 @@ class SuttaTabWidget(QWidget):
 
         js_extra = f"const SUTTA_UID = '{self.sutta.uid}';";
 
+
+        is_on = self._app_data.app_settings.get('show_bookmarks', True)
+        if is_on:
+            js_extra += f"const SHOW_BOOKMARKS = true;";
+        else:
+            js_extra += f"const SHOW_BOOKMARKS = false;";
+
         if sutta_quote:
             text = sutta_quote['quote'].replace('"', '\\"')
             selection_range = sutta_quote['selection_range'] if sutta_quote['selection_range'] is not None else 0
