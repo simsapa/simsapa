@@ -134,6 +134,7 @@ class DictionaryQueries:
 
         return html_page
 
+
     def _add_example_links(self, html_page: str) -> str:
         example_ids: List[str] = re.findall(r'id="(example__[^"]+)"', html_page)
         if len(example_ids) == 0:
@@ -197,6 +198,27 @@ class DictionaryQueries:
 
         return html_page
 
+
+    def _add_epd_pali_words_links(self, html_page: str) -> str:
+        if '<div class="epd">' not in html_page:
+            return html_page
+
+        epd_words: List[str] = re.findall(r'<b class="epd">([^<]+)</b>', html_page)
+        if len(epd_words) == 0:
+            return html_page
+
+        for word in epd_words:
+            url = QUrl(f"ssp://{QueryType.words.value}/{word}")
+            link = f'<a href="{url.toString()}">{word}</a>'
+
+            word_tag = f'<b class="epd">{word}</b>'
+            linked_tag = f'<b class="epd">{link}</b>'
+
+            html_page = html_page.replace(word_tag, linked_tag)
+
+        return html_page
+
+
     def render_html_page(self,
                           body: str,
                           css_head: str = '',
@@ -226,6 +248,9 @@ class DictionaryQueries:
         if 'id="declension__' not in body:
             # dpd-grammar doesn't have a declension div.
             body = self._add_grammar_links(body)
+
+
+        body = self._add_epd_pali_words_links(body)
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,
