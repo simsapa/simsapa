@@ -323,6 +323,7 @@ class Bookmark(Base): # type: ignore
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     quote = Column(String)
+    nth = Column(Integer)
     selection_range = Column(String)
 
     sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=True)
