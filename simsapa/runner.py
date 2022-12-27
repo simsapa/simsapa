@@ -2,7 +2,9 @@ import sys
 from typing import Optional
 import typer
 
-from simsapa import logger
+from multiprocessing import freeze_support
+
+from simsapa import logger, IS_WINDOWS
 from simsapa.app.types import QueryType
 
 app = typer.Typer()
@@ -91,4 +93,6 @@ def main():
         app()
 
 if __name__ == "__main__":
+    if IS_WINDOWS:
+        freeze_support()
     main()

@@ -48,6 +48,7 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     logger.info(f"Available port: {port}")
 
+    multiprocessing.set_start_method('spawn')
     server_proc = multiprocessing.Process(target=start_server, args=(port,), daemon=True)
     server_proc.start()
 
