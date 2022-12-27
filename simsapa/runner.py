@@ -1,11 +1,9 @@
 import sys
 from typing import Optional
 import typer
-import threading
 
 from simsapa import logger
 from simsapa.app.types import QueryType
-from simsapa.app.api import start_server, find_available_port
 
 app = typer.Typer()
 index_app = typer.Typer()
@@ -21,21 +19,8 @@ def gui(url: Optional[str] = None):
     #     print(str(e))
     #     sys.exit(2)
 
-    try:
-        port = find_available_port()
-        logger.info(f"Available port: {port}")
-        daemon = threading.Thread(name='daemon_server',
-                                target=start_server,
-                                args=(port,))
-        daemon.setDaemon(True)
-        daemon.start()
-    except Exception as e:
-        logger.error(e)
-        # FIXME show error to user
-        port = 6789
-
     from simsapa.gui import start
-    start(port=port, url=url)
+    start(url=url)
 
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):

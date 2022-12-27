@@ -3,11 +3,13 @@ import sys
 import traceback
 from typing import Optional
 from PyQt6 import QtCore
+import multiprocessing
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
+from simsapa.app.api import start_server, find_available_port
 from simsapa import logger
 from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
@@ -18,7 +20,7 @@ from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
-from simsapa.assets import icons_rc  # noqa: F401
+from simsapa.assets import icons_rc
 
 def excepthook(exc_type, exc_value, exc_tb):
     logger.error("excepthook()")
@@ -32,8 +34,22 @@ sys.excepthook = excepthook
 
 create_app_dirs()
 
-def start(port: int, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
+
+def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.info("gui::start()")
+
+    if port is None:
+        try:
+            port = find_available_port()
+        except Exception as e:
+            logger.error(e)
+            # FIXME show error to user
+            port = 6789
+
+    logger.info(f"Available port: {port}")
+
+    server_proc = multiprocessing.Process(target=start_server, args=(port,), daemon=True)
+    server_proc.start()
 
     ensure_empty_graphs_cache()
 
