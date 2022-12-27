@@ -1,3 +1,4 @@
+import os
 import sys
 from typing import Optional
 import typer
@@ -6,6 +7,13 @@ from multiprocessing import freeze_support
 
 from simsapa import logger, IS_WINDOWS
 from simsapa.app.types import QueryType
+
+# Error in click.utils.echo() when console is unavailable
+# https://github.com/pallets/click/issues/2415
+if getattr(sys, 'frozen', False):
+    f = open(os.devnull, 'w')
+    sys.stdin = f
+    sys.stdout = f
 
 app = typer.Typer()
 index_app = typer.Typer()
