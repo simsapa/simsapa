@@ -1,6 +1,7 @@
 from pathlib import Path
 import socket
 import os
+import sys
 from typing import Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
@@ -299,6 +300,11 @@ def start_server(port=8000):
     # Run this here, not in AppData.__init__(), so that db_helpers module loads
     # in this thread and doesn't block the main thread opening the first window.
     find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
+
+    if getattr(sys, 'frozen', False):
+        f = open(os.devnull, 'w')
+        sys.stdin = f
+        sys.stdout = f
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)
 
