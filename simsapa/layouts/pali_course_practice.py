@@ -11,12 +11,12 @@ from sqlalchemy.sql import func
 
 from PyQt6 import QtWidgets
 from PyQt6.QtMultimedia import QAudioDevice, QMediaDevices, QSoundEffect
-from PyQt6.QtCore import QMessageAuthenticationCode, QSize, QTimer, QUrl, pyqtSignal, Qt
-from PyQt6.QtGui import QAction, QCloseEvent, QEnterEvent, QIcon, QPicture, QPixmap, QPlatformSurfaceEvent
+from PyQt6.QtCore import QSize, QTimer, QUrl, pyqtSignal, Qt
+from PyQt6.QtGui import QAction, QCloseEvent, QEnterEvent, QIcon, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolBar, QToolButton, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolButton, QVBoxLayout
 
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.layouts.html_content import html_page

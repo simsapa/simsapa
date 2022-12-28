@@ -301,6 +301,8 @@ def start_server(port=8000):
     # in this thread and doesn't block the main thread opening the first window.
     find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
 
+    # Error in click.utils.echo() when console is unavailable
+    # https://github.com/pallets/click/issues/2415
     if getattr(sys, 'frozen', False):
         f = open(os.devnull, 'w')
         sys.stdin = f

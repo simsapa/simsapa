@@ -5,7 +5,7 @@ import typer
 
 from multiprocessing import freeze_support
 
-from simsapa import logger, IS_WINDOWS
+from simsapa import logger
 from simsapa.app.types import QueryType
 
 # Error in click.utils.echo() when console is unavailable
@@ -101,6 +101,5 @@ def main():
         app()
 
 if __name__ == "__main__":
-    if IS_WINDOWS:
-        freeze_support()
+    freeze_support()
     main()
