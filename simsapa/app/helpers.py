@@ -443,6 +443,14 @@ def compact_rich_text(text: str) -> str:
 def strip_html(text: str) -> str:
     text = html.unescape(text)
 
+    re_thumbs = re.compile("["
+        u"\U0001f44d" # thumb up
+        u"\U0001f44e" # thumb down
+    "]+", flags=re.UNICODE)
+
+    text = re_thumbs.sub(r'', text)
+
+    text = re.sub(r'<!doctype html>', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<head(.*?)</head>', '', text)
     text = re.sub(r'<style(.*?)</style>', '', text)
     text = re.sub(r'<script(.*?)</script>', '', text)

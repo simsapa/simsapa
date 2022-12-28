@@ -1,4 +1,6 @@
+import multiprocessing as mp
 from pathlib import Path
+import json
 import socket
 import os
 import sys
@@ -7,7 +9,7 @@ from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
 
-from simsapa import APP_QUEUES, PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
+from simsapa import PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
 from simsapa import logger
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session
 
@@ -25,33 +27,37 @@ app = Flask(__name__)
 app.config['ENV'] = 'development'
 cors = CORS(app)
 
+global server_queue
+server_queue: Optional[mp.Queue] = None
+
 @app.route('/queues/<string:queue_id>', methods=['POST'])
 def queues(queue_id):
     if request.content_type == 'application/json':
         try:
-            # NOTE get the byte string, we want a string as the queue message,
-            # and we'll deserialize somewhere else, instead of doing so with
-            # .get_json() here.
-            data = request.get_data(as_text=True, cache=False)
+            msg = request.get_json(cache=False)
+            if msg is None:
+                logger.error("can't deserialize message")
+                abort(400)
+
+            msg['queue_id'] = queue_id
+
         except Exception as e:
             abort(Response(f"{e}", 403))
 
-        logger.info(f"QueueResource.on_post() data: {data}")
+        logger.info(f"QueueResource.on_post() msg: {msg}")
 
     else:
         abort(400)
 
-    if queue_id is None:
+    if queue_id is None or queue_id == '':
+        logger.error("queue_id is missing")
         abort(404)
 
-    if queue_id != 'all' and queue_id not in APP_QUEUES.keys():
-        abort(403)
+    if server_queue is None:
+        logger.error("server_queue is None")
+        abort(404)
 
-    if queue_id == 'all':
-        for i in APP_QUEUES.keys():
-            APP_QUEUES[i].put_nowait(data)
-    else:
-        APP_QUEUES[queue_id].put_nowait(data)
+    server_queue.put_nowait(json.dumps(msg))
 
     return 'OK', 200
 
@@ -293,9 +299,12 @@ def resp_forbidden(e):
     logger.error(msg)
     return msg, 403
 
-def start_server(port=8000):
+def start_server(port: int, q: mp.Queue):
     logger.info(f'Starting server on port {port}')
     os.environ["FLASK_ENV"] = "development"
+
+    global server_queue
+    server_queue = q
 
     # Run this here, not in AppData.__init__(), so that db_helpers module loads
     # in this thread and doesn't block the main thread opening the first window.

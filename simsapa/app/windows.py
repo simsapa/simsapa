@@ -12,7 +12,7 @@ from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, p
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
-from simsapa import APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
+from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
@@ -60,6 +60,21 @@ class AppWindows:
         self.word_scan_popup: Optional[WordScanPopup] = None
 
     def handle_messages(self):
+        try:
+            s = SERVER_QUEUE.get_nowait()
+            msg: ApiMessage = json.loads(s)
+            if len(APP_QUEUES) > 0:
+                if 'queue_id' in msg.keys():
+                    queue_id = msg['queue_id']
+                else:
+                    queue_id = 'all'
+
+                if queue_id in APP_QUEUES.keys():
+                    APP_QUEUES[queue_id].put_nowait(s)
+
+        except queue.Empty:
+            pass
+
         if len(APP_QUEUES) > 0 and self.queue_id in APP_QUEUES.keys():
             try:
                 s = APP_QUEUES[self.queue_id].get_nowait()
@@ -245,14 +260,16 @@ class AppWindows:
         self._connect_signals(view)
 
         def _lookup(query: str):
-            msg = ApiMessage(action = ApiAction.lookup_in_dictionary,
-                            data = query)
+            msg = ApiMessage(queue_id = 'all',
+                             action = ApiAction.lookup_in_dictionary,
+                             data = query)
             self._lookup_clipboard_in_dictionary(msg)
 
         def _study(side: str, uid: str):
             data = {'side': side, 'uid': uid}
-            msg = ApiMessage(action = ApiAction.open_in_study_window,
-                            data = json.dumps(obj=data))
+            msg = ApiMessage(queue_id = 'all',
+                             action = ApiAction.open_in_study_window,
+                             data = json.dumps(obj=data))
             self._show_sutta_by_uid_in_side(msg)
 
         view.lookup_in_dictionary_signal.connect(partial(_lookup))
@@ -293,8 +310,9 @@ class AppWindows:
 
         def _study(side: str, uid: str):
             data = {'side': side, 'uid': uid}
-            msg = ApiMessage(action = ApiAction.open_in_study_window,
-                            data = json.dumps(obj=data))
+            msg = ApiMessage(queue_id = 'all',
+                             action = ApiAction.open_in_study_window,
+                             data = json.dumps(obj=data))
             self._show_sutta_by_uid_in_side(msg)
 
         view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
@@ -326,8 +344,9 @@ class AppWindows:
         self._connect_signals(view)
 
         def _lookup_in_suttas(query: str):
-            msg = ApiMessage(action = ApiAction.lookup_in_suttas,
-                            data = query)
+            msg = ApiMessage(queue_id = 'all',
+                             action = ApiAction.lookup_in_suttas,
+                             data = query)
             self._lookup_clipboard_in_suttas(msg)
 
         def _show_sutta_url(url: QUrl):

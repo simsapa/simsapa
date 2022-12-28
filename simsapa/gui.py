@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
 from simsapa.app.api import start_server, find_available_port
 from simsapa import logger
-from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
+from simsapa import SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
 from .app.types import AppData, QueryType
@@ -48,8 +48,7 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     logger.info(f"Available port: {port}")
 
-    multiprocessing.set_start_method('spawn')
-    server_proc = multiprocessing.Process(target=start_server, args=(port,), daemon=True)
+    server_proc = multiprocessing.Process(target=start_server, args=(port, SERVER_QUEUE), daemon=True)
     server_proc.start()
 
     ensure_empty_graphs_cache()
