@@ -22,6 +22,7 @@ class Helper(QObject):
     mouseover = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
 
+    hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -74,6 +75,8 @@ class ReaderWebEnginePage(QWebEnginePage):
 
     def acceptNavigationRequest(self, url: QUrl, _type: QWebEnginePage.NavigationType, isMainFrame):
         if _type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+
+            self.helper.hide_preview.emit()
 
             # Don't follow relative URLs. It's usually from static content
             # linking to files (which are now not present) such as

@@ -56,6 +56,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     open_in_study_window_signal = pyqtSignal([str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
 
     def __init__(self,
@@ -339,12 +340,16 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
+    def _emit_hide_preview(self):
+        self.hide_preview.emit()
+
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 

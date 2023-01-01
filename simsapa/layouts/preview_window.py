@@ -39,6 +39,13 @@ class PreviewWindow(QDialog):
         self._connect_signals()
 
 
+    def _do_hide(self):
+        self._hover_data = None
+        self._link_mouseleave = False
+        self._mouseover = False
+        self._hide_timer.stop()
+        self.hide()
+
     def _ui_setup(self):
         self.wrap_layout = QVBoxLayout()
         self.wrap_layout.setContentsMargins(8, 8, 8, 8)
@@ -178,7 +185,7 @@ class PreviewWindow(QDialog):
 
 
     def _render_words(self, words: List[UDictWord]):
-        self.setWindowTitle("Words")
+        self.setWindowTitle("Simsapa Preview")
 
         css_extra = """
         html { font-size: 18px; }
@@ -186,20 +193,22 @@ class PreviewWindow(QDialog):
         h1 { font-size: 22px; margin-top: 0pt; }
         """
 
-        html = self.dict_queries.words_to_html_page(words, css_extra)
+        js_extra = "const SHOW_BOOKMARKS = false;";
+
+        html = self.dict_queries.words_to_html_page(words=words, css_extra=css_extra, js_extra=js_extra)
 
         self.set_qwe_html(html)
 
 
     def _render_sutta(self, sutta: USutta, highlight_text: Optional[str] = None):
-        self.setWindowTitle(str(sutta.title))
-
-        if sutta.content_html is not None and sutta.content_html != '':
-            content = str(sutta.content_html)
+        self.setWindowTitle(f"Simsapa Preview: {sutta.title}")
 
         if sutta.content_json is not None and sutta.content_json != '':
             segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))
             content = bilara_content_json_to_html(segments_json)
+
+        elif sutta.content_html is not None and sutta.content_html != '':
+            content = str(sutta.content_html)
 
         elif sutta.content_plain is not None and sutta.content_plain != '':
             content = '<pre>' + str(sutta.content_plain) + '</pre>'
@@ -213,7 +222,8 @@ class PreviewWindow(QDialog):
         h1 { font-size: 22px; margin-top: 0pt; }
         """
 
-        js_extra = ""
+        js_extra = f"const SUTTA_UID = '{sutta.uid}';";
+        js_extra += "const SHOW_BOOKMARKS = false;";
 
         if highlight_text:
             text = highlight_text.replace('"', '\\"')

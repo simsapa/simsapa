@@ -1,6 +1,5 @@
 from typing import Optional
 
-from PyQt6.QtCore import QFile
 from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS, SUTTAS_JS
 from mako.template import Template
 

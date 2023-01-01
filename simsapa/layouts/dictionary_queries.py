@@ -77,7 +77,10 @@ class DictionaryQueries:
                                  .first()
         return word
 
-    def words_to_html_page(self, words: List[UDictWord], css_extra: Optional[str] = None) -> str:
+    def words_to_html_page(self,
+                           words: List[UDictWord],
+                           css_extra: Optional[str] = None,
+                           js_extra: Optional[str] = None) -> str:
         # avoid multiple copies of the same content with a crc32 checksum
         page_body: dict[int, str] = {}
         page_css: dict[int, str] = {}
@@ -105,11 +108,18 @@ class DictionaryQueries:
         else:
             css_extra = css
 
+        if js_extra:
+            js = js_extra
+        else:
+            js = ""
+
+        js_head = js + "\n\n".join(page_js.values())
+
         page_html = self.render_html_page(
             body = "\n\n".join(page_body.values()),
             css_head = "\n\n".join(page_css.values()),
             css_extra = css_extra,
-            js_head = "\n\n".join(page_js.values()))
+            js_head = js_head)
 
         return page_html
 

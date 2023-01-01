@@ -45,6 +45,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    hide_preview = pyqtSignal()
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -200,13 +201,19 @@ class WordScanPopupState(QWidget, HasFulltextList):
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
+    def _emit_hide_preview(self):
+        self.hide_preview.emit()
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
+
         # FIXME preview appears over the link
         # page.helper.mouseover.connect(partial(self._link_mouseover))
         # page.helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         self.qwe.setPage(page)
 

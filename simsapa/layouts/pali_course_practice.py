@@ -103,6 +103,7 @@ class CoursePracticeWindow(AppWindowInterface):
     show_sutta_by_url = pyqtSignal(QUrl)
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    hide_preview = pyqtSignal()
 
     current_group: UChallengeGroup
     progress_in_remaining: int = 1
@@ -446,6 +447,7 @@ class CoursePracticeWindow(AppWindowInterface):
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         qwe.setPage(page)
 
@@ -466,6 +468,10 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
+
+
+    def _emit_hide_preview(self):
+        self.hide_preview.emit()
 
 
     def _show_sutta_by_url(self, url: QUrl):

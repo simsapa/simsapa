@@ -124,6 +124,8 @@ class AppWindows:
         if url.host() != QueryType.words:
             return False
 
+        self._preview_window._do_hide()
+
         view = None
         for w in self._windows:
             if isinstance(w, DictionarySearchWindow) and w.isVisible():
@@ -142,6 +144,8 @@ class AppWindows:
     def _show_sutta_by_url_in_search(self, url: QUrl) -> bool:
         if url.host() != QueryType.suttas:
             return False
+
+        self._preview_window._do_hide()
 
         uid = re.sub(r"^/", "", url.path())
         query = parse_qs(url.query())
@@ -178,6 +182,8 @@ class AppWindows:
             if isinstance(w, SuttaStudyWindow) and w.isVisible():
                 view = w
                 break
+
+        self._preview_window._do_hide()
 
         if view is None:
             view = self._new_sutta_study_window()
@@ -284,6 +290,8 @@ class AppWindows:
         view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 
+        view.s.hide_preview.connect(partial(self._preview_window._do_hide))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -364,6 +372,8 @@ class AppWindows:
         view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 
+        view.hide_preview.connect(partial(self._preview_window._do_hide))
+
         if self._hotkeys_manager is not None:
             try:
                 self._hotkeys_manager.setup_window(view)
@@ -402,6 +412,8 @@ class AppWindows:
 
             self.word_scan_popup.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
             self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
+            self.word_scan_popup.s.hide_preview.connect(partial(self._preview_window._do_hide))
 
             self.word_scan_popup.show()
             self.word_scan_popup.activateWindow()
@@ -523,6 +535,8 @@ class AppWindows:
 
         view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
+        view.hide_preview.connect(partial(self._preview_window._do_hide))
 
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):
