@@ -389,6 +389,20 @@ class AppWindows:
     def _toggle_word_scan_popup(self):
         if self.word_scan_popup is None:
             self.word_scan_popup = WordScanPopup(self._app_data)
+
+            def _show_sutta_url(url: QUrl):
+                self._show_sutta_by_url_in_search(url)
+
+            def _show_words_url(url: QUrl):
+                if self.word_scan_popup:
+                    self.word_scan_popup.s._show_word_by_url(url)
+
+            self.word_scan_popup.s.show_sutta_by_url.connect(partial(_show_sutta_url))
+            self.word_scan_popup.s.show_words_by_url.connect(partial(_show_words_url))
+
+            self.word_scan_popup.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+            self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
             self.word_scan_popup.show()
             self.word_scan_popup.activateWindow()
 

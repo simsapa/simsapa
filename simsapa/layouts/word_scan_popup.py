@@ -5,8 +5,9 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt
+from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
@@ -15,9 +16,9 @@ from ..app.db import userdata_models as Um
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
-from simsapa.app.types import AppData, DictionarySearchModeNameToType, SearchMode, UDictWord, WindowPosSize
+from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
 from .search_query_worker import SearchQueryWorker
 
@@ -38,6 +39,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _last_query_time = datetime.now()
     search_query_worker: Optional[SearchQueryWorker] = None
     exact_query_worker: Optional[ExactQueryWorker] = None
+
+    show_sutta_by_url = pyqtSignal(QUrl)
+    show_words_by_url = pyqtSignal(QUrl)
+
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -175,9 +182,33 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         return css_extra
 
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.show_words_by_url.emit(url)
+
+    def _show_sutta_by_url(self, url: QUrl):
+        if url.host() != QueryType.suttas:
+            return
+
+        self.show_sutta_by_url.emit(url)
+
+    def _link_mouseover(self, hover_data: LinkHoverData):
+        self.link_mouseover.emit(hover_data)
+
+    def _link_mouseleave(self, href: str):
+        self.link_mouseleave.emit(href)
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
-        self.qwe.setPage(ReaderWebEnginePage(self))
+
+        page = ReaderWebEnginePage(self)
+        # FIXME preview appears over the link
+        # page.helper.mouseover.connect(partial(self._link_mouseover))
+        # page.helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        self.qwe.setPage(page)
 
         self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -192,6 +223,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.qwe.show()
         self.content_layout.addWidget(self.qwe, 100)
+
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
     def _set_qwe_html(self, html: str):
         self._current_html = html
