@@ -309,7 +309,11 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.suttas_table.setShowGrid(False)
         self.suttas_table.setWordWrap(False)
         self.suttas_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+
+        # MultiSelection allows multiple items to be selected with left-click,
+        # and it becomes confusing what should be opened when the Open button or
+        # double-click is used.
+        self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.suttas_table.horizontalHeader().setStretchLastSection(True)
