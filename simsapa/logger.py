@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime
 from typing import Any
 
@@ -33,7 +34,7 @@ def _write_log(msg: Any, level: str = "INFO", start_new: bool = False):
     t = datetime.now()
     logline = f"[{t}] {level}: {msg}\n"
 
-    if ENABLE_PRINT_LOG:
+    if ENABLE_PRINT_LOG and not getattr(sys, 'frozen', False):
         if IS_MAC:
             # Avoid MacOS encoding error
             # UnicodeEncodeError: 'ascii' codec can't encode character '\u0101' in position 169: ordinal not in range(128)
