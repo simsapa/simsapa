@@ -775,6 +775,9 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         if len(file_path) == 0:
             return
 
+        if not file_path.endswith(".csv"):
+            file_path = f"{file_path}.csv"
+
         res = self._app_data.db_session \
                             .query(Um.Bookmark) \
                             .filter(Um.Bookmark.sutta_uid != '') \
