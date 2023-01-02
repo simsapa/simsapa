@@ -154,8 +154,7 @@ class PreviewWindow(QDialog):
         preview_width = 500
         preview_height = 400
 
-        self.resize(preview_width, preview_height)
-
+        self.setFixedSize(preview_width, preview_height)
 
         if self._app_data.screen_size:
             if self._hover_data:
