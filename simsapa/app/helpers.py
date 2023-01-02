@@ -338,6 +338,7 @@ def consistent_nasal_m(text: Optional[str] = None) -> str:
     # Aj Thanissaro's BMC uses ṁ
     # Uncommon Wisdom uses ṁ
     #
+    # PTS books use ṃ
     # Digital Pali Reader MS uses ṃ
     # Bodhirasa DPD uses ṃ
     # Bhikkhu Bodhi uses ṃ
@@ -347,21 +348,25 @@ def consistent_nasal_m(text: Optional[str] = None) -> str:
     return text.replace('ṃ', 'ṁ')
 
 
-def expand_quote_to_pattern(text: str) -> re.Pattern:
+def expand_quote_to_pattern_str(text: str) -> str:
     s = text
     # Normalize quote marks to '
     s = s.replace('"', "'");
     # Quote mark should match all types, and may not be present
-    s = s.replace("'", '[\'"“”‘’]*');
+    s = s.replace("'", r'[\'"“”‘’]*');
     # Normalize spaces
     s = re.sub(r' +', " ", s)
     # Common spelling variations
     s = re.sub(r'[iī]', '[iī]', s)
     # Punctuation may not be present
     # Space may have punctuation in the text, but not in the link quote param
-    s = re.sub(r'[ \.,;\?\!…—-]', '[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s);
+    s = re.sub(r'[ \.,;\?\!…—-]', r'[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s);
 
-    return re.compile(s)
+    return s
+
+
+def expand_quote_to_pattern(text: str) -> re.Pattern:
+    return re.compile(expand_quote_to_pattern_str(text))
 
 
 def remove_punct(text: Optional[str] = None) -> str:

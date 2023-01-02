@@ -10,6 +10,7 @@ from sqlalchemy.sql.elements import and_, or_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
 from ..app.db.search import SearchQuery, SearchResult, dict_word_to_search_result, sutta_to_search_result
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -45,7 +46,7 @@ class SearchQueryWorker(QRunnable):
                   only_lang: Optional[str] = None,
                   only_source: Optional[str] = None):
 
-        self.query = query
+        self.query = consistent_nasal_m(query.lower())
         self.query_started = query_started
         self.disabled_labels = disabled_labels
         self.only_lang = None if only_lang is None else only_lang.lower()
@@ -199,27 +200,31 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.Sutta)
                         for i in and_terms:
-                            q = q.filter(Am.Sutta.content_plain.like(f"%{i}%"))
+                            p = expand_quote_to_pattern_str(i)
+                            q = q.filter(Am.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                         q = db_session.query(Um.Sutta)
                         for i in and_terms:
-                            q = q.filter(Um.Sutta.content_plain.like(f"%{i}%"))
+                            p = expand_quote_to_pattern_str(i)
+                            q = q.filter(Um.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                     else:
 
+                        p = expand_quote_to_pattern_str(self.query)
+
                         r = db_session \
                             .query(Am.Sutta) \
-                            .filter(Am.Sutta.content_plain.like(f"%{self.query}%")) \
+                            .filter(Am.Sutta.content_plain.regexp_match(p)) \
                             .all()
                         res_suttas.extend(r)
 
                         r = db_session \
                             .query(Um.Sutta) \
-                            .filter(Um.Sutta.content_plain.like(f"%{self.query}%")) \
+                            .filter(Um.Sutta.content_plain.regexp_match(p)) \
                             .all()
                         res_suttas.extend(r)
 
