@@ -22,9 +22,15 @@ def html_page(content: str,
     # NOTE not using this atm
     # js = str(open_sutta_links_js_tmpl.render(api_url=api_url))
 
-    js = SUTTAS_JS
+    js = ""
+
     if js_extra:
         js += "\n\n" + js_extra
+
+    if not js_extra or 'SHOW_BOOKMARKS' not in js_extra:
+        js += "const SHOW_BOOKMARKS = false;";
+
+    js += SUTTAS_JS
 
     html = str(page_tmpl.render(content=content,
                                 css_head=css,

@@ -50,6 +50,7 @@ class PreviewWindow(QDialog):
         self.wrap_layout = QVBoxLayout()
         self.wrap_layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self.wrap_layout)
+        self.setWindowTitle("Simsapa Preview")
 
         self.setMinimumSize(50, 50)
 
@@ -122,6 +123,9 @@ class PreviewWindow(QDialog):
             sutta = self.sutta_queries.get_sutta_by_url(url)
 
             if sutta is None:
+                self._render_not_found(url)
+                self._move_window_from_hover()
+                self.show()
                 return
 
             query = parse_qs(url.query())
@@ -138,6 +142,9 @@ class PreviewWindow(QDialog):
             words = self.dict_queries.get_words_by_uid(word_uid)
 
             if len(words) == 0:
+                self._render_not_found(url)
+                self._move_window_from_hover()
+                self.show()
                 return
 
             self._render_words(words)
@@ -181,6 +188,30 @@ class PreviewWindow(QDialog):
             self.move(x, y)
         else:
             self.move(10, 10)
+
+
+    def _render_not_found(self, url: QUrl):
+        self.setWindowTitle("Simsapa Preview: 404 Not Found")
+
+        content = f"""
+        <h1>404 Not Found</h1>
+        <p>No content found for URL: {url.toString()}</p>
+        <p>
+        <i>Host:</i> {url.host()}<br>
+        <i>Path:</i> {url.path()}<br>
+        <i>Query:</i> {parse_qs(url.query())}<br>
+        </p>
+        """
+
+        css_extra = """
+        html { font-size: 18px; }
+        body { padding: 0.5rem; max-width: 100%; }
+        h1 { font-size: 22px; margin-top: 0pt; }
+        """
+
+        html = html_page(content, self._app_data.api_url, css_extra)
+
+        self.set_qwe_html(html)
 
 
     def _render_words(self, words: List[UDictWord]):

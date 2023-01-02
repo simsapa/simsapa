@@ -138,6 +138,9 @@ class SuttaQueries:
                 res = self.get_suttas_by_quote(sutta_quote['quote'])
                 results.extend(res)
 
+        if len(results) == 0:
+            return None
+
         if sutta_quote:
             res_sutta = self.find_quote_in_suttas(results, sutta_quote['quote']) or results[0]
         else:
@@ -217,6 +220,9 @@ class SuttaQueries:
 
                 res = self.get_suttas_by_quote(sutta_quote['quote'])
                 results.extend(res)
+
+        if len(results) == 0:
+            return None
 
         if sutta_quote:
             res_sutta = self.find_quote_in_suttas(results, sutta_quote['quote']) or results[0]
