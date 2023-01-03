@@ -191,10 +191,10 @@ class PreviewWindow(QDialog):
 
 
     def _render_not_found(self, url: QUrl):
-        self.setWindowTitle("Simsapa Preview: 404 Not Found")
+        self.setWindowTitle("Simsapa Preview: Content Not Found")
 
         content = f"""
-        <h1>404 Not Found</h1>
+        <h1>Content Not Found</h1>
         <p>No content found for URL: {url.toString()}</p>
         <p>
         <i>Host:</i> {url.host()}<br>
