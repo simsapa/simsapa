@@ -226,6 +226,32 @@ function highlight_and_scroll_to (highlight_text) {
     }
 }
 
+function get_selection_data () {
+    // test for selection to exist
+    let sel = document.getSelection();
+    let sel_text = sel.toString();
+    if (sel_text.length == 0) {
+        return '';
+    }
+
+    let anchor_text = sel.anchorNode.textContent;
+
+    let before = anchor_text.slice(0, sel.anchorOffset);
+
+    let nth_in_anchor = before.split(sel_text).length;
+
+    let sel_range = rangy.serializeSelection(null, true);
+
+    let data = {
+        sel_range: sel_range,
+        sel_text: sel_text,
+        anchor_text: anchor_text,
+        nth_in_anchor: nth_in_anchor,
+    };
+
+    return JSON.stringify(data);
+}
+
 document.qt_channel = null;
 
 document.addEventListener("DOMContentLoaded", function(event) {

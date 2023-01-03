@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
+import logging
 
 from simsapa import PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
 from simsapa import logger
@@ -26,6 +27,7 @@ from .graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
 app = Flask(__name__)
 app.config['ENV'] = 'development'
 cors = CORS(app)
+logging.getLogger("werkzeug").disabled = True
 
 global server_queue
 server_queue: Optional[mp.Queue] = None

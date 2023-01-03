@@ -1,5 +1,6 @@
 import re
-from typing import Callable, Optional
+import json
+from typing import Callable, Optional, TypedDict
 from PyQt6 import QtCore
 
 from PyQt6.QtCore import QAbstractListModel, Qt, pyqtSignal
@@ -8,13 +9,21 @@ from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QLabel, QLineEdit, QListView,
 
 from sqlalchemy.sql import func
 # from simsapa.app.file_doc import FileDoc
-from simsapa import logger
+from simsapa import DbSchemaName, logger
+from simsapa.app.helpers import compact_plain_text
 
 from simsapa.app.types import AppData
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 
-# from ..app.db import appdata_models as Am
+from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
+
+
+class SelectionData(TypedDict):
+    sel_range: str
+    sel_text: str
+    anchor_text: str
+    nth_in_anchor: int
 
 
 class SuggestModel(QAbstractListModel):
@@ -204,6 +213,7 @@ class HasBookmarkDialog:
                                    bookmark_name: str,
                                    bookmark_id: Optional[int] = None,
                                    bookmark_quote: Optional[str] = None,
+                                   bookmark_nth: Optional[int] = None,
                                    bookmark_selection_range: Optional[str] = None,
                                    bookmark_comment_text: Optional[str] = None,
                                    sutta_id: Optional[int] = None,
@@ -254,6 +264,7 @@ class HasBookmarkDialog:
 
             if bookmark_quote:
                 bookmark.quote = bookmark_quote
+                bookmark.nth = bookmark_nth
             if bookmark_selection_range:
                 bookmark.selection_range = bookmark_selection_range
             if bookmark_comment_text:
@@ -272,6 +283,7 @@ class HasBookmarkDialog:
             bookmark = Um.Bookmark(
                 name = bookmark_name,
                 quote = bookmark_quote,
+                nth = bookmark_nth,
                 selection_range = bookmark_selection_range,
                 comment_text = bookmark_comment_text,
                 sutta_id = sutta_id,
@@ -291,31 +303,79 @@ class HasBookmarkDialog:
             except Exception as e:
                 logger.error(e)
 
-    def _bookmark_with_range(self, selection_range: str):
-        logger.info(f"_bookmark_with_range(): {selection_range}")
+
+    def _count_occurrence_before(self, quote: str, before: str, sutta_schema: str, sutta_id: int) -> int:
+        r = None
+        if sutta_schema == DbSchemaName.AppData.value:
+            r = self._app_data \
+                    .db_session.query(Am.Sutta) \
+                    .filter(Am.Sutta.id == sutta_id) \
+                    .first()
+
+        else:
+            r = self._app_data \
+                    .db_session.query(Um.Sutta) \
+                    .filter(Um.Sutta.id == sutta_id) \
+                    .first()
+
+        if r is None or r.content_plain is None or r.content_plain == '':
+            return 0
+
+        content = str(r.content_plain)
+
+        a = content.split(compact_plain_text(before))
+
+        # if it was not split, len is 1
+        if len(a) > 1:
+            text = a[0]
+            count = len(text.split(quote)) - 1
+            return count
+        else:
+            return 0
+
+
+    def _bookmark_with_range(self, sel_data_json: str):
+        if sel_data_json == '':
+            return
+
+        sel_data: SelectionData = json.loads(sel_data_json)
+        logger.info(f"_bookmark_with_range(): {sel_data}")
 
         if self._active_tab.sutta is None:
             logger.error("Sutta is not set")
             return
 
-        quote = str(self._active_tab.qwe.selectedText()).replace("\n", " ").strip()
+        quote = sel_data['sel_text'].replace("\n", " ").strip()
 
-        d = BookmarkDialog(self._app_data, quote=quote, selection_range=selection_range)
+        d = BookmarkDialog(self._app_data, quote=quote, selection_range=sel_data['sel_range'])
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 
-        if self.new_bookmark_values['name'] == '':
+        if 'name' not in self.new_bookmark_values.keys() or self.new_bookmark_values['name'] == '':
             return
+
+        sutta_schema = self._active_tab.sutta.metadata.schema
+        sutta_id = int(str(self._active_tab.sutta.id))
+
+        n_before = self._count_occurrence_before(
+            quote = sel_data['sel_text'],
+            before = sel_data['anchor_text'],
+            sutta_schema = sutta_schema,
+            sutta_id = sutta_id,
+        )
+
+        bookmark_nth = n_before + sel_data['nth_in_anchor']
 
         try:
             self._create_or_update_bookmark(
                 bookmark_name = self.new_bookmark_values['name'],
                 bookmark_quote = self.new_bookmark_values['quote'],
+                bookmark_nth = bookmark_nth,
                 bookmark_selection_range = self.new_bookmark_values['selection_range'],
                 bookmark_comment_text = self.new_bookmark_values['comment_text'],
-                sutta_id = int(str(self._active_tab.sutta.id)),
+                sutta_id = sutta_id,
                 sutta_uid = str(self._active_tab.sutta.uid),
-                sutta_schema = self._active_tab.sutta.metadata.schema,
+                sutta_schema = sutta_schema,
                 sutta_ref = str(self._active_tab.sutta.sutta_ref),
                 sutta_title = str(self._active_tab.sutta.title),
             )
@@ -330,7 +390,7 @@ class HasBookmarkDialog:
             logger.error("Sutta is not set")
             return
 
-        self._active_tab.qwe.page().runJavaScript("rangy.serializeSelection(null, true)", self._bookmark_with_range)
+        self._active_tab.qwe.page().runJavaScript("get_selection_data()", self._bookmark_with_range)
 
     def handle_edit_bookmark(self, schema_and_id: str):
         _, db_id = schema_and_id.split("-")
@@ -354,7 +414,7 @@ class HasBookmarkDialog:
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 
-        if self.new_bookmark_values['new_name'] == '':
+        if 'new_name' not in self.new_bookmark_values.keys() or self.new_bookmark_values['new_name'] == '':
             return
 
         try:
