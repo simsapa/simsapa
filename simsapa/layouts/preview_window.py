@@ -1,3 +1,5 @@
+import subprocess
+
 from functools import partial
 from urllib.parse import parse_qs
 
@@ -8,7 +10,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa import READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
 from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -153,8 +155,9 @@ class PreviewWindow(QDialog):
             # It's not a sutta or dictionary word link.
             return
 
-        self._move_window_from_hover()
+        self.setWindowTitle("Simsapa Preview")
         self.show()
+        self._move_window_from_hover()
 
 
     def _move_window_from_hover(self):
@@ -185,9 +188,21 @@ class PreviewWindow(QDialog):
                 x = self._app_data.screen_size.width() - preview_width - 10
                 y = 10
 
-            self.move(x, y)
+            if IS_SWAY:
+                self._sway_move(x, y)
+            else:
+                self.move(x, y)
         else:
-            self.move(10, 10)
+
+            if IS_SWAY:
+                self._sway_move(10, 10)
+            else:
+                self.move(10, 10)
+
+
+    def _sway_move(self, x: int, y: int):
+        cmd = f"""swaymsg 'for_window [title="Simsapa Preview.*"] floating enable' && swaymsg 'for_window [title="Simsapa Preview.*"] move position {x} {y}'"""
+        subprocess.Popen(cmd, shell=True)
 
 
     def _render_not_found(self, url: QUrl):

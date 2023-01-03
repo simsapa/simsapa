@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QDialog, QLabel, QLineEdit, QListView,
 
 from sqlalchemy.sql import func
 # from simsapa.app.file_doc import FileDoc
-from simsapa import DbSchemaName, logger
+from simsapa import IS_SWAY, DbSchemaName, logger
 from simsapa.app.helpers import compact_plain_text
 
 from simsapa.app.types import AppData
@@ -58,6 +58,9 @@ class BookmarkDialog(QDialog):
                  creating_new: bool = True):
 
         super().__init__()
+
+        if IS_SWAY:
+            self.setFixedSize(400, 800)
 
         self.creating_new = creating_new
         self.init_name = name
