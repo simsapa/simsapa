@@ -24,7 +24,7 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|kp|khp|snp|thag|thig|ud|uda|dhp) *([\d\.]+)', re.IGNORECASE)
+RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp) *([\d\.]+)', re.IGNORECASE)
 
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)

@@ -323,6 +323,7 @@ def get_db_update_info() -> Optional[UpdateInfo]:
 def normalize_sutta_ref(ref: str) -> str:
     ref = re.sub(r'ud(\d)', r'uda\1', ref)
     ref = re.sub(r'khp(\d)', r'kp\1', ref)
+    ref = re.sub(r'th(\d)', r'thag\1', ref)
 
     return ref
 

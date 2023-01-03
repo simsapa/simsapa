@@ -186,9 +186,6 @@ class DictionaryQueries:
 
                         quote = q.strip()
 
-                    # DPD uses ṃ, but ms and cst4 uses ṁ
-                    quote = quote.replace('ṃ', 'ṁ')
-
                     text = m[2].strip()
                     ref = re.search(RE_SUTTA_REF, text)
                     if not ref:
