@@ -133,6 +133,9 @@ class BookmarkDialog(QDialog):
 
         form.addRow(self.buttons_layout)
 
+        # Check if add_btn can be already unlocked (such as editing existing bookmarks)
+        self.unlock()
+
     def _handle_suggest_select(self):
         a = self.suggest_list.selectedIndexes()
         if not a:
