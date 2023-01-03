@@ -118,6 +118,7 @@ class AppSettings(TypedDict):
     suttas_show_pali_buttons: bool
     dictionary_show_pali_buttons: bool
     show_toolbar: bool
+    link_preview: bool
     first_window_on_startup: WindowType
     word_scan_popup_pos: WindowPosSize
     show_sutta_sidebar: bool
@@ -156,6 +157,7 @@ def default_app_settings() -> AppSettings:
         suttas_show_pali_buttons = True,
         dictionary_show_pali_buttons = True,
         show_toolbar = False,
+        link_preview = False,
         first_window_on_startup = WindowType.SuttaSearch,
         word_scan_popup_pos = WindowPosSize(
             x = 100,
@@ -389,6 +391,7 @@ class AppData:
 class AppWindowInterface(QMainWindow):
     action_Notify_About_Updates: QAction
     action_Show_Toolbar: QAction
+    action_Link_Preview: QAction
     action_Show_Word_Scan_Popup: QAction
     action_Search_As_You_Type: QAction
     action_Search_Completion: QAction

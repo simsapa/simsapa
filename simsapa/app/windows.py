@@ -761,6 +761,15 @@ class AppWindows:
             if hasattr(w,'toolBar'):
                 w.toolBar.setVisible(checked)
 
+    def _set_link_preview_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Link_Preview.isChecked()
+        self._app_data.app_settings['link_preview'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w,'action_Link_Preview'):
+                w.action_Link_Preview.setChecked(checked)
+
     def _set_search_as_you_type_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Search_As_You_Type.isChecked()
         self._app_data.app_settings['search_as_you_type'] = checked
@@ -901,6 +910,11 @@ class AppWindows:
         view.action_Show_Toolbar.setChecked(show_toolbar)
         view.action_Show_Toolbar \
             .triggered.connect(partial(self._set_show_toolbar_setting, view))
+
+        link_preview = self._app_data.app_settings.get('link_preview', True)
+        view.action_Link_Preview.setChecked(link_preview)
+        view.action_Link_Preview \
+            .triggered.connect(partial(self._set_link_preview_setting, view))
 
         if hasattr(view, 'toolBar') and not show_toolbar:
             view.toolBar.setVisible(False)

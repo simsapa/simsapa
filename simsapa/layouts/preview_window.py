@@ -40,6 +40,10 @@ class PreviewWindow(QDialog):
         self._ui_setup()
         self._connect_signals()
 
+    def _do_show(self):
+        if self._app_data.app_settings.get('link_preview', True):
+            self.show()
+            self._move_window_from_hover()
 
     def _do_hide(self):
         self._hover_data = None
@@ -109,7 +113,7 @@ class PreviewWindow(QDialog):
             self._hide_timer.stop()
 
             if self.isHidden():
-                self.show()
+                self._do_show()
             else:
                 return
 
@@ -126,8 +130,7 @@ class PreviewWindow(QDialog):
 
             if sutta is None:
                 self._render_not_found(url)
-                self._move_window_from_hover()
-                self.show()
+                self._do_show()
                 return
 
             query = parse_qs(url.query())
@@ -145,8 +148,7 @@ class PreviewWindow(QDialog):
 
             if len(words) == 0:
                 self._render_not_found(url)
-                self._move_window_from_hover()
-                self.show()
+                self._do_show()
                 return
 
             self._render_words(words)
@@ -156,9 +158,7 @@ class PreviewWindow(QDialog):
             return
 
         self.setWindowTitle("Simsapa Preview")
-        self.show()
-        self._move_window_from_hover()
-
+        self._do_show()
 
     def _move_window_from_hover(self):
         preview_width = 500

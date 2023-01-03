@@ -207,6 +207,7 @@
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
     <addaction name="action_Show_Toolbar"/>
+    <addaction name="action_Link_Preview"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -511,6 +512,17 @@
    </property>
    <property name="shortcut">
     <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Link_Preview">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Link Preview</string>
    </property>
   </action>
  </widget>
