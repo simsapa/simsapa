@@ -3,7 +3,8 @@ import sys
 import traceback
 from typing import Optional
 from PyQt6 import QtCore
-import multiprocessing
+import multiprocessing as mp
+import threading
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
@@ -48,8 +49,17 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     logger.info(f"Available port: {port}")
 
-    server_proc = multiprocessing.Process(target=start_server, args=(port, SERVER_QUEUE), daemon=True)
-    server_proc.start()
+    if IS_MAC:
+        # FIXME avoids multiprocessing error until Python 3.11.2 is released
+        daemon = threading.Thread(name='daemon_server',
+                                target=start_server,
+                                args=(port, SERVER_QUEUE))
+        daemon.setDaemon(True)
+        daemon.start()
+
+    else:
+        server_proc = mp.Process(target=start_server, args=(port, SERVER_QUEUE), daemon=True)
+        server_proc.start()
 
     ensure_empty_graphs_cache()
 
