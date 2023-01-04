@@ -10,7 +10,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR
+from simsapa import IS_SWAY, SIMSAPA_PACKAGE_DIR
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
 from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -18,6 +18,12 @@ from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.sutta_queries import SuttaQueries
 
+TITLE_PRE = "Simsapa Preview"
+
+PREVIEW_BG_COLOR = "#FCEFCF"
+TITLE_BG_COLOR = "#FEF8E8"
+DARK_BORDER_COLOR = "#D47400"
+LIGHT_BORDER_COLOR = TITLE_BG_COLOR
 
 class PreviewWindow(QDialog):
 
@@ -25,6 +31,8 @@ class PreviewWindow(QDialog):
         super().__init__()
 
         self._app_data: AppData = app_data
+
+        self.title = ''
 
         self._hover_data: Optional[LinkHoverData] = None
         self._link_mouseleave = False
@@ -40,8 +48,15 @@ class PreviewWindow(QDialog):
         self._ui_setup()
         self._connect_signals()
 
+    def _set_title(self):
+        if self.title == '':
+            self.setWindowTitle(TITLE_PRE)
+        else:
+            self.setWindowTitle(f"{TITLE_PRE}: {self.title}")
+
     def _do_show(self):
         if self._app_data.app_settings.get('link_preview', True):
+            self._set_title()
             self.show()
             self._move_window_from_hover()
 
@@ -54,9 +69,9 @@ class PreviewWindow(QDialog):
 
     def _ui_setup(self):
         self.wrap_layout = QVBoxLayout()
-        self.wrap_layout.setContentsMargins(8, 8, 8, 8)
+        self.wrap_layout.setContentsMargins(1, 1, 1, 8)
         self.setLayout(self.wrap_layout)
-        self.setWindowTitle("Simsapa Preview")
+        self._set_title()
 
         self.setMinimumSize(50, 50)
 
@@ -70,7 +85,7 @@ class PreviewWindow(QDialog):
         self.setWindowFlags(Qt.WindowType(flags))
 
         self.setObjectName("PreviewWindow")
-        self.setStyleSheet("#PreviewWindow { background-color: %s; border: 1px solid #ababab; }" % READING_BACKGROUND_COLOR)
+        self.setStyleSheet("#PreviewWindow { background-color: %s; border: 1px solid %s; }" % (PREVIEW_BG_COLOR, LIGHT_BORDER_COLOR))
 
         self.qwe = self._new_webengine()
 
@@ -157,7 +172,6 @@ class PreviewWindow(QDialog):
             # It's not a sutta or dictionary word link.
             return
 
-        self.setWindowTitle("Simsapa Preview")
         self._do_show()
 
     def _move_window_from_hover(self):
@@ -206,7 +220,7 @@ class PreviewWindow(QDialog):
 
 
     def _render_not_found(self, url: QUrl):
-        self.setWindowTitle("Simsapa Preview: Content Not Found")
+        self.title = "Content Not Found"
 
         content = f"""
         <h1>Content Not Found</h1>
@@ -230,7 +244,7 @@ class PreviewWindow(QDialog):
 
 
     def _render_words(self, words: List[UDictWord]):
-        self.setWindowTitle("Simsapa Preview")
+        self.title = ''
 
         css_extra = """
         html { font-size: 18px; }
@@ -245,8 +259,23 @@ class PreviewWindow(QDialog):
         self.set_qwe_html(html)
 
 
+    def _window_title_bar_html(self) -> str:
+        html = f"""<div id="window_title_bar">
+        <a href="#" id="preview-open"><svg class="icon icon-open"><use xlink:href="#icon-square-up-right-solid"></use></svg></a>
+        <a href="#" id="preview-make-windowed"><svg class="icon icon-make-windowed"><use xlink:href="#icon-copy-solid"></use></svg></a>
+        <span class="title">{self.title}</span>
+        <a href="#" id="preview-close"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>
+        </div>"""
+
+        return html
+
+
     def _render_sutta(self, sutta: USutta, highlight_text: Optional[str] = None):
-        self.setWindowTitle(f"Simsapa Preview: {sutta.title}")
+        if sutta.title_trans is not None and sutta.title_trans != '':
+            s = sutta.title_trans
+        else:
+            s = sutta.title
+        self.title = f"{sutta.sutta_ref} {s}"
 
         if sutta.content_json is not None and sutta.content_json != '':
             segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))
@@ -261,14 +290,36 @@ class PreviewWindow(QDialog):
         else:
             content = 'No content.'
 
-        css_extra = """
-        html { font-size: 18px; }
-        body { padding: 0.5rem; max-width: 100%; }
-        h1 { font-size: 22px; margin-top: 0pt; }
+        content = self._window_title_bar_html() + content
+
+        css_extra = f"""
+        html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
+        html {{ font-size: 18px; }}
+        body {{ padding: 0; margin: 2rem 1rem 1rem 1rem; max-width: 100%; }}
+        #window_title_bar {{ height: 1.5rem; width: 100%; position: fixed; top: 0; left: 0; padding: 5px; background-color: {TITLE_BG_COLOR}; }}
+        #window_title_bar .title {{ height: 1.5rem; width: 100%; position: fixed; top: 0; left: 0; padding: 5px; display: inline-block; color: black; text-align: center; }}
+        #window_title_bar .icon {{ color: black; }}
+        #window_title_bar .icon-close {{ float: right; margin: 0.25rem 1rem; }}
+        #window_title_bar .icon-open {{ float: left; margin: 0.25rem; }}
+        #window_title_bar .icon-make-windowed {{ float: left; margin: 0.25rem; }}
+        h1 {{ font-size: 22px; margin-top: 0pt; }}
         """
 
         js_extra = f"const SUTTA_UID = '{sutta.uid}';";
         js_extra += "const SHOW_BOOKMARKS = false;";
+
+        js_extra += """
+        document.addEventListener("DOMContentLoaded", function(event) {
+            //el = document.getElementById('preview-open');
+            //el = document.getElementById('preview-make-windowed');
+
+            el = document.getElementById('preview-close');
+
+            el.addEventListener("click", function() {
+                document.qt_channel.objects.helper.emit_do_close();
+            });
+        });
+        """
 
         if highlight_text:
             text = highlight_text.replace('"', '\\"')
@@ -286,6 +337,8 @@ class PreviewWindow(QDialog):
         qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
+
+        page.helper.do_close.connect(partial(self._do_hide))
 
         qwe.setPage(page)
 

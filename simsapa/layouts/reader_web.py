@@ -25,8 +25,28 @@ class Helper(QObject):
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
 
+    do_close = pyqtSignal()
+    open = pyqtSignal()
+    make_windowed = pyqtSignal()
+
+
     def __init__(self, parent=None):
         super().__init__(parent)
+
+
+    @pyqtSlot()
+    def emit_do_close(self):
+        self.do_close.emit()
+
+
+    @pyqtSlot()
+    def emit_open(self):
+        self.open.emit()
+
+
+    @pyqtSlot()
+    def emit_make_windowed(self):
+        self.make_windowed.emit()
 
 
     @pyqtSlot(str)

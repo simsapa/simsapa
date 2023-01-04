@@ -127,7 +127,7 @@ function add_bookmark_comment (el) {
     let close_btn = document.createElement("div");
     close_btn.classList.add('btn');
     close_btn.classList.add('pull-right');
-    close_btn.innerHTML = '<a href="#"><svg class="icon icon-close"><use xlink:href="#icon-close"></use></svg></a>';
+    close_btn.innerHTML = '<a href="#"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>';
     title_div.appendChild(close_btn);
 
     close_btn.addEventListener("click", () => toggle_show_comment(bookmark_schema_id));
@@ -268,7 +268,17 @@ document.addEventListener("DOMContentLoaded", function(event) {
 
     new QWebChannel(qt.webChannelTransport, function (channel) {
         document.qt_channel = channel;
-        let arr = document.querySelectorAll("a");
+        var res = document.querySelectorAll("a");
+        var arr = [];
+
+        res.forEach((el) => {
+            var href = el.getAttribute('href');
+            if (href !== null && href.startsWith('ssp://')) {
+                arr.push(el);
+            }
+        });
+
         arr.forEach(el => add_hover_events(el, channel));
     });
+
 });
