@@ -14,4 +14,6 @@ pyinstaller run.py \
     -i "simsapa/assets/icons/appicons/simsapa.ico" \
     --add-data "simsapa/assets:simsapa/assets" \
     --add-data "simsapa/alembic:simsapa/alembic" \
-    --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
+    --add-data "simsapa/alembic.ini:simsapa/alembic.ini" \
+    --target-architecture arm64 \
+    --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa'
