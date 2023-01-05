@@ -4,7 +4,7 @@ from functools import partial
 from urllib.parse import parse_qs
 
 from typing import List, Optional
-from PyQt6.QtCore import QTimer, QUrl, Qt
+from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QEnterEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -27,14 +27,20 @@ LIGHT_BORDER_COLOR = TITLE_BG_COLOR
 
 class PreviewWindow(QDialog):
 
-    def __init__(self, app_data: AppData) -> None:
+    open_new = pyqtSignal()
+    make_windowed = pyqtSignal()
+
+    def __init__(self, app_data: AppData,
+                 hover_data: Optional[LinkHoverData] = None,
+                 frameless: bool = True) -> None:
         super().__init__()
 
         self._app_data: AppData = app_data
 
         self.title = ''
 
-        self._hover_data: Optional[LinkHoverData] = None
+        self._hover_data = hover_data
+        self._frameless = frameless
         self._link_mouseleave = False
         self._mouseover = False
 
@@ -54,11 +60,13 @@ class PreviewWindow(QDialog):
         else:
             self.setWindowTitle(f"{TITLE_PRE}: {self.title}")
 
-    def _do_show(self):
-        if self._app_data.app_settings.get('link_preview', True):
-            self._set_title()
-            self.show()
-            self._move_window_from_hover()
+    def _do_show(self, check_settings: bool = True):
+        if check_settings and not self._app_data.app_settings.get('link_preview', True):
+            return
+
+        self._set_title()
+        self.show()
+        self._move_window_from_hover()
 
     def _do_hide(self):
         self._hover_data = None
@@ -75,12 +83,18 @@ class PreviewWindow(QDialog):
 
         self.setMinimumSize(50, 50)
 
-        flags = Qt.WindowType.Dialog | \
-            Qt.WindowType.CustomizeWindowHint | \
-            Qt.WindowType.WindowStaysOnTopHint | \
-            Qt.WindowType.FramelessWindowHint | \
-            Qt.WindowType.BypassWindowManagerHint | \
-            Qt.WindowType.X11BypassWindowManagerHint
+        if self._frameless:
+            flags = Qt.WindowType.Dialog | \
+                Qt.WindowType.CustomizeWindowHint | \
+                Qt.WindowType.WindowStaysOnTopHint | \
+                Qt.WindowType.FramelessWindowHint | \
+                Qt.WindowType.BypassWindowManagerHint | \
+                Qt.WindowType.X11BypassWindowManagerHint
+
+        else:
+            flags = Qt.WindowType.Dialog | \
+                Qt.WindowType.CustomizeWindowHint | \
+                Qt.WindowType.WindowStaysOnTopHint
 
         self.setWindowFlags(Qt.WindowType(flags))
 
@@ -120,24 +134,29 @@ class PreviewWindow(QDialog):
             if not self._mouseover:
                 self._hide_timer.start(500)
 
-
     def link_mouseover(self, hover_data: LinkHoverData):
+        if self.render_hover_data(hover_data):
+            self._do_show()
+
+    def render_hover_data(self, hover_data: Optional[LinkHoverData] = None) -> bool:
         if self._hover_data is not None and \
+           hover_data is not None and \
            self._hover_data['href'] == hover_data['href']:
 
             self._hide_timer.stop()
 
-            if self.isHidden():
-                self._do_show()
-            else:
-                return
+            return self.isHidden()
 
         self._link_mouseleave = False
         self._hide_timer.stop()
 
-        self._hover_data = hover_data
+        if hover_data:
+            self._hover_data = hover_data
 
-        url = QUrl(hover_data['href'])
+        if self._hover_data is None:
+            return False
+
+        url = QUrl(self._hover_data['href'])
 
         if url.host() == QueryType.suttas:
 
@@ -145,8 +164,7 @@ class PreviewWindow(QDialog):
 
             if sutta is None:
                 self._render_not_found(url)
-                self._do_show()
-                return
+                return True
 
             query = parse_qs(url.query())
             quote = None
@@ -163,16 +181,15 @@ class PreviewWindow(QDialog):
 
             if len(words) == 0:
                 self._render_not_found(url)
-                self._do_show()
-                return
+                return True
 
             self._render_words(words)
 
         else:
             # It's not a sutta or dictionary word link.
-            return
+            return False
 
-        self._do_show()
+        return True
 
     def _move_window_from_hover(self):
         preview_width = 500
@@ -260,11 +277,23 @@ class PreviewWindow(QDialog):
 
 
     def _window_title_bar_html(self) -> str:
-        html = f"""<div id="window_title_bar">
-        <a href="#" id="preview-open"><svg class="icon icon-open"><use xlink:href="#icon-square-up-right-solid"></use></svg></a>
-        <a href="#" id="preview-make-windowed"><svg class="icon icon-make-windowed"><use xlink:href="#icon-copy-solid"></use></svg></a>
-        <span class="title">{self.title}</span>
-        <a href="#" id="preview-close"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>
+        html = f"""<div id="window-title-bar">
+        <div class="flex-container">
+            <div id="left-btn-box">
+                <div class="btn" id="preview-open-new">
+                    <a href="#"><svg class="icon icon-open-new"><use xlink:href="#icon-square-up-right-solid"></use></svg></a>
+                </div>
+                <div class="btn" id="preview-make-windowed">
+                    <a href="#"><svg class="icon icon-make-windowed"><use xlink:href="#icon-copy-solid"></use></svg></a>
+                </div>
+            </div>
+            <div id="preview-title-text">{self.title}</div>
+            <div id="right-btn-box">
+                <div class="btn pull-right" id="preview-close">
+                    <a href="#"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>
+                </div>
+            </div>
+        </div>
         </div>"""
 
         return html
@@ -296,13 +325,13 @@ class PreviewWindow(QDialog):
         html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
         html {{ font-size: 18px; }}
         body {{ padding: 0; margin: 2rem 1rem 1rem 1rem; max-width: 100%; }}
-        #window_title_bar {{ height: 1.5rem; width: 100%; position: fixed; top: 0; left: 0; padding: 5px; background-color: {TITLE_BG_COLOR}; }}
-        #window_title_bar .title {{ height: 1.5rem; width: 100%; position: fixed; top: 0; left: 0; padding: 5px; display: inline-block; color: black; text-align: center; }}
-        #window_title_bar .icon {{ color: black; }}
-        #window_title_bar .icon-close {{ float: right; margin: 0.25rem 1rem; }}
-        #window_title_bar .icon-open {{ float: left; margin: 0.25rem; }}
-        #window_title_bar .icon-make-windowed {{ float: left; margin: 0.25rem; }}
         h1 {{ font-size: 22px; margin-top: 0pt; }}
+        #window-title-bar {{ font-size: 18px; line-height: 1; width: 100%; position: fixed; top: 0; left: 0; padding: 0.1em; background-color: {TITLE_BG_COLOR}; }}
+        #window-title-bar .flex-container {{ display: flex; flex-flow: row nowrap; justify-content: space-between; align-items: center; align-content: center; gap: 0.2em; }}
+        #window-title-bar #left-btn-box {{ flex: 1; }}
+        #window-title-bar #right-btn-box {{ flex: 1; }}
+        #window-title-bar #preview-title-text {{ display: inline-block; color: black; text-align: center; }}
+        #window-title-bar .icon {{ font-size: 0.8rem; color: black; padding-top: 0.1rem; margin: 0.1rem 0.3rem; }}
         """
 
         js_extra = f"const SUTTA_UID = '{sutta.uid}';";
@@ -310,11 +339,17 @@ class PreviewWindow(QDialog):
 
         js_extra += """
         document.addEventListener("DOMContentLoaded", function(event) {
-            //el = document.getElementById('preview-open');
-            //el = document.getElementById('preview-make-windowed');
+            let el = document.getElementById('preview-open-new');
+            el.addEventListener("click", function() {
+                document.qt_channel.objects.helper.emit_open_new();
+            });
 
-            el = document.getElementById('preview-close');
+            el = document.getElementById('preview-make-windowed');
+            el.addEventListener("click", function() {
+                document.qt_channel.objects.helper.emit_make_windowed();
+            });
 
+            el = document.querySelector('#preview-close');
             el.addEventListener("click", function() {
                 document.qt_channel.objects.helper.emit_do_close();
             });
@@ -339,6 +374,8 @@ class PreviewWindow(QDialog):
         page = ReaderWebEnginePage(self)
 
         page.helper.do_close.connect(partial(self._do_hide))
+        page.helper.open_new.connect(partial(self.open_new.emit))
+        page.helper.make_windowed.connect(partial(self.make_windowed.emit))
 
         qwe.setPage(page)
 

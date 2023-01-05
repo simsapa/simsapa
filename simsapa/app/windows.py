@@ -44,6 +44,9 @@ class AppWindows:
         self._windows: List[AppWindowInterface] = []
         self._preview_window = PreviewWindow(self._app_data)
 
+        self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
+        self._preview_window.make_windowed.connect(partial(self._new_windowed_preview))
+
         self.queue_id = 'app_windows'
         APP_QUEUES[self.queue_id] = queue.Queue()
 
@@ -119,6 +122,26 @@ class AppWindows:
         view = WordsWindow(self._app_data, schemas_ids)
         self._windows.append(view)
         make_active_window(view)
+
+    def _new_windowed_preview(self):
+        if self._preview_window._hover_data is None:
+            return
+
+        view = PreviewWindow(self._app_data,
+                             hover_data = self._preview_window._hover_data,
+                             frameless = False)
+        if view.render_hover_data():
+            view._do_show(check_settings=False)
+
+    def _new_sutta_from_preview(self):
+        if self._preview_window._hover_data is None:
+            return
+
+        url = QUrl(self._preview_window._hover_data['href'])
+        sutta = self._preview_window.sutta_queries.get_sutta_by_url(url)
+
+        if sutta:
+            self._new_sutta_search_window(f"uid:{sutta.uid}")
 
     def _show_words_by_url(self, url: QUrl) -> bool:
         if url.host() != QueryType.words:

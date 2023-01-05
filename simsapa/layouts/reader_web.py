@@ -26,7 +26,7 @@ class Helper(QObject):
     bookmark_edit = pyqtSignal(str)
 
     do_close = pyqtSignal()
-    open = pyqtSignal()
+    open_new = pyqtSignal()
     make_windowed = pyqtSignal()
 
 
@@ -40,8 +40,8 @@ class Helper(QObject):
 
 
     @pyqtSlot()
-    def emit_open(self):
-        self.open.emit()
+    def emit_open_new(self):
+        self.open_new.emit()
 
 
     @pyqtSlot()
