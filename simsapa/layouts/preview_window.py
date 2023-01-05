@@ -93,7 +93,6 @@ class PreviewWindow(QDialog):
 
         else:
             flags = Qt.WindowType.Dialog | \
-                Qt.WindowType.CustomizeWindowHint | \
                 Qt.WindowType.WindowStaysOnTopHint
 
         self.setWindowFlags(Qt.WindowType(flags))
