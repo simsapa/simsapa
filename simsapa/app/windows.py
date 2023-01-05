@@ -130,14 +130,22 @@ class AppWindows:
         view = PreviewWindow(self._app_data,
                              hover_data = self._preview_window._hover_data,
                              frameless = False)
+
+        view.open_new.connect(partial(self._new_sutta_from_preview))
+
         if view.render_hover_data():
             view._do_show(check_settings=False)
 
-    def _new_sutta_from_preview(self):
-        if self._preview_window._hover_data is None:
+    def _new_sutta_from_preview(self, href: Optional[str] = None):
+        if href is None and self._preview_window._hover_data is not None:
+            url = QUrl(self._preview_window._hover_data['href'])
+
+        elif href is not None:
+            url = QUrl(href)
+
+        else:
             return
 
-        url = QUrl(self._preview_window._hover_data['href'])
         sutta = self._preview_window.sutta_queries.get_sutta_by_url(url)
 
         if sutta:

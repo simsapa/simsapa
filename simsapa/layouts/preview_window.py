@@ -27,7 +27,7 @@ LIGHT_BORDER_COLOR = TITLE_BG_COLOR
 
 class PreviewWindow(QDialog):
 
-    open_new = pyqtSignal()
+    open_new = pyqtSignal(str)
     make_windowed = pyqtSignal()
 
     def __init__(self, app_data: AppData,
@@ -133,9 +133,11 @@ class PreviewWindow(QDialog):
             if not self._mouseover:
                 self._hide_timer.start(500)
 
+
     def link_mouseover(self, hover_data: LinkHoverData):
         if self.render_hover_data(hover_data):
             self._do_show()
+
 
     def render_hover_data(self, hover_data: Optional[LinkHoverData] = None) -> bool:
         if self._hover_data is not None and \
@@ -190,11 +192,17 @@ class PreviewWindow(QDialog):
 
         return True
 
+
     def _move_window_from_hover(self):
         preview_width = 500
         preview_height = 400
 
-        self.setFixedSize(preview_width, preview_height)
+        if IS_SWAY:
+            self.setFixedSize(preview_width, preview_height)
+        elif self._frameless:
+            self.setFixedSize(preview_width, preview_height)
+        else:
+            self.resize(preview_width, preview_height)
 
         if self._app_data.screen_size:
             if self._hover_data:
@@ -262,15 +270,41 @@ class PreviewWindow(QDialog):
     def _render_words(self, words: List[UDictWord]):
         self.title = ''
 
-        css_extra = """
-        html { font-size: 18px; }
-        body { padding: 0.5rem; max-width: 100%; }
-        h1 { font-size: 22px; margin-top: 0pt; }
+        css_extra = f"""
+        html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
+        html {{ font-size: 18px; }}
+        body {{ padding: 0.5rem; max-width: 100%; }}
+        h1 {{ font-size: 22px; margin-top: 0pt; }}
         """
 
         js_extra = "const SHOW_BOOKMARKS = false;";
 
-        html = self.dict_queries.words_to_html_page(words=words, css_extra=css_extra, js_extra=js_extra)
+        if self._frameless:
+            js_extra += """
+            document.addEventListener("DOMContentLoaded", function(event) {
+                let el = document.querySelector('#preview-close');
+                el.addEventListener("click", function() {
+                    document.qt_channel.objects.helper.emit_do_close();
+                });
+            });
+            """
+
+        html_title = None
+        if self._frameless:
+            html_title = """
+            <div class="btn pull-right" id="preview-close">
+                <a href="#"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>
+            </div>
+            """
+
+            css_extra += """
+            #preview-close { font-size: 14.5px; line-height: 1; position: fixed; top: 6px; right: 6px; }
+            """
+
+        html = self.dict_queries.words_to_html_page(words=words,
+                                                    css_extra=css_extra,
+                                                    js_extra=js_extra,
+                                                    html_title=html_title)
 
         self.set_qwe_html(html)
 
@@ -318,42 +352,38 @@ class PreviewWindow(QDialog):
         else:
             content = 'No content.'
 
-        content = self._window_title_bar_html() + content
+        if self._frameless:
+            content = self._window_title_bar_html() + content
 
         css_extra = f"""
         html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
         html {{ font-size: 18px; }}
         body {{ padding: 0; margin: 2rem 1rem 1rem 1rem; max-width: 100%; }}
         h1 {{ font-size: 22px; margin-top: 0pt; }}
-        #window-title-bar {{ font-size: 18px; line-height: 1; width: 100%; position: fixed; top: 0; left: 0; padding: 0.1em; background-color: {TITLE_BG_COLOR}; }}
-        #window-title-bar .flex-container {{ display: flex; flex-flow: row nowrap; justify-content: space-between; align-items: center; align-content: center; gap: 0.2em; }}
-        #window-title-bar #left-btn-box {{ flex: 1; }}
-        #window-title-bar #right-btn-box {{ flex: 1; }}
-        #window-title-bar #preview-title-text {{ display: inline-block; color: black; text-align: center; }}
-        #window-title-bar .icon {{ font-size: 0.8rem; color: black; padding-top: 0.1rem; margin: 0.1rem 0.3rem; }}
         """
 
         js_extra = f"const SUTTA_UID = '{sutta.uid}';";
         js_extra += "const SHOW_BOOKMARKS = false;";
 
-        js_extra += """
-        document.addEventListener("DOMContentLoaded", function(event) {
-            let el = document.getElementById('preview-open-new');
-            el.addEventListener("click", function() {
-                document.qt_channel.objects.helper.emit_open_new();
-            });
+        if self._frameless:
+            js_extra += """
+            document.addEventListener("DOMContentLoaded", function(event) {
+                let el = document.getElementById('preview-open-new');
+                el.addEventListener("click", function() {
+                    document.qt_channel.objects.helper.emit_open_new();
+                });
 
-            el = document.getElementById('preview-make-windowed');
-            el.addEventListener("click", function() {
-                document.qt_channel.objects.helper.emit_make_windowed();
-            });
+                el = document.getElementById('preview-make-windowed');
+                el.addEventListener("click", function() {
+                    document.qt_channel.objects.helper.emit_make_windowed();
+                });
 
-            el = document.querySelector('#preview-close');
-            el.addEventListener("click", function() {
-                document.qt_channel.objects.helper.emit_do_close();
+                el = document.querySelector('#preview-close');
+                el.addEventListener("click", function() {
+                    document.qt_channel.objects.helper.emit_do_close();
+                });
             });
-        });
-        """
+            """
 
         if highlight_text:
             text = highlight_text.replace('"', '\\"')
@@ -367,14 +397,23 @@ class PreviewWindow(QDialog):
         self.set_qwe_html(html)
 
 
+    def _show_sutta_by_url(self, url: QUrl):
+        self.open_new.emit(url.toString())
+
+
     def _new_webengine(self) -> QWebEngineView:
         qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
 
         page.helper.do_close.connect(partial(self._do_hide))
-        page.helper.open_new.connect(partial(self.open_new.emit))
         page.helper.make_windowed.connect(partial(self.make_windowed.emit))
+
+        def _open_new():
+            if self._hover_data:
+                self.open_new.emit(self._hover_data['href'])
+
+        page.helper.open_new.connect(partial(_open_new))
 
         qwe.setPage(page)
 

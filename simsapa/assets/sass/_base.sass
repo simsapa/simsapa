@@ -2,6 +2,8 @@ $black-90: #1a1a1a
 //$solarized-light-bg: #FDF6E3
 $solarized-light-bg: #FAE6B2
 
+$title_bg_color: #FEF8E8
+
 @import "type_crimson_pro"
 @import "type_abhaya_libre"
 @import "type_source_sans_3"
@@ -100,3 +102,36 @@ div.btn
 
     a
       color: #700909
+
+#window-title-bar
+  font-size: 18px
+  line-height: 1
+  width: 100%
+  position: fixed
+  top: 0
+  left: 0
+  padding: 0.1em
+  background-color: $title_bg_color
+
+  .flex-container
+    display: flex
+    flex-flow: row nowrap
+    justify-content: space-between
+    align-items: center
+    align-content: center
+    gap: 0.2em
+
+    #left-btn-box,
+    #right-btn-box
+      flex: 1
+
+    #preview-title-text
+      display: inline-block
+      color: black
+      text-align: center
+
+    .icon
+      font-size: 0.8rem
+      color: black
+      padding-top: 0.1rem
+      margin: 0.1rem 0.3rem
