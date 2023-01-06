@@ -204,10 +204,10 @@ function highlight_and_scroll_to (highlight_text) {
     let s = expand_quote_to_pattern(highlight_text);
     const regex = new RegExp(s, 'gi');
 
-    let body = document.querySelector('body');
-    let body_html = body.innerHTML;
+    let main = document.querySelector('#ssp_main');
+    let main_html = main.innerHTML;
 
-    const m = body_html.match(regex);
+    const m = main_html.match(regex);
     if (m == null) {
         return;
     }
@@ -215,9 +215,10 @@ function highlight_and_scroll_to (highlight_text) {
 
     const marked_html = '<mark class="scrollto-highlight">' + matched_html.replaceAll(/<[^>]+>/g, '</mark>$&<mark class="scrollto-highlight">') + '</mark>';
 
-    const new_body_html = body_html.replace(matched_html, marked_html);
+    const new_main_html = main_html.replace(matched_html, marked_html);
 
-    body.innerHTML = new_body_html;
+    // NOTE This loses eventlisteners. Add document.addEventListener() after this, or use onclick HTML attributes.
+    main.innerHTML = new_main_html;
 
     // only need the first result
     el = document.querySelector('mark.scrollto-highlight');

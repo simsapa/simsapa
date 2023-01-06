@@ -337,7 +337,7 @@ class PreviewWindow(QDialog):
             s = sutta.title_trans
         else:
             s = sutta.title
-        self.title = f"{sutta.sutta_ref} {s}"
+            self.title = f"{sutta.sutta_ref} {s}"
 
         if sutta.content_json is not None and sutta.content_json != '':
             segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))
@@ -365,6 +365,13 @@ class PreviewWindow(QDialog):
         js_extra = f"const SUTTA_UID = '{sutta.uid}';";
         js_extra += "const SHOW_BOOKMARKS = false;";
 
+        if highlight_text:
+            # NOTE highlight_and_scroll_to() replaces #ssp_main.innerHTML and
+            # loses eventlisteners. Add document.addEventListener() after this,
+            # or use onclick HTML attributes.
+            text = highlight_text.replace('"', '\\"')
+            js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });""" % text
+
         if self._frameless:
             js_extra += """
             document.addEventListener("DOMContentLoaded", function(event) {
@@ -384,10 +391,6 @@ class PreviewWindow(QDialog):
                 });
             });
             """
-
-        if highlight_text:
-            text = highlight_text.replace('"', '\\"')
-            js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });""" % text
 
         html = html_page(content=content,
                          api_url=self._app_data.api_url,

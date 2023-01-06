@@ -90,8 +90,6 @@ class ReaderWebEnginePage(QWebEnginePage):
 
         self.setWebChannel(self.event_channel)
 
-        # self.loadFinished.connect(partial(self._init_channel))
-
 
     def acceptNavigationRequest(self, url: QUrl, _type: QWebEnginePage.NavigationType, isMainFrame):
         if _type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:

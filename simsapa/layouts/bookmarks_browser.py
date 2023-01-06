@@ -1,5 +1,6 @@
 import re
 import csv
+import subprocess
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
@@ -14,7 +15,7 @@ from sqlalchemy.sql.elements import and_, or_, not_
 from PyQt6.QtCore import QAbstractTableModel, Qt
 from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
 
-from simsapa import logger
+from simsapa import IS_SWAY, logger
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 # from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -107,6 +108,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
     def _ui_setup(self):
         self.setWindowTitle("Bookmarks Browser")
         self.resize(850, 650)
+
+        if IS_SWAY:
+            cmd = f"""swaymsg 'for_window [title="Bookmarks Browser"] floating enable'"""
+            subprocess.Popen(cmd, shell=True)
 
         self._central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(self._central_widget)
