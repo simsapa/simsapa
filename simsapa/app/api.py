@@ -1,4 +1,4 @@
-import multiprocessing as mp
+import queue
 from pathlib import Path
 import json
 import socket
@@ -30,7 +30,7 @@ cors = CORS(app)
 logging.getLogger("werkzeug").disabled = True
 
 global server_queue
-server_queue: Optional[mp.Queue] = None
+server_queue: Optional[queue.Queue] = None
 
 @app.route('/queues/<string:queue_id>', methods=['POST'])
 def queues(queue_id):
@@ -301,7 +301,7 @@ def resp_forbidden(e):
     logger.error(msg)
     return msg, 403
 
-def start_server(port: int, q: mp.Queue):
+def start_server(port: int, q: queue.Queue):
     logger.info(f'Starting server on port {port}')
     os.environ["FLASK_ENV"] = "development"
 

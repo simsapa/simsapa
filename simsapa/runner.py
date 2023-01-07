@@ -3,8 +3,6 @@ import sys
 from typing import Optional
 import typer
 
-from multiprocessing import freeze_support
-
 from simsapa import logger
 from simsapa.app.types import QueryType
 
@@ -101,5 +99,4 @@ def main():
         app()
 
 if __name__ == "__main__":
-    freeze_support()
     main()

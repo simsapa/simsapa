@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Dict, TypedDict
 from enum import Enum
 import queue
-import multiprocessing as mp
 from dotenv import find_dotenv, load_dotenv
 import appdirs
 import platform
@@ -58,7 +57,7 @@ COURSES_DIR = ASSETS_DIR.joinpath('courses')
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
 APP_QUEUES: Dict[str, queue.Queue] = {}
-SERVER_QUEUE = mp.Queue()
+SERVER_QUEUE = queue.Queue()
 
 IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
