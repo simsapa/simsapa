@@ -86,7 +86,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
         author = "gretil"
         uid = f"{ref}/{lang}/{author}"
 
-        logger.info(f"{uid} -- {title}")
+        # logger.info(f"{uid} -- {title}")
 
         main_text = gretil_header_to_footer(body)
 

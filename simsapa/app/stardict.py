@@ -309,10 +309,9 @@ def _word_done(res: ParseResult):
     global DONE_COUNT
     DONE_COUNT += 1
 
-    segment = res['segment']
-
-    percent = DONE_COUNT/(TOTAL_SEGMENTS/100)
-    logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
+    # segment = res['segment']
+    # percent = DONE_COUNT/(TOTAL_SEGMENTS/100)
+    # logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
 
 
 def _add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:

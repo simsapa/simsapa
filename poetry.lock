@@ -819,6 +819,14 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
+name = "roman"
+version = "3.3"
+description = "Integer to Roman numerals converter"
+category = "main"
+optional = false
+python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*"
+
+[[package]]
 name = "scipy"
 version = "1.10.0"
 description = "Fundamental algorithms for scientific computing in Python"
@@ -1036,7 +1044,7 @@ develop = false
 type = "git"
 url = "https://github.com/nschloe/tuna.git"
 reference = "HEAD"
-resolved_reference = "af0b2ee706b7fa306c4d3c23d7a72e19f3ba0c34"
+resolved_reference = "c3914fadde0f3044f46a0ade588349967fb81b12"
 
 [[package]]
 name = "typer"
@@ -1158,7 +1166,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.11"
-content-hash = "e81c4fd7d5e42b7918ce199495d7d64911ddc128672694153f6405637fac3235"
+content-hash = "7f14300faddadb006f12ff4e3fab2488f168fd95a00825b7b3fdc23108c1734f"
 
 [metadata.files]
 aksharamukha = [
@@ -2038,6 +2046,10 @@ regex = [
 requests = [
     {file = "requests-2.28.1-py3-none-any.whl", hash = "sha256:8fefa2a1a1365bf5520aac41836fbee479da67864514bdb821f31ce07ce65349"},
     {file = "requests-2.28.1.tar.gz", hash = "sha256:7c5599b102feddaa661c826c56ab4fee28bfd17f5abca1ebbe3e7f19d7c97983"},
+]
+roman = [
+    {file = "roman-3.3-py2.py3-none-any.whl", hash = "sha256:c2a1f14ab47373aecc141edbcdd66595949c9d0ed932fe76bd547df1b55f7278"},
+    {file = "roman-3.3.tar.gz", hash = "sha256:2c46ac8db827d34e4fa9ccc0577e7f0b0d84f16ffe112351bd4f1ec2eb12d73f"},
 ]
 scipy = [
     {file = "scipy-1.10.0-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:b901b423c91281a974f6cd1c36f5c6c523e665b5a6d5e80fcb2334e14670eefd"},

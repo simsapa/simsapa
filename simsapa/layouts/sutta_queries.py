@@ -8,7 +8,7 @@ from PyQt6.QtCore import QUrl
 from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern, normalize_sutta_ref, remove_punct
+from simsapa.app.helpers import consistent_nasal_m, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
 from simsapa.app.types import AppData, QueryType, SuttaQuote, USutta, sutta_quote_from_url
 
 
@@ -44,7 +44,12 @@ class SuttaQueries:
 
         uid = url.path().strip("/")
 
-        return self.get_sutta_by_uid(uid, sutta_quote_from_url(url), quote_scope)
+        sutta = self.get_sutta_by_uid(uid, sutta_quote_from_url(url), quote_scope)
+
+        if sutta:
+            return sutta
+
+        return self.get_sutta_by_ref(uid)
 
 
     def find_quote_in_suttas(self, suttas: List[USutta], quote: Optional[str] = None) -> Optional[USutta]:
@@ -89,7 +94,7 @@ class SuttaQueries:
                 return None
 
         if len(uid) > 0:
-            uid = normalize_sutta_ref(uid)
+            uid = normalize_sutta_uid(uid)
 
         res_sutta = None
 
@@ -149,6 +154,24 @@ class SuttaQueries:
         return res_sutta
 
 
+    def get_sutta_by_ref(self, ref: str) -> Optional[USutta]:
+        if len(ref) == 0:
+            return None
+
+        ref = normalize_sutta_ref(ref)
+        ref = re.sub(r'pts *', '', ref)
+
+        multi_refs = self._app_data.db_session \
+            .query(Am.MultiRef) \
+            .filter(Am.MultiRef.ref.like(f"%{ref}%")) \
+            .all()
+
+        if len(multi_refs) == 0:
+            return None
+
+        return multi_refs[0].suttas[0]
+
+
     def is_complete_uid(self, uid: str) -> bool:
         uid = uid.strip("/")
 
@@ -178,7 +201,25 @@ class SuttaQueries:
 
         if re.match(r'^dhp[0-9]+$', sutta_ref) is not None:
             verse_num = int(sutta_ref.replace('dhp', ''))
-            ch = self.dhp_verse_to_chapter(verse_num)
+            ch = dhp_verse_to_chapter(verse_num)
+            if ch:
+                sutta_ref = ch
+
+        if re.match(r'^snp[0-9]+$', sutta_ref) is not None:
+            verse_num = int(sutta_ref.replace('snp', ''))
+            ch = snp_verse_to_uid(verse_num)
+            if ch:
+                sutta_ref = ch
+
+        if re.match(r'^thag[0-9]+$', sutta_ref) is not None:
+            verse_num = int(sutta_ref.replace('thag', ''))
+            ch = thag_verse_to_uid(verse_num)
+            if ch:
+                sutta_ref = ch
+
+        if re.match(r'^thig[0-9]+$', sutta_ref) is not None:
+            verse_num = int(sutta_ref.replace('thig', ''))
+            ch = thig_verse_to_uid(verse_num)
             if ch:
                 sutta_ref = ch
 
@@ -255,41 +296,3 @@ class SuttaQueries:
 
         return results
 
-    def dhp_verse_to_chapter(self, verse_num: int) -> Optional[str]:
-        chapters = [
-            [1, 20],
-            [21, 32],
-            [33, 43],
-            [44, 59],
-            [44, 59],
-            [60, 75],
-            [60, 75],
-            [76, 89],
-            [100, 115],
-            [116, 128],
-            [129, 145],
-            [146, 156],
-            [157, 166],
-            [167, 178],
-            [179, 196],
-            [197, 208],
-            [209, 220],
-            [221, 234],
-            [235, 255],
-            [256, 272],
-            [273, 289],
-            [290, 305],
-            [306, 319],
-            [320, 333],
-            [334, 359],
-            [360, 382],
-            [383, 423],
-        ]
-
-        for lim in chapters:
-            a = lim[0]
-            b = lim[1]
-            if verse_num >= a and verse_num <= b:
-                return f"dhp{a}-{b}"
-
-        return None

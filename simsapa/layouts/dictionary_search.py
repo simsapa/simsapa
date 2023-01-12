@@ -756,8 +756,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
 
+        body = self.queries._add_sutta_links(word_html['body'])
+
         page_html = self.queries.render_html_page(
-            body = word_html['body'],
+            body = body,
             css_head = word_html['css'],
             css_extra = css_extra,
             js_head = word_html['js'])

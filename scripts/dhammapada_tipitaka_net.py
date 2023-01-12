@@ -74,7 +74,7 @@ def parse_sutta(ref: str, content_html: str) -> Am.Sutta:
     author = "daw"
     uid = f"{ref}/{lang}/{author}"
 
-    logger.info(f"{ref} -- {title}")
+    # logger.info(f"{ref} -- {title}")
 
     content_html = '<div class="tipitaka_net">' + consistent_nasal_m(content_html) + '</div>'
 

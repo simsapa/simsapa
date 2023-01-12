@@ -3,24 +3,26 @@
 import os
 import sys
 from pathlib import Path
+import re
 import json
 import tomlkit
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypedDict
 from dotenv import load_dotenv
 from collections import namedtuple
+import roman
 
 from sqlalchemy import create_engine, null
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
-# from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy import or_, and_
 
 from pyArango.connection import Connection
 from pyArango.database import DBHandle
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, create_app_dirs, html_get_sutta_page_body, compact_rich_text
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, create_app_dirs, html_get_sutta_page_body, compact_rich_text, normalize_sutta_ref, sutta_range_from_ref
 
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
@@ -30,6 +32,7 @@ import cst4
 import dhammatalks_org
 import dhammapada_munindo
 import dhammapada_tipitaka_net
+import multi_refs
 import create_links
 
 load_dotenv()
@@ -105,6 +108,11 @@ def html_text_to_sutta(x, title: str, _: Optional[str]) -> Am.Sutta:
     uid = html_text_uid(x)
     source_uid = uid.split('/')[-1]
 
+    sutta_range = sutta_range_from_ref(x['uid'])
+    if not sutta_range:
+        logger.error(f"Can't determine sutta range: {x['uid']}")
+        sys.exit(1)
+
     return Am.Sutta(
         source_uid = source_uid,
         source_info = x['_id'],
@@ -114,6 +122,9 @@ def html_text_to_sutta(x, title: str, _: Optional[str]) -> Am.Sutta:
         uid = uid,
         # SN 12.23
         sutta_ref = helpers.uid_to_ref(x['uid']),
+        sutta_range_group = sutta_range['group'],
+        sutta_range_start = sutta_range['start'],
+        sutta_range_end = sutta_range['end'],
         # en
         language = x['lang'],
         content_html = content_html,
@@ -141,6 +152,11 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
     uid = bilara_text_uid(x)
     source_uid = uid.split('/')[-1]
 
+    sutta_range = sutta_range_from_ref(x['uid'])
+    if not sutta_range:
+        logger.error(f"Can't determine sutta range: {x['uid']}")
+        sys.exit(1)
+
     return Am.Sutta(
         source_uid = source_uid,
         source_info = x['_id'],
@@ -149,6 +165,9 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
         uid = uid,
         # SN 12.23
         sutta_ref = helpers.uid_to_ref(x['uid']),
+        sutta_range_group = sutta_range['group'],
+        sutta_range_start = sutta_range['start'],
+        sutta_range_end = sutta_range['end'],
         # pli
         language = x['lang'],
         content_plain = content_plain,
@@ -552,6 +571,211 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, language: str, limi
         sys.exit(1)
 
 
+def _text_to_multi_ref(collection: str, ref_text: str) -> Optional[Am.MultiRef]:
+    ref_text = ref_text.lower()
+
+    # Vinaya, Sutta Vibhanga
+    if collection == 'vb':
+        # ref includes the volume or not?
+        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
+            collection = 'vin'
+        else:
+            collection = 'vin i'
+
+    # Vinaya, Parajika
+    if collection.startswith('pli-tv-bu-vb'):
+        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
+            collection = 'vin'
+        else:
+            collection = 'vin iii'
+
+    # Vinaya, Parivāra
+    if collection.startswith('pli-tv-pvr'):
+        # ref includes the volume or not?
+        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
+            collection = 'vin'
+        else:
+            collection = 'vin v'
+
+    # PTS (1st ed) SN i 36
+    # PTS (2nd ed) SN i 79
+    if '(1st ed)' in ref_text:
+        ref_text = ref_text.replace('(1st ed)', '')
+
+        item = Am.MultiRef(
+            collection = collection,
+            ref_type = "pts",
+            ref = normalize_sutta_ref(ref_text),
+            edition = "1st ed. Feer (1884)",
+        )
+
+        return item
+
+    elif '(2nd ed)' in ref_text:
+        ref_text = ref_text.replace('(2nd ed)', '')
+
+        item = Am.MultiRef(
+            collection = collection,
+            ref_type = "pts",
+            ref = normalize_sutta_ref(ref_text),
+            edition = "2nd ed. Somaratne (1998)",
+        )
+
+        return item
+
+    refs = []
+    # Ref may contain a list of references, separated by commas.
+    # MN 13
+    # PTS 1.84, PTS 1.85, PTS 1.86, PTS 1.87, PTS 1.88, PTS 1.89, PTS 1.90
+    # PTS 3.123 = DN iii 123
+    matches = re.finditer(r'(?P<pts>pts *)?(?P<vol>\d+)\.(?P<page>\d+)', ref_text)
+    for m in matches:
+        vol = roman.toRoman(int(m.group('vol'))).lower()
+        s = f"{collection} {vol} {m.group('page')}"
+        refs.append(s)
+
+    if len(refs) > 0:
+        item = Am.MultiRef(
+            collection = collection,
+            ref_type = "pts",
+            ref = ", ".join(refs),
+        )
+
+        return item
+
+    # Ref may contain roman numerals.
+    # DN iii 123
+    # PTS iii 123
+    matches = re.finditer(r'(?P<pts>pts *)?(?P<vol>[ivx]+)[\. ](?P<page>\d+)', ref_text)
+    for m in matches:
+        vol = m.group('vol').lower()
+        s = f"{collection} {vol} {m.group('page')}"
+        refs.append(s)
+
+    if len(refs) > 0:
+        item = Am.MultiRef(
+            collection = collection,
+            ref_type = "pts",
+            ref = ", ".join(refs),
+        )
+
+        return item
+
+    return None
+
+
+def add_sc_multi_refs(appdata_db: Session, sc_db: DBHandle):
+    logger.info("=== add_sc_multi_refs() ===")
+
+    """
+    uid: sn1.51
+    acronym: SN 1.51
+    alt_acronym: SN 51
+    volpage: PTS (1st ed) SN i 36
+    alt_volpage: PTS (2nd ed) SN i 79
+    alt_name: null
+    biblio_uid: null
+    """
+
+    class TextInfo(TypedDict):
+        uid: str
+        acronym: str
+        alt_acronym: Optional[str]
+        volpage: Optional[str]
+        alt_volpage: Optional[str]
+        alt_name: Optional[str]
+        biblio_uid: Optional[str]
+
+    get_text_extra_info_aql = "LET docs = (FOR x IN text_extra_info RETURN x) RETURN docs"
+
+    q = sc_db.AQLQuery(get_text_extra_info_aql)
+    text_extra_info_by_uid: Dict[str, TextInfo] = dict()
+    for r in q.result[0]:
+        item = TextInfo(
+            uid = r['uid'],
+            acronym = r['acronym'],
+            alt_acronym = r['alt_acronym'],
+            volpage = r['volpage'],
+            alt_volpage = r['alt_volpage'],
+            alt_name = r['alt_name'],
+            biblio_uid = r['biblio_uid'],
+        )
+
+        text_extra_info_by_uid[r['uid']] = item
+
+
+    for part_uid in text_extra_info_by_uid.keys():
+        sutta_range = sutta_range_from_ref(part_uid)
+        if not sutta_range:
+            logger.error(f"Can't determine sutta range: {part_uid}")
+            continue
+
+        suttas: List[Am.Sutta] = []
+
+        if sutta_range['start'] is None:
+            suttas = appdata_db.query(Am.Sutta) \
+                .filter(Am.Sutta.uid.like(f"{part_uid}/%")) \
+                .all()
+
+        else:
+            # Find a sutta which exactly matches
+            # OR includes this range
+            # sn22.1-20 includes sn22.11-15
+            suttas = appdata_db \
+                .query(Am.Sutta) \
+                .filter(or_(
+                    Am.Sutta.uid.like(f"{part_uid}/%"),
+                    and_(Am.Sutta.sutta_range_group == sutta_range['group'],
+                         Am.Sutta.sutta_range_start <= sutta_range['start'],
+                         Am.Sutta.sutta_range_end >= sutta_range['end']),
+                )) \
+                .all()
+
+            # Find a sutta which matches the start of the range
+            # sn22.39 is at the start of sn22.39-42
+            if len(suttas) == 0:
+                suttas = appdata_db \
+                    .query(Am.Sutta) \
+                    .filter(
+                        and_(Am.Sutta.sutta_range_group == sutta_range['group'],
+                             Am.Sutta.sutta_range_start == sutta_range['start'])) \
+                    .all()
+
+        if len(suttas) == 0:
+            logger.warn(f"No sutta for part_uid {part_uid}, sutta_range {sutta_range}")
+            continue
+
+        ref = text_extra_info_by_uid[part_uid]
+
+        multi_refs: List[Am.MultiRef] = []
+
+        if ref['volpage'] is None and ref['alt_volpage'] is None:
+            continue
+
+        if 'PTS' not in str(ref['volpage']) and 'PTS' not in str(ref['alt_volpage']):
+            continue
+
+        collection = re.sub(r'^([a-z]+)\d.*', r'\1', part_uid)
+
+        if ref['volpage']:
+            item = _text_to_multi_ref(collection, ref['volpage'])
+            if item:
+                multi_refs.append(item)
+
+        if ref['alt_volpage']:
+            item = _text_to_multi_ref(collection, ref['alt_volpage'])
+            if item:
+                multi_refs.append(item)
+
+        for i in multi_refs:
+            appdata_db.add(i)
+        appdata_db.commit()
+
+        for sutta in suttas:
+            sutta.multi_refs = multi_refs # type: ignore
+        appdata_db.commit()
+
+
 def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle, limit: Optional[int] = None):
     for lang in ['en', 'pli']:
         suttas = get_suttas(sc_db, lang, limit)
@@ -707,6 +931,10 @@ def main():
     dhammapada_munindo.populate_suttas_from_dhammapada_munindo(appdata_db, limit)
 
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db, limit)
+
+    add_sc_multi_refs(appdata_db, sc_db)
+
+    multi_refs.populate_sutta_multi_refs(appdata_db, limit)
 
     # FIXME improve synonym parsing
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)

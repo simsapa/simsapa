@@ -17,6 +17,7 @@ from simsapa import logger
 
 import helpers
 from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
 
 load_dotenv()
 
@@ -43,7 +44,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     m = re.findall(r'dhp-(\d+)', p.stem)
     ch_num = int(m[0])
-    r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
+    r = DHP_CHAPTERS_TO_RANGE[ch_num]
 
     ref = f"dhp{r[0]}-{r[1]}"
 
@@ -52,7 +53,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     source_uid = author
     uid = f"{ref}/{lang}/{source_uid}"
 
-    logger.info(f"{ref} -- {title}")
+    # logger.info(f"{ref} -- {title}")
 
     content_html = '<div class="dhammapada_munindo">' + consistent_nasal_m(html_text) + '</div>'
 

@@ -17,9 +17,18 @@ from PyQt6.QtWidgets import QMainWindow, QMessageBox
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
 from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
+
+
+class SuttaRange(TypedDict):
+    # sn30.7-16
+    group: str # sn30
+    start: Optional[int] # 7
+    end: Optional[int] # 16
+
 
 def create_app_dirs():
     if not SIMSAPA_DIR.exists():
@@ -320,12 +329,103 @@ def get_db_update_info() -> Optional[UpdateInfo]:
         return None
 
 
-def normalize_sutta_ref(ref: str) -> str:
-    ref = re.sub(r'ud(\d)', r'uda\1', ref)
-    ref = re.sub(r'khp(\d)', r'kp\1', ref)
-    ref = re.sub(r'th(\d)', r'thag\1', ref)
+def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
+    # logger.info(f"sutta_range_from_ref(): {ref}")
 
-    return ref
+    """
+    sn30.7-16/pli/ms -> SuttaRange(group: 'sn30', start: 7, end: 16)
+    sn30.1/pli/ms -> SuttaRange(group: 'sn30', start: 1, end: 1)
+    dn1-5/bodhi/en -> SuttaRange(group: 'dn', start: 1, end: 5)
+    dn12/bodhi/en -> SuttaRange(group: 'dn', start: 12, end: 12)
+    dn2-a -> -> SuttaRange(group: 'dn-a', start: 2, end: 2)
+    pli-tv-pvr10
+    """
+
+    """
+    Problematic:
+
+    ---
+    _id: text_extra_info/21419
+    uid: sn22.57_a
+    acronym: SN 22.57(*) + AN 2.19(*)
+    volpage: PTS SN iii 61–63 + AN i 58
+    ---
+    """
+
+    # logger.info(ref)
+
+    if '/' in ref:
+        ref = ref.split('/')[0]
+
+    ref = ref.replace('--', '-')
+
+    # Atthakata
+    if ref.endswith('-a'):
+        # dn2-a -> dn-a2
+        ref = re.sub(r'([a-z-]+)([0-9-]+)-a', r'\1-a\2', ref)
+
+    if not re.search('[0-9]', ref):
+        return SuttaRange(
+            group = ref,
+            start = None,
+            end = None,
+        )
+
+    if '.' in ref:
+        a = ref.split('.')
+        group = a[0]
+        numeric = a[1]
+
+    else:
+        m = re.match(r'([a-z-]+)([0-9-]+)', ref)
+        if not m:
+            logger.warn(f"Cannot determine range for {ref}")
+            return None
+
+        group = m.group(1)
+        numeric = m.group(2)
+
+    try:
+        if '-' in numeric:
+            a = numeric.split('-')
+            start = int(a[0])
+            end = int(a[1])
+        else:
+            start = int(numeric)
+            end = start
+    except Exception as e:
+        logger.warn(f"Cannot determine range for {ref}: {e}")
+        return None
+
+    res = SuttaRange(
+        group = group,
+        start = start,
+        end = end,
+    )
+
+    # logger.info(res)
+
+    return res
+
+
+def normalize_sutta_ref(ref: str) -> str:
+    ref = ref.lower()
+    ref = re.sub(r'ud *(\d)', r'uda \1', ref)
+    ref = re.sub(r'khp *(\d)', r'kp \1', ref)
+    ref = re.sub(r'th *(\d)', r'thag \1', ref)
+
+    ref = re.sub(r'\.([ivx]+)\.', r' \1 ', ref)
+    ref = re.sub(r'^d ', 'dn ', ref)
+    ref = re.sub(r'^m ', 'mn ', ref)
+    ref = re.sub(r'^s ', 'sn ', ref)
+    ref = re.sub(r'^a ', 'an ', ref)
+
+    return ref.strip()
+
+
+def normalize_sutta_uid(uid: str) -> str:
+    uid = normalize_sutta_ref(uid).replace(' ', '')
+    return uid
 
 
 def consistent_nasal_m(text: Optional[str] = None) -> str:
@@ -647,3 +747,51 @@ def bilara_text_to_html(
     )
 
     return bilara_content_json_to_html(content_json)
+
+
+def dhp_verse_to_chapter(verse_num: int) -> Optional[str]:
+    for lim in DHP_CHAPTERS_TO_RANGE.values():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return f"dhp{a}-{b}"
+
+    return None
+
+
+def thag_verse_to_uid(verse_num: int) -> Optional[str]:
+    # v1 - v120 are thag1.x
+    if verse_num <= 120:
+        return f"thag1.{verse_num}"
+
+    for uid, lim in THAG_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None
+
+
+def thig_verse_to_uid(verse_num: int) -> Optional[str]:
+    # v1 - v18 are thig1.x
+    if verse_num <= 18:
+        return f"thig1.{verse_num}"
+
+    for uid, lim in THIG_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None
+
+
+def snp_verse_to_uid(verse_num: int) -> Optional[str]:
+    for uid, lim in SNP_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None

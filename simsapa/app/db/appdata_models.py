@@ -29,6 +29,13 @@ assoc_sutta_tags = Table(
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
+assoc_sutta_multi_refs = Table(
+    'sutta_multi_refs',
+    Base.metadata, # type: ignore
+    Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+    Column('multi_ref_id', Integer, ForeignKey("multi_refs.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+)
+
 assoc_dict_word_tags = Table(
     'dict_word_tags',
     Base.metadata, # type: ignore
@@ -73,9 +80,13 @@ class Sutta(Base): # type: ignore
     group_path = Column(String) # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
     group_index = Column(Integer) # 1
     sutta_ref = Column(String) # DN 1
-    sutta_ref_pts = Column(String) # DN i 1
     language = Column(String) # pli / en
     order_index = Column(Integer)
+
+    # sn30.7-16
+    sutta_range_group = Column(String) # sn30
+    sutta_range_start = Column(Integer) # 7
+    sutta_range_end = Column(Integer) # 16
 
     # --- Content props ---
     title = Column(String) # Brahmajāla: The Root of All Things
@@ -104,6 +115,8 @@ class Sutta(Base): # type: ignore
 
     variant = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
     comment = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
+
+    multi_refs = relationship("MultiRef", secondary=assoc_sutta_multi_refs, back_populates="suttas")
 
 
 class SuttaVariant(Base): # type: ignore
@@ -430,3 +443,45 @@ class Challenge(Base): # type: ignore
 
     course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
     group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)
+
+
+class MultiRef(Base): # type: ignore
+    __tablename__ = "multi_refs"
+
+    id = Column(Integer, primary_key=True)
+
+    # lowercase an / mn / kp / etc.
+    collection = Column(String, nullable=False)
+
+    # AN 2.52-63
+    # PTS 1.77.1-1.80.1
+    # PTS i 77.1 - i 80.1
+
+    ref_type = Column(String) # sc / pts / dpr / cst4 / bodhi / verse / trad
+
+    # Ref may contain a list of references, separated by commas.
+    ref = Column(String) # sn 1.51 / an 1.77.1-1.80.1 / an i 77.1 - i 80.1
+    sutta_uid = Column(String) # sn1.51
+
+    edition = Column(String) # 1st ed. Feer (1884) / 2nd ed. Somaratne (1998) / etc.
+
+    name = Column(String)
+    biblio_uid = Column(String)
+
+    nipata_number = Column(Integer) # 1 in AN 1.8.3
+    vagga_number = Column(Integer) # 8
+    sutta_number = Column(Integer) # 3
+
+    volume = Column(Integer)
+    page_start = Column(Integer)
+    page_end = Column(Integer)
+    par_start = Column(Integer)
+    par_end = Column(Integer)
+
+    sutta_start = Column(Integer) # 52 in AN 2.52-63
+    sutta_end = Column(Integer) # 63 in AN 2.52-63
+
+    verse_start = Column(Integer)
+    verse_end = Column(Integer)
+
+    suttas = relationship("Sutta", secondary=assoc_sutta_multi_refs, back_populates="multi_refs")

@@ -42,6 +42,7 @@ class AppWindows:
         self._app_data = app_data
         self._hotkeys_manager = hotkeys_manager
         self._windows: List[AppWindowInterface] = []
+        self._windowed_previews: List[PreviewWindow] = []
         self._preview_window = PreviewWindow(self._app_data)
 
         self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
@@ -130,6 +131,7 @@ class AppWindows:
         view = PreviewWindow(self._app_data,
                              hover_data = self._preview_window._hover_data,
                              frameless = False)
+        self._windowed_previews.append(view)
 
         view.open_new.connect(partial(self._new_sutta_from_preview))
 
@@ -762,6 +764,9 @@ class AppWindows:
 
     def _close_all_windows(self):
         for w in self._windows:
+            w.close()
+
+        for w in self._windowed_previews:
             w.close()
 
     def _quit_app(self):

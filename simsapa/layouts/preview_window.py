@@ -25,6 +25,14 @@ TITLE_BG_COLOR = "#FEF8E8"
 DARK_BORDER_COLOR = "#D47400"
 LIGHT_BORDER_COLOR = TITLE_BG_COLOR
 
+PREVIEW_CSS_EXTRA = f"""
+html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
+html {{ font-size: 18px; }}
+body {{ padding: 0.5rem; max-width: 100%; }}
+h1 {{ font-size: 22px; margin-top: 0pt; }}
+"""
+
+
 class PreviewWindow(QDialog):
 
     open_new = pyqtSignal(str)
@@ -119,7 +127,7 @@ class PreviewWindow(QDialog):
     def leaveEvent(self, e: QEnterEvent):
         self._mouseover = False
 
-        if self._link_mouseleave:
+        if self._link_mouseleave and self._frameless:
             self._hide_timer.start(500)
 
         return super().leaveEvent(e)
@@ -256,11 +264,7 @@ class PreviewWindow(QDialog):
         </p>
         """
 
-        css_extra = """
-        html { font-size: 18px; }
-        body { padding: 0.5rem; max-width: 100%; }
-        h1 { font-size: 22px; margin-top: 0pt; }
-        """
+        css_extra = PREVIEW_CSS_EXTRA
 
         html = html_page(content, self._app_data.api_url, css_extra)
 
@@ -270,13 +274,7 @@ class PreviewWindow(QDialog):
     def _render_words(self, words: List[UDictWord]):
         self.title = ''
 
-        css_extra = f"""
-        html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
-        html {{ font-size: 18px; }}
-        body {{ padding: 0.5rem; max-width: 100%; }}
-        h1 {{ font-size: 22px; margin-top: 0pt; }}
-        """
-
+        css_extra = PREVIEW_CSS_EXTRA
         js_extra = "const SHOW_BOOKMARKS = false;";
 
         if self._frameless:

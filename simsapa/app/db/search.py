@@ -24,7 +24,10 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp) *([\d\.]+)', re.IGNORECASE)
+# MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
+RE_ALL_BOOK_SUTTA_REF = re.compile(r'\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]+)\b', re.IGNORECASE)
+# Vin.iii.40; AN.i.78; D iii 264; SN i 190
+RE_ALL_PTS_VOL_SUTTA_REF = re.compile(r'\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]([ivxIVX]+)[ \.](\d[\d\.]+)\b', re.IGNORECASE)
 
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)
@@ -236,7 +239,7 @@ class SearchQuery:
 
         if 'uid:' not in query:
             # Replace user input sutta refs such as 'SN 56.11' with query language
-            matches = re.finditer(RE_SUTTA_REF, query)
+            matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query)
             for m in matches:
                 nikaya = m.group(1).lower()
                 number = m.group(2)
@@ -378,7 +381,7 @@ class SearchIndexed:
             total = len(suttas)
             for idx, i in enumerate(suttas):
                 percent = idx/(total/100)
-                logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
+                # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
                     # Remove content marked with 'noindex' class, such as footer material
@@ -462,7 +465,7 @@ class SearchIndexed:
             total = len(words)
             for idx, i in enumerate(words):
                 percent = idx/(total/100)
-                logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
+                # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
 
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:

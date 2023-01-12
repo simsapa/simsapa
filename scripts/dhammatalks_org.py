@@ -17,6 +17,7 @@ from simsapa import logger
 
 import helpers
 from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
 from simsapa.app.types import QueryType
 
 load_dotenv()
@@ -45,7 +46,7 @@ def ref_notation_convert(ref: str) -> str:
     if ref.startswith('ch'):
         m = re.findall(r'ch(\d+)', ref)
         ch_num = int(m[0])
-        r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
+        r = DHP_CHAPTERS_TO_RANGE[ch_num]
 
         ref = f"dhp{r[0]}-{r[1]}"
 
@@ -147,7 +148,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     author = "thanissaro"
     uid = f"{ref}/{lang}/{author}"
 
-    logger.info(f"{ref} -- {title} -- {title_pali}")
+    # logger.info(f"{ref} -- {title} -- {title_pali}")
 
     content_html = '<div class="dhammatalks_org">' + consistent_nasal_m(content_html) + '</div>'
 

@@ -21,7 +21,7 @@ from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
-from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_SUTTA_REF
+from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_ALL_BOOK_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
@@ -570,7 +570,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._show_sutta(self._current_sutta)
             return
 
-        if re.search(RE_SUTTA_REF, query) is None and len(query) < min_length:
+        if re.search(RE_ALL_BOOK_SUTTA_REF, query) is None and len(query) < min_length:
             return
 
         # Not aborting, show the user that the app started processsing

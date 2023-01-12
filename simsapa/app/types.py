@@ -157,7 +157,7 @@ def default_app_settings() -> AppSettings:
         suttas_show_pali_buttons = True,
         dictionary_show_pali_buttons = True,
         show_toolbar = False,
-        link_preview = False,
+        link_preview = True,
         first_window_on_startup = WindowType.SuttaSearch,
         word_scan_popup_pos = WindowPosSize(
             x = 100,
