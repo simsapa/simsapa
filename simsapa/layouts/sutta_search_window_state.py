@@ -187,10 +187,10 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         if self.enable_search_extras:
             self._setup_source_filter()
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
-            self._setup_toggle_pali_button()
+            # self._setup_toggle_pali_button() # TODO: reimplement as hover window
             setup_info_button(self.search_extras, self)
 
-            self._setup_pali_buttons()
+            # self._setup_pali_buttons() # TODO: reimplement as hover window
 
         if self.enable_find_panel:
             self._find_panel = FindPanel()

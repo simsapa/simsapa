@@ -255,10 +255,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self._setup_dict_filter_dropdown()
         self._setup_dict_select_button()
-        self._setup_toggle_pali_button()
+        # self._setup_toggle_pali_button() # TODO: reimplement as hover window
         setup_info_button(self.search_extras, self)
 
-        self._setup_pali_buttons()
+        # self._setup_pali_buttons() # TODO: reimplement as hover window
         self._setup_qwe()
 
         self.search_input.setFocus()

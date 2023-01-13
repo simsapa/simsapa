@@ -92,7 +92,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 pass
 
     def _ui_setup(self):
-        self._setup_pali_buttons()
+        # self._setup_pali_buttons() # TODO: reimplement as hover window
 
         self.setup_links_controls()
         self.setup_content_graph()
@@ -277,6 +277,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.suttas",
                 uid=str(x.uid),
+                source_uid=str(x.source_uid),
                 title=title,
                 ref=str(x.sutta_ref),
                 author=None,
@@ -314,6 +315,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.dict_words",
                 uid=str(x.uid),
+                source_uid=str(x.source_uid),
                 title=str(x.word),
                 ref=None,
                 author=None,
@@ -352,6 +354,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.documents",
                 uid=None,
+                source_uid=None,
                 title=str(title).strip(),
                 ref=None,
                 author=None,
