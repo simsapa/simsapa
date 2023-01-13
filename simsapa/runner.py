@@ -5,6 +5,7 @@ import typer
 
 from simsapa import logger
 from simsapa.app.types import QueryType
+from simsapa.app.helpers import create_app_dirs
 
 # Error in click.utils.echo() when console is unavailable
 # https://github.com/pallets/click/issues/2415
@@ -16,6 +17,9 @@ if getattr(sys, 'frozen', False):
 app = typer.Typer()
 index_app = typer.Typer()
 app.add_typer(index_app, name="index")
+
+create_app_dirs()
+
 
 @app.command()
 def gui(url: Optional[str] = None):

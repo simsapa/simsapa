@@ -34,7 +34,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch=None,
+    target_arch='arm64',
     codesign_identity=None,
     entitlements_file=None,
     icon=['simsapa/assets/icons/appicons/simsapa.ico'],
@@ -48,4 +48,10 @@ coll = COLLECT(
     upx=False,
     upx_exclude=[],
     name='Simsapa Dhamma Reader',
+)
+app = BUNDLE(
+    coll,
+    name='Simsapa Dhamma Reader.app',
+    icon='simsapa/assets/icons/appicons/simsapa.ico',
+    bundle_identifier='com.profound-labs.dhamma.simsapa',
 )

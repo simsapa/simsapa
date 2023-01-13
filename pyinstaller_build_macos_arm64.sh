@@ -17,3 +17,5 @@ pyinstaller run.py \
     --add-data "simsapa/alembic.ini:simsapa/alembic.ini" \
     --target-architecture arm64 \
     --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa'
+
+dmgbuild -s dmgbuild_settings.py "Simsapa Dhamma Reader" "./dist/Simsapa Dhamma Reader.dmg"

@@ -51,3 +51,6 @@ tags
 # dotenv environment variables file
 .env
 .env.test
+
+# MacOS
+.DS_Store
