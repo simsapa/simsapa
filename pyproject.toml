@@ -57,6 +57,12 @@ aksharamukha = "~2.0.4"
 markdown = "^3.4.1"
 psutil = "^5.9.4"
 roman = "^3.3"
+chardet = "^5.1.0"
+
+# NOTE: charset-normalizer = "^3.0.1" errors with PyInstaller
+# ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
+# https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
+charset-normalizer = "==2.1.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
