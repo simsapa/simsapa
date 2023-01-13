@@ -13,6 +13,12 @@ p = find_dotenv() or find_dotenv('.env.txt')
 if p != '':
     load_dotenv(p)
 
+# When running from dev folder, get_app_version() returns t['tool']['poetry']['version'].
+# When running the prod app, the value below is used.
+#
+# In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
+SIMSAPA_APP_VERSION = "0.2.0-alpha.1"
+
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
 PACKAGE_ASSETS_RSC_DIR = Path('assets')

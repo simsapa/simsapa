@@ -1,6 +1,3 @@
-# NOTE: importlib.metadata is a missing module on Windows
-# from importlib import metadata
-from importlib_metadata import version
 from pathlib import Path
 import shutil
 from typing import Dict, List, Optional, TypedDict
@@ -22,7 +19,7 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
 
 
 class SuttaRange(TypedDict):
@@ -119,7 +116,7 @@ def get_app_version() -> Optional[str]:
         return ver
 
     # If not dev, return installed version
-    ver = version('simsapa')
+    ver = SIMSAPA_APP_VERSION
     if len(ver) == 0:
         return None
 

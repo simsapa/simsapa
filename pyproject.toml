@@ -6,7 +6,11 @@ description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 authors = ["Gambhiro <profound.labs@gmail.com>"]
 license = "MIT"
 
-# NOTE: Adjust tool.briefcase.version below.
+# NOTE: Version updates:
+# - tool.poetry.version (above)
+# - simsapa.db_version
+# - tool.briefcase.version
+# - simsapa/__init__.py SIMSAPA_APP_VERSION
 
 [simsapa]
 db_version = "0.2.0-alpha.1"
@@ -63,8 +67,6 @@ chardet = "^5.1.0"
 # ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
 # https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
 charset-normalizer = "==2.1.0"
-
-importlib-metadata = "^6.0.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -155,7 +157,6 @@ requires = [
 "roman              >= 3.3,      < 4.0",
 "chardet            >= 5.1.0,    < 5.2.0",
 "charset-normalizer == 2.1.0",
-"importlib-metadata >= 6.0,      < 7.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]
