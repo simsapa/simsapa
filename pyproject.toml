@@ -13,7 +13,10 @@ db_version = "0.2.0-alpha.1"
 
 [tool.poetry.dependencies]
 python = "~3.11"
+PyQt6 = "~6.4.0"
+# Check poetry.lock Qt version matches with briefcase workflow yml
 PyQt6-Qt6 = "~6.4.2"
+PyQt6-WebEngine = "~6.4.0"
 PyQt6-WebEngine-Qt6 = "~6.4.2"
 PyYAML = "~6.0.0"
 SQLAlchemy = "~1.4.45"
@@ -101,7 +104,9 @@ icon = "simsapa/assets/icons/appicons/simsapa"
 sources = ['simsapa']
 
 requires = [
+"PyQt6              >= 6.4.0,    < 6.5.0",
 "PyQt6-Qt6           == 6.4.2",
+"PyQt6-WebEngine    >= 6.4.0,    < 6.5.0",
 "PyQt6-WebEngine-Qt6 == 6.4.2",
 "PyYAML             >= 6.0.0,    < 6.1.0",
 "SQLAlchemy         >= 1.4.45,   < 1.5.0",
