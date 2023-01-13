@@ -1,4 +1,6 @@
-from importlib import metadata
+# NOTE: importlib.metadata is a missing module on Windows
+# from importlib import metadata
+from importlib_metadata import version
 from pathlib import Path
 import shutil
 from typing import Dict, List, Optional, TypedDict
@@ -117,7 +119,7 @@ def get_app_version() -> Optional[str]:
         return ver
 
     # If not dev, return installed version
-    ver = metadata.version('simsapa')
+    ver = version('simsapa')
     if len(ver) == 0:
         return None
 
