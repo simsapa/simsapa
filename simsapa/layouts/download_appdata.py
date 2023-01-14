@@ -238,6 +238,7 @@ class DownloadAppdataWindow(QMainWindow):
         self.download_worker.signals.msg_update.connect(partial(self._msg_update))
 
         self.download_worker.signals.finished.connect(partial(self._download_finished))
+        self.download_worker.signals.cancelled.connect(partial(self._download_cancelled))
 
         self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
         self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
@@ -258,19 +259,47 @@ class DownloadAppdataWindow(QMainWindow):
     def _msg_update(self, msg: str):
         self._msg.setText(msg)
 
+    def _cancelled_cleanup_files(self):
+        # Don't remove assets dir, it may contain userdata.sqlite3 with user's
+        # memos, bookmarks, settings, etc.
+
+        if INDEX_DIR.exists():
+            shutil.rmtree(INDEX_DIR)
+
+        if APP_DB_PATH.exists():
+            APP_DB_PATH.unlink()
+
     def _download_finished(self):
         self.stop_animation()
         self._animation.deleteLater()
 
-        self._msg.setText("Download completed.\n\nQuit and start the application again.")
+        self._msg.setText("<p>Download completed.</p><p>Quit and start the application again.</p>")
 
-    def _handle_quit(self):
-        self.download_worker.download_stop.set()
+    def _download_cancelled(self):
+        self.stop_animation()
+        self._animation.deleteLater()
+        self._cancelled_cleanup_files()
         self.close()
 
+    def _handle_quit(self):
+        if self.download_worker.download_started.isSet():
+            self._msg.setText("<p>Setup cancelled, waiting for subprocesses to end ...</p>")
+            self.download_worker.download_stop.set()
+            # Don't .close() here, wait for _download_cancelled() to do it.
+            #
+            # Otherwise, triggering .close() while the extraction is not finished will cause a threading error.
+            #
+            # RuntimeError: wrapped C/C++ object of type WorkerSignals has been deleted
+            # QObject: Cannot create children for a parent that is in a different thread.
+            # (Parent is QApplication(0x4050170), parent's thread is QThread(0x2785280), current thread is QThreadPoolThread(0x51dbd00)
+            # fish: Job 1, './run.py' terminated by signal SIGSEGV (Address boundary error)
+
+        else:
+            self.close()
 
 class WorkerSignals(QObject):
     finished = pyqtSignal()
+    cancelled = pyqtSignal()
     msg_update = pyqtSignal(str)
     set_total_progress = pyqtSignal(int)
     set_current_progress = pyqtSignal(int)
@@ -280,6 +309,7 @@ class WorkerSignals(QObject):
 class Worker(QRunnable):
     urls: List[str]
     signals: WorkerSignals
+    download_started: threading.Event
     download_stop: threading.Event
 
     def __init__(self):
@@ -287,13 +317,19 @@ class Worker(QRunnable):
 
         self.signals = WorkerSignals()
 
+        self.download_started = threading.Event()
         self.download_stop = threading.Event()
 
     @pyqtSlot()
     def run(self):
         try:
+            self.download_started.set()
             for i in self.urls:
                 self.download_extract_tar_bz2(i)
+                if self.download_stop.is_set():
+                    logger.info("run(): Cancelling")
+                    self.signals.cancelled.emit()
+                    return
 
             def _not_core_db(s: str) -> bool:
                 p = Path(s)
@@ -315,6 +351,7 @@ class Worker(QRunnable):
             logger.error(msg)
 
         finally:
+            self.download_started.clear()
             self.signals.finished.emit()
 
     def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
@@ -340,10 +377,10 @@ class Worker(QRunnable):
                         read_mb = "%.2f" % (read_bytes / 1024 / 1024)
 
                         self.signals.set_current_progress.emit(read_bytes)
-                        self.signals.msg_update.emit(f"Downloading {file_name} ({read_mb} / {total_mb} MB) ...")
+                        self.signals.msg_update.emit(f"<p>Downloading {file_name}</p><p>({read_mb} / {total_mb} MB) ...</p>")
 
                         if self.download_stop.is_set():
-                            logger.info("Aborting download, removing partial file.")
+                            logger.info("download_file(): Stopping download, removing partial file.")
                             file_path.unlink()
                             return None
         except Exception as e:
