@@ -112,13 +112,11 @@ def populate_sutta_multi_refs(appdata_db: Session, limit: Optional[int] = None):
             suttas: List[Am.Sutta] = []
 
             if sutta_range['start'] is None:
-                print("one")
                 suttas = appdata_db.query(Am.Sutta) \
                     .filter(Am.Sutta.uid.like(f"{ref.sutta_uid}/%")) \
                     .all()
 
             else:
-                print("two")
                 suttas = appdata_db \
                     .query(Am.Sutta) \
                     .filter(or_(

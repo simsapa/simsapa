@@ -1,5 +1,4 @@
 import re
-import csv
 import subprocess
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
@@ -725,54 +724,25 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
     def _handle_import(self):
         file_path, _ = QFileDialog \
             .getOpenFileName(self,
-                             "Import from CSV...",
-                             "",
-                             "CSV Files (*.csv)")
+                            "Import from CSV...",
+                            "",
+                            "CSV Files (*.csv)")
 
         if len(file_path) == 0:
             return
 
-        rows = []
+        bookmarks = self._app_data.import_bookmarks(file_path)
 
-        with open(file_path) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                rows.append(row)
+        self.reload_bookmarks()
+        self.reload_table()
 
-        def _to_bookmark(x: Dict[str, str]) -> UBookmark:
-            return Um.Bookmark(
-                name          = x['name']          if x['name']          != 'None' else None,
-                quote         = x['quote']         if x['quote']         != 'None' else None,
-                selection_range = x['selection_range'] if x['selection_range'] != 'None' else None,
-                sutta_id      = int(x['sutta_id']) if x['sutta_id']      != 'None' else None,
-                sutta_uid     = x['sutta_uid']     if x['sutta_uid']     != 'None' else None,
-                sutta_schema  = x['sutta_schema']  if x['sutta_schema']  != 'None' else None,
-                sutta_ref     = x['sutta_ref']     if x['sutta_ref']     != 'None' else None,
-                sutta_title   = x['sutta_title']   if x['sutta_title']   != 'None' else None,
-                comment_text  = x['comment_text']  if x['comment_text']  != 'None' else None,
-                comment_attr_json = x['comment_attr_json'] if x['comment_attr_json'] != 'None' else None,
-                read_only     = x['read_only']     if x['read_only']     != 'None' else None,
-            )
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"Imported {bookmarks} bookmarks.")
+        box.setWindowTitle("Import Completed")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
-        bookmarks = list(map(_to_bookmark, rows))
-
-        try:
-            for i in bookmarks:
-                self._app_data.db_session.add(i)
-            self._app_data.db_session.commit()
-
-            self.reload_bookmarks()
-            self.reload_table()
-
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Icon.Information)
-            box.setText(f"Imported {len(bookmarks)} bookmarks.")
-            box.setWindowTitle("Import Completed")
-            box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            box.exec()
-
-        except Exception as e:
-            logger.error(e)
 
     def _handle_export(self):
         file_path, _ = QFileDialog \
@@ -784,51 +754,15 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         if len(file_path) == 0:
             return
 
-        if not file_path.endswith(".csv"):
-            file_path = f"{file_path}.csv"
+        bookmarks = self._app_data.export_bookmarks(file_path)
 
-        res = self._app_data.db_session \
-                            .query(Um.Bookmark) \
-                            .filter(Um.Bookmark.sutta_uid != '') \
-                            .all()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"Exported {bookmarks} bookmarks.")
+        box.setWindowTitle("Export Completed")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
-        if not res:
-            return
-
-        def _to_row(x: UBookmark) -> Dict[str, str]:
-            return {
-                "name": str(x.name),
-                "quote": str(x.quote),
-                "selection_range": str(x.selection_range),
-                "sutta_id": str(x.sutta_id),
-                "sutta_uid": str(x.sutta_uid),
-                "sutta_schema": str(x.sutta_schema),
-                "sutta_ref": str(x.sutta_ref),
-                "sutta_title": str(x.sutta_title),
-                "comment_text": str(x.comment_text),
-                "comment_attr_json": str(x.comment_attr_json),
-                "read_only": str(x.read_only),
-            }
-
-        a = list(map(_to_row, res))
-        rows = sorted(a, key=lambda x: x['name'])
-
-        try:
-            with open(file_path, 'w') as f:
-                w = csv.DictWriter(f, fieldnames=rows[0].keys())
-                w.writeheader()
-                for r in rows:
-                    w.writerow(r)
-
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Icon.Information)
-            box.setText(f"Exported {len(rows)} bookmarks.")
-            box.setWindowTitle("Export Completed")
-            box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            box.exec()
-
-        except Exception as e:
-            logger.error(e)
 
     def _connect_signals(self):
         self.tree_view.clicked.connect(self._handle_tree_clicked)

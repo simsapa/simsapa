@@ -1,22 +1,16 @@
-import json
-import re
 import shutil
 from functools import partial
-from pathlib import Path
-from typing import List, Optional, TypedDict
+from typing import Optional
 
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QSize, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTreeView, QVBoxLayout, QWidget)
 
-import tomlkit
 import markdown
 
-from sqlalchemy import func, null
-
-from PyQt6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTreeView, QVBoxLayout, QWidget)
-from tomlkit.toml_document import TOMLDocument
+from sqlalchemy import null
 
 from simsapa import COURSES_DIR, DbSchemaName, logger
 from simsapa.layouts.pali_course_helpers import count_remaining_challenges_in_group, get_groups_in_course
@@ -24,23 +18,7 @@ from simsapa.layouts.pali_course_helpers import count_remaining_challenges_in_gr
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
-
-
-class TomlCourseChallenge(TypedDict):
-    challenge_type: str
-    explanation_md: str
-    question: str
-    answer: str
-    audio: str
-    gfx: str
-
-
-class TomlCourseGroup(TypedDict):
-    name: str
-    description: str
-    sort_index: int
-    challenges: List[TomlCourseChallenge]
+from ..app.types import AppData, AppWindowInterface, PaliCourseGroup, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
 
 
 class ListItem(QStandardItem):
@@ -414,130 +392,6 @@ class CoursesBrowserWindow(AppWindowInterface):
         self._handle_start()
 
 
-    def parse_toml(self, path: Path) -> Optional[TOMLDocument]:
-        with open(path) as f:
-            s = f.read()
-
-        t = None
-        try:
-            t = tomlkit.parse(s)
-        except Exception as e:
-            msg = f"Can't parse TOML: {path}\n\n{e}"
-            logger.error(msg)
-
-            box = QMessageBox(self)
-            box.setWindowTitle("Error")
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setText(msg)
-            box.exec()
-
-        return t
-
-    def _course_base_from_name(self, course_name: str) -> Path:
-        p = COURSES_DIR.joinpath(re.sub(r'[^0-9A-Za-z]', '_', course_name))
-        return p
-
-    def _copy_to_courses(self, toml_path: Path, asset_rel_path: Path, course_base: Path):
-        toml_dir = toml_path.parent
-
-        from_path = toml_dir.joinpath(asset_rel_path)
-
-        to_path = course_base.joinpath(asset_rel_path)
-
-        to_dir = to_path.parent
-        if not to_dir.exists():
-            to_dir.mkdir(parents=True, exist_ok=True)
-
-        shutil.copy(from_path, to_path)
-
-    def import_from_toml(self, toml_path: Path):
-        t = self.parse_toml(toml_path)
-        if t is None:
-            return
-
-        courses_count = self._app_data.db_session \
-                                      .query(func.count(Um.ChallengeCourse.id)) \
-                                      .scalar()
-
-        course_name = t.get('name') or 'Unknown'
-
-        course_base = self._course_base_from_name(course_name)
-        if not course_base.exists():
-            course_base.mkdir(parents=True, exist_ok=True)
-
-        shutil.copy(toml_path, course_base)
-
-        c = Um.ChallengeCourse(
-            name = course_name,
-            description = t['description'],
-            course_dirname = course_base.name,
-            sort_index = courses_count + 1,
-        )
-
-        self._app_data.db_session.add(c)
-        self._app_data.db_session.commit()
-
-        groups: List[TomlCourseGroup] = t.get('groups') or []
-
-        for idx_i, i in enumerate(groups):
-            g = Um.ChallengeGroup(
-                name = i['name'],
-                description = i['description'],
-                sort_index = idx_i,
-            )
-
-            g.course = c
-
-            self._app_data.db_session.add(g)
-            self._app_data.db_session.commit()
-
-            for idx_j, j in enumerate(i['challenges']):
-
-                ch = None
-
-                if j['challenge_type'] == PaliChallengeType.Explanation.value:
-
-                    ch = Um.Challenge(
-                        sort_index = idx_j,
-                        challenge_type = j['challenge_type'],
-                        explanation_md = j['explanation_md'],
-                    )
-
-                elif j['challenge_type'] == PaliChallengeType.Vocabulary.value or \
-                     j['challenge_type'] == PaliChallengeType.TranslateFromEnglish.value or \
-                     j['challenge_type'] == PaliChallengeType.TranslateFromPali.value:
-
-                    if j.get('gfx', False):
-                        self._copy_to_courses(toml_path, Path(j['gfx']), course_base)
-                        # Challenge asset paths are relative to course dir
-                        gfx = j['gfx']
-                    else:
-                        gfx = None
-
-                    question = PaliItem(text = j['question'], audio = None, gfx = gfx, uuid = None)
-
-                    if j.get('audio', False):
-                        self._copy_to_courses(toml_path, Path(j['audio']), course_base)
-                        audio = j['audio']
-                    else:
-                        audio = None
-
-                    answers = [PaliItem(text = j['answer'], audio = audio, gfx = None, uuid = None)]
-
-                    ch = Um.Challenge(
-                        sort_index = idx_j,
-                        challenge_type = j['challenge_type'],
-                        question_json = json.dumps(question),
-                        answers_json = json.dumps(answers),
-                    )
-
-                if ch is not None:
-                    ch.course = c
-                    ch.group = g
-                    self._app_data.db_session.add(ch)
-                    self._app_data.db_session.commit()
-
-
     def _reload_courses_tree(self):
         self.tree_model.clear()
         self._create_tree_items(self.tree_model)
@@ -553,7 +407,15 @@ class CoursesBrowserWindow(AppWindowInterface):
             "TOML Files (*.toml)")
 
         if len(file_path) != 0:
-            self.import_from_toml(Path(file_path))
+            try:
+                self._app_data.import_pali_course(file_path)
+            except Exception as e:
+                box = QMessageBox(self)
+                box.setWindowTitle("Error")
+                box.setIcon(QMessageBox.Icon.Warning)
+                box.setText(str(e))
+                box.exec()
+
             self._reload_courses_tree()
 
 

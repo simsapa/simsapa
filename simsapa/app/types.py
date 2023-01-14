@@ -1,5 +1,6 @@
 from enum import Enum
 from functools import partial
+import csv
 import re
 import json
 import os
@@ -7,17 +8,20 @@ import os.path
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 from urllib.parse import parse_qs
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
+import tomlkit
+import shutil
+from tomlkit.toml_document import TOMLDocument
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql.functions import func
+from sqlalchemy import func
 
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
-from simsapa import IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
+from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, upgrade_db
 
@@ -101,6 +105,20 @@ class PaliListModel(str, Enum):
 class PaliGroupStats(TypedDict):
     completed: int
     total: int
+
+class TomlCourseChallenge(TypedDict):
+    challenge_type: str
+    explanation_md: str
+    question: str
+    answer: str
+    audio: str
+    gfx: str
+
+class TomlCourseGroup(TypedDict):
+    name: str
+    description: str
+    sort_index: int
+    challenges: List[TomlCourseChallenge]
 
 def default_search_result_sizes() -> SearchResultSizes:
     return SearchResultSizes(
@@ -386,6 +404,211 @@ class AppData:
             exit(1)
         else:
             return APP_DB_PATH
+
+    def import_bookmarks(self, file_path: str) -> int:
+        rows = []
+
+        with open(file_path) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+
+        def _to_bookmark(x: Dict[str, str]) -> UBookmark:
+            return Um.Bookmark(
+                name          = x['name']          if x['name']          != 'None' else None,
+                quote         = x['quote']         if x['quote']         != 'None' else None,
+                selection_range = x['selection_range'] if x['selection_range'] != 'None' else None,
+                sutta_id      = int(x['sutta_id']) if x['sutta_id']      != 'None' else None,
+                sutta_uid     = x['sutta_uid']     if x['sutta_uid']     != 'None' else None,
+                sutta_schema  = x['sutta_schema']  if x['sutta_schema']  != 'None' else None,
+                sutta_ref     = x['sutta_ref']     if x['sutta_ref']     != 'None' else None,
+                sutta_title   = x['sutta_title']   if x['sutta_title']   != 'None' else None,
+                comment_text  = x['comment_text']  if x['comment_text']  != 'None' else None,
+                comment_attr_json = x['comment_attr_json'] if x['comment_attr_json'] != 'None' else None,
+                read_only     = x['read_only']     if x['read_only']     != 'None' else None,
+            )
+
+        bookmarks = list(map(_to_bookmark, rows))
+
+        try:
+            for i in bookmarks:
+                self.db_session.add(i)
+            self.db_session.commit()
+        except Exception as e:
+            logger.error(e)
+            return 0
+
+        return len(bookmarks)
+
+    def export_bookmarks(self, file_path: str) -> int:
+        if not file_path.endswith(".csv"):
+            file_path = f"{file_path}.csv"
+
+        res = self.db_session \
+                  .query(Um.Bookmark) \
+                  .filter(Um.Bookmark.sutta_uid != '') \
+                  .all()
+
+        if not res:
+            return 0
+
+        def _to_row(x: UBookmark) -> Dict[str, str]:
+            return {
+                "name": str(x.name),
+                "quote": str(x.quote),
+                "selection_range": str(x.selection_range),
+                "sutta_id": str(x.sutta_id),
+                "sutta_uid": str(x.sutta_uid),
+                "sutta_schema": str(x.sutta_schema),
+                "sutta_ref": str(x.sutta_ref),
+                "sutta_title": str(x.sutta_title),
+                "comment_text": str(x.comment_text),
+                "comment_attr_json": str(x.comment_attr_json),
+                "read_only": str(x.read_only),
+            }
+
+        a = list(map(_to_row, res))
+        rows = sorted(a, key=lambda x: x['name'])
+
+        try:
+            with open(file_path, 'w') as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                for r in rows:
+                    w.writerow(r)
+        except Exception as e:
+            logger.error(e)
+            return 0
+
+        return len(rows)
+
+
+    def parse_toml(self, path: Path) -> Optional[TOMLDocument]:
+        with open(path) as f:
+            s = f.read()
+
+        t = None
+        try:
+            t = tomlkit.parse(s)
+        except Exception as e:
+            msg = f"Can't parse TOML: {path}\n\n{e}"
+            logger.error(msg)
+            raise Exception(msg)
+
+        return t
+
+
+    def _course_base_from_name(self, course_name: str) -> Path:
+        p = COURSES_DIR.joinpath(re.sub(r'[^0-9A-Za-z]', '_', course_name))
+        return p
+
+
+    def _copy_to_courses(self, toml_path: Path, asset_rel_path: Path, course_base: Path):
+        toml_dir = toml_path.parent
+
+        from_path = toml_dir.joinpath(asset_rel_path)
+
+        to_path = course_base.joinpath(asset_rel_path)
+
+        to_dir = to_path.parent
+        if not to_dir.exists():
+            to_dir.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy(from_path, to_path)
+
+
+    def import_pali_course(self, file_path: str) -> Optional[str]:
+        try:
+            t = self.parse_toml(Path(file_path))
+        except Exception as e:
+            raise e
+
+        if t is None:
+            return
+
+        courses_count = self.db_session \
+                            .query(func.count(Um.ChallengeCourse.id)) \
+                            .scalar()
+
+        course_name = t.get('name') or 'Unknown'
+
+        course_base = self._course_base_from_name(course_name)
+        if not course_base.exists():
+            course_base.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy(file_path, course_base)
+
+        c = Um.ChallengeCourse(
+            name = course_name,
+            description = t['description'],
+            course_dirname = course_base.name,
+            sort_index = courses_count + 1,
+        )
+
+        self.db_session.add(c)
+        self.db_session.commit()
+
+        groups: List[TomlCourseGroup] = t.get('groups') or []
+
+        for idx_i, i in enumerate(groups):
+            g = Um.ChallengeGroup(
+                name = i['name'],
+                description = i['description'],
+                sort_index = idx_i,
+            )
+
+            g.course = c
+
+            self.db_session.add(g)
+            self.db_session.commit()
+
+            for idx_j, j in enumerate(i['challenges']):
+
+                ch = None
+
+                if j['challenge_type'] == PaliChallengeType.Explanation.value:
+
+                    ch = Um.Challenge(
+                        sort_index = idx_j,
+                        challenge_type = j['challenge_type'],
+                        explanation_md = j['explanation_md'],
+                    )
+
+                elif j['challenge_type'] == PaliChallengeType.Vocabulary.value or \
+                     j['challenge_type'] == PaliChallengeType.TranslateFromEnglish.value or \
+                     j['challenge_type'] == PaliChallengeType.TranslateFromPali.value:
+
+                    if j.get('gfx', False):
+                        self._copy_to_courses(Path(file_path), Path(j['gfx']), course_base)
+                        # Challenge asset paths are relative to course dir
+                        gfx = j['gfx']
+                    else:
+                        gfx = None
+
+                    question = PaliItem(text = j['question'], audio = None, gfx = gfx, uuid = None)
+
+                    if j.get('audio', False):
+                        self._copy_to_courses(Path(file_path), Path(j['audio']), course_base)
+                        audio = j['audio']
+                    else:
+                        audio = None
+
+                    answers = [PaliItem(text = j['answer'], audio = audio, gfx = None, uuid = None)]
+
+                    ch = Um.Challenge(
+                        sort_index = idx_j,
+                        challenge_type = j['challenge_type'],
+                        question_json = json.dumps(question),
+                        answers_json = json.dumps(answers),
+                    )
+
+                if ch is not None:
+                    ch.course = c
+                    ch.group = g
+                    self.db_session.add(ch)
+                    self.db_session.commit()
+
+        return course_name
 
 
 class AppWindowInterface(QMainWindow):

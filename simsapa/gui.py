@@ -38,6 +38,23 @@ create_app_dirs()
 def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.info("gui::start()")
 
+    ensure_empty_graphs_cache()
+
+    if not APP_DB_PATH.exists():
+        if splash_proc is not None:
+            if splash_proc.poll() is None:
+                splash_proc.kill()
+
+        dl_app = QApplication(sys.argv)
+        w = DownloadAppdataWindow()
+        w.show()
+        status = dl_app.exec()
+        logger.info(f"gui::start() Exiting with status {status}.")
+        sys.exit(status)
+
+    # Start the API server after checking for APP_DB. If this is the first run,
+    # the server would create the userdata db, and we can't use it to test in
+    # DownloadAppdataWindow() if this is the first ever start.
     if port is None:
         try:
             port = find_available_port()
@@ -53,20 +70,6 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
                             args=(port, SERVER_QUEUE))
     daemon.setDaemon(True)
     daemon.start()
-
-    ensure_empty_graphs_cache()
-
-    if not APP_DB_PATH.exists():
-        if splash_proc is not None:
-            if splash_proc.poll() is None:
-                splash_proc.kill()
-
-        dl_app = QApplication(sys.argv)
-        w = DownloadAppdataWindow()
-        w.show()
-        status = dl_app.exec()
-        logger.info(f"gui::start() Exiting with status {status}.")
-        sys.exit(status)
 
     app = QApplication(sys.argv)
 

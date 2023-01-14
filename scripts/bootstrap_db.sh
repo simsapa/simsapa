@@ -4,6 +4,7 @@ START_TIME=$(date --iso-8601=seconds)
 
 SIMSAPA_DIR="$HOME/.local/share/simsapa"
 ASSETS_DIR="$SIMSAPA_DIR/assets"
+BOOTSTRAP_ASSETS_DIR="$(pwd)/../bootstrap-assets-resources"
 DIST_DIR="$(pwd)/../bootstrap-assets-resources/dist"
 
 RELEASE_DIR="$(pwd)/../releases/$(date --iso-8601=date)-dev"
@@ -17,6 +18,8 @@ RELEASE_DIR="$(pwd)/../releases/$(date --iso-8601=date)-dev"
 
 echo "=== Clean and Create Folders ==="
 
+if [ -e "$ASSETS_DIR" ]; then rm -r "$ASSETS_DIR"; fi
+
 mkdir -p "$ASSETS_DIR"
 mkdir -p "$RELEASE_DIR"
 
@@ -27,6 +30,7 @@ rm "$SIMSAPA_DIR"/*.tar.bz2
 
 rm "$RELEASE_DIR"/*.tar.bz2
 
+rm -r "$DIST_DIR"/courses
 rm "$DIST_DIR"/*
 
 dotenv="SIMSAPA_DIR=/home/yume/.local/share/simsapa
@@ -56,7 +60,28 @@ cd - || exit
 
 echo "=== Copy Appdata DB to user folder ==="
 
-cp "$DIST_DIR"/appdata.sqlite3 "$ASSETS_DIR"/appdata.sqlite3
+cp "$DIST_DIR"/appdata.sqlite3 "$ASSETS_DIR"
+
+echo "=== Import User Data ==="
+
+./run.py import-pali-course "$BOOTSTRAP_ASSETS_DIR/courses/dhammapada-word-by-word/dhammapada-word-by-word.toml"
+
+./run.py import-bookmarks "$BOOTSTRAP_ASSETS_DIR/bookmarks/bookmarks.csv"
+
+echo "=== Copy Userdata to DIST folder ==="
+
+cp "$ASSETS_DIR"/userdata.sqlite3 "$DIST_DIR"
+cp -r "$ASSETS_DIR"/courses "$DIST_DIR"
+
+echo "=== Create userdata.tar.bz2 ==="
+
+cd "$DIST_DIR" || exit
+
+tar cjf userdata.tar.bz2 userdata.sqlite3 courses/
+
+mv userdata.tar.bz2 "$RELEASE_DIR"
+
+cd - || exit
 
 echo "=== Reindex ==="
 

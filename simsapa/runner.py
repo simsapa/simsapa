@@ -34,6 +34,7 @@ def gui(url: Optional[str] = None):
     from simsapa.gui import start
     start(url=url)
 
+
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
     """Query the database."""
@@ -68,12 +69,14 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
         for i in search_query.get_all_results(highlight=False):
             print(i['title'])
 
+
 @index_app.command("create")
 def index_create():
     """Create database indexes, removing existing ones."""
     from simsapa.app.db.search import SearchIndexed
     search_indexed = SearchIndexed()
     search_indexed.create_all()
+
 
 @index_app.command("reindex")
 def index_reindex():
@@ -85,6 +88,39 @@ def index_reindex():
 
     search_indexed.create_all()
     search_indexed.index_all(app_data.db_session)
+
+
+@app.command("import-bookmarks")
+def import_bookmarks(path_to_csv: str):
+    """Import bookmarks from a CSV file (such as an earlier export)"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    bookmarks = app_data.import_bookmarks(path_to_csv)
+    print(f"Imported {bookmarks} bookmarks.")
+
+
+@app.command("export-bookmarks")
+def export_bookmarks(path_to_csv: str):
+    """Export bookmarks to a CSV file"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    bookmarks = app_data.export_bookmarks(path_to_csv)
+    print(f"Exported {bookmarks} bookmarks.")
+
+
+@app.command("import-pali-course")
+def import_pali_course(path_to_toml: str):
+    """Import a Pali Cource from a TOML file"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    try:
+        name = app_data.import_pali_course(path_to_toml)
+    except Exception as e:
+        print(e)
+        return
+
+    print(f"Imported Pali Course: {name}")
+
 
 def main():
     logger.info("runner::main()", start_new=True)

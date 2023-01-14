@@ -691,6 +691,18 @@ def add_sc_multi_refs(appdata_db: Session, sc_db: DBHandle):
     q = sc_db.AQLQuery(get_text_extra_info_aql)
     text_extra_info_by_uid: Dict[str, TextInfo] = dict()
     for r in q.result[0]:
+        # ignore refs not expected to be linked
+        ignore_prefixes = ["xct-", "lzh-", "xct-", "lzh-"]
+
+        do_continue = False
+
+        for i in ignore_prefixes:
+            if r['uid'].startswith(i):
+                do_continue = True
+
+        if do_continue:
+            continue
+
         item = TextInfo(
             uid = r['uid'],
             acronym = r['acronym'],

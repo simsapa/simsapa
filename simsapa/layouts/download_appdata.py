@@ -1,4 +1,3 @@
-import json
 import os
 import glob
 from functools import partial
@@ -18,15 +17,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 
-from simsapa.app.types import AppMessage, QSizeExpanding, QSizeMinimum
+from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries
 
-from simsapa import INDEX_DIR, logger
-from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
-from simsapa.assets import icons_rc  # noqa: F401
+from simsapa import logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+
+from simsapa.assets import icons_rc
 
 
 class DownloadAppdataWindow(QMainWindow):
@@ -59,7 +58,7 @@ class DownloadAppdataWindow(QMainWindow):
         spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc2)
 
-        self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
+        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
@@ -216,6 +215,7 @@ class DownloadAppdataWindow(QMainWindow):
             version = 'v' + version
 
         appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
+        userdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/userdata.tar.bz2"
         index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
 
         sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
@@ -232,6 +232,14 @@ class DownloadAppdataWindow(QMainWindow):
                 sanskrit_appdata_tar_url,
                 sanskrit_index_tar_url,
             ]
+
+
+        if not USER_DB_PATH.exists():
+            urls.append(userdata_tar_url)
+
+        # Remove existing indexes here. Can't safely clear and remove them in
+        # windows._redownload_database_dialog().
+        self._remove_old_index()
 
         self.download_worker.urls = urls
 
@@ -258,6 +266,21 @@ class DownloadAppdataWindow(QMainWindow):
 
     def _msg_update(self, msg: str):
         self._msg.setText(msg)
+
+    def _remove_old_index(self):
+        if INDEX_DIR.exists():
+            shutil.rmtree(INDEX_DIR)
+
+        # FIXME When removing the previous index, test if there were user imported
+        # data in the userdata database, and if so, tell the user that they have to
+        # re-index.
+
+        # msg = AppMessage(
+        #     kind = "warning",
+        #     text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
+        # )
+        # with open(STARTUP_MESSAGE_PATH, 'w') as f:
+        #     f.write(json.dumps(msg))
 
     def _cancelled_cleanup_files(self):
         # Don't remove assets dir, it may contain userdata.sqlite3 with user's
@@ -389,7 +412,7 @@ class Worker(QRunnable):
         self.signals.download_max.emit()
         return file_path
 
-    def download_extract_tar_bz2(self, url) -> bool:
+    def download_extract_tar_bz2(self, url):
         try:
             tar_file_path = self.download_file(url, ASSETS_DIR)
         except Exception as e:
@@ -414,33 +437,16 @@ class Worker(QRunnable):
         for p in glob.glob(f"{temp_dir}/*.sqlite3"):
             shutil.move(p, ASSETS_DIR)
 
-        # Remove existing indexes here. Can't safely clear and remove them in
-        # windows._redownload_database_dialog().
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if temp_dir.joinpath("courses").exists():
+            for p in glob.glob(f"{temp_dir}/courses/*"):
+                shutil.move(p, COURSES_DIR)
 
         temp_index = temp_dir.joinpath("index")
         if temp_index.exists():
             shutil.move(temp_index, ASSETS_DIR)
 
-        # FIXME When removing the previous index, test if there were user imported
-        # data in the userdata database, and if so, tell the user that they have to
-        # re-index.
-
-        # msg = AppMessage(
-        #     kind = "warning",
-        #     text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
-        # )
-        # with open(STARTUP_MESSAGE_PATH, 'w') as f:
-        #     f.write(json.dumps(msg))
-
         shutil.rmtree(temp_dir)
 
-        if not APP_DB_PATH.exists():
-            logger.error(f"File not found: {APP_DB_PATH}")
-            return False
-        else:
-            return True
 
     def import_suttas_to_appdata(self, db_path: Path):
         if not db_path.exists():
