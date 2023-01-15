@@ -46,7 +46,7 @@ jobs:
       - name: Windows Build
         if: runner.os == 'Windows'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets:simsapa\assets" --add-data "simsapa\alembic:simsapa\alembic" --add-data "simsapa\alembic.ini:simsapa\alembic.ini"
 
       - name: Upload Artifact for MacOS
         uses: actions/upload-artifact@v3
