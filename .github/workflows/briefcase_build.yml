@@ -16,6 +16,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         python-version: ["3.11"]
+        arch: "x86_64"
       fail-fast: false
     defaults:
       run:
@@ -87,7 +88,7 @@ jobs:
         uses: actions/upload-artifact@v3
         if: runner.os == 'MacOS'
         with:
-          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}.dmg
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
           path: '**/*.dmg'
 
       - name: Upload Artifact for Windows

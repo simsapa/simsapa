@@ -14,8 +14,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-2022]
+        os: [macos-12, windows-2022]
         python-version: ["3.11"]
+        arch: "x86_64"
       fail-fast: false
     defaults:
       run:
@@ -37,18 +38,26 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
-      - name: Linux / Mac Build
-        if: runner.os != 'Windows'
+      - name: Mac Build
+        if: runner.os == 'MacOS'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini" --target-architecture ${{ matrix.arch }} --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa' && dmgbuild -s dmgbuild_settings.py "Simsapa Dhamma Reader" "./dist/Simsapa Dhamma Reader.dmg"
 
       - name: Windows Build
         if: runner.os == 'Windows'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
 
-      - name: Upload Artifact
+      - name: Upload Artifact for MacOS
         uses: actions/upload-artifact@v3
+        if: runner.os == 'MacOS'
+        with:
+          name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
+          path: 'dist/*.dmg'
+
+      - name: Upload Artifact for Windows
+        uses: actions/upload-artifact@v3
+        if: runner.os == 'Windows'
         with:
           name: simsapa-${{ github.ref_name }}-${{ matrix.os }}
           path: 'dist/Simsapa Dhamma Reader/'
