@@ -160,7 +160,7 @@ class CoursePracticeWindow(AppWindowInterface):
 
         self.player.setAudioDevice(self.audio_device)
 
-        volume = self._app_data.app_settings.get('audio_volume', 1.0)
+        volume = self._app_data.app_settings.get('audio_volume', 0.9)
         if volume == 0.0:
             self.player.setMuted(True)
         else:

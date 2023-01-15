@@ -202,7 +202,7 @@ def default_app_settings() -> AppSettings:
         sutta_source_filter_idx = 0,
         dict_filter_idx = 0,
         word_scan_dict_filter_idx = 0,
-        audio_volume = 1.0,
+        audio_volume = 0.9,
         audio_device_desc = '',
     )
 
