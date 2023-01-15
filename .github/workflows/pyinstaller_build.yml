@@ -44,10 +44,11 @@ jobs:
         run: |
           pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini" --target-architecture ${{ matrix.arch }} --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa' && dmgbuild -s dmgbuild_settings.py "Simsapa Dhamma Reader" "./dist/Simsapa Dhamma Reader.dmg"
 
+      # NOTE: Windows uses \ in paths and expects ; not : in data names
       - name: Windows Build
         if: runner.os == 'Windows'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets:simsapa\assets" --add-data "simsapa\alembic:simsapa\alembic" --add-data "simsapa\alembic.ini:simsapa\alembic.ini"
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir -w --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
 
       - name: Upload Artifact for MacOS
         uses: actions/upload-artifact@v3
