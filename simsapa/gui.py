@@ -89,6 +89,8 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     if len(app.screens()) > 0:
         app_data.screen_size = app.primaryScreen().size()
+        logger.info(f"Screen size: {app_data.screen_size}")
+        logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
 
     if app_data.search_indexed.has_empty_index():
         w = CreateSearchIndexWindow()

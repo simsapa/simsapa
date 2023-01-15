@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 
 from typing import List, Optional
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QEnterEvent
+from PyQt6.QtGui import QCursor, QEnterEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
@@ -212,9 +212,12 @@ class PreviewWindow(QDialog):
         else:
             self.resize(preview_width, preview_height)
 
+        cursor_pos = QCursor.pos()
+
         if self._app_data.screen_size:
             if self._hover_data:
-                x_hover = self._hover_data['x']
+                # x_hover = self._hover_data['x']
+                x_hover = cursor_pos.x()
                 x_max = self._app_data.screen_size.width() - 10
 
                 if x_hover + preview_width < x_max:
@@ -222,7 +225,8 @@ class PreviewWindow(QDialog):
                 else:
                     x = x_hover - preview_width + 30
 
-                y_hover = self._hover_data['y'] + 130
+                # y_hover = self._hover_data['y'] + 130
+                y_hover = cursor_pos.y()
                 y_max = self._app_data.screen_size.height() - 10
 
                 if y_hover + preview_height < y_max:
