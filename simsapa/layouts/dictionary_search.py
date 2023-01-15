@@ -758,6 +758,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         body = self.queries._add_sutta_links(word_html['body'])
 
+        if word.source_uid == "cpd":
+            body = self.queries._add_word_links_to_bold(body)
+
         page_html = self.queries.render_html_page(
             body = body,
             css_head = word_html['css'],

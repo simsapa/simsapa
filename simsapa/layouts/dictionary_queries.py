@@ -92,6 +92,9 @@ class DictionaryQueries:
 
             word_html['body'] = self._add_sutta_links(word_html['body'])
 
+            if w.source_uid == "cpd":
+                word_html['body'] = self._add_word_links_to_bold(word_html['body'])
+
             body_sum = crc32(bytes(word_html['body'], 'utf-8'))
             if body_sum not in page_body.keys():
                 page_body[body_sum] = word_html['body']
@@ -270,6 +273,32 @@ class DictionaryQueries:
 
             word_tag = f'<b class="epd">{word}</b>'
             linked_tag = f'<b class="epd">{link}</b>'
+
+            html_page = html_page.replace(word_tag, linked_tag)
+
+        return html_page
+
+
+    def _add_word_links_to_bold(self, html_page: str) -> str:
+        words: List[str] = re.findall(r'<b>([^<]+)</b>', html_page)
+        if len(words) == 0:
+            return html_page
+
+        def _word_to_link(word: str) -> str:
+            url = QUrl(f"ssp://{QueryType.words.value}/{word}")
+            link = f'<a href="{url.toString()}">{word}</a>'
+            return link
+
+        for word in words:
+            if '-' in word:
+                parts = word.split('-')
+            else:
+                parts = [word]
+
+            links = list(map(_word_to_link, parts))
+
+            word_tag = f'<b>{word}</b>'
+            linked_tag = f'<b>{"-".join(links)}</b>'
 
             html_page = html_page.replace(word_tag, linked_tag)
 
