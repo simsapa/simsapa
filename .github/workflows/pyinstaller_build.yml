@@ -16,7 +16,7 @@ jobs:
       matrix:
         os: [macos-12, windows-2022]
         python-version: ["3.11"]
-        arch: "x86_64"
+        arch: ["x86_64"]
       fail-fast: false
     defaults:
       run:

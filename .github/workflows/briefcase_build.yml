@@ -16,7 +16,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         python-version: ["3.11"]
-        arch: "x86_64"
+        arch: ["x86_64"]
       fail-fast: false
     defaults:
       run:
