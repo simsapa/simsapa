@@ -5,12 +5,12 @@ from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import Qt, QAbstractListModel, QItemSelectionModel
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWidgets import QListView, QListWidget, QMessageBox, QPlainTextEdit
+from PyQt6.QtWidgets import QListView, QMessageBox, QPlainTextEdit
 
 from sqlalchemy.sql import func
 
 from simsapa import DbSchemaName, logger
-from ..app.file_doc import FileDoc
+# from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
@@ -30,7 +30,7 @@ class MemoPlainListModel(QAbstractListModel):
             text = text[0:150] + " ..."
             return text
 
-    def rowCount(self, index):
+    def rowCount(self, _):
         if self.memos:
             return len(self.memos)
         else:
@@ -47,7 +47,8 @@ class HasMemosSidebar:
     memos_list: QListView
     _current_sutta: Optional[USutta]
     _current_word: Optional[UDictWord]
-    file_doc: Optional[FileDoc]
+    # file_doc: Optional[FileDoc]
+    file_doc = None
     db_doc: Optional[Um.Document]
     add_memo_button: QtWidgets.QPushButton
     clear_memo_button: QtWidgets.QPushButton
@@ -207,14 +208,14 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         self.update_memos_list()
 
-    def update_memos_list_for_document(self, file_doc: FileDoc, db_doc: Um.Document):
-        memos = self.get_memos_for_document_page(file_doc, db_doc)
-        if memos:
-            self.model.memos = memos
-        else:
-            self.model.memos = []
+    # def update_memos_list_for_document(self, file_doc: FileDoc, db_doc: Um.Document):
+    #     memos = self.get_memos_for_document_page(file_doc, db_doc)
+    #     if memos:
+    #         self.model.memos = memos
+    #     else:
+    #         self.model.memos = []
 
-        self.update_memos_list()
+    #     self.update_memos_list()
 
     def update_memos_list(self):
         self.memos_list.clearSelection()
@@ -228,62 +229,62 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         self.model.layoutChanged.emit()
 
-    def get_memos_for_document_page(self, file_doc: FileDoc, db_doc: Um.Document) -> List[UMemo]:
-        am_assoc = []
-        um_assoc = []
+    # def get_memos_for_document_page(self, file_doc: FileDoc, db_doc: Um.Document) -> List[UMemo]:
+    #     am_assoc = []
+    #     um_assoc = []
 
-        doc_schema = db_doc.metadata.schema
+    #     doc_schema = db_doc.metadata.schema
 
-        if doc_schema == DbSchemaName.AppData.value:
+    #     if doc_schema == DbSchemaName.AppData.value:
 
-            res = self._app_data.db_session \
-                                .query(Am.MemoAssociation) \
-                                .filter(
-                                    Am.MemoAssociation.associated_table == 'appdata.documents',
-                                    Am.MemoAssociation.associated_id == db_doc.id,
-                                    Am.MemoAssociation.page_number == file_doc.current_page_number()) \
-                                .all()
-            am_assoc.extend(res)
+    #         res = self._app_data.db_session \
+    #                             .query(Am.MemoAssociation) \
+    #                             .filter(
+    #                                 Am.MemoAssociation.associated_table == 'appdata.documents',
+    #                                 Am.MemoAssociation.associated_id == db_doc.id,
+    #                                 Am.MemoAssociation.page_number == file_doc.current_page_number()) \
+    #                             .all()
+    #         am_assoc.extend(res)
 
-            res = self._app_data.db_session \
-                                .query(Um.MemoAssociation) \
-                                .filter(
-                                    Um.MemoAssociation.associated_table == 'appdata.documents',
-                                    Um.MemoAssociation.associated_id == db_doc.id,
-                                    Um.MemoAssociation.page_number == file_doc.current_page_number()) \
-                                .all()
-            um_assoc.extend(res)
+    #         res = self._app_data.db_session \
+    #                             .query(Um.MemoAssociation) \
+    #                             .filter(
+    #                                 Um.MemoAssociation.associated_table == 'appdata.documents',
+    #                                 Um.MemoAssociation.associated_id == db_doc.id,
+    #                                 Um.MemoAssociation.page_number == file_doc.current_page_number()) \
+    #                             .all()
+    #         um_assoc.extend(res)
 
-        else:
+    #     else:
 
-            res = self._app_data.db_session \
-                                .query(Um.MemoAssociation) \
-                                .filter(
-                                    Um.MemoAssociation.associated_table == 'userdata.documents',
-                                    Um.MemoAssociation.associated_id == db_doc.id,
-                                    Um.MemoAssociation.page_number == file_doc.current_page_number()) \
-                                .all()
-            um_assoc.extend(res)
+    #         res = self._app_data.db_session \
+    #                             .query(Um.MemoAssociation) \
+    #                             .filter(
+    #                                 Um.MemoAssociation.associated_table == 'userdata.documents',
+    #                                 Um.MemoAssociation.associated_id == db_doc.id,
+    #                                 Um.MemoAssociation.page_number == file_doc.current_page_number()) \
+    #                             .all()
+    #         um_assoc.extend(res)
 
-        memos: List[UMemo] = []
+    #     memos: List[UMemo] = []
 
-        ids = list(map(lambda x: x.memo_id, am_assoc))
+    #     ids = list(map(lambda x: x.memo_id, am_assoc))
 
-        res = self._app_data.db_session \
-                            .query(Am.Memo) \
-                            .filter(Am.Memo.id.in_(ids)) \
-                            .all()
-        memos.extend(res)
+    #     res = self._app_data.db_session \
+    #                         .query(Am.Memo) \
+    #                         .filter(Am.Memo.id.in_(ids)) \
+    #                         .all()
+    #     memos.extend(res)
 
-        ids = list(map(lambda x: x.memo_id, um_assoc))
+    #     ids = list(map(lambda x: x.memo_id, um_assoc))
 
-        res = self._app_data.db_session \
-                            .query(Um.Memo) \
-                            .filter(Um.Memo.id.in_(ids)) \
-                            .all()
-        memos.extend(res)
+    #     res = self._app_data.db_session \
+    #                         .query(Um.Memo) \
+    #                         .filter(Um.Memo.id.in_(ids)) \
+    #                         .all()
+    #     memos.extend(res)
 
-        return memos
+    #     return memos
 
     def get_selected_memo(self) -> Optional[UMemo]:
         a = self.memos_list.selectedIndexes()

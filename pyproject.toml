@@ -1,74 +1,96 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.1.9-alpha.1"
+version = "0.2.0-alpha.1"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 # pypi identification
 authors = ["Gambhiro <profound.labs@gmail.com>"]
 license = "MIT"
 
+# NOTE: Version updates:
+# - tool.poetry.version (above)
+# - simsapa.db_version
+# - tool.briefcase.version
+# - simsapa/__init__.py SIMSAPA_APP_VERSION
+
+[simsapa]
+db_version = "0.2.0-alpha.1"
+
 [tool.poetry.dependencies]
-python = "~3.9"
+python = "~3.11"
 PyQt6 = "~6.4.0"
+# Check poetry.lock Qt version matches with briefcase workflow yml
+PyQt6-Qt6 = "~6.4.2"
 PyQt6-WebEngine = "~6.4.0"
-SQLAlchemy = "~1.4.6"
-PyYAML = "~5.4.1"
-SQLAlchemy-Utils = "~0.37.2"
+PyQt6-WebEngine-Qt6 = "~6.4.2"
+PyYAML = "~6.0.0"
+SQLAlchemy = "~1.4.45"
+SQLAlchemy-Utils = "~0.39.0"
+types-sqlalchemy-utils = "~1.0.1"
+sqlalchemy2-stubs = "^0.0.2a31"
+alembic = "~1.8.1"
 requests = "~2"
 appdirs = "~1.4.4"
 PyPDF2 = "~1.26.0"
 epub_meta = "~0.0.7"
 PyMuPDF = "~1"
-#Pillow = "~9.0.0"
-Pillow = [
-  { version = "7.2.0", platform = "linux"},
-  { version = "~9.0.0", platform = "win32" },
-  { version = "~9.0.0", platform = "darwin" },
-]
+Pillow = "~9.3.0"
 pandas = "~1"
-openpyxl = "~3.0.7"
+openpyxl = "~3.0.10"
 semver = "~2.13.0"
 pyglossary = "~4"
-lxml = "~4"
-python-dotenv = "~0.17.1"
+lxml = "~4.9.2"
+python-dotenv = "~0.21.0"
 pyperclip = "~1.8.2"
 networkx = "~2"
 bokeh = "~2"
-scipy = "~1.8.0"
-alembic = "~1.7.5"
-sqlalchemy2-stubs = "^0.0.2-alpha.20"
+scipy = "~1.10.0"
+# For building on MacOS 11
+#scipy = { file = "scipy-1.10.0-cp311-cp311-macosx_11_0_arm64.whl" }
 python-idzip = "~0.3.7"
-bleach = "~4.1.0"
 Whoosh = "~2.7.4"
-typer = "~0.4.0"
-tomlkit = "~0.8.0"
-feedparser = "~6.0.8"
+typer = "~0.7.0"
+tomlkit = "~0.11.6"
+feedparser = "~6.0.10"
 #pyqtkeybind = [{ version = "~0.0.9", platform = "linux" },]
-beautifulsoup4 = "~4.10.0"
+beautifulsoup4 = "~4.11.1"
 MarkupSafe = "~2.1.1"
-Mako = "~1.1.6"
+Mako = "~1.2.4"
 Flask = "~2.2.2"
 Flask-Cors = "~3.0.10"
-aksharamukha = "~1.9.7"
+aksharamukha = "~2.0.4"
+markdown = "^3.4.1"
+psutil = "^5.9.4"
+roman = "^3.3"
+chardet = "^5.1.0"
 
-[tool.poetry.dev-dependencies]
-pytest = "~6.2.5"
-pyArango = "~1.3.5"
-selenium = "^4.1.1"
-lxml = "^4.8.0"
-html5lib = "^1.1"
+# NOTE: charset-normalizer = "^3.0.1" errors with PyInstaller
+# ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
+# https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
+charset-normalizer = "==2.1.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = "^5.5"
+pyinstaller = "^5.7"
+tuna = { git = "https://github.com/nschloe/tuna.git" }
+
+# nuitka = "^1.2"
+# orderedset = "^2.0.3"
+# scalene = "^1.5.14"
+
+pytest = "~7.2.0"
+pyArango = "~2.0.0"
+html5lib = "^1.1"
+selenium = "^4.7.2"
+dmgbuild = "^1.6.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.11"
 typeCheckingMode = "basic"
 
 [tool.dephell.main]
@@ -79,7 +101,7 @@ to = {format = "setuppy", path = "setup.py"}
 project_name = "Simsapa Dhamma Reader"
 bundle = "io.github"
 # briefcase requires PEP440 version strings
-version = "0.1.9a1"
+version = "0.2.0a1"
 url = "https://github.com/simsapa/simsapa"
 license = "MIT license"
 # Package will display this info
@@ -94,58 +116,61 @@ sources = ['simsapa']
 
 requires = [
 "PyQt6              >= 6.4.0,    < 6.5.0",
+"PyQt6-Qt6           == 6.4.2",
 "PyQt6-WebEngine    >= 6.4.0,    < 6.5.0",
-"SQLAlchemy         >= 1.4.6,    < 1.5.0",
-"PyYAML             >= 5.4.1,    < 5.5.0",
-"SQLAlchemy-Utils   >= 0.37.2,   < 0.38.0",
+"PyQt6-WebEngine-Qt6 == 6.4.2",
+"PyYAML             >= 6.0.0,    < 6.1.0",
+"SQLAlchemy         >= 1.4.45,   < 1.5.0",
+"SQLAlchemy-Utils   >= 0.39.0,   < 0.40.0",
+"types-sqlalchemy-utils >= 1.0.1, < 1.1.0",
+"sqlalchemy2-stubs  >= 0.0.2a31, < 0.1.0",
+"alembic            >= 1.8.1,    < 1.9.0",
 "requests           >= 2.25.0,   < 3.0.0",
 "appdirs            >= 1.4.4,    < 1.5.0",
 "PyPDF2             >= 1.26.0,   < 1.27.0",
 "epub_meta          >= 0.0.7,    < 0.1.0",
 "PyMuPDF            >= 1.18.0,   < 2.0.0",
+"Pillow             >= 9.3.0,    < 9.4.0",
 "pandas             >= 1.2.0,    < 2.0.0",
-"openpyxl           >= 3.0.7,    < 3.1.0",
+"openpyxl           >= 3.0.10,   < 3.1.0",
 "semver             >= 2.13.0,   < 2.14.0",
 "pyglossary         >= 4.0.0,    < 5.0.0",
-"lxml               >= 4.6.0,    < 5.0.0",
-"python-dotenv      >= 0.17.1,   < 0.18.0",
+"lxml               >= 4.9.2,    < 5.0.0",
+"python-dotenv      >= 0.21.0,   < 0.22.0",
 "pyperclip          >= 1.8.2,    < 1.9.0",
 "networkx           >= 2.5.0,    < 3.0.0",
 "bokeh              >= 2.4.0,    < 3.0.0",
-"scipy              >= 1.8.0,    < 1.9.0",
-"alembic            >= 1.7.5,    < 1.8.0",
-"sqlalchemy2-stubs  >= 0.0.2a20, < 0.1.0",
+"scipy              >= 1.10.0,   < 2.0.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
-"bleach             >= 4.1.0,    < 4.2.0",
 "Whoosh             >= 2.7.4,    < 2.8.0",
-"typer              >= 0.4.0,    < 0.5.0",
-"tomlkit            >= 0.8.0,    < 0.9.0",
-"feedparser         >= 6.0.8,    < 6.1.0",
-"beautifulsoup4     >= 4.10.0,   < 4.11.0",
+"typer              >= 0.7.0,    < 0.8.0",
+"tomlkit            >= 0.11.0,   < 0.12.0",
+"feedparser         >= 6.0.10,   < 6.1.0",
+"beautifulsoup4     >= 4.11.1,   < 4.12.0",
 "MarkupSafe         == 2.1.1",
-"Mako               >= 1.1.6,    < 1.2.0",
+"Mako               >= 1.2.4,    < 1.3.0",
 "Flask              >= 2.2.2,    < 2.3.0",
 "Flask-Cors         >= 3.0.10,   < 3.1.0",
-"aksharamukha       >= 1.9.7,    < 1.10.0",
+"aksharamukha       >= 2.0.4,    < 2.1.0",
+"markdown           >= 3.4.1,    < 3.5.0",
+"psutil             >= 5.9.4,    < 5.10.0",
+"roman              >= 3.3,      < 4.0",
+"chardet            >= 5.1.0,    < 5.2.0",
+"charset-normalizer == 2.1.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]
-requires = [
-"Pillow >= 9.0.0, < 9.1.0",
-]
+requires = []
 
 [tool.briefcase.app.simsapa.linux]
 requires = [
-"Pillow == 7.2.0",
 #"pyqtkeybind >= 0.0.9, < 0.1.0",
 ]
 
 system_requires = ["libtiff-dev"]
 
 [tool.briefcase.app.simsapa.windows]
-requires = [
-"Pillow >= 9.0.0, < 9.1.0",
-]
+requires = []
 
 # Mobile deployments
 [tool.briefcase.app.simsapa.iOS]

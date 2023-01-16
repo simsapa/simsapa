@@ -2,10 +2,16 @@
   <qresource>
     <file alias="search">icons/32x32/bx_search_alt_2.png</file>
     <file alias="fa-search">icons/32x32/fa_magnifying-glass-solid.png</file>
+    <file alias="gear">icons/32x32/fa_gear-solid.png</file>
+    <file alias="gears">icons/32x32/fa_gears-solid.png</file>
+    <file alias="hourglass-half">icons/32x32/fa_hourglass-half-solid.png</file>
+    <file alias="stopwatch">icons/32x32/fa_stopwatch-solid.png</file>
     <file alias="close">icons/32x32/fa_times-circle.png</file>
     <file alias="sync">icons/32x32/fa_sync.png</file>
     <file alias="reload">icons/32x32/fa_redo.png</file>
+    <file alias="history-icon">icons/32x32/fa_clock-rotate-left-solid.png</file>
     <file alias="book">icons/32x32/bxs_book_bookmark.png</file>
+    <file alias="bookmark">icons/32x32/fa_bookmark-solid.png</file>
     <file alias="dictionary">icons/32x32/bxs_book_content.png</file>
     <file alias="info">icons/32x32/fa_circle-info-solid.png</file>
     <file alias="keyboard">icons/32x32/fa_keyboard-solid.png</file>
@@ -16,6 +22,8 @@
     <file alias="resize">icons/32x32/fa_down-left-and-up-right-to-center-solid.png</file>
     <file alias="simsapa-tray">icons/32x32/simsapa-tray.png</file>
     <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
+    <file alias="loading-bar">icons/gif/loading-bar.gif</file>
+    <file alias="loading-bar-empty">icons/gif/loading-bar-empty.gif</file>
     <file alias="arrow-down">icons/32x32/fa_arrow-down-solid.png</file>
     <file alias="arrow-left">icons/32x32/fa_arrow-left-solid.png</file>
     <file alias="arrow-right">icons/32x32/fa_arrow-right-solid.png</file>
@@ -35,5 +43,20 @@
     <file alias="angle-right">icons/32x32/fa_angle-right-solid.png</file>
     <file alias="angle-up">icons/32x32/fa_angle-up-solid.png</file>
     <file alias="maximize">icons/32x32/fa_maximize-solid.png</file>
+    <file alias="play-regular">icons/32x32/fa_circle-play-regular.png</file>
+    <file alias="play-solid">icons/32x32/fa_circle-play-solid.png</file>
+    <file alias="volume-high">icons/32x32/fa_volume-high-solid.png</file>
+    <file alias="volume-low">icons/32x32/fa_volume-low-solid.png</file>
+    <file alias="volume-off">icons/32x32/fa_volume-off-solid.png</file>
+    <file alias="volume-xmark">icons/32x32/fa_volume-xmark-solid.png</file>
+    <file alias="bars-solid">icons/32x32/fa_bars-solid.png</file>
+    <file alias="note-sticky-regular">icons/32x32/fa_note-sticky-regular.png</file>
+    <file alias="note-sticky-solid">icons/32x32/fa_note-sticky-solid.png</file>
+    <file alias="pen-to-square-solid">icons/32x32/fa_pen-to-square-solid.png</file>
+    <file alias="rectangle-xmark-regular">icons/32x32/fa_rectangle-xmark-regular.png</file>
+    <file alias="rectangle-xmark-solid">icons/32x32/fa_rectangle-xmark-solid.png</file>
+    <file alias="square-check-regular">icons/32x32/fa_square-check-regular.png</file>
+    <file alias="square-check-solid">icons/32x32/fa_square-check-solid.png</file>
+    <file alias="square-pen-solid">icons/32x32/fa_square-pen-solid.png</file>
   </qresource>
 </RCC>

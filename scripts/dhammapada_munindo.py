@@ -5,7 +5,7 @@ import sys
 import glob
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -16,6 +16,8 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
 
 load_dotenv()
 
@@ -42,35 +44,44 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     m = re.findall(r'dhp-(\d+)', p.stem)
     ch_num = int(m[0])
-    r = helpers.DHP_CHAPTERS_TO_RANGE[ch_num]
+    r = DHP_CHAPTERS_TO_RANGE[ch_num]
 
     ref = f"dhp{r[0]}-{r[1]}"
 
     lang = "en"
     author = "munindo"
-    uid = f"{ref}/{lang}/{author}"
+    source_uid = author
+    uid = f"{ref}/{lang}/{source_uid}"
 
-    logger.info(f"{ref} -- {title}")
+    # logger.info(f"{ref} -- {title}")
 
-    content_html = '<div class="dhammapada_munindo">' + html_text + '</div>'
+    content_html = '<div class="dhammapada_munindo">' + consistent_nasal_m(html_text) + '</div>'
 
     sutta = Am.Sutta(
-        title = title,
+        source_uid = source_uid,
+        title = consistent_nasal_m(title),
         title_pali = '',
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
         language = lang,
         content_html = content_html,
+        content_plain = compact_rich_text(content_html),
         created_at = func.now(),
     )
 
     return sutta
 
-def get_suttas() -> List[Am.Sutta]:
+def get_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
 
     suttas: List[Am.Sutta] = []
 
-    for p in glob.glob(f"{HTML_DIR.joinpath('dhp-*.html')}"):
+    paths = glob.glob(f"{HTML_DIR.joinpath('dhp-*.html')}")
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
+
+    for p in paths:
         p = Path(p)
         if not re.search(r'^dhp-\d+.html', p.name):
             continue
@@ -81,20 +92,21 @@ def get_suttas() -> List[Am.Sutta]:
 
     return suttas
 
-def populate_suttas_from_dhammapada_munindo(appdata_db: Session):
+def populate_suttas_from_dhammapada_munindo(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_dhammapada_munindo() ===")
 
-    suttas = get_suttas()
+    suttas = get_suttas(limit)
 
     try:
         for i in suttas:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
 
 def main():
-    logger.info(f"Parsing suttas from {HTML_DIR}", start_new=True)
+    logger.info(f"Parsing suttas from {HTML_DIR}")
 
     suttas = get_suttas()
 

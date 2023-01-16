@@ -198,6 +198,8 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Bookmarks"/>
+    <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -205,6 +207,7 @@
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
     <addaction name="action_Show_Toolbar"/>
+    <addaction name="action_Link_Preview"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -485,6 +488,41 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+F5</string>
+   </property>
+  </action>
+  <action name="action_Bookmarks">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/bookmark</normaloff>:/bookmark</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Bookmarks</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
+   </property>
+  </action>
+  <action name="action_Pali_Courses">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Pali Courses</string>
+   </property>
+   <property name="shortcut">
+    <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Link_Preview">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Link Preview</string>
    </property>
   </action>
  </widget>

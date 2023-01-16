@@ -7,9 +7,10 @@ __pycache__/
 .coverage
 .vscode/
 
-# pyinstaller
+# build folders
 build/
 dist/
+dist_nuitka/
 
 # mypy
 .mypy_cache/
@@ -50,3 +51,6 @@ tags
 # dotenv environment variables file
 .env
 .env.test
+
+# MacOS
+.DS_Store

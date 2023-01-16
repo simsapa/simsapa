@@ -104,8 +104,142 @@ a {
   vertical-align: -0.125em;
 }
 
+.hide {
+  display: none;
+}
+
+.highlight {
+  padding: 0.2rem 0pt;
+  background: #027f55;
+  color: white;
+}
+
+.scrollto-highlight {
+  padding: 0.2rem 0pt;
+  background: #027f85;
+  color: white;
+}
+
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  stroke-width: 0;
+  stroke: currentColor;
+  fill: currentColor;
+}
+
+div.btn {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+}
+div.btn a {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.open-button {
+  font-size: 15px;
+}
+.open-button .icon {
+  color: #027f55;
+  opacity: 0.5;
+}
+
+.pull-left {
+  float: left;
+}
+
+.pull-right {
+  float: right;
+}
+
+.bookmark-comment {
+  border: 1px solid #1f936d;
+  border-radius: 5px;
+  background-color: #57dbaf;
+}
+.bookmark-comment .bookmark-title {
+  background-color: #1f936d;
+  height: 30px;
+  font-size: 20px;
+}
+.bookmark-comment .bookmark-title .btn {
+  margin: 2.5px 5px;
+}
+.bookmark-comment .bookmark-title .btn a {
+  color: white;
+}
+.bookmark-comment .bookmark-content {
+  color: #1a1a1a;
+  font-size: 0.8rem;
+  padding: 0.5rem;
+}
+.bookmark-comment .bookmark-content p {
+  margin-block-start: 0;
+  margin-block-end: 0;
+  padding-top: 0.4rem;
+}
+.bookmark-comment .bookmark-content p:first-child {
+  padding-top: 0;
+}
+.bookmark-comment .bookmark-content a {
+  color: #700909;
+}
+
+#window-title-bar {
+  font-size: 18px;
+  line-height: 1;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  padding: 0.1em;
+  background-color: #FEF8E8;
+}
+#window-title-bar .flex-container {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  align-items: center;
+  align-content: center;
+  gap: 0.2em;
+}
+#window-title-bar .flex-container #left-btn-box,
+#window-title-bar .flex-container #right-btn-box {
+  flex: 1;
+}
+#window-title-bar .flex-container #preview-title-text {
+  display: inline-block;
+  color: black;
+  text-align: center;
+}
+#window-title-bar .flex-container .icon {
+  font-size: 0.8rem;
+  color: black;
+  padding-top: 0.1rem;
+  margin: 0.1rem 0.3rem;
+}
+
+.suttacentral span.segment span.translated {
+  display: block;
+  padding-top: 0.5rem;
+}
+.suttacentral span.segment span.pali {
+  display: block;
+  padding-top: 0.5rem;
+  font-family: "Source Sans 3 SSP";
+  font-size: 0.8rem;
+}
+
 .suttacentral header {
   text-align: center;
+}
+.suttacentral header ul {
+  margin-block-start: 1em;
+  margin-block-end: 1em;
+  padding-inline-start: 0pt;
 }
 .suttacentral header ul li {
   font-family: "Source Sans 3 SSP";
@@ -117,12 +251,35 @@ a {
   word-spacing: 1.5pt;
   padding-top: 0.3rem;
 }
+.suttacentral header ul li .segment .pali,
+.suttacentral header ul li .segment .translated {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.15rem;
+}
 .suttacentral header h1 {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
   font-size: 1.4rem;
   font-weight: bold;
   word-spacing: 2pt;
   padding-top: 0.8rem;
   padding-bottom: 0.8rem;
+}
+.suttacentral header h1 .segment .pali,
+.suttacentral header h1 .segment .translated {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+  font-size: 1.4rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
 }
 .suttacentral h2 {
   font-size: 1.1rem;
@@ -172,6 +329,18 @@ a {
 }
 .suttacentral footer span.publication-date {
   font-style: italic;
+}
+.suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
+  font-size: 0.6rem;
+  position: relative;
+  top: -0.1rem;
+  padding: 3px;
+}
+.suttacentral .variant-wrap .mark:hover, .suttacentral .comment-wrap .mark:hover {
+  border-bottom: 2px solid black;
+}
+.suttacentral .variant, .suttacentral .comment {
+  font-size: 0.8rem;
 }
 
 .cst4 .note {
@@ -344,10 +513,10 @@ h4 {
 }
 
 .lang-skr {
-  font-family: "DejaVu Serif", serif;
+  font-family: "DejaVu Serif", "Georgia", serif;
 }
 .lang-skr h1, .lang-skr h2, .lang-skr h3, .lang-skr h4, .lang-skr h5, .lang-skr h6 {
-  font-family: "DejaVu Serif", serif;
+  font-family: "DejaVu Serif", "Georgia", serif;
 }
 
 .gretil {

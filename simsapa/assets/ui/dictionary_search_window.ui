@@ -28,122 +28,6 @@
         <property name="sizeConstraint">
          <enum>QLayout::SetMinimumSize</enum>
         </property>
-        <item>
-         <widget class="QPushButton" name="back_recent_button">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>40</width>
-            <height>40</height>
-           </size>
-          </property>
-          <property name="toolTip">
-           <string>Back in History</string>
-          </property>
-          <property name="text">
-           <string/>
-          </property>
-          <property name="icon">
-           <iconset resource="../icons.qrc">
-            <normaloff>:/arrow-left</normaloff>:/arrow-left</iconset>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="forward_recent_button">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>40</width>
-            <height>40</height>
-           </size>
-          </property>
-          <property name="toolTip">
-           <string>Forward in History</string>
-          </property>
-          <property name="text">
-           <string/>
-          </property>
-          <property name="icon">
-           <iconset resource="../icons.qrc">
-            <normaloff>:/arrow-right</normaloff>:/arrow-right</iconset>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="search_input">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>500</width>
-            <height>35</height>
-           </size>
-          </property>
-          <property name="placeholderText">
-           <string>Type here to search</string>
-          </property>
-          <property name="clearButtonEnabled">
-           <bool>true</bool>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="search_button">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>40</height>
-           </size>
-          </property>
-          <property name="toolTip">
-           <string>Search</string>
-          </property>
-          <property name="text">
-           <string>Search</string>
-          </property>
-          <property name="icon">
-           <iconset resource="../icons.qrc">
-            <normaloff>:/search</normaloff>:/search</iconset>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <layout class="QHBoxLayout" name="search_extras"/>
-        </item>
-        <item>
-         <spacer name="horizontalSpacer_2">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
        </layout>
       </item>
       <item>
@@ -195,8 +79,12 @@
              <number>0</number>
             </property>
             <widget class="QWidget" name="fulltext_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/search</normaloff>:/search</iconset>
+             </attribute>
              <attribute name="title">
-              <string>Fulltext</string>
+              <string>Results</string>
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_4">
               <item>
@@ -292,6 +180,25 @@
                  </layout>
                 </item>
                 <item>
+                 <widget class="QLabel" name="fulltext_loading_bar">
+                  <property name="minimumSize">
+                   <size>
+                    <width>0</width>
+                    <height>5</height>
+                   </size>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>5</height>
+                   </size>
+                  </property>
+                  <property name="text">
+                   <string/>
+                  </property>
+                 </widget>
+                </item>
+                <item>
                  <widget class="QListWidget" name="fulltext_list">
                   <property name="frameShape">
                    <enum>QFrame::NoFrame</enum>
@@ -303,6 +210,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="links_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/diagram</normaloff>:/diagram</iconset>
+             </attribute>
              <attribute name="title">
               <string>Links</string>
              </attribute>
@@ -412,6 +323,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="memos_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/pen-fancy</normaloff>:/pen-fancy</iconset>
+             </attribute>
              <attribute name="title">
               <string>Memos</string>
              </attribute>
@@ -504,6 +419,10 @@
              </layout>
             </widget>
             <widget class="QWidget" name="recent_tab">
+             <attribute name="icon">
+              <iconset resource="../icons.qrc">
+               <normaloff>:/history-icon</normaloff>:/history-icon</iconset>
+             </attribute>
              <attribute name="title">
               <string>History</string>
              </attribute>
@@ -571,6 +490,8 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Bookmarks"/>
+    <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -578,6 +499,7 @@
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
     <addaction name="action_Show_Toolbar"/>
+    <addaction name="action_Link_Preview"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -592,6 +514,7 @@
     <property name="title">
      <string>&amp;Dictionary</string>
     </property>
+    <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
@@ -599,6 +522,8 @@
     <property name="title">
      <string>&amp;Go</string>
     </property>
+    <addaction name="action_Search_As_You_Type"/>
+    <addaction name="action_Search_Completion"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
    </widget>
@@ -606,6 +531,7 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <addaction name="action_Reload_Page"/>
     <addaction name="action_Increase_Text_Size"/>
     <addaction name="action_Decrease_Text_Size"/>
     <addaction name="action_Search_Result_Sizes"/>
@@ -715,16 +641,10 @@
    <property name="toolTip">
     <string>Document Reader</string>
    </property>
-   <property name="shortcut">
-    <string>F7</string>
-   </property>
   </action>
   <action name="action_Library">
    <property name="text">
     <string>&amp;Library</string>
-   </property>
-   <property name="shortcut">
-    <string>F8</string>
    </property>
   </action>
   <action name="action_Memos">
@@ -915,6 +835,91 @@
   <action name="action_Search_Result_Sizes">
    <property name="text">
     <string>&amp;Search Result Sizes...</string>
+   </property>
+  </action>
+  <action name="action_Search_As_You_Type">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search As You &amp;Type</string>
+   </property>
+   <property name="toolTip">
+    <string>Run search query when you stop typing</string>
+   </property>
+   <property name="statusTip">
+    <string/>
+   </property>
+  </action>
+  <action name="action_Search_Completion">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search &amp;Completion</string>
+   </property>
+  </action>
+  <action name="action_Bookmarks">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/bookmark</normaloff>:/bookmark</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Bookmarks</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
+   </property>
+  </action>
+  <action name="action_Pali_Courses">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Pali Courses</string>
+   </property>
+   <property name="shortcut">
+    <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Show_Sidebar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show &amp;Sidebar</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+F9</string>
+   </property>
+  </action>
+  <action name="action_Reload_Page">
+   <property name="text">
+    <string>&amp;Reload Page</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="action_Link_Preview">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Link Preview</string>
    </property>
   </action>
  </widget>

@@ -1,4 +1,5 @@
 import time
+import requests
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
@@ -8,14 +9,10 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
-from ..app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
-                         dict_word_nodes_and_edges,
-                         document_page_nodes_and_edges, sutta_graph_id)
+# from ..app.file_doc import FileDoc
+# from ..app.db import userdata_models as Um
 
-from ..app.file_doc import FileDoc
-from ..app.db import userdata_models as Um
-
-from ..app.types import AppData, USutta, UDictWord
+from ..app.types import AppData, GraphRequest, USutta, UDictWord
 
 from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
 
@@ -31,9 +28,10 @@ class GraphGenSignals(QObject):
 
 class GraphGenerator(QRunnable):
     def __init__(self,
+                 api_url: str,
                  graph_gen_timestamp: float,
-                 sutta: Optional[USutta],
-                 dict_word: Optional[UDictWord],
+                 sutta_uid: Optional[str],
+                 dict_word_uid: Optional[str],
                  queue_id: str,
                  graph_path: Path,
                  messages_url: str,
@@ -52,9 +50,10 @@ class GraphGenerator(QRunnable):
 
         self.signals = GraphGenSignals()
 
+        self.api_url = api_url
         self.graph_gen_timestamp = graph_gen_timestamp
-        self.sutta = sutta
-        self.dict_word = dict_word
+        self.sutta_uid = sutta_uid
+        self.dict_word_uid = dict_word_uid
         self.queue_id = queue_id
         self.graph_path = graph_path
         self.messages_url = messages_url
@@ -69,46 +68,33 @@ class GraphGenerator(QRunnable):
     @pyqtSlot()
     def run(self):
         try:
-            if self.sutta is not None:
+            p = GraphRequest(
+                sutta_uid=self.sutta_uid,
+                dict_word_uid=self.dict_word_uid,
+                distance=self.distance,
+                queue_id=self.queue_id,
+                graph_gen_timestamp=self.graph_gen_timestamp,
+                graph_path=str(self.graph_path),
+                messages_url=self.messages_url,
+                labels=self.labels,
+                min_links=self.min_links,
+                width=self.width,
+                height=self.height,
+            )
 
-                (nodes, edges) = sutta_nodes_and_edges(self.sutta, distance=self.distance)
-
-                selected = []
-                for idx, n in enumerate(nodes):
-                    if n[0] == sutta_graph_id(self.sutta):
-                        selected.append(idx)
-
-            elif self.dict_word is not None:
-                (nodes, edges) = dict_word_nodes_and_edges(self.dict_word, distance=self.distance)
-
-                selected = []
-                for idx, n in enumerate(nodes):
-                    if n[0] == sutta_graph_id(self.dict_word):
-                        selected.append(idx)
-
-            else:
-                (nodes, edges) = all_nodes_and_edges()
-                selected = []
-
-            generate_graph(nodes,
-                           edges,
-                           selected,
-                           self.queue_id,
-                           self.graph_path,
-                           self.messages_url,
-                           self.labels,
-                           self.min_links,
-                           (self.width, self.height))
-
-            hits = len(nodes) - 1
-
-            result = (self.graph_gen_timestamp, hits, self.graph_path)
+            res = requests.post(self.api_url + "/generate_graph", json=p)
 
         except Exception as e:
             logger.error("%s" % e)
 
         else:
-            self.signals.result.emit(result)
+            if res.ok:
+                j = res.json()
+                # [1667675976.411231, 100, '/home/yume/.local/share/simsapa/assets/graphs/window_1.html']
+                r = (j[0], j[1], Path(j[2]))
+                self.signals.result.emit(r)
+            else:
+                logger.error("%s" % res)
 
         finally:
             self.signals.finished.emit()
@@ -215,7 +201,21 @@ class HasLinksSidebar:
 
         graph_gen_timestamp = time.time()
         self._last_graph_gen_timestamp = graph_gen_timestamp
-        graph_gen = GraphGenerator(graph_gen_timestamp, sutta, dict_word, queue_id, graph_path, messages_url, labels, distance, min_links, width, height)
+
+        if self._app_data.api_url is None:
+            return
+
+        if sutta is None:
+            sutta_uid = None
+        else:
+            sutta_uid = str(sutta.uid)
+
+        if dict_word is None:
+            dict_word_uid = None
+        else:
+            dict_word_uid = str(dict_word.uid)
+
+        graph_gen = GraphGenerator(self._app_data.api_url, graph_gen_timestamp, sutta_uid, dict_word_uid, queue_id, graph_path, messages_url, labels, distance, min_links, width, height)
 
         graph_gen.signals.result.connect(self._graph_finished)
 
@@ -228,26 +228,26 @@ class HasLinksSidebar:
 
         self._app_data.graph_gen_pool.start(graph_gen)
 
-    def generate_graph_for_document(self,
-                                    file_doc: FileDoc,
-                                    db_doc: Um.Document,
-                                    queue_id: str,
-                                    graph_path: Path,
-                                    messages_url: str):
+    # def generate_graph_for_document(self,
+    #                                 file_doc: FileDoc,
+    #                                 db_doc: Um.Document,
+    #                                 queue_id: str,
+    #                                 graph_path: Path,
+    #                                 messages_url: str):
 
-        (nodes, edges) = document_page_nodes_and_edges(
-            db_doc=db_doc,
-            page_number=file_doc._current_idx + 1,
-            distance=3
-        )
+    #     (nodes, edges) = document_page_nodes_and_edges(
+    #         db_doc=db_doc,
+    #         page_number=file_doc._current_idx + 1,
+    #         distance=3
+    #     )
 
-        hits = len(nodes) - 1
-        if hits > 0:
-            self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
-        else:
-            self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
+    #     hits = len(nodes) - 1
+    #     if hits > 0:
+    #         self.rightside_tabs.setTabText(self.links_tab_idx, f"Links ({hits})")
+    #     else:
+    #         self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        # central node was appended last
-        selected = [len(nodes) - 1]
+    #     # central node was appended last
+    #     selected = [len(nodes) - 1]
 
-        generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)
+    #     generate_graph(nodes, edges, selected, queue_id, graph_path, messages_url)

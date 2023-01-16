@@ -22,6 +22,21 @@ def show_search_info(parent=None):
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Information)
     msg = """
+<h3>Search Modes</h3>
+
+<p><b>Fulltext Match:</b> the content is searched for the keywords. Non-accented letters will match accented ones. Globbing expressions (e.g. dhammapad*) are available.</p>
+
+<p><b>Exact Match:</b> the content is searched for exact matches.</p>
+
+<p>Joining terms with 'AND' creates filtered queries.</p>
+
+<p>kamma vipāka: will match texts which contain the exact expression 'kamma vipāka' (including the space).</p>
+
+<p>kamma AND vipāka: will match texts which contain both 'kamma' and 'vipāka', anywhere in the text (including 'kammavipāka').</p>
+
+<p><b>Title / Headword Match:</b> the title / headword is searched for exact matches.</p>
+
+<h3>Fulltext Match Queries</h3>
 <p>Search query terms are related as AND by default, <b>kamma vipāka</b> searches for entries containing <b>kamma</b> AND <b>vipāka</b>.</p>
 <p>Latin terms are expanded to include diacritics, <b>patipada</b> will match <b>paṭipadā</b>.</p>
 <p>Add * or ? to match inexact terms. * matches a series of letters, ? matches a single letter.</p>

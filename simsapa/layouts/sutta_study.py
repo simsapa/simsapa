@@ -2,24 +2,23 @@ import json
 import queue
 
 from functools import partial
-from ..app.db.search import SearchQuery, sutta_hit_to_search_result
 from simsapa.layouts.dictionary_queries import DictionaryQueries
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QSpacerItem, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 
-from ..app.types import AppData, USutta
+from ..app.types import AppData, SuttaSearchWindowInterface, USutta
 from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 from .word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
+class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
     sutta_one_layout: QVBoxLayout
@@ -44,11 +43,6 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.timer.start(TIMER_SPEED)
 
         self.page_len = 20
-        self.search_query = SearchQuery(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            sutta_hit_to_search_result,
-        )
 
         self.queries = DictionaryQueries(self._app_data)
 
@@ -115,6 +109,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
                                                       sutta_tabs_layout=self.sutta_one_tabs_layout,
                                                       tabs_layout=None,
                                                       focus_input=False,
+                                                      enable_language_filter=True,
                                                       enable_search_extras=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
@@ -144,6 +139,7 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
                                                       sutta_tabs_layout=self.sutta_two_tabs_layout,
                                                       tabs_layout=None,
                                                       focus_input=False,
+                                                      enable_language_filter=True,
                                                       enable_search_extras=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
@@ -166,6 +162,17 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
         self.dictionary_layout.addItem(spacer)
 
         self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
+
+        # Tab order for input fields
+
+        self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
+        self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
+
+    def start_loading_animation(self):
+        pass
+
+    def stop_loading_animation(self):
+        pass
 
     def _lookup_clipboard_in_suttas(self):
         self.activateWindow()
@@ -212,6 +219,10 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
 
     def _focus_search_input(self):
         self.sutta_one_state.search_input.setFocus()
+
+    def reload_sutta_pages(self):
+        self.sutta_one_state.reload_page()
+        self.sutta_two_state.reload_page()
 
     def _increase_text_size(self):
         font_size = self._app_data.app_settings.get('sutta_font_size', 22)
@@ -270,6 +281,9 @@ class SuttaStudyWindow(QMainWindow, Ui_SuttaStudyWindow):
 
         self.action_Lookup_Selection_in_Dictionary \
             .triggered.connect(partial(self._lookup_selection_in_dictionary))
+
+        self.action_Reload_Page \
+            .triggered.connect(partial(self.reload_sutta_pages))
 
         self.action_Increase_Text_Size \
             .triggered.connect(partial(self._increase_text_size))

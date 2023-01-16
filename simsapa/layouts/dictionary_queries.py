@@ -1,13 +1,18 @@
 import re
 from typing import List, Optional, TypedDict
 from binascii import crc32
+from urllib.parse import urlencode
+from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import SearchResult
-from ..app.types import AppData, UDictWord
+from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa.app.db.search import RE_ALL_PTS_VOL_SUTTA_REF, RE_ALL_BOOK_SUTTA_REF, SearchResult
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.helpers import normalize_sutta_ref, strip_html
+from simsapa.layouts.sutta_queries import QuoteScope
+from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from .html_content import page_tmpl
@@ -21,20 +26,41 @@ class DictionaryQueries:
     def __init__(self, app_data: AppData):
         self._app_data = app_data
 
+    def is_complete_uid(self, uid: str) -> bool:
+        # Check if uid contains a /, i.e. if it specifies the dictionary
+        # (dhammacakkhu/dpd).
+        return ("/" in uid.strip("/"))
+
     def get_words_by_uid(self, uid: str) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        res = self._app_data.db_session \
-            .query(Am.DictWord) \
-            .filter(Am.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
+        if self.is_complete_uid(uid):
 
-        res = self._app_data.db_session \
-            .query(Um.DictWord) \
-            .filter(Um.DictWord.uid == uid) \
-            .all()
-        results.extend(res)
+            res = self._app_data.db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid == uid) \
+                .all()
+            results.extend(res)
+
+            res = self._app_data.db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid == uid) \
+                .all()
+            results.extend(res)
+
+        else:
+
+            res = self._app_data.db_session \
+                .query(Am.DictWord) \
+                .filter(Am.DictWord.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
+
+            res = self._app_data.db_session \
+                .query(Um.DictWord) \
+                .filter(Um.DictWord.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
 
         return results
 
@@ -51,43 +77,11 @@ class DictionaryQueries:
                                  .first()
         return word
 
-    def word_exact_matches(self, query: str) -> List[UDictWord]:
-        res: List[UDictWord] = []
-
-        r = self._app_data.db_session \
-                          .query(Am.DictWord) \
-                          .filter(or_(
-                              Am.DictWord.word.like(f"{query}%"),
-                              Am.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                          .query(Um.DictWord) \
-                          .filter(or_(
-                              Um.DictWord.word.like(f"{query}%"),
-                              Um.DictWord.synonyms.like(f"%{query}%"),
-                          )) \
-                          .all()
-        res.extend(r)
-
-        ch = "." * len(query)
-        # for 'dhamma' also match 'dhammā'
-        # for 'akata' also match 'akaṭa'
-        # for 'kondanna' also match 'koṇḍañña'
-        p_query = re.compile(f"^{ch}$")
-        # for 'dhamma' also match 'dhamma 1'
-        p_num = re.compile(f"^{ch}[ 0-9]+$")
-
-        def _is_match(x: UDictWord):
-            return re.match(p_query, str(x.word)) or re.match(p_num, str(x.word))
-
-        res = list(filter(_is_match, res))
-
-        return res
-
-    def words_to_html_page(self, words: List[UDictWord], css_extra: Optional[str] = None) -> str:
+    def words_to_html_page(self,
+                           words: List[UDictWord],
+                           css_extra: Optional[str] = None,
+                           js_extra: Optional[str] = None,
+                           html_title: Optional[str] = None) -> str:
         # avoid multiple copies of the same content with a crc32 checksum
         page_body: dict[int, str] = {}
         page_css: dict[int, str] = {}
@@ -95,6 +89,11 @@ class DictionaryQueries:
 
         for w in words:
             word_html = self.get_word_html(w)
+
+            word_html['body'] = self._add_sutta_links(word_html['body'])
+
+            if w.source_uid == "cpd":
+                word_html['body'] = self._add_word_links_to_bold(word_html['body'])
 
             body_sum = crc32(bytes(word_html['body'], 'utf-8'))
             if body_sum not in page_body.keys():
@@ -115,13 +114,196 @@ class DictionaryQueries:
         else:
             css_extra = css
 
+        if js_extra:
+            js = js_extra
+        else:
+            js = ""
+
+        js_head = js + "\n\n".join(page_js.values())
+
+        body = "\n\n".join(page_body.values())
+        if html_title:
+            body = html_title + body
+
         page_html = self.render_html_page(
-            body = "\n\n".join(page_body.values()),
+            body = body,
             css_head = "\n\n".join(page_css.values()),
             css_extra = css_extra,
-            js_head = "\n\n".join(page_js.values()))
+            js_head = js_head)
 
         return page_html
+
+    def _add_sutta_links(self, html_content: str) -> str:
+        linked_content = html_content
+
+        matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, linked_content)
+        already_replaced = []
+        for ref in matches:
+            if ref.group(0) in already_replaced:
+                continue
+
+            sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
+
+            url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
+
+            link = f'<a href="{url.toString()}">{ref.group(0)}</a>'
+
+            linked_content = re.sub(ref.group(0), link, linked_content)
+            already_replaced.append(ref.group(0))
+
+        matches = re.finditer(RE_ALL_PTS_VOL_SUTTA_REF, linked_content)
+        already_replaced = []
+        for ref in matches:
+            if ref.group(0) in already_replaced:
+                continue
+            pts_ref = normalize_sutta_ref(ref.group(0))
+
+            multi_ref = self._app_data.db_session \
+                .query(Am.MultiRef) \
+                .filter(Am.MultiRef.ref.like(f"%{pts_ref}%")) \
+                .first()
+
+            if multi_ref and len(multi_ref.suttas) > 0:
+
+                sutta = multi_ref.suttas[0]
+
+                url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta.uid}")
+
+                link = f'<a href="{url.toString()}">{ref.group(0)}</a>'
+
+                linked_content = re.sub(ref.group(0), link, linked_content)
+                already_replaced.append(ref.group(0))
+
+        return linked_content
+
+    def _add_grammar_links(self, html_page: str) -> str:
+        """
+        <tr>
+        <td><b>noun</b></td>
+        <td>nt loc sg</td>
+        <td>of</td>
+        <td>dhammacakkhu</td>
+        </tr>
+        """
+
+        grammar_rows = re.findall(r'(<td>([^>]+)</td>\s*</tr>)', html_page)
+
+        for m in grammar_rows:
+            dict_word = m[1].lower().strip()
+            url = QUrl(f"ssp://{QueryType.words.value}/{dict_word}")
+            link = f'<a href="{url.toString()}">{m[1]}</a>'
+
+            html_page = html_page.replace(m[0], f'<td>{link}</td></tr>')
+
+        return html_page
+
+
+    def _add_example_links(self, html_page: str) -> str:
+        example_ids: List[str] = re.findall(r'id="(example__[^"]+)"', html_page)
+        if len(example_ids) == 0:
+            return html_page
+
+        soup = BeautifulSoup(html_page, 'html.parser')
+        for div_id in example_ids:
+            h = soup.find(id = div_id)
+            if h is None:
+                logger.error(f"Can't find #{div_id}")
+            else:
+                example_content = h.decode_contents() # type: ignore
+
+                # FIXME: DPD dict. exmple text <p> tags are not closed before the sutta <p>.
+                # FIXME: DPD dict. sutta refs format doesn't match.
+                """
+                <p>atthi nu kho bhante kiñci rūpaṃ yaṃ rūpaṃ niccaṃ dhuvaṃ sassataṃ avipariṇāma<b>dhammaṃ</b> sassatisamaṃ tath'eva ṭhassati<p class="sutta">SN 22.97 nakhasikhāsuttaṃ</p><p>gāth'ābhigītaṃ me abhojaneyyaṃ,<br/>sampassataṃ brāhmaṇa n'esa dhammo,<br/>gāth'ābhigītaṃ panudanti buddhā,<br/><b>dhamme</b> satī brāhmaṇa vutti'r'esā.<p class="sutta">SNP 4 kasibhāradvājasuttaṃ<br/>uragavaggo 4</p><p>Can you think of a better example? <a class="link" href="https://docs.google.com/forms/d/e/1FAIpQLSf9boBe7k5tCwq7LdWgBHHGIPVc4ROO5yjVDo1X5LDAxkmGWQ/viewform?usp=pp_url&amp;entry.438735500=dhamma 01&amp;entry.326955045=Example1&amp;entry.1433863141=GoldenDict 2022-11-08" target="_blank">Add it here.</a></p></p></p>
+                """
+
+                linked_content = example_content
+
+                for m in re.findall(r'<p>(.*?)\s*(<p class="sutta">(.*?)</p>)', example_content, flags = re.DOTALL | re.MULTILINE):
+                    # Replace linebreaks with space, otherwise punctuation gets joined with the next line.
+                    s = m[0]
+                    s = s.replace("<br>", " ")
+                    s = s.replace("<br/>", " ")
+
+                    # Convert to plain text.
+                    quote = strip_html(s)
+
+                    # End the quote on a word boundary.
+                    if len(quote) > 100:
+                        words = quote.split(" ")
+                        q = ""
+                        for i in words:
+                            q += i + " "
+                            if len(q) > 100:
+                                break
+
+                        quote = q.strip()
+
+                    text = m[2].strip()
+                    ref = re.search(RE_ALL_BOOK_SUTTA_REF, text)
+                    if not ref:
+                        continue
+
+                    sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
+
+                    url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
+                    url.setQuery(urlencode({'q': quote, 'quote_scope': QuoteScope.Nikaya.value}))
+
+                    link = f'<a href="{url.toString()}">{m[2]}</a>'
+
+                    # count=1 so that two links to the same sutta doesn't get overwritten by the first
+                    linked_content = re.sub(m[1], f'<p class="sutta">{link}</p>', linked_content, count=1)
+
+                html_page = html_page.replace(example_content, linked_content)
+
+        return html_page
+
+
+    def _add_epd_pali_words_links(self, html_page: str) -> str:
+        if '<div class="epd">' not in html_page:
+            return html_page
+
+        epd_words: List[str] = re.findall(r'<b class="epd">([^<]+)</b>', html_page)
+        if len(epd_words) == 0:
+            return html_page
+
+        for word in epd_words:
+            url = QUrl(f"ssp://{QueryType.words.value}/{word}")
+            link = f'<a href="{url.toString()}">{word}</a>'
+
+            word_tag = f'<b class="epd">{word}</b>'
+            linked_tag = f'<b class="epd">{link}</b>'
+
+            html_page = html_page.replace(word_tag, linked_tag)
+
+        return html_page
+
+
+    def _add_word_links_to_bold(self, html_page: str) -> str:
+        words: List[str] = re.findall(r'<b>([^<]+)</b>', html_page)
+        if len(words) == 0:
+            return html_page
+
+        def _word_to_link(word: str) -> str:
+            url = QUrl(f"ssp://{QueryType.words.value}/{word}")
+            link = f'<a href="{url.toString()}">{word}</a>'
+            return link
+
+        for word in words:
+            if '-' in word:
+                parts = word.split('-')
+            else:
+                parts = [word]
+
+            links = list(map(_word_to_link, parts))
+
+            word_tag = f'<b>{word}</b>'
+            linked_tag = f'<b>{"-".join(links)}</b>'
+
+            html_page = html_page.replace(word_tag, linked_tag)
+
+        return html_page
+
 
     def render_html_page(self,
                           body: str,
@@ -130,12 +312,12 @@ class DictionaryQueries:
                           js_head: str = '',
                           js_body: str = '') -> str:
         try:
-            with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f:
+            with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f: # type: ignore
                 css = f.read()
                 if self._app_data.api_url is not None:
                     css = css.replace("http://localhost:8000", self._app_data.api_url)
         except Exception as e:
-            logger.error("Can't read dictionary.css")
+            logger.error(f"Can't read dictionary.css: {e}")
             css = ""
 
         css_head = re.sub(r'font-family[^;]+;', '', css_head)
@@ -143,6 +325,18 @@ class DictionaryQueries:
 
         if css_extra is not None:
             css_head += css_extra
+
+        js_head += DICTIONARY_JS
+
+        if 'id="example__' in body:
+            body = self._add_example_links(body)
+
+        if 'id="declension__' not in body:
+            # dpd-grammar doesn't have a declension div.
+            body = self._add_grammar_links(body)
+
+
+        body = self._add_epd_pali_words_links(body)
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,
@@ -174,18 +368,13 @@ class DictionaryQueries:
             for m in matches:
                 name = m[0].replace('{', '').replace('}', '')
                 name = re.sub(r'[\n ]+', ' ', name)
-                url = "bword://localhost/" + name.replace(' ', '%20')
+                url = f"ssp://{QueryType.words.value}/{name.replace(' ', '%20')}"
                 text = text.replace(m[0], f'<a href="{url}">{name}</a>')
 
             definition = style + '<pre>' + text + '</pre>'
+
         else:
             definition = '<p>No definition.</p>'
-
-        # Ensure localhost in bword:// urls, otherwise they are invalid and lookup content is empty
-        # First remove possibly correct cases, to then replace all cases
-        definition = definition \
-            .replace('bword://localhost/', 'bword://') \
-            .replace('bword://', 'bword://localhost/')
 
         # We'll remove CSS and JS from 'definition' before assigning it to 'body'
         body = ""
@@ -239,19 +428,115 @@ class DictionaryQueries:
         )
 
     def autocomplete_hits(self, query: str) -> set[str]:
-        res: List[UDictWord] = []
-        r = self._app_data.db_session \
-                            .query(Am.DictWord.word) \
-                            .filter(Am.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-                            .query(Um.DictWord.word) \
-                            .filter(Um.DictWord.word.like(f"{query}%")) \
-                            .all()
-        res.extend(r)
-
-        a = set(map(lambda x: re.sub(r' *\d+$', '', x[0]), res))
-
+        a = set(filter(lambda x: x.lower().startswith(query.lower()), self._app_data.completion_cache['dict_words']))
         return a
+
+class ExactQueryResult(TypedDict):
+    appdata_ids: List[int]
+    userdata_ids: List[int]
+    add_recent: bool
+
+class ExactQueryWorkerSignals(QObject):
+    finished = pyqtSignal(dict)
+
+class ExactQueryWorker(QRunnable):
+    signals: ExactQueryWorkerSignals
+
+    def __init__(self,
+                 query: str,
+                 only_source: Optional[str] = None,
+                 disabled_labels: Optional[Labels] = None,
+                 add_recent: bool = True):
+
+        super().__init__()
+        self.signals = ExactQueryWorkerSignals()
+        self.query = query
+        self.only_source = only_source
+        self.disabled_labels = disabled_labels
+        self.add_recent = add_recent
+
+    @pyqtSlot()
+    def run(self):
+        logger.info("ExactQueryWorker::run()")
+        res: List[UDictWord] = []
+        try:
+            _, _, db_session = get_db_engine_connection_session()
+
+            r = db_session \
+                .query(Am.DictWord) \
+                .filter(or_(
+                    Am.DictWord.word.like(f"{self.query}%"),
+                    Am.DictWord.synonyms.like(f"%{self.query}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            r = db_session \
+                .query(Um.DictWord) \
+                .filter(or_(
+                    Um.DictWord.word.like(f"{self.query}%"),
+                    Um.DictWord.synonyms.like(f"%{self.query}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            db_session.close()
+
+        except Exception as e:
+            logger.error(f"DB query failed: {e}")
+
+        try:
+            def _only_in_source(x: UDictWord):
+                if self.only_source is not None:
+                    return str(x.uid).endswith(f'/{self.only_source.lower()}')
+                else:
+                    return True
+
+            def _not_in_disabled(x: UDictWord):
+                if self.disabled_labels is not None:
+                    for schema in self.disabled_labels.keys():
+                        for label in self.disabled_labels[schema]:
+                            if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
+                                return False
+                    return True
+                else:
+                    return True
+
+            if self.only_source is not None:
+                res = list(filter(_only_in_source, res))
+
+            elif self.disabled_labels is not None:
+                res = list(filter(_not_in_disabled, res))
+
+            ch = "." * len(self.query)
+            # for 'dhamma' also match 'dhammā'
+            # for 'akata' also match 'akaṭa'
+            # for 'kondanna' also match 'koṇḍañña'
+            p_query = re.compile(f"^{ch}$")
+            # for 'dhamma' also match 'dhamma 1'
+            p_num = re.compile(f"^{ch}[ 0-9]+$")
+
+            def _is_match(x: UDictWord):
+                if x.word is None:
+                    return False
+                else:
+                    return re.match(p_query, str(x.word)) or re.match(p_num, str(x.word))
+
+            res = list(filter(_is_match, res))
+
+            a = filter(lambda x: x.metadata.schema == DbSchemaName.AppData.value, res)
+            appdata_ids = list(map(lambda x: x.id, a))
+
+            a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
+            userdata_ids = list(map(lambda x: x.id, a))
+
+            ret = ExactQueryResult(
+                appdata_ids = appdata_ids,
+                userdata_ids = userdata_ids,
+                add_recent = self.add_recent,
+            )
+
+            self.signals.finished.emit(ret)
+
+        except Exception as e:
+            logger.error(e)

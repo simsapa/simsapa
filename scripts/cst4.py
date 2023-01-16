@@ -5,6 +5,7 @@ import shutil
 import sys
 import re
 import glob
+import multiprocessing
 from pathlib import Path
 from typing import Any, List, Optional, Pattern, Tuple, TypedDict
 from bs4 import BeautifulSoup
@@ -16,6 +17,7 @@ from sqlalchemy.orm.session import Session
 from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 import helpers
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
 
 load_dotenv()
 
@@ -1043,6 +1045,7 @@ def set_wisdom_pubs_ref(sutta: Group,
     return (sutta, c)
 
 def get_mula_suttas() -> List[Group]:
+    logger.info("=== get_mula_suttas() ===")
     sutta_groups: List[Group] = []
 
     collection = 'mul'
@@ -1144,7 +1147,42 @@ def get_mula_suttas() -> List[Group]:
     return sutta_groups
 
 
-def get_other_texts_body() -> List[Am.Sutta]:
+def _parse_path(p: Path) -> Am.Sutta:
+    # get body text
+    html_text = open(p, 'r', encoding='utf-8').read()
+    soup = BeautifulSoup(html_text, 'html.parser')
+    h = soup.find(name = 'body')
+    if h is not None:
+        body = h.decode_contents() # type: ignore
+    else:
+        logger.error("No <body> in %s" % p)
+        sys.exit(1)
+
+    body = consistent_nasal_m(body)
+
+    # pitaka = get_pitaka(p)
+    # nikaya = get_nikaya(p)
+    # collection = get_collection(p)
+
+    lang = 'pli'
+    author = 'cst4'
+
+    uid = f"{p.stem}/{lang}/{author}"
+
+    return Am.Sutta(
+        source_uid = author,
+        title = consistent_nasal_m(p.stem),
+        uid = uid,
+        sutta_ref = uid,
+        language = lang,
+        content_html = body,
+        content_plain = compact_rich_text(body),
+        created_at = func.now(),
+    )
+
+
+def get_other_texts_body(limit: Optional[int] = None) -> List[Am.Sutta]:
+    logger.info("=== get_other_texts_body() ===")
     processed_already = [
         's0101m.mul.html',
         's0102m.mul.html',
@@ -1170,42 +1208,35 @@ def get_other_texts_body() -> List[Am.Sutta]:
         's0404m4.mul.html',
     ]
 
+    paths = list(map(lambda x: Path(x), glob.glob(f"{HTML_DIR.joinpath('*.html')}")))
+    paths = list(filter(lambda p: p.name not in processed_already, paths))
+
     suttas: List[Am.Sutta] = []
+    results = []
 
-    for p in glob.glob(f"{HTML_DIR.joinpath('*.html')}"):
-        p = Path(p)
-        if p.name in processed_already:
-            continue
+    pool = multiprocessing.Pool(processes = 4)
 
-        # get body text
-        html_text = open(p, 'r', encoding='utf-8').read()
-        soup = BeautifulSoup(html_text, 'html.parser')
-        h = soup.find(name = 'body')
-        if h is not None:
-            body = h.decode_contents() # type: ignore
-        else:
-            logger.error("No <body> in %s" % p)
-            sys.exit(1)
-
-        # pitaka = get_pitaka(p)
-        # nikaya = get_nikaya(p)
-        # collection = get_collection(p)
-
-        lang = 'pli'
-        author = 'cst4'
-
-        uid = f"{p.stem}/{lang}/{author}"
-
-        sutta = Am.Sutta(
-            title = p.stem,
-            uid = uid,
-            sutta_ref = uid,
-            language = lang,
-            content_html = body,
-            created_at = func.now(),
+    for p in paths:
+        r = pool.apply_async(
+            _parse_path,
+            (p,),
         )
+        results.append(r)
 
-        suttas.append(sutta)
+    if limit:
+        max_suttas = limit if len(results) >= limit else len(results)
+    else:
+        max_suttas = len(results)
+
+    for r in results:
+        if len(suttas) >= max_suttas:
+            pool.terminate()
+            break
+
+        suttas.append(r.get())
+
+
+    pool.close()
 
     return suttas
 
@@ -1241,22 +1272,50 @@ def group_to_sutta(g: Group) -> Am.Sutta:
     author = "cst4"
     uid = f"{ref}/{lang}/{author}"
 
-    content_html = '<div class="cst4">' + content_html + '</div>'
+    content_html = '<div class="cst4">' + consistent_nasal_m(content_html) + '</div>'
 
     return Am.Sutta(
-        title = g.title,
-        title_pali = g.title,
+        source_uid = author,
+        title = consistent_nasal_m(g.title),
+        title_pali = consistent_nasal_m(g.title),
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
         language = lang,
         content_html = content_html,
+        content_plain = compact_rich_text(content_html),
         created_at = func.now(),
     )
 
-def populate_suttas_from_cst4(appdata_db: Session):
+def populate_suttas_from_cst4(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("=== populate_suttas_from_cst4() ===")
 
     sutta_groups = get_mula_suttas()
-    suttas = list(map(group_to_sutta, sutta_groups))
+
+    suttas: List[Am.Sutta] = []
+    results = []
+    pool = multiprocessing.Pool(processes = 4)
+
+    for g in sutta_groups:
+        r = pool.apply_async(
+            group_to_sutta,
+            (g,),
+        )
+
+        results.append(r)
+
+    if limit:
+        max_suttas = limit if len(results) >= limit else len(results)
+    else:
+        max_suttas = len(results)
+
+    for r in results:
+        if len(suttas) >= max_suttas:
+            pool.terminate()
+            break
+
+        suttas.append(r.get())
+
+    pool.close()
 
     logger.info(f"Adding CST4 mula, count {len(suttas)} ...")
 
@@ -1276,25 +1335,29 @@ def populate_suttas_from_cst4(appdata_db: Session):
             uids.append(i.uid)
 
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
 
-    suttas = get_other_texts_body()
+    if limit:
+        limit -= len(suttas)
+
+    suttas: List[Am.Sutta] = []
+    suttas = get_other_texts_body(limit)
 
     logger.info(f"Adding CST4 remaining texts as html <body>, count {len(suttas)} ...")
 
     try:
         for i in suttas:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
 
 def main():
-    logger.info("Extract suttas from CST4", start_new=True)
+    logger.info("Extract suttas from CST4")
 
     sutta_groups = get_mula_suttas()
 

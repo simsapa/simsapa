@@ -66,6 +66,8 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Bookmarks"/>
+    <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
@@ -73,6 +75,7 @@
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
     <addaction name="action_Show_Toolbar"/>
+    <addaction name="action_Link_Preview"/>
    </widget>
    <widget class="QMenu" name="menu_Help">
     <property name="title">
@@ -89,11 +92,16 @@
     </property>
     <addaction name="action_Select_Sutta_Authors"/>
     <addaction name="action_Show_Related_Suttas"/>
+    <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
+    <addaction name="action_Show_All_Variant_Readings"/>
+    <addaction name="action_Show_Bookmarks"/>
    </widget>
    <widget class="QMenu" name="menu_Go">
     <property name="title">
      <string>&amp;Go</string>
     </property>
+    <addaction name="action_Search_As_You_Type"/>
+    <addaction name="action_Search_Completion"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
     <addaction name="action_Previous_Tab"/>
@@ -103,6 +111,7 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
+    <addaction name="action_Reload_Page"/>
     <addaction name="action_Increase_Text_Size"/>
     <addaction name="action_Decrease_Text_Size"/>
     <addaction name="action_Increase_Text_Margins"/>
@@ -443,6 +452,107 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Shift+-</string>
+   </property>
+  </action>
+  <action name="action_Bookmarks">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/bookmark</normaloff>:/bookmark</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Bookmarks</string>
+   </property>
+   <property name="shortcut">
+    <string>F7</string>
+   </property>
+  </action>
+  <action name="action_Pali_Courses">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Pali Courses</string>
+   </property>
+   <property name="shortcut">
+    <string>F8</string>
+   </property>
+  </action>
+  <action name="action_Search_As_You_Type">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search As You &amp;Type</string>
+   </property>
+   <property name="toolTip">
+    <string>Run search query when you stop typing</string>
+   </property>
+   <property name="statusTip">
+    <string/>
+   </property>
+  </action>
+  <action name="action_Search_Completion">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Search &amp;Completion</string>
+   </property>
+  </action>
+  <action name="action_Show_All_Variant_Readings">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Show All &amp;Variant Readings</string>
+   </property>
+  </action>
+  <action name="action_Show_Translation_and_Pali_Line_by_Line">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Translation and Pali &amp;Line by Line</string>
+   </property>
+  </action>
+  <action name="action_Reload_Page">
+   <property name="text">
+    <string>&amp;Reload Page</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="action_Show_Bookmarks">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show &amp;Bookmarks</string>
+   </property>
+  </action>
+  <action name="action_Link_Preview">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Link Preview</string>
    </property>
   </action>
  </widget>

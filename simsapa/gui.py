@@ -5,21 +5,22 @@ from typing import Optional
 from PyQt6 import QtCore
 import threading
 
+from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
+from simsapa.app.api import start_server, find_available_port
 from simsapa import logger
-from simsapa import APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
+from simsapa import SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
-from .app.types import AppData
+from .app.types import AppData, QueryType
 from .app.windows import AppWindows
-from .app.api import start_server, find_available_port
 from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
-from simsapa.assets import icons_rc  # noqa: F401
+from simsapa.assets import icons_rc
 
 def excepthook(exc_type, exc_value, exc_tb):
     logger.error("excepthook()")
@@ -33,8 +34,9 @@ sys.excepthook = excepthook
 
 create_app_dirs()
 
-def start(splash_proc: Optional[Popen] = None):
-    logger.info("start()", start_new=True)
+
+def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
+    logger.info("gui::start()")
 
     ensure_empty_graphs_cache()
 
@@ -47,23 +49,29 @@ def start(splash_proc: Optional[Popen] = None):
         w = DownloadAppdataWindow()
         w.show()
         status = dl_app.exec()
-        logger.info(f"main() Exiting with status {status}.")
+        logger.info(f"gui::start() Exiting with status {status}.")
         sys.exit(status)
 
-    app = QApplication(sys.argv)
+    # Start the API server after checking for APP_DB. If this is the first run,
+    # the server would create the userdata db, and we can't use it to test in
+    # DownloadAppdataWindow() if this is the first ever start.
+    if port is None:
+        try:
+            port = find_available_port()
+        except Exception as e:
+            logger.error(e)
+            # FIXME show error to user
+            port = 6789
 
-    try:
-        port = find_available_port()
-        logger.info(f"Available port: {port}")
-        daemon = threading.Thread(name='daemon_server',
-                                target=start_server,
-                                args=(port,))
-        daemon.setDaemon(True)
-        daemon.start()
-    except Exception as e:
-        logger.error(e)
-        # FIXME show error to user
-        port = 6789
+    logger.info(f"Available port: {port}")
+
+    daemon = threading.Thread(name='daemon_server',
+                            target=start_server,
+                            args=(port, SERVER_QUEUE))
+    daemon.setDaemon(True)
+    daemon.start()
+
+    app = QApplication(sys.argv)
 
     actions_manager = ActionsManager(port)
 
@@ -78,6 +86,11 @@ def start(splash_proc: Optional[Popen] = None):
         hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
+
+    if len(app.screens()) > 0:
+        app_data.screen_size = app.primaryScreen().size()
+        logger.info(f"Screen size: {app_data.screen_size}")
+        logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
 
     if app_data.search_indexed.has_empty_index():
         w = CreateSearchIndexWindow()
@@ -129,7 +142,17 @@ def start(splash_proc: Optional[Popen] = None):
 
     # === Create first window ===
 
-    app_windows.open_first_window()
+    ok = False
+    if url:
+        open_url = QUrl(url)
+        if open_url.scheme() == 'ssp' and open_url.host() == QueryType.suttas:
+            ok = app_windows._show_sutta_by_url_in_search(open_url)
+
+        elif open_url.scheme() == 'ssp' and open_url.host() == QueryType.words:
+            ok = app_windows._show_words_by_url(open_url)
+
+    if not ok:
+        app_windows.open_first_window()
 
     app_windows.show_startup_message()
 

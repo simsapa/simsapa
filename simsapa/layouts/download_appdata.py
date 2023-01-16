@@ -1,4 +1,3 @@
-import json
 import os
 import glob
 from functools import partial
@@ -18,14 +17,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 
-from simsapa.app.types import AppMessage, QSizeExpanding, QSizeMinimum
+from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import filter_compatible_db_entries, get_db_engine_connection_session, get_feed_entries
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries
 
-from simsapa import INDEX_DIR, logger
-from simsapa import ASSETS_DIR, APP_DB_PATH, STARTUP_MESSAGE_PATH
-from simsapa.assets import icons_rc  # noqa: F401
+from simsapa import logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+
+from simsapa.assets import icons_rc
 
 
 class DownloadAppdataWindow(QMainWindow):
@@ -58,7 +58,7 @@ class DownloadAppdataWindow(QMainWindow):
         spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc2)
 
-        self._msg = QLabel("The application database\nwas not found on this system.\n\nPlease select the sources to download.")
+        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
@@ -215,6 +215,7 @@ class DownloadAppdataWindow(QMainWindow):
             version = 'v' + version
 
         appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
+        userdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/userdata.tar.bz2"
         index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
 
         sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
@@ -232,11 +233,20 @@ class DownloadAppdataWindow(QMainWindow):
                 sanskrit_index_tar_url,
             ]
 
+
+        if not USER_DB_PATH.exists():
+            urls.append(userdata_tar_url)
+
+        # Remove existing indexes here. Can't safely clear and remove them in
+        # windows._redownload_database_dialog().
+        self._remove_old_index()
+
         self.download_worker.urls = urls
 
         self.download_worker.signals.msg_update.connect(partial(self._msg_update))
 
         self.download_worker.signals.finished.connect(partial(self._download_finished))
+        self.download_worker.signals.cancelled.connect(partial(self._download_cancelled))
 
         self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
         self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
@@ -257,19 +267,62 @@ class DownloadAppdataWindow(QMainWindow):
     def _msg_update(self, msg: str):
         self._msg.setText(msg)
 
+    def _remove_old_index(self):
+        if INDEX_DIR.exists():
+            shutil.rmtree(INDEX_DIR)
+
+        # FIXME When removing the previous index, test if there were user imported
+        # data in the userdata database, and if so, tell the user that they have to
+        # re-index.
+
+        # msg = AppMessage(
+        #     kind = "warning",
+        #     text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
+        # )
+        # with open(STARTUP_MESSAGE_PATH, 'w') as f:
+        #     f.write(json.dumps(msg))
+
+    def _cancelled_cleanup_files(self):
+        # Don't remove assets dir, it may contain userdata.sqlite3 with user's
+        # memos, bookmarks, settings, etc.
+
+        if INDEX_DIR.exists():
+            shutil.rmtree(INDEX_DIR)
+
+        if APP_DB_PATH.exists():
+            APP_DB_PATH.unlink()
+
     def _download_finished(self):
         self.stop_animation()
         self._animation.deleteLater()
 
-        self._msg.setText("Download completed.\n\nQuit and start the application again.")
+        self._msg.setText("<p>Download completed.</p><p>Quit and start the application again.</p>")
 
-    def _handle_quit(self):
-        self.download_worker.download_stop.set()
+    def _download_cancelled(self):
+        self.stop_animation()
+        self._animation.deleteLater()
+        self._cancelled_cleanup_files()
         self.close()
 
+    def _handle_quit(self):
+        if self.download_worker.download_started.isSet():
+            self._msg.setText("<p>Setup cancelled, waiting for subprocesses to end ...</p>")
+            self.download_worker.download_stop.set()
+            # Don't .close() here, wait for _download_cancelled() to do it.
+            #
+            # Otherwise, triggering .close() while the extraction is not finished will cause a threading error.
+            #
+            # RuntimeError: wrapped C/C++ object of type WorkerSignals has been deleted
+            # QObject: Cannot create children for a parent that is in a different thread.
+            # (Parent is QApplication(0x4050170), parent's thread is QThread(0x2785280), current thread is QThreadPoolThread(0x51dbd00)
+            # fish: Job 1, './run.py' terminated by signal SIGSEGV (Address boundary error)
+
+        else:
+            self.close()
 
 class WorkerSignals(QObject):
     finished = pyqtSignal()
+    cancelled = pyqtSignal()
     msg_update = pyqtSignal(str)
     set_total_progress = pyqtSignal(int)
     set_current_progress = pyqtSignal(int)
@@ -279,6 +332,7 @@ class WorkerSignals(QObject):
 class Worker(QRunnable):
     urls: List[str]
     signals: WorkerSignals
+    download_started: threading.Event
     download_stop: threading.Event
 
     def __init__(self):
@@ -286,13 +340,19 @@ class Worker(QRunnable):
 
         self.signals = WorkerSignals()
 
+        self.download_started = threading.Event()
         self.download_stop = threading.Event()
 
     @pyqtSlot()
     def run(self):
         try:
+            self.download_started.set()
             for i in self.urls:
                 self.download_extract_tar_bz2(i)
+                if self.download_stop.is_set():
+                    logger.info("run(): Cancelling")
+                    self.signals.cancelled.emit()
+                    return
 
             def _not_core_db(s: str) -> bool:
                 p = Path(s)
@@ -314,6 +374,7 @@ class Worker(QRunnable):
             logger.error(msg)
 
         finally:
+            self.download_started.clear()
             self.signals.finished.emit()
 
     def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
@@ -339,10 +400,10 @@ class Worker(QRunnable):
                         read_mb = "%.2f" % (read_bytes / 1024 / 1024)
 
                         self.signals.set_current_progress.emit(read_bytes)
-                        self.signals.msg_update.emit(f"Downloading {file_name} ({read_mb} / {total_mb} MB) ...")
+                        self.signals.msg_update.emit(f"<p>Downloading {file_name}</p><p>({read_mb} / {total_mb} MB) ...</p>")
 
                         if self.download_stop.is_set():
-                            logger.info("Aborting download, removing partial file.")
+                            logger.info("download_file(): Stopping download, removing partial file.")
                             file_path.unlink()
                             return None
         except Exception as e:
@@ -351,7 +412,7 @@ class Worker(QRunnable):
         self.signals.download_max.emit()
         return file_path
 
-    def download_extract_tar_bz2(self, url) -> bool:
+    def download_extract_tar_bz2(self, url):
         try:
             tar_file_path = self.download_file(url, ASSETS_DIR)
         except Exception as e:
@@ -376,33 +437,16 @@ class Worker(QRunnable):
         for p in glob.glob(f"{temp_dir}/*.sqlite3"):
             shutil.move(p, ASSETS_DIR)
 
-        # Remove existing indexes here. Can't safely clear and remove them in
-        # windows._redownload_database_dialog().
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if temp_dir.joinpath("courses").exists():
+            for p in glob.glob(f"{temp_dir}/courses/*"):
+                shutil.move(p, COURSES_DIR)
 
         temp_index = temp_dir.joinpath("index")
         if temp_index.exists():
             shutil.move(temp_index, ASSETS_DIR)
 
-        # FIXME When removing the previous index, test if there were user imported
-        # data in the userdata database, and if so, tell the user that they have to
-        # re-index.
-
-        # msg = AppMessage(
-        #     kind = "warning",
-        #     text = "<p>The sutta and dictionary database was updated. Re-indexing is necessary for the contents to be searchable.</p><p>You can start a re-index operation with <b>File > Re-index database</b>.</p>",
-        # )
-        # with open(STARTUP_MESSAGE_PATH, 'w') as f:
-        #     f.write(json.dumps(msg))
-
         shutil.rmtree(temp_dir)
 
-        if not APP_DB_PATH.exists():
-            logger.error(f"File not found: {APP_DB_PATH}")
-            return False
-        else:
-            return True
 
     def import_suttas_to_appdata(self, db_path: Path):
         if not db_path.exists():

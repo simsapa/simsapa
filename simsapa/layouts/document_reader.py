@@ -145,8 +145,9 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         if self.file_doc is None or self.db_doc is None:
             return
 
-        self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path, self.messages_url)
-        self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
+        print("TODO: move generate_graph_for_document() from links_sidebar.py to Flask API call")
+        # self.generate_graph_for_document(self.file_doc, self.db_doc, self.queue_id, self.graph_path, self.messages_url)
+        # self.content_graph.load(QUrl(str(self.graph_path.absolute().as_uri())))
 
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None

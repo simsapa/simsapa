@@ -1,22 +1,7 @@
-from typing import List, Optional, TypedDict
-from PyQt6.QtCore import pyqtSignal, QCoreApplication
-from PyQt6.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
-
-import re
-from pathlib import Path
-from bs4 import BeautifulSoup
-
-from sqlalchemy.sql import func
-
-from openpyxl import load_workbook
-from openpyxl.workbook.workbook import Workbook
-from openpyxl.worksheet.worksheet import Worksheet
-
-from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import gretil_header_to_footer
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
 
 from ..app.types import AppData, SearchResultSizes, default_search_result_sizes
-from ..app.db import userdata_models as Um
 
 
 class SearchResultSizesDialog(QDialog):

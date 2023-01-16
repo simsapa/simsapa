@@ -10,18 +10,22 @@ from sqlalchemy.orm.session import Session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa import APP_DB_PATH, USER_DB_PATH, logger
+from simsapa.app.types import QueryType
 
 
 def get_links(appdata_db: Session) -> List[Am.Link]:
     links: List[Am.Link] = []
 
     suttas = appdata_db.query(Am.Sutta) \
-        .filter(Am.Sutta.content_html.like("%ssp://%")) \
+        .filter(Am.Sutta.content_html.like(f"%ssp://{QueryType.suttas.value}/%")) \
         .all()
+
+    # capture the uid part
+    re_link = re.compile(f'ssp://{QueryType.suttas.value}/([^\'"#\\?]+)')
 
     for i in suttas:
 
-        m = re.findall(r'ssp://([^\'"#]+)[\'"#]', i.content_html)
+        m = re.findall(re_link, i.content_html)
         if len(m) == 0:
             logger.error(f"Can't match uids")
             continue
@@ -51,6 +55,8 @@ def get_links(appdata_db: Session) -> List[Am.Link]:
     return links
 
 def populate_links(appdata_db: Session):
+    logger.info("=== populate_links() ===")
+
     links = get_links(appdata_db)
 
     logger.info(f"Adding links, count: {len(links)}")
@@ -58,7 +64,7 @@ def populate_links(appdata_db: Session):
     try:
         for i in links:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -96,7 +102,7 @@ def _connect_to_db() -> Session:
     return db_session
 
 def main():
-    logger.info(f"Creating links", start_new=True)
+    logger.info(f"Creating links")
 
     appdata_db = _connect_to_db()
     links = get_links(appdata_db)
@@ -106,7 +112,7 @@ def main():
     try:
         for i in links:
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
         exit(1)

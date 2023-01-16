@@ -8,7 +8,7 @@ from PyQt6.QtGui import QMovie
 
 from simsapa.app.db.search import SearchIndexed
 
-from simsapa.app.helpers import get_db_engine_connection_session
+from simsapa.app.db_helpers import get_db_engine_connection_session
 
 from simsapa import logger
 

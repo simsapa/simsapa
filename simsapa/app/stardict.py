@@ -10,6 +10,7 @@ Support functions:
 https://github.com/codito/stargaze/blob/master/stargaze.py
 """
 
+import multiprocessing
 from pathlib import Path
 import datetime
 from typing import List, TypedDict, Optional
@@ -17,9 +18,12 @@ import shutil
 from zipfile import ZipFile
 import struct
 import idzip
+import re
 
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
+from simsapa.app.helpers import compact_rich_text, consistent_nasal_m
+from simsapa.app.types import QueryType
 
 class DictError(Exception):
     """Error in the dictionary."""
@@ -145,13 +149,38 @@ def new_stardict_paths(zip_path: Path):
         syn_path = None,
     )
 
+class DictSegment(TypedDict):
+    bookname: str
+    dict_word: str
+    idx: int
+    data_str: str
+
+
+class ParseResult(TypedDict):
+    segment: DictSegment
+    dict_entry: DictEntry
+
+
+global TOTAL_SEGMENTS
+TOTAL_SEGMENTS = 0
+
+global DONE_COUNT
+DONE_COUNT = 0
+
+
 def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
 
     stardict_paths = new_stardict_paths(zip_path)
     unzipped_dir = stardict_paths['unzipped_dir']
 
     # Find the .ifo, .idx, .dic, .syn
-    hits = {'*.ifo': [], '*.idx': [], '*.dic*': [], '*.syn*': []}
+    pat = {
+        'ifo_path': r'\.ifo$',
+        'idx_path': r'\.idx$',
+        'dic_path': r'(\.dic|\.dict)(\.dz)?$',
+        'syn_path': r'\.syn(\.dz)?$',
+    }
+
     try:
         # delete and re-create to make sure it's an empty directory
         if unzipped_dir.exists():
@@ -164,31 +193,33 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
         # NOTE: The zip file may or may not have a top-level folder. A
         # dictionary may be compressed as '*.dict.dz'.
 
-        for ext in hits.keys():
-            a = list(unzipped_dir.glob(f"**/{ext}"))
-            if len(a) == 0:
+        for name, pat_name in pat.items():
+
+            file_path = None
+            for p in list(unzipped_dir.glob(f"**/*")):
+                if re.search(pat_name, str(p)) is not None:
+                    file_path = p
+                    break
+
+            stardict_paths[name] = file_path
+
+            if file_path is None:
                 # .syn is optional
-                if ext == '*.syn*':
-                    hits[ext] = [None]
+                if name == 'syn_path':
+                    stardict_paths[name] = None
                 else:
-                    msg = f"ERROR: Can't find this type of file in the .zip: {ext}"
+                    msg = f"ERROR: Can't find this type of file in the .zip: {name}"
                     logger.error(msg)
                     raise DictError(msg)
-            else:
-                hits[ext] = [a[0]]
 
     except Exception as e:
         logger.error(e)
         raise e
 
-    stardict_paths['ifo_path'] = hits['*.ifo'][0]
-    stardict_paths['idx_path'] = hits['*.idx'][0]
-    stardict_paths['dic_path'] = hits['*.dic*'][0]
-    stardict_paths['syn_path'] = hits['*.syn*'][0]
-
     return stardict_paths
 
 def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
+    logger.info("=== parse_ifo() ===")
     if paths['ifo_path'] is None:
         msg = f"ifo file is None"
         logger.error(msg)
@@ -214,17 +245,19 @@ def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
 
         return ifo_from_opts(opts)
 
-def stardict_to_dict_entries(paths: StarDictPaths) -> List[DictEntry]:
+def stardict_to_dict_entries(paths: StarDictPaths, limit: Optional[int] = None) -> List[DictEntry]:
+    logger.info("=== stardict_to_dict_entries() ===")
 
     idx = parse_idx(paths)
     ifo = parse_ifo(paths)
     syn = parse_syn(paths)
-    words = parse_dict(paths, ifo, idx, syn)
+    words = parse_dict(paths, ifo, idx, syn, limit)
 
     return words
 
 def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
     """Parse an .idx file."""
+    logger.info("=== parse_idx() ===")
 
     if paths['idx_path'] is None:
         msg = f"idx file is None"
@@ -261,11 +294,90 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
 
     return words_index
 
+def parse_bword_links_to_ssp(definition: str) -> str:
+    words_path = QueryType.words.value
+
+    definition = definition \
+        .replace('bword://localhost/', f'ssp://{words_path}/') \
+        .replace('bword://', f'ssp://{words_path}/')
+
+    return definition
+
+
+def _word_done(res: ParseResult):
+    global TOTAL_SEGMENTS
+    global DONE_COUNT
+    DONE_COUNT += 1
+
+    # segment = res['segment']
+    # percent = DONE_COUNT/(TOTAL_SEGMENTS/100)
+    # logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
+
+
+def _add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
+    if syn_entries is None:
+        return []
+
+    synonyms = []
+    for k, v in syn_entries.items():
+        if v[0] == idx:
+            synonyms.append(consistent_nasal_m(k))
+
+    return synonyms
+
+
+def _parse_word(segment: DictSegment, types: str, syn_entries: Optional[SynEntries]) -> ParseResult:
+    dict_word = consistent_nasal_m(segment['dict_word'])
+    idx = segment['idx']
+    data_str = consistent_nasal_m(segment['data_str'])
+
+    definition_plain = ""
+    definition_html = ""
+    # Only accept sametypesequence = m, h
+    if types == "m":
+        # NOTE: it doesn't seem to be necessary to strip the 'm'
+        #
+        # if data_str[0] == "m":
+        #     definition_plain = data_str[1:]
+        # else:
+        #     definition_plain = data_str
+
+        definition_plain = data_str
+
+    elif types == "h":
+        definition_html = parse_bword_links_to_ssp(data_str)
+        definition_plain = compact_rich_text(data_str)
+
+    else:
+        logger.warn(f"Entry type {types} is not handled, definition will be empty for {dict_word}")
+
+    if definition_plain == "" and definition_html == "":
+        logger.warn(f"Definition type {types} is empty: {dict_word}")
+
+    # FIXME very slow for DPD's long synonym lists.
+    # synonyms = _add_synonyms(syn_entries, idx)
+    synonyms = []
+
+    dict_entry = DictEntry(
+        word = dict_word,
+        definition_plain = definition_plain,
+        definition_html = definition_html,
+        synonyms = synonyms,
+    )
+
+    return ParseResult(
+        segment = segment,
+        dict_entry = dict_entry,
+    )
+
+
 def parse_dict(paths: StarDictPaths,
                ifo: StarDictIfo,
                idx_entries: List[IdxEntry],
-               syn_entries: Optional[SynEntries]) -> List[DictEntry]:
+               syn_entries: Optional[SynEntries],
+               limit: Optional[int] = None) -> List[DictEntry]:
     """Parse a .dict file."""
+    logger.info("=== parse_dict() ===")
 
     dict_path = paths['dic_path']
 
@@ -279,8 +391,6 @@ def parse_dict(paths: StarDictPaths,
         logger.error(msg)
         raise DictError(msg)
 
-    words: List[DictEntry] = []
-
     open_dict = open
     if f"{dict_path}".endswith(".dz"):
         open_dict = idzip.open
@@ -290,45 +400,69 @@ def parse_dict(paths: StarDictPaths,
     else:
         types = "m"
 
-    with open_dict(dict_path, "rb") as f:
-        for idx, i in enumerate(idx_entries):
+    if limit:
+        n = limit if len(idx_entries) >= limit else len(idx_entries)
+        idx_entries = idx_entries[0:n]
 
-            dict_word = i['word']
-            logger.info(dict_word)
+    global TOTAL_SEGMENTS
+    global DONE_COUNT
+    TOTAL_SEGMENTS = len(idx_entries)
+    DONE_COUNT = 0
+
+    dict_segments: List[DictSegment] = []
+
+    with open_dict(dict_path, "rb") as f:
+        logger.info(f"Reading segments from {dict_path}")
+
+        for idx, i in enumerate(idx_entries):
             f.seek(i["offset_begin"])
             data = f.read(i["data_size"])
             data_str: str = data.decode("utf-8").rstrip("\0")
 
-            definition_plain = ""
-            definition_html = ""
-            # Only accept sametypesequence = m, h
-            if types == "m":
-                # NOTE: it doesn't seem to be necessary to strip the 'm'
-                #
-                # if data_str[0] == "m":
-                #     definition_plain = data_str[1:]
-                # else:
-                #     definition_plain = data_str
+            if len(data_str) == 0:
+                logger.warn(f"data_str empty: {i}")
 
-                definition_plain = data_str
+            dict_word = i['word']
 
-            if types == "h":
-                definition_html = data_str
+            dict_segments.append(
+                DictSegment(
+                    bookname=ifo['bookname'],
+                    dict_word=dict_word,
+                    idx=idx,
+                    data_str=data_str,
+                ))
 
-            synonyms = []
-            if syn_entries is not None:
-                for k, v in syn_entries.items():
-                    if v[0] == idx:
-                        synonyms.append(k)
+    results = []
+    dict_entries: List[DictEntry] = []
 
-            words.append(DictEntry(
-                word = dict_word,
-                definition_plain = definition_plain,
-                definition_html = definition_html,
-                synonyms = synonyms,
-            ))
+    # NOTE: More than 4 threads don't improve performance.
+    #
+    # n = psutil.cpu_count()-4
+    # if n > 0:
+    #     processes = n
+    # else:
+    #     processes = 1
 
-    return words
+    pool = multiprocessing.Pool(processes = 4)
+
+    for segment in dict_segments:
+        r = pool.apply_async(
+            _parse_word,
+            (segment, types, syn_entries),
+            callback = _word_done,
+        )
+
+        results.append(r)
+
+    for r in results:
+        d = r.get()
+        dict_entries.append(d['dict_entry'])
+
+    pool.close()
+
+    logger.info(f"parse_dict() {ifo['bookname']} finished")
+
+    return dict_entries
 
 def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
     """Parse a .syn file with synonyms.
@@ -350,6 +484,7 @@ def parse_syn(paths: StarDictPaths) -> Optional[SynEntries]:
     or more items may have the same "synonym_word" with different
     original_word_index.
     """
+    logger.info("=== parse_syn() ===")
 
     if paths['syn_path'] is None:
         # Syn file is optional

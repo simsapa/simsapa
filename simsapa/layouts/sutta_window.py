@@ -2,17 +2,17 @@ from typing import List, Optional
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from ..app.types import AppData, USutta
+from ..app.types import AppData, AppWindowInterface, USutta
 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-class SuttaWindow(QMainWindow):
+class SuttaWindow(AppWindowInterface):
     def __init__(self, app_data: AppData, sutta_uid: str, parent=None) -> None:
         super().__init__(parent)
         logger.info("SuttaWindow()")

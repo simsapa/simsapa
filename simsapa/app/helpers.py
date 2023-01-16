@@ -1,36 +1,33 @@
-from importlib import metadata
 from pathlib import Path
 import shutil
-from typing import List, Optional, Tuple, TypedDict
+from typing import Dict, List, Optional, TypedDict
+import html
+from bs4 import BeautifulSoup
+import json
 import requests
 import feedparser
 import semver
-import os
 import sys
 import re
-import bleach
 
-from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
-from sqlalchemy.engine.base import Connection
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm.session import Session
-from sqlalchemy_utils import database_exists, create_database
-
-from alembic import command
-from alembic.config import Config
-from alembic.script import ScriptDirectory
-from alembic.runtime.migration import MigrationContext
 import tomlkit
 
 from PyQt6.QtWidgets import QMainWindow, QMessageBox
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
-from .db import appdata_models as Am
-from .db import userdata_models as Um
+from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
+from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, GRAPHS_DIR, SIMSAPA_DIR, DbSchemaName, logger
-from simsapa import ALEMBIC_INI, ALEMBIC_DIR, SIMSAPA_PACKAGE_DIR
+from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
+
+
+class SuttaRange(TypedDict):
+    # sn30.7-16
+    group: str # sn30
+    start: Optional[int] # 7
+    end: Optional[int] # 16
+
 
 def create_app_dirs():
     if not SIMSAPA_DIR.exists():
@@ -41,6 +38,9 @@ def create_app_dirs():
 
     if not GRAPHS_DIR.exists():
         GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not COURSES_DIR.exists():
+        COURSES_DIR.mkdir(parents=True, exist_ok=True)
 
 def ensure_empty_graphs_cache():
     if GRAPHS_DIR.exists():
@@ -93,10 +93,10 @@ def to_version(ver: str) -> Version:
 def get_app_dev_version() -> Optional[str]:
 
     p = SIMSAPA_PACKAGE_DIR.joinpath('..').joinpath('pyproject.toml')
-    if not p.exists():
+    if not p.exists(): # type: ignore
         return None
 
-    with open(p) as pyproject:
+    with open(p) as pyproject: # type: ignore
         s = pyproject.read()
 
     try:
@@ -116,7 +116,7 @@ def get_app_version() -> Optional[str]:
         return ver
 
     # If not dev, return installed version
-    ver = metadata.version('simsapa')
+    ver = SIMSAPA_APP_VERSION
     if len(ver) == 0:
         return None
 
@@ -127,13 +127,25 @@ def get_app_version() -> Optional[str]:
     return ver
 
 def get_db_version() -> Optional[str]:
-    # TODO insert version to db when generating, and retreive here
-    # return a fixed value for now
-    ver = "v0.1.8-alpha.1"
+    _, _, db_session = get_db_engine_connection_session()
+
+    res = db_session \
+        .query(Am.AppSetting.value) \
+        .filter(Am.AppSetting.key == 'db_version') \
+        .first()
+
+    db_session.close()
+
+    if res is None:
+        # An old version number before db_version was stored.
+        ver = "v0.1.8-alpha.1"
+    else:
+        ver = str(res[0])
 
     # 'v' prefix is invalid semver string
     # v0.1.7-alpha.1 -> 0.1.7-alpha.1
-    # ver = re.sub(r'^v', '', ver)
+    ver = re.sub(r'^v', '', ver)
+
     return ver
 
 def get_sys_version() -> str:
@@ -315,25 +327,193 @@ def get_db_update_info() -> Optional[UpdateInfo]:
         logger.error(e)
         return None
 
-def compactPlainText(text: str) -> str:
+
+def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
+    # logger.info(f"sutta_range_from_ref(): {ref}")
+
+    """
+    sn30.7-16/pli/ms -> SuttaRange(group: 'sn30', start: 7, end: 16)
+    sn30.1/pli/ms -> SuttaRange(group: 'sn30', start: 1, end: 1)
+    dn1-5/bodhi/en -> SuttaRange(group: 'dn', start: 1, end: 5)
+    dn12/bodhi/en -> SuttaRange(group: 'dn', start: 12, end: 12)
+    dn2-a -> -> SuttaRange(group: 'dn-a', start: 2, end: 2)
+    pli-tv-pvr10
+    """
+
+    """
+    Problematic:
+
+    ---
+    _id: text_extra_info/21419
+    uid: sn22.57_a
+    acronym: SN 22.57(*) + AN 2.19(*)
+    volpage: PTS SN iii 61–63 + AN i 58
+    ---
+    """
+
+    # logger.info(ref)
+
+    if '/' in ref:
+        ref = ref.split('/')[0]
+
+    ref = ref.replace('--', '-')
+
+    # Atthakata
+    if ref.endswith('-a'):
+        # dn2-a -> dn-a2
+        ref = re.sub(r'([a-z-]+)([0-9-]+)-a', r'\1-a\2', ref)
+
+    if not re.search('[0-9]', ref):
+        return SuttaRange(
+            group = ref,
+            start = None,
+            end = None,
+        )
+
+    if '.' in ref:
+        a = ref.split('.')
+        group = a[0]
+        numeric = a[1]
+
+    else:
+        m = re.match(r'([a-z-]+)([0-9-]+)', ref)
+        if not m:
+            logger.warn(f"Cannot determine range for {ref}")
+            return None
+
+        group = m.group(1)
+        numeric = m.group(2)
+
+    try:
+        if '-' in numeric:
+            a = numeric.split('-')
+            start = int(a[0])
+            end = int(a[1])
+        else:
+            start = int(numeric)
+            end = start
+    except Exception as e:
+        logger.warn(f"Cannot determine range for {ref}: {e}")
+        return None
+
+    res = SuttaRange(
+        group = group,
+        start = start,
+        end = end,
+    )
+
+    # logger.info(res)
+
+    return res
+
+
+def normalize_sutta_ref(ref: str) -> str:
+    ref = ref.lower()
+    ref = re.sub(r'ud *(\d)', r'uda \1', ref)
+    ref = re.sub(r'khp *(\d)', r'kp \1', ref)
+    ref = re.sub(r'th *(\d)', r'thag \1', ref)
+
+    ref = re.sub(r'\.([ivx]+)\.', r' \1 ', ref)
+    ref = re.sub(r'^d ', 'dn ', ref)
+    ref = re.sub(r'^m ', 'mn ', ref)
+    ref = re.sub(r'^s ', 'sn ', ref)
+    ref = re.sub(r'^a ', 'an ', ref)
+
+    return ref.strip()
+
+
+def normalize_sutta_uid(uid: str) -> str:
+    uid = normalize_sutta_ref(uid).replace(' ', '')
+    return uid
+
+
+def consistent_nasal_m(text: Optional[str] = None) -> str:
+    if text is None:
+        return ''
+
+    # Use only ṁ, both in content and query strings.
+    #
+    # CST4 uses ṁ
+    # SuttaCentral MS uses ṁ
+    # Aj Thanissaro's BMC uses ṁ
+    # Uncommon Wisdom uses ṁ
+    #
+    # PTS books use ṃ
+    # Digital Pali Reader MS uses ṃ
+    # Bodhirasa DPD uses ṃ
+    # Bhikkhu Bodhi uses ṃ
+    # Forest Sangha Pubs uses ṃ
+    # Buddhadhamma uses ṃ
+
+    return text.replace('ṃ', 'ṁ')
+
+
+def expand_quote_to_pattern_str(text: str) -> str:
+    s = text
+    # Normalize quote marks to '
+    s = s.replace('"', "'");
+    # Quote mark should match all types, and may not be present
+    s = s.replace("'", r'[\'"“”‘’]*');
+    # Normalize spaces
+    s = re.sub(r' +', " ", s)
+    # Common spelling variations
+    s = re.sub(r'[iī]', '[iī]', s)
+    # Punctuation may not be present
+    # Space may have punctuation in the text, but not in the link quote param
+    s = re.sub(r'[ \.,;\?\!…—-]', r'[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s);
+
+    return s
+
+
+def expand_quote_to_pattern(text: str) -> re.Pattern:
+    return re.compile(expand_quote_to_pattern_str(text))
+
+
+def remove_punct(text: Optional[str] = None) -> str:
+    if text is None:
+        return ''
+
+    # Replace punctuation marks with space. Removing them can join lines or words.
+    text = re.sub(r'[\.,;\?\!“”‘’…—-]', '', text)
+
+    # Newline and tab to space
+    text = text.replace("\n", " ")
+    text = text.replace("\t", " ")
+
+    # Remove quote marks.
+    #
+    # 'ti is sometimes not punctuated with an apostrophe. Remove the ' both from
+    # plain text content and from query strings.
+    #
+    # Sometimes people add quote marks in compounds: manopubbaṅ'gamā dhammā
+
+    text = text.replace("'", '')
+    text = text.replace('"', '')
+
+    # Normalize double spaces to single
+    text = re.sub(r'  +', ' ', text)
+
+    return text
+
+
+def compact_plain_text(text: str) -> str:
     # NOTE: Don't remove new lines here, useful for matching beginning of lines when setting snippets.
     # Replace multiple spaces to one.
     text = re.sub(r"  +", ' ', text)
     text = text.replace('{', '').replace('}', '')
 
+    # Make lowercase and remove punctuation to help matching query strings.
+    text = text.lower()
+    text = remove_punct(text)
+    text = consistent_nasal_m(text)
+    text = text.strip()
+
     return text
 
-def compactRichText(text: str) -> str:
+def compact_rich_text(text: str) -> str:
     # All on one line
     text = text.replace("\n", " ")
-    # Some CSS is not removed by bleach when syntax is malformed
-    text = re.sub(r'<style.*</style>', '', text)
-    # No JS here
-    text = re.sub(r'<script.*</script>', '', text)
-    # escaped html tags
-    text = re.sub(r'&lt;[^&]+&gt;', '', text)
-    text = text.replace('&nbsp;', ' ')
-    text = text.replace('&amp;', '&')
+
     # remove SuttaCentral ref links
     text = re.sub(r"<a class=.ref\b[^>]+>[^<]*</a>", '', text)
 
@@ -358,87 +538,34 @@ def compactRichText(text: str) -> str:
     text = text.replace('</', ' </')
     text = text.replace('>', '> ')
 
-    text = bleach.clean(text, tags=[], styles=[], strip=True)
-    text = compactPlainText(text)
+    text = strip_html(text)
+
+    text = compact_plain_text(text)
 
     return text
 
-def find_or_create_db(db_path: Path, schema_name: str):
-    # Create an in-memory database
-    engine = create_engine("sqlite+pysqlite://", echo=False)
 
-    if isinstance(engine, Engine):
-        db_conn = engine.connect()
-        db_url = f"sqlite+pysqlite:///{db_path}"
+def strip_html(text: str) -> str:
+    text = html.unescape(text)
 
-        alembic_cfg = Config(f"{ALEMBIC_INI}")
-        alembic_cfg.set_main_option('script_location', f"{ALEMBIC_DIR}")
-        alembic_cfg.set_main_option('sqlalchemy.url', db_url)
+    re_thumbs = re.compile("["
+        u"\U0001f44d" # thumb up
+        u"\U0001f44e" # thumb down
+    "]+", flags=re.UNICODE)
 
-        if not database_exists(db_url):
-            logger.info(f"Cannot find {db_url}, creating it")
-            # On a new install, create database and all tables with the recent schema.
-            create_database(db_url)
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS '{schema_name}';")
-            if schema_name == DbSchemaName.UserData.value:
-                Um.metadata.create_all(bind=engine)
-            else:
-                Am.metadata.create_all(bind=engine)
+    text = re_thumbs.sub(r'', text)
 
-            # generate the Alembic version table, "stamping" it with the most recent rev:
-            command.stamp(alembic_cfg, "head")
+    text = re.sub(r'<!doctype html>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<head(.*?)</head>', '', text)
+    text = re.sub(r'<style(.*?)</style>', '', text)
+    text = re.sub(r'<script(.*?)</script>', '', text)
+    text = re.sub(r'<!--(.*?)-->', '', text)
+    text = re.sub(r'</*\w[^>]*>', '', text)
 
-        elif not is_db_revision_at_head(alembic_cfg, engine):
-            logger.info(f"{db_url} is stale, running migrations")
+    text = re.sub(r'  +', ' ', text)
 
-            if db_conn is not None:
-                alembic_cfg.attributes['connection'] = db_conn
-                try:
-                    command.upgrade(alembic_cfg, "head")
-                except Exception as e:
-                    logger.error("Failed to run migrations: %s" % e)
-                    exit(1)
-    else:
-        logger.error("Can't create in-memory database")
+    return text
 
-def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Engine, Connection, Session]:
-    app_db_path = APP_DB_PATH
-    user_db_path = USER_DB_PATH
-
-    if not os.path.isfile(app_db_path):
-        logger.error(f"Database file doesn't exist: {app_db_path}")
-        exit(1)
-
-    if include_userdata and not os.path.isfile(user_db_path):
-        logger.error(f"Database file doesn't exist: {user_db_path}")
-        exit(1)
-
-    try:
-        # Create an in-memory database
-        db_eng = create_engine("sqlite+pysqlite://", echo=False)
-
-        db_conn = db_eng.connect()
-
-        # Attach appdata and userdata
-        db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
-        if include_userdata:
-            db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
-
-        Session = sessionmaker(db_eng)
-        Session.configure(bind=db_eng)
-        db_session = Session()
-
-    except Exception as e:
-        logger.error(f"Can't connect to database: {e}")
-        exit(1)
-
-    return (db_eng, db_conn, db_session)
-
-def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
-    directory = ScriptDirectory.from_config(alembic_cfg)
-    with e.begin() as db_conn:
-        context = MigrationContext.configure(db_conn)
-        return set(context.get_current_heads()) == set(directory.get_heads())
 
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
@@ -474,3 +601,196 @@ def make_active_window(view: QMainWindow):
     view.show() # bring window to top on OSX
     view.raise_() # bring window from minimized state on OSX
     view.activateWindow() # bring window to front/unminimize on Windows
+
+def html_get_sutta_page_body(html_page: str):
+    if '<html' in html_page or '<HTML' in html_page:
+        soup = BeautifulSoup(html_page, 'html.parser')
+        h = soup.find(name = 'body')
+        if h is None:
+            logger.error("HTML document is missing a <body>")
+            body = html_page
+        else:
+            body = h.decode_contents() # type: ignore
+    else:
+        body = html_page
+
+    return body
+
+
+def bilara_html_post_process(body: str) -> str:
+    # add .noindex to <footer> in suttacentral
+
+    # soup = BeautifulSoup(body, 'html.parser')
+    # h = soup.find(name = 'footer')
+    # if h is not None:
+    #     h['class'] = h.get('class', []) + ['noindex'] # type: ignore
+    #
+    # html = str(soup)
+
+    html = body.replace('<footer>', '<footer class="noindex">')
+
+    return html
+
+def bilara_text_to_segments(
+        content: str,
+        tmpl: Optional[str],
+        variant: Optional[str] = None,
+        comment: Optional[str] = None,
+        show_variant_readings: bool = False) -> Dict[str, str]:
+
+    content_json = json.loads(content)
+    if tmpl:
+        tmpl_json = json.loads(tmpl)
+    else:
+        tmpl_json = None
+
+    if variant:
+        variant_json = json.loads(variant)
+    else:
+        variant_json = None
+
+    if comment:
+        comment_json = json.loads(comment)
+    else:
+        comment_json = None
+
+    for i in content_json.keys():
+        if variant_json:
+            if i in variant_json.keys():
+                txt = variant_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                classes = ['variant',]
+
+                if not show_variant_readings:
+                    classes.append('hide')
+
+                s = """
+                <span class='variant-wrap'>
+                  <span class='mark'>⧫</span>
+                  <span class='%s'>(%s)</span>
+                </span>
+                """ % (' '.join(classes), txt)
+
+                content_json[i] += s
+
+        if comment_json:
+            if i in comment_json.keys():
+                txt = comment_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                s = """
+                <span class='comment-wrap'>
+                  <span class='mark'>✱</span>
+                  <span class='comment hide'>(%s)</span>
+                </span>
+                """ % txt
+
+                content_json[i] += s
+
+        if tmpl_json and i in tmpl_json.keys():
+            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+
+    return content_json
+
+def bilara_content_json_to_html(content_json: Dict[str, str]) -> str:
+    page = "\n\n".join(content_json.values())
+
+    body = html_get_sutta_page_body(page)
+    body = bilara_html_post_process(body)
+
+    content_html = '<div class="suttacentral bilara-text">' + body + '</div>'
+
+    return content_html
+
+def bilara_line_by_line_html(translated_json: Dict[str, str],
+                             pali_json: Dict[str, str],
+                             tmpl_json: Dict[str, str]) -> str:
+
+    content_json: Dict[str, str] = dict()
+
+    for i in translated_json.keys():
+        translated_segment = translated_json[i]
+        if i in pali_json:
+            pali_segment = pali_json[i]
+        else:
+            pali_segment = ""
+
+        content_json[i] = """
+        <span class='segment'>
+          <span class='translated'>%s</span>
+          <span class='pali'>%s</span>
+        </span>
+        """ % (translated_segment, pali_segment)
+
+        if tmpl_json and i in tmpl_json.keys():
+            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+
+    return bilara_content_json_to_html(content_json)
+
+def bilara_text_to_html(
+        content: str,
+        tmpl: str,
+        variant: Optional[str] = None,
+        comment: Optional[str] = None,
+        show_variant_readings: bool = False) -> str:
+
+    content_json = bilara_text_to_segments(
+        content,
+        tmpl,
+        variant,
+        comment,
+        show_variant_readings,
+    )
+
+    return bilara_content_json_to_html(content_json)
+
+
+def dhp_verse_to_chapter(verse_num: int) -> Optional[str]:
+    for lim in DHP_CHAPTERS_TO_RANGE.values():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return f"dhp{a}-{b}"
+
+    return None
+
+
+def thag_verse_to_uid(verse_num: int) -> Optional[str]:
+    # v1 - v120 are thag1.x
+    if verse_num <= 120:
+        return f"thag1.{verse_num}"
+
+    for uid, lim in THAG_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None
+
+
+def thig_verse_to_uid(verse_num: int) -> Optional[str]:
+    # v1 - v18 are thig1.x
+    if verse_num <= 18:
+        return f"thig1.{verse_num}"
+
+    for uid, lim in THIG_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None
+
+
+def snp_verse_to_uid(verse_num: int) -> Optional[str]:
+    for uid, lim in SNP_UID_TO_RANGE.items():
+        a = lim[0]
+        b = lim[1]
+        if verse_num >= a and verse_num <= b:
+            return uid
+
+    return None

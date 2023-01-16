@@ -12,40 +12,45 @@ class ActionsManager:
         self.api_url = f'http://localhost:{api_port}'
 
     def show_word_scan_popup(self):
-        msg = ApiMessage(action = ApiAction.show_word_scan_popup, data = '')
+        msg = ApiMessage(queue_id = 'all', action = ApiAction.show_word_scan_popup, data = '')
         self._send_to_all(msg)
 
     def lookup_clipboard_in_suttas(self):
-        msg = ApiMessage(action = ApiAction.lookup_clipboard_in_suttas, data = '')
+        msg = ApiMessage(queue_id = 'all', action = ApiAction.lookup_clipboard_in_suttas, data = '')
         self._send_to_all(msg)
 
     def lookup_clipboard_in_dictionary(self):
-        msg = ApiMessage(action = ApiAction.lookup_clipboard_in_dictionary, data = '')
+        msg = ApiMessage(queue_id = 'all', action = ApiAction.lookup_clipboard_in_dictionary, data = '')
         self._send_to_all(msg)
 
     def lookup_in_suttas(self, query: str):
-        msg = ApiMessage(action = ApiAction.lookup_in_suttas,
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.lookup_in_suttas,
                          data = query)
         self._send_to_all(msg)
 
     def lookup_in_dictionary(self, query: str):
-        msg = ApiMessage(action = ApiAction.lookup_in_dictionary,
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.lookup_in_dictionary,
                          data = query)
         self._send_to_all(msg)
 
     def open_in_study_window(self, side: str, uid: str):
         data = {'side': side, 'uid': uid}
-        msg = ApiMessage(action = ApiAction.open_in_study_window,
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.open_in_study_window,
                          data = json.dumps(obj=data))
         self._send_to_all(msg)
 
     def open_sutta_new(self, uid: str):
-        msg = ApiMessage(action = ApiAction.open_sutta_new,
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.open_sutta_new,
                          data = uid)
         self._send_to_all(msg)
 
     def open_words_new(self, schemas_ids: List[tuple[str, int]]):
-        msg = ApiMessage(action = ApiAction.open_words_new,
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.open_words_new,
                          data = json.dumps(schemas_ids))
         self._send_to_all(msg)
 

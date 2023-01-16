@@ -1,7 +1,22 @@
 .suttacentral
+  span.segment
+    span.translated
+      display: block
+      padding-top: 0.5rem
+    span.pali
+      display: block
+      padding-top: 0.5rem
+      font-family: "Source Sans 3 SSP"
+      font-size: 0.8rem
+
+.suttacentral
   header
     text-align: center
     ul
+      margin-block-start: 1em
+      margin-block-end: 1em
+      padding-inline-start: 0pt
+
       li
         font-family: "Source Sans 3 SSP"
         font-weight: 400
@@ -12,12 +27,35 @@
         word-spacing: 1.5pt
         padding-top: 0.3rem
 
+      li .segment .pali,
+      li .segment .translated
+        font-family: "Source Sans 3 SSP"
+        font-weight: 400
+        list-style-type: none
+        text-transform: uppercase
+        font-size: 0.65rem
+        letter-spacing: 1pt
+        word-spacing: 1.5pt
+        padding-top: 0.15rem
+
     h1
+      font-family: "Abhaya Libre SSP"
+      font-weight: 800
       font-size: 1.4rem
       font-weight: bold
       word-spacing: 2pt
       padding-top: 0.8rem
       padding-bottom: 0.8rem
+
+    h1 .segment .pali,
+    h1 .segment .translated
+      font-family: "Abhaya Libre SSP"
+      font-weight: 800
+      font-size: 1.4rem
+      font-weight: bold
+      word-spacing: 2pt
+      padding-top: 0.2rem
+      padding-bottom: 0.2rem
 
   h2
     font-size: 1.1rem
@@ -64,3 +102,16 @@
       font-style: italic
     span.publication-date
       font-style: italic
+
+  .variant-wrap, .comment-wrap
+    .mark
+      font-size: 0.6rem
+      position: relative
+      top: -0.1rem
+      padding: 3px
+
+      &:hover
+        border-bottom: 2px solid black
+
+  .variant, .comment
+    font-size: 0.8rem

@@ -9,27 +9,25 @@ from typing import Any, List, Optional, Tuple
 
 from PyQt6.QtCore import QUrl, QTimer
 from PyQt6.QtGui import QCloseEvent, QColor, QAction
-from PyQt6.QtWidgets import (QLineEdit, QMainWindow, QListWidgetItem,
+from PyQt6.QtWidgets import (QLineEdit, QListWidgetItem,
                              QHBoxLayout, QPushButton, QSizePolicy, QMessageBox,
-                             QComboBox, QSplitter, QVBoxLayout, QWidget)
+                             QComboBox, QSplitter, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import LOADING_HTML, PACKAGE_ASSETS_DIR, logger, ApiAction, ApiMessage
+from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.helpers import compactRichText
+from simsapa.app.helpers import compact_rich_text
 from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.db.search import SearchResult
-from ..app.types import AppData, USutta, UDictWord, UDocument
+from ..app.types import AppData, AppWindowInterface, USutta, UDictWord, UDocument, default_search_result_sizes
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget
 
-CLICK_GENERATE_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/click_generate.html'), 'r').read()
-
-class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
+class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
 
     splitter: QSplitter
     tabs_layout: QVBoxLayout
@@ -94,7 +92,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 pass
 
     def _ui_setup(self):
-        self._setup_pali_buttons()
+        # self._setup_pali_buttons() # TODO: reimplement as hover window
 
         self.setup_links_controls()
         self.setup_content_graph()
@@ -121,7 +119,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self.min_links_input.setMinimum(1)
         self.min_links_input.setValue(3)
 
-        def _show_graph(arg: Optional[Any] = None):
+        def _show_graph(_: Optional[Any] = None):
             # ignore the argument value, will read params somewhere else
             self.show_network_graph()
 
@@ -171,7 +169,11 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
 
         graph_gen_timestamp = time.time()
         self._last_graph_gen_timestamp = graph_gen_timestamp
-        graph_gen = GraphGenerator(graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
+
+        if self._app_data.api_url is None:
+            return
+
+        graph_gen = GraphGenerator(self._app_data.api_url, graph_gen_timestamp, None, None, self.queue_id, self.graph_path, self.messages_url, labels, 0, min_links, width, height)
 
         graph_gen.signals.result.connect(self._graph_finished)
 
@@ -217,15 +219,17 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         self._results = self._results[0:100]
 
         def _compact_snippet(x: SearchResult) -> SearchResult:
-            x['snippet'] = compactRichText(x['snippet'])
+            x['snippet'] = compact_rich_text(x['snippet'])
             return x
 
         self._results = list(map(_compact_snippet, self._results))
 
         colors = ["#ffffff", "#efefef"]
 
+        sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
+
         for idx, x in enumerate(self._results):
-            w = SearchItemWidget()
+            w = SearchItemWidget(sizes)
             w.setFromResult(x)
 
             item = QListWidgetItem(self.results_list)
@@ -273,6 +277,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.suttas",
                 uid=str(x.uid),
+                source_uid=str(x.source_uid),
                 title=title,
                 ref=str(x.sutta_ref),
                 author=None,
@@ -300,7 +305,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
         def to_search_result(x: UDictWord):
             snippet = ''
             if x.definition_html:
-                snippet = compactRichText(str(x.definition_html))
+                snippet = compact_rich_text(str(x.definition_html))
                 snippet = snippet[0:400]
             elif x.definition_plain:
                 snippet = x.definition_plain[0:400].strip()
@@ -310,6 +315,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.dict_words",
                 uid=str(x.uid),
+                source_uid=str(x.source_uid),
                 title=str(x.word),
                 ref=None,
                 author=None,
@@ -348,6 +354,7 @@ class LinksBrowserWindow(QMainWindow, Ui_LinksBrowserWindow):
                 schema_name=x.metadata.schema,
                 table_name=f"{x.metadata.schema}.documents",
                 uid=None,
+                source_uid=None,
                 title=str(title).strip(),
                 ref=None,
                 author=None,

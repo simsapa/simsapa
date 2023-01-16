@@ -1,17 +1,26 @@
+from datetime import datetime
 from functools import partial
 import math
 from typing import List, Optional
-from PyQt6.QtCore import QPoint, QUrl, Qt
-from PyQt6.QtGui import QClipboard, QCloseEvent, QCursor, QEnterEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6 import QtGui
+from PyQt6 import QtCore
+from PyQt6 import QtWidgets
+from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import DARK_READING_BACKGROUND_COLOR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger
-from simsapa.app.db.search import SearchQuery, SearchResult, dict_word_hit_to_search_result
-from simsapa.app.types import AppData, UDictWord, WindowPosSize
-from simsapa.layouts.dictionary_queries import DictionaryQueries
-from simsapa.layouts.reader_web import ReaderWebEnginePage
+from ..app.db import appdata_models as Am
+from ..app.db import userdata_models as Um
+
+from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
+from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
+from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
+from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
+from .search_query_worker import SearchQueryWorker
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
@@ -23,10 +32,20 @@ class WordScanPopupState(QWidget, HasFulltextList):
     qwe: QWebEngineView
     _app_data: AppData
     _layout: QVBoxLayout
-    _results: List[SearchResult]
     _clipboard: Optional[QClipboard]
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
+    _search_timer = QTimer()
+    _last_query_time = datetime.now()
+    search_query_worker: Optional[SearchQueryWorker] = None
+    exact_query_worker: Optional[ExactQueryWorker] = None
+
+    show_sutta_by_url = pyqtSignal(QUrl)
+    show_words_by_url = pyqtSignal(QUrl)
+
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
+    hide_preview = pyqtSignal()
 
     def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
         super().__init__()
@@ -35,15 +54,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.features: List[str] = []
         self._app_data: AppData = app_data
-        self._results: List[SearchResult] = []
         self._current_words = []
 
         self.page_len = 20
-        self.search_query = SearchQuery(
-            self._app_data.search_indexed.dict_words_index,
-            self.page_len,
-            dict_word_hit_to_search_result,
-        )
+
+        self.thread_pool = QThreadPool()
 
         self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
@@ -84,6 +99,23 @@ class WordScanPopupState(QWidget, HasFulltextList):
         search_box.addWidget(self.search_input)
         search_box.addWidget(self.search_button)
 
+        self.search_mode_dropdown = QComboBox()
+        items = DictionarySearchModeNameToType.keys()
+        self.search_mode_dropdown.addItems(items)
+        self.search_mode_dropdown.setFixedHeight(35)
+
+        mode = self._app_data.app_settings.get('word_scan_search_mode', SearchMode.FulltextMatch)
+        values = list(map(lambda x: x[1], DictionarySearchModeNameToType.items()))
+        idx = values.index(mode)
+        self.search_mode_dropdown.setCurrentIndex(idx)
+
+        search_box.addWidget(self.search_mode_dropdown)
+
+        self.search_extras = QtWidgets.QHBoxLayout()
+        search_box.addLayout(self.search_extras)
+
+        self._setup_dict_filter_dropdown()
+
         self.wrap_layout.addLayout(search_box)
 
         if self.focus_input:
@@ -91,15 +123,99 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._setup_search_tabs()
 
+    def _get_filter_labels(self):
+        res = []
+
+        r = self._app_data.db_session.query(Am.Dictionary.label.distinct()).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Dictionary.label.distinct()).all()
+        res.extend(r)
+
+        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+
+        return labels
+
+    def _setup_dict_filter_dropdown(self):
+        cmb = QComboBox()
+        items = ["Dictionaries",]
+        items.extend(self._get_filter_labels())
+        idx = self._app_data.app_settings.get('word_scan_dict_filter_idx', 0)
+
+        cmb.addItems(items)
+        cmb.setFixedHeight(35)
+        cmb.setCurrentIndex(idx)
+        self.dict_filter_dropdown = cmb
+        self.search_extras.addWidget(self.dict_filter_dropdown)
+
+    def _init_search_query_worker(self, query: str = ""):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+        self._last_query_time = datetime.now()
+
+        idx = self.search_mode_dropdown.currentIndex()
+        s = self.search_mode_dropdown.itemText(idx)
+        mode = DictionarySearchModeNameToType[s]
+
+        self.search_query_worker = SearchQueryWorker(
+            self._app_data.search_indexed.dict_words_index,
+            self.page_len,
+            mode,
+            dict_word_hit_to_search_result)
+
+        self.search_query_worker.set_query(query,
+                                           self._last_query_time,
+                                           disabled_labels,
+                                           None,
+                                           only_source)
+
+        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+
     def _get_css_extra(self) -> str:
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }} " + CSS_EXTRA_BODY
 
         return css_extra
 
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.show_words_by_url.emit(url)
+
+    def _show_sutta_by_url(self, url: QUrl):
+        if url.host() != QueryType.suttas:
+            return
+
+        self.show_sutta_by_url.emit(url)
+
+    def _link_mouseover(self, hover_data: LinkHoverData):
+        self.link_mouseover.emit(hover_data)
+
+    def _link_mouseleave(self, href: str):
+        self.link_mouseleave.emit(href)
+
+    def _emit_hide_preview(self):
+        self.hide_preview.emit()
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
-        self.qwe.setPage(ReaderWebEnginePage(self))
+
+        page = ReaderWebEnginePage(self)
+
+        # FIXME preview appears over the link
+        # page.helper.mouseover.connect(partial(self._link_mouseover))
+        # page.helper.mouseleave.connect(partial(self._link_mouseleave))
+
+        page.helper.hide_preview.connect(partial(self._emit_hide_preview))
+
+        self.qwe.setPage(page)
 
         self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -114,6 +230,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.qwe.show()
         self.content_layout.addWidget(self.qwe, 100)
+
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
     def _set_qwe_html(self, html: str):
         self._current_html = html
@@ -147,6 +268,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._setup_words_tab()
         self._setup_fulltext_tab()
+        self.fulltext_results_tab_idx = 1
 
     def _setup_words_tab(self):
         self.tab_word = QWidget()
@@ -162,10 +284,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
     def _setup_fulltext_tab(self):
         self.fulltext_tab = QWidget()
-        self.fulltext_tab.setObjectName("Fulltext")
-        self.fulltext_tab.setStyleSheet("QWidget#Fulltext { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.fulltext_tab.setObjectName("Results")
+        self.fulltext_tab.setStyleSheet("QWidget#Results { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self.tabs.addTab(self.fulltext_tab, "Fulltext")
+        self.tabs.addTab(self.fulltext_tab, "Results")
 
         self.fulltext_tab_layout = QVBoxLayout(self.fulltext_tab)
         self.fulltext_tab_inner_layout = QVBoxLayout()
@@ -197,6 +319,14 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.fulltext_label = QLabel(self.fulltext_tab)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
 
+        self.fulltext_loading_bar = QLabel(self.fulltext_tab)
+        self.fulltext_loading_bar.setMinimumSize(QtCore.QSize(0, 5))
+        self.fulltext_loading_bar.setMaximumSize(QtCore.QSize(16777215, 5))
+        self.fulltext_loading_bar.setText("")
+        self.fulltext_loading_bar.setObjectName("fulltext_loading_bar")
+
+        self.fulltext_tab_inner_layout.addWidget(self.fulltext_loading_bar)
+
         self.fulltext_list = QListWidget(self.fulltext_tab)
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
@@ -207,6 +337,8 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.search_input.setText(s)
 
     def _show_word(self, word: UDictWord):
+        self.tabs.setTabText(0, str(word.uid))
+
         self._current_words = [word]
         word_html = self.queries.get_word_html(word)
 
@@ -218,7 +350,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._set_qwe_html(page_html)
 
-    def _show_word_by_bword_url(self, url: QUrl):
+    def _show_word_by_url(self, url: QUrl):
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
         query = url.path().replace('/', '')
@@ -232,10 +364,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(results) > 0:
             self._show_word(results[0])
 
-    def _word_search_query(self, query: str) -> List[SearchResult]:
-        results = self.search_query.new_query(query, self._app_data.app_settings['disabled_dict_labels'])
-        hits = self.search_query.hits
-
+    def _update_fulltext_page_btn(self, hits: int):
         if hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
@@ -255,7 +384,40 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.fulltext_first_page_btn.setEnabled(True)
             self.fulltext_last_page_btn.setEnabled(True)
 
-        return results
+    def _search_query_finished(self):
+        logger.info("_search_query_finished()")
+        self.stop_loading_animation()
+
+        if self.search_query_worker is None:
+            return
+
+        if self._last_query_time != self.search_query_worker.query_started:
+            return
+
+        icon_search = QtGui.QIcon()
+        icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.search_button.setIcon(icon_search)
+
+        if self.query_hits() > 0:
+            self.tabs.setTabText(1, f"Results ({self.query_hits()})")
+        else:
+            self.tabs.setTabText(1, "Results")
+
+        self.render_fulltext_page()
+
+        results = self.search_query_worker.results_page(0)
+
+        if self.query_hits() == 1 and results[0]['uid'] is not None:
+            self._show_word_by_uid(results[0]['uid'])
+
+        self._update_fulltext_page_btn(self.query_hits())
+
+    def _start_query_worker(self, query: str):
+        self.start_loading_animation()
+        self._init_search_query_worker(query)
+        if self.search_query_worker is not None:
+            self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -263,17 +425,16 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(query) < min_length:
             return
 
-        self._results = self._word_search_query(query)
+        idx = self.dict_filter_dropdown.currentIndex()
+        self._app_data.app_settings['word_scan_dict_filter_idx'] = idx
+        self._app_data._save_app_settings()
 
-        if self.search_query.hits > 0:
-            self.tabs.setTabText(1, f"Fulltext ({self.search_query.hits})")
-        else:
-            self.tabs.setTabText(1, "Fulltext")
+        # Not aborting, show the user that the app started processsing
+        icon_processing = QtGui.QIcon()
+        icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self.search_button.setIcon(icon_processing)
 
-        self.render_fulltext_page()
-
-        if self.search_query.hits == 1 and self._results[0]['uid'] is not None:
-            self._show_word_by_uid(self._results[0]['uid'])
+        self._start_query_worker(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -288,7 +449,49 @@ class WordScanPopupState(QWidget, HasFulltextList):
         for i in a:
             self._autocomplete_model.appendRow(QStandardItem(i))
 
-        self._autocomplete_model.sort(0)
+        # NOTE: completion cache is already sorted.
+        # self._autocomplete_model.sort(0)
+
+    def _exact_query_finished(self, q_res: ExactQueryResult):
+        logger.info("_exact_query_finished()")
+
+        res: List[UDictWord] = []
+
+        r = self._app_data.db_session \
+            .query(Am.DictWord) \
+            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .all()
+        res.extend(r)
+
+        query = self.search_input.text()
+        self.tabs.setTabText(0, query)
+
+        self._render_words(res)
+
+    def _init_exact_query_worker(self, query: str):
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
+
+        self.exact_query_worker = ExactQueryWorker(query, only_source, disabled_labels)
+
+        self.exact_query_worker.signals.finished.connect(partial(self._exact_query_finished))
+
+    def _start_exact_query_worker(self, query: str):
+        self._init_exact_query_worker(query)
+        if self.exact_query_worker is not None:
+            self.thread_pool.start(self.exact_query_worker)
 
     def _handle_exact_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -296,14 +499,20 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(query) < min_length:
             return
 
-        res = self.queries.word_exact_matches(query)
-
-        self._render_words(res)
+        self._start_exact_query_worker(query)
 
     def _handle_result_select(self):
+        logger.info("_handle_result_select()")
+
+        if len(self.fulltext_list.selectedItems()) == 0:
+            return
+
+        page_num = self.fulltext_page_input.value() - 1
+        results = self.results_page(page_num)
+
         selected_idx = self.fulltext_list.currentRow()
-        if selected_idx < len(self._results):
-            word = self.queries.dict_word_from_result(self._results[selected_idx])
+        if selected_idx < len(results):
+            word = self.queries.dict_word_from_result(results[selected_idx])
             if word is not None:
                 self._show_word(word)
 
@@ -318,19 +527,62 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self._handle_query(min_length=4)
             self._handle_exact_query(min_length=4)
 
+    def _user_typed(self):
+        if not self._app_data.app_settings.get('search_as_you_type', True):
+            return
+
+        if not self._search_timer.isActive():
+            self._search_timer = QTimer()
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
+            self._search_timer.setSingleShot(True)
+
+        self._search_timer.start(SEARCH_TIMER_SPEED)
+
+    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        if self.search_query_worker is None:
+            return []
+        else:
+            return self.search_query_worker.highlight_results_page(page_num)
+
+    def query_hits(self) -> int:
+        if self.search_query_worker is None:
+            return 0
+        else:
+            return self.search_query_worker.query_hits()
+
+    def results_page(self, page_num: int) -> List[SearchResult]:
+        if self.search_query_worker is None:
+            return []
+        else:
+            return self.search_query_worker.results_page(page_num)
+
+    def _handle_search_mode_changed(self):
+        idx = self.search_mode_dropdown.currentIndex()
+        m = self.search_mode_dropdown.itemText(idx)
+
+        self._app_data.app_settings['word_scan_search_mode'] = DictionarySearchModeNameToType[m]
+        self._app_data._save_app_settings()
+
     def _connect_signals(self):
         if self._clipboard is not None:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._handle_query, min_length=4))
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
 
+        self.search_input.textEdited.connect(partial(self._user_typed))
         self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
 
-        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
-        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        self.dict_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
+
+        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
 class WordScanPopup(QDialog):
     oldPos: QPoint
@@ -346,98 +598,22 @@ class WordScanPopup(QDialog):
 
         self.setWindowTitle("Clipboard Scanning Word Lookup")
         self.setMinimumSize(50, 50)
-        self.setMouseTracking(True)
 
         self._restore_size_pos()
 
         flags = Qt.WindowType.Dialog | \
-            Qt.WindowType.CustomizeWindowHint | \
-            Qt.WindowType.WindowStaysOnTopHint | \
-            Qt.WindowType.FramelessWindowHint | \
-            Qt.WindowType.BypassWindowManagerHint | \
-            Qt.WindowType.X11BypassWindowManagerHint
+            Qt.WindowType.WindowStaysOnTopHint
 
         self.setWindowFlags(Qt.WindowType(flags))
 
         self.setObjectName("WordScanPopup")
-        self.setStyleSheet("#WordScanPopup { background-color: %s; border: 1px solid #ababab; }" % READING_BACKGROUND_COLOR)
+        self.setStyleSheet("#WordScanPopup { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self._resized = False
-        self._left_pressed = False
         self._margin = 8
-        self._cursor = QCursor()
-        self._dragMenuBarOnlyWayToMoveWindowFlag = False
-
-        self.__init_position()
-        self.oldPos = self.pos()
 
         self.focus_input = focus_input
 
-        self._ui_setup()
-        self._connect_signals()
-
         self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
-
-    def _ui_setup(self):
-        top_buttons_box = QHBoxLayout()
-        self.wrap_layout.addLayout(top_buttons_box)
-
-        icon = QIcon()
-        icon.addPixmap(QPixmap(":/close"))
-
-        button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
-
-        self.close_button = QPushButton()
-        self.close_button.setFixedSize(20, 20)
-        self.close_button.setStyleSheet(button_style)
-        self.close_button.setIcon(icon)
-
-        self.close_button.setShortcut(QKeySequence("Ctrl+F6"))
-
-        icon = QIcon()
-        icon.addPixmap(QPixmap(":/drag"))
-
-        self.drag_button = QPushButton()
-        self.drag_button.setCheckable(True)
-        self.drag_button.setFixedSize(20, 20)
-        self.drag_button.setStyleSheet(button_style)
-        self.drag_button.setIcon(icon)
-
-        # FIXME tooltip doesn't activate, show in window content
-        self.drag_button.setToolTip("Move the window: check move button, left-click, hold and drag, uncheck move button.")
-
-        icon = QIcon()
-        icon.addPixmap(QPixmap(":/resize"))
-
-        self.resize_button = QPushButton()
-        self.resize_button.setCheckable(True)
-        self.resize_button.setFixedSize(20, 20)
-        self.resize_button.setStyleSheet(button_style)
-        self.resize_button.setIcon(icon)
-
-        spacer = QSpacerItem(100, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        if IS_MAC:
-            top_buttons_box.addWidget(self.close_button)
-            top_buttons_box.addItem(spacer)
-            top_buttons_box.addWidget(self.resize_button)
-            top_buttons_box.addWidget(self.drag_button)
-        else:
-            top_buttons_box.addWidget(self.drag_button)
-            top_buttons_box.addWidget(self.resize_button)
-            top_buttons_box.addItem(spacer)
-            top_buttons_box.addWidget(self.close_button)
-
-    def _connect_signals(self):
-        self.drag_button.clicked.connect(partial(self._handle_drag_button))
-        self.resize_button.clicked.connect(partial(self._handle_resize_button))
-        self.close_button.clicked.connect(partial(self._handle_close_button))
-
-    def __init_position(self):
-        self.__top = False
-        self.__bottom = False
-        self.__left = False
-        self.__right = False
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
@@ -454,121 +630,8 @@ class WordScanPopup(QDialog):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def mousePressEvent(self, e: QMouseEvent):
-        self.oldPos = e.globalPosition().toPoint()
-        self._left_pressed = (e.button() == Qt.MouseButton.LeftButton)
-        # if e.button() == Qt.MouseButton.LeftButton:
-        #     if self._resized:
-        #         self._resize()
-        #     else:
-        #         if self._dragMenuBarOnlyWayToMoveWindowFlag:
-        #             pass
-        #         else:
-        #             self._move()
-        return super().mousePressEvent(e)
-
-    def mouseReleaseEvent(self, e: QMouseEvent):
-        self._left_pressed = not (e.button() == Qt.MouseButton.LeftButton)
-        return super().mouseReleaseEvent(e)
-
-    def mouseMoveEvent(self, e: QMouseEvent):
-        self.__set_cursor_shape_for_current_point(e.pos())
-
-        is_resizing_cursor_shape = (self._cursor.shape() == Qt.CursorShape.SizeBDiagCursor \
-                                    or self._cursor.shape() == Qt.CursorShape.SizeFDiagCursor \
-                                    or self._cursor.shape() == Qt.CursorShape.SizeHorCursor \
-                                    or self._cursor.shape() == Qt.CursorShape.SizeVerCursor)
-
-        if self.drag_button.isChecked() \
-           or (not self.resize_button.isChecked() and self._left_pressed and self._cursor.shape() == Qt.CursorShape.ClosedHandCursor):
-            self._move(e)
-
-        elif self.resize_button.isChecked() \
-           or (not self.drag_button.isChecked() and self._left_pressed and is_resizing_cursor_shape):
-            self._resize(e)
-
-        return super().mouseMoveEvent(e)
-
-    def enterEvent(self, e: QEnterEvent):
-        # prevent accumulated cursor shape bug
-        self.__set_cursor_shape_for_current_point(e.position().toPoint())
-
-        if self.focus_input:
-            self.s.search_input.setFocus()
-            self.s.search_input.grabKeyboard()
-
-        return super().enterEvent(e)
-
-    def leaveEvent(self, e: QEnterEvent):
-        self.s.search_input.releaseKeyboard()
-        return super().leaveEvent(e)
-
-    def __set_cursor_shape_for_current_point(self, p: QPoint):
-        # give the margin to reshape cursor shape
-        rect = self.rect()
-        rect.setX(self.rect().x() + self._margin)
-        rect.setY(self.rect().y() + self._margin)
-        rect.setWidth(self.rect().width() - self._margin * 2)
-        rect.setHeight(self.rect().height() - self._margin * 2)
-
-        self._resized = rect.contains(p)
-        if self._resized:
-            # resize end
-            self.unsetCursor()
-            self._cursor = self.cursor()
-            self.__init_position()
-        else:
-            # resize start
-            x = p.x()
-            y = p.y()
-
-            x1 = self.rect().x()
-            y1 = self.rect().y()
-            x2 = self.rect().width()
-            y2 = self.rect().height()
-
-            self.__left = abs(x - x1) <= self._margin # if mouse cursor is at the almost far left
-            self.__top = abs(y - y1) <= self._margin # far top
-            self.__right = abs(x - (x2 + x1)) <= self._margin # far right
-            self.__bottom = abs(y - (y2 + y1)) <= self._margin # far bottom
-
-            # set the cursor shape based on flag above
-            if self.__top and self.__left:
-                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
-            elif self.__top and self.__right:
-                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
-            elif self.__bottom and self.__left:
-                self._cursor.setShape(Qt.CursorShape.SizeBDiagCursor)
-            elif self.__bottom and self.__right:
-                self._cursor.setShape(Qt.CursorShape.SizeFDiagCursor)
-            elif self.__left:
-                self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
-            elif self.__top:
-                self._cursor.setShape(Qt.CursorShape.ClosedHandCursor)
-            elif self.__right:
-                self._cursor.setShape(Qt.CursorShape.SizeHorCursor)
-            elif self.__bottom:
-                self._cursor.setShape(Qt.CursorShape.SizeVerCursor)
-            self.setCursor(self._cursor)
-
-        self._resized = not self._resized
-
-    def _resize(self, e: QMouseEvent):
-        p = e.globalPosition().toPoint()
-        p -= self.oldPos
-        delta = QPoint(p)
-        size = self.rect()
-        self.resize(size.width() + delta.x(),
-                    size.height() + delta.y())
-        self.oldPos = e.globalPosition().toPoint()
-
-    def _move(self, e: QMouseEvent):
-        p = e.globalPosition().toPoint()
-        p -= self.oldPos
-        delta = QPoint(p)
-        self.move(self.x() + delta.x(), self.y() + delta.y())
-        self.oldPos = e.globalPosition().toPoint()
-
+    def _noop(self):
+        pass
 
     def closeEvent(self, event: QCloseEvent):
         qr = self.frameGeometry()
@@ -581,50 +644,7 @@ class WordScanPopup(QDialog):
         self._app_data.app_settings['word_scan_popup_pos'] = p
         self._app_data._save_app_settings()
 
+        if self.s._clipboard is not None:
+            self.s._clipboard.dataChanged.connect(partial(self._noop))
+
         event.accept()
-
-    def _handle_drag_button(self):
-        if self.drag_button.isChecked():
-            self.drag_button.grabMouse()
-            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
-
-            msg = """
-            <h2>Moving the window</h2>
-            <ol>
-                <li>Check the move button.</li>
-                <li>Left-click, hold and drag.</li>
-                <li>Uncheck the move button.</li>
-            </ol>
-            """
-            self.s._show_temp_content_msg(msg)
-        else:
-            self.drag_button.releaseMouse()
-            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
-            self.s._show_current_html()
-
-        self.drag_button.setStyleSheet(button_style)
-
-    def _handle_resize_button(self):
-        if self.resize_button.isChecked():
-            self.resize_button.grabMouse()
-            button_style = "QPushButton { background-color: %s; border: none; }" % DARK_READING_BACKGROUND_COLOR
-
-            msg = """
-            <h2>Resizing the window</h2>
-            <ol>
-                <li>Check the resize button.</li>
-                <li>Left-click, hold and drag.</li>
-                <li>Uncheck the resize button.</li>
-            </ol>
-            """
-            self.s._show_temp_content_msg(msg)
-        else:
-            self.resize_button.releaseMouse()
-            button_style = "QPushButton { background-color: %s; border: none; }" % READING_BACKGROUND_COLOR
-            self.s._show_current_html()
-
-        self.resize_button.setStyleSheet(button_style)
-
-    def _handle_close_button(self):
-        if self._app_data.actions_manager is not None:
-            self._app_data.actions_manager.show_word_scan_popup()

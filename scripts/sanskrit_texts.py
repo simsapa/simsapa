@@ -5,7 +5,7 @@ import sys
 import re
 from pathlib import Path
 import glob
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
 from simsapa import logger
-from simsapa.app.helpers import gretil_header_to_footer
+from simsapa.app.helpers import compact_rich_text, gretil_header_to_footer
 from simsapa.app.db import appdata_models as Am
 
 import helpers
@@ -34,10 +34,22 @@ for p in [bootstrap_assets_dir, gretil_html_dir]:
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
 
-def get_gretil_suttas() -> List[Am.Sutta]:
+s = os.getenv('BOOTSTRAP_LIMIT')
+if s is None or s == "":
+    BOOTSTRAP_LIMIT = None
+else:
+    BOOTSTRAP_LIMIT = int(s)
+
+def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
     suttas: List[Am.Sutta] = []
 
-    for html_path in glob.glob(f"{gretil_html_dir}/*.htm"):
+    paths = glob.glob(f"{gretil_html_dir}/*.htm")
+
+    if limit:
+        n = limit if len(paths) >= limit else len(paths)
+        paths = paths[0:n]
+
+    for html_path in paths:
         if 'pAda-index_sa-dharma.htm' in html_path:
             continue
 
@@ -74,19 +86,21 @@ def get_gretil_suttas() -> List[Am.Sutta]:
         author = "gretil"
         uid = f"{ref}/{lang}/{author}"
 
-        logger.info(f"{uid} -- {title}")
+        # logger.info(f"{uid} -- {title}")
 
         main_text = gretil_header_to_footer(body)
 
         content_html = '<div class="gretil lang-skr">' + main_text + '</div>'
 
         sutta = Am.Sutta(
+            source_uid = author,
             title = title,
             title_pali = "",
             uid = uid,
             sutta_ref = "",
             language = lang,
             content_html = content_html,
+            content_plain = compact_rich_text(content_html),
             created_at = func.now(),
         )
 
@@ -95,15 +109,15 @@ def get_gretil_suttas() -> List[Am.Sutta]:
     return suttas
 
 
-def populate_sanskrit_from_gretil(db_session: Session):
-    suttas = get_gretil_suttas()
+def populate_sanskrit_from_gretil(db_session: Session, limit: Optional[int] = None):
+    suttas = get_gretil_suttas(limit)
 
     logger.info(f"Adding GRETIL, count {len(suttas)} ...")
 
     try:
         for i in suttas:
             db_session.add(i)
-            db_session.commit()
+        db_session.commit()
     except Exception as e:
         logger.error(e)
         exit(1)
@@ -121,7 +135,7 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
             i.id = None
 
             appdata_db.add(i)
-            appdata_db.commit()
+        appdata_db.commit()
     except Exception as e:
         logger.error(f"Import problem: {e}")
         exit(1)
@@ -131,7 +145,9 @@ def main():
     sanskrit_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("sanskrit-texts.sqlite3")
     sanskrit_db = helpers.get_appdata_db(sanskrit_db_path, remove_if_exists = True)
 
-    populate_sanskrit_from_gretil(sanskrit_db)
+    limit = BOOTSTRAP_LIMIT
+
+    populate_sanskrit_from_gretil(sanskrit_db, limit)
 
     appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
     appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = False)

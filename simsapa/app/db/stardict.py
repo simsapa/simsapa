@@ -21,6 +21,7 @@ class DbDictEntry(TypedDict):
     definition_html: str
     synonyms: str
     uid: str
+    source_uid: str
     dictionary_id: int
 
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
@@ -42,6 +43,7 @@ def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDic
         synonyms = ", ".join(syn),
         # add missing data
         uid = uid,
+        source_uid = dictionary_label.lower(),
         dictionary_id = dictionary_id,
     )
 
@@ -72,6 +74,7 @@ def insert_db_words(db_session,
             stmt = stmt.on_conflict_do_update(
                 index_elements = [Um.DictWord.uid],
                 set_ = dict(
+                    source_uid = stmt.excluded.source_uid,
                     word = stmt.excluded.word,
                     word_nom_sg = stmt.excluded.word_nom_sg,
                     inflections = stmt.excluded.inflections,
@@ -139,7 +142,9 @@ def import_stardict_as_new(db_session,
                            paths: StarDictPaths,
                            label: Optional[str] = None,
                            batch_size = 1000,
-                           ignore_synonyms = False):
+                           ignore_synonyms = False,
+                           limit: Optional[int] = None):
+    logger.info("=== import_stardict_as_new() ===")
 
     if ignore_synonyms:
         paths['syn_path'] = None
@@ -148,11 +153,13 @@ def import_stardict_as_new(db_session,
     # Using PostgreSQL ON CONFLICT with RETURNING to return upserted ORM objects
     # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
 
-    words: List[DictEntry] = stardict_to_dict_entries(paths)
+    words: List[DictEntry] = stardict_to_dict_entries(paths, limit)
     ifo = parse_ifo(paths)
     title = ifo['bookname']
     if label is None:
         label = title
+
+    logger.info(f"Importing {ifo['bookname']} ...")
 
     # create a dictionary, commit to get its ID
     if schema_name == DbSchemaName.UserData.value:

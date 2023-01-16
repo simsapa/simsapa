@@ -2,6 +2,8 @@ $black-90: #1a1a1a
 //$solarized-light-bg: #FDF6E3
 $solarized-light-bg: #FAE6B2
 
+$title_bg_color: #FEF8E8
+
 @import "type_crimson_pro"
 @import "type_abhaya_libre"
 @import "type_source_sans_3"
@@ -29,3 +31,107 @@ a
   width: 1em
   height: 1em
   vertical-align: -.125em
+
+.hide
+  display: none
+
+.highlight
+  padding: 0.2rem 0pt
+  background: #027f55
+  color: white
+
+.scrollto-highlight
+  padding: 0.2rem 0pt
+  background: #027f85
+  color: white
+
+.icon
+  display: inline-block
+  width: 1em
+  height: 1em
+  stroke-width: 0
+  stroke: currentColor
+  fill: currentColor
+
+div.btn
+  display: inline-block
+  padding: 0
+  margin: 0
+  a
+    cursor: pointer
+    text-decoration: none
+
+.open-button
+  font-size: 15px
+  .icon
+    color: #027f55
+    opacity: 0.5
+
+.pull-left
+  float: left
+
+.pull-right
+  float: right
+
+.bookmark-comment
+  border: 1px solid hsl(160, 65%, 35%)
+  border-radius: 5px
+  background-color: hsl(160, 65%, 60%)
+
+  .bookmark-title
+    background-color: hsl(160, 65%, 35%)
+    height: 30px
+    font-size: 20px
+
+    .btn
+      margin: 2.5px 5px
+      a
+        color: white
+
+  .bookmark-content
+    color: $black-90
+    font-size: 0.8rem
+    padding: 0.5rem
+
+    p
+      margin-block-start: 0
+      margin-block-end: 0
+      padding-top: 0.4rem
+      &:first-child
+        padding-top: 0
+
+    a
+      color: #700909
+
+#window-title-bar
+  font-size: 18px
+  line-height: 1
+  width: 100%
+  position: fixed
+  top: 0
+  left: 0
+  padding: 0.1em
+  background-color: $title_bg_color
+
+  .flex-container
+    display: flex
+    flex-flow: row nowrap
+    justify-content: space-between
+    align-items: center
+    align-content: center
+    gap: 0.2em
+
+    #left-btn-box,
+    #right-btn-box
+      flex: 1
+
+    #preview-title-text
+      display: inline-block
+      color: black
+      text-align: center
+
+    .icon
+      font-size: 0.8rem
+      color: black
+      padding-top: 0.1rem
+      margin: 0.1rem 0.3rem

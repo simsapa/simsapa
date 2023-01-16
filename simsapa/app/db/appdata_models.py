@@ -17,41 +17,48 @@ Base = declarative_base(metadata=metadata)
 
 assoc_sutta_authors = Table(
     'sutta_authors',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('author_id', Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_sutta_tags = Table(
     'sutta_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
+assoc_sutta_multi_refs = Table(
+    'sutta_multi_refs',
+    Base.metadata, # type: ignore
+    Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+    Column('multi_ref_id', Integer, ForeignKey("multi_refs.id", ondelete="CASCADE"), primary_key=True, nullable=False),
+)
+
 assoc_dict_word_tags = Table(
     'dict_word_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('dict_word_id', Integer, ForeignKey("dict_words.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_document_tags = Table(
     'document_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('document_id', Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_memo_tags = Table(
     'memo_tags',
-    Base.metadata,
+    Base.metadata, # type: ignore
     Column('memo_id', Integer, ForeignKey("memos.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 
-class Author(Base):
+class Author(Base): # type: ignore
     __tablename__ = "authors"
 
     id = Column(Integer, primary_key=True)
@@ -65,7 +72,7 @@ class Author(Base):
     suttas = relationship("Sutta", secondary=assoc_sutta_authors, back_populates="authors")
 
 
-class Sutta(Base):
+class Sutta(Base): # type: ignore
     __tablename__ = "suttas"
 
     id = Column(Integer, primary_key=True)
@@ -73,9 +80,13 @@ class Sutta(Base):
     group_path = Column(String) # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
     group_index = Column(Integer) # 1
     sutta_ref = Column(String) # DN 1
-    sutta_ref_pts = Column(String) # DN i 1
     language = Column(String) # pli / en
     order_index = Column(Integer)
+
+    # sn30.7-16
+    sutta_range_group = Column(String) # sn30
+    sutta_range_start = Column(Integer) # 7
+    sutta_range_end = Column(Integer) # 16
 
     # --- Content props ---
     title = Column(String) # Brahmajāla: The Root of All Things
@@ -84,8 +95,11 @@ class Sutta(Base):
     description = Column(String)
     content_plain = Column(String) # content in plain text
     content_html = Column(String) # content in HTML
+    content_json = Column(String) # content in Bilara JSON
+    content_json_tmpl = Column(String) # HTML template to wrap around JSON
 
     # --- Source ---
+    source_uid = Column(String) # ms, bodhi, than
     source_info = Column(String)
     source_language = Column(String)
     message = Column(String)
@@ -97,9 +111,50 @@ class Sutta(Base):
 
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
+    bookmarks = relationship("Bookmark", back_populates="sutta", passive_deletes=True)
+
+    variant = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
+    comment = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
+
+    multi_refs = relationship("MultiRef", secondary=assoc_sutta_multi_refs, back_populates="suttas")
 
 
-class Dictionary(Base):
+class SuttaVariant(Base): # type: ignore
+    __tablename__ = "sutta_variants"
+
+    id = Column(Integer, primary_key=True)
+
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+
+    language = Column(String) # pli / en
+    source_uid = Column(String) # ms, bodhi, than
+    content_json = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="variant", uselist=False)
+
+
+class SuttaComment(Base): # type: ignore
+    __tablename__ = "sutta_comments"
+
+    id = Column(Integer, primary_key=True)
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+
+    language = Column(String) # pli / en
+    source_uid = Column(String) # ms, bodhi, than
+    content_json = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="comment", uselist=False)
+
+
+class Dictionary(Base): # type: ignore
     __tablename__ = "dictionaries"
 
     id = Column(Integer, primary_key=True)
@@ -122,12 +177,13 @@ class Dictionary(Base):
     dict_words = relationship("DictWord", back_populates="dictionary", passive_deletes=True)
 
 
-class DictWord(Base):
+class DictWord(Base): # type: ignore
     __tablename__ = "dict_words"
 
     id = Column(Integer, primary_key=True)
     dictionary_id = Column(Integer, ForeignKey("dictionaries.id", ondelete="CASCADE"), nullable=False)
     uid = Column(String, nullable=False, unique=True)
+    source_uid = Column(String) # pts, dpd, mw
     word = Column(String, nullable=False)
     word_nom_sg = Column(String)
     inflections = Column(String)
@@ -155,7 +211,7 @@ class DictWord(Base):
     tags = relationship("Tag", secondary=assoc_dict_word_tags, back_populates="dict_words")
 
 
-class Example(Base):
+class Example(Base): # type: ignore
     __tablename__ = "examples"
 
     id = Column(Integer, primary_key=True)
@@ -175,7 +231,7 @@ class Example(Base):
     dict_word = relationship("DictWord", back_populates="examples")
 
 
-class Document(Base):
+class Document(Base): # type: ignore
     __tablename__ = "documents"
 
     id = Column(Integer, primary_key=True)
@@ -195,7 +251,7 @@ class Document(Base):
     tags = relationship("Tag", secondary=assoc_document_tags, back_populates="documents")
 
 
-class Deck(Base):
+class Deck(Base): # type: ignore
     __tablename__ = "decks"
 
     id = Column(Integer, primary_key=True)
@@ -207,11 +263,11 @@ class Deck(Base):
     memos = relationship("Memo", back_populates="deck")
 
 
-class Memo(Base):
+class Memo(Base): # type: ignore
     __tablename__ = "memos"
 
     id = Column(Integer, primary_key=True)
-    deck_id = Column(Integer, ForeignKey("decks.id", ondelete="NO ACTION"))
+    deck_id = Column(Integer, ForeignKey("decks.id", ondelete="CASCADE"))
 
     # --- Content ---
     fields_json = Column(String) # Front, Back
@@ -227,7 +283,7 @@ class Memo(Base):
     tags = relationship("Tag", secondary=assoc_memo_tags, back_populates="memos")
 
 
-class MemoAssociation(Base):
+class MemoAssociation(Base): # type: ignore
     __tablename__ = "memo_associations"
 
     id = Column(Integer, primary_key=True)
@@ -239,7 +295,7 @@ class MemoAssociation(Base):
     location = Column(String)
 
 
-class Annotation(Base):
+class Annotation(Base): # type: ignore
     __tablename__ = "annotations"
 
     id = Column(Integer, primary_key=True)
@@ -250,7 +306,7 @@ class Annotation(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
-class AnnotationAssociation(Base):
+class AnnotationAssociation(Base): # type: ignore
     __tablename__ = "annotation_associations"
 
     id = Column(Integer, primary_key=True)
@@ -262,7 +318,7 @@ class AnnotationAssociation(Base):
     location = Column(Integer)
 
 
-class Tag(Base):
+class Tag(Base): # type: ignore
     __tablename__ = "tags"
 
     id = Column(Integer, primary_key=True)
@@ -274,7 +330,33 @@ class Tag(Base):
     memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
 
 
-class Link(Base):
+class Bookmark(Base): # type: ignore
+    __tablename__ = "bookmarks"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    quote = Column(String)
+    nth = Column(Integer)
+    selection_range = Column(String)
+
+    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=True)
+    sutta_uid = Column(String, nullable=True)
+    sutta_schema = Column(String, nullable=True)
+    sutta_ref = Column(String, nullable=True)
+    sutta_title = Column(String, nullable=True)
+
+    comment_text = Column(String)
+    comment_attr_json = Column(String)
+
+    read_only = Column(Boolean)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta = relationship("Sutta", back_populates="bookmarks")
+
+
+class Link(Base): # type: ignore
     __tablename__ = "links"
 
     id = Column(Integer, primary_key=True)
@@ -291,7 +373,7 @@ class Link(Base):
     to_target = Column(String)
 
 
-class AppSetting(Base):
+class AppSetting(Base): # type: ignore
     __tablename__ = "app_settings"
 
     id = Column(Integer, primary_key=True)
@@ -300,3 +382,106 @@ class AppSetting(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class ChallengeCourse(Base): # type: ignore
+    __tablename__ = "challenge_courses"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String)
+    course_dirname = Column(String)
+
+    sort_index = Column(Integer, nullable=False)
+
+    groups = relationship("ChallengeGroup", back_populates="course")
+    challenges = relationship("Challenge", back_populates="course")
+
+
+class ChallengeGroup(Base): # type: ignore
+    __tablename__ = "challenge_groups"
+
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
+
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String)
+
+    sort_index = Column(Integer, nullable=False)
+
+    course = relationship("ChallengeCourse", back_populates="groups", uselist=False)
+    challenges = relationship("Challenge", back_populates="group")
+
+
+class Challenge(Base): # type: ignore
+    __tablename__ = "challenges"
+
+    id = Column(Integer, primary_key=True)
+    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
+    group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="CASCADE"))
+
+    challenge_type = Column(String, nullable=False)
+
+    sort_index = Column(Integer, nullable=False)
+
+    explanation_md = Column(String)
+
+    question_json = Column(String)
+    answers_json = Column(String)
+
+    level = Column(Integer)
+
+    studied_at = Column(DateTime(timezone=True))
+    due_at = Column(DateTime(timezone=True))
+
+    anki_model_name = Column(String) # Basic, Cloze
+    anki_note_id = Column(Integer)
+    anki_synced_at = Column(DateTime)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
+    group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)
+
+
+class MultiRef(Base): # type: ignore
+    __tablename__ = "multi_refs"
+
+    id = Column(Integer, primary_key=True)
+
+    # lowercase an / mn / kp / etc.
+    collection = Column(String, nullable=False)
+
+    # AN 2.52-63
+    # PTS 1.77.1-1.80.1
+    # PTS i 77.1 - i 80.1
+
+    ref_type = Column(String) # sc / pts / dpr / cst4 / bodhi / verse / trad
+
+    # Ref may contain a list of references, separated by commas.
+    ref = Column(String) # sn 1.51 / an 1.77.1-1.80.1 / an i 77.1 - i 80.1
+    sutta_uid = Column(String) # sn1.51
+
+    edition = Column(String) # 1st ed. Feer (1884) / 2nd ed. Somaratne (1998) / etc.
+
+    name = Column(String)
+    biblio_uid = Column(String)
+
+    nipata_number = Column(Integer) # 1 in AN 1.8.3
+    vagga_number = Column(Integer) # 8
+    sutta_number = Column(Integer) # 3
+
+    volume = Column(Integer)
+    page_start = Column(Integer)
+    page_end = Column(Integer)
+    par_start = Column(Integer)
+    par_end = Column(Integer)
+
+    sutta_start = Column(Integer) # 52 in AN 2.52-63
+    sutta_end = Column(Integer) # 63 in AN 2.52-63
+
+    verse_start = Column(Integer)
+    verse_end = Column(Integer)
+
+    suttas = relationship("Sutta", secondary=assoc_sutta_multi_refs, back_populates="multi_refs")

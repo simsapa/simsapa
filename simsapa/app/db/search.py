@@ -13,7 +13,7 @@ from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import compactPlainText, compactRichText
+from simsapa.app.helpers import compact_rich_text, compact_plain_text
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa import INDEX_DIR
@@ -24,13 +24,18 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-RE_SUTTA_REF = re.compile(r'(DN|MN|SN|AN|iti|khp|snp|thag|thig|ud|uda) *([\d\.]+)', re.IGNORECASE)
+# MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
+RE_ALL_BOOK_SUTTA_REF = re.compile(r'\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]+)\b', re.IGNORECASE)
+# Vin.iii.40; AN.i.78; D iii 264; SN i 190
+RE_ALL_PTS_VOL_SUTTA_REF = re.compile(r'\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]([ivxIVX]+)[ \.](\d[\d\.]+)\b', re.IGNORECASE)
 
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)
     db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
+    language = ID(stored = True)
+    source_uid = ID(stored = True)
     title = TEXT(stored = True, analyzer = folding_analyzer)
     title_pali = TEXT(stored = True, analyzer = folding_analyzer)
     title_trans = TEXT(stored = True, analyzer = folding_analyzer)
@@ -42,6 +47,7 @@ class DictWordsIndexSchema(SchemaClass):
     db_id = NUMERIC(stored = True)
     schema_name = TEXT(stored = True)
     uid = ID(stored = True)
+    source_uid = ID(stored = True)
     word = TEXT(stored = True, analyzer = folding_analyzer)
     synonyms = TEXT(stored = True, analyzer = folding_analyzer)
     content = TEXT(stored = True, analyzer = folding_analyzer)
@@ -59,6 +65,7 @@ class SearchResult(TypedDict):
     # database table name (e.g. suttas or dict_words)
     table_name: str
     uid: Optional[str]
+    source_uid: Optional[str]
     title: str
     ref: Optional[str]
     author: Optional[str]
@@ -73,8 +80,23 @@ def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'suttas',
         uid = x['uid'],
-        title = x['title'],
-        ref = x['ref'],
+        source_uid = x['source_uid'],
+        title = x['title'] if 'title' in x.keys() else '',
+        ref = x['ref'] if 'ref' in x.keys() else '',
+        author = None,
+        snippet = snippet,
+        page_number = None,
+    )
+
+def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
+    return SearchResult(
+        db_id = int(str(x.id)),
+        schema_name = x.metadata.schema,
+        table_name = 'suttas',
+        uid = str(x.uid),
+        source_uid = str(x.source_uid),
+        title = str(x.title) if x.title else '',
+        ref = str(x.sutta_ref) if x.sutta_ref else '',
         author = None,
         snippet = snippet,
         page_number = None,
@@ -86,23 +108,25 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         schema_name = x['schema_name'],
         table_name = 'dict_words',
         uid = x['uid'],
-        title = x['word'],
+        source_uid = x['source_uid'],
+        title = x['word'] if 'word' in x.keys() else '',
         ref = None,
         author = None,
         snippet = snippet,
         page_number = None,
     )
 
-def dict_word_to_search_result(x: UDictWord) -> SearchResult:
+def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
     return SearchResult(
         db_id = int(str(x.id)),
         schema_name = x.metadata.schema,
         table_name = 'dict_words',
         uid = str(x.uid),
+        source_uid = str(x.source_uid),
         title = str(x.word),
         ref = None,
         author = None,
-        snippet = '',
+        snippet = snippet,
         page_number = None,
     )
 
@@ -111,7 +135,7 @@ class SearchQuery:
         self.ix = ix
         self.searcher = ix.searcher()
         self.all_results: Results
-        self.filtered: List[Hit]
+        self.filtered: List[Hit] = []
         self.hits: int = 0
         self.page_len = page_len
         self.hit_to_result_fn = hit_to_result_fn
@@ -193,7 +217,7 @@ class SearchQuery:
         q = parser.parse(query)
 
         # NOTE: limit=None is fast enough (~1700 hits for 'dhamma'), doesn't
-        # hang when doing incremental search while typing.
+        # hang when search_as_you_type setting is enabled.
         #
         # The highlighting _is_ slow, that has to be only done on the
         # displayed results page.
@@ -201,6 +225,7 @@ class SearchQuery:
         return self.searcher.search(q, limit=None)
 
     def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+        logger.info(f"highlight_results_page({page_num})")
         page_start = page_num * self.page_len
         page_end = page_start + self.page_len
         return list(map(self._result_with_snippet_highlight, self.filtered[page_start:page_end]))
@@ -208,22 +233,19 @@ class SearchQuery:
     def new_query(self,
                   query: str,
                   disabled_labels: Optional[Labels] = None,
-                  only_source: Optional[str] = None) -> List[SearchResult]:
+                  only_lang: Optional[str] = None,
+                  only_source: Optional[str] = None):
+        logger.info("SearchQuery::new_query()")
 
-        # Replace user input sutta refs such as 'SN 56.11' with query language
-        matches = re.finditer(RE_SUTTA_REF, query)
-        for m in matches:
-            nikaya = m.group(1).lower()
-            number = m.group(2)
-            query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
+        if 'uid:' not in query:
+            # Replace user input sutta refs such as 'SN 56.11' with query language
+            matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query)
+            for m in matches:
+                nikaya = m.group(1).lower()
+                number = m.group(2)
+                query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
 
         self.all_results = self._search_field(field_name = 'content', query = query)
-
-        def _only_in_source(x: Hit):
-            if only_source is not None:
-                return x['uid'].endswith(f'/{only_source.lower()}')
-            else:
-                return True
 
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
@@ -235,20 +257,32 @@ class SearchQuery:
             else:
                 return True
 
+        self.filtered = list(self.all_results)
+
+        if only_lang == "Language":
+            only_lang = None
+        elif only_lang:
+            only_lang = only_lang.lower()
+
+        if only_source == "Source" or only_source == "Dictionaries":
+            only_source = None
+        elif only_source:
+            only_source = only_source.lower()
+
+        if only_lang is not None:
+            self.filtered = list(filter(lambda x: x['language'].lower() == only_lang, self.filtered))
+
         if only_source is not None:
-            self.filtered = list(filter(_only_in_source, self.all_results))
+            self.filtered = list(filter(lambda x: x['source_uid'].lower() == only_source, self.filtered))
 
-        elif disabled_labels is not None:
-            self.filtered = list(filter(_not_in_disabled, self.all_results))
-
-        else:
-            self.filtered = list(self.all_results)
+        if disabled_labels is not None:
+            self.filtered = list(filter(_not_in_disabled, self.filtered))
 
         # NOTE: r.estimated_min_length() errors on some searches
         self.hits = len(self.filtered)
 
         if self.hits == 0:
-            return []
+            return
 
         # may slow down highlighting with many results
         # r.fragmenter.charlimit = None
@@ -259,11 +293,6 @@ class SearchQuery:
         # SCORE Show highest scoring fragments first.
         self.all_results.order = SCORE
         self.all_results.formatter = HtmlFormatter(tagname='span', classname='match')
-
-        # NOTE: highlighting the matched fragments is slow, so only do
-        # highlighting on the first page of results.
-
-        return self.highlight_results_page(0)
 
     def get_all_results(self, highlight: bool = False) -> List[SearchResult]:
         if highlight:
@@ -302,8 +331,8 @@ class SearchIndexed:
             self.index_dict_words(DbSchemaName.UserData.value, words)
 
     def open_all(self):
-        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema)
-        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema)
+        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema) # type: ignore
+        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema) # type: ignore
 
     def clear_all(self):
         w = self.suttas_index.writer()
@@ -329,9 +358,10 @@ class SearchIndexed:
             ix = open_dir(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
             return ix
         except Exception as e:
-            logger.info(f"Can't open the index: {index_name}, {e}")
+            logger.warn(f"Can't open the index: {index_name}, {e}")
 
         try:
+            logger.info(f"Creating the index: {index_name}")
             ix = create_in(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
         except Exception as e:
             logger.error(f"Can't create the index: {index_name}, {e}")
@@ -348,8 +378,10 @@ class SearchIndexed:
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
-            for i in suttas:
-                logger.info(f"Indexing: {i.uid}")
+            total = len(suttas)
+            for idx, i in enumerate(suttas):
+                percent = idx/(total/100)
+                # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
                     # Remove content marked with 'noindex' class, such as footer material
@@ -358,15 +390,22 @@ class SearchIndexed:
                     for x in h:
                         x.decompose()
 
-                    content = compactRichText(str(soup))
+                    content = compact_rich_text(str(soup))
 
                 elif i.content_plain is not None:
-                    content = compactPlainText(str(i.content_plain))
+                    content = compact_plain_text(str(i.content_plain))
 
                 else:
+                    logger.warn(f"Skipping, no content in {i.uid}")
                     continue
 
-                logger.info(f"len(content) = {len(content)}")
+                language = ""
+                if i.language is not None:
+                    language = i.language
+
+                source_uid = ""
+                if i.source_uid is not None:
+                    source_uid = i.source_uid
 
                 sutta_ref = ""
                 if i.sutta_ref is not None:
@@ -388,7 +427,7 @@ class SearchIndexed:
                 # Db fields can be None
                 c = list(filter(lambda x: len(str(x)) > 0, [str(sutta_ref), str(title), str(title_pali)]))
                 pre = " ".join(c)
-                logger.info(f"pre: {pre}")
+                # logger.info(f"pre: {pre}")
 
                 if len(pre) > 0:
                     content = f"{pre} {content}"
@@ -398,6 +437,8 @@ class SearchIndexed:
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
+                    language = language,
+                    source_uid = source_uid,
                     title = title,
                     title_pali = title_pali,
                     title_trans = title_trans,
@@ -405,7 +446,7 @@ class SearchIndexed:
                     ref = sutta_ref,
                 )
 
-                logger.info(f"updated: {i.uid}")
+                # logger.info(f"updated: {i.uid}")
 
             writer.commit()
 
@@ -420,15 +461,21 @@ class SearchIndexed:
             # NOTE: Only use multisegment=True when indexing from scratch.
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
-            for i in words:
+
+            total = len(words)
+            for idx, i in enumerate(words):
+                percent = idx/(total/100)
+                # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
+
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    content = compactRichText(str(i.definition_html))
+                    content = compact_rich_text(str(i.definition_html))
 
                 elif i.definition_plain is not None:
-                    content = compactPlainText(str(i.definition_plain))
+                    content = compact_plain_text(str(i.definition_plain))
 
                 else:
+                    logger.warn(f"Skipping, no content in {i.word}")
                     continue
 
                 # Add word and synonyms to content field so a single query will match
@@ -443,6 +490,7 @@ class SearchIndexed:
                     db_id = i.id,
                     schema_name = schema_name,
                     uid = i.uid,
+                    source_uid = i.source_uid,
                     word = i.word,
                     synonyms = i.synonyms,
                     content = content,

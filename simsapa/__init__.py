@@ -2,16 +2,27 @@ import os
 from pathlib import Path
 from typing import Dict, TypedDict
 from enum import Enum
-from queue import Queue
-from dotenv import load_dotenv
+import queue
+from dotenv import find_dotenv, load_dotenv
 import appdirs
 import platform
+import importlib.resources
+import pkgutil
 
-load_dotenv()
+p = find_dotenv() or find_dotenv('.env.txt')
+if p != '':
+    load_dotenv(p)
 
-SIMSAPA_PACKAGE_DIR = Path(os.path.dirname(__file__)).absolute()
+# When running from dev folder, get_app_version() returns t['tool']['poetry']['version'].
+# When running the prod app, the value below is used.
+#
+# In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
+SIMSAPA_APP_VERSION = "0.2.0-alpha.1"
 
-PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets')
+SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
+
+PACKAGE_ASSETS_RSC_DIR = Path('assets')
+PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
 
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
@@ -28,13 +39,17 @@ SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
-TIMER_SPEED = 50
+TIMER_SPEED = 30
 
-s = os.getenv('USE_TEST_DATA')
-if s is not None and s.lower() == 'true':
-    ASSETS_DIR = TEST_ASSETS_DIR
-else:
-    ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
+SEARCH_TIMER_SPEED = 500
+
+#s = os.getenv('USE_TEST_DATA')
+#if s is not None and s.lower() == 'true':
+#    ASSETS_DIR = TEST_ASSETS_DIR
+#else:
+#    ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
+
+ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
 
 INDEX_DIR = ASSETS_DIR.joinpath('index')
 
@@ -43,19 +58,58 @@ GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
+COURSES_DIR = ASSETS_DIR.joinpath('courses')
+
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
-APP_QUEUES: Dict[str, Queue] = {}
+APP_QUEUES: Dict[str, queue.Queue] = {}
+SERVER_QUEUE = queue.Queue()
 
 IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
 IS_MAC = (platform.system() == 'Darwin')
 
+if IS_LINUX:
+    s = os.getenv('XDG_CURRENT_DESKTOP')
+    IS_SWAY = s is not None and s == 'sway'
+else:
+    IS_SWAY = False
+
 READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
+BUTTON_BG_COLOR = "#007564"
 
-LOADING_HTML = open(PACKAGE_ASSETS_DIR.joinpath('templates/loading.html'), 'r').read()
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/loading.html")))
+if b is None:
+    LOADING_HTML = "<b>Loading...</b>"
+else:
+    LOADING_HTML = b.decode("utf-8")
+
+b =  pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/click_generate.html")))
+if b is None:
+    CLICK_GENERATE_HTML = "<b>Missing click_generate.html</b>"
+else:
+    CLICK_GENERATE_HTML = b.decode("utf-8")
+
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/suttas.css')))
+if b is None:
+    SUTTAS_CSS = ""
+else:
+    SUTTAS_CSS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/suttas.js')))
+if b is None:
+    SUTTAS_JS = ""
+else:
+    SUTTAS_JS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/dictionary.js')))
+if b is None:
+    DICTIONARY_JS = ""
+else:
+    DICTIONARY_JS = b.decode("utf-8")
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
@@ -77,6 +131,7 @@ class ApiAction(str, Enum):
 
 # Messages sent via the localhost web API
 class ApiMessage(TypedDict):
+    queue_id: str
     action: ApiAction
     data: str
 

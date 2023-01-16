@@ -8,7 +8,7 @@ pyinstaller run.py ^
     -w ^
     --clean ^
     --noupx ^
-    -i "simsapa\assets\icons\appicons\simsapa.icns" ^
+    -i "simsapa\assets\icons\appicons\simsapa.ico" ^
     --add-data "simsapa\assets;simsapa\assets" ^
     --add-data "simsapa\alembic;simsapa\alembic" ^
     --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
