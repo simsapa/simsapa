@@ -21,7 +21,7 @@ from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries
+from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries_with_requests
 
 from simsapa import logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
 
@@ -190,7 +190,7 @@ class DownloadAppdataWindow(QMainWindow):
             return
 
         try:
-            stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+            stable_entries = get_feed_entries_with_requests("https://github.com/simsapa/simsapa-assets/releases.atom")
             logger.info(f"stable entries: {stable_entries}")
         except Exception as e:
             msg = "Download failed: %s" % e

@@ -230,9 +230,19 @@ class FeedEntry(TypedDict):
     content: str
 
 def get_feed_entries(url: str, stable_only: bool = True) -> List[FeedEntry]:
+    logger.info(f"get_feed_entries(): {url}, {stable_only}")
+
+    # NOTE: MacOS 11 seems to have a problem with feeparser.
+    # The returned entries list is empty, []
+
     try:
         d = feedparser.parse(url)
+        if d:
+            logger.info(f"Feedparser Entries: {d.entries}")
+        else:
+            logger.info("Feedparser result is None")
     except Exception as e:
+        logger.error(e)
         raise e
 
     if stable_only:
@@ -250,6 +260,40 @@ def get_feed_entries(url: str, stable_only: bool = True) -> List[FeedEntry]:
         )
 
     entries: List[FeedEntry] = list(map(_to_entry, a))
+
+    return entries
+
+def get_feed_entries_with_requests(url: str, stable_only: bool = True) -> List[FeedEntry]:
+    logger.info(f"get_feed_entries_with_requests(): {url}, {stable_only}")
+
+    try:
+        r = requests.get(url)
+        if r.ok:
+            data = r.text
+        else:
+            raise Exception(f"Response: {r.status_code}")
+    except Exception as e:
+        logger.error(e)
+        raise e
+
+    versions = []
+    #  <id>tag:github.com,2008:Repository/469025679/v0.2.0-alpha.1</id>
+    #  <id>tag:github.com,2008:Repository/469025679/v0.1.8-alpha.1</id>
+    matches = re.finditer(r'<id>tag:github.com,2008:Repository/469025679/([^<]+)</id>', data)
+    for m in matches:
+        ver = m.group(1)
+        if _is_version_stable(ver):
+            versions.append(ver)
+
+    def _to_entry(ver: str) -> FeedEntry:
+        return FeedEntry(
+            title="Updates available",
+            # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
+            version=ver.replace('v', ''),
+            content="",
+        )
+
+    entries: List[FeedEntry] = list(map(_to_entry, versions))
 
     return entries
 
@@ -279,7 +323,7 @@ def get_db_update_info() -> Optional[UpdateInfo]:
         return None
 
     try:
-        stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+        stable_entries = get_feed_entries_with_requests("https://github.com/simsapa/simsapa-assets/releases.atom")
 
         if len(stable_entries) == 0:
             return None
