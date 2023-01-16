@@ -191,6 +191,7 @@ class DownloadAppdataWindow(QMainWindow):
 
         try:
             stable_entries = get_feed_entries("https://github.com/simsapa/simsapa-assets/releases.atom")
+            logger.info(f"stable entries: {stable_entries}")
         except Exception as e:
             msg = "Download failed: %s" % e
             QMessageBox.information(self,
@@ -204,6 +205,7 @@ class DownloadAppdataWindow(QMainWindow):
             return
 
         compat_entries = filter_compatible_db_entries(stable_entries)
+        logger.info(f"compatible entries: {compat_entries}")
 
         if len(compat_entries) == 0:
             return
@@ -252,8 +254,10 @@ class DownloadAppdataWindow(QMainWindow):
         self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
         self.download_worker.signals.download_max.connect(partial(self._download_max))
 
+        logger.info("Show progress bar")
         self._progress_bar.show()
 
+        logger.info("Start download worker")
         self.thread_pool.start(self.download_worker)
 
         self.info_frame.hide()
@@ -345,8 +349,12 @@ class Worker(QRunnable):
 
     @pyqtSlot()
     def run(self):
+        logger.info("Worker::run()")
         try:
             self.download_started.set()
+
+            logger.info(f"Download urls: {self.urls}")
+
             for i in self.urls:
                 self.download_extract_tar_bz2(i)
                 if self.download_stop.is_set():
