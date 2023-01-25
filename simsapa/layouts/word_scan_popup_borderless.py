@@ -366,11 +366,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
 
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+    def results_page(self, page_num: int) -> List[SearchResult]:
         if self.search_query_worker is None:
             return []
         else:
-            return self.search_query_worker.search_query.highlight_results_page(page_num)
+            return self.search_query_worker.results_page(page_num)
 
     def query_hits(self) -> int:
         if self.search_query_worker is None:

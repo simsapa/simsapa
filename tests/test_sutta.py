@@ -1,7 +1,7 @@
 """Basic Sutta test cases
 """
 
-from sqlalchemy import func
+from sqlalchemy.sql import func
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

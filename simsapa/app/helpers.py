@@ -453,6 +453,7 @@ def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
 
 def normalize_sutta_ref(ref: str) -> str:
     ref = ref.lower()
+
     ref = re.sub(r'ud *(\d)', r'uda \1', ref)
     ref = re.sub(r'khp *(\d)', r'kp \1', ref)
     ref = re.sub(r'th *(\d)', r'thag \1', ref)

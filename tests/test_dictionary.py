@@ -1,7 +1,7 @@
 """Basic Dictionary test cases
 """
 
-from sqlalchemy import func
+from sqlalchemy.sql import func
 from sqlalchemy.orm import joinedload
 
 from simsapa.app.db import appdata_models as Am

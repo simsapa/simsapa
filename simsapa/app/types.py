@@ -14,7 +14,7 @@ from tomlkit.toml_document import TOMLDocument
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import func
+from sqlalchemy.sql import func
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, upgrade_db
+from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, get_db_session_with_schema, upgrade_db
 
 from .db.search import SearchIndexed
 
@@ -439,6 +439,67 @@ class AppData:
             return 0
 
         return len(bookmarks)
+
+    def import_suttas_to_userdata(self, db_path: str) -> int:
+        import_db_session = get_db_session_with_schema(Path(db_path), DbSchemaName.UserData)
+
+        import_suttas = import_db_session.query(Um.Sutta).all()
+
+        if len(import_suttas) == 0:
+            import_db_session.close()
+            return 0
+
+        for i in import_suttas:
+            sutta = Um.Sutta(
+                uid = i.uid,
+                group_path = i.group_path,
+                group_index = i.group_index,
+                sutta_ref = i.sutta_ref,
+                language = i.language,
+                order_index = i.order_index,
+
+                sutta_range_group = i.sutta_range_group,
+                sutta_range_start = i.sutta_range_start,
+                sutta_range_end = i.sutta_range_end,
+
+                title = i.title,
+                title_pali = i.title_pali,
+                title_trans = i.title_trans,
+                description = i.description,
+                content_plain = i.content_plain,
+                content_html = i.content_html,
+                content_json = i.content_json,
+                content_json_tmpl = i.content_json_tmpl,
+
+                source_uid = i.source_uid,
+                source_info = i.source_info,
+                source_language = i.source_language,
+                message = i.message,
+                copyright = i.copyright,
+                license = i.license,
+            )
+
+            author_uid = i.source_uid
+
+            author = self.db_session \
+                         .query(Um.Author) \
+                         .filter(Um.Author.uid == author_uid) \
+                         .first()
+
+            if author is None:
+                author = Um.Author(uid = author_uid)
+
+            self.db_session.add(author)
+            sutta.author = author
+
+            self.db_session.add(sutta)
+
+        self.db_session.commit()
+
+        n = len(import_suttas)
+        import_db_session.close()
+
+        return n
 
     def export_bookmarks(self, file_path: str) -> int:
         if not file_path.endswith(".csv"):

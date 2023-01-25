@@ -156,11 +156,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if text is not None:
             self.lookup_in_dictionary_signal.emit(text)
 
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        if self.s.search_query_worker is None:
-            return []
-        else:
-            return self.s.search_query_worker.highlight_results_page(page_num)
+    def results_page(self, page_num: int) -> List[SearchResult]:
+        return self.s.results_page(page_num)
 
     def query_hits(self) -> int:
         return self.s.query_hits()

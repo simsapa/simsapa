@@ -50,7 +50,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     _related_tabs: List[SuttaTabWidget]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: Optional[SearchQueryWorker] = None
+    search_query_workers: List[SearchQueryWorker] = []
     search_mode_dropdown: QComboBox
 
     open_in_study_window_signal = pyqtSignal([str, str])
@@ -111,7 +111,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.init_bookmark_dialog()
         self.init_memo_dialog()
 
-    def _init_search_query_worker(self, query: str = ""):
+    def _init_search_query_workers(self, query: str = ""):
         if self.enable_search_extras:
             idx = self.sutta_language_filter_dropdown.currentIndex()
             language = self.sutta_language_filter_dropdown.itemText(idx)
@@ -141,20 +141,47 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         s = self.search_mode_dropdown.itemText(idx)
         mode = SuttaSearchModeNameToType[s]
 
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            mode,
-            sutta_hit_to_search_result)
+        for i in self.search_query_workers:
+            i.will_emit_finished = False
 
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           only_lang,
-                                           only_source)
+        self.search_query_workers = []
 
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+        # Sutta query worker
 
+        w = SearchQueryWorker(self._app_data.search_indexed.suttas_index,
+                              self.page_len,
+                              mode,
+                              sutta_hit_to_search_result)
+
+        w.set_query(query,
+                    self._last_query_time,
+                    disabled_labels,
+                    only_lang,
+                    only_source)
+
+        w.signals.finished.connect(partial(self._search_query_finished))
+
+        self.search_query_workers.append(w)
+
+        # Language query workers
+
+        index_names = self._app_data.search_indexed.suttas_lang_index.keys()
+        for i in index_names:
+
+            w = SearchQueryWorker(self._app_data.search_indexed.suttas_lang_index[i],
+                                  self.page_len,
+                                  mode,
+                                  sutta_hit_to_search_result)
+
+            w.set_query(query,
+                        self._last_query_time,
+                        disabled_labels,
+                        only_lang,
+                        only_source)
+
+            w.signals.finished.connect(partial(self._search_query_finished))
+
+            self.search_query_workers.append(w)
 
     def _get_active_tab(self) -> SuttaTabWidget:
         current_idx = self.sutta_tabs.currentIndex()
@@ -505,25 +532,42 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def query_hits(self) -> int:
-        if self.search_query_worker is None:
+        if len(self.search_query_workers) == 0:
             return 0
         else:
-            return self.search_query_worker.query_hits()
+            return sum([i.query_hits() for i in self.search_query_workers])
 
     def results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_query_worker is None:
+        logger.info(f"results_page(): page_num = {page_num}")
+        n = len(self.running_queries())
+        if n != 0:
+            logger.info(f"Running queries: {n}, return empty results")
             return []
         else:
-            return self.search_query_worker.results_page(page_num)
+            a: List[SearchResult] = []
+            for i in self.search_query_workers:
+                a.extend(i.results_page(page_num))
+
+            # The higher the score, the better. Reverse to get descending order.
+            res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+            return res
+
+    def running_queries(self) -> List[SearchQueryWorker]:
+        return [i for i in self.search_query_workers if i.query_finished is None]
 
     def _search_query_finished(self):
-        logger.info("_search_query_finished()")
-        self.pw.stop_loading_animation()
+        n = len(self.running_queries())
+        logger.info(f"_search_query_finished(), still running: {n}")
 
-        if self.search_query_worker is None:
+        if n > 0:
             return
 
-        if self._last_query_time != self.search_query_worker.query_started:
+        self.pw.stop_loading_animation()
+
+        if len(self.search_query_workers) == 0:
+            return
+
+        if self._last_query_time != self.search_query_workers[0].query_started:
             return
 
         # Restore the search icon, processing finished
@@ -535,7 +579,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self.enable_sidebar:
             self.pw._update_sidebar_fulltext(self.query_hits())
 
-        results = self.search_query_worker.results_page(0)
+        results = self.results_page(0)
 
         if self.query_hits() == 1 and results[0]['uid'] is not None:
             self._show_sutta_by_uid(results[0]['uid'])
@@ -547,9 +591,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         logger.info("_start_query_worker()")
         self.pw.start_loading_animation()
 
-        self._init_search_query_worker(query)
-        if self.search_query_worker is not None:
-            self.thread_pool.start(self.search_query_worker)
+        self._init_search_query_workers(query)
+        for i in self.search_query_workers:
+            self.thread_pool.start(i)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -585,8 +629,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         self.showing_query_in_tab = True
-        if self.search_query_worker is not None:
-            self._get_active_tab().render_search_results(self.search_query_worker.all_results())
+        if len(self.running_queries()) == 0:
+            a = []
+            for i in self.search_query_workers:
+                a.extend(i.all_results())
+            res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+            self._get_active_tab().render_search_results(res)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         if not self.pw.action_Search_Completion.isChecked():
@@ -611,17 +659,19 @@ QWidget:focus { border: 1px solid #1092C3; }
         # TODO This is a synchronous version of _start_query_worker(), still
         # used in links_browser.py. Update and use the background thread worker.
 
-        if self.search_query_worker is None:
-            self._init_search_query_worker(query)
+        self._init_search_query_workers(query)
 
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
 
-        first_page_results = []
-        if self.search_query_worker is not None:
-            self.search_query_worker.search_query.new_query(query, disabled_labels, only_lang, only_source)
-            first_page_results = self.search_query_worker.search_query.highlight_results_page(0)
+        # first page results
+        a = []
+        for i in self.search_query_workers:
+            i.search_query.new_query(query, disabled_labels, only_lang, only_source)
+            a.extend(i.results_page(0))
 
-        return first_page_results
+        res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+
+        return res
 
     def _set_qwe_html(self, html: str):
         self.sutta_tab.set_qwe_html(html)

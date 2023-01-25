@@ -33,7 +33,8 @@ class SearchQueryWorker(QRunnable):
         self.search_mode = search_mode
 
         self.query = ""
-        self.query_started = datetime.now()
+        self.query_started: datetime = datetime.now()
+        self.query_finished: Optional[datetime] = None
         self.disabled_labels = None
         self.only_source = None
 
@@ -48,6 +49,8 @@ class SearchQueryWorker(QRunnable):
 
         self.query = consistent_nasal_m(query.lower())
         self.query_started = query_started
+        self.query_finished = None
+        self.will_emit_finished = True
         self.disabled_labels = disabled_labels
         self.only_lang = None if only_lang is None else only_lang.lower()
         self.only_source = None if only_source is None else only_source.lower()
@@ -82,7 +85,7 @@ class SearchQueryWorker(QRunnable):
     def results_page(self, page_num: int) -> List[SearchResult]:
         if page_num not in self._highlighted_result_pages:
             if self.search_mode == SearchMode.FulltextMatch:
-                self._highlighted_result_pages[page_num] = self.search_query.highlight_results_page(page_num)
+                self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
             else:
                 page_start = page_num * self._page_len
                 page_end = page_start + self._page_len
@@ -96,9 +99,6 @@ class SearchQueryWorker(QRunnable):
                 self._highlighted_result_pages[page_num] = page
 
         return self._highlighted_result_pages[page_num]
-
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        return self.results_page(page_num)
 
     def _fragment_around_query(self, query: str, content: str) -> str:
         n = content.lower().find(query.lower())
@@ -185,7 +185,7 @@ class SearchQueryWorker(QRunnable):
 
             if self.search_mode == SearchMode.FulltextMatch:
                  self.search_query.new_query(self.query, self.disabled_labels, self.only_lang, self.only_source)
-                 self._highlighted_result_pages[0] = self.search_query.highlight_results_page(0)
+                 self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
             elif self.search_mode == SearchMode.ExactMatch:
                 _, _, db_session = get_db_engine_connection_session()
@@ -396,8 +396,10 @@ class SearchQueryWorker(QRunnable):
 
                 db_session.close()
 
-            logger.info("signals.finished.emit()")
-            self.signals.finished.emit()
+            self.query_finished = datetime.now()
+            if self.will_emit_finished:
+                logger.info("signals.finished.emit()")
+                self.signals.finished.emit()
 
         except Exception as e:
             logger.error(e)

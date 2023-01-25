@@ -1,7 +1,7 @@
 from sqlalchemy import (MetaData, Table, Column, Integer, String,
                         ForeignKey, Boolean, DateTime, LargeBinary)
 
-from sqlalchemy import func
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -205,6 +205,7 @@ class DictWord(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at = Column(DateTime(timezone=True))
 
     dictionary = relationship("Dictionary", back_populates="dict_words")
     examples = relationship("Example", back_populates="dict_word", passive_deletes=True)
@@ -440,6 +441,7 @@ class Challenge(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at = Column(DateTime(timezone=True))
 
     course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
     group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)

@@ -213,7 +213,10 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
                           .filter(Um.Sutta.uid == uid) \
                           .all()
 
-        self._app_data.search_indexed.index_suttas(DbSchemaName.UserData.value, s)
+        self._app_data.search_indexed.index_suttas(
+            self._app_data.search_indexed.suttas_index,
+            DbSchemaName.UserData.value,
+            s)
 
     def import_sheet(self, sheet: Worksheet):
         logger.info("=== import_sheet() ===")

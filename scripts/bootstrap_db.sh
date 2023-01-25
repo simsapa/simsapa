@@ -38,6 +38,7 @@ BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources
 USE_TEST_DATA=false
 DISABLE_LOG=false
 ENABLE_PRINT_LOG=true
+START_NEW_LOG=false
 ENABLE_WIP_FEATURES=false"
 
 echo "$dotenv" > .env
@@ -46,7 +47,7 @@ echo "" > "$SIMSAPA_DIR/log.txt"
 
 echo "=== Bootstrap Appdata DB ==="
 
-./scripts/bootstrap_appdata_db.py
+./scripts/bootstrap_appdata.py
 
 echo "=== Create appdata.tar.bz2 ==="
 
@@ -138,6 +139,39 @@ tar cjf sanskrit-index.tar.bz2 index/
 cd - || exit
 
 mv "$ASSETS_DIR"/sanskrit-index.tar.bz2 "$RELEASE_DIR"
+
+echo "=== Bootstrap Languages ==="
+
+# AQL: LET docs = (FOR x IN language FILTER x._key != 'en' && x._key != 'pli' RETURN x._key) RETURN docs
+
+for lang in 'af' 'ar' 'au' 'bn' 'ca' 'cs' 'de' 'es' 'ev' 'fa' 'fi' 'fr' 'gu' 'haw' 'he' 'hi' 'hr' 'hu' 'id' 'it' 'jpn' 'kan' 'kho' 'kln' 'ko' 'la' 'lt' 'lzh' 'mr' 'my' 'nl' 'no' 'pgd' 'pl' 'pra' 'pt' 'ro' 'ru' 'san' 'si' 'sk' 'sl' 'sld' 'sr' 'sv' 'ta' 'th' 'uig' 'vi' 'vu' 'xct' 'xto' 'zh'
+do
+    echo "=== $lang ==="
+    name="suttas_lang_$lang"
+
+    ./scripts/bootstrap_suttas_lang.py $lang | tee out.log
+
+    ok=$(grep "0 suttas for $lang, exiting." out.log)
+    if [ "$ok" != "" ]; then
+        f="$DIST_DIR/$name.sqlite3"
+        if [ -e "$f" ]; then rm "$f"; fi
+        continue
+    fi
+
+    cd "$DIST_DIR" || exit
+    tar cjf "$name.tar.bz2" "$name.sqlite3"
+    mv "$name.tar.bz2" "$RELEASE_DIR"
+    cd - || exit
+
+    ./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
+
+    ./run.py index suttas-lang $lang
+
+    cd "$ASSETS_DIR" || exit
+    tar cjf "$name.tar.bz2" "index/$name"_*
+    mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
+    cd - || exit
+done
 
 echo "=== Copy log.txt ==="
 

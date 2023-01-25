@@ -172,12 +172,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         else:
             return None
 
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_query_worker is None:
-            return []
-        else:
-            return self.search_query_worker.highlight_results_page(page_num)
-
     def query_hits(self) -> int:
         if self.search_query_worker is None:
             return 0

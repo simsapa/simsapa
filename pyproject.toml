@@ -75,8 +75,6 @@ simsapa = 'simsapa.runner:main'
 pyinstaller = "^5.7"
 tuna = { git = "https://github.com/nschloe/tuna.git" }
 
-# nuitka = "^1.2"
-# orderedset = "^2.0.3"
 # scalene = "^1.5.14"
 
 pytest = "~7.2.0"

@@ -1,7 +1,7 @@
 from sqlalchemy import (MetaData, Table, Column, Integer, String,
                         ForeignKey, Boolean, DateTime, LargeBinary)
 
-from sqlalchemy import func
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -108,6 +108,7 @@ class Sutta(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at = Column(DateTime(timezone=True))
 
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
@@ -205,6 +206,7 @@ class DictWord(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at = Column(DateTime(timezone=True))
 
     dictionary = relationship("Dictionary", back_populates="dict_words")
     examples = relationship("Example", back_populates="dict_word", passive_deletes=True)

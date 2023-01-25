@@ -10,7 +10,6 @@ __pycache__/
 # build folders
 build/
 dist/
-dist_nuitka/
 
 # mypy
 .mypy_cache/

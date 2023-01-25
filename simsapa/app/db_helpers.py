@@ -119,11 +119,11 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
 
     if not os.path.isfile(app_db_path):
         logger.error(f"Database file doesn't exist: {app_db_path}")
-        exit(1)
+        sys.exit(1)
 
     if include_userdata and not os.path.isfile(user_db_path):
         logger.error(f"Database file doesn't exist: {user_db_path}")
-        exit(1)
+        sys.exit(1)
 
     try:
         # Create an in-memory database
@@ -142,9 +142,32 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
 
     except Exception as e:
         logger.error(f"Can't connect to database: {e}")
-        exit(1)
+        sys.exit(1)
 
     return (db_eng, db_conn, db_session)
+
+def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Session:
+    if not os.path.isfile(db_path):
+        logger.error(f"Database file doesn't exist: {db_path}")
+        sys.exit(1)
+
+    try:
+        # Create an in-memory database
+        db_eng = create_engine("sqlite+pysqlite://", echo=False)
+
+        db_conn = db_eng.connect()
+
+        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS {schema.value};")
+
+        Session = sessionmaker(db_eng)
+        Session.configure(bind=db_eng)
+        db_session = Session()
+
+    except Exception as e:
+        print(f"Can't connect to database: {e}")
+        sys.exit(1)
+
+    return db_session
 
 def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
     directory = ScriptDirectory.from_config(alembic_cfg)
