@@ -13,11 +13,12 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import compact_rich_text, gretil_header_to_footer
 from simsapa.app.db import appdata_models as Am
 
 import helpers
+import suttacentral
 
 load_dotenv()
 
@@ -26,10 +27,11 @@ if s is None or s == "":
     logger.error("Missing env variable: BOOTSTRAP_ASSETS_DIR")
     sys.exit(1)
 
-bootstrap_assets_dir = Path(s)
-gretil_html_dir = bootstrap_assets_dir.joinpath("sanskrit/gretil/1_sanskr/tei/transformations/html")
+BOOTSTRAP_ASSETS_DIR = Path(s)
+SC_DATA_DIR = BOOTSTRAP_ASSETS_DIR.joinpath("sc-data")
+gretil_html_dir = BOOTSTRAP_ASSETS_DIR.joinpath("sanskrit/gretil/1_sanskr/tei/transformations/html")
 
-for p in [bootstrap_assets_dir, gretil_html_dir]:
+for p in [BOOTSTRAP_ASSETS_DIR, SC_DATA_DIR, gretil_html_dir]:
     if not p.exists():
         logger.error(f"Missing folder: {p}")
         sys.exit(1)
@@ -82,7 +84,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
         title = title.strip()
 
         ref = html_path.stem.replace('sa_', '')
-        lang = "skr"
+        lang = "san"
         author = "gretil"
         uid = f"{ref}/{lang}/{author}"
 
@@ -90,7 +92,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
 
         main_text = gretil_header_to_footer(body)
 
-        content_html = '<div class="gretil lang-skr">' + main_text + '</div>'
+        content_html = '<div class="gretil lang-san">' + main_text + '</div>'
 
         sutta = Am.Sutta(
             source_uid = author,
@@ -142,15 +144,20 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
 
 
 def main():
-    sanskrit_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("sanskrit-texts.sqlite3")
-    sanskrit_db = helpers.get_appdata_db(sanskrit_db_path, remove_if_exists = True)
+    sanskrit_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("sanskrit-texts.sqlite3")
+    sanskrit_db = helpers.get_simsapa_db(sanskrit_db_path, DbSchemaName.AppData, remove_if_exists = True)
 
     limit = BOOTSTRAP_LIMIT
 
     populate_sanskrit_from_gretil(sanskrit_db, limit)
 
-    appdata_db_path = bootstrap_assets_dir.joinpath("dist").joinpath("appdata.sqlite3")
-    appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = False)
+    sc_db = suttacentral.get_suttacentral_db()
+
+    # populate to sanskrit_db here, then all will be copied to appdata
+    suttacentral.populate_suttas_from_suttacentral(sanskrit_db, DbSchemaName.AppData, sc_db, SC_DATA_DIR, 'san', limit)
+
+    appdata_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("appdata.sqlite3")
+    appdata_db = helpers.get_simsapa_db(appdata_db_path, DbSchemaName.AppData, remove_if_exists = False)
 
     populate_from_sanskrit_to_appdata(sanskrit_db, appdata_db)
 

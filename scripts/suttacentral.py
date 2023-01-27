@@ -3,7 +3,6 @@ from pathlib import Path
 import re
 import json
 from typing import Dict, List, Optional, TypedDict
-import roman
 
 from sqlalchemy import null, or_, and_
 from sqlalchemy.sql import func
@@ -12,11 +11,13 @@ from sqlalchemy.orm.session import Session
 from pyArango.connection import Connection
 from pyArango.database import DBHandle
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, html_get_sutta_page_body, compact_rich_text, sutta_range_from_ref, normalize_sutta_ref
+from simsapa.app.db import userdata_models as Um
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, html_get_sutta_page_body, compact_rich_text, sutta_range_from_ref
 
 import helpers
+from simsapa.app.types import USutta
 
 def get_suttacentral_db() -> DBHandle:
     conn = Connection(
@@ -62,7 +63,7 @@ def bilara_text_uid(x) -> str:
 
     return f"{x['uid']}/{x['lang']}/{author}"
 
-def html_text_to_sutta(x, title: str, _: Optional[str]) -> Am.Sutta:
+def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) -> USutta:
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
@@ -77,28 +78,49 @@ def html_text_to_sutta(x, title: str, _: Optional[str]) -> Am.Sutta:
     sutta_range = sutta_range_from_ref(x['uid'])
     if not sutta_range:
         logger.error(f"Can't determine sutta range: {x['uid']}")
-        sys.exit(1)
 
-    return Am.Sutta(
-        source_uid = source_uid,
-        source_info = x['_id'],
-        # The All-embracing Net of Views
-        title = consistent_nasal_m(title),
-        # dn1/en/bodhi
-        uid = uid,
-        # SN 12.23
-        sutta_ref = helpers.uid_to_ref(x['uid']),
-        sutta_range_group = sutta_range['group'],
-        sutta_range_start = sutta_range['start'],
-        sutta_range_end = sutta_range['end'],
-        # en
-        language = x['lang'],
-        content_html = content_html,
-        content_plain = content_plain,
-        created_at = func.now(),
-    )
+    if schema == DbSchemaName.AppData:
+        sutta = Am.Sutta(
+            source_uid = source_uid,
+            source_info = x['_id'],
+            # The All-embracing Net of Views
+            title = consistent_nasal_m(title),
+            # dn1/en/bodhi
+            uid = uid,
+            # SN 12.23
+            sutta_ref = helpers.uid_to_ref(x['uid']),
+            sutta_range_group = sutta_range['group'] if sutta_range else None,
+            sutta_range_start = sutta_range['start'] if sutta_range else None,
+            sutta_range_end = sutta_range['end'] if sutta_range else None,
+            # en
+            language = x['lang'],
+            content_html = content_html,
+            content_plain = content_plain,
+            created_at = func.now(),
+        )
+    else:
+        sutta = Um.Sutta(
+            source_uid = source_uid,
+            source_info = x['_id'],
+            # The All-embracing Net of Views
+            title = consistent_nasal_m(title),
+            # dn1/en/bodhi
+            uid = uid,
+            # SN 12.23
+            sutta_ref = helpers.uid_to_ref(x['uid']),
+            sutta_range_group = sutta_range['group'] if sutta_range else None,
+            sutta_range_start = sutta_range['start'] if sutta_range else None,
+            sutta_range_end = sutta_range['end'] if sutta_range else None,
+            # en
+            language = x['lang'],
+            content_html = content_html,
+            content_plain = content_plain,
+            created_at = func.now(),
+        )
 
-def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
+    return sutta
+
+def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
     content = x['text']
 
     if tmpl_json is None:
@@ -120,29 +142,54 @@ def bilara_text_to_sutta(x, title: str, tmpl_json: Optional[str]) -> Am.Sutta:
     sutta_range = sutta_range_from_ref(x['uid'])
     if not sutta_range:
         logger.error(f"Can't determine sutta range: {x['uid']}")
-        sys.exit(1)
 
-    return Am.Sutta(
-        source_uid = source_uid,
-        source_info = x['_id'],
-        title = consistent_nasal_m(title),
-        # mn123/pli/ms
-        uid = uid,
-        # SN 12.23
-        sutta_ref = helpers.uid_to_ref(x['uid']),
-        sutta_range_group = sutta_range['group'],
-        sutta_range_start = sutta_range['start'],
-        sutta_range_end = sutta_range['end'],
-        # pli
-        language = x['lang'],
-        content_plain = content_plain,
-        # Not saving the html to reduce DB size. content_plain is used for
-        # indexing and search. Re-generate HTML from JSON is needed.
-        content_html = null(),
-        content_json = consistent_nasal_m(content),
-        content_json_tmpl = tmpl_json,
-        created_at = func.now(),
-    )
+    if schema == DbSchemaName.AppData:
+        sutta = Am.Sutta(
+            source_uid = source_uid,
+            source_info = x['_id'],
+            title = consistent_nasal_m(title),
+            # mn123/pli/ms
+            uid = uid,
+            # SN 12.23
+            sutta_ref = helpers.uid_to_ref(x['uid']),
+            sutta_range_group = sutta_range['group'] if sutta_range else None,
+            sutta_range_start = sutta_range['start'] if sutta_range else None,
+            sutta_range_end = sutta_range['end'] if sutta_range else None,
+            # pli
+            language = x['lang'],
+            content_plain = content_plain,
+            # Not saving the html to reduce DB size. content_plain is used for
+            # indexing and search. Re-generate HTML from JSON is needed.
+            content_html = null(),
+            content_json = consistent_nasal_m(content),
+            content_json_tmpl = tmpl_json,
+            created_at = func.now(),
+        )
+
+    else:
+        sutta = Um.Sutta(
+            source_uid = source_uid,
+            source_info = x['_id'],
+            title = consistent_nasal_m(title),
+            # mn123/pli/ms
+            uid = uid,
+            # SN 12.23
+            sutta_ref = helpers.uid_to_ref(x['uid']),
+            sutta_range_group = sutta_range['group'] if sutta_range else None,
+            sutta_range_start = sutta_range['start'] if sutta_range else None,
+            sutta_range_end = sutta_range['end'] if sutta_range else None,
+            # pli
+            language = x['lang'],
+            content_plain = content_plain,
+            # Not saving the html to reduce DB size. content_plain is used for
+            # indexing and search. Re-generate HTML from JSON is needed.
+            content_html = null(),
+            content_json = consistent_nasal_m(content),
+            content_json_tmpl = tmpl_json,
+            created_at = func.now(),
+        )
+
+    return sutta
 
 def get_titles(db: DBHandle, language = 'en') -> dict[str, str]:
     if language == 'pli':
@@ -210,7 +257,7 @@ def _uid_is_ignored(uid: str) -> bool:
 
     return False
 
-def get_suttas(db: DBHandle, sc_data_dir: Path, language = 'en', limit: Optional[int] = None) -> dict[str, Am.Sutta]:
+def get_suttas(db: DBHandle, schema: DbSchemaName, sc_data_dir: Path, language = 'en', limit: Optional[int] = None) -> dict[str, USutta]:
     logger.info("=== get_suttas() ===")
 
     # NOTE: In suttacentral records an uid is not a unique record, it is the
@@ -221,7 +268,7 @@ def get_suttas(db: DBHandle, sc_data_dir: Path, language = 'en', limit: Optional
     #
     # Bilara format is newer and edited, we'll prefer that source to html_text.
 
-    suttas: dict[str, Am.Sutta] = {}
+    suttas: dict[str, USutta] = {}
     suttas_html_tmpl_json: dict[str, str] = {}
 
     get_html_text_aql = '''
@@ -317,7 +364,7 @@ def get_suttas(db: DBHandle, sc_data_dir: Path, language = 'en', limit: Optional
                 continue
 
             if uid not in suttas.keys():
-                suttas[uid] = f_to_sutta(r, title, tmpl_json)
+                suttas[uid] = f_to_sutta(r, schema, title, tmpl_json)
 
             elif 'muids' in r.keys() and ('reference' in r['muids'] or 'variant' in r['muids']):
                 # keeping only the 'root' version
@@ -327,12 +374,12 @@ def get_suttas(db: DBHandle, sc_data_dir: Path, language = 'en', limit: Optional
             elif 'muids' in r.keys() and 'root' in r['muids']:
                 # keeping only the 'root' version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title, tmpl_json)
+                suttas[uid] = f_to_sutta(r, schema, title, tmpl_json)
 
             elif r['_id'].startswith('sc_bilara_texts/') and suttas[uid].source_info.startswith('html_text/'):
                 # keeping the Bilara version
                 known_dup += 1
-                suttas[uid] = f_to_sutta(r, title, tmpl_json)
+                suttas[uid] = f_to_sutta(r, schema, title, tmpl_json)
 
             else:
                 unknown_dup += 1
@@ -376,7 +423,7 @@ def convert_paths_to_content(doc, sc_data_dir: Path):
                         doc[to_prop] = load_func(f)
 
 
-def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, language: str, limit: Optional[int] = None):
+def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandle, sc_data_dir: Path, language: str, limit: Optional[int] = None):
     logger.info("=== add_sutta_variants() ===")
 
     get_bilara_text_variant_aql = '''
@@ -413,10 +460,17 @@ def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
         if _uid_is_ignored(sutta_uid):
             continue
 
-        res = appdata_db \
-            .query(Am.Sutta.id) \
-            .filter(Am.Sutta.uid == sutta_uid) \
-            .first()
+        if schema == DbSchemaName.AppData:
+            res = appdata_db \
+                .query(Am.Sutta.id) \
+                .filter(Am.Sutta.uid == sutta_uid) \
+                .first()
+
+        else:
+            res = appdata_db \
+                .query(Um.Sutta.id) \
+                .filter(Um.Sutta.uid == sutta_uid) \
+                .first()
 
         if res is None:
             logger.error(f"add_sutta_variants() Can't find sutta uid: {sutta_uid}")
@@ -424,13 +478,23 @@ def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
 
         sutta_id = int(res[0])
 
-        item = Am.SuttaVariant(
-            sutta_id = sutta_id,
-            sutta_uid = sutta_uid,
-            language = language,
-            source_uid = source_uid,
-            content_json = consistent_nasal_m(r['text']),
-        )
+        if schema == DbSchemaName.AppData:
+            item = Am.SuttaVariant(
+                sutta_id = sutta_id,
+                sutta_uid = sutta_uid,
+                language = language,
+                source_uid = source_uid,
+                content_json = consistent_nasal_m(r['text']),
+            )
+
+        else:
+            item = Um.SuttaVariant(
+                sutta_id = sutta_id,
+                sutta_uid = sutta_uid,
+                language = language,
+                source_uid = source_uid,
+                content_json = consistent_nasal_m(r['text']),
+            )
 
         results.append(item)
 
@@ -444,7 +508,7 @@ def add_sutta_variants(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
         logger.error(e)
         sys.exit(1)
 
-def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, language: str, limit: Optional[int] = None):
+def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandle, sc_data_dir: Path, language: str, limit: Optional[int] = None):
     logger.info("=== add_sutta_comments() ===")
 
     get_bilara_text_comment_aql = '''
@@ -481,10 +545,17 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
         if _uid_is_ignored(sutta_uid):
             continue
 
-        res = appdata_db \
-            .query(Am.Sutta.id) \
-            .filter(Am.Sutta.uid == sutta_uid) \
-            .first()
+        if schema == DbSchemaName.AppData:
+            res = appdata_db \
+                .query(Am.Sutta.id) \
+                .filter(Am.Sutta.uid == sutta_uid) \
+                .first()
+
+        else:
+            res = appdata_db \
+                .query(Um.Sutta.id) \
+                .filter(Um.Sutta.uid == sutta_uid) \
+                .first()
 
         if res is None:
             logger.error(f"add_sutta_comments() Can't find sutta uid: {sutta_uid}")
@@ -492,13 +563,23 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
 
         sutta_id = int(res[0])
 
-        item = Am.SuttaComment(
-            sutta_id = sutta_id,
-            sutta_uid = sutta_uid,
-            language = language,
-            source_uid = source_uid,
-            content_json = consistent_nasal_m(r['text']),
-        )
+        if schema == DbSchemaName.AppData:
+            item = Am.SuttaComment(
+                sutta_id = sutta_id,
+                sutta_uid = sutta_uid,
+                language = language,
+                source_uid = source_uid,
+                content_json = consistent_nasal_m(r['text']),
+            )
+
+        else:
+            item = Um.SuttaComment(
+                sutta_id = sutta_id,
+                sutta_uid = sutta_uid,
+                language = language,
+                source_uid = source_uid,
+                content_json = consistent_nasal_m(r['text']),
+            )
 
         results.append(item)
 
@@ -512,8 +593,8 @@ def add_sutta_comments(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, 
         logger.error(e)
         sys.exit(1)
 
-def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle, sc_data_dir: Path, lang: str, limit: Optional[int] = None):
-        suttas = get_suttas(sc_db, sc_data_dir, lang, limit)
+def populate_suttas_from_suttacentral(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandle, sc_data_dir: Path, lang: str, limit: Optional[int] = None):
+        suttas = get_suttas(sc_db, schema, sc_data_dir, lang, limit)
         if len(suttas) == 0:
             # NOTE: This exact output string is checked for status in bootstrap_db.sh
             logger.info(f"0 suttas for {lang}, exiting.")
@@ -531,9 +612,9 @@ def populate_suttas_from_suttacentral(appdata_db: Session, sc_db: DBHandle, sc_d
             logger.error(e)
             sys.exit(1)
 
-        add_sutta_variants(appdata_db, sc_db, sc_data_dir, lang, limit)
+        add_sutta_variants(appdata_db, schema, sc_db, sc_data_dir, lang, limit)
 
-        add_sutta_comments(appdata_db, sc_db, sc_data_dir, lang, limit)
+        add_sutta_comments(appdata_db, schema, sc_db, sc_data_dir, lang, limit)
 
         logger.info(f"DONE: {lang}")
 
@@ -545,114 +626,6 @@ class TextInfo(TypedDict):
     alt_volpage: Optional[str]
     alt_name: Optional[str]
     biblio_uid: Optional[str]
-
-def _text_to_multi_ref(collection: str, ref_text: str) -> Optional[Am.MultiRef]:
-    ref_text = ref_text.lower()
-
-    # Vinaya, Sutta Vibhanga
-    if collection == 'vb':
-        # ref includes the volume or not?
-        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
-            collection = 'vin'
-        else:
-            collection = 'vin i'
-
-    # pli-tv-bi-pm-{pj,ss,ay,np,pc,pd,sk,as}
-    # pli-tv-bu-pm-{pj,ss,ay,np,pc,pd,sk,as}
-    #
-    # volpage and alt_volpage is empty in SuttaCentral DB.
-
-    # Bhikkhu Vibhanga
-    if collection.startswith('pli-tv-bu-vb'):
-        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
-            collection = 'vin'
-        else:
-            collection = 'vin iii'
-
-    # pli-tv-bi-vb-pj5
-    # PTS 4.211,PTS 4.212,PTS 4.213, PTS 4.214, PTS 4.215
-
-    # Bhikkhuni Vibhanga
-    if collection.startswith('pli-tv-bi-vb'):
-        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
-            collection = 'vin'
-        else:
-            collection = 'vin iv'
-
-    # Vinaya, Parivāra
-    if collection.startswith('pli-tv-pvr'):
-        # ref includes the volume or not?
-        if re.search(r' +[0-9ivx]+[\. ][0-9]+', ref_text):
-            collection = 'vin'
-        else:
-            collection = 'vin v'
-
-    # PTS (1st ed) SN i 36
-    # PTS (2nd ed) SN i 79
-    if '(1st ed)' in ref_text:
-        ref_text = ref_text.replace('(1st ed)', '')
-
-        item = Am.MultiRef(
-            collection = collection,
-            ref_type = "pts",
-            ref = normalize_sutta_ref(ref_text),
-            edition = "1st ed. Feer (1884)",
-        )
-
-        return item
-
-    elif '(2nd ed)' in ref_text:
-        ref_text = ref_text.replace('(2nd ed)', '')
-
-        item = Am.MultiRef(
-            collection = collection,
-            ref_type = "pts",
-            ref = normalize_sutta_ref(ref_text),
-            edition = "2nd ed. Somaratne (1998)",
-        )
-
-        return item
-
-    refs = []
-    # Ref may contain a list of references, separated by commas.
-    # MN 13
-    # PTS 1.84, PTS 1.85, PTS 1.86, PTS 1.87, PTS 1.88, PTS 1.89, PTS 1.90
-    # PTS 3.123 = DN iii 123
-    matches = re.finditer(r'(?P<pts>pts *)?(?P<vol>\d+)\.(?P<page>\d+)', ref_text)
-    for m in matches:
-        vol = roman.toRoman(int(m.group('vol'))).lower()
-        s = f"{collection} {vol} {m.group('page')}"
-        s = re.sub(r'  +', ' ', s)
-        refs.append(s)
-
-    if len(refs) > 0:
-        item = Am.MultiRef(
-            collection = collection,
-            ref_type = "pts",
-            ref = ", ".join(refs),
-        )
-
-        return item
-
-    # Ref may contain roman numerals.
-    # DN iii 123
-    # PTS iii 123
-    matches = re.finditer(r'(?P<pts>pts *)?(?P<vol>[ivx]+)[\. ](?P<page>\d+)', ref_text)
-    for m in matches:
-        vol = m.group('vol').lower()
-        s = f"{collection} {vol} {m.group('page')}"
-        refs.append(s)
-
-    if len(refs) > 0:
-        item = Am.MultiRef(
-            collection = collection,
-            ref_type = "pts",
-            ref = ", ".join(refs),
-        )
-
-        return item
-
-    return None
 
 def add_sc_multi_refs(appdata_db: Session, sc_db: DBHandle):
     logger.info("=== add_sc_multi_refs() ===")
@@ -712,6 +685,9 @@ def add_sc_multi_refs(appdata_db: Session, sc_db: DBHandle):
 
 
     for part_uid in text_extra_info_by_uid.keys():
+        if part_uid == "":
+            continue
+
         sutta_range = sutta_range_from_ref(part_uid)
         if not sutta_range:
             logger.error(f"Can't determine sutta range: {part_uid}")
@@ -765,12 +741,12 @@ def add_sc_multi_refs(appdata_db: Session, sc_db: DBHandle):
         collection = re.sub(r'^([a-z]+)\d.*', r'\1', part_uid)
 
         if ref['volpage']:
-            item = _text_to_multi_ref(collection, ref['volpage'])
+            item = helpers.text_to_multi_ref(collection, ref['volpage'], DbSchemaName.AppData)
             if item:
                 multi_refs.append(item)
 
         if ref['alt_volpage']:
-            item = _text_to_multi_ref(collection, ref['alt_volpage'])
+            item = helpers.text_to_multi_ref(collection, ref['alt_volpage'], DbSchemaName.AppData)
             if item:
                 multi_refs.append(item)
 

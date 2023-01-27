@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-from simsapa import logger
+from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import create_app_dirs
 
 import helpers
@@ -43,13 +43,13 @@ def main():
     create_app_dirs()
 
     db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath(name)
-    db_session = helpers.get_appdata_db(db_path, remove_if_exists = True)
+    db_session = helpers.get_simsapa_db(db_path, DbSchemaName.UserData, remove_if_exists = True)
 
     limit = BOOTSTRAP_LIMIT
 
     sc_db = suttacentral.get_suttacentral_db()
 
-    suttacentral.populate_suttas_from_suttacentral(db_session, sc_db, SC_DATA_DIR, lang, limit)
+    suttacentral.populate_suttas_from_suttacentral(db_session, DbSchemaName.UserData, sc_db, SC_DATA_DIR, lang, limit)
 
 if __name__ == "__main__":
     main()

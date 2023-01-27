@@ -136,8 +136,8 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             if sutta_row['html_last_line'] <= 0:
                 content_html = gretil_header_to_footer(content_html)
 
-        if sutta_row['language'] == 'skr':
-            content_classes.append('lang-skr')
+        if sutta_row['language'] == 'san':
+            content_classes.append('lang-san')
 
         if len(content_classes) > 0:
             s = " ".join(content_classes)
@@ -216,6 +216,7 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         self._app_data.search_indexed.index_suttas(
             self._app_data.search_indexed.suttas_index,
             DbSchemaName.UserData.value,
+            self._app_data.db_session,
             s)
 
     def import_sheet(self, sheet: Worksheet):

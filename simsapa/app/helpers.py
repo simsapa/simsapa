@@ -402,6 +402,17 @@ def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
 
     ref = ref.replace('--', '-')
 
+    # sn22.57_a -> sn22.57
+    ref = re.sub(r'_a$', '', ref)
+
+    # an2.19_an3.29 -> an2.19
+    # an3.29_sn22.57 -> an3.29
+    ref = re.sub(r'_[as]n.*$', '', ref)
+
+    # snp1.2(33-34) -> snp1.2
+    if ref == "snp1.2(33-34)":
+        ref = "snp1.2"
+
     # Atthakata
     if ref.endswith('-a'):
         # dn2-a -> dn-a2
@@ -799,6 +810,14 @@ def dhp_verse_to_chapter(verse_num: int) -> Optional[str]:
         b = lim[1]
         if verse_num >= a and verse_num <= b:
             return f"dhp{a}-{b}"
+
+    return None
+
+
+def dhp_chapter_ref_for_verse_num(num: int) -> Optional[str]:
+    for ch, verses in DHP_CHAPTERS_TO_RANGE.items():
+        if num >= ch and num <= ch:
+            return f"dhp{verses[0]}-{verses[1]}"
 
     return None
 

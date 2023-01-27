@@ -331,7 +331,7 @@ class SearchIndexed:
 
     def index_all(self, db_session: Session, only_if_empty: bool = False):
         if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
-            general_langs = ['en', 'pli', 'skr']
+            general_langs = ['en', 'pli', 'san']
             logger.info(f"Indexing {', '.join(general_langs)} suttas ...")
 
             suttas: List[USutta] = db_session \

@@ -47,6 +47,7 @@ UChallengeCourse = Union[Am.ChallengeCourse, Um.ChallengeCourse]
 UChallengeGroup = Union[Am.ChallengeGroup, Um.ChallengeGroup]
 UChallenge = Union[Am.Challenge, Um.Challenge]
 
+UMultiRef = Union[Am.MultiRef, Um.MultiRef]
 
 class Labels(TypedDict):
     appdata: List[str]

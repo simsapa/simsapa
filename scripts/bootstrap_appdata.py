@@ -8,8 +8,6 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from collections import namedtuple
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 
@@ -50,22 +48,6 @@ if s is None or s == "":
 else:
     BOOTSTRAP_LIMIT = int(s)
 
-
-def get_legacy_db(db_path: Path) -> Session:
-    try:
-        # Create an in-memory database
-        engine = create_engine(f"sqlite+pysqlite:///{db_path}", echo=False)
-
-        # db_conn = engine.connect()
-
-        Session = sessionmaker(engine)
-        Session.configure(bind=engine)
-        db_session = Session()
-    except Exception as e:
-        logger.error(f"Can't connect to database: {e}")
-        exit(1)
-
-    return db_session
 
 def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: Session, limit: Optional[int] = None):
     logger.info("Adding Nyanatiloka DictWords from legacy dict_words")
@@ -176,10 +158,10 @@ def main():
     create_app_dirs()
 
     appdata_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("appdata.sqlite3")
-    appdata_db = helpers.get_appdata_db(appdata_db_path, remove_if_exists = True)
+    appdata_db = helpers.get_simsapa_db(appdata_db_path, DbSchemaName.AppData, remove_if_exists = True)
 
-    legacy_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("db").joinpath("appdata-legacy.sqlite3")
-    legacy_db = get_legacy_db(legacy_db_path)
+    legacy_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("legacy-db").joinpath("appdata-legacy.sqlite3")
+    legacy_db = helpers.get_db_session(legacy_db_path)
 
     limit = BOOTSTRAP_LIMIT
 
@@ -192,7 +174,7 @@ def main():
     populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db, limit)
 
     for lang in ['en', 'pli']:
-        suttacentral.populate_suttas_from_suttacentral(appdata_db, sc_db, SC_DATA_DIR, lang, limit)
+        suttacentral.populate_suttas_from_suttacentral(appdata_db, DbSchemaName.AppData, sc_db, SC_DATA_DIR, lang, limit)
 
     cst4.populate_suttas_from_cst4(appdata_db, limit)
 

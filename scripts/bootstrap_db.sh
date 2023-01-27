@@ -140,11 +140,19 @@ cd - || exit
 
 mv "$ASSETS_DIR"/sanskrit-index.tar.bz2 "$RELEASE_DIR"
 
-echo "=== Bootstrap Languages ==="
+echo "=== Bootstrap Languages from SuttaCentral ==="
 
-# AQL: LET docs = (FOR x IN language FILTER x._key != 'en' && x._key != 'pli' RETURN x._key) RETURN docs
+# AQL:
+#
+# LET docs = (FOR x IN language
+# FILTER x._key != 'en'
+# && x._key != 'pli'
+# && x._key != 'san'
+# && x._key != 'hu'
+# RETURN x._key)
+# RETURN docs
 
-for lang in 'af' 'ar' 'au' 'bn' 'ca' 'cs' 'de' 'es' 'ev' 'fa' 'fi' 'fr' 'gu' 'haw' 'he' 'hi' 'hr' 'hu' 'id' 'it' 'jpn' 'kan' 'kho' 'kln' 'ko' 'la' 'lt' 'lzh' 'mr' 'my' 'nl' 'no' 'pgd' 'pl' 'pra' 'pt' 'ro' 'ru' 'san' 'si' 'sk' 'sl' 'sld' 'sr' 'sv' 'ta' 'th' 'uig' 'vi' 'vu' 'xct' 'xto' 'zh'
+for lang in 'af' 'ar' 'au' 'bn' 'ca' 'cs' 'de' 'es' 'ev' 'fa' 'fi' 'fr' 'gu' 'haw' 'he' 'hi' 'hr' 'id' 'it' 'jpn' 'kan' 'kho' 'kln' 'ko' 'la' 'lt' 'lzh' 'mr' 'my' 'nl' 'no' 'pgd' 'pl' 'pra' 'pt' 'ro' 'ru' 'si' 'sk' 'sl' 'sld' 'sr' 'sv' 'ta' 'th' 'uig' 'vi' 'vu' 'xct' 'xto' 'zh'
 do
     echo "=== $lang ==="
     name="suttas_lang_$lang"
@@ -172,6 +180,27 @@ do
     mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
     cd - || exit
 done
+
+echo "=== Bootstrap Hungarian from Buddha Ujja ==="
+
+lang="hu"
+name="suttas_lang_$lang"
+
+./scripts/buddha_ujja.py
+
+cd "$DIST_DIR" || exit
+tar cjf "$name.tar.bz2" "$name.sqlite3"
+mv "$name.tar.bz2" "$RELEASE_DIR"
+cd - || exit
+
+./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
+
+./run.py index suttas-lang $lang
+
+cd "$ASSETS_DIR" || exit
+tar cjf "$name.tar.bz2" "index/$name"_*
+mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
+cd - || exit
 
 echo "=== Copy log.txt ==="
 
