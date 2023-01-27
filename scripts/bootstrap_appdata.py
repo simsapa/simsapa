@@ -4,22 +4,21 @@ import os
 import sys
 from pathlib import Path
 import tomlkit
-from typing import List, Optional
+from typing import Optional
 from dotenv import load_dotenv
-from collections import namedtuple
 
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql import func
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import consistent_nasal_m, create_app_dirs, compact_rich_text
+from simsapa.app.helpers import create_app_dirs
 
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
 
 import helpers
 import suttacentral
+import nyanatiloka
 import cst4
 import dhammatalks_org
 import dhammapada_munindo
@@ -48,59 +47,6 @@ if s is None or s == "":
 else:
     BOOTSTRAP_LIMIT = int(s)
 
-
-def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, legacy_db: Session, limit: Optional[int] = None):
-    logger.info("Adding Nyanatiloka DictWords from legacy dict_words")
-
-    label = 'NYANAT'
-    # create the dictionary
-    dictionary = Am.Dictionary(
-        label = label,
-        title = "Nyanatiloka's Buddhist Dictionary",
-        created_at = func.now(),
-    )
-
-    try:
-        appdata_db.add(dictionary)
-        appdata_db.commit()
-    except Exception as e:
-        logger.error(e)
-        exit(1)
-
-    # get words and commit to appdata db
-
-    # label is stored lowercase in legacy db
-    if limit:
-        a = legacy_db.execute(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}' LIMIT {limit};") # type: ignore
-    else:
-        a = legacy_db.execute(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}';") # type: ignore
-
-    LegacyDictWord = namedtuple('LegacyDictWord', a.keys())
-    records = [LegacyDictWord(*r) for r in a.fetchall()]
-
-    def _legacy_to_dict_word(x: LegacyDictWord) -> Am.DictWord:
-        # all-lowercase uid
-        uid = f"{x.word}/{label}".lower()
-        return Am.DictWord(
-            dictionary_id = dictionary.id,
-            word = consistent_nasal_m(x.word),
-            uid = uid,
-            source_uid = label,
-            definition_plain = compact_rich_text(x.definition_plain),
-            definition_html = consistent_nasal_m(x.definition_html),
-            summary = consistent_nasal_m(x.summary),
-            created_at = func.now(),
-        )
-
-    dict_words: List[Am.DictWord] = list(map(_legacy_to_dict_word, records))
-
-    try:
-        for i in dict_words:
-            appdata_db.add(i)
-        appdata_db.commit()
-    except Exception as e:
-        logger.error(e)
-        exit(1)
 
 def populate_dict_words_from_stardict(appdata_db: Session,
                                       stardict_base_path: Path,
@@ -160,9 +106,6 @@ def main():
     appdata_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("appdata.sqlite3")
     appdata_db = helpers.get_simsapa_db(appdata_db_path, DbSchemaName.AppData, remove_if_exists = True)
 
-    legacy_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("legacy-db").joinpath("appdata-legacy.sqlite3")
-    legacy_db = helpers.get_db_session(legacy_db_path)
-
     limit = BOOTSTRAP_LIMIT
 
     sc_db = suttacentral.get_suttacentral_db()
@@ -171,7 +114,7 @@ def main():
 
     insert_db_version(appdata_db)
 
-    populate_nyanatiloka_dict_words_from_legacy(appdata_db, legacy_db, limit)
+    nyanatiloka.populate_nyanatiloka_dict_words_from_legacy(appdata_db, BOOTSTRAP_ASSETS_DIR, limit)
 
     for lang in ['en', 'pli']:
         suttacentral.populate_suttas_from_suttacentral(appdata_db, DbSchemaName.AppData, sc_db, SC_DATA_DIR, lang, limit)
