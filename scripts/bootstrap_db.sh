@@ -39,7 +39,9 @@ USE_TEST_DATA=false
 DISABLE_LOG=false
 ENABLE_PRINT_LOG=true
 START_NEW_LOG=false
-ENABLE_WIP_FEATURES=false"
+ENABLE_WIP_FEATURES=false
+NO_STATS=true
+RELEASES_CHANNEL=development"
 
 echo "$dotenv" > .env
 
@@ -205,6 +207,27 @@ cd - || exit
 echo "=== Copy log.txt ==="
 
 cp "$SIMSAPA_DIR/log.txt" "$RELEASE_DIR"
+
+echo "=== Release Info ==="
+
+cd "$DIST_DIR" || exit
+
+suttas_lang=$(ls -1 suttas_lang_*.tar.bz2 | sed 's/^suttas_lang_/\\"/' | perl -0777 -pe 's/\.tar\.bz2\n/\\", /g' | sed -e 's/^/[/; s/, *$/]/')
+datetime=$(date +%FT%T)
+
+release_info="[[assets.releases]]
+date = \"$datetime\"
+version_tag = \"v0.3.0-dev.1\"
+github_repo = \"simsapa/simsapa-assets\"
+suttas_lang = $suttas_lang
+title = \"Updates\"
+description = \"\"
+"
+
+echo "$release_info"
+
+echo "$release_info" > "release_info.toml"
+cd - || exit
 
 echo "=== Clean up ==="
 

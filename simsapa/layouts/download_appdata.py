@@ -21,9 +21,9 @@ from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries_with_requests
+from simsapa.app.helpers import EntryType, get_latest_release, get_releases_info
 
-from simsapa import logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa import SIMSAPA_RELEASES_BASE_URL, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
 
 from simsapa.assets import icons_rc
 
@@ -179,7 +179,7 @@ class DownloadAppdataWindow(QMainWindow):
         # Filter for app-compatible db versions, major and minor version number must agree.
 
         try:
-            requests.head("https://github.com/", timeout=5)
+            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "No connection, cannot download database: %s" % e
             QMessageBox.information(self,
@@ -190,38 +190,33 @@ class DownloadAppdataWindow(QMainWindow):
             return
 
         try:
-            stable_entries = get_feed_entries_with_requests("https://github.com/simsapa/simsapa-assets/releases.atom")
-            logger.info(f"stable entries: {stable_entries}")
+            info = get_releases_info()
+            compat_release = get_latest_release(info, EntryType.Assets)
+            if compat_release is None:
+                raise(Exception("Cannot find a compatible release"))
+
         except Exception as e:
             msg = "Download failed: %s" % e
+            logger.error(msg)
             QMessageBox.information(self,
                                     "Error",
                                     msg,
                                     QMessageBox.StandardButton.Ok)
-            logger.error(msg)
             return
 
-        if len(stable_entries) == 0:
-            return
-
-        compat_entries = filter_compatible_db_entries(stable_entries)
-        logger.info(f"compatible entries: {compat_entries}")
-
-        if len(compat_entries) == 0:
-            return
-
-        version = compat_entries[0]["version"]
+        version = compat_release["version_tag"]
+        github_repo = compat_release["github_repo"]
 
         # ensure 'v' prefix
         if version[0] != 'v':
             version = 'v' + version
 
-        appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
-        userdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/userdata.tar.bz2"
-        index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
+        appdata_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/appdata.tar.bz2"
+        userdata_tar_url = f"https://github.com/{github_repo}/releases/download/{version}/userdata.tar.bz2"
+        index_tar_url    = f"https://github.com/{github_repo}/releases/download/{version}/index.tar.bz2"
 
-        sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
-        sanskrit_index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-index.tar.bz2"
+        sanskrit_appdata_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/sanskrit-appdata.tar.bz2"
+        sanskrit_index_tar_url    = f"https://github.com/{github_repo}/releases/download/{version}/sanskrit-index.tar.bz2"
 
         # Default: General bundle
         urls = [

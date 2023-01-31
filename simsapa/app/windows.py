@@ -6,14 +6,15 @@ from typing import List, Optional
 import queue
 import json
 import webbrowser
+import requests
 from urllib.parse import parse_qs
 
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import logger, ApiAction, ApiMessage
-from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
-from simsapa.app.helpers import UpdateInfo, get_app_update_info, get_db_update_info, make_active_window, show_work_in_progress
+from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
+from simsapa.app.helpers import EntryType, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
 from simsapa.layouts.preview_window import PreviewWindow
@@ -1006,12 +1007,21 @@ class CheckUpdatesWorker(QRunnable):
 
     @pyqtSlot()
     def run(self):
+        # Test if connection to is working.
         try:
-            update_info = get_app_update_info()
+            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
+        except Exception as e:
+            logger.error("No Connection: Update info unavailable: %s" % e)
+            return None
+
+        try:
+            info = get_releases_info()
+
+            update_info = has_update(info, EntryType.Application)
             if update_info is not None:
                 self.signals.have_app_update.emit(update_info)
 
-            update_info = get_db_update_info()
+            update_info = has_update(info, EntryType.Assets)
             if update_info is not None:
                 self.signals.have_db_update.emit(update_info)
 
