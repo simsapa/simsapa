@@ -21,7 +21,7 @@ from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import EntryType, get_latest_release, get_releases_info
+from simsapa.app.helpers import get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
 from simsapa import SIMSAPA_RELEASES_BASE_URL, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
 
@@ -173,6 +173,13 @@ class DownloadAppdataWindow(QMainWindow):
     def stop_animation(self):
         self._movie.stop()
 
+    def _show_error(self, msg: str):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Download Error")
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
     def _run_download(self):
         # Retreive released asset versions from github.
@@ -191,9 +198,17 @@ class DownloadAppdataWindow(QMainWindow):
 
         try:
             info = get_releases_info()
-            compat_release = get_latest_release(info, EntryType.Assets)
+            compat_release = get_latest_app_compatible_assets_release(info)
             if compat_release is None:
-                raise(Exception("Cannot find a compatible release"))
+                asset_versions = list(map(lambda x: x['version_tag'], info['assets']['releases']))
+                msg = f"""
+                <p>Cannot find a compatible asset release.<br>
+                Release channel: {get_release_channel()}<br>
+                Application version: {get_app_version()}<br>
+                Available asset versions: {", ".join(asset_versions)}</p>
+                """.strip()
+
+                raise(Exception(msg))
 
         except Exception as e:
             msg = "Download failed: %s" % e
@@ -241,6 +256,8 @@ class DownloadAppdataWindow(QMainWindow):
         self.download_worker.urls = urls
 
         self.download_worker.signals.msg_update.connect(partial(self._msg_update))
+
+        self.download_worker.signals.error_msg.connect(partial(self._show_error))
 
         self.download_worker.signals.finished.connect(partial(self._download_finished))
         self.download_worker.signals.cancelled.connect(partial(self._download_cancelled))
@@ -323,6 +340,7 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
     cancelled = pyqtSignal()
     msg_update = pyqtSignal(str)
+    error_msg = pyqtSignal(str)
     set_total_progress = pyqtSignal(int)
     set_current_progress = pyqtSignal(int)
     download_max = pyqtSignal()
@@ -372,17 +390,17 @@ class Worker(QRunnable):
                 Path(i).unlink()
 
         except Exception as e:
-            # FIXME return error to download window and show the user
             msg = "%s" % e
             logger.error(msg)
+            self.signals.error_msg.emit(msg)
 
         finally:
             self.download_started.clear()
             self.signals.finished.emit()
 
     def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
-
         logger.info(f"download_file() : {url}, {folder_path}")
+
         file_name = url.split('/')[-1]
         file_path = folder_path.joinpath(file_name)
 
@@ -431,9 +449,6 @@ class Worker(QRunnable):
         temp_dir = ASSETS_DIR.joinpath('extract_temp')
         tar.extractall(temp_dir)
         tar.close()
-
-        # FIXME on Mac, it downloads the extra database (i.e.
-        # sanskrit-texts.sqlite3) but then deletes it. Path name problems?
 
         os.remove(tar_file_path)
 

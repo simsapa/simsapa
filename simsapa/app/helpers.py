@@ -137,13 +137,14 @@ def get_db_version() -> Optional[str]:
             .first()
         db_session.close()
     else:
-        res = None
+        return None
 
     if res is None:
-        # An old version number before db_version was stored.
-        ver = "v0.1.8-alpha.1"
-    else:
-        ver = str(res[0])
+        # A database exists but retreiving the db_version failed.
+        # Probably a very old db when version was not yet stored.
+        return None
+
+    ver = str(res[0])
 
     # 'v' prefix is invalid semver string
     # v0.1.7-alpha.1 -> 0.1.7-alpha.1
@@ -212,14 +213,19 @@ def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> Lis
 
     return versions
 
-def get_releases_info() -> ReleasesInfo:
-    logger.info("get_releases_info()")
-
+def get_release_channel() -> str:
     s = os.getenv('RELEASES_CHANNEL')
     if s is not None and s == 'development':
         channel = s
     else:
         channel = 'main'
+
+    return channel
+
+def get_releases_info() -> ReleasesInfo:
+    logger.info("get_releases_info()")
+
+    channel = get_release_channel()
 
     logger.info(f"Channel: {channel}")
 
@@ -267,24 +273,21 @@ def get_latest_release(info: ReleasesInfo, entry_type: EntryType) -> Optional[Re
     else:
         return None
 
-def get_latest_patch_compatible_release(info: ReleasesInfo, entry_type: EntryType) -> Optional[ReleaseEntry]:
-    if entry_type == EntryType.Application:
-        s = get_app_version()
-        releases = info['application']['releases']
-    else:
-        s = get_db_version()
-        releases = info['assets']['releases']
-
+def get_latest_app_compatible_assets_release(info: ReleasesInfo) -> Optional[ReleaseEntry]:
+    s = get_app_version()
     if s is None:
         return None
+    assets_releases = info['assets']['releases']
 
-    version = to_version(s)
+    # Compare app version with the latest available db version.
+
+    app_v = to_version(s)
 
     def _is_compat(x: ReleaseEntry) -> bool:
-        v = to_version(x['version_tag'])
-        return (v["major"] == version["major"] and v["minor"] == version["minor"])
+        db_v = to_version(x['version_tag'])
+        return (db_v["major"] == app_v["major"] and db_v["minor"] == app_v["minor"])
 
-    compat = list(filter(_is_compat, releases))
+    compat = list(filter(_is_compat, assets_releases))
 
     if len(compat) > 0:
         return compat[0]
