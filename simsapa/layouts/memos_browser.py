@@ -5,10 +5,8 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt6.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt6.QtWidgets import (QLabel, QLineEdit, QMessageBox)
+from PyQt6.QtWidgets import (QLineEdit, QMessageBox)
 from sqlalchemy.sql import func
-
-from simsapa.assets import icons_rc  # noqa: F401
 
 from simsapa import DbSchemaName, logger
 from ..app.db import appdata_models as Am

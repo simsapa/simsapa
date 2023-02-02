@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (QLabel, QMainWindow,
 
 from simsapa import logger
 from simsapa import ASSETS_DIR
-from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.db_models import DictionarySource
 from ..app.types import AppData, DictWord

@@ -20,8 +20,6 @@ from .layouts.download_appdata import DownloadAppdataWindow
 from .layouts.error_message import ErrorMessageWindow
 from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
-from simsapa.assets import icons_rc
-
 def excepthook(exc_type, exc_value, exc_tb):
     logger.error("excepthook()")
     tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))

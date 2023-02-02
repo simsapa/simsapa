@@ -5,9 +5,8 @@ from sqlalchemy.sql import func
 
 from PyQt6.QtCore import QAbstractListModel, Qt
 from PyQt6.QtGui import QIcon, QImage, QPixmap
-from PyQt6.QtWidgets import (QFileDialog, QLabel, QMainWindow,
+from PyQt6.QtWidgets import (QFileDialog, QMainWindow,
                              QMessageBox)
-from simsapa.assets import icons_rc  # noqa: F401
 
 from simsapa import DbSchemaName, logger
 from ..app.file_doc import FileDoc
