@@ -21,11 +21,9 @@ from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
+from simsapa.app.helpers import ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
 from simsapa import SIMSAPA_RELEASES_BASE_URL, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
-
-from simsapa.assets import icons_rc
 
 
 class DownloadAppdataWindow(QMainWindow):
@@ -37,11 +35,34 @@ class DownloadAppdataWindow(QMainWindow):
         self.setFixedSize(350, 400)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
+        self.releases_info: Optional[ReleasesInfo] = None
+
         self.thread_pool = QThreadPool()
 
-        self.download_worker = Worker()
+        self.releases_worker = ReleasesWorker()
+        self.asset_worker = AssetWorker()
 
         self._setup_ui()
+
+        self.releases_worker.signals.finished.connect(partial(self._releases_finished))
+
+        def _show_error_retry_or_quit(msg: str):
+            msg += "<p>Retry?</p>"
+            ret = self._show_error(msg, QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+            if ret == QMessageBox.StandardButton.Ok:
+                self.releases_worker = ReleasesWorker()
+                self.releases_worker.signals.error_msg.connect(partial(_show_error_retry_or_quit))
+                self.thread_pool.start(self.releases_worker)
+            else:
+                self.close()
+
+        self.releases_worker.signals.error_msg.connect(partial(_show_error_retry_or_quit))
+
+        self.thread_pool.start(self.releases_worker)
+
+    def _releases_finished(self, info: ReleasesInfo):
+        self.releases_info = info
+        self._setup_selection()
 
     def _setup_ui(self):
         self._central_widget = QWidget(self)
@@ -58,9 +79,25 @@ class DownloadAppdataWindow(QMainWindow):
         spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc2)
 
-        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
+        self._msg = QLabel("<p>The application database<br>was not found on this system.</p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
+
+        self._please_select = QLabel("<p>Checking for available sources to download...<p>")
+        self._please_select.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(self._please_select)
+
+        self.spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(self.spc3)
+
+        self.spc4 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(self.spc4)
+
+    def _setup_selection(self):
+        self.spc3 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
+        self.spc4 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
+
+        self._please_select.setText("<p>Please select the sources to download.<p>")
 
         self._setup_info_frame()
 
@@ -75,7 +112,6 @@ class DownloadAppdataWindow(QMainWindow):
         self._layout.addItem(spacerItem)
 
         self._setup_buttons()
-
 
     def _setup_info_frame(self):
         frame = QFrame()
@@ -124,7 +160,6 @@ class DownloadAppdataWindow(QMainWindow):
         # self.index_info.setDisabled(True)
         # self.text_select_layout.addWidget(self.index_info)
 
-
     def _toggled_general_bundle(self):
         checked = self.sel_general_bundle.isChecked()
 
@@ -133,12 +168,10 @@ class DownloadAppdataWindow(QMainWindow):
         self.chk_sanskrit_texts.setDisabled(checked)
         # self.index_info.setDisabled(checked)
 
-
     def _setup_animation(self):
         self._animation = QLabel(self)
         self._animation.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._animation)
-
 
     def _setup_buttons(self):
         buttons_layout = QHBoxLayout()
@@ -157,7 +190,6 @@ class DownloadAppdataWindow(QMainWindow):
 
         self._layout.addLayout(buttons_layout)
 
-
     def setup_animation(self):
         self._msg.setText("Downloading ...")
         self._download_button.setEnabled(False)
@@ -165,42 +197,62 @@ class DownloadAppdataWindow(QMainWindow):
         self._movie = QMovie(':simsapa-loading')
         self._animation.setMovie(self._movie)
 
-
     def start_animation(self):
         self._movie.start()
-
 
     def stop_animation(self):
         self._movie.stop()
 
-    def _show_error(self, msg: str):
+    def _show_error_no_ret(self, msg: str):
+        self._show_error(msg)
+
+    def _show_error(self, msg: str, buttons = QMessageBox.StandardButton.Ok):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("Download Error")
         box.setText(msg)
-        box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        box.exec()
+        box.setStandardButtons(buttons)
+        return box.exec()
 
     def _run_download(self):
         # Retreive released asset versions from github.
         # Filter for app-compatible db versions, major and minor version number must agree.
 
+        self._please_select.setText("")
+
+        self.asset_worker.signals.msg_update.connect(partial(self._msg_update))
+
+        self.asset_worker.signals.error_msg.connect(partial(self._show_error_no_ret))
+
+        self.asset_worker.signals.finished.connect(partial(self._download_finished))
+        self.asset_worker.signals.cancelled.connect(partial(self._download_cancelled))
+        self.asset_worker.signals.failed.connect(partial(self._download_failed))
+
+        self.asset_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
+        self.asset_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
+        self.asset_worker.signals.download_max.connect(partial(self._download_max))
+
+        if self.releases_info is None:
+            logger.error("releases_info is None")
+            self.asset_worker.signals.failed.emit()
+            return
+
         try:
             requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "No connection, cannot download database: %s" % e
-            QMessageBox.information(self,
-                                    "No Connection",
-                                    msg,
-                                    QMessageBox.StandardButton.Ok)
+            QMessageBox.warning(self,
+                                "No Connection",
+                                msg,
+                                QMessageBox.StandardButton.Ok)
             logger.error(msg)
+            self.asset_worker.signals.failed.emit()
             return
 
         try:
-            info = get_releases_info()
-            compat_release = get_latest_app_compatible_assets_release(info)
+            compat_release = get_latest_app_compatible_assets_release(self.releases_info)
             if compat_release is None:
-                asset_versions = list(map(lambda x: x['version_tag'], info['assets']['releases']))
+                asset_versions = list(map(lambda x: x['version_tag'], self.releases_info['assets']['releases']))
                 msg = f"""
                 <p>Cannot find a compatible asset release.<br>
                 Release channel: {get_release_channel()}<br>
@@ -211,12 +263,13 @@ class DownloadAppdataWindow(QMainWindow):
                 raise(Exception(msg))
 
         except Exception as e:
-            msg = "Download failed: %s" % e
+            msg = "<p>Download failed:</p><p>%s</p>" % e
             logger.error(msg)
-            QMessageBox.information(self,
-                                    "Error",
-                                    msg,
-                                    QMessageBox.StandardButton.Ok)
+            QMessageBox.warning(self,
+                                "Error",
+                                msg,
+                                QMessageBox.StandardButton.Ok)
+            self.asset_worker.signals.failed.emit()
             return
 
         version = compat_release["version_tag"]
@@ -253,24 +306,13 @@ class DownloadAppdataWindow(QMainWindow):
         # windows._redownload_database_dialog().
         self._remove_old_index()
 
-        self.download_worker.urls = urls
-
-        self.download_worker.signals.msg_update.connect(partial(self._msg_update))
-
-        self.download_worker.signals.error_msg.connect(partial(self._show_error))
-
-        self.download_worker.signals.finished.connect(partial(self._download_finished))
-        self.download_worker.signals.cancelled.connect(partial(self._download_cancelled))
-
-        self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
-        self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
-        self.download_worker.signals.download_max.connect(partial(self._download_max))
+        self.asset_worker.urls = urls
 
         logger.info("Show progress bar")
         self._progress_bar.show()
 
         logger.info("Start download worker")
-        self.thread_pool.start(self.download_worker)
+        self.thread_pool.start(self.asset_worker)
 
         self.info_frame.hide()
 
@@ -320,10 +362,17 @@ class DownloadAppdataWindow(QMainWindow):
         self._cancelled_cleanup_files()
         self.close()
 
+    def _download_failed(self):
+        self.stop_animation()
+        self._animation.deleteLater()
+        self._progress_bar.deleteLater()
+
+        self._msg.setText("<p>Download failed.</p><p>Quit and try again, or report the issue here:</p><p><a href='https://github.com/simsapa/simsapa/issues'>https://github.com/simsapa/simsapa/issues</a></p>")
+
     def _handle_quit(self):
-        if self.download_worker.download_started.isSet():
+        if self.asset_worker.download_started.isSet():
             self._msg.setText("<p>Setup cancelled, waiting for subprocesses to end ...</p>")
-            self.download_worker.download_stop.set()
+            self.asset_worker.download_stop.set()
             # Don't .close() here, wait for _download_cancelled() to do it.
             #
             # Otherwise, triggering .close() while the extraction is not finished will cause a threading error.
@@ -336,33 +385,33 @@ class DownloadAppdataWindow(QMainWindow):
         else:
             self.close()
 
-class WorkerSignals(QObject):
+class AssetWorkerSignals(QObject):
     finished = pyqtSignal()
     cancelled = pyqtSignal()
+    failed = pyqtSignal()
     msg_update = pyqtSignal(str)
     error_msg = pyqtSignal(str)
     set_total_progress = pyqtSignal(int)
     set_current_progress = pyqtSignal(int)
     download_max = pyqtSignal()
 
-
-class Worker(QRunnable):
+class AssetWorker(QRunnable):
     urls: List[str]
-    signals: WorkerSignals
+    signals: AssetWorkerSignals
     download_started: threading.Event
     download_stop: threading.Event
 
     def __init__(self):
-        super(Worker, self).__init__()
+        super(AssetWorker, self).__init__()
 
-        self.signals = WorkerSignals()
+        self.signals = AssetWorkerSignals()
 
         self.download_started = threading.Event()
         self.download_stop = threading.Event()
 
     @pyqtSlot()
     def run(self):
-        logger.info("Worker::run()")
+        logger.info("AssetWorker::run()")
         try:
             self.download_started.set()
 
@@ -393,10 +442,13 @@ class Worker(QRunnable):
             msg = "%s" % e
             logger.error(msg)
             self.signals.error_msg.emit(msg)
+            self.signals.failed.emit()
+            return
 
         finally:
             self.download_started.clear()
-            self.signals.finished.emit()
+
+        self.signals.finished.emit()
 
     def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
         logger.info(f"download_file() : {url}, {folder_path}")
@@ -465,7 +517,6 @@ class Worker(QRunnable):
 
         shutil.rmtree(temp_dir)
 
-
     def import_suttas_to_appdata(self, db_path: Path):
         if not db_path.exists():
             logger.error(f"Doesn't exist: {db_path}")
@@ -509,3 +560,35 @@ class Worker(QRunnable):
 
         except Exception as e:
             logger.error(f"Database problem: {e}")
+
+class ReleasesWorkerSignals(QObject):
+    finished = pyqtSignal(dict)
+    error_msg = pyqtSignal(str)
+
+class ReleasesWorker(QRunnable):
+    def __init__(self):
+        super(ReleasesWorker, self).__init__()
+
+        self.signals = ReleasesWorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        logger.info("ReleasesWorker::run()")
+
+        try:
+            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
+        except Exception as e:
+            msg = "<p>Cannot download releases info.</p><p>%s</p>" % e
+            logger.error(msg)
+            self.signals.error_msg.emit(msg)
+            return
+
+        try:
+            info = get_releases_info()
+            self.signals.finished.emit(info)
+
+        except Exception as e:
+            msg = "<p>Cannot download releases info.</p><p>%s</p>" % e
+            logger.error(msg)
+            self.signals.error_msg.emit(msg)
+            return
