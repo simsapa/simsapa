@@ -68,12 +68,12 @@ class DictionaryQueries:
         if x['schema_name'] == DbSchemaName.AppData.value:
             word = self._app_data.db_session \
                                  .query(Am.DictWord) \
-                                 .filter(Am.DictWord.id == x['db_id']) \
+                                 .filter(Am.DictWord.uid == x['uid']) \
                                  .first()
         else:
             word = self._app_data.db_session \
                                  .query(Um.DictWord) \
-                                 .filter(Um.DictWord.id == x['db_id']) \
+                                 .filter(Um.DictWord.uid == x['uid']) \
                                  .first()
         return word
 

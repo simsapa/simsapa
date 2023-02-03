@@ -121,11 +121,17 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         # x.title: AN 2.31-32 Kataññu Sutta
         title = re.sub(r'^[a-zA-Z]+ [0-9\.-]+ (.*)', r'\1', x.title)
 
-        sutta_ref = helpers.uid_to_ref(uid)
+        # take the first part of the uid
+        s = uid.split('/')[0]
+        sutta_ref = helpers.uid_to_ref(s)
+
+        content_text = consistent_nasal_m(str(x.markdown_content))
+        # line break is two trailing spaces, not trailing \
+        content_text = re.sub(r'\\$', '  ', content_text)
 
         content_main = markdown.markdown(
-            text = consistent_nasal_m(str(x.markdown_content)),
-            extensions = ['footnotes'],
+            text = content_text,
+            extensions = ['footnotes', 'smarty'],
         )
 
         if x.license == "cc-by-nc-sa":
@@ -138,9 +144,9 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         content_html = f"""
         <h1>{sutta_ref} {title}</h1>
         {content_main}
-        <p>&nbsb;</p>
+        <p>&nbsp;</p>
         <footer class="noindex">
-            <p>Copyright: {x.copyright}</p>
+            <p>Copyright &copy; {x.copyright}</p>
             {license_html}
         </footer>
         """

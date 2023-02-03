@@ -1,3 +1,4 @@
+import re
 import os
 import glob
 from functools import partial
@@ -9,22 +10,61 @@ import threading
 from typing import List, Optional
 from PyQt6 import QtWidgets
 
-from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
-from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
+from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QHeaderView, QLineEdit, QMessageBox, QRadioButton, QTableView, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
 from PyQt6.QtGui import QMovie
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
+from simsapa.app.lookup import LANG_CODE_TO_NAME
 
 from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
+from simsapa.app.helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
-from simsapa import SIMSAPA_RELEASES_BASE_URL, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
 
+# Keys with underscore prefix will not be shown in table columns.
+LangModelColToIdx = {
+    "Code": 0,
+    "Language": 1,
+}
+
+class LangModel(QAbstractTableModel):
+    def __init__(self, data = []):
+        super().__init__()
+        self._data = data
+        self._columns = list(filter(lambda x: not x.startswith("_"), LangModelColToIdx.keys()))
+
+    def data(self, index: QModelIndex, role: Qt.ItemDataRole):
+        if role == Qt.ItemDataRole.DisplayRole:
+            if len(self._data) == 0:
+                return list(map(lambda _: "", self._columns))
+            else:
+                return self._data[index.row()][index.column()]
+        elif role == Qt.ItemDataRole.UserRole:
+            return self._data
+
+    def rowCount(self, _):
+        return len(self._data)
+
+    def columnCount(self, _):
+        if len(self._data) == 0:
+            return 0
+        else:
+            return len(self._columns)
+
+    def headerData(self, section, orientation, role):
+       if role == Qt.ItemDataRole.DisplayRole:
+            if orientation == Qt.Orientation.Horizontal:
+                return self._columns[section]
+
+            if orientation == Qt.Orientation.Vertical:
+                return str(section+1)
 
 class DownloadAppdataWindow(QMainWindow):
     _msg: QLabel
@@ -32,10 +72,11 @@ class DownloadAppdataWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Download Application Assets")
-        self.setFixedSize(350, 400)
+        self.setFixedSize(400, 600)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self.releases_info: Optional[ReleasesInfo] = None
+        self.compat_release: Optional[ReleaseEntry] = None
 
         self.thread_pool = QThreadPool()
 
@@ -62,6 +103,7 @@ class DownloadAppdataWindow(QMainWindow):
 
     def _releases_finished(self, info: ReleasesInfo):
         self.releases_info = info
+        self.compat_release = get_latest_app_compatible_assets_release(self.releases_info)
         self._setup_selection()
 
     def _setup_ui(self):
@@ -99,7 +141,8 @@ class DownloadAppdataWindow(QMainWindow):
 
         self._please_select.setText("<p>Please select the sources to download.<p>")
 
-        self._setup_info_frame()
+        self._setup_bundles_frame()
+        self._setup_languages_frame()
 
         spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc3)
@@ -113,17 +156,17 @@ class DownloadAppdataWindow(QMainWindow):
 
         self._setup_buttons()
 
-    def _setup_info_frame(self):
+    def _setup_bundles_frame(self):
         frame = QFrame()
         frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         frame.setLineWidth(0)
 
-        self.info_frame = frame
-        self._layout.addWidget(self.info_frame)
+        self.bundles_frame = frame
+        self._layout.addWidget(self.bundles_frame)
 
         self.text_select_layout = QVBoxLayout()
-        self.info_frame.setLayout(self.text_select_layout)
+        self.bundles_frame.setLayout(self.text_select_layout)
 
         rad = QRadioButton("General bundle")
         rad.setChecked(True)
@@ -155,10 +198,54 @@ class DownloadAppdataWindow(QMainWindow):
         self.chk_sanskrit_texts = chk
         self.text_select_layout.addWidget(self.chk_sanskrit_texts)
 
-        # NOTE: At the moment, the Sanskrit texts also include the index. Will need this when downloading other languages.
-        # self.index_info = QLabel("(The search index will be generated on first-time\n start. This may take 30-60 mins.)")
-        # self.index_info.setDisabled(True)
-        # self.text_select_layout.addWidget(self.index_info)
+    def _setup_languages_frame(self):
+        frame = QFrame()
+        frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+
+        self.languages_frame = frame
+        self._layout.addWidget(self.languages_frame)
+
+        self.languages_select_layout = QVBoxLayout()
+        self.languages_frame.setLayout(self.languages_select_layout)
+
+        self.languages_msg = QLabel("<p>Type in the short codes of additional sutta languages to download, or * to include all.</p>")
+        self.languages_msg.setWordWrap(True)
+        self.languages_select_layout.addWidget(self.languages_msg)
+
+        self.languages_input = QLineEdit()
+        self.languages_input.setPlaceholderText("E.g.: it, fr, pt, th")
+        self.languages_select_layout.addWidget(self.languages_input)
+
+        self.languages_select_layout.addWidget(QLabel("<p>Available languages:</p>"))
+
+        self.languages_table = QTableView()
+        self.languages_table.setShowGrid(False)
+        self.languages_table.setWordWrap(False)
+        self.languages_table.verticalHeader().setVisible(False)
+
+        self.languages_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.languages_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.languages_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.languages_table.horizontalHeader().setStretchLastSection(True)
+
+        self.languages_select_layout.addWidget(self.languages_table)
+
+        assert(self.releases_info is not None)
+        assert(self.compat_release is not None)
+
+        def _to_item(code: str) -> List[str]:
+            if code in LANG_CODE_TO_NAME.keys():
+                return [code, LANG_CODE_TO_NAME[code]]
+            else:
+                return [code, ""]
+
+        items = list(map(_to_item, self.compat_release['suttas_lang']))
+
+        self.lang_model = LangModel(items)
+        self.languages_table.setModel(self.lang_model)
+
 
     def _toggled_general_bundle(self):
         checked = self.sel_general_bundle.isChecked()
@@ -182,7 +269,7 @@ class DownloadAppdataWindow(QMainWindow):
         self._quit_button = QPushButton("Quit")
         self._quit_button.setFixedSize(100, 30)
 
-        self._download_button.clicked.connect(partial(self._run_download))
+        self._download_button.clicked.connect(partial(self._validate_and_run_download))
         self._quit_button.clicked.connect(partial(self._handle_quit))
 
         buttons_layout.addWidget(self._quit_button)
@@ -213,6 +300,29 @@ class DownloadAppdataWindow(QMainWindow):
         box.setText(msg)
         box.setStandardButtons(buttons)
         return box.exec()
+
+    def _validate_and_run_download(self):
+        # Check that all entered language codes are available.
+
+        assert(self.compat_release is not None)
+
+        s = self.languages_input.text().lower().strip()
+        if s != "" and s != "*":
+            s = s.replace(',', ' ')
+            s = re.sub(r'  +', ' ', s)
+            selected_langs = s.split(' ')
+
+            for lang in selected_langs:
+                if lang in ['en', 'pli', 'san']:
+                    continue
+                if lang not in self.compat_release["suttas_lang"]:
+                    QMessageBox.warning(self,
+                                        "Warning",
+                                        f"<p>This language code is not available:</p><p>{lang}</p>",
+                                        QMessageBox.StandardButton.Ok)
+                    return
+
+        self._run_download()
 
     def _run_download(self):
         # Retreive released asset versions from github.
@@ -298,9 +408,27 @@ class DownloadAppdataWindow(QMainWindow):
                 sanskrit_index_tar_url,
             ]
 
-
+        # Userdata must come before the languages, so that it is extracted and
+        # ready to import the sutta languages into.
         if not USER_DB_PATH.exists():
             urls.append(userdata_tar_url)
+
+        # Languages
+        s = self.languages_input.text().lower().strip()
+
+        selected_langs = []
+
+        if s != "" and s != "*":
+            s = s.replace(',', ' ')
+            s = re.sub(r'  +', ' ', s)
+            selected_langs = list(filter(lambda x: x not in ['en', 'pli', 'san'], s.split(' ')))
+
+        elif s == "*":
+            selected_langs = compat_release["suttas_lang"]
+
+        for lang in selected_langs:
+            s = f"https://github.com/{github_repo}/releases/download/{version}/suttas_lang_{lang}.tar.bz2"
+            urls.append(s)
 
         # Remove existing indexes here. Can't safely clear and remove them in
         # windows._redownload_database_dialog().
@@ -314,7 +442,8 @@ class DownloadAppdataWindow(QMainWindow):
         logger.info("Start download worker")
         self.thread_pool.start(self.asset_worker)
 
-        self.info_frame.hide()
+        self.bundles_frame.hide()
+        self.languages_frame.hide()
 
         self.setup_animation()
         self.start_animation()
@@ -428,12 +557,13 @@ class AssetWorker(QRunnable):
                 p = Path(s)
                 return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
 
-            # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
             p = ASSETS_DIR.joinpath("*.sqlite3")
             sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
 
-            for i in sqlite_files:
-                self.import_suttas_to_appdata(Path(i))
+            # # NOTE: Not currently using this mechanism for anything
+            # # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
+            # for i in sqlite_files:
+            #     self.import_suttas_to_appdata(Path(i))
 
             for i in sqlite_files:
                 Path(i).unlink()
@@ -504,38 +634,68 @@ class AssetWorker(QRunnable):
 
         os.remove(tar_file_path)
 
-        for p in glob.glob(f"{temp_dir}/*.sqlite3"):
-            shutil.move(p, ASSETS_DIR)
+        # Move appdata to assets.
+        p = Path(f"{temp_dir}/appdata.sqlite3")
+        if p.exists():
+            shutil.move(p, APP_DB_PATH)
 
+        # If a userdata db was included in the download, move it to assets.
+        # Check not to overwrite user's existing userdata.
+        p = Path(f"{temp_dir}/userdata.sqlite3")
+        if p.exists() and not USER_DB_PATH.exists():
+            shutil.move(p, USER_DB_PATH)
+
+        # If Pali Course assets were included, move them to assets.
         if temp_dir.joinpath("courses").exists():
             for p in glob.glob(f"{temp_dir}/courses/*"):
                 shutil.move(p, COURSES_DIR)
 
+        # If a sutta language DB is found, import it to userdata.
+        for p in glob.glob(f"{temp_dir}/suttas_lang_*.sqlite3"):
+            lang_db_path = Path(p)
+            self.import_suttas(lang_db_path, DbSchemaName.UserData)
+            lang_db_path.unlink()
+
+        # If indexed segments were included (e.g. with sutta languages), move
+        # the segment files to the index folder.
         temp_index = temp_dir.joinpath("index")
         if temp_index.exists():
-            shutil.move(temp_index, ASSETS_DIR)
+            if INDEX_DIR.exists():
+                for p in glob.glob(f"{temp_index}/*"):
+                    shutil.move(p, INDEX_DIR)
+            else:
+                shutil.move(temp_index, ASSETS_DIR)
 
+        # Remove the temp folder where the assets were extraced to.
         shutil.rmtree(temp_dir)
 
-    def import_suttas_to_appdata(self, db_path: Path):
-        if not db_path.exists():
-            logger.error(f"Doesn't exist: {db_path}")
+    def import_suttas(self, import_db_path: Path, schema: DbSchemaName):
+        if not import_db_path.exists():
+            logger.error(f"Doesn't exist: {import_db_path}")
             return
 
         try:
-            app_db_eng, app_db_conn, app_db_session = get_db_engine_connection_session(include_userdata=False)
+            _, _, app_db_session = get_db_engine_connection_session()
 
-            db_eng = create_engine("sqlite+pysqlite://", echo=False)
-            db_conn = db_eng.connect()
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
-            Session = sessionmaker(db_eng)
-            Session.configure(bind=db_eng)
+            import_db_eng = create_engine("sqlite+pysqlite://", echo=False)
+            import_db_conn = import_db_eng.connect()
+
+            if schema == DbSchemaName.AppData:
+                import_db_conn.execute(f"ATTACH DATABASE '{import_db_path}' AS appdata;")
+            else:
+                import_db_conn.execute(f"ATTACH DATABASE '{import_db_path}' AS userdata;")
+
+            Session = sessionmaker(import_db_eng)
+            Session.configure(bind=import_db_eng)
 
             import_db_session = Session()
 
-            res = import_db_session.query(Am.Sutta).all()
+            if schema == DbSchemaName.AppData:
+                res = import_db_session.query(Am.Sutta).all()
+            else:
+                res = import_db_session.query(Um.Sutta).all()
 
-            logger.info(f"Importing to Appdata, {len(res)} suttas from {db_path}")
+            logger.info(f"Importing to {schema.value}, {len(res)} suttas from {import_db_path}")
 
             # https://stackoverflow.com/questions/28871406/how-to-clone-a-sqlalchemy-object-with-new-primary-key
 
@@ -551,12 +711,10 @@ class AssetWorker(QRunnable):
                     logger.error(f"Import problem: {e}")
 
             app_db_session.close_all()
-            app_db_conn.close()
-            app_db_eng.dispose()
 
             import_db_session.close()
-            db_conn.close()
-            db_eng.dispose()
+            import_db_conn.close()
+            import_db_eng.dispose()
 
         except Exception as e:
             logger.error(f"Database problem: {e}")

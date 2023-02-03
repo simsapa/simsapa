@@ -168,17 +168,14 @@ do
         continue
     fi
 
-    cd "$DIST_DIR" || exit
-    tar cjf "$name.tar.bz2" "$name.sqlite3"
-    mv "$name.tar.bz2" "$RELEASE_DIR"
-    cd - || exit
-
     ./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
 
     ./run.py index suttas-lang $lang
 
+    cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
+
     cd "$ASSETS_DIR" || exit
-    tar cjf "$name.tar.bz2" "index/$name"_*
+    tar cjf "$name.tar.bz2" "$name.sqlite3" index/*"$name"_*
     mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
     cd - || exit
 done
@@ -190,17 +187,14 @@ name="suttas_lang_$lang"
 
 ./scripts/buddha_ujja.py
 
-cd "$DIST_DIR" || exit
-tar cjf "$name.tar.bz2" "$name.sqlite3"
-mv "$name.tar.bz2" "$RELEASE_DIR"
-cd - || exit
-
 ./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
 
 ./run.py index suttas-lang $lang
 
+cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
+
 cd "$ASSETS_DIR" || exit
-tar cjf "$name.tar.bz2" "index/$name"_*
+tar cjf "$name.tar.bz2" "$name.sqlite3" index/*"$name"_*
 mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
 cd - || exit
 

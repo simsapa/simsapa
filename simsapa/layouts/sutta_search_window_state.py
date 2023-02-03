@@ -696,12 +696,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         if x['schema_name'] == DbSchemaName.AppData.value:
             sutta = self._app_data.db_session \
                                   .query(Am.Sutta) \
-                                  .filter(Am.Sutta.id == x['db_id']) \
+                                  .filter(Am.Sutta.uid == x['uid']) \
                                   .first()
         else:
             sutta = self._app_data.db_session \
                                   .query(Um.Sutta) \
-                                  .filter(Um.Sutta.id == x['db_id']) \
+                                  .filter(Um.Sutta.uid == x['uid']) \
                                   .first()
         return sutta
 
