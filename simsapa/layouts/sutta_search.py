@@ -433,11 +433,11 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.action_Decrease_Text_Margins \
             .triggered.connect(partial(self._decrease_text_margins))
 
-        self.action_Import_Suttas_with_Spreadsheet \
-            .triggered.connect(partial(self._show_import_suttas_dialog))
+        # self.action_Import_Suttas_with_Spreadsheet \
+        #     .triggered.connect(partial(self._show_import_suttas_dialog))
 
-        self.action_Remove_Imported_Suttas \
-            .triggered.connect(partial(self._remove_imported_suttas))
+        # self.action_Remove_Imported_Suttas \
+        #     .triggered.connect(partial(self._remove_imported_suttas))
 
         self.action_Search_Result_Sizes \
             .triggered.connect(partial(self._show_search_result_sizes_dialog))

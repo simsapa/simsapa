@@ -432,8 +432,6 @@ class Ui_SuttaSearchWindow(object):
         self.menu_Suttas.addAction(self.action_Show_All_Variant_Readings)
         self.menu_Suttas.addAction(self.action_Show_Bookmarks)
         self.menu_Suttas.addAction(self.action_Select_Sutta_Authors)
-        self.menu_Suttas.addAction(self.action_Import_Suttas_with_Spreadsheet)
-        self.menu_Suttas.addAction(self.action_Remove_Imported_Suttas)
         self.menu_Suttas.addAction(self.action_Sutta_Languages)
         self.menu_Go.addAction(self.action_Search_As_You_Type)
         self.menu_Go.addAction(self.action_Search_Completion)
