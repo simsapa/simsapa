@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.db.search import SearchResult
+from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, SuttaSearchWindowInterface
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
@@ -368,6 +369,10 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         else:
             self.splitter.setSizes([2000, 0])
 
+    def _show_sutta_languages(self):
+        w = SuttaLanguagesWindow(self._app_data, parent=self)
+        w.show()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
@@ -439,3 +444,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.action_Show_Sidebar \
             .triggered.connect(partial(self._toggle_sidebar))
+
+        self.action_Sutta_Languages \
+            .triggered.connect(partial(self._show_sutta_languages))

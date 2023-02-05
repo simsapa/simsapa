@@ -21,7 +21,7 @@ from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSigna
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
-from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH
+from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, get_db_session_with_schema, upgrade_db
 
@@ -235,6 +235,10 @@ class AppData:
 
         self.actions_manager = actions_manager
 
+        # Remove indexes marked to be deleted in a previous session. Can't
+        # safely clear and remove them after the application has opened them.
+        self._remove_marked_indexes()
+
         if app_db_path is None:
             app_db_path = self._find_app_data_or_exit()
 
@@ -273,6 +277,29 @@ class AppData:
         self._read_app_settings()
         self._read_pali_groups_stats()
         self._ensure_user_memo_deck()
+
+    def _remove_marked_indexes(self):
+        p = ASSETS_DIR.joinpath('indexes_to_remove.txt')
+        if not p.exists():
+            return
+
+        with open(p, 'r') as f:
+            s = f.read()
+        p.unlink()
+
+        if s == "":
+            return
+
+        langs = s.split(',')
+        for lang in langs:
+            p = INDEX_DIR.joinpath(f'suttas_lang_{lang}_WRITELOCK')
+            p.unlink()
+
+            for p in INDEX_DIR.glob(f'suttas_lang_{lang}_*.seg'):
+                p.unlink()
+
+            for p in INDEX_DIR.glob(f'_suttas_lang_{lang}_*.toc'):
+                p.unlink()
 
     def _set_completion_cache(self, values: CompletionCache):
         self.completion_cache = values
