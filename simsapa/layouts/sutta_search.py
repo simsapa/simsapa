@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.db.search import SearchResult
+from simsapa.layouts.send_to_kindle import SendToKindleWindow
+from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
 from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, SuttaSearchWindowInterface
@@ -370,7 +372,23 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.splitter.setSizes([2000, 0])
 
     def _show_sutta_languages(self):
-        w = SuttaLanguagesWindow(self._app_data, parent=self)
+        w = SuttaLanguagesWindow(self._app_data, parent = self)
+        w.show()
+
+    def _show_send_to_kindle(self):
+        tab = self.s._get_active_tab()
+
+        def _open_send(html: str):
+            w = SendToKindleWindow(self._app_data,
+                                   tab_sutta = tab.sutta,
+                                   tab_html = html,
+                                   parent = self)
+            w.show()
+
+        tab.qwe.page().toHtml(_open_send)
+
+    def _show_send_to_remarkable(self):
+        w = SendToRemarkableWindow(self._app_data, parent=self)
         w.show()
 
     def _connect_signals(self):
@@ -447,3 +465,9 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.action_Sutta_Languages \
             .triggered.connect(partial(self._show_sutta_languages))
+
+        self.action_Send_to_Kindle \
+            .triggered.connect(partial(self._show_send_to_kindle))
+
+        self.action_Send_to_reMarkable \
+            .triggered.connect(partial(self._show_send_to_remarkable))

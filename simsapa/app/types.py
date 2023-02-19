@@ -130,6 +130,84 @@ def default_search_result_sizes() -> SearchResultSizes:
         snippet_max_height = 60,
     )
 
+class SmtpServicePreset(str, Enum):
+    NoPreset = "No preset"
+    GoogleMail = "Google Mail"
+    FastMail = "Fast Mail"
+    ProtonMail = "Proton Mail"
+
+SmtpServicePresetToEnum = {
+    "Google Mail": SmtpServicePreset.GoogleMail,
+    "Fast Mail": SmtpServicePreset.FastMail,
+    "Proton Mail": SmtpServicePreset.ProtonMail,
+    "No preset": SmtpServicePreset.NoPreset,
+}
+
+class SmtpData(TypedDict):
+    host: str
+    port_tls: int
+    user: str
+    password: str
+
+SmtpDataPreset: Dict[SmtpServicePreset, SmtpData] = dict()
+
+SmtpDataPreset[SmtpServicePreset.GoogleMail] = SmtpData(
+    host = "smtp.gmail.com",
+    port_tls = 587,
+    user = "e.g. account@gmail.com",
+    password = "",
+)
+
+class KindleFileFormat(str, Enum):
+    EPUB = "EPUB"
+    MOBI = "MOBI"
+    HTML = "HTML"
+    TXT = "TXT"
+
+KindleFileFormatToEnum = {
+    "EPUB": KindleFileFormat.EPUB,
+    "MOBI": KindleFileFormat.MOBI,
+    "HTML": KindleFileFormat.HTML,
+    "TXT": KindleFileFormat.TXT,
+}
+
+class KindleContextAction(str, Enum):
+    SaveViaUSB = "Save to Kindle via USB"
+    SendToEmail = "Send to Kindle Email"
+
+KindleContextActionToEnum = {
+    "Save to Kindle via USB": KindleContextAction.SaveViaUSB,
+    "Send to Kindle Email": KindleContextAction.SendToEmail,
+}
+
+class SendToKindleSettings(TypedDict):
+    context_menu_action: KindleContextAction
+    path_to_ebook_convert: Optional[str]
+    format: KindleFileFormat
+    kindle_email: Optional[str]
+    sender_email: Optional[str]
+    smtp_preset: SmtpServicePreset
+    smtp_data: Optional[SmtpData]
+
+def default_send_to_kindle_settings() -> SendToKindleSettings:
+    return SendToKindleSettings(
+        context_menu_action = KindleContextAction.SaveViaUSB,
+        path_to_ebook_convert = None,
+        format = KindleFileFormat.EPUB,
+        kindle_email = None,
+        sender_email = None,
+        smtp_preset = SmtpServicePreset.NoPreset,
+        smtp_data = SmtpDataPreset[SmtpServicePreset.GoogleMail],
+    )
+
+class SendToRemarkableSettings(TypedDict):
+    format: str
+
+def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
+    return SendToRemarkableSettings(
+        format = "EPUB",
+    )
+
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
@@ -161,6 +239,8 @@ class AppSettings(TypedDict):
     word_scan_dict_filter_idx: int
     audio_volume: float
     audio_device_desc: str
+    send_to_kindle: SendToKindleSettings
+    send_to_remarkable: SendToRemarkableSettings
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -205,6 +285,8 @@ def default_app_settings() -> AppSettings:
         word_scan_dict_filter_idx = 0,
         audio_volume = 0.9,
         audio_device_desc = '',
+        send_to_kindle = default_send_to_kindle_settings(),
+        send_to_remarkable = default_send_to_remarkable_settings(),
     )
 
 class CompletionCache(TypedDict):

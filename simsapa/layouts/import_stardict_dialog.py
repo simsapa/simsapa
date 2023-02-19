@@ -5,7 +5,7 @@ from typing import Callable, List, Optional, TypedDict
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QMessageBox, QTabWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import show_work_in_progress

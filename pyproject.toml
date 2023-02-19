@@ -67,6 +67,8 @@ chardet = "^5.1.0"
 # ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
 # https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
 charset-normalizer = "==2.1.0"
+ebooklib = "^0.18"
+bleach = "^6.0.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -155,6 +157,8 @@ requires = [
 "roman              >= 3.3,      < 4.0",
 "chardet            >= 5.1.0,    < 5.2.0",
 "charset-normalizer == 2.1.0",
+"ebooklib           >= 0.18.0,   < 0.19.0",
+"bleach             >= 6.0.0,    < 7.0.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

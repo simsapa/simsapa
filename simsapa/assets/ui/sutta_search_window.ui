@@ -536,6 +536,8 @@
     <addaction name="action_Show_Bookmarks"/>
     <addaction name="action_Select_Sutta_Authors"/>
     <addaction name="action_Sutta_Languages"/>
+    <addaction name="action_Send_to_Kindle"/>
+    <addaction name="action_Send_to_reMarkable"/>
    </widget>
    <widget class="QMenu" name="menu_Go">
     <property name="title">
@@ -1023,6 +1025,16 @@
   <action name="action_Sutta_Languages">
    <property name="text">
     <string>Sutta Languages...</string>
+   </property>
+  </action>
+  <action name="action_Send_to_Kindle">
+   <property name="text">
+    <string>Send to Kindle...</string>
+   </property>
+  </action>
+  <action name="action_Send_to_reMarkable">
+   <property name="text">
+    <string>Send to reMarkable...</string>
    </property>
   </action>
  </widget>
