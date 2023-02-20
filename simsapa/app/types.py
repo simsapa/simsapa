@@ -206,12 +206,10 @@ RemarkableFileFormatToEnum = {
 class RemarkableContextAction(str, Enum):
     SaveWithCurl = "Save to reMarkable with curl"
     SaveWithScp = "Save to reMarkable with scp"
-    SendToCloud = "Send to Remarkable Cloud Library"
 
 RemarkableContextActionToEnum = {
     "Save to reMarkable with curl": RemarkableContextAction.SaveWithCurl,
     "Save to reMarkable with scp": RemarkableContextAction.SaveWithScp,
-    "Send to Remarkable Cloud Library": RemarkableContextAction.SendToCloud,
 }
 
 class SendToRemarkableSettings(TypedDict):

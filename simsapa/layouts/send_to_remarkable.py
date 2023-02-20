@@ -108,16 +108,6 @@ class SendToRemarkableWindow(QMainWindow):
 
         self.send_tab_layout.addWidget(self.save_with_scp)
 
-        self.send_tab_layout.addItem(QtWidgets.QSpacerItem(0, 40, QSizeMinimum, QSizeMinimum))
-
-        self.send_tab_layout.addWidget(QLabel("<p>Send the text to your reMarkable Cloud Library.</p>"))
-
-        self.send_to_cloud = QPushButton(RemarkableContextAction.SendToCloud.value)
-        self.send_to_cloud.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
-        self.send_to_cloud.setMinimumSize(QtCore.QSize(180, 40))
-
-        self.send_tab_layout.addWidget(self.send_to_cloud)
-
         self.send_tab_layout.addItem(QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeExpanding))
 
     def _setup_settings_tab(self):
@@ -361,11 +351,6 @@ class SendToRemarkableWindow(QMainWindow):
 
         self.close()
 
-    def _send_to_cloud(self):
-        # FIXME
-        self._show_info("<p>Coming soon.</p>")
-        return
-
     def _write_file_in_selected_format(self, target_dir: Optional[Path] = None) -> Optional[Path]:
         if self.tab_sutta is None:
             self._show_warning("<p>No selected sutta.</p>")
@@ -424,7 +409,6 @@ class SendToRemarkableWindow(QMainWindow):
 
         self.save_with_curl.clicked.connect(partial(self._save_with_curl))
         self.save_with_scp.clicked.connect(partial(self._save_with_scp))
-        self.send_to_cloud.clicked.connect(partial(self._send_to_cloud))
 
         self.path_to_ebook_convert_file_btn.clicked.connect(partial(self._select_ebook_convert_file))
         self.path_to_curl_file_btn.clicked.connect(partial(self._select_curl_file))
