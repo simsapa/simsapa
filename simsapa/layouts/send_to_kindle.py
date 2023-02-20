@@ -1,23 +1,16 @@
-import re
 from pathlib import Path
 from typing import Optional
+from functools import partial
+
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtGui import QMouseEvent
-
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
-from functools import partial
-from shutil import which
-import bleach
-from ebooklib import epub
-import subprocess
-
 from simsapa import ASSETS_DIR, logger
+from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, save_html_as_txt, sanitized_sutta_html_for_export
 from simsapa.app.simsapa_smtp import SimsapaSMTP
-# from ..app.db import appdata_models as Am
-# from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, KindleContextAction, KindleContextActionToEnum, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpData, SmtpDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta, default_send_to_kindle_settings
+from ..app.types import AppData, KindleContextAction, KindleContextActionToEnum, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
 
 class SendToKindleWindow(QMainWindow):
 
@@ -49,8 +42,25 @@ class SendToKindleWindow(QMainWindow):
         self.tabs = QTabWidget(self)
         self._layout.addWidget(self.tabs)
 
-        # Send to Kindle tab
+        self._setup_send_tab()
+        self._setup_settings_tab()
 
+        self.status_msg = QLabel()
+        self._layout.addWidget(self.status_msg)
+
+        # Buttons box
+
+        self.bottom_buttons_box = QHBoxLayout()
+        self.bottom_buttons_box.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._layout.addLayout(self.bottom_buttons_box)
+
+        self.close_button = QPushButton("Close")
+        self.close_button.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
+        self.close_button.setMinimumSize(QtCore.QSize(80, 40))
+
+        self.bottom_buttons_box.addWidget(self.close_button)
+
+    def _setup_send_tab(self):
         self.send_tab = QWidget()
         self.tabs.addTab(self.send_tab, "Send to Kindle")
 
@@ -109,8 +119,7 @@ class SendToKindleWindow(QMainWindow):
 
         self.send_tab_layout.addItem(QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeExpanding))
 
-        # Settings tab
-
+    def _setup_settings_tab(self):
         self.settings_tab = QWidget()
         self.tabs.addTab(self.settings_tab, "Settings")
 
@@ -185,59 +194,35 @@ class SendToKindleWindow(QMainWindow):
         self.smtp_form_layout.addRow(QLabel("Password:"), self.smtp_password)
         self.smtp_form_layout.addRow(QLabel("Show password:"), self.smtp_password_visible)
 
-        self.status_msg = QLabel()
-        self._layout.addWidget(self.status_msg)
-
-        # Buttons box
-
-        self.bottom_buttons_box = QHBoxLayout()
-        self.bottom_buttons_box.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self._layout.addLayout(self.bottom_buttons_box)
-
-        self.close_button = QPushButton("Close")
-        self.close_button.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
-        self.close_button.setMinimumSize(QtCore.QSize(80, 40))
-
-        self.bottom_buttons_box.addWidget(self.close_button)
-
     def _init_values(self):
-        settings: SendToKindleSettings = self._app_data.app_settings.get('send_to_kindle', None)
+        app_settings = self._app_data.app_settings
+        kindle_settings = self._app_data.app_settings['send_to_kindle']
 
-        self.select_format.setCurrentText(settings["format"])
+        self.select_format.setCurrentText(kindle_settings["format"])
 
-        self.context_menu_action_select.setCurrentText(settings['context_menu_action'])
+        self.context_menu_action_select.setCurrentText(kindle_settings['context_menu_action'])
 
-        path_to_ebook_convert = None
-        if settings:
-            path_to_ebook_convert = settings.get('path_to_ebook_convert', None)
-        else:
-            settings = default_send_to_kindle_settings()
+        path_to_ebook_convert = app_settings.get('path_to_ebook_convert', None)
 
         if path_to_ebook_convert:
             self.path_to_ebook_convert.setText(str(path_to_ebook_convert))
-        else:
-            p = which('ebook-convert')
-            if p:
-                self.path_to_ebook_convert.setText(str(p))
-            settings['path_to_ebook_convert'] = str(p)
-            self._app_data._save_app_settings()
 
-        s = settings['kindle_email']
+        s = kindle_settings['kindle_email']
         if s:
             self.kindle_email_input.setText(s)
 
-        s = settings['sender_email']
+        s = app_settings['smtp_sender_email']
         if s:
             self.sender_email_input.setText(s)
 
-        self.select_smtp_preset.setCurrentText(settings['smtp_preset'])
+        self.select_smtp_preset.setCurrentText(app_settings['smtp_preset'])
 
-        smtp_data = settings['smtp_data']
-        if smtp_data:
-            self.smtp_host.setText(smtp_data['host'])
-            self.smtp_port_tls.setValue(smtp_data['port_tls'])
-            self.smtp_username.setText(smtp_data['user'])
-            self.smtp_password.setText(smtp_data['password'])
+        smtp = app_settings['smtp_login_data']
+        if smtp:
+            self.smtp_host.setText(smtp['host'])
+            self.smtp_port_tls.setValue(smtp['port_tls'])
+            self.smtp_username.setText(smtp['user'])
+            self.smtp_password.setText(smtp['password'])
 
     def _save_all_settings(self):
         logger.info("_save_all_settings()")
@@ -247,24 +232,28 @@ class SendToKindleWindow(QMainWindow):
 
         smtp_preset = self.select_smtp_preset.currentText()
 
-        smtp_data = SmtpData(
+        smtp = SmtpLoginData(
             host = self.smtp_host.text(),
             port_tls = self.smtp_port_tls.value(),
             user = self.smtp_username.text(),
             password = self.smtp_password.text(),
         )
 
-        settings = SendToKindleSettings(
+        kindle_settings = SendToKindleSettings(
             context_menu_action = KindleContextActionToEnum[context_action],
-            path_to_ebook_convert = self.path_to_ebook_convert.text(),
             format = KindleFileFormatToEnum[format],
             kindle_email = self.kindle_email_input.text(),
-            sender_email = self.sender_email_input.text(),
-            smtp_preset = SmtpServicePresetToEnum[smtp_preset],
-            smtp_data = smtp_data,
         )
 
-        self._app_data.app_settings['send_to_kindle'] = settings
+        app_settings = self._app_data.app_settings
+        app_settings['path_to_ebook_convert'] = self.path_to_ebook_convert.text()
+        app_settings['smtp_sender_email'] = self.sender_email_input.text()
+        app_settings['smtp_preset'] = SmtpServicePresetToEnum[smtp_preset]
+        app_settings['smtp_login_data'] = smtp
+
+        app_settings['send_to_kindle'] = kindle_settings
+        self._app_data.app_settings = app_settings
+
         self._app_data._save_app_settings()
 
         self.status_msg.setText("Changes saved.")
@@ -300,8 +289,8 @@ class SendToKindleWindow(QMainWindow):
         if preset_name == SmtpServicePreset.NoPreset:
             return
 
-        if preset_name in SmtpDataPreset.keys():
-            preset = SmtpDataPreset[preset_name]
+        if preset_name in SmtpLoginDataPreset.keys():
+            preset = SmtpLoginDataPreset[preset_name]
 
             self.smtp_host.setText(preset['host'])
             self.smtp_port_tls.setValue(preset['port_tls'])
@@ -310,46 +299,25 @@ class SendToKindleWindow(QMainWindow):
 
             self._save_all_settings()
 
-    def _sanitized_tab_html(self) -> str:
-        clean_html = self.tab_html
-        clean_html = re.sub(r'<script(.*?)</script>', '', clean_html, flags=re.DOTALL)
-
-        # Remove bg/fg color
-        """
-        html, body {
-            height: 100%;
-            color: #1a1a1a;
-            background-color: #FAE6B2;
-        }
-        """
-        clean_html = re.sub(r'html, body [{](.*?)[}]',
-                            'html, body { height: 100%; }',
-                            clean_html,
-                            flags=re.DOTALL)
-
-        # Remove inline svg icons
-        clean_html = re.sub(r'<svg(.*?)</svg>', '', clean_html, flags=re.DOTALL)
-
-        return clean_html
-
     def _send_to_kindle_email(self):
-        settings = self._app_data.app_settings['send_to_kindle']
+        app_settings = self._app_data.app_settings
+        kindle_settings = app_settings['send_to_kindle']
 
         if self.tab_sutta is None:
             self._show_warning("<p>No selected sutta.</p>")
             return
 
-        smtp_data = settings['smtp_data']
-        if smtp_data is None:
+        smtp = app_settings['smtp_login_data']
+        if smtp is None:
             self._show_warning("<p>SMTP data is missing</p>")
             return
 
-        sender_email = settings['sender_email']
+        sender_email = app_settings['smtp_sender_email']
         if sender_email is None:
             self._show_warning("<p>Sender email is missing</p>")
             return
 
-        kindle_email = settings['kindle_email']
+        kindle_email = kindle_settings['kindle_email']
 
         if kindle_email is None:
             self._show_warning("<p>Send to Kindle email is missing</p>")
@@ -362,7 +330,7 @@ class SendToKindleWindow(QMainWindow):
 
         sutta_title = self.sutta_title_input.text()
 
-        with SimsapaSMTP(smtp_data) as server:
+        with SimsapaSMTP(smtp) as server:
             server.send_message(from_addr = sender_email,
                                 to_addr = kindle_email,
                                 msg = "",
@@ -408,46 +376,17 @@ class SendToKindleWindow(QMainWindow):
         box.setText(text)
         box.exec()
 
-    def _write_epub(self, path: Path, html: str):
-        if self.tab_sutta is None:
-            self._show_warning("<p>No selected sutta.</p>")
-            return
-
-        book = epub.EpubBook()
-
-        sutta_title = self.sutta_title_input.text()
-        lang = str(self.tab_sutta.language)
-
-        book.set_identifier(path.name)
-        book.set_title(sutta_title)
-        book.set_language(lang)
-
-        book.add_author(str(self.tab_sutta.source_uid))
-
-        chapter = epub.EpubHtml(title=sutta_title, file_name='sutta.xhtml', lang=lang)
-        chapter.content = html
-
-        book.add_item(chapter)
-
-        book.toc = (chapter,) # type: ignore
-
-        book.add_item(epub.EpubNcx(uid='ncx'))
-        book.add_item(epub.EpubNav(uid='nav'))
-
-        book.spine = ['nav', chapter]
-
-        epub.write_epub(path, book)
-
     def _write_file_in_selected_format(self, target_dir: Optional[Path] = None) -> Optional[Path]:
         if self.tab_sutta is None:
             self._show_warning("<p>No selected sutta.</p>")
             return
 
-        settings = self._app_data.app_settings['send_to_kindle']
+        app_settings = self._app_data.app_settings
+        kindle_settings = app_settings['send_to_kindle']
 
         name = self.tab_sutta.uid.replace('/', '_')
-        html = self._sanitized_tab_html()
-        format = settings['format']
+        html = sanitized_sutta_html_for_export(self.tab_html)
+        format = kindle_settings['format']
 
         result_path: Optional[Path] = None
         if target_dir:
@@ -462,45 +401,36 @@ class SendToKindleWindow(QMainWindow):
 
         elif format == KindleFileFormat.TXT:
             result_path = dir.joinpath(f'{name}.txt')
-
-            html = re.sub(r'<style(.*?)</style>', '', html, flags=re.DOTALL)
-
-            txt = bleach.clean(text=html, tags=[], strip=True)
-
-            txt = re.sub(r'\s+$', '', txt)
-            txt = re.sub(r'\n\n\n+', r'\n\n', txt)
-
-            with open(result_path, 'w') as f:
-                f.write(txt)
+            save_html_as_txt(result_path, html)
 
         elif format == KindleFileFormat.EPUB:
             result_path = dir.joinpath(f'{name}.epub')
-            self._write_epub(result_path, html)
+            save_html_as_epub(output_path = result_path,
+                              sanitized_html = html,
+                              title = self.sutta_title_input.text(),
+                              author = str(self.tab_sutta.source_uid),
+                              language = str(self.tab_sutta.language))
 
         elif format == KindleFileFormat.MOBI:
-            if not settings['path_to_ebook_convert']:
+            if not app_settings['path_to_ebook_convert']:
                 self._show_warning("<p>The ebook-convert tool from Calibre is required to create MOBI files. Please install Calibre Ebook Reader and set the path to ebook-covert in the settings tab.</p>")
                 return
 
-            # Test if we can call it
-            ebook_convert_path = settings['path_to_ebook_convert']
+            ebook_convert_path = app_settings['path_to_ebook_convert']
 
-            res = subprocess.run([ebook_convert_path, '--version'], capture_output=True)
-            if res.returncode != 0 or 'calibre' not in res.stdout.decode():
-                self._show_warning(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
+            result_path = dir.joinpath(f'{name}.mobi')
+
+            try:
+                save_html_as_mobi(ebook_convert_path = Path(ebook_convert_path),
+                                output_path = result_path,
+                                sanitized_html = html,
+                                title = self.sutta_title_input.text(),
+                                author = str(self.tab_sutta.source_uid),
+                                language = str(self.tab_sutta.language))
+
+            except Exception as e:
+                self._show_warning(str(e))
                 return
-
-            epub_path = dir.joinpath(f'{name}.epub')
-            self._write_epub(epub_path, html)
-
-            result_path = epub_path.with_suffix('.mobi')
-            res = subprocess.run([ebook_convert_path, epub_path, result_path], capture_output=True)
-
-            if res.returncode != 0:
-                self._show_warning(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
-                return
-
-            epub_path.unlink()
 
         return result_path
 

@@ -6,12 +6,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List
 
-from simsapa.app.types import SmtpData
+from simsapa.app.types import SmtpLoginData
 
 class SimsapaSMTP(smtplib.SMTP):
     """A wrapper for handling SMTP connections."""
 
-    def __init__(self, smtp_data: SmtpData):
+    def __init__(self, smtp_data: SmtpLoginData):
         super().__init__(host=smtp_data['host'], port=smtp_data['port_tls'])
         context = ssl.create_default_context()
         self.starttls(context=context)

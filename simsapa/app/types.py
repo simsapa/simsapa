@@ -143,15 +143,15 @@ SmtpServicePresetToEnum = {
     "No preset": SmtpServicePreset.NoPreset,
 }
 
-class SmtpData(TypedDict):
+class SmtpLoginData(TypedDict):
     host: str
     port_tls: int
     user: str
     password: str
 
-SmtpDataPreset: Dict[SmtpServicePreset, SmtpData] = dict()
+SmtpLoginDataPreset: Dict[SmtpServicePreset, SmtpLoginData] = dict()
 
-SmtpDataPreset[SmtpServicePreset.GoogleMail] = SmtpData(
+SmtpLoginDataPreset[SmtpServicePreset.GoogleMail] = SmtpLoginData(
     host = "smtp.gmail.com",
     port_tls = 587,
     user = "e.g. account@gmail.com",
@@ -182,30 +182,54 @@ KindleContextActionToEnum = {
 
 class SendToKindleSettings(TypedDict):
     context_menu_action: KindleContextAction
-    path_to_ebook_convert: Optional[str]
     format: KindleFileFormat
     kindle_email: Optional[str]
-    sender_email: Optional[str]
-    smtp_preset: SmtpServicePreset
-    smtp_data: Optional[SmtpData]
 
 def default_send_to_kindle_settings() -> SendToKindleSettings:
     return SendToKindleSettings(
         context_menu_action = KindleContextAction.SaveViaUSB,
-        path_to_ebook_convert = None,
         format = KindleFileFormat.EPUB,
         kindle_email = None,
-        sender_email = None,
-        smtp_preset = SmtpServicePreset.NoPreset,
-        smtp_data = SmtpDataPreset[SmtpServicePreset.GoogleMail],
     )
 
+class RemarkableFileFormat(str, Enum):
+    EPUB = "EPUB"
+    HTML = "HTML"
+    TXT = "TXT"
+
+RemarkableFileFormatToEnum = {
+    "EPUB": RemarkableFileFormat.EPUB,
+    "HTML": RemarkableFileFormat.HTML,
+    "TXT": RemarkableFileFormat.TXT,
+}
+
+class RemarkableContextAction(str, Enum):
+    SaveWithCurl = "Save to reMarkable with curl"
+    SaveWithScp = "Save to reMarkable with scp"
+    SendToCloud = "Send to Remarkable Cloud Library"
+
+RemarkableContextActionToEnum = {
+    "Save to reMarkable with curl": RemarkableContextAction.SaveWithCurl,
+    "Save to reMarkable with scp": RemarkableContextAction.SaveWithScp,
+    "Send to Remarkable Cloud Library": RemarkableContextAction.SendToCloud,
+}
+
 class SendToRemarkableSettings(TypedDict):
-    format: str
+    context_menu_action: RemarkableContextAction
+    format: RemarkableFileFormat
+    rmk_web_ip: str
+    rmk_ssh_ip: str
+    rmk_folder_to_scp: str
+    user_ssh_pubkey_path: str
 
 def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
     return SendToRemarkableSettings(
-        format = "EPUB",
+        context_menu_action = RemarkableContextAction.SaveWithCurl,
+        format = RemarkableFileFormat.EPUB,
+        rmk_web_ip = "10.11.99.1",
+        rmk_ssh_ip = "10.11.99.1",
+        rmk_folder_to_scp = "/home/root",
+        user_ssh_pubkey_path = "~/.ssh/id_rsa",
     )
 
 class AppSettings(TypedDict):
@@ -239,6 +263,12 @@ class AppSettings(TypedDict):
     word_scan_dict_filter_idx: int
     audio_volume: float
     audio_device_desc: str
+    path_to_curl: Optional[str]
+    path_to_scp: Optional[str]
+    path_to_ebook_convert: Optional[str]
+    smtp_sender_email: Optional[str]
+    smtp_preset: SmtpServicePreset
+    smtp_login_data: Optional[SmtpLoginData]
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
 
@@ -285,6 +315,12 @@ def default_app_settings() -> AppSettings:
         word_scan_dict_filter_idx = 0,
         audio_volume = 0.9,
         audio_device_desc = '',
+        path_to_curl = None,
+        path_to_scp = None,
+        path_to_ebook_convert = None,
+        smtp_sender_email = None,
+        smtp_preset = SmtpServicePreset.NoPreset,
+        smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
     )
@@ -357,6 +393,7 @@ class AppData:
         self.search_indexed = SearchIndexed()
 
         self._read_app_settings()
+        self._find_cli_paths()
         self._read_pali_groups_stats()
         self._ensure_user_memo_deck()
 
@@ -450,6 +487,27 @@ class AppData:
                 self.db_session.commit()
         except Exception as e:
             logger.error(e)
+
+    def _find_cli_paths(self):
+        s = self.app_settings
+
+        if not s['path_to_curl']:
+            p = shutil.which('curl')
+            if p:
+                s['path_to_curl'] = str(p)
+
+        if not s['path_to_scp']:
+            p = shutil.which('scp')
+            if p:
+                s['path_to_scp'] = str(p)
+
+        if not s['path_to_ebook_convert']:
+            p = shutil.which('ebook-convert')
+            if p:
+                s['path_to_ebook_convert'] = str(p)
+
+        self.app_settings = s
+        self._save_app_settings()
 
     def _read_pali_groups_stats(self):
         schemas = [DbSchemaName.AppData, DbSchemaName.UserData]

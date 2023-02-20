@@ -607,7 +607,6 @@ def strip_html(text: str) -> str:
 
     return text
 
-
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
     latin = 'a i u m m n n t d n l r s s'.split(' ')

@@ -388,8 +388,16 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         tab.qwe.page().toHtml(_open_send)
 
     def _show_send_to_remarkable(self):
-        w = SendToRemarkableWindow(self._app_data, parent=self)
-        w.show()
+        tab = self.s._get_active_tab()
+
+        def _open_send(html: str):
+            w = SendToRemarkableWindow(self._app_data,
+                                       tab_sutta = tab.sutta,
+                                       tab_html = html,
+                                       parent = self)
+            w.show()
+
+        tab.qwe.page().toHtml(_open_send)
 
     def _connect_signals(self):
         self.action_Close_Window \
