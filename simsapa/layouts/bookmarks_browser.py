@@ -366,7 +366,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             name = re.sub(r'/+$', '', name)
             parts = list(map(lambda x: x.strip(), name.split("/")))
 
-            for level, name in enumerate(parts):
+            for level, _ in enumerate(parts):
 
                 path = "/".join(parts[0:level+1])
 

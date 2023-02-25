@@ -108,6 +108,7 @@ class Sutta(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at = Column(DateTime(timezone=True))
 
     authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
     tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
@@ -374,6 +375,30 @@ class Link(Base): # type: ignore
     to_target = Column(String)
 
 
+class GptPrompt(Base): # type: ignore
+    __tablename__ = "gpt_prompts"
+
+    id = Column(Integer, primary_key=True)
+    name_path = Column(String, nullable=False, unique=True)
+    prompt_text = Column(String)
+    show_in_context = Column(Boolean)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class GptHistory(Base): # type: ignore
+    __tablename__ = "gpt_history"
+
+    id = Column(Integer, primary_key=True)
+    name_path = Column(String)
+    prompt_text = Column(String)
+    completion_text = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
 class AppSetting(Base): # type: ignore
     __tablename__ = "app_settings"
 
@@ -441,7 +466,6 @@ class Challenge(Base): # type: ignore
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    indexed_at = Column(DateTime(timezone=True))
 
     course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
     group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)

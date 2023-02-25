@@ -539,9 +539,9 @@
     <addaction name="action_Send_to_Kindle"/>
     <addaction name="action_Send_to_reMarkable"/>
    </widget>
-   <widget class="QMenu" name="menu_Go">
+   <widget class="QMenu" name="menu_Find">
     <property name="title">
-     <string>&amp;Go</string>
+     <string>F&amp;ind</string>
     </property>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
@@ -561,12 +561,19 @@
     <addaction name="action_Decrease_Text_Margins"/>
     <addaction name="action_Search_Result_Sizes"/>
    </widget>
+   <widget class="QMenu" name="menu_GPT">
+    <property name="title">
+     <string>&amp;GPT</string>
+    </property>
+    <addaction name="action_Prompts"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_View"/>
-   <addaction name="menu_Go"/>
+   <addaction name="menu_Find"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Suttas"/>
+   <addaction name="menu_GPT"/>
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QToolBar" name="toolBar">
@@ -1035,6 +1042,11 @@
   <action name="action_Send_to_reMarkable">
    <property name="text">
     <string>Send to reMarkable...</string>
+   </property>
+  </action>
+  <action name="action_Prompts">
+   <property name="text">
+    <string>&amp;Prompts</string>
    </property>
   </action>
  </widget>

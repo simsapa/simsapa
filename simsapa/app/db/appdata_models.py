@@ -375,6 +375,30 @@ class Link(Base): # type: ignore
     to_target = Column(String)
 
 
+class GptPrompt(Base): # type: ignore
+    __tablename__ = "gpt_prompts"
+
+    id = Column(Integer, primary_key=True)
+    name_path = Column(String, nullable=False, unique=True)
+    prompt_text = Column(String)
+    show_in_context = Column(Boolean)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class GptHistory(Base): # type: ignore
+    __tablename__ = "gpt_history"
+
+    id = Column(Integer, primary_key=True)
+    name_path = Column(String)
+    prompt_text = Column(String)
+    completion_text = Column(String)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
 class AppSetting(Base): # type: ignore
     __tablename__ = "app_settings"
 

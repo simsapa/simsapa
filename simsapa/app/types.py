@@ -230,6 +230,54 @@ def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
         user_ssh_pubkey_path = "~/.ssh/id_rsa",
     )
 
+class OpenAIModel(str, Enum):
+    TextDavinci = "TextDavinci"
+    TextCurie = "TextCurie"
+    TextBabbage = "TextBabbage"
+    TextAda = "TextAda"
+    CodeDavinci = "CodeDavinci"
+    CodeCushman = "CodeCushman"
+
+OpenAIModelToEnum = {
+    "TextDavinci": OpenAIModel.TextDavinci,
+    "TextCurie": OpenAIModel.TextCurie,
+    "TextBabbage": OpenAIModel.TextBabbage,
+    "TextAda": OpenAIModel.TextAda,
+    "CodeDavinci": OpenAIModel.CodeDavinci,
+    "CodeCushman": OpenAIModel.CodeCushman,
+}
+
+OpenAIModelLatest = {
+    "TextDavinci": "text-davinci-003",
+    "TextCurie": "text-curie-001",
+    "TextBabbage": "text-babbage-001",
+    "TextAda": "text-ada-001",
+    "CodeDavinci": "code-davinci-002",
+    "CodeCushman": "code-cushman-001",
+}
+
+class OpenAISettings(TypedDict):
+    api_key: Optional[str]
+    model: OpenAIModel
+    temperature: float
+    max_tokens: int
+    auto_max_tokens: bool
+    n_completions: int
+    join_short_lines: int
+    chat_mode: bool
+
+def default_openai_settings() -> OpenAISettings:
+    return OpenAISettings(
+        api_key = None,
+        model = OpenAIModel.TextDavinci,
+        temperature = 0.0,
+        max_tokens = 256,
+        auto_max_tokens = False,
+        n_completions = 1,
+        join_short_lines = 80,
+        chat_mode = False,
+    )
+
 class AppSettings(TypedDict):
     disabled_sutta_labels: Labels
     disabled_dict_labels: Labels
@@ -269,6 +317,7 @@ class AppSettings(TypedDict):
     smtp_login_data: Optional[SmtpLoginData]
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
+    openai: OpenAISettings
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
@@ -321,6 +370,7 @@ def default_app_settings() -> AppSettings:
         smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
+        openai = default_openai_settings(),
     )
 
 class CompletionCache(TypedDict):
@@ -863,6 +913,7 @@ class AppWindowInterface(QMainWindow):
     action_Dictionaries_Manager: QAction
     action_Document_Reader: QAction
     action_Library: QAction
+    action_Prompts: QAction
 
     toolBar: QToolBar
     search_input: QLineEdit

@@ -33,6 +33,7 @@ from simsapa.layouts.sutta_window import SuttaWindow
 from simsapa.layouts.words_window import WordsWindow
 from simsapa.layouts.memos_browser import MemosBrowserWindow
 from simsapa.layouts.links_browser import LinksBrowserWindow
+from simsapa.layouts.gpt_prompts import GptPromptsWindow
 from simsapa.layouts.word_scan_popup import WordScanPopup
 from simsapa.layouts.help_info import open_simsapa_website, show_about
 
@@ -608,6 +609,13 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_gpt_prompts_window(self) -> GptPromptsWindow:
+        view = GptPromptsWindow(self._app_data)
+
+        make_active_window(view)
+        self._windows.append(view)
+        return view
+
     # def _new_document_reader_window(self, file_path=None):
     #     view = DocumentReaderWindow(self._app_data)
     #     self._set_size_and_maximize(view)
@@ -966,6 +974,13 @@ class AppWindows:
         if hasattr(view, 'action_Search_Completion'):
             view.action_Search_Completion \
                 .triggered.connect(partial(self._set_search_completion_setting, view))
+
+            search_completion = self._app_data.app_settings.get('search_completion', True)
+            view.action_Search_Completion.setChecked(search_completion)
+
+        if hasattr(view, 'action_Prompts'):
+            view.action_Prompts \
+                .triggered.connect(partial(self._new_gpt_prompts_window))
 
             search_completion = self._app_data.app_settings.get('search_completion', True)
             view.action_Search_Completion.setChecked(search_completion)

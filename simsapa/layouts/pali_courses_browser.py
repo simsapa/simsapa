@@ -28,8 +28,6 @@ class ListItem(QStandardItem):
     def __init__(self, name: str, db_model: PaliListModel, db_schema: DbSchemaName, db_id: int):
         super().__init__()
 
-        self.setEditable(False)
-
         self.name = name
         self.data = PaliListItem(
             db_model=db_model,
@@ -523,12 +521,10 @@ class CoursesBrowserWindow(AppWindowInterface):
             self._app_data.db_session.commit()
             self._reload_courses_tree()
 
-
     def _handle_selection_changed(self, selected: QItemSelection, _: QItemSelection):
         indexes = selected.indexes()
         if len(indexes) > 0:
             self._handle_tree_clicked(indexes[0])
-
 
     def _connect_signals(self):
         self.tree_view.doubleClicked.connect(partial(self._start_selected))
