@@ -759,6 +759,63 @@ class AppData:
 
         return len(rows)
 
+    def import_prompts(self, file_path: str) -> int:
+        rows = []
+
+        with open(file_path) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+
+        def _to_prompt(x: Dict[str, str]) -> Um.GptPrompt:
+            return Um.GptPrompt(
+                name_path       = x['name_path']       if x['name_path']       != 'None' else None,
+                prompt_text     = x['prompt_text']     if x['prompt_text']     != 'None' else None,
+                show_in_context = True                 if x['show_in_context'] == 'True' else False,
+            )
+
+        prompts = list(map(_to_prompt, rows))
+
+        try:
+            for i in prompts:
+                self.db_session.add(i)
+            self.db_session.commit()
+        except Exception as e:
+            logger.error(e)
+            return 0
+
+        return len(prompts)
+
+    def export_prompts(self, file_path: str) -> int:
+        if not file_path.endswith(".csv"):
+            file_path = f"{file_path}.csv"
+
+        res = self.db_session.query(Um.GptPrompt).all()
+
+        if not res:
+            return 0
+
+        def _to_row(x: Um.GptPrompt) -> Dict[str, str]:
+            return {
+                "name_path": str(x.name_path),
+                "prompt_text": str(x.prompt_text),
+                "show_in_context": str(x.show_in_context),
+            }
+
+        a = list(map(_to_row, res))
+        rows = sorted(a, key=lambda x: x['name_path'])
+
+        try:
+            with open(file_path, 'w') as f:
+                w = csv.DictWriter(f, fieldnames=rows[0].keys())
+                w.writeheader()
+                for r in rows:
+                    w.writerow(r)
+        except Exception as e:
+            logger.error(e)
+            return 0
+
+        return len(rows)
 
     def parse_toml(self, path: Path) -> Optional[TOMLDocument]:
         with open(path) as f:
@@ -1076,3 +1133,9 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
         )
 
     return sutta_quote
+
+class OpenPromptParams(TypedDict):
+    prompt_db_id: int
+    sutta_uid: str
+    with_name: Optional[str]
+    selection_text: Optional[str]

@@ -11,7 +11,7 @@ from datetime import datetime
 
 from transformers import GPT2TokenizerFast
 
-from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import IS_MAC, IS_SWAY, SEARCH_TIMER_SPEED, logger
 from simsapa.app.helpers import strip_html
@@ -19,7 +19,7 @@ from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, QExpanding, QMinimum, USutta, default_openai_settings
+from ..app.types import AppData, AppWindowInterface, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -120,7 +120,7 @@ class PromptItem(QStandardItem):
 class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
     _input_timer = QTimer()
 
-    def __init__(self, app_data: AppData, parent=None) -> None:
+    def __init__(self, app_data: AppData, prompt_params: Optional[OpenPromptParams] = None, parent = None) -> None:
         super().__init__(parent)
         logger.info("GptPromptsWindow()")
 
@@ -136,6 +136,12 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self._ui_setup()
         self._init_values()
         self._connect_signals()
+
+        self._update_vert_splitter_widths()
+        self._update_horiz_splitter_widths()
+
+        if prompt_params is not None:
+            self._show_prompt_by_params(prompt_params)
 
     def _ui_setup(self):
         self.setWindowTitle("Prompts")
@@ -251,9 +257,6 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self._setup_history_tab()
         self._setup_settings_tab()
 
-        self._update_vert_splitter_widths()
-        self._update_horiz_splitter_widths()
-
         self.reload_history_table()
 
     def _setup_menubar(self):
@@ -267,6 +270,12 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.action_Close_Window = QAction("&Close Window")
         self.menu_File.addAction(self.action_Close_Window)
+
+        self.action_Import = QAction("&Import from CSV...")
+        self.menu_File.addAction(self.action_Import)
+
+        self.action_Export = QAction("&Export as CSV...")
+        self.menu_File.addAction(self.action_Export)
 
     def _setup_editor(self):
         if IS_MAC:
@@ -335,6 +344,9 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self.prompt_delete_btn = QPushButton("Delete")
         self.prompt_buttons_layout.addWidget(self.prompt_delete_btn)
 
+        self.prompt_delete_all_btn = QPushButton("Delete All")
+        self.prompt_buttons_layout.addWidget(self.prompt_delete_all_btn)
+
         self._setup_prompts_tree_view()
 
     def _setup_prompts_tree_view(self):
@@ -353,17 +365,20 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
 
         self._create_prompts_tree_items(self.prompts_tree_model)
 
-        idx = self.prompts_tree_model.index(0, 0)
-        self.prompts_tree_view.selectionModel() \
-                              .select(idx,
-                                      QItemSelectionModel.SelectionFlag.ClearAndSelect | \
-                                      QItemSelectionModel.SelectionFlag.Rows)
+        # NOTE: Don't select the first item when opening the window. It is
+        # confusing when the prompt is loaded from a sutta window.
 
-        self._handle_prompts_tree_clicked(idx)
+        # idx = self.prompts_tree_model.index(0, 0)
+        # self.prompts_tree_view.selectionModel() \
+        #                       .select(idx,
+        #                               QItemSelectionModel.SelectionFlag.ClearAndSelect | \
+        #                               QItemSelectionModel.SelectionFlag.Rows)
+
+        # self._handle_prompts_tree_clicked(idx)
 
         self.prompts_tree_view.expandAll()
 
-    def _reload_prompts_tree(self):
+    def reload_prompts_tree(self):
         self.prompts_tree_model.clear()
         self._create_prompts_tree_items(self.prompts_tree_model)
         self.prompts_tree_model.layoutChanged.emit()
@@ -398,19 +413,42 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self.prompts_tree_view.resizeColumnToContents(0)
         self.prompts_tree_view.resizeColumnToContents(1)
 
-    def _show_prompt(self, item: PromptItem):
-        r = self._app_data.db_session \
-                            .query(Um.GptPrompt) \
-                            .filter(Um.GptPrompt.id == item.data['db_id']) \
-                            .first()
-        if r:
-            self.prompt_input.setPlainText(r.prompt_text)
-            self.prompt_name_input.setText(r.name_path)
+    def _show_prompt_by_id(self, db_id: int):
+        prompt = self._app_data.db_session \
+                               .query(Um.GptPrompt) \
+                               .filter(Um.GptPrompt.id == db_id) \
+                               .first()
+        if prompt is None:
+            return
+
+        self.prompt_name_input.setText(prompt.name_path)
+        prompt = self._parse_prompt_variables(prompt.prompt_text)
+        self.prompt_input.setPlainText(prompt)
+
+    def _show_prompt_by_params(self, params: OpenPromptParams):
+        prompt = self._app_data.db_session \
+                               .query(Um.GptPrompt) \
+                               .filter(Um.GptPrompt.id == params['prompt_db_id']) \
+                               .first()
+        if prompt is None:
+            return
+
+        if params['with_name'] is None:
+            self.prompt_name_input.setText(prompt.name_path)
+        else:
+            self.prompt_name_input.setText(params['with_name'])
+
+        prompt = self._parse_prompt_variables(prompt.prompt_text,
+                                              False,
+                                              params['sutta_uid'],
+                                              params['selection_text'])
+
+        self.prompt_input.setPlainText(prompt)
 
     def _handle_prompts_tree_clicked(self, val: QModelIndex):
         item: PromptItem = self.prompts_tree_model.itemFromIndex(val) # type: ignore
         if item is not None:
-            self._show_prompt(item)
+            self._show_prompt_by_id(item.data['db_id'])
 
     def _setup_history_tab(self):
         self.history_tab_widget = QWidget()
@@ -632,7 +670,58 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         box.setText(text)
         box.exec()
 
-    def _parse_prompt_variables(self, prompt: str) -> str:
+    def _parse_prompt_variables(self,
+                                prompt: str,
+                                parse_sutta_in_text = False,
+                                sutta_uid: Optional[str] = None,
+                                selection_text: Optional[str] = None) -> str:
+
+        prompt = prompt.strip()
+
+        if parse_sutta_in_text:
+            prompt = self._parse_prompt_sutta_in_text(prompt)
+
+        if sutta_uid:
+            prompt = self._parse_prompt_current_sutta(prompt, sutta_uid)
+
+        if selection_text:
+            prompt = self._parse_prompt_selection_text(prompt, selection_text)
+
+        return prompt
+
+    def _parse_prompt_selection_text(self, prompt: str, selection_text: str) -> str:
+        if '<<selection_text>>' not in prompt:
+            return prompt
+
+        return prompt.replace('<<selection_text>>', selection_text)
+
+    def _parse_prompt_current_sutta(self, prompt: str, sutta_uid: str) -> str:
+        if '<<current_sutta>>' not in prompt:
+            return prompt
+
+        res: List[USutta] = []
+        r = self._app_data.db_session \
+                            .query(Am.Sutta) \
+                            .filter(Am.Sutta.uid == sutta_uid) \
+                            .first()
+        if r:
+            res.append(r)
+
+        r = self._app_data.db_session \
+                            .query(Um.Sutta) \
+                            .filter(Um.Sutta.uid == sutta_uid) \
+                            .first()
+        if r:
+            res.append(r)
+
+        if len(res) > 0:
+            sutta_plain = self._sutta_content_plain(res[0])
+            return prompt.replace('<<current_sutta>>', sutta_plain)
+
+        else:
+            return prompt
+
+    def _parse_prompt_sutta_in_text(self, prompt: str) -> str:
         matches = re.finditer(r'<<suttas*/([^>]+)>>', prompt)
         parsed_prompt = prompt
 
@@ -683,6 +772,10 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         else:
             content = 'No content.'
 
+        content = content.strip()
+        content = re.sub(r'\s+$', '', content)
+        content = re.sub(r'\n\n\n+', r'\n\n', content)
+
         max = self._app_data.app_settings['openai']['join_short_lines']
         if max > 0:
             re_line = re.compile(f'^(.{{1,{max}}})\n')
@@ -700,7 +793,8 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
             self._show_warning("<p>Please add your OpenAI key in the Settings tab.</p>")
             return
 
-        prompt = self._parse_prompt_variables(self.prompt_input.toPlainText()).strip()
+        text = self.prompt_input.toPlainText().strip()
+        prompt = self._parse_prompt_variables(text, parse_sutta_in_text=True)
 
         if len(prompt) < 4:
             return
@@ -846,7 +940,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
             prompt.prompt_text = self.prompt_input.toPlainText()
 
         self._app_data.db_session.commit()
-        self._reload_prompts_tree()
+        self.reload_prompts_tree()
 
     def _get_selected_prompt(self) -> Optional[Um.GptPrompt]:
         a = self.prompts_tree_view.selectedIndexes()
@@ -870,7 +964,23 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
             self._app_data.db_session.delete(prompt)
             self._app_data.db_session.commit()
 
-            self._reload_prompts_tree()
+            self.reload_prompts_tree()
+
+    def _prompt_delete_all(self):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Delete Confirmation")
+        box.setText("<p>Delete all Prompts?</p>")
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        reply = box.exec()
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self._app_data.db_session.query(Um.GptPrompt).delete()
+        self._app_data.db_session.commit()
+
+        self.reload_prompts_tree()
 
     def _prompt_copy(self):
         prompt_text = self.prompt_input.toPlainText().strip()
@@ -907,7 +1017,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         idx = a[0]
         sel_row = idx.row()
 
-        self._reload_prompts_tree()
+        self.reload_prompts_tree()
 
         idx = self.prompts_tree_model.index(sel_row, 0)
         self.prompts_tree_view.selectionModel() \
@@ -917,7 +1027,8 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
 
     def _prompt_show_parsed(self):
         prompt_name = self.prompt_name_input.text().strip()
-        prompt_text = self._parse_prompt_variables(self.prompt_input.toPlainText()).strip()
+        text = self.prompt_input.toPlainText().strip()
+        prompt_text = self._parse_prompt_variables(text, parse_sutta_in_text=True)
         completion_text = self.completion_text.toPlainText().strip()
 
         text = f"{prompt_name}\n\n{prompt_text}\n\n{completion_text}".strip()
@@ -993,9 +1104,56 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.reload_history_table()
 
+    def _handle_import(self):
+        file_path, _ = QFileDialog \
+            .getOpenFileName(self,
+                            "Import from CSV...",
+                            "",
+                            "CSV Files (*.csv)")
+
+        if len(file_path) == 0:
+            return
+
+        n = self._app_data.import_prompts(file_path)
+
+        self.reload_history_table()
+        self.reload_prompts_tree()
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"Imported {n} prompts.")
+        box.setWindowTitle("Import Completed")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+    def _handle_export(self):
+        file_path, _ = QFileDialog \
+            .getSaveFileName(self,
+                             "Export as CSV...",
+                             "",
+                             "CSV Files (*.csv)")
+
+        if len(file_path) == 0:
+            return
+
+        n = self._app_data.export_prompts(file_path)
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"Exported {n} prompts.")
+        box.setWindowTitle("Export Completed")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
     def _connect_signals(self):
         self.action_Close_Window \
             .triggered.connect(partial(self.close))
+
+        self.action_Import \
+            .triggered.connect(partial(self._handle_import))
+
+        self.action_Export \
+            .triggered.connect(partial(self._handle_export))
 
         self.toggle_sidebar_btn.clicked.connect(partial(self._toggle_sidebar))
 
@@ -1013,6 +1171,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self.prompt_copy_all_btn.clicked.connect(partial(self._prompt_copy_all))
 
         self.prompt_delete_btn.clicked.connect(partial(self._prompt_delete_selected))
+        self.prompt_delete_all_btn.clicked.connect(partial(self._prompt_delete_all))
 
         self.history_table.doubleClicked.connect(self._handle_history_load)
         self.history_load_btn.clicked.connect(partial(self._handle_history_row_load))

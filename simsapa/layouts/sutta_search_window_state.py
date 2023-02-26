@@ -8,9 +8,8 @@ from typing import Any, List, Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget)
+from PyQt6.QtWebEngineCore import QWebEnginePage
 
 from sqlalchemy.sql.elements import and_
 # from tomlkit import items
@@ -21,10 +20,11 @@ from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
+from simsapa.layouts.sutta_webengine import SuttaWebEngine
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_ALL_BOOK_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
+from ..app.types import AppData, OpenPromptParams, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -53,11 +53,13 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     search_query_workers: List[SearchQueryWorker] = []
     search_mode_dropdown: QComboBox
 
+    open_sutta_new_signal = pyqtSignal(str)
     open_in_study_window_signal = pyqtSignal([str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
+    open_gpt_prompt = pyqtSignal(dict)
 
     def __init__(self,
                  app_data: AppData,
@@ -370,9 +372,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
-    def _new_webengine(self) -> QWebEngineView:
-        qwe = QWebEngineView()
-
+    def _new_webengine(self) -> SuttaWebEngine:
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
@@ -380,17 +380,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 
-        qwe.setPage(page)
-
-        qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        # Enable dev tools
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
-
-        self._setup_qwe_context_menu(qwe)
+        qwe = SuttaWebEngine(page, self._create_qwe_context_menu)
 
         return qwe
 
@@ -998,53 +988,117 @@ QWidget:focus { border: 1px solid #1092C3; }
         uid: str = sutta.uid # type: ignore
         self.open_in_study_window_signal.emit(side, uid)
 
-    def _setup_qwe_context_menu(self, qwe: QWebEngineView):
-        qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+    def _create_qwe_context_menu(self, menu: QMenu):
+        self.qwe_copy_menu = QMenu("Copy")
+        menu.addMenu(self.qwe_copy_menu)
 
-        copyAction = QAction("Copy Selection", qwe)
+        self.qwe_copy_selection = QAction("Selection")
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
-        copyAction.triggered.connect(partial(self._handle_copy))
+        self.qwe_copy_selection.triggered.connect(partial(self._handle_copy))
+        self.qwe_copy_menu.addAction(self.qwe_copy_selection)
 
-        qwe.addAction(copyAction)
+        self.qwe_copy_link_to_sutta = QAction("Link to Sutta and Selection")
+        self.qwe_copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
+        self.qwe_copy_menu.addAction(self.qwe_copy_link_to_sutta)
 
-        copy_link_to_sutta = QAction("Copy Link to Sutta and Selection", qwe)
-        copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
-        qwe.addAction(copy_link_to_sutta)
+        self.qwe_copy_uid = QAction("uid")
+        self.qwe_copy_uid.triggered.connect(partial(self._handle_copy_uid))
+        self.qwe_copy_menu.addAction(self.qwe_copy_uid)
 
-        copyUidAction = QAction("Copy uid", qwe)
-        copyUidAction.triggered.connect(partial(self._handle_copy_uid))
+        self.qwe_bookmark = QAction("Create Bookmark from Selection")
+        self.qwe_bookmark.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
+        menu.addAction(self.qwe_bookmark)
 
-        qwe.addAction(copyUidAction)
+        self.qwe_memo = QAction("Create Memo")
+        self.qwe_memo.triggered.connect(partial(self.handle_create_memo_for_sutta))
+        menu.addAction(self.qwe_memo)
 
-        bookmark_Action = QAction("Create Bookmark from Selection", qwe)
-        bookmark_Action.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
+        self.qwe_study_menu = QMenu("Open in Study Window")
+        menu.addMenu(self.qwe_study_menu)
 
-        qwe.addAction(bookmark_Action)
+        self.qwe_study_left = QAction("Left")
+        self.qwe_study_left.triggered.connect(partial(self._open_in_study_window, 'left'))
+        self.qwe_study_menu.addAction(self.qwe_study_left)
 
-        memoAction = QAction("Create Memo", qwe)
-        memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))
+        self.qwe_study_middle = QAction("Middle")
+        self.qwe_study_middle.triggered.connect(partial(self._open_in_study_window, 'middle'))
+        self.qwe_study_menu.addAction(self.qwe_study_middle)
 
-        qwe.addAction(memoAction)
+        self.qwe_lookup_menu = QMenu("Lookup Selection")
+        menu.addMenu(self.qwe_lookup_menu)
 
-        studyLeftAction = QAction("Open in Study Window: Left", qwe)
-        studyLeftAction.triggered.connect(partial(self._open_in_study_window, 'left'))
+        self.qwe_lookup_in_suttas = QAction("In Suttas")
+        self.qwe_lookup_in_suttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
+        self.qwe_lookup_menu.addAction(self.qwe_lookup_in_suttas)
 
-        qwe.addAction(studyLeftAction)
+        self.qwe_lookup_in_dictionary = QAction("In Dictionary")
+        self.qwe_lookup_in_dictionary.triggered.connect(partial(self.pw._lookup_selection_in_dictionary))
+        self.qwe_lookup_menu.addAction(self.qwe_lookup_in_dictionary)
 
-        studyMiddleAction = QAction("Open in Study Window: Middle", qwe)
-        studyMiddleAction.triggered.connect(partial(self._open_in_study_window, 'middle'))
+        self.gpt_prompts_menu = QMenu("GPT Prompts")
+        menu.addMenu(self.gpt_prompts_menu)
 
-        qwe.addAction(studyMiddleAction)
+        prompts = self._app_data.db_session \
+                                .query(Um.GptPrompt) \
+                                .filter(Um.GptPrompt.show_in_context == True) \
+                                .all()
 
-        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
-        lookupSelectionInSuttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
+        self.gpt_prompts_actions = []
 
-        qwe.addAction(lookupSelectionInSuttas)
+        def _add_action_to_menu(x: Um.GptPrompt):
+            a = QAction(str(x.name_path))
+            db_id: int = x.id # type: ignore
+            a.triggered.connect(partial(self._open_gpt_prompt_with_params, db_id))
+            self.gpt_prompts_actions.append(a)
+            self.gpt_prompts_menu.addAction(a)
 
-        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", qwe)
-        lookupSelectionInDictionary.triggered.connect(partial(self.pw._lookup_selection_in_dictionary))
+        for i in prompts:
+            _add_action_to_menu(i)
 
-        qwe.addAction(lookupSelectionInDictionary)
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/new-window"))
+
+        self.qwe_open_new_action = QAction("Open in New Window")
+        self.qwe_open_new_action.setIcon(icon)
+        self.qwe_open_new_action.triggered.connect(partial(self._handle_open_content_new))
+        menu.addAction(self.qwe_open_new_action)
+
+        tab = self._get_active_tab()
+
+        self.qwe_devtools = QAction("Show Inspector")
+        self.qwe_devtools.setCheckable(True)
+        self.qwe_devtools.setChecked(tab.devtools_open)
+        self.qwe_devtools.triggered.connect(partial(self._toggle_devtools_inspector))
+        menu.addAction(self.qwe_devtools)
+
+    def _open_gpt_prompt_with_params(self, prompt_db_id: int):
+        tab = self._get_active_tab()
+        if tab.sutta is None:
+            return
+
+        params = OpenPromptParams(
+            prompt_db_id = prompt_db_id,
+            with_name = '', # Empty string to clear existing name
+            sutta_uid = str(tab.sutta.uid),
+            selection_text = self._get_selection(),
+        )
+
+        self.open_gpt_prompt.emit(params)
+
+    def _toggle_devtools_inspector(self):
+        tab = self._get_active_tab()
+
+        if self.qwe_devtools.isChecked():
+            tab._show_devtools()
+        else:
+            tab._hide_devtools()
+
+    def _handle_open_content_new(self):
+        tab = self._get_active_tab()
+        if tab.sutta is not None:
+            self.open_sutta_new_signal.emit(str(tab.sutta.uid))
+        else:
+            logger.warn("Sutta is not set")
 
     def _handle_show_related_suttas(self):
         if self._current_sutta is not None:

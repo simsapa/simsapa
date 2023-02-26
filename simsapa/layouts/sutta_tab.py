@@ -15,18 +15,17 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db.search import SearchResult
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, bilara_text_to_segments
+from simsapa.layouts.sutta_webengine import SuttaWebEngine
 from ..app.types import AppData, SuttaQuote, USutta
 from .html_content import html_page
 
 class SuttaTabWidget(QWidget):
 
-    open_sutta_new_signal = pyqtSignal(str)
-
     def __init__(self,
                  app_data: AppData,
                  title: str,
                  tab_index: int,
-                 qwe: QWebEngineView,
+                 qwe: SuttaWebEngine,
                  sutta: Optional[USutta] = None) -> None:
 
         super().__init__()
@@ -41,26 +40,12 @@ class SuttaTabWidget(QWidget):
         self.sutta = sutta
         self.api_url = self._app_data.api_url
         self.current_html = ""
+        self.devtools_open = False
 
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self._layout)
         self._layout.addWidget(self.qwe, 100)
-
-        icon = QIcon()
-        icon.addPixmap(QPixmap(":/new-window"))
-
-        open_new_action = QAction("Open in New Window", qwe)
-        open_new_action.setIcon(icon)
-        open_new_action.triggered.connect(partial(self._handle_open_content_new))
-
-        self.qwe.addAction(open_new_action)
-
-        self.devToolsAction = QAction("Show Inspector", qwe)
-        self.devToolsAction.setCheckable(True)
-        self.devToolsAction.triggered.connect(partial(self._toggle_dev_tools_inspector))
-
-        self.qwe.addAction(self.devToolsAction)
 
     def get_current_html(self) -> str:
         return self.current_html
@@ -258,17 +243,13 @@ class SuttaTabWidget(QWidget):
 
         self.set_qwe_html(html)
 
-    def _toggle_dev_tools_inspector(self):
-        if self.devToolsAction.isChecked():
-            self.dev_view = QWebEngineView()
-            self._layout.addWidget(self.dev_view, 100)
-            self.qwe.page().setDevToolsPage(self.dev_view.page())
-        else:
-            self.qwe.page().devToolsPage().deleteLater()
-            self.dev_view.deleteLater()
+    def _show_devtools(self):
+        self.dev_view = QWebEngineView()
+        self._layout.addWidget(self.dev_view, 100)
+        self.qwe.page().setDevToolsPage(self.dev_view.page())
+        self.devtools_open = True
 
-    def _handle_open_content_new(self):
-        if self.sutta is not None:
-            self.open_sutta_new_signal.emit(str(self.sutta.uid))
-        else:
-            logger.warn("Sutta is not set")
+    def _hide_devtools(self):
+        self.qwe.page().devToolsPage().deleteLater()
+        self.dev_view.deleteLater()
+        self.devtools_open = False

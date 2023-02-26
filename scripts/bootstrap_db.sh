@@ -71,6 +71,8 @@ echo "=== Import User Data ==="
 
 ./run.py import-bookmarks "$BOOTSTRAP_ASSETS_DIR/bookmarks/bookmarks.csv"
 
+./run.py import-prompts "$BOOTSTRAP_ASSETS_DIR/prompts/prompts.csv"
+
 echo "=== Copy Userdata to DIST folder ==="
 
 cp "$ASSETS_DIR"/userdata.sqlite3 "$DIST_DIR"

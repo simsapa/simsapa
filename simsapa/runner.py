@@ -112,6 +112,22 @@ def import_suttas_to_userdata(path_to_db: str):
     suttas = app_data.import_suttas_to_userdata(path_to_db)
     print(f"Imported {suttas} suttas.")
 
+@app.command("export-prompts")
+def export_prompts(path_to_csv: str):
+    """Export prompts to a CSV file"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    prompts = app_data.export_prompts(path_to_csv)
+    print(f"Exported {prompts} prompts.")
+
+@app.command("import-prompts")
+def import_prompts(path_to_csv: str):
+    """Import prompts from a CSV file (such as an earlier export)"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    prompts = app_data.import_prompts(path_to_csv)
+    print(f"Imported {prompts} prompts.")
+
 @app.command("export-bookmarks")
 def export_bookmarks(path_to_csv: str):
     """Export bookmarks to a CSV file"""

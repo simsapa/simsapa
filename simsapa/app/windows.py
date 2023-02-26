@@ -16,7 +16,7 @@ from simsapa import logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
 from simsapa.app.helpers import EntryType, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.app.types import AppData, AppMessage, AppWindowInterface, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
 
@@ -315,7 +315,7 @@ class AppWindows:
 
         view.lookup_in_dictionary_signal.connect(partial(_lookup))
         view.s.open_in_study_window_signal.connect(partial(_study))
-        view.s.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
         view.s.bookmark_created.connect(partial(self._reload_bookmarks))
 
@@ -326,6 +326,11 @@ class AppWindows:
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 
         view.s.hide_preview.connect(partial(self._preview_window._do_hide))
+
+        def _open_prompt(params: Optional[OpenPromptParams] = None):
+            self._new_gpt_prompts_window(params)
+
+        view.s.open_gpt_prompt.connect(partial(_open_prompt))
 
         if self._hotkeys_manager is not None:
             try:
@@ -359,9 +364,9 @@ class AppWindows:
             self._show_sutta_by_uid_in_side(msg)
 
         view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
-        view.sutta_one_state.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
         view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
-        view.sutta_two_state.sutta_tab.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
         if self._hotkeys_manager is not None:
             try:
@@ -609,8 +614,8 @@ class AppWindows:
         self._windows.append(view)
         return view
 
-    def _new_gpt_prompts_window(self) -> GptPromptsWindow:
-        view = GptPromptsWindow(self._app_data)
+    def _new_gpt_prompts_window(self, prompt_params: Optional[OpenPromptParams] = None) -> GptPromptsWindow:
+        view = GptPromptsWindow(self._app_data, prompt_params)
 
         make_active_window(view)
         self._windows.append(view)
@@ -980,7 +985,7 @@ class AppWindows:
 
         if hasattr(view, 'action_Prompts'):
             view.action_Prompts \
-                .triggered.connect(partial(self._new_gpt_prompts_window))
+                .triggered.connect(partial(self._new_gpt_prompts_window, None))
 
             search_completion = self._app_data.app_settings.get('search_completion', True)
             view.action_Search_Completion.setChecked(search_completion)
