@@ -604,9 +604,17 @@ def write_words(words: List[DictEntry], paths: StarDictPaths) -> WriteResult:
             for n, w in enumerate(words):
 
                 if res['syn_count'] is not None:
-                    n = int(res['syn_count'])
-                    n += len(w['synonyms'])
-                    res['syn_count'] = n
+                    res['syn_count'] += len(w['synonyms']) # type: ignore
+
+                # NOTE: The above 'type: ignore' can be avoided when re-written
+                # in the form below, but this produces an error in GoldenDict.
+                # GoldenDict starts the indexing process, then fails after a few
+                # seconds, and the dictionary is not available
+                #
+                # if res['syn_count'] is not None:
+                #     n = int(res['syn_count'])
+                #     n += len(w['synonyms'])
+                #     res['syn_count'] = n
 
                 for s in w['synonyms']:
                     d = bytes(f"{s}\0", "utf-8")
