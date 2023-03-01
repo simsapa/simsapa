@@ -1,20 +1,12 @@
-import re
-import json
-from functools import partial
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QAction
+from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from sqlalchemy.sql.elements import and_
-
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
-from simsapa.app.db import appdata_models as Am
-from simsapa.app.db import userdata_models as Um
 from simsapa.app.db.search import SearchResult
-from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, bilara_text_to_segments
+from simsapa.app.export_helpers import render_sutta_content
 from simsapa.layouts.sutta_webengine import SuttaWebEngine
 from ..app.types import AppData, SuttaQuote, USutta
 from .html_content import html_page
@@ -81,121 +73,12 @@ class SuttaTabWidget(QWidget):
             except Exception as e:
                 logger.error("set_qwe_html() : %s" % e)
 
-    def _sutta_to_segments_json(self,
-                                sutta: USutta,
-                                use_template: bool = True) -> Dict[str, str]:
-
-        res = sutta.variant
-        if res is None:
-            variant = None
-        else:
-            variant = str(res.content_json)
-
-        res = sutta.comment
-        if res is None:
-            comment = None
-        else:
-            comment = str(res.content_json)
-
-        show_variants = self._app_data.app_settings.get('show_all_variant_readings', True)
-
-        if use_template:
-            tmpl = str(sutta.content_json_tmpl)
-        else:
-            tmpl = None
-
-        segments_json = bilara_text_to_segments(
-            str(sutta.content_json),
-            tmpl,
-            variant,
-            comment,
-            show_variants,
-        )
-
-        return segments_json
-
-    def _get_pali_for_translated(self, sutta: USutta) -> Optional[USutta]:
-        if sutta.language == 'pli':
-            return None
-
-        uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
-
-        res: List[USutta] = []
-        r = self._app_data.db_session \
-            .query(Am.Sutta) \
-            .filter(and_(
-                Am.Sutta.uid != sutta.uid,
-                Am.Sutta.language == 'pli',
-                Am.Sutta.uid.like(f"{uid_ref}/%"),
-            )) \
-            .all()
-        res.extend(r)
-
-        r = self._app_data.db_session \
-            .query(Um.Sutta) \
-            .filter(and_(
-                Um.Sutta.uid != sutta.uid,
-                Um.Sutta.language == 'pli',
-                Um.Sutta.uid.like(f"{uid_ref}/%"),
-            )) \
-            .all()
-        res.extend(r)
-
-        if len(res) > 0:
-            return res[0]
-        else:
-            return None
 
     def render_sutta_content(self, sutta_quote: Optional[SuttaQuote] = None):
         if self.sutta is None:
             return
-
         logger.info(f"render_sutta_content(): {self.sutta.uid}, sutta_quote: {sutta_quote}")
-
-        if self.sutta.content_json is not None and self.sutta.content_json != '':
-            line_by_line = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
-
-            pali_sutta = self._get_pali_for_translated(self.sutta)
-
-            if line_by_line and pali_sutta:
-                translated_json = self._sutta_to_segments_json(self.sutta, use_template=False)
-                pali_json = self._sutta_to_segments_json(pali_sutta, use_template=False)
-                tmpl_json = json.loads(str(self.sutta.content_json_tmpl))
-                content = bilara_line_by_line_html(translated_json, pali_json, tmpl_json)
-
-            else:
-                translated_json = self._sutta_to_segments_json(self.sutta, use_template=True)
-                content = bilara_content_json_to_html(translated_json)
-
-        elif self.sutta.content_html is not None and self.sutta.content_html != '':
-            content = str(self.sutta.content_html)
-
-        elif self.sutta.content_plain is not None and self.sutta.content_plain != '':
-            content = '<pre>' + str(self.sutta.content_plain) + '</pre>'
-
-        else:
-            content = 'No content.'
-
-        font_size = self._app_data.app_settings.get('sutta_font_size', 22)
-        max_width = self._app_data.app_settings.get('sutta_max_width', 75)
-
-        css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
-
-        js_extra = f"const SUTTA_UID = '{self.sutta.uid}';";
-
-        is_on = self._app_data.app_settings.get('show_bookmarks', True)
-        if is_on:
-            js_extra += "const SHOW_BOOKMARKS = true;";
-        else:
-            js_extra += "const SHOW_BOOKMARKS = false;";
-
-        if sutta_quote:
-            text = sutta_quote['quote'].replace('"', '\\"')
-            selection_range = sutta_quote['selection_range'] if sutta_quote['selection_range'] is not None else 0
-            js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s", "%s"); });""" % (text, selection_range)
-
-        html = html_page(content, self.api_url, css_extra, js_extra)
-
+        html = render_sutta_content(self._app_data, self.sutta, sutta_quote)
         self.set_qwe_html(html)
 
     def render_search_results(self, results: List[SearchResult]):

@@ -43,10 +43,13 @@ class ShowPromptDialog(QDialog):
         self._layout.addLayout(self.buttons_box)
 
         self.close_btn = QPushButton('Close')
-        self.close_btn.clicked.connect(self.close)
+        self.close_btn.clicked.connect(partial(self._handle_close))
 
         self.buttons_box.addWidget(self.close_btn)
         self.buttons_box.addItem(QSpacerItem(0, 0, QExpanding, QMinimum))
+
+    def _handle_close(self):
+        self.close()
 
 # Keys with underscore prefix will not be shown in table columns.
 HistoryModelColToIdx = {
@@ -1119,9 +1122,12 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.exec()
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Import \
             .triggered.connect(partial(self._handle_import))

@@ -394,8 +394,11 @@ class SendToRemarkableWindow(QMainWindow):
         box.setText(text)
         box.exec()
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
-        self.close_button.clicked.connect(self.close)
+        self.close_button.clicked.connect(partial(self._handle_close))
 
         self.save_with_curl.clicked.connect(partial(self._save_with_curl))
         self.save_with_scp.clicked.connect(partial(self._save_with_scp))

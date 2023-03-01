@@ -15,6 +15,7 @@ from tomlkit.toml_document import TOMLDocument
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
+from sqlalchemy.sql.elements import and_
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
@@ -24,6 +25,7 @@ from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, get_db_session_with_schema, upgrade_db
+from simsapa.app.helpers import bilara_text_to_segments
 
 from .db.search import SearchIndexed
 
@@ -940,6 +942,70 @@ class AppData:
 
         return course_name
 
+    def get_pali_for_translated(self, sutta: USutta) -> Optional[USutta]:
+        if sutta.language == 'pli':
+            return None
+
+        uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
+
+        res: List[USutta] = []
+        r = self.db_session \
+            .query(Am.Sutta) \
+            .filter(and_(
+                Am.Sutta.uid != sutta.uid,
+                Am.Sutta.language == 'pli',
+                Am.Sutta.uid.like(f"{uid_ref}/%"),
+            )) \
+            .all()
+        res.extend(r)
+
+        r = self.db_session \
+            .query(Um.Sutta) \
+            .filter(and_(
+                Um.Sutta.uid != sutta.uid,
+                Um.Sutta.language == 'pli',
+                Um.Sutta.uid.like(f"{uid_ref}/%"),
+            )) \
+            .all()
+        res.extend(r)
+
+        if len(res) > 0:
+            return res[0]
+        else:
+            return None
+
+    def sutta_to_segments_json(self,
+                               sutta: USutta,
+                               use_template: bool = True) -> Dict[str, str]:
+
+        res = sutta.variant
+        if res is None:
+            variant = None
+        else:
+            variant = str(res.content_json)
+
+        res = sutta.comment
+        if res is None:
+            comment = None
+        else:
+            comment = str(res.content_json)
+
+        show_variants = self.app_settings.get('show_all_variant_readings', True)
+
+        if use_template:
+            tmpl = str(sutta.content_json_tmpl)
+        else:
+            tmpl = None
+
+        segments_json = bilara_text_to_segments(
+            str(sutta.content_json),
+            tmpl,
+            variant,
+            comment,
+            show_variants,
+        )
+
+        return segments_json
 
 class AppWindowInterface(QMainWindow):
     action_Notify_About_Updates: QAction

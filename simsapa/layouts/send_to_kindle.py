@@ -423,8 +423,11 @@ class SendToKindleWindow(QMainWindow):
 
         return result_path
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
-        self.close_button.clicked.connect(self.close)
+        self.close_button.clicked.connect(partial(self._handle_close))
 
         self.send_to_kindle_email.clicked.connect(partial(self._send_to_kindle_email))
 
