@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineE
 from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import sanitized_sutta_html_for_export, save_html_as_epub, save_html_as_txt
 
-from ..app.types import AppData, RemarkableContextAction, RemarkableContextActionToEnum, RemarkableFileFormat, RemarkableFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToRemarkableSettings, USutta
+from ..app.types import AppData, RemarkableAction, RemarkableFileFormat, RemarkableFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToRemarkableSettings, USutta
 
 class SendToRemarkableWindow(QMainWindow):
 
@@ -88,9 +88,10 @@ class SendToRemarkableWindow(QMainWindow):
 
         label_1 = QLabel("<p>If the reMarkable is connected via USB and the Web Interface is enabled, we can send files over with curl.</p>")
         label_1.setWordWrap(True)
+        label_1.setMinimumWidth(400)
         self.send_tab_layout.addWidget(label_1)
 
-        self.save_with_curl = QPushButton(RemarkableContextAction.SaveWithCurl.value)
+        self.save_with_curl = QPushButton(RemarkableAction.SaveWithCurl.value)
         self.save_with_curl.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
         self.save_with_curl.setMinimumSize(QtCore.QSize(180, 40))
 
@@ -102,7 +103,7 @@ class SendToRemarkableWindow(QMainWindow):
         label_2.setWordWrap(True)
         self.send_tab_layout.addWidget(label_2)
 
-        self.save_with_scp = QPushButton(RemarkableContextAction.SaveWithScp.value)
+        self.save_with_scp = QPushButton(RemarkableAction.SaveWithScp.value)
         self.save_with_scp.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
         self.save_with_scp.setMinimumSize(QtCore.QSize(180, 40))
 
@@ -116,14 +117,6 @@ class SendToRemarkableWindow(QMainWindow):
 
         self.settings_tab_layout = QVBoxLayout(self.settings_tab)
         self.settings_tab_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-
-        label_2 = QLabel("<p>Default action for Sutta > Right-click > Send to reMarkable...</p>")
-        label_2.setWordWrap(True)
-        self.settings_tab_layout.addWidget(label_2)
-
-        self.context_menu_action_select = QComboBox()
-        self.context_menu_action_select.addItems([i.value for i in RemarkableContextAction])
-        self.settings_tab_layout.addWidget(self.context_menu_action_select)
 
         # ebook-convert
 
@@ -185,8 +178,6 @@ class SendToRemarkableWindow(QMainWindow):
 
         self.select_format.setCurrentText(rmk_settings["format"])
 
-        self.context_menu_action_select.setCurrentText(rmk_settings['context_menu_action'])
-
         path_to_ebook_convert = app_settings.get('path_to_ebook_convert', None)
         if path_to_ebook_convert:
             self.path_to_ebook_convert.setText(str(path_to_ebook_convert))
@@ -219,10 +210,7 @@ class SendToRemarkableWindow(QMainWindow):
         logger.info("_save_all_settings()")
         format = self.select_format.currentText()
 
-        context_action = self.context_menu_action_select.currentText()
-
         rmk_settings = SendToRemarkableSettings(
-            context_menu_action = RemarkableContextActionToEnum[context_action],
             format = RemarkableFileFormatToEnum[format],
             rmk_web_ip = self.rmk_web_ip.text(),
             rmk_ssh_ip = self.rmk_ssh_ip.text(),
@@ -416,8 +404,8 @@ class SendToRemarkableWindow(QMainWindow):
         self.path_to_pubkey_btn.clicked.connect(partial(self._select_pubkey))
 
         # save values on every change
-        for i in [self.select_format, self.context_menu_action_select]:
-            i.currentIndexChanged.connect(partial(self._save_all_settings))
+
+        self.select_format.currentIndexChanged.connect(partial(self._save_all_settings))
 
         for i in [self.path_to_ebook_convert,
                   self.path_to_curl,

@@ -10,7 +10,7 @@ from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, save_html_as_txt, sanitized_sutta_html_for_export
 from simsapa.app.simsapa_smtp import SimsapaSMTP
 
-from ..app.types import AppData, KindleContextAction, KindleContextActionToEnum, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
+from ..app.types import AppData, KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
 
 class SendToKindleWindow(QMainWindow):
 
@@ -101,7 +101,7 @@ class SendToKindleWindow(QMainWindow):
         label_1.setWordWrap(True)
         self.send_tab_layout.addWidget(label_1)
 
-        self.save_via_usb = QPushButton(KindleContextAction.SaveViaUSB.value)
+        self.save_via_usb = QPushButton(KindleAction.SaveViaUSB.value)
         self.save_via_usb.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
         self.save_via_usb.setMinimumSize(QtCore.QSize(180, 40))
 
@@ -111,7 +111,7 @@ class SendToKindleWindow(QMainWindow):
 
         self.send_tab_layout.addWidget(QLabel("<p>Send the text to your Kindle Library.</p>"))
 
-        self.send_to_kindle_email = QPushButton(KindleContextAction.SendToEmail.value)
+        self.send_to_kindle_email = QPushButton(KindleAction.SendToEmail.value)
         self.send_to_kindle_email.setSizePolicy(QtWidgets.QSizePolicy(QFixed, QFixed))
         self.send_to_kindle_email.setMinimumSize(QtCore.QSize(180, 40))
 
@@ -125,14 +125,6 @@ class SendToKindleWindow(QMainWindow):
 
         self.settings_tab_layout = QVBoxLayout(self.settings_tab)
         self.settings_tab_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
-
-        label_2 = QLabel("<p>Default action for Sutta > Right-click > Send to Kindle...</p>")
-        label_2.setWordWrap(True)
-        self.settings_tab_layout.addWidget(label_2)
-
-        self.context_menu_action_select = QComboBox()
-        self.context_menu_action_select.addItems([i.value for i in KindleContextAction])
-        self.settings_tab_layout.addWidget(self.context_menu_action_select)
 
         self.settings_tab_layout.addWidget(QLabel("Path to Calibre's ebook-convert tool:"))
         self.path_to_ebook_convert = QLineEdit()
@@ -200,8 +192,6 @@ class SendToKindleWindow(QMainWindow):
 
         self.select_format.setCurrentText(kindle_settings["format"])
 
-        self.context_menu_action_select.setCurrentText(kindle_settings['context_menu_action'])
-
         path_to_ebook_convert = app_settings.get('path_to_ebook_convert', None)
 
         if path_to_ebook_convert:
@@ -228,8 +218,6 @@ class SendToKindleWindow(QMainWindow):
         logger.info("_save_all_settings()")
         format = self.select_format.currentText()
 
-        context_action = self.context_menu_action_select.currentText()
-
         smtp_preset = self.select_smtp_preset.currentText()
 
         smtp = SmtpLoginData(
@@ -240,7 +228,6 @@ class SendToKindleWindow(QMainWindow):
         )
 
         kindle_settings = SendToKindleSettings(
-            context_menu_action = KindleContextActionToEnum[context_action],
             format = KindleFileFormatToEnum[format],
             kindle_email = self.kindle_email_input.text(),
         )
@@ -334,7 +321,7 @@ class SendToKindleWindow(QMainWindow):
             server.send_message(from_addr = sender_email,
                                 to_addr = kindle_email,
                                 msg = "",
-                                subject = "[Simsapa] Kindle email for %s" % sutta_title,
+                                subject = "[Simsapa] %s" % sutta_title,
                                 attachment_paths = [path])
 
         path.unlink()
@@ -450,7 +437,7 @@ class SendToKindleWindow(QMainWindow):
         self.select_smtp_preset.currentIndexChanged.connect(partial(self._handle_preset_change))
 
         # save values on every change
-        for i in [self.select_format, self.context_menu_action_select, self.select_smtp_preset]:
+        for i in [self.select_format, self.select_smtp_preset]:
             i.currentIndexChanged.connect(partial(self._save_all_settings))
 
         for i in [self.path_to_ebook_convert,

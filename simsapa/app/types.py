@@ -171,23 +171,21 @@ KindleFileFormatToEnum = {
     "TXT": KindleFileFormat.TXT,
 }
 
-class KindleContextAction(str, Enum):
+class KindleAction(str, Enum):
     SaveViaUSB = "Save to Kindle via USB"
     SendToEmail = "Send to Kindle Email"
 
-KindleContextActionToEnum = {
-    "Save to Kindle via USB": KindleContextAction.SaveViaUSB,
-    "Send to Kindle Email": KindleContextAction.SendToEmail,
+KindleActionToEnum = {
+    "Save to Kindle via USB": KindleAction.SaveViaUSB,
+    "Send to Kindle Email": KindleAction.SendToEmail,
 }
 
 class SendToKindleSettings(TypedDict):
-    context_menu_action: KindleContextAction
     format: KindleFileFormat
     kindle_email: Optional[str]
 
 def default_send_to_kindle_settings() -> SendToKindleSettings:
     return SendToKindleSettings(
-        context_menu_action = KindleContextAction.SaveViaUSB,
         format = KindleFileFormat.EPUB,
         kindle_email = None,
     )
@@ -203,17 +201,16 @@ RemarkableFileFormatToEnum = {
     "TXT": RemarkableFileFormat.TXT,
 }
 
-class RemarkableContextAction(str, Enum):
+class RemarkableAction(str, Enum):
     SaveWithCurl = "Save to reMarkable with curl"
     SaveWithScp = "Save to reMarkable with scp"
 
-RemarkableContextActionToEnum = {
-    "Save to reMarkable with curl": RemarkableContextAction.SaveWithCurl,
-    "Save to reMarkable with scp": RemarkableContextAction.SaveWithScp,
+RemarkableActionToEnum = {
+    "Save to reMarkable with curl": RemarkableAction.SaveWithCurl,
+    "Save to reMarkable with scp": RemarkableAction.SaveWithScp,
 }
 
 class SendToRemarkableSettings(TypedDict):
-    context_menu_action: RemarkableContextAction
     format: RemarkableFileFormat
     rmk_web_ip: str
     rmk_ssh_ip: str
@@ -222,7 +219,6 @@ class SendToRemarkableSettings(TypedDict):
 
 def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
     return SendToRemarkableSettings(
-        context_menu_action = RemarkableContextAction.SaveWithCurl,
         format = RemarkableFileFormat.EPUB,
         rmk_web_ip = "10.11.99.1",
         rmk_ssh_ip = "10.11.99.1",
