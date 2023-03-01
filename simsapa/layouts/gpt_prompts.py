@@ -1,5 +1,4 @@
 import re
-import json
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
@@ -14,7 +13,7 @@ from transformers import GPT2TokenizerFast
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import IS_MAC, IS_SWAY, SEARCH_TIMER_SPEED, logger
-from simsapa.app.helpers import strip_html
+from simsapa.app.export_helpers import sutta_content_plain
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -756,33 +755,8 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         return parsed_prompt
 
     def _sutta_content_plain(self, sutta: USutta) -> str:
-        if sutta.content_json is not None and sutta.content_json != '':
-            lines = json.loads(str(sutta.content_json))
-            content = "\n\n".join(lines)
-
-        elif sutta.content_html is not None and sutta.content_html != '':
-            html = str(sutta.content_html)
-            # Remove footer content
-            html = re.sub(r'<footer(.*?)</footer>', '', html, flags=re.DOTALL)
-            content = strip_html(html)
-
-        elif sutta.content_plain is not None and sutta.content_plain != '':
-            content = str(sutta.content_plain)
-
-        else:
-            content = 'No content.'
-
-        content = content.strip()
-        content = re.sub(r'\s+$', '', content)
-        content = re.sub(r'\n\n\n+', r'\n\n', content)
-
         max = self._app_data.app_settings['openai']['join_short_lines']
-        if max > 0:
-            re_line = re.compile(f'^(.{{1,{max}}})\n')
-
-            # Join short lines to reduce token count.
-            content = re_line.sub(r'\1', content)
-
+        content = sutta_content_plain(sutta, max)
         return content
 
     def _submit_prompt(self):

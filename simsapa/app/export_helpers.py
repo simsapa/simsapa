@@ -1,21 +1,42 @@
 from pathlib import Path
 import re
 import subprocess
+import json
 
-import bleach
 from ebooklib import epub
 
-def save_html_as_txt(output_path: Path, sanitized_html: str):
-    html = sanitized_html
-    html = re.sub(r'<style(.*?)</style>', '', html, flags=re.DOTALL)
+from simsapa.app.helpers import strip_html
+from simsapa.app.types import USutta
 
-    txt = bleach.clean(text=html, tags=[], strip=True)
+def sutta_content_plain(sutta: USutta, join_short_lines: int = 80) -> str:
+    if sutta.content_json is not None and sutta.content_json != '':
+        lines = json.loads(str(sutta.content_json))
+        content = "\n\n".join(lines)
 
-    txt = re.sub(r'\s+$', '', txt)
-    txt = re.sub(r'\n\n\n+', r'\n\n', txt)
+    elif sutta.content_html is not None and sutta.content_html != '':
+        html = str(sutta.content_html)
+        html = re.sub(r'<style(.*?)</style>', '', html, flags=re.DOTALL)
+        html = re.sub(r'<footer(.*?)</footer>', '', html, flags=re.DOTALL)
+        content = strip_html(html)
 
-    with open(output_path, 'w') as f:
-        f.write(txt)
+    elif sutta.content_plain is not None and sutta.content_plain != '':
+        content = str(sutta.content_plain)
+
+    else:
+        content = 'No content.'
+
+    content = content.strip()
+    content = re.sub(r'\s+$', '', content)
+    content = re.sub(r'\n\n\n+', r'\n\n', content)
+
+    max = join_short_lines
+    if max > 0:
+        re_line = re.compile(f'^(.{{1,{max}}})\n')
+
+        # Join short lines to reduce token count.
+        content = re_line.sub(r'\1', content)
+
+    return content
 
 def save_html_as_epub(output_path: Path, sanitized_html: str, title: str, author: str, language: str):
     html = sanitized_html

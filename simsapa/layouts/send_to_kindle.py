@@ -7,7 +7,7 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 from simsapa import ASSETS_DIR, logger
-from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, save_html_as_txt, sanitized_sutta_html_for_export
+from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, sanitized_sutta_html_for_export, sutta_content_plain
 from simsapa.app.simsapa_smtp import SimsapaSMTP
 
 from ..app.types import AppData, KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
@@ -388,7 +388,9 @@ class SendToKindleWindow(QMainWindow):
 
         elif format == KindleFileFormat.TXT:
             result_path = dir.joinpath(f'{name}.txt')
-            save_html_as_txt(result_path, html)
+            txt = sutta_content_plain(self.tab_sutta)
+            with open(result_path, 'w') as f:
+                f.write(txt)
 
         elif format == KindleFileFormat.EPUB:
             result_path = dir.joinpath(f'{name}.epub')

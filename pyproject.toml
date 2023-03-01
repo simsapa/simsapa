@@ -68,9 +68,15 @@ chardet = "^5.1.0"
 # https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
 charset-normalizer = "==2.1.0"
 ebooklib = "^0.18"
-bleach = "^6.0.0"
 openai = "^0.26.5"
 transformers = "^4.26.1"
+
+# 67.4.0 failed to install
+setuptools = "65.7.0"
+# 2022.7.1 failed to install
+pytz = "2022.7.0"
+# 2023.0 failed to install
+pyinstaller-hooks-contrib = "2022.14"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -81,7 +87,8 @@ tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 # scalene = "^1.5.14"
 
-pytest = "~7.2.0"
+# 7.2.1 failed to install
+pytest = "7.2.0"
 pyArango = "~2.0.0"
 html5lib = "^1.1"
 selenium = "^4.7.2"
@@ -160,9 +167,11 @@ requires = [
 "chardet            >= 5.1.0,    < 5.2.0",
 "charset-normalizer == 2.1.0",
 "ebooklib           >= 0.18.0,   < 0.19.0",
-"bleach             >= 6.0.0,    < 7.0.0",
 "openai             >= 0.26.5,   < 0.27.0",
 "transformers       >= 4.26.1,   < 4.27.0",
+"setuptools         >= 65.7.0,   < 66.0.0",
+"pytz               >= 2022.7.0, < 2022.7.1",
+"pyinstaller-hooks-contrib >= 2022.14.0, < 2023.0.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

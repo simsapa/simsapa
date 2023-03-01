@@ -9,7 +9,7 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from simsapa import ASSETS_DIR, logger
-from simsapa.app.export_helpers import sanitized_sutta_html_for_export, save_html_as_epub, save_html_as_txt
+from simsapa.app.export_helpers import sanitized_sutta_html_for_export, save_html_as_epub, sutta_content_plain
 
 from ..app.types import AppData, RemarkableAction, RemarkableFileFormat, RemarkableFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToRemarkableSettings, USutta
 
@@ -364,7 +364,9 @@ class SendToRemarkableWindow(QMainWindow):
 
         elif format == RemarkableFileFormat.TXT:
             result_path = dir.joinpath(f'{name}.txt')
-            save_html_as_txt(result_path, html)
+            txt = sutta_content_plain(self.tab_sutta)
+            with open(result_path, 'w') as f:
+                f.write(txt)
 
         elif format == RemarkableFileFormat.EPUB:
             result_path = dir.joinpath(f'{name}.epub')
