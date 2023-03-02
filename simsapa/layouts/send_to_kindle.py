@@ -25,11 +25,11 @@ class SendToKindleWindow(QMainWindow):
         self.tab_sutta = tab_sutta
         self.tab_html = tab_html
 
-        self._ui_setup()
+        self._setup_ui()
         self._init_values()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Send to Kindle")
         self.setFixedSize(450, 700)
 

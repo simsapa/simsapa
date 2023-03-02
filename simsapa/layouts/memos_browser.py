@@ -52,10 +52,10 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.memos_list.setModel(self.model)
         self.sel_model = self.memos_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
             pass

@@ -20,7 +20,7 @@ from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
-from simsapa.layouts.sutta_webengine import SuttaWebEngine
+from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_ALL_BOOK_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -107,7 +107,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.focus_input = focus_input
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_bookmark_dialog()
@@ -205,7 +205,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         else:
             return None
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._setup_search_bar();
 
         self._setup_sutta_tabs()
@@ -372,7 +372,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
-    def _new_webengine(self) -> SuttaWebEngine:
+    def _new_webengine(self) -> SimsapaWebEngine:
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
@@ -380,7 +380,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 
-        qwe = SuttaWebEngine(page, self._create_qwe_context_menu)
+        qwe = SimsapaWebEngine(page, self._create_qwe_context_menu)
 
         return qwe
 
@@ -1129,26 +1129,30 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data._save_app_settings()
 
     def _connect_signals(self):
-        self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._user_typed))
+        if hasattr(self, 'search_button'):
+            self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
 
-        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        if hasattr(self, 'search_input'):
+            self.search_input.textEdited.connect(partial(self._user_typed))
+            self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+            self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
-        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
+        if hasattr(self, 'search_mode_dropdown'):
+            self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
-        if self.enable_sidebar:
-            self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
-            self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
+        if hasattr(self, 'back_recent_button'):
+            if self.enable_sidebar:
+                self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
+                self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
 
-            def _handle_sidebar():
-                self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+                def _handle_sidebar():
+                    self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
 
-            self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
+                self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
 
-        else:
-            self.back_recent_button.clicked.connect(partial(self._show_next_recent))
-            self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
+            else:
+                self.back_recent_button.clicked.connect(partial(self._show_next_recent))
+                self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
         if self.enable_language_filter and hasattr(self, 'sutta_language_filter_dropdown'):
             self.sutta_language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))

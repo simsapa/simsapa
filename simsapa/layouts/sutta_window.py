@@ -30,7 +30,7 @@ class SuttaWindow(AppWindowInterface):
 
         self.qwe = self._new_webengine()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
     def _get_sutta_by_uid(self, uid: str) -> Optional[USutta]:
@@ -69,7 +69,7 @@ class SuttaWindow(AppWindowInterface):
 
         self.set_qwe_html(html)
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
 

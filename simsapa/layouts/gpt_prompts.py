@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, Q
 
 from simsapa import IS_MAC, IS_SWAY, SEARCH_TIMER_SPEED, logger
 from simsapa.app.export_helpers import sutta_content_plain
-from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
@@ -119,7 +118,7 @@ class PromptItem(QStandardItem):
         self.setEditable(False)
         self.setText(self.name_path)
 
-class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
+class GptPromptsWindow(AppWindowInterface):
     _input_timer = QTimer()
 
     def __init__(self, app_data: AppData, prompt_params: Optional[OpenPromptParams] = None, parent = None) -> None:
@@ -135,7 +134,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.sidebar_visible = True
 
-        self._ui_setup()
+        self._setup_ui()
         self._init_values()
         self._connect_signals()
 
@@ -145,7 +144,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         if prompt_params is not None:
             self._show_prompt_by_params(prompt_params)
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Prompts")
         self.resize(1068, 625)
         self.setBaseSize(QtCore.QSize(800, 600))
@@ -156,7 +155,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self._layout = QVBoxLayout()
         self._central_widget.setLayout(self._layout)
 
-        # vertical splitter
+        # horizontal splitter
 
         self.vert_splitter = QSplitter(self._central_widget)
         self.vert_splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
@@ -171,7 +170,7 @@ class GptPromptsWindow(AppWindowInterface, HasBookmarkDialog):
         self.right_box_layout = QVBoxLayout(self.right_box_widget)
         self.right_box_layout.setContentsMargins(0, 0, 0, 0)
 
-        # horizontal splitter
+        # vertical splitter
 
         self.horiz_splitter = QSplitter(self._central_widget)
         self.horiz_splitter.setOrientation(QtCore.Qt.Orientation.Vertical)

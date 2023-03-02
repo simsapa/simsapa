@@ -51,11 +51,11 @@ class CoursesBrowserWindow(AppWindowInterface):
 
         self._app_data: AppData = app_data
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Pali Courses Browser")
         self.resize(850, 650)
 

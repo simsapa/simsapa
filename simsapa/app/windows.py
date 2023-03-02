@@ -17,6 +17,7 @@ from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH,
 from simsapa.app.helpers import EntryType, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.layouts.ebook_reader import EbookReaderWindow
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
 
@@ -621,6 +622,13 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_ebook_reader_window(self) -> EbookReaderWindow:
+        view = EbookReaderWindow(self._app_data)
+
+        make_active_window(view)
+        self._windows.append(view)
+        return view
+
     # def _new_document_reader_window(self, file_path=None):
     #     view = DocumentReaderWindow(self._app_data)
     #     self._set_size_and_maximize(view)
@@ -892,6 +900,14 @@ class AppWindows:
             view.action_Pali_Courses \
                 .triggered.connect(partial(self._new_courses_browser_window))
 
+        if hasattr(view, 'action_Prompts'):
+            view.action_Prompts \
+                .triggered.connect(partial(self._new_gpt_prompts_window, None))
+
+        if hasattr(view, 'action_Ebook_Reader'):
+            view.action_Ebook_Reader \
+                .triggered.connect(partial(self._new_ebook_reader_window))
+
         if isinstance(view, DictionarySearchWindow):
             if hasattr(view, 'action_Show_Sidebar'):
                 is_on = self._app_data.app_settings.get('show_dictionary_sidebar', True)
@@ -979,13 +995,6 @@ class AppWindows:
         if hasattr(view, 'action_Search_Completion'):
             view.action_Search_Completion \
                 .triggered.connect(partial(self._set_search_completion_setting, view))
-
-            search_completion = self._app_data.app_settings.get('search_completion', True)
-            view.action_Search_Completion.setChecked(search_completion)
-
-        if hasattr(view, 'action_Prompts'):
-            view.action_Prompts \
-                .triggered.connect(partial(self._new_gpt_prompts_window, None))
 
             search_completion = self._app_data.app_settings.get('search_completion', True)
             view.action_Search_Completion.setChecked(search_completion)

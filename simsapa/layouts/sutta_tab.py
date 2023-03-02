@@ -7,7 +7,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult
 from simsapa.app.export_helpers import render_sutta_content
-from simsapa.layouts.sutta_webengine import SuttaWebEngine
+from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from ..app.types import AppData, SuttaQuote, USutta
 from .html_content import html_page
 
@@ -17,7 +17,7 @@ class SuttaTabWidget(QWidget):
                  app_data: AppData,
                  title: str,
                  tab_index: int,
-                 qwe: SuttaWebEngine,
+                 qwe: SimsapaWebEngine,
                  sutta: Optional[USutta] = None) -> None:
 
         super().__init__()

@@ -67,12 +67,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.focus_input = focus_input
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_fulltext_list()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         search_box = QHBoxLayout()
 
         self.search_input = QLineEdit()

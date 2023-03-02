@@ -46,7 +46,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.queries = DictionaryQueries(self._app_data)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
     def handle_messages(self):
@@ -78,7 +78,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         uid: str = sutta.uid # type: ignore
         self._show_sutta_by_uid_in_side(side, uid)
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
 

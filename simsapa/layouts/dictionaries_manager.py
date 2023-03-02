@@ -55,10 +55,10 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         self.dictionary_sources_list.setModel(self.model)
         self.sel_model = self.dictionary_sources_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._show_dictionary_source_clear()
 
     def _get_all_dictionary_sources(self) -> List[DictionarySource]:

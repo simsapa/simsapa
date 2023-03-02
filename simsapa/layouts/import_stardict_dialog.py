@@ -46,10 +46,10 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
 
         self.dict_select_data: List[DictData] = []
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self.title.setFixedSize(500, 40)

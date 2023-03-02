@@ -392,6 +392,7 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
+    <addaction name="action_Ebook_Reader"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
@@ -677,6 +678,11 @@
    </property>
    <property name="text">
     <string>Link Preview</string>
+   </property>
+  </action>
+  <action name="action_Ebook_Reader">
+   <property name="text">
+    <string>&amp;Ebook Reader</string>
    </property>
   </action>
  </widget>

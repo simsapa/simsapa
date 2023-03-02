@@ -45,10 +45,10 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         self.suttas_wb = None
         self.sheet_file_path = None
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._layout = QVBoxLayout()
 
         self.open_spreadsheet_button = QPushButton("Open Spreadsheet (.xlsx) ...")

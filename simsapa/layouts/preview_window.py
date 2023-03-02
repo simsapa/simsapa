@@ -59,7 +59,7 @@ class PreviewWindow(QDialog):
         self._hide_timer.timeout.connect(partial(self.hide))
         self._hide_timer.setSingleShot(True)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
     def _set_title(self):
@@ -83,7 +83,7 @@ class PreviewWindow(QDialog):
         self._hide_timer.stop()
         self.hide()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.wrap_layout = QVBoxLayout()
         self.wrap_layout.setContentsMargins(1, 1, 1, 8)
         self.setLayout(self.wrap_layout)

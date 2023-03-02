@@ -18,10 +18,10 @@ class SearchResultSizesDialog(QDialog):
 
         self.sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._layout = QVBoxLayout()
 
         self.hbox1 = QHBoxLayout()

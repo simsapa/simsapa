@@ -6,7 +6,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
-class SuttaWebEngine(QWebEngineView):
+class SimsapaWebEngine(QWebEngineView):
     menu: QMenu
 
     def __init__(self,

@@ -49,10 +49,10 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self.documents_list.setModel(self.model)
         self.sel_model = self.documents_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.search_input.setFocus()
         self._show_document_clear()
 

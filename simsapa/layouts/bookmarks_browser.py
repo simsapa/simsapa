@@ -104,10 +104,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.init_bookmark_dialog()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Bookmarks Browser")
         self.resize(850, 650)
 

@@ -96,7 +96,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_fulltext_list()
@@ -233,7 +233,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             except queue.Empty:
                 pass
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 

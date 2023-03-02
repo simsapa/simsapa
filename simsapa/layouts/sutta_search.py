@@ -60,7 +60,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
 
         self.s = SuttaSearchWindowState(app_data,
                                         self,
@@ -77,7 +77,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 

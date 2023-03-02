@@ -1044,6 +1044,7 @@ class AppWindowInterface(QMainWindow):
     action_Website: QAction
     action_About: QAction
     action_Open: QAction
+    action_Ebook_Reader: QAction
     action_Dictionaries_Manager: QAction
     action_Document_Reader: QAction
     action_Library: QAction

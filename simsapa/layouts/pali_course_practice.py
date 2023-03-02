@@ -136,7 +136,7 @@ class CoursePracticeWindow(AppWindowInterface):
             return
 
         self._setup_audio()
-        self._ui_setup()
+        self._setup_ui()
         self._load_challenge_content()
         self._connect_signals()
 
@@ -236,7 +236,7 @@ class CoursePracticeWindow(AppWindowInterface):
         return r
 
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Pali Courses Browser")
         self.resize(850, 650)
 
