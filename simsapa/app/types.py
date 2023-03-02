@@ -160,6 +160,19 @@ SmtpLoginDataPreset[SmtpServicePreset.GoogleMail] = SmtpLoginData(
     password = "",
 )
 
+class ExportFileFormat(str, Enum):
+    EPUB = "EPUB"
+    MOBI = "MOBI"
+    HTML = "HTML"
+    TXT = "TXT"
+
+ExportFileFormatToEnum = {
+    "EPUB": ExportFileFormat.EPUB,
+    "MOBI": ExportFileFormat.MOBI,
+    "HTML": ExportFileFormat.HTML,
+    "TXT": ExportFileFormat.TXT,
+}
+
 class KindleFileFormat(str, Enum):
     EPUB = "EPUB"
     MOBI = "MOBI"
@@ -313,6 +326,7 @@ class AppSettings(TypedDict):
     smtp_sender_email: Optional[str]
     smtp_preset: SmtpServicePreset
     smtp_login_data: Optional[SmtpLoginData]
+    export_format: ExportFileFormat
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
     openai: OpenAISettings
@@ -366,6 +380,7 @@ def default_app_settings() -> AppSettings:
         smtp_sender_email = None,
         smtp_preset = SmtpServicePreset.NoPreset,
         smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
+        export_format = ExportFileFormat.EPUB,
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
         openai = default_openai_settings(),

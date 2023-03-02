@@ -41,6 +41,12 @@ def sutta_content_plain(sutta: USutta, join_short_lines: int = 80) -> str:
 
     return content
 
+def save_sutta_as_html(app_data: AppData, output_path: Path, sutta: USutta):
+    s = render_sutta_content(app_data, sutta)
+    html = sanitized_sutta_html_for_export(s)
+    with open(output_path, 'w') as f:
+        f.write(html)
+
 def save_suttas_as_epub(app_data: AppData,
                         output_path: Path,
                         suttas: List[USutta],

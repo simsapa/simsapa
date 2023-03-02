@@ -538,6 +538,7 @@
     <addaction name="action_Sutta_Languages"/>
     <addaction name="action_Send_to_Kindle"/>
     <addaction name="action_Send_to_reMarkable"/>
+    <addaction name="action_Export_As"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
     <property name="title">
@@ -1047,6 +1048,11 @@
   <action name="action_Prompts">
    <property name="text">
     <string>&amp;Prompts</string>
+   </property>
+  </action>
+  <action name="action_Export_As">
+   <property name="text">
+    <string>&amp;Export As...</string>
    </property>
   </action>
  </widget>

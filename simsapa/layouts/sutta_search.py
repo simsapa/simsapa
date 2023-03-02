@@ -14,6 +14,7 @@ from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.db.search import SearchResult
 from simsapa.layouts.send_to_kindle import SendToKindleWindow
 from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
+from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
 from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, SuttaSearchWindowInterface
@@ -399,6 +400,14 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         tab.qwe.page().toHtml(_open_send)
 
+    def _show_export_as(self):
+        tab = self.s._get_active_tab()
+        if tab.sutta is None:
+            return
+
+        d = SuttaExportDialog(self._app_data, tab.sutta)
+        d.exec()
+
     def _handle_close(self):
         self.close()
 
@@ -482,3 +491,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.action_Send_to_reMarkable \
             .triggered.connect(partial(self._show_send_to_remarkable))
+
+        self.action_Export_As \
+            .triggered.connect(partial(self._show_export_as))
