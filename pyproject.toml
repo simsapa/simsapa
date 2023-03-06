@@ -4,7 +4,7 @@ version = "0.3.0-alpha.1"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 # pypi identification
 authors = ["Gambhiro <profound.labs@gmail.com>"]
-license = "MIT"
+license = "GPLv3"
 
 # NOTE: Version updates:
 # - tool.poetry.version (above)
