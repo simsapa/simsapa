@@ -511,14 +511,10 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
         self.thread_pool.start(self.sutta_links_worker)
 
     def _links_finished(self):
-        logger.info("links_finished()")
-
         self.toc_tree_model.removeColumn(0)
         self.toc_tree_model.layoutChanged.emit()
 
     def _links_done_chapter(self, path: Path):
-        logger.info(f"links_done_chapter(): {path}")
-
         for idx, i in enumerate(self.ebook_toc_items):
             if i.path == path:
                 self.ebook_toc_items[idx].suttas_linked = True
