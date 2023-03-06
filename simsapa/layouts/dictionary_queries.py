@@ -8,9 +8,10 @@ from bs4 import BeautifulSoup
 from sqlalchemy import or_
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import RE_ALL_PTS_VOL_SUTTA_REF, RE_ALL_BOOK_SUTTA_REF, SearchResult
+from simsapa.app.db.search import RE_ALL_BOOK_SUTTA_REF, SearchResult
 from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import normalize_sutta_ref, strip_html
+from simsapa.app.export_helpers import add_sutta_links
+from simsapa.app.helpers import strip_html
 from simsapa.layouts.sutta_queries import QuoteScope
 from ..app.types import AppData, Labels, QueryType, UDictWord
 from ..app.db import appdata_models as Am
@@ -90,7 +91,7 @@ class DictionaryQueries:
         for w in words:
             word_html = self.get_word_html(w)
 
-            word_html['body'] = self._add_sutta_links(word_html['body'])
+            word_html['body'] = add_sutta_links(self._app_data.db_session, word_html['body'])
 
             if w.source_uid == "cpd":
                 word_html['body'] = self._add_word_links_to_bold(word_html['body'])
@@ -132,49 +133,6 @@ class DictionaryQueries:
             js_head = js_head)
 
         return page_html
-
-    def _add_sutta_links(self, html_content: str) -> str:
-        linked_content = html_content
-
-        matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, linked_content)
-        already_replaced = []
-        for ref in matches:
-            if ref.group(0) in already_replaced:
-                continue
-
-            sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
-
-            url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
-
-            link = f'<a href="{url.toString()}">{ref.group(0)}</a>'
-
-            linked_content = re.sub(ref.group(0), link, linked_content)
-            already_replaced.append(ref.group(0))
-
-        matches = re.finditer(RE_ALL_PTS_VOL_SUTTA_REF, linked_content)
-        already_replaced = []
-        for ref in matches:
-            if ref.group(0) in already_replaced:
-                continue
-            pts_ref = normalize_sutta_ref(ref.group(0))
-
-            multi_ref = self._app_data.db_session \
-                .query(Am.MultiRef) \
-                .filter(Am.MultiRef.ref.like(f"%{pts_ref}%")) \
-                .first()
-
-            if multi_ref and len(multi_ref.suttas) > 0:
-
-                sutta = multi_ref.suttas[0]
-
-                url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta.uid}")
-
-                link = f'<a href="{url.toString()}">{ref.group(0)}</a>'
-
-                linked_content = re.sub(ref.group(0), link, linked_content)
-                already_replaced.append(ref.group(0))
-
-        return linked_content
 
     def _add_grammar_links(self, html_page: str) -> str:
         """

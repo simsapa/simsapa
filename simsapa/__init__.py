@@ -63,6 +63,8 @@ USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
 COURSES_DIR = ASSETS_DIR.joinpath('courses')
 
+EBOOK_UNZIP_DIR = ASSETS_DIR.joinpath('ebook_unzip')
+
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
 APP_QUEUES: Dict[str, queue.Queue] = {}
@@ -113,6 +115,18 @@ if b is None:
     DICTIONARY_JS = ""
 else:
     DICTIONARY_JS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/ebook_extra.css')))
+if b is None:
+    EBOOK_EXTRA_CSS = ""
+else:
+    EBOOK_EXTRA_CSS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/ebook_extra.js')))
+if b is None:
+    EBOOK_EXTRA_JS = ""
+else:
+    EBOOK_EXTRA_JS = b.decode("utf-8")
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'

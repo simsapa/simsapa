@@ -401,6 +401,12 @@ class PreviewWindow(QDialog):
 
         self.set_qwe_html(html)
 
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        # elif url.host() == QueryType.words:
+        #     self._show_words_by_url(url)
 
     def _show_sutta_by_url(self, url: QUrl):
         self.open_new.emit(url.toString())

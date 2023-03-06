@@ -148,18 +148,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if text is not None:
             self.lookup_in_dictionary_signal.emit(text)
 
-    def _lookup_selection_in_suttas(self):
-        self.activateWindow()
-        text = self.s._get_selection()
-        if text is not None:
-            self.s._set_query(text)
-            self.s._handle_query()
-
-    def _lookup_selection_in_dictionary(self):
-        text = self.s._get_selection()
-        if text is not None:
-            self.lookup_in_dictionary_signal.emit(text)
-
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self.s.results_page(page_num)
 
@@ -431,7 +419,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             .triggered.connect(partial(self.s._handle_show_related_suttas))
 
         self.action_Lookup_Selection_in_Dictionary \
-            .triggered.connect(partial(self._lookup_selection_in_dictionary))
+            .triggered.connect(partial(self.s._lookup_selection_in_dictionary))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))

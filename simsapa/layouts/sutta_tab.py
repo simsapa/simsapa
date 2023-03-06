@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QUrl
@@ -73,6 +74,8 @@ class SuttaTabWidget(QWidget):
             except Exception as e:
                 logger.error("set_qwe_html() : %s" % e)
 
+    def set_qwe_html_file(self, html_path: Path):
+        self.qwe.load(QUrl(str(html_path.absolute().as_uri())))
 
     def render_sutta_content(self, sutta_quote: Optional[SuttaQuote] = None):
         if self.sutta is None:

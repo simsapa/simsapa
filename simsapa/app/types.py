@@ -1063,8 +1063,6 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _set_recent_list: Callable
     show_network_graph: Callable
     update_memos_list_for_sutta: Callable
-    _lookup_selection_in_suttas: Callable
-    _lookup_selection_in_dictionary: Callable
     _select_next_recent: Callable
     _select_prev_recent: Callable
     _toggle_sidebar: Callable
@@ -1079,6 +1077,9 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     action_Show_All_Variant_Readings: QAction
     action_Show_Bookmarks: QAction
     action_Find_in_Page: QAction
+
+    lookup_in_dictionary_signal: pyqtSignal
+    lookup_in_new_sutta_window_signal: pyqtSignal
 
 class DictionarySearchWindowInterface(AppWindowInterface):
     action_Show_Sidebar: QAction
@@ -1214,6 +1215,6 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
 
 class OpenPromptParams(TypedDict):
     prompt_db_id: int
-    sutta_uid: str
+    sutta_uid: Optional[str]
     with_name: Optional[str]
     selection_text: Optional[str]

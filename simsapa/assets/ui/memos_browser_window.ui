@@ -527,6 +527,10 @@
    </property>
   </action>
   <action name="action_Ebook_Reader">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
    <property name="text">
     <string>&amp;Ebook Reader</string>
    </property>

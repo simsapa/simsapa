@@ -272,9 +272,12 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         self.sutta_one_state._get_active_tab().render_sutta_content()
         self.sutta_two_state._get_active_tab().render_sutta_content()
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Copy \
             .triggered.connect(partial(self._handle_copy))

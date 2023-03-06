@@ -22,7 +22,6 @@ class SimsapaWebEngine(QWebEngineView):
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Enable dev tools
         self.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         self.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         self.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)

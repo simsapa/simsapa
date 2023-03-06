@@ -17,6 +17,7 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
@@ -58,7 +59,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     show_sutta_by_url = pyqtSignal(QUrl)
     show_words_by_url = pyqtSignal(QUrl)
-    lookup_in_suttas_signal = pyqtSignal(str)
+    lookup_in_new_sutta_window_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
@@ -139,7 +140,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
         if text is not None:
-            self.lookup_in_suttas_signal.emit(text)
+            self.lookup_in_new_sutta_window_signal.emit(text)
 
     def _lookup_clipboard_in_dictionary(self):
         self.activateWindow()
@@ -152,7 +153,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def _lookup_selection_in_suttas(self):
         text = self._get_selection()
         if text is not None:
-            self.lookup_in_suttas_signal.emit(text)
+            self.lookup_in_new_sutta_window_signal.emit(text)
 
     def _lookup_selection_in_dictionary(self):
         self.activateWindow()
@@ -750,7 +751,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
 
-        body = self.queries._add_sutta_links(word_html['body'])
+        body = add_sutta_links(self._app_data.db_session, word_html['body'])
 
         if word.source_uid == "cpd":
             body = self.queries._add_word_links_to_bold(body)
@@ -815,6 +816,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
+
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
 
     def _show_words_by_url(self, url: QUrl):
         if url.host() != QueryType.words:
@@ -988,9 +996,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             self.splitter.setSizes([2000, 0])
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))

@@ -3,7 +3,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
@@ -52,6 +52,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     _last_query_time = datetime.now()
     search_query_workers: List[SearchQueryWorker] = []
     search_mode_dropdown: QComboBox
+    show_url_action_fn: Callable
 
     open_sutta_new_signal = pyqtSignal(str)
     open_in_study_window_signal = pyqtSignal([str, str])
@@ -72,7 +73,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
                  enable_search_extras: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
-                 show_query_results_in_active_tab: bool = False) -> None:
+                 show_query_results_in_active_tab: bool = False,
+                 custom_create_context_menu_fn: Optional[Callable] = None) -> None:
         super().__init__()
 
         self.pw = parent_window
@@ -89,8 +91,12 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.query_in_tab = show_query_results_in_active_tab
         self.showing_query_in_tab = False
 
+        self.custom_create_context_menu_fn = custom_create_context_menu_fn
+
         self.features: List[str] = []
         self._app_data: AppData = app_data
+
+        self.show_url_action_fn = self._show_sutta_by_url
 
         self.queries = SuttaQueries(self._app_data)
 
@@ -380,7 +386,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 
-        qwe = SimsapaWebEngine(page, self._create_qwe_context_menu)
+        if self.custom_create_context_menu_fn:
+            qwe = SimsapaWebEngine(page, self.custom_create_context_menu_fn)
+        else:
+            qwe = SimsapaWebEngine(page, self._create_qwe_context_menu)
 
         return qwe
 
@@ -720,6 +729,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         elif selected_idx + 1 < len(self.sutta_tabs):
             self.sutta_tabs.setCurrentIndex(selected_idx + 1)
 
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self.show_url_action_fn(url)
+
+        # elif url.host() == QueryType.words:
+        #     self._show_words_by_url(url)
+
     def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
 
@@ -899,7 +915,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # read state from the window action, not from app_data.app_settings, b/c
         # that will be set from windows.py
-        if not self.pw.action_Show_Related_Suttas.isChecked():
+        if hasattr(self.pw, 'action_Show_Related_Suttas') \
+           and not self.pw.action_Show_Related_Suttas.isChecked():
             return
 
         uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
@@ -988,6 +1005,23 @@ QWidget:focus { border: 1px solid #1092C3; }
         uid: str = sutta.uid # type: ignore
         self.open_in_study_window_signal.emit(side, uid)
 
+    def _lookup_selection_in_suttas(self):
+        self.pw.activateWindow()
+        text = self._get_selection()
+        if text is not None:
+            self._set_query(text)
+            self._handle_query()
+
+    def _lookup_selection_in_new_sutta_window(self):
+        text = self._get_selection()
+        if text is not None:
+            self.pw.lookup_in_new_sutta_window_signal.emit(text)
+
+    def _lookup_selection_in_dictionary(self):
+        text = self._get_selection()
+        if text is not None:
+            self.pw.lookup_in_dictionary_signal.emit(text)
+
     def _create_qwe_context_menu(self, menu: QMenu):
         self.qwe_copy_menu = QMenu("Copy")
         menu.addMenu(self.qwe_copy_menu)
@@ -1028,11 +1062,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         menu.addMenu(self.qwe_lookup_menu)
 
         self.qwe_lookup_in_suttas = QAction("In Suttas")
-        self.qwe_lookup_in_suttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
+        self.qwe_lookup_in_suttas.triggered.connect(partial(self._lookup_selection_in_suttas))
         self.qwe_lookup_menu.addAction(self.qwe_lookup_in_suttas)
 
         self.qwe_lookup_in_dictionary = QAction("In Dictionary")
-        self.qwe_lookup_in_dictionary.triggered.connect(partial(self.pw._lookup_selection_in_dictionary))
+        self.qwe_lookup_in_dictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
         self.qwe_lookup_menu.addAction(self.qwe_lookup_in_dictionary)
 
         self.gpt_prompts_menu = QMenu("GPT Prompts")
@@ -1074,12 +1108,14 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _open_gpt_prompt_with_params(self, prompt_db_id: int):
         tab = self._get_active_tab()
         if tab.sutta is None:
-            return
+            uid = None
+        else:
+            uid = str(tab.sutta.uid)
 
         params = OpenPromptParams(
             prompt_db_id = prompt_db_id,
             with_name = '', # Empty string to clear existing name
-            sutta_uid = str(tab.sutta.uid),
+            sutta_uid = uid,
             selection_text = self._get_selection(),
         )
 

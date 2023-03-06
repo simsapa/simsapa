@@ -222,254 +222,6 @@ div.btn a {
   margin: 0.1rem 0.3rem;
 }
 
-.suttacentral span.segment span.translated {
-  display: block;
-  padding-top: 0.5rem;
-}
-.suttacentral span.segment span.pali {
-  display: block;
-  padding-top: 0.5rem;
-  font-family: "Source Sans 3 SSP";
-  font-size: 0.8rem;
-}
-
-.suttacentral header {
-  text-align: center;
-}
-.suttacentral header ul {
-  margin-block-start: 1em;
-  margin-block-end: 1em;
-  padding-inline-start: 0pt;
-}
-.suttacentral header ul li {
-  font-family: "Source Sans 3 SSP";
-  font-weight: 400;
-  list-style-type: none;
-  text-transform: uppercase;
-  font-size: 0.65rem;
-  letter-spacing: 1pt;
-  word-spacing: 1.5pt;
-  padding-top: 0.3rem;
-}
-.suttacentral header ul li .segment .pali,
-.suttacentral header ul li .segment .translated {
-  font-family: "Source Sans 3 SSP";
-  font-weight: 400;
-  list-style-type: none;
-  text-transform: uppercase;
-  font-size: 0.65rem;
-  letter-spacing: 1pt;
-  word-spacing: 1.5pt;
-  padding-top: 0.15rem;
-}
-.suttacentral header h1 {
-  font-family: "Abhaya Libre SSP";
-  font-weight: 800;
-  font-size: 1.4rem;
-  font-weight: bold;
-  word-spacing: 2pt;
-  padding-top: 0.8rem;
-  padding-bottom: 0.8rem;
-}
-.suttacentral header h1 .segment .pali,
-.suttacentral header h1 .segment .translated {
-  font-family: "Abhaya Libre SSP";
-  font-weight: 800;
-  font-size: 1.4rem;
-  font-weight: bold;
-  word-spacing: 2pt;
-  padding-top: 0.2rem;
-  padding-bottom: 0.2rem;
-}
-.suttacentral h2 {
-  font-size: 1.1rem;
-  font-weight: bold;
-  word-spacing: 2pt;
-  padding-top: 1rem;
-}
-.suttacentral h3 {
-  font-size: 1.1rem;
-  font-weight: bold;
-  word-spacing: 2pt;
-  padding-top: 1rem;
-}
-.suttacentral .evam {
-  text-transform: lowercase;
-  font-variant: small-caps;
-  font-size: 1.15rem;
-  letter-spacing: 0.8pt;
-  word-spacing: 1pt;
-}
-.suttacentral .speaker {
-  font-style: italic;
-  text-indent: 3em;
-  display: block;
-}
-.suttacentral blockquote.gatha {
-  font-style: normal;
-  margin-left: 3em;
-}
-.suttacentral blockquote.gatha .verse-line {
-  display: block;
-}
-.suttacentral .endsutta {
-  font-style: italic;
-}
-.suttacentral a.ref {
-  display: none;
-}
-.suttacentral footer {
-  margin-top: 4rem;
-  border-top: 1px solid #aaa;
-  font-size: 0.8rem;
-  line-height: 1rem;
-}
-.suttacentral footer span.author {
-  font-style: italic;
-}
-.suttacentral footer span.publication-date {
-  font-style: italic;
-}
-.suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
-  font-size: 0.6rem;
-  position: relative;
-  top: -0.1rem;
-  padding: 3px;
-}
-.suttacentral .variant-wrap .mark:hover, .suttacentral .comment-wrap .mark:hover {
-  border-bottom: 2px solid black;
-}
-.suttacentral .variant, .suttacentral .comment {
-  font-size: 0.8rem;
-}
-
-.cst4 .note {
-  color: blue;
-}
-.cst4 .bld {
-  font-weight: bold;
-}
-.cst4 .paranum {
-  font-weight: bold;
-}
-.cst4 .indent {
-  font-size: 12pt;
-  text-indent: 2em;
-  margin-left: 3em;
-}
-.cst4 .bodytext {
-  font-size: 12pt;
-  text-indent: 2em;
-}
-.cst4 .hangnum {
-  font-size: 12pt;
-  margin-bottom: -18pt;
-  text-indent: 2em;
-}
-.cst4 .centered {
-  font-size: 12pt;
-  text-align: center;
-}
-.cst4 .unindented {
-  font-size: 12pt;
-}
-.cst4 .book {
-  font-size: 21pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .chapter {
-  font-size: 18pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .nikaya {
-  font-size: 24pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .title {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .subhead {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .subsubhead {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .gatha1 {
-  font-size: 12pt;
-  margin-bottom: 0em;
-  margin-left: 4em;
-}
-.cst4 .gatha2 {
-  font-size: 12pt;
-  margin-bottom: 0em;
-  margin-left: 4em;
-}
-.cst4 .gatha3 {
-  font-size: 12pt;
-  margin-bottom: 0em;
-  margin-left: 4em;
-}
-.cst4 .gathalast {
-  font-size: 12pt;
-  margin-bottom: 0.5cm;
-  margin-left: 4em;
-}
-
-.dhammatalks_org .author {
-  font-style: italic;
-  font-size: 1em;
-}
-.dhammatalks_org .title {
-  font-weight: bold;
-  font-size: 1em;
-}
-.dhammatalks_org .fn {
-  vertical-align: 0.4em;
-  font-size: 0.8em;
-}
-.dhammatalks_org .verse {
-  margin: 0.8em 8%;
-  text-indent: 0;
-}
-.dhammatalks_org .verse p {
-  margin-top: 0;
-}
-.dhammatalks_org .verse p.v2 {
-  text-indent: -2%;
-  padding-left: 10%;
-}
-.dhammatalks_org .verse p.vspk {
-  margin-bottom: 0.1em;
-  text-indent: -2.6em;
-  font-style: italic;
-}
-.dhammatalks_org .verse p.seealso {
-  margin-top: 0.8em;
-  font-style: italic;
-  font-size: 0.9em;
-}
-.dhammatalks_org .verse-add {
-  margin-top: 0.4em;
-  text-indent: 0;
-}
-.dhammatalks_org .note {
-  margin: 0.6em 4%;
-  font-size: 0.85em;
-}
-
-.tipitaka_net ul.toc li {
-  font-size: 0.8em;
-}
-
 html, body {
   font-size: 22px;
   line-height: 1.5;
@@ -481,10 +233,18 @@ html, body {
   padding-bottom: 4rem;
 }
 
+*, *:before, *:after {
+  box-sizing: content-box;
+}
+
 body {
   padding: 0 2rem;
   max-width: 75ex;
   margin: 0 auto;
+}
+
+img {
+  max-width: 100%;
 }
 
 p {
@@ -494,6 +254,8 @@ p {
 h1, h2, h3, h4, h5, h6 {
   font-family: "Abhaya Libre SSP";
   font-weight: 800;
+  font-style: normal;
+  text-transform: none;
 }
 
 h1 {
@@ -510,22 +272,4 @@ h3 {
 
 h4 {
   font-size: 1rem;
-}
-
-.lang-san {
-  font-family: "DejaVu Serif", "Georgia", serif;
-}
-.lang-san h1, .lang-san h2, .lang-san h3, .lang-san h4, .lang-san h5, .lang-san h6 {
-  font-family: "DejaVu Serif", "Georgia", serif;
-}
-
-.gretil {
-  font-size: 18px;
-  margin-left: -5ex;
-  margin-right: -5ex;
-}
-
-.gretil > footer {
-  padding-top: 4em;
-  font-size: 14px;
 }

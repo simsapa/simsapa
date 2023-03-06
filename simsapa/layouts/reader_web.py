@@ -6,7 +6,6 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebChannel import QWebChannel
 
 from simsapa import logger
-from simsapa.app.types import QueryType
 
 
 class LinkHoverData(TypedDict):
@@ -96,11 +95,16 @@ class ReaderWebEnginePage(QWebEnginePage):
 
             self.helper.hide_preview.emit()
 
-            # Don't follow relative URLs. It's usually from static content
-            # linking to files (which are now not present) such as
+            # Allow following relative URLs. Ebooks have HTML Contents pages and
+            # cross-links between chapter files.
+            #
+            # The path sometimes fails when it is from static content linking to
+            # files which are now not present such as
             # '../pages/dhamma.html#anatta'
-            if url.isRelative():
-                logger.info("Not following relative links: %s" % url)
+
+            if url.isRelative() or url.scheme() == 'file':
+                logger.info("Following relative link: %s" % url)
+                return super().acceptNavigationRequest(url, _type, isMainFrame)
 
             elif url.scheme() == 'http' or \
                url.scheme() == 'https' or \
@@ -118,15 +122,8 @@ class ReaderWebEnginePage(QWebEnginePage):
                 if self._parent_window is None:
                     return
 
-                if url.host() == QueryType.suttas:
-
-                    if hasattr(self._parent_window, '_show_sutta_by_url'):
-                        self._parent_window._show_sutta_by_url(url)
-
-                elif url.host() == QueryType.words:
-
-                    if hasattr(self._parent_window, '_show_words_by_url'):
-                        self._parent_window._show_words_by_url(url)
+                if hasattr(self._parent_window, '_show_url'):
+                    self._parent_window._show_url(url)
 
                 else:
                     logger.info("Unrecognized host: %s" % url)

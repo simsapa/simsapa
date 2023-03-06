@@ -2,14 +2,22 @@ from pathlib import Path
 import re
 import subprocess
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from PyQt6.QtCore import QUrl
+
+from sqlalchemy.orm.session import Session
+from bs4 import BeautifulSoup
+from bs4.element import Tag, ResultSet
 from ebooklib import epub
+from simsapa.app.db.search import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
 
 from simsapa.layouts.html_content import html_page
-from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html
+from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, normalize_sutta_ref
 from simsapa.app.helpers import strip_html
-from simsapa.app.types import AppData, SuttaQuote, USutta
+from simsapa.app.types import AppData, QueryType, SuttaQuote, USutta
+from simsapa.app.db import appdata_models as Am
+# from simsapa.app.db import userdata_models as Um
 
 def sutta_content_plain(sutta: USutta, join_short_lines: int = 80) -> str:
     if sutta.content_json is not None and sutta.content_json != '':
@@ -68,9 +76,8 @@ def save_suttas_as_epub(app_data: AppData,
     toc = []
 
     for i in suttas:
-        chapter = epub.EpubHtml(
-            title = f"{i.sutta_ref} {i.title}",
-            file_name = f"sutta_{i.uid}.xhtml")
+        uid = i.uid.replace("/", "_")
+        chapter = epub.EpubHtml(title = f"{i.sutta_ref} {i.title}", file_name = f"sutta_{uid}.xhtml")
 
         if i.language is not None:
             chapter.lang = i.language
@@ -131,7 +138,7 @@ def save_html_as_epub(output_path: Path, sanitized_html: str, title: str, author
 
     epub.write_epub(output_path, book)
 
-def convert_epub_to_mobi(ebook_convert_path: Path, epub_path: Path, mobi_path: Path):
+def convert_epub_to_mobi(ebook_convert_path: Path, epub_path: Path, mobi_path: Path, remove_source = False):
     # Test if we can call ebook-covert
     res = subprocess.run([ebook_convert_path, '--version'], capture_output=True)
     if res.returncode != 0 or 'calibre' not in res.stdout.decode():
@@ -139,7 +146,22 @@ def convert_epub_to_mobi(ebook_convert_path: Path, epub_path: Path, mobi_path: P
 
     res = subprocess.run([ebook_convert_path, epub_path, mobi_path], capture_output=True)
 
-    epub_path.unlink()
+    if remove_source:
+        epub_path.unlink()
+
+    if res.returncode != 0:
+        raise Exception(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
+
+def convert_mobi_to_epub(ebook_convert_path: Path, mobi_path: Path, epub_path: Path, remove_source = False):
+    # Test if we can call ebook-covert
+    res = subprocess.run([ebook_convert_path, '--version'], capture_output=True)
+    if res.returncode != 0 or 'calibre' not in res.stdout.decode():
+        raise Exception(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
+
+    res = subprocess.run([ebook_convert_path, mobi_path, epub_path], capture_output=True)
+
+    if remove_source:
+        mobi_path.unlink()
 
     if res.returncode != 0:
         raise Exception(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
@@ -222,3 +244,134 @@ def render_sutta_content(app_data: AppData, sutta: USutta, sutta_quote: Optional
     html = html_page(content, app_data.api_url, css_extra, js_extra)
 
     return html
+
+def text_all_escaped(text: str) -> str:
+    # All letters to escape codes:
+    # a -> 0x61 -> &#x61;
+    # hello -> '&#x68;&#x65;&#x6c;&#x6c;&#x6f;'
+    return "".join([hex(ord(s)).replace('0x', '&#x')+";" for s in list(text)])
+
+def apply_escape(text: str) -> str:
+    matches = re.finditer(r':ESCAPE_START:(.*?):ESCAPE_END:', text)
+    already_replaced = []
+    for m in matches:
+        if m.group(0) in already_replaced:
+            continue
+
+        text = re.sub(m.group(0), text_all_escaped(m.group(1)), text)
+
+        already_replaced.append(m.group(0))
+
+    return text
+
+def find_linkable_sutta_urls_in_text(db_session: Session, content: str) -> List[Tuple[QUrl, str]]:
+    content = content \
+        .replace("&nbsp;", " ") \
+        .replace(u"\u00A0", " ")
+
+    linkable: List[Tuple[QUrl, str]] = []
+
+    matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, content)
+    already_found = []
+    for ref in matches:
+        if ref.group(0) in already_found:
+            continue
+
+        sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
+
+        url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
+        text = ref.group(0)
+        linkable.append((url, text))
+
+        already_found.append(text)
+
+    matches = re.finditer(RE_ALL_PTS_VOL_SUTTA_REF, content)
+    already_found = []
+    for ref in matches:
+        if ref.group(0) in already_found:
+            continue
+        pts_ref = normalize_sutta_ref(ref.group(0))
+
+        multi_ref = db_session \
+            .query(Am.MultiRef) \
+            .filter(Am.MultiRef.ref.like(f"%{pts_ref}%")) \
+            .first()
+
+        if multi_ref and len(multi_ref.suttas) > 0:
+
+            sutta = multi_ref.suttas[0]
+
+            url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta.uid}")
+            text = ref.group(0)
+            linkable.append((url, text))
+
+            already_found.append(text)
+
+    return linkable
+
+def add_href_sutta_links_in_text(db_session: Session,
+                                 content: str,
+                                 do_mark_escape = True,
+                                 do_apply_escape = True) -> str:
+
+    linkable = find_linkable_sutta_urls_in_text(db_session, content)
+    linked_content = content
+    already_replaced: List[str] = []
+
+    for i in linkable:
+        url, text = i
+        if text in already_replaced:
+            continue
+
+        label = text
+        if do_mark_escape:
+            label = f":ESCAPE_START:{label}:ESCAPE_END:"
+        if do_apply_escape:
+            label = apply_escape(label)
+        link = f'<a href="{url.toString()}">{label}</a>'
+
+        linked_content = re.sub(text, link, linked_content)
+        already_replaced.append(text)
+
+    return linked_content
+
+def add_sutta_links(db_session: Session, html_content: str) -> str:
+    # Interferes with sutta ref linking if &nbsp; is used between the nikaya and section numbers.
+    html_content = html_content \
+        .replace("&nbsp;", " ") \
+        .replace(u"\u00A0", " ")
+
+    # Find all links and rewrite to ssp:// links if possible
+    # - If the href is suttacentral, use the path as uid and rewrite as ssp://
+    # - else, if the link text is a sutta ref, parse it and replace link href to a ssp://
+    # - replace link text with escaped text block overlapping replacements later
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    links: ResultSet[Tag] = soup.find_all(name = 'a', href = True)
+    for link in links:
+        if 'suttacentral.net' in str(link.get('href')):
+
+            sc_url = QUrl(link.attrs['href'])
+
+            uid = re.sub(r'^/', '', sc_url.path())
+
+            ssp_href = f"ssp://{QueryType.suttas.value}/{uid}"
+
+            link['href'] = ssp_href
+
+            if link.string is not None:
+                link.string = f":ESCAPE_START:{link.string}:ESCAPE_END:"
+
+        elif link.string is not None:
+            linkable = find_linkable_sutta_urls_in_text(db_session, link.string)
+            if len(linkable) > 0:
+                url, _ = linkable[0]
+                link['href'] = url.toString()
+                link.string = f":ESCAPE_START:{link.string}:ESCAPE_END:"
+
+    linked_content = apply_escape(soup.decode_contents())
+
+    linked_content = add_href_sutta_links_in_text(db_session, linked_content)
+
+    return linked_content

@@ -1,10 +1,6 @@
 @charset "utf-8"
 
 @import "base"
-@import "suttacentral"
-@import "cst4"
-@import "dhammatalks_org"
-@import "tipitaka_net"
 
 html, body
   font-size: 22px
@@ -15,10 +11,16 @@ html, body
 #ssp_main
   padding-bottom: 4rem
 
+*, *:before, *:after
+  box-sizing: content-box
+
 body
   padding: 0 2rem
   max-width: 75ex
   margin: 0 auto
+
+img
+  max-width: 100%
 
 p
   margin: 0.8rem 0 0 0
@@ -26,6 +28,8 @@ p
 h1, h2, h3, h4, h5, h6
   font-family: "Abhaya Libre SSP"
   font-weight: 800
+  font-style: normal
+  text-transform: none
 
 h1
   font-size: 1.6rem
@@ -35,5 +39,3 @@ h3
   font-size: 1.2rem
 h4
   font-size: 1.0rem
-
-@import "gretil_post"

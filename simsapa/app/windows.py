@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import shutil
 from functools import partial
 from typing import List, Optional
 import queue
@@ -12,7 +13,7 @@ from urllib.parse import parse_qs
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
-from simsapa import logger, ApiAction, ApiMessage
+from simsapa import EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
 from simsapa.app.helpers import EntryType, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
@@ -293,6 +294,22 @@ class AppWindows:
         else:
             return self._new_sutta_search_window()
 
+    def _lookup_msg(self, query: str):
+        msg = ApiMessage(queue_id = 'all',
+                            action = ApiAction.lookup_in_dictionary,
+                            data = query)
+        self._lookup_clipboard_in_dictionary(msg)
+
+    def _study_msg(self, side: str, uid: str):
+        data = {'side': side, 'uid': uid}
+        msg = ApiMessage(queue_id = 'all',
+                         action = ApiAction.open_in_study_window,
+                         data = json.dumps(obj=data))
+        self._show_sutta_by_uid_in_side(msg)
+
+    def _new_sutta_search_window_noret(self, query: Optional[str] = None) -> None:
+        self._new_sutta_search_window(query)
+
     def _new_sutta_search_window(self, query: Optional[str] = None) -> SuttaSearchWindow:
         if query is not None and not isinstance(query, str):
             query = None
@@ -301,21 +318,9 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-        def _lookup(query: str):
-            msg = ApiMessage(queue_id = 'all',
-                             action = ApiAction.lookup_in_dictionary,
-                             data = query)
-            self._lookup_clipboard_in_dictionary(msg)
 
-        def _study(side: str, uid: str):
-            data = {'side': side, 'uid': uid}
-            msg = ApiMessage(queue_id = 'all',
-                             action = ApiAction.open_in_study_window,
-                             data = json.dumps(obj=data))
-            self._show_sutta_by_uid_in_side(msg)
-
-        view.lookup_in_dictionary_signal.connect(partial(_lookup))
-        view.s.open_in_study_window_signal.connect(partial(_study))
+        view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
+        view.s.open_in_study_window_signal.connect(partial(self._study_msg))
         view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
         view.s.bookmark_created.connect(partial(self._reload_bookmarks))
@@ -328,10 +333,7 @@ class AppWindows:
 
         view.s.hide_preview.connect(partial(self._preview_window._do_hide))
 
-        def _open_prompt(params: Optional[OpenPromptParams] = None):
-            self._new_gpt_prompts_window(params)
-
-        view.s.open_gpt_prompt.connect(partial(_open_prompt))
+        view.s.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
         if self._hotkeys_manager is not None:
             try:
@@ -351,6 +353,9 @@ class AppWindows:
         self._windows.append(view)
 
         return view
+
+    def _new_sutta_study_window_noret(self) -> None:
+        self._new_sutta_study_window()
 
     def _new_sutta_study_window(self) -> SuttaStudyWindow:
         view = SuttaStudyWindow(self._app_data)
@@ -384,6 +389,15 @@ class AppWindows:
 
         return view
 
+    def _new_dictionary_search_window_noret(self, query: Optional[str] = None) -> None:
+        self._new_dictionary_search_window(query)
+
+    def _lookup_in_suttas_msg(self, query: str):
+        msg = ApiMessage(queue_id = 'all',
+                            action = ApiAction.lookup_in_suttas,
+                            data = query)
+        self._lookup_clipboard_in_suttas(msg)
+
     def _new_dictionary_search_window(self, query: Optional[str] = None) -> DictionarySearchWindow:
         if query is not None and not isinstance(query, str):
             query = None
@@ -391,12 +405,6 @@ class AppWindows:
         view = DictionarySearchWindow(self._app_data)
         self._set_size_and_maximize(view)
         self._connect_signals(view)
-
-        def _lookup_in_suttas(query: str):
-            msg = ApiMessage(queue_id = 'all',
-                             action = ApiAction.lookup_in_suttas,
-                             data = query)
-            self._lookup_clipboard_in_suttas(msg)
 
         def _show_sutta_url(url: QUrl):
             self._show_sutta_by_url_in_search(url)
@@ -407,7 +415,7 @@ class AppWindows:
         view.show_sutta_by_url.connect(partial(_show_sutta_url))
         view.show_words_by_url.connect(partial(_show_words_url))
 
-        view.lookup_in_suttas_signal.connect(partial(_lookup_in_suttas))
+        view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
         view.open_words_new_signal.connect(partial(self.open_words_new))
 
         view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
@@ -484,7 +492,8 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Related_Suttas'):
+            if (isinstance(w, SuttaSearchWindow) or isinstance(w, EbookReaderWindow)) \
+               and hasattr(w, 'action_Show_Related_Suttas'):
                 w.action_Show_Related_Suttas.setChecked(is_on)
 
     def _toggle_show_line_by_line(self, view: SuttaSearchWindowInterface):
@@ -554,6 +563,9 @@ class AppWindows:
             view.reload_bookmarks()
             view.reload_table()
 
+    def _new_bookmarks_browser_window_noret(self) -> None:
+        self._new_bookmarks_browser_window()
+
     def _new_bookmarks_browser_window(self) -> BookmarksBrowserWindow:
         view = BookmarksBrowserWindow(self._app_data)
 
@@ -590,6 +602,9 @@ class AppWindows:
     def _start_challenge_group(self, group: PaliCourseGroup):
         self._new_course_practice_window(group)
 
+    def _new_courses_browser_window_noret(self) -> None:
+        self._new_courses_browser_window()
+
     def _new_courses_browser_window(self) -> CoursesBrowserWindow:
         view = CoursesBrowserWindow(self._app_data)
 
@@ -599,6 +614,9 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_memos_browser_window_noret(self) -> None:
+        self._new_memos_browser_window()
+
     def _new_memos_browser_window(self) -> MemosBrowserWindow:
         view = MemosBrowserWindow(self._app_data)
         self._set_size_and_maximize(view)
@@ -606,6 +624,9 @@ class AppWindows:
         make_active_window(view)
         self._windows.append(view)
         return view
+
+    def _new_links_browser_window_noret(self) -> None:
+        self._new_links_browser_window()
 
     def _new_links_browser_window(self) -> LinksBrowserWindow:
         view = LinksBrowserWindow(self._app_data)
@@ -615,6 +636,9 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_gpt_prompts_window_noret(self, prompt_params: Optional[OpenPromptParams] = None) -> None:
+        self._new_gpt_prompts_window(prompt_params)
+
     def _new_gpt_prompts_window(self, prompt_params: Optional[OpenPromptParams] = None) -> GptPromptsWindow:
         view = GptPromptsWindow(self._app_data, prompt_params)
 
@@ -622,8 +646,28 @@ class AppWindows:
         self._windows.append(view)
         return view
 
+    def _new_ebook_reader_window_noret(self) -> None:
+        self._new_ebook_reader_window()
+
     def _new_ebook_reader_window(self) -> EbookReaderWindow:
         view = EbookReaderWindow(self._app_data)
+
+        view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
+        view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
+
+        view.reading_state.open_in_study_window_signal.connect(partial(self._study_msg))
+        view.reading_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.reading_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.reading_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+        view.reading_state.hide_preview.connect(partial(self._preview_window._do_hide))
+        view.reading_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+
+        view.sutta_state.open_in_study_window_signal.connect(partial(self._study_msg))
+        view.sutta_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        view.sutta_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.sutta_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+        view.sutta_state.hide_preview.connect(partial(self._preview_window._do_hide))
+        view.sutta_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
         make_active_window(view)
         self._windows.append(view)
@@ -791,8 +835,17 @@ class AppWindows:
         for w in self._windowed_previews:
             w.close()
 
+    def _remove_temp_files(self):
+        if EBOOK_UNZIP_DIR.exists():
+            for p in EBOOK_UNZIP_DIR.glob('*'):
+                if p.is_dir():
+                    shutil.rmtree(p)
+                else:
+                    p.unlink()
+
     def _quit_app(self):
         self._close_all_windows()
+        self._remove_temp_files()
         self._app.quit()
 
         logger.info("_quit_app() Exiting with status 0.")
@@ -882,31 +935,31 @@ class AppWindows:
         view.action_Quit \
             .triggered.connect(partial(self._quit_app))
         view.action_Sutta_Search \
-            .triggered.connect(partial(self._new_sutta_search_window))
+            .triggered.connect(partial(self._new_sutta_search_window_noret))
         view.action_Sutta_Study \
-            .triggered.connect(partial(self._new_sutta_study_window))
+            .triggered.connect(partial(self._new_sutta_study_window_noret))
         view.action_Dictionary_Search \
-            .triggered.connect(partial(self._new_dictionary_search_window))
+            .triggered.connect(partial(self._new_dictionary_search_window_noret))
         view.action_Memos \
-            .triggered.connect(partial(self._new_memos_browser_window))
+            .triggered.connect(partial(self._new_memos_browser_window_noret))
         view.action_Links \
-            .triggered.connect(partial(self._new_links_browser_window))
+            .triggered.connect(partial(self._new_links_browser_window_noret))
 
         if hasattr(view, 'action_Bookmarks'):
             view.action_Bookmarks \
-                .triggered.connect(partial(self._new_bookmarks_browser_window))
+                .triggered.connect(partial(self._new_bookmarks_browser_window_noret))
 
         if hasattr(view, 'action_Pali_Courses'):
             view.action_Pali_Courses \
-                .triggered.connect(partial(self._new_courses_browser_window))
+                .triggered.connect(partial(self._new_courses_browser_window_noret))
 
         if hasattr(view, 'action_Prompts'):
             view.action_Prompts \
-                .triggered.connect(partial(self._new_gpt_prompts_window, None))
+                .triggered.connect(partial(self._new_gpt_prompts_window_noret))
 
         if hasattr(view, 'action_Ebook_Reader'):
             view.action_Ebook_Reader \
-                .triggered.connect(partial(self._new_ebook_reader_window))
+                .triggered.connect(partial(self._new_ebook_reader_window_noret))
 
         if isinstance(view, DictionarySearchWindow):
             if hasattr(view, 'action_Show_Sidebar'):
@@ -951,6 +1004,14 @@ class AppWindows:
 
                 view.action_Show_Bookmarks \
                     .triggered.connect(partial(self._toggle_show_bookmarks, view))
+
+        if isinstance(view, EbookReaderWindow):
+            if hasattr(view, 'action_Show_Related_Suttas'):
+                is_on = self._app_data.app_settings.get('show_related_suttas', True)
+                view.action_Show_Related_Suttas.setChecked(is_on)
+
+                view.action_Show_Related_Suttas \
+                    .triggered.connect(partial(self._toggle_show_related_suttas, view))
 
         if hasattr(view, 'action_Show_Word_Scan_Popup'):
             view.action_Show_Word_Scan_Popup \

@@ -363,6 +363,7 @@ class Ui_DictionarySearchWindow(object):
         self.action_Link_Preview.setChecked(True)
         self.action_Link_Preview.setObjectName("action_Link_Preview")
         self.action_Ebook_Reader = QtGui.QAction(parent=DictionarySearchWindow)
+        self.action_Ebook_Reader.setIcon(icon6)
         self.action_Ebook_Reader.setObjectName("action_Ebook_Reader")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)

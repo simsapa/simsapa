@@ -183,6 +183,13 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         return css_extra
 
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
+
     def _show_words_by_url(self, url: QUrl):
         if url.host() != QueryType.words:
             return

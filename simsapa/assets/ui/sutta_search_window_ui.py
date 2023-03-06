@@ -406,6 +406,7 @@ class Ui_SuttaSearchWindow(object):
         self.action_Export_As = QtGui.QAction(parent=SuttaSearchWindow)
         self.action_Export_As.setObjectName("action_Export_As")
         self.action_Ebook_Reader = QtGui.QAction(parent=SuttaSearchWindow)
+        self.action_Ebook_Reader.setIcon(icon6)
         self.action_Ebook_Reader.setObjectName("action_Ebook_Reader")
         self.menu_File.addAction(self.action_Open)
         self.menu_File.addAction(self.action_Close_Window)

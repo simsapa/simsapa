@@ -21,7 +21,7 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, logger
+from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, logger
 
 
 class SuttaRange(TypedDict):
@@ -43,6 +43,9 @@ def create_app_dirs():
 
     if not COURSES_DIR.exists():
         COURSES_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not EBOOK_UNZIP_DIR.exists():
+        EBOOK_UNZIP_DIR.mkdir(parents=True, exist_ok=True)
 
 def ensure_empty_graphs_cache():
     if GRAPHS_DIR.exists():
@@ -454,7 +457,7 @@ def normalize_sutta_ref(ref: str) -> str:
     ref = re.sub(r'khp *(\d)', r'kp \1', ref)
     ref = re.sub(r'th *(\d)', r'thag \1', ref)
 
-    ref = re.sub(r'\.([ivx]+)\.', r' \1 ', ref)
+    ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
     ref = re.sub(r'^d ', 'dn ', ref)
     ref = re.sub(r'^m ', 'mn ', ref)
     ref = re.sub(r'^s ', 'sn ', ref)
