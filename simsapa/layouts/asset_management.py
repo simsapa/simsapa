@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRunnable, QThrea
 from PyQt6.QtWidgets import (QAbstractItemView, QFrame, QHeaderView, QLineEdit, QMessageBox, QTableView, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
 
 from sqlalchemy import create_engine
+from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 from simsapa.app.lookup import LANG_CODE_TO_NAME
@@ -782,9 +783,9 @@ class AssetsWorker(QRunnable):
             import_db_conn = import_db_eng.connect()
 
             if schema == DbSchemaName.AppData:
-                import_db_conn.execute(f"ATTACH DATABASE '{import_db_path}' AS appdata;")
+                import_db_conn.execute(text(f"ATTACH DATABASE '{import_db_path}' AS appdata;"))
             else:
-                import_db_conn.execute(f"ATTACH DATABASE '{import_db_path}' AS userdata;")
+                import_db_conn.execute(text(f"ATTACH DATABASE '{import_db_path}' AS userdata;"))
 
             Session = sessionmaker(import_db_eng)
             Session.configure(bind=import_db_eng)

@@ -3,7 +3,7 @@ from typing import List, Optional
 from collections import namedtuple
 
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 
 from simsapa import logger
 from simsapa.app.db import appdata_models as Am
@@ -36,9 +36,9 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, bootstrap_a
 
     # label is stored lowercase in legacy db
     if limit:
-        a = legacy_db.execute(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}' LIMIT {limit};") # type: ignore
+        a = legacy_db.execute(text(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}' LIMIT {limit};"))
     else:
-        a = legacy_db.execute(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}';") # type: ignore
+        a = legacy_db.execute(text(f"SELECT * from dict_words WHERE entry_source = '{label.lower()}';"))
 
     LegacyDictWord = namedtuple('LegacyDictWord', a.keys())
     records = [LegacyDictWord(*r) for r in a.fetchall()]

@@ -5,6 +5,7 @@ import re
 from typing import List
 
 from sqlalchemy import create_engine
+from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
@@ -88,8 +89,8 @@ def _connect_to_db() -> Session:
         db_conn = db_eng.connect()
 
         # Attach appdata and userdata
-        db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
-        db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+        db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
+        db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
 
         Session = sessionmaker(db_eng)
         Session.configure(bind=db_eng)

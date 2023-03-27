@@ -10,7 +10,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 import markdown
 
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 from sqlalchemy.orm.session import Session
 
 from simsapa import DbSchemaName, logger
@@ -86,9 +86,9 @@ def _code_to_uid(code: str) -> str:
 
 def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutta]:
     if limit:
-        a = db_session.execute(f"SELECT * from suttas WHERE language_code = 'hu' AND is_published = 1 LIMIT {limit};") # type: ignore
+        a = db_session.execute(text(f"SELECT * from suttas WHERE language_code = 'hu' AND is_published = 1 LIMIT {limit};"))
     else:
-        a = db_session.execute("SELECT * from suttas WHERE language_code = 'hu' AND is_published = 1;") # type: ignore
+        a = db_session.execute(text("SELECT * from suttas WHERE language_code = 'hu' AND is_published = 1;"))
 
     BuSutta = namedtuple('LegacyDictWord', a.keys())
     records = [BuSutta(*r) for r in a.fetchall()]
@@ -96,7 +96,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
     def _to_sutta(x: BuSutta) -> Um.Sutta:
 
         # get sutta author
-        a = db_session.execute(f"SELECT author_id from sutta_author WHERE sutta_id = {x.id};") # type: ignore
+        a = db_session.execute(text(f"SELECT author_id from sutta_author WHERE sutta_id = {x.id};"))
         r = a.fetchone()
         if r is None:
             logger.error(f"Can't get author for: {x.sutta_ref_code}")
@@ -104,7 +104,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         else:
             author_id = r[0]
 
-        a = db_session.execute(f"SELECT author_ref_code from authors WHERE id = {author_id};") # type: ignore
+        a = db_session.execute(text(f"SELECT author_ref_code from authors WHERE id = {author_id};"))
         r = a.fetchone()
         if r is None:
             logger.error(f"Can't get author_ref_code for: {author_id}")
@@ -205,7 +205,7 @@ def populate_suttas_from_buddha_ujja(userdata_db: Session, bu_db_path: Path, lim
             if i.source_uid:
                 res = userdata_db.query(Um.Author).filter(Um.Author.uid == i.source_uid).first()
                 if res is None:
-                    a = db_session.execute(f"SELECT full_name from authors WHERE author_ref_code = '{i.source_uid}';") # type: ignore
+                    a = db_session.execute(text(f"SELECT full_name from authors WHERE author_ref_code = '{i.source_uid}';"))
                     r = a.fetchone()
                     full_name = r[0] if r is not None else None
 

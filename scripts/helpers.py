@@ -5,6 +5,7 @@ from pathlib import Path
 import roman
 
 from sqlalchemy import create_engine
+from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
@@ -45,9 +46,9 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
         db_conn = engine.connect()
 
         if schema == DbSchemaName.AppData:
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
+            db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS appdata;"))
         else:
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS userdata;")
+            db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS userdata;"))
 
         Session = sessionmaker(engine)
         Session.configure(bind=engine)

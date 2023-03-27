@@ -16,7 +16,7 @@ from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_s
 
 from .types import GraphRequest, UBookmark, USutta, UDictWord
 
-from sqlalchemy.sql.elements import and_, or_
+from sqlalchemy import and_, or_
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um

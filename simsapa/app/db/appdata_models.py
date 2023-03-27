@@ -1,9 +1,9 @@
-from sqlalchemy import (MetaData, Table, Column, Integer, String,
-                        ForeignKey, Boolean, DateTime, LargeBinary)
+from typing import List, Optional
+from sqlalchemy import (MetaData, Table, Column, Integer,
+                        ForeignKey, DateTime, LargeBinary)
 
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, mapped_column, Mapped, declarative_base
 
 from simsapa import DbSchemaName
 
@@ -17,497 +17,467 @@ Base = declarative_base(metadata=metadata)
 
 assoc_sutta_authors = Table(
     'sutta_authors',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('author_id', Integer, ForeignKey("authors.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_sutta_tags = Table(
     'sutta_tags',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_sutta_multi_refs = Table(
     'sutta_multi_refs',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('sutta_id', Integer, ForeignKey("suttas.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('multi_ref_id', Integer, ForeignKey("multi_refs.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_dict_word_tags = Table(
     'dict_word_tags',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('dict_word_id', Integer, ForeignKey("dict_words.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_document_tags = Table(
     'document_tags',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('document_id', Integer, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
 assoc_memo_tags = Table(
     'memo_tags',
-    Base.metadata, # type: ignore
+    Base.metadata,
     Column('memo_id', Integer, ForeignKey("memos.id", ondelete="CASCADE"), primary_key=True, nullable=False),
     Column('tag_id', Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, nullable=False),
 )
 
-
-class Author(Base): # type: ignore
+class Author(Base):
     __tablename__ = "authors"
 
-    id = Column(Integer, primary_key=True)
-    uid = Column(String, nullable=False, unique=True) # sujato
-    full_name = Column(String) # Sujato Bhikkhu
-    description = Column(String) # Translated for SuttaCentral by Sujato Bhikkhu
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(unique=True) # sujato
+    full_name: Mapped[Optional[str]] # Sujato Bhikkhu
+    description: Mapped[Optional[str]] # Translated for SuttaCentral by Sujato Bhikkhu
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    suttas = relationship("Sutta", secondary=assoc_sutta_authors, back_populates="authors")
+    suttas: Mapped[List["Sutta"]] = relationship(secondary=assoc_sutta_authors, back_populates="authors")
 
-
-class Sutta(Base): # type: ignore
+class Sutta(Base):
     __tablename__ = "suttas"
 
-    id = Column(Integer, primary_key=True)
-    uid = Column(String, nullable=False, unique=True) # dn1/pli/ms
-    group_path = Column(String) # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
-    group_index = Column(Integer) # 1
-    sutta_ref = Column(String) # DN 1
-    language = Column(String) # pli / en
-    order_index = Column(Integer)
+    id:  Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(unique=True) # dn1/pli/ms
+    group_path:  Mapped[Optional[str]] # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
+    group_index: Mapped[Optional[int]] # 1
+    sutta_ref:   Mapped[Optional[str]] # DN 1
+    language:    Mapped[Optional[str]] # pli / en
+    order_index: Mapped[Optional[int]]
 
     # sn30.7-16
-    sutta_range_group = Column(String) # sn30
-    sutta_range_start = Column(Integer) # 7
-    sutta_range_end = Column(Integer) # 16
+    sutta_range_group: Mapped[Optional[str]] # sn30
+    sutta_range_start: Mapped[Optional[int]] # 7
+    sutta_range_end:   Mapped[Optional[int]] # 16
 
     # --- Content props ---
-    title = Column(String) # Brahmajāla: The Root of All Things
-    title_pali = Column(String) # Brahmajāla
-    title_trans = Column(String) # The Root of All Things
-    description = Column(String)
-    content_plain = Column(String) # content in plain text
-    content_html = Column(String) # content in HTML
-    content_json = Column(String) # content in Bilara JSON
-    content_json_tmpl = Column(String) # HTML template to wrap around JSON
+    title:             Mapped[Optional[str]] # Brahmajāla: The Root of All Things
+    title_pali:        Mapped[Optional[str]] # Brahmajāla
+    title_trans:       Mapped[Optional[str]] # The Root of All Things
+    description:       Mapped[Optional[str]]
+    content_plain:     Mapped[Optional[str]] # content in plain text
+    content_html:      Mapped[Optional[str]] # content in HTML
+    content_json:      Mapped[Optional[str]] # content in Bilara JSON
+    content_json_tmpl: Mapped[Optional[str]] # HTML template to wrap around JSON
 
     # --- Source ---
-    source_uid = Column(String) # ms, bodhi, than
-    source_info = Column(String)
-    source_language = Column(String)
-    message = Column(String)
-    copyright = Column(String)
-    license = Column(String)
+    source_uid:      Mapped[Optional[str]] # ms, bodhi, than
+    source_info:     Mapped[Optional[str]]
+    source_language: Mapped[Optional[str]]
+    message:         Mapped[Optional[str]]
+    copyright:       Mapped[Optional[str]]
+    license:         Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    indexed_at = Column(DateTime(timezone=True))
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
 
-    authors = relationship("Author", secondary=assoc_sutta_authors, back_populates="suttas")
-    tags = relationship("Tag", secondary=assoc_sutta_tags, back_populates="suttas")
-    bookmarks = relationship("Bookmark", back_populates="sutta", passive_deletes=True)
+    authors:    Mapped[List[Author]]     = relationship("Author",       secondary=assoc_sutta_authors,    back_populates="suttas")
+    tags:       Mapped[List["Tag"]]      = relationship("Tag",          secondary=assoc_sutta_tags,       back_populates="suttas")
+    multi_refs: Mapped[List["MultiRef"]] = relationship("MultiRef",     secondary=assoc_sutta_multi_refs, back_populates="suttas")
+    bookmarks:  Mapped[List["Bookmark"]] = relationship("Bookmark",     back_populates="sutta", passive_deletes=True)
+    variant:    Mapped["SuttaVariant"]   = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
+    comment:    Mapped["SuttaComment"]   = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
 
-    variant = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
-    comment = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
-
-    multi_refs = relationship("MultiRef", secondary=assoc_sutta_multi_refs, back_populates="suttas")
-
-
-class SuttaVariant(Base): # type: ignore
+class SuttaVariant(Base):
     __tablename__ = "sutta_variants"
 
-    id = Column(Integer, primary_key=True)
+    id:        Mapped[int] = mapped_column(primary_key=True)
+    sutta_id:  Mapped[int] = mapped_column(ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid: Mapped[str] # dn1/pli/ms
 
-    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
-    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+    language:     Mapped[Optional[str]] # pli / en
+    source_uid:   Mapped[Optional[str]] # ms, bodhi, than
+    content_json: Mapped[Optional[str]]
 
-    language = Column(String) # pli / en
-    source_uid = Column(String) # ms, bodhi, than
-    content_json = Column(String)
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    sutta: Mapped[Sutta] = relationship("Sutta", back_populates="variant", uselist=False)
 
-    sutta = relationship("Sutta", back_populates="variant", uselist=False)
-
-
-class SuttaComment(Base): # type: ignore
+class SuttaComment(Base):
     __tablename__ = "sutta_comments"
 
-    id = Column(Integer, primary_key=True)
-    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
-    sutta_uid = Column(String, nullable=False) # dn1/pli/ms
+    id:        Mapped[int] = mapped_column(primary_key=True)
+    sutta_id:  Mapped[int] = mapped_column(ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid: Mapped[str] # dn1/pli/ms
 
-    language = Column(String) # pli / en
-    source_uid = Column(String) # ms, bodhi, than
-    content_json = Column(String)
+    language:     Mapped[Optional[str]] # pli / en
+    source_uid:   Mapped[Optional[str]] # ms, bodhi, than
+    content_json: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    sutta = relationship("Sutta", back_populates="comment", uselist=False)
+    sutta: Mapped[Sutta] = relationship("Sutta", back_populates="comment", uselist=False)
 
-
-class Dictionary(Base): # type: ignore
+class Dictionary(Base):
     __tablename__ = "dictionaries"
 
-    id = Column(Integer, primary_key=True)
-    label = Column(String, nullable=False, unique=True)
-    title = Column(String, nullable=False)
+    id:    Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[str] = mapped_column(unique=True)
+    title: Mapped[str]
 
-    creator = Column(String)
-    description = Column(String)
-    feedback_email = Column(String)
-    feedback_url = Column(String)
-    version = Column(String)
-    data_zip_url = Column(String)
-    info_json_url = Column(String)
-    url_synced_at = Column(String)
-    has_update = Column(Boolean)
+    creator:        Mapped[Optional[str]]
+    description:    Mapped[Optional[str]]
+    feedback_email: Mapped[Optional[str]]
+    feedback_url:   Mapped[Optional[str]]
+    version:        Mapped[Optional[str]]
+    data_zip_url:   Mapped[Optional[str]]
+    info_json_url:  Mapped[Optional[str]]
+    url_synced_at:  Mapped[Optional[str]]
+    has_update:     Mapped[Optional[bool]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    dict_words = relationship("DictWord", back_populates="dictionary", passive_deletes=True)
+    dict_words: Mapped[List["DictWord"]] = relationship("DictWord", back_populates="dictionary", passive_deletes=True)
 
-
-class DictWord(Base): # type: ignore
+class DictWord(Base):
     __tablename__ = "dict_words"
 
-    id = Column(Integer, primary_key=True)
-    dictionary_id = Column(Integer, ForeignKey("dictionaries.id", ondelete="CASCADE"), nullable=False)
-    uid = Column(String, nullable=False, unique=True)
-    source_uid = Column(String) # pts, dpd, mw
-    word = Column(String, nullable=False)
-    word_nom_sg = Column(String)
-    inflections = Column(String)
-    phonetic = Column(String)
-    transliteration = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dictionary_id: Mapped[int] = mapped_column(ForeignKey("dictionaries.id", ondelete="CASCADE"), nullable=False)
+
+    uid:             Mapped[str] = mapped_column(unique=True)
+    word:            Mapped[str]
+    source_uid:      Mapped[Optional[str]] # pts, dpd, mw
+    word_nom_sg:     Mapped[Optional[str]]
+    inflections:     Mapped[Optional[str]]
+    phonetic:        Mapped[Optional[str]]
+    transliteration: Mapped[Optional[str]]
 
     # --- Meaning ---
-    meaning_order = Column(Integer)
-    definition_plain = Column(String)
-    definition_html = Column(String)
-    summary = Column(String)
+    meaning_order:    Mapped[Optional[int]]
+    definition_plain: Mapped[Optional[str]]
+    definition_html:  Mapped[Optional[str]]
+    summary:          Mapped[Optional[str]]
 
     # --- Associated words ---
-    synonyms = Column(String)
-    antonyms = Column(String)
-    homonyms = Column(String)
-    also_written_as = Column(String)
-    see_also = Column(String)
+    synonyms: Mapped[Optional[str]]
+    antonyms: Mapped[Optional[str]]
+    homonyms: Mapped[Optional[str]]
+    also_written_as: Mapped[Optional[str]]
+    see_also: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    indexed_at = Column(DateTime(timezone=True))
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    indexed_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
 
-    dictionary = relationship("Dictionary", back_populates="dict_words")
-    examples = relationship("Example", back_populates="dict_word", passive_deletes=True)
-    tags = relationship("Tag", secondary=assoc_dict_word_tags, back_populates="dict_words")
+    dictionary: Mapped[Dictionary]    = relationship("Dictionary", back_populates="dict_words")
+    examples: Mapped[List["Example"]] = relationship("Example",    back_populates="dict_word", passive_deletes=True)
+    tags: Mapped[List["Tag"]]         = relationship("Tag",        secondary=assoc_dict_word_tags, back_populates="dict_words")
 
-
-class Example(Base): # type: ignore
+class Example(Base):
     __tablename__ = "examples"
 
-    id = Column(Integer, primary_key=True)
-    dict_word_id = Column(Integer, ForeignKey("dict_words.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dict_word_id: Mapped[int] = mapped_column(ForeignKey("dict_words.id", ondelete="CASCADE"), nullable=False)
 
-    source_ref = Column(String)
-    source_title = Column(String)
+    source_ref:       Mapped[Optional[str]]
+    source_title:     Mapped[Optional[str]]
+    text_html:        Mapped[Optional[str]]
+    translation_html: Mapped[Optional[str]]
+    highlight:        Mapped[Optional[str]]
 
-    text_html = Column(String)
-    translation_html = Column(String)
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    highlight = Column(String)
+    dict_word: Mapped[DictWord] = relationship("DictWord", back_populates="examples")
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    dict_word = relationship("DictWord", back_populates="examples")
-
-
-class Document(Base): # type: ignore
+class Document(Base):
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True)
-    filepath = Column(String, nullable=False, unique=True)
-    title = Column(String)
-    author = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    filepath: Mapped[str] = mapped_column(unique=True)
+    title: Mapped[Optional[str]]
+    author: Mapped[Optional[str]]
 
     # --- Cover ---
     cover_data = Column(LargeBinary)
-    cover_width = Column(Integer)
-    cover_height = Column(Integer)
-    cover_stride = Column(Integer)
+    cover_width: Mapped[Optional[int]]
+    cover_height: Mapped[Optional[int]]
+    cover_stride: Mapped[Optional[int]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    tags = relationship("Tag", secondary=assoc_document_tags, back_populates="documents")
+    tags: Mapped[List["Tag"]] = relationship("Tag", secondary=assoc_document_tags, back_populates="documents")
 
-
-class Deck(Base): # type: ignore
+class Deck(Base):
     __tablename__ = "decks"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    memos = relationship("Memo", back_populates="deck")
+    memos: Mapped[List["Memo"]] = relationship("Memo", back_populates="deck")
 
-
-class Memo(Base): # type: ignore
+class Memo(Base):
     __tablename__ = "memos"
 
-    id = Column(Integer, primary_key=True)
-    deck_id = Column(Integer, ForeignKey("decks.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deck_id: Mapped[Optional[int]] = mapped_column(ForeignKey("decks.id", ondelete="CASCADE"))
 
     # --- Content ---
-    fields_json = Column(String) # Front, Back
+    fields_json: Mapped[Optional[str]] # Front, Back
 
-    anki_model_name = Column(String) # Basic, Cloze
-    anki_note_id = Column(Integer)
-    anki_synced_at = Column(DateTime)
+    anki_model_name: Mapped[Optional[str]] # Basic, Cloze
+    anki_note_id: Mapped[Optional[int]]
+    anki_synced_at = Mapped[Optional[DateTime]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    deck = relationship("Deck", back_populates="memos")
-    tags = relationship("Tag", secondary=assoc_memo_tags, back_populates="memos")
+    deck: Mapped[Deck] = relationship("Deck", back_populates="memos")
+    tags: Mapped[List["Tag"]] = relationship("Tag", secondary=assoc_memo_tags, back_populates="memos")
 
-
-class MemoAssociation(Base): # type: ignore
+class MemoAssociation(Base):
     __tablename__ = "memo_associations"
 
-    id = Column(Integer, primary_key=True)
-    memo_id = Column(Integer, ForeignKey("memos.id", ondelete="CASCADE"), nullable=False)
-    associated_table = Column(String, nullable=False)
-    associated_id = Column(Integer, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    memo_id: Mapped[int] = mapped_column(ForeignKey("memos.id", ondelete="CASCADE"), nullable=False)
 
-    page_number = Column(Integer)
-    location = Column(String)
+    associated_table: Mapped[str]
+    associated_id: Mapped[int]
 
+    page_number: Mapped[Optional[int]]
+    location: Mapped[Optional[str]]
 
-class Annotation(Base): # type: ignore
+class Annotation(Base):
     __tablename__ = "annotations"
 
-    id = Column(Integer, primary_key=True)
-    ann_type = Column(String)
-    text = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ann_type: Mapped[Optional[str]]
+    text: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-
-class AnnotationAssociation(Base): # type: ignore
+class AnnotationAssociation(Base):
     __tablename__ = "annotation_associations"
 
-    id = Column(Integer, primary_key=True)
-    annotation_id = Column(Integer, ForeignKey("annotations.id", ondelete="CASCADE"))
-    associated_table = Column(String, nullable=False)
-    associated_id = Column(Integer, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    annotation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("annotations.id", ondelete="CASCADE"))
+    associated_table: Mapped[str]
+    associated_id: Mapped[str]
 
-    page_number = Column(Integer)
-    location = Column(Integer)
+    page_number: Mapped[Optional[int]]
+    location: Mapped[Optional[int]]
 
-
-class Tag(Base): # type: ignore
+class Tag(Base):
     __tablename__ = "tags"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[Optional[str]]
 
-    suttas = relationship("Sutta", secondary=assoc_sutta_tags, back_populates="tags")
-    dict_words = relationship("DictWord", secondary=assoc_dict_word_tags, back_populates="tags")
-    documents = relationship("Document", secondary=assoc_document_tags, back_populates="tags")
-    memos = relationship("Memo", secondary=assoc_memo_tags, back_populates="tags")
+    suttas:     Mapped[List[Sutta]]     = relationship("Sutta",    secondary=assoc_sutta_tags, back_populates="tags")
+    dict_words: Mapped[List[DictWord]]  = relationship("DictWord", secondary=assoc_dict_word_tags, back_populates="tags")
+    documents:  Mapped[List[Document]]  = relationship("Document", secondary=assoc_document_tags, back_populates="tags")
+    memos:      Mapped[List[Memo]]      = relationship("Memo",     secondary=assoc_memo_tags, back_populates="tags")
 
-
-class Bookmark(Base): # type: ignore
+class Bookmark(Base):
     __tablename__ = "bookmarks"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    quote = Column(String)
-    nth = Column(Integer)
-    selection_range = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
 
-    sutta_id = Column(Integer, ForeignKey("suttas.id", ondelete="CASCADE"), nullable=True)
-    sutta_uid = Column(String, nullable=True)
-    sutta_schema = Column(String, nullable=True)
-    sutta_ref = Column(String, nullable=True)
-    sutta_title = Column(String, nullable=True)
+    quote: Mapped[Optional[str]]
+    nth: Mapped[Optional[int]]
+    selection_range: Mapped[Optional[str]]
 
-    comment_text = Column(String)
-    comment_attr_json = Column(String)
+    sutta_id:     Mapped[Optional[int]] = mapped_column(ForeignKey("suttas.id", ondelete="CASCADE"))
+    sutta_uid:    Mapped[Optional[str]]
+    sutta_schema: Mapped[Optional[str]]
+    sutta_ref:    Mapped[Optional[str]]
+    sutta_title:  Mapped[Optional[str]]
 
-    read_only = Column(Boolean)
+    comment_text: Mapped[Optional[str]]
+    comment_attr_json: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    read_only: Mapped[Optional[bool]]
 
-    sutta = relationship("Sutta", back_populates="bookmarks")
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
+    sutta: Mapped[Sutta] = relationship("Sutta", back_populates="bookmarks")
 
-class Link(Base): # type: ignore
+class Link(Base):
     __tablename__ = "links"
 
-    id = Column(Integer, primary_key=True)
-    label = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    label: Mapped[Optional[str]]
 
-    from_table = Column(String, nullable=False)
-    from_id = Column(Integer, nullable=False)
-    from_page_number = Column(Integer)
-    from_target = Column(String)
+    from_table:       Mapped[str]
+    from_id:          Mapped[int]
+    from_page_number: Mapped[Optional[int]]
+    from_target:      Mapped[Optional[str]]
 
-    to_table = Column(String, nullable=False)
-    to_id = Column(Integer, nullable=False)
-    to_page_number = Column(Integer)
-    to_target = Column(String)
+    to_table:       Mapped[str]
+    to_id:          Mapped[int]
+    to_page_number: Mapped[Optional[int]]
+    to_target:      Mapped[Optional[str]]
 
-
-class GptPrompt(Base): # type: ignore
+class GptPrompt(Base):
     __tablename__ = "gpt_prompts"
 
-    id = Column(Integer, primary_key=True)
-    name_path = Column(String, nullable=False, unique=True)
-    prompt_text = Column(String)
-    show_in_context = Column(Boolean)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name_path:       Mapped[str] = mapped_column(unique=True)
+    prompt_text:     Mapped[Optional[str]]
+    show_in_context: Mapped[Optional[bool]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-
-class GptHistory(Base): # type: ignore
+class GptHistory(Base):
     __tablename__ = "gpt_history"
 
-    id = Column(Integer, primary_key=True)
-    name_path = Column(String)
-    prompt_text = Column(String)
-    completion_text = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name_path:       Mapped[Optional[str]]
+    prompt_text:     Mapped[Optional[str]]
+    completion_text: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-
-class AppSetting(Base): # type: ignore
+class AppSetting(Base):
     __tablename__ = "app_settings"
 
-    id = Column(Integer, primary_key=True)
-    key = Column(String, nullable=False, unique=True)
-    value = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(unique=True)
+    value: Mapped[Optional[str]]
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-
-class ChallengeCourse(Base): # type: ignore
+class ChallengeCourse(Base):
     __tablename__ = "challenge_courses"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-    description = Column(String)
-    course_dirname = Column(String)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
 
-    sort_index = Column(Integer, nullable=False)
+    description:    Mapped[Optional[str]]
+    course_dirname: Mapped[Optional[str]]
+    sort_index:     Mapped[int]
 
-    groups = relationship("ChallengeGroup", back_populates="course")
-    challenges = relationship("Challenge", back_populates="course")
+    groups: Mapped[List["ChallengeGroup"]] = relationship("ChallengeGroup", back_populates="course")
+    challenges: Mapped[List["Challenge"]] = relationship("Challenge", back_populates="course")
 
-
-class ChallengeGroup(Base): # type: ignore
+class ChallengeGroup(Base):
     __tablename__ = "challenge_groups"
 
-    id = Column(Integer, primary_key=True)
-    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    course_id: Mapped[Optional[int]] = mapped_column(ForeignKey("challenge_courses.id", ondelete="CASCADE"))
 
-    name = Column(String, nullable=False, unique=True)
-    description = Column(String)
+    name:        Mapped[str] = mapped_column(unique=True)
+    description: Mapped[Optional[str]]
+    sort_index:  Mapped[int]
 
-    sort_index = Column(Integer, nullable=False)
+    course: Mapped[ChallengeCourse] = relationship("ChallengeCourse", back_populates="groups", uselist=False)
+    challenges: Mapped[List["Challenge"]] = relationship("Challenge", back_populates="group")
 
-    course = relationship("ChallengeCourse", back_populates="groups", uselist=False)
-    challenges = relationship("Challenge", back_populates="group")
-
-
-class Challenge(Base): # type: ignore
+class Challenge(Base):
     __tablename__ = "challenges"
 
-    id = Column(Integer, primary_key=True)
-    course_id = Column(Integer, ForeignKey("challenge_courses.id", ondelete="CASCADE"))
-    group_id = Column(Integer, ForeignKey("challenge_groups.id", ondelete="CASCADE"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    course_id: Mapped[Optional[int]] = mapped_column(ForeignKey("challenge_courses.id", ondelete="CASCADE"))
+    group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("challenge_groups.id", ondelete="CASCADE"))
 
-    challenge_type = Column(String, nullable=False)
+    challenge_type: Mapped[str]
+    sort_index:     Mapped[int]
+    explanation_md: Mapped[Optional[str]]
+    question_json:  Mapped[Optional[str]]
+    answers_json:   Mapped[Optional[str]]
+    level:          Mapped[Optional[int]]
 
-    sort_index = Column(Integer, nullable=False)
+    studied_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
+    due_at:     Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
 
-    explanation_md = Column(String)
+    anki_model_name: Mapped[Optional[str]] # Basic, Cloze
+    anki_note_id:    Mapped[Optional[int]]
+    anki_synced_at:  Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True))
 
-    question_json = Column(String)
-    answers_json = Column(String)
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    level = Column(Integer)
+    course: Mapped[ChallengeCourse] = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
+    group: Mapped[ChallengeGroup] = relationship("ChallengeGroup", back_populates="challenges", uselist=False)
 
-    studied_at = Column(DateTime(timezone=True))
-    due_at = Column(DateTime(timezone=True))
-
-    anki_model_name = Column(String) # Basic, Cloze
-    anki_note_id = Column(Integer)
-    anki_synced_at = Column(DateTime)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    course = relationship("ChallengeCourse", back_populates="challenges", uselist=False)
-    group = relationship("ChallengeGroup", back_populates="challenges", uselist=False)
-
-
-class MultiRef(Base): # type: ignore
+class MultiRef(Base):
     __tablename__ = "multi_refs"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
     # lowercase an / mn / kp / etc.
-    collection = Column(String, nullable=False)
+    collection: Mapped[str]
 
     # AN 2.52-63
     # PTS 1.77.1-1.80.1
     # PTS i 77.1 - i 80.1
 
-    ref_type = Column(String) # sc / pts / dpr / cst4 / bodhi / verse / trad
+    ref_type: Mapped[Optional[str]] # sc / pts / dpr / cst4 / bodhi / verse / trad
 
     # Ref may contain a list of references, separated by commas.
-    ref = Column(String) # sn 1.51 / an 1.77.1-1.80.1 / an i 77.1 - i 80.1
-    sutta_uid = Column(String) # sn1.51
+    ref: Mapped[Optional[str]] # sn 1.51 / an 1.77.1-1.80.1 / an i 77.1 - i 80.1
+    sutta_uid: Mapped[Optional[str]] # sn1.51
 
-    edition = Column(String) # 1st ed. Feer (1884) / 2nd ed. Somaratne (1998) / etc.
+    edition: Mapped[Optional[str]] # 1st ed. Feer (1884) / 2nd ed. Somaratne (1998) / etc.
 
-    name = Column(String)
-    biblio_uid = Column(String)
+    name: Mapped[Optional[str]]
+    biblio_uid: Mapped[Optional[str]]
 
-    nipata_number = Column(Integer) # 1 in AN 1.8.3
-    vagga_number = Column(Integer) # 8
-    sutta_number = Column(Integer) # 3
+    nipata_number: Mapped[Optional[int]] # 1 in AN 1.8.3
+    vagga_number: Mapped[Optional[int]] # 8
+    sutta_number: Mapped[Optional[int]] # 3
 
-    volume = Column(Integer)
-    page_start = Column(Integer)
-    page_end = Column(Integer)
-    par_start = Column(Integer)
-    par_end = Column(Integer)
+    volume: Mapped[Optional[int]]
+    page_start: Mapped[Optional[int]]
+    page_end: Mapped[Optional[int]]
+    par_start: Mapped[Optional[int]]
+    par_end: Mapped[Optional[int]]
 
-    sutta_start = Column(Integer) # 52 in AN 2.52-63
-    sutta_end = Column(Integer) # 63 in AN 2.52-63
+    sutta_start: Mapped[Optional[int]] # 52 in AN 2.52-63
+    sutta_end: Mapped[Optional[int]] # 63 in AN 2.52-63
 
-    verse_start = Column(Integer)
-    verse_end = Column(Integer)
+    verse_start: Mapped[Optional[int]]
+    verse_end: Mapped[Optional[int]]
 
-    suttas = relationship("Sutta", secondary=assoc_sutta_multi_refs, back_populates="multi_refs")
+    suttas: Mapped[List[Sutta]] = relationship("Sutta", secondary=assoc_sutta_multi_refs, back_populates="multi_refs")

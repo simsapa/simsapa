@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from urllib.parse import quote_plus
 import shutil
 
-from sqlalchemy.sql.elements import and_, or_, not_
+from sqlalchemy import and_, or_, not_
 
 from PyQt6.QtCore import QAbstractTableModel, Qt
 from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)

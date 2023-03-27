@@ -1,7 +1,7 @@
 from typing import List
 
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql.elements import and_, or_
+from sqlalchemy import and_, or_
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

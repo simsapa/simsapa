@@ -5,6 +5,7 @@ from typing import Tuple
 from PyQt6.QtWidgets import QMessageBox
 
 from sqlalchemy import create_engine
+from sqlalchemy.sql import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import sessionmaker
@@ -78,7 +79,7 @@ def find_or_create_db(db_path: Path, schema_name: str):
             logger.info(f"Cannot find {db_url}, creating it")
             # On a new install, create database and all tables with the recent schema.
             create_database(db_url)
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS '{schema_name}';")
+            db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS '{schema_name}';"))
             if schema_name == DbSchemaName.UserData.value:
                 Um.metadata.create_all(bind=engine)
             else:
@@ -132,9 +133,9 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
         db_conn = db_eng.connect()
 
         # Attach appdata and userdata
-        db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
+        db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
         if include_userdata:
-            db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+            db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
 
         Session = sessionmaker(db_eng)
         Session.configure(bind=db_eng)
@@ -157,7 +158,7 @@ def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Session:
 
         db_conn = db_eng.connect()
 
-        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS {schema.value};")
+        db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS {schema.value};"))
 
         Session = sessionmaker(db_eng)
         Session.configure(bind=db_eng)

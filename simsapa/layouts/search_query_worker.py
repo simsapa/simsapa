@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from whoosh.index import FileIndex
 
-from sqlalchemy.sql.elements import and_, or_, not_
+from sqlalchemy import and_, or_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session

@@ -11,7 +11,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QActi
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 from PyQt6.QtWebEngineCore import QWebEnginePage
 
-from sqlalchemy.sql.elements import and_
+from sqlalchemy import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger

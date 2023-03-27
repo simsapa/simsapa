@@ -14,8 +14,8 @@ from tomlkit.toml_document import TOMLDocument
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql import func
-from sqlalchemy.sql.elements import and_
+from sqlalchemy.sql import func, text
+from sqlalchemy import and_
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
@@ -504,8 +504,8 @@ class AppData:
             self.db_conn = self.db_eng.connect()
 
             # Attach appdata and userdata
-            self.db_conn.execute(f"ATTACH DATABASE '{app_db_path}' AS appdata;")
-            self.db_conn.execute(f"ATTACH DATABASE '{user_db_path}' AS userdata;")
+            self.db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
+            self.db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
 
             Session = sessionmaker(self.db_eng)
             Session.configure(bind=self.db_eng)
@@ -521,7 +521,7 @@ class AppData:
                 .filter(Um.AppSetting.key == 'app_settings') \
                 .first()
 
-        if x is not None:
+        if x is not None and x.value is not None:
             self.app_settings: AppSettings = json.loads(x.value)
         else:
             self.app_settings = default_app_settings()
@@ -580,7 +580,7 @@ class AppData:
                     .filter(Um.AppSetting.key == key) \
                     .first()
 
-            if r is not None:
+            if r is not None and r.value is not None:
                 self.pali_groups_stats[sc] = json.loads(r.value)
             else:
                 self.pali_groups_stats[sc] = dict()

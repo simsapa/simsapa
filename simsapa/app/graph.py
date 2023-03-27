@@ -20,7 +20,7 @@ import networkx
 from bokeh.transform import linear_cmap
 
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql.elements import and_
+from sqlalchemy import and_
 
 from simsapa import ShowLabels
 from simsapa.app.db_helpers import get_db_engine_connection_session
