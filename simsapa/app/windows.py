@@ -13,11 +13,12 @@ from urllib.parse import parse_qs
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
-from simsapa import EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
-from simsapa.app.helpers import EntryType, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
+from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.layouts.download_appdata import DownloadAppdataWindow
 from simsapa.layouts.ebook_reader import EbookReaderWindow
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
@@ -729,7 +730,9 @@ class AppWindows:
         if self._app_data.app_settings.get('notify_about_updates'):
             self.thread_pool.start(self.check_updates_worker)
 
-    def show_app_update_message(self, update_info: UpdateInfo):
+    def show_app_update_message(self, value: dict):
+        update_info: UpdateInfo = value['update_info']
+
         update_info['message'] += "<h3>Open page in the browser now?</h3>"
 
         box = QMessageBox()
@@ -742,7 +745,10 @@ class AppWindows:
         if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
             webbrowser.open_new(update_info['visit_url'])
 
-    def show_db_update_message(self, update_info: UpdateInfo):
+    def show_db_update_message(self, value: dict):
+        update_info: UpdateInfo = value['update_info']
+        releases_info: ReleasesInfo = value['releases_info']
+
         # Db version must be compatible with app version.
         # Major and minor version must agree, patch version means updated content.
         #
@@ -773,7 +779,25 @@ class AppWindows:
         reply = box.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            self._redownload_database_dialog()
+            # temp_assets = ASSETS_DIR.parent.joinpath("assets-temp")
+            # if not temp_assets.exists():
+            #     temp_assets.mkdir()
+
+            w = DownloadAppdataWindow(ASSETS_DIR, releases_info)
+            w._quit_action = self._quit_app
+
+            w.show()
+
+            # determine if using Sanskrit bundle
+            # determine downloaded languages
+
+            w.sel_additional.setChecked(True)
+            w.chk_sanskrit_texts.setChecked(True)
+            w._toggled_general_bundle()
+
+            w.add_languages_input.setText("de, hu")
+
+            w._validate_and_run_download()
 
     def _reindex_database_dialog(self, _ = None):
         show_work_in_progress()
@@ -1109,11 +1133,13 @@ class CheckUpdatesWorker(QRunnable):
 
             update_info = has_update(info, EntryType.Application)
             if update_info is not None:
-                self.signals.have_app_update.emit(update_info)
+                value = {"update_info": update_info, "releases_info": info}
+                self.signals.have_app_update.emit(value)
 
             update_info = has_update(info, EntryType.Assets)
             if update_info is not None:
-                self.signals.have_db_update.emit(update_info)
+                value = {"update_info": update_info, "releases_info": info}
+                self.signals.have_db_update.emit(value)
 
         except Exception as e:
             logger.error(e)

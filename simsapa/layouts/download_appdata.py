@@ -1,23 +1,31 @@
 from functools import partial
 import shutil
+from pathlib import Path
+from typing import Optional
 from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QPushButton, QLabel)
+from simsapa.app.helpers import ReleasesInfo
 
 from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
-from simsapa import INDEX_DIR, APP_DB_PATH
+from simsapa import ASSETS_DIR, APP_DB_PATH
 from simsapa.layouts.asset_management import AssetManagement
 
 class DownloadAppdataWindow(AssetManagement):
-    def __init__(self) -> None:
+    def __init__(self, assets_dir: Path = ASSETS_DIR, releases_info: Optional[ReleasesInfo] = None) -> None:
         super().__init__()
         self.setWindowTitle("Download Application Assets")
         self.setFixedSize(500, 700)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
-        self._init_workers()
+        self.assets_dir = assets_dir
+        self.index_dir = assets_dir.joinpath("index")
+
+        self.releases_info = releases_info
+
+        self._init_workers(self.assets_dir)
         self._setup_ui()
 
         self.add_languages_title_text = "Include Languages"
@@ -32,7 +40,10 @@ class DownloadAppdataWindow(AssetManagement):
 
         self._run_download_pre_hook = _pre_hook
 
-        self.thread_pool.start(self.releases_worker)
+        if self.releases_info is None:
+            self.thread_pool.start(self.releases_worker)
+        else:
+            self._releases_finished(self.releases_info)
 
     def _setup_ui(self):
         self._central_widget = QWidget(self)
@@ -137,8 +148,8 @@ class DownloadAppdataWindow(AssetManagement):
         # self.index_info.setDisabled(checked)
 
     def _remove_old_index(self):
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if self.index_dir.exists():
+            shutil.rmtree(self.index_dir)
 
         # FIXME When removing the previous index, test if there were user imported
         # data in the userdata database, and if so, tell the user that they have to
@@ -155,8 +166,8 @@ class DownloadAppdataWindow(AssetManagement):
         # Don't remove assets dir, it may contain userdata.sqlite3 with user's
         # memos, bookmarks, settings, etc.
 
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if self.index_dir.exists():
+            shutil.rmtree(self.index_dir)
 
         if APP_DB_PATH.exists():
             APP_DB_PATH.unlink()

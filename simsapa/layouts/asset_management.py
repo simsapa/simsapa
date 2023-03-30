@@ -24,10 +24,10 @@ from simsapa.app.types import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_helpers import get_db_session_with_schema
 from simsapa.app.helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
-from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
 
 # Keys with underscore prefix will not be shown in table columns.
 LangModelColToIdx = {
@@ -89,10 +89,17 @@ class AssetManagement(QMainWindow):
     _run_download_pre_hook: Optional[Callable] = None
     _run_download_post_hook: Optional[Callable] = None
 
-    def _init_workers(self):
+    def _init_workers(self, assets_dir = ASSETS_DIR):
+
+        self.assets_dir = assets_dir
+        self.index_dir = assets_dir.joinpath('index')
+        self.courses_dir = assets_dir.joinpath('courses')
+
         self.thread_pool = QThreadPool()
         self.releases_worker = ReleasesWorker()
-        self.asset_worker = AssetsWorker()
+        self.asset_worker = AssetsWorker(assets_dir = self.assets_dir,
+                                         index_dir = self.index_dir,
+                                         courses_dir = self.courses_dir)
 
         self.releases_worker.signals.finished.connect(partial(self._releases_finished))
 
@@ -251,7 +258,7 @@ class AssetManagement(QMainWindow):
 
         # Languages in index
         self.removable_suttas_lang = []
-        for p in INDEX_DIR.glob('_suttas_lang_*.toc'):
+        for p in self.index_dir.glob('_suttas_lang_*.toc'):
             lang = re.sub(r'.*_suttas_lang_([^_]+)_.*', r'\1', p.name)
             if lang != "" and lang not in ['en', 'pli', 'san']:
                 self.removable_suttas_lang.append(lang)
@@ -457,7 +464,7 @@ class AssetManagement(QMainWindow):
         # them.
 
         s = ",".join(remove_languages)
-        p = ASSETS_DIR.joinpath('indexes_to_remove.txt')
+        p = self.assets_dir.joinpath('indexes_to_remove.txt')
         with open(p, 'w', encoding='utf-8') as f:
             f.write(s)
 
@@ -631,10 +638,16 @@ class AssetsWorker(QRunnable):
     download_started: threading.Event
     download_stop: threading.Event
 
-    def __init__(self):
+    def __init__(self, assets_dir: Path, index_dir: Path, courses_dir: Path):
         super(AssetsWorker, self).__init__()
 
         self.signals = AssetsWorkerSignals()
+
+        self.assets_dir = assets_dir
+        self.index_dir = index_dir
+        self.courses_dir = courses_dir
+
+        self.user_db_path = assets_dir.joinpath("userdata.sqlite3")
 
         self.download_started = threading.Event()
         self.download_stop = threading.Event()
@@ -647,19 +660,43 @@ class AssetsWorker(QRunnable):
 
             logger.info(f"Download urls: {self.urls}")
 
+            tar_paths = []
+
             for i in self.urls:
-                self.download_extract_tar_bz2(i)
+                try:
+                    p = self.download_file(i, self.assets_dir)
+                    tar_paths.append(p)
+
+                    if self.download_stop.is_set():
+                        logger.info("run(): Cancelling")
+                        self.signals.msg_update.emit("Download cancelled.")
+                        self.signals.cancelled.emit()
+                        return
+
+                except Exception as e:
+                    raise e
+
+            extract_temp_dir = self.assets_dir.joinpath('extract_temp')
+
+            for i in tar_paths:
+                self.extract_tar_bz2(i, extract_temp_dir)
                 if self.download_stop.is_set():
                     logger.info("run(): Cancelling")
-                    self.signals.msg_update.emit("Download cancelled.")
+                    self.signals.msg_update.emit("Extracting cancelled.")
                     self.signals.cancelled.emit()
+                    shutil.rmtree(extract_temp_dir)
                     return
+
+            self.import_assets_from_extract_temp(extract_temp_dir)
+
+            # Remove the temp folder where the assets were extraced to.
+            shutil.rmtree(extract_temp_dir)
 
             def _not_core_db(s: str) -> bool:
                 p = Path(s)
                 return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
 
-            p = ASSETS_DIR.joinpath("*.sqlite3")
+            p = self.assets_dir.joinpath("*.sqlite3")
             sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
 
             # # NOTE: Not currently using this mechanism for anything
@@ -717,67 +754,74 @@ class AssetsWorker(QRunnable):
         self.signals.download_max.emit()
         return file_path
 
-    def download_extract_tar_bz2(self, url):
-        try:
-            tar_file_path = self.download_file(url, ASSETS_DIR)
-        except Exception as e:
-            raise e
-
-        if tar_file_path is None:
-            return False
-
-        file_name = url.split('/')[-1]
-        self.signals.msg_update.emit(f"Extracting {file_name} ...")
+    def extract_tar_bz2(self, tar_file_path: Path, extract_temp_dir: Path):
+        self.signals.msg_update.emit(f"Extracting {tar_file_path.name} ...")
 
         tar = tarfile.open(tar_file_path, "r:bz2")
-        temp_dir = ASSETS_DIR.joinpath('extract_temp')
-        tar.extractall(temp_dir)
+        tar.extractall(extract_temp_dir)
         tar.close()
 
         os.remove(tar_file_path)
 
+    def import_move_appdata(self, extract_temp_dir: Path):
         # Move appdata to assets.
-        p = Path(f"{temp_dir}/appdata.sqlite3")
+        p = Path(f"{extract_temp_dir}/appdata.sqlite3")
         if p.exists():
-            shutil.move(p, APP_DB_PATH)
+            shutil.move(p, self.assets_dir.joinpath('appdata.sqlite3'))
 
-        # If a userdata db was included in the download, move it to assets.
-        # Check not to overwrite user's existing userdata.
-        p = Path(f"{temp_dir}/userdata.sqlite3")
-        if p.exists() and not USER_DB_PATH.exists():
-            shutil.move(p, USER_DB_PATH)
-
+    def import_move_courses_data(self, extract_temp_dir: Path):
         # If Pali Course assets were included, move them to assets.
-        if temp_dir.joinpath("courses").exists():
-            for p in glob.glob(f"{temp_dir}/courses/*"):
-                shutil.move(p, COURSES_DIR)
+        if extract_temp_dir.joinpath("courses").exists():
+            for p in glob.glob(f"{extract_temp_dir}/courses/*"):
+                shutil.move(p, self.courses_dir)
 
-        # If a sutta language DB is found, import it to userdata.
-        for p in glob.glob(f"{temp_dir}/suttas_lang_*.sqlite3"):
-            lang_db_path = Path(p)
-            self.import_suttas(lang_db_path, DbSchemaName.UserData)
-            lang_db_path.unlink()
-
+    def import_move_index(self, extract_temp_dir: Path):
         # If indexed segments were included (e.g. with sutta languages), move
         # the segment files to the index folder.
-        temp_index = temp_dir.joinpath("index")
+        temp_index = extract_temp_dir.joinpath("index")
         if temp_index.exists():
-            if INDEX_DIR.exists():
+            if self.index_dir.exists():
                 for p in glob.glob(f"{temp_index}/*"):
-                    shutil.move(p, INDEX_DIR)
+                    shutil.move(p, self.index_dir)
             else:
-                shutil.move(temp_index, ASSETS_DIR)
+                shutil.move(temp_index, self.assets_dir)
 
-        # Remove the temp folder where the assets were extraced to.
-        shutil.rmtree(temp_dir)
+    def import_move_userdata(self, extract_temp_dir: Path):
+        # If a userdata db was included in the download, move it to assets.
+        # Check not to overwrite user's existing userdata.
+        p = Path(f"{extract_temp_dir}/userdata.sqlite3")
+        if p.exists() and not self.user_db_path.exists():
+            shutil.move(p, self.user_db_path)
 
-    def import_suttas(self, import_db_path: Path, schema: DbSchemaName):
+    def import_suttas_lang_to_userdata(self, extract_temp_dir: Path):
+        # If a sutta language DB is found, import it to userdata.
+        for p in glob.glob(f"{extract_temp_dir}/suttas_lang_*.sqlite3"):
+            lang_db_path = Path(p)
+            self.import_suttas(lang_db_path,
+                               DbSchemaName.UserData,
+                               target_db_path = self.user_db_path)
+            lang_db_path.unlink()
+
+    def import_assets_from_extract_temp(self, extract_temp_dir: Path):
+        self.import_move_appdata(extract_temp_dir)
+        self.import_move_courses_data(extract_temp_dir)
+        self.import_move_index(extract_temp_dir)
+        self.import_move_userdata(extract_temp_dir)
+        self.import_suttas_lang_to_userdata(extract_temp_dir)
+
+    def import_suttas(self, import_db_path: Path, schema: DbSchemaName, target_db_path: Optional[Path] = None):
         if not import_db_path.exists():
             logger.error(f"Doesn't exist: {import_db_path}")
             return
 
         try:
-            _, _, app_db_session = get_db_engine_connection_session()
+            if target_db_path is None:
+                if schema == DbSchemaName.AppData:
+                    target_db_path = APP_DB_PATH
+                else:
+                    target_db_path = USER_DB_PATH
+
+            target_db_session = get_db_session_with_schema(target_db_path, schema)
 
             import_db_eng = create_engine("sqlite+pysqlite://", echo=False)
             import_db_conn = import_db_eng.connect()
@@ -805,14 +849,22 @@ class AssetsWorker(QRunnable):
                 try:
                     import_db_session.expunge(i)
                     make_transient(i)
-                    i.id = None
+                    i.id = None # type: ignore
 
-                    app_db_session.add(i)
-                    app_db_session.commit()
+                    if schema == DbSchemaName.AppData:
+                        old_sutta = target_db_session.query(Am.Sutta).filter(Am.Sutta.uid == i.uid).first()
+                    else:
+                        old_sutta = target_db_session.query(Um.Sutta).filter(Um.Sutta.uid == i.uid).first()
+
+                    if old_sutta is not None:
+                        target_db_session.delete(old_sutta)
+
+                    target_db_session.add(i)
+                    target_db_session.commit()
                 except Exception as e:
                     logger.error(f"Import problem: {e}")
 
-            app_db_session.close_all()
+            target_db_session.close_all()
 
             import_db_session.close()
             import_db_conn.close()

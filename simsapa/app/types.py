@@ -1,15 +1,12 @@
 from enum import Enum
 from functools import partial
-import csv
-import re
-import json
-import os
+import csv, re, json, os, shutil
 import os.path
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 from urllib.parse import parse_qs
+
 import tomlkit
-import shutil
 from tomlkit.toml_document import TOMLDocument
 
 from sqlalchemy import create_engine
@@ -522,10 +519,16 @@ class AppData:
                 .first()
 
         if x is not None and x.value is not None:
-            self.app_settings: AppSettings = json.loads(x.value)
+            # Ensure that keys are not missing by updating a default value.
+            d = default_app_settings()
+            d.update(json.loads(x.value))
+            self.app_settings = d
+
         else:
             self.app_settings = default_app_settings()
-            self._save_app_settings()
+
+        # Always save it back, default keys might have been updated.
+        self._save_app_settings()
 
     def _save_app_settings(self):
         x = self.db_session \
