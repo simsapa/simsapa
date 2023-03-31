@@ -89,11 +89,19 @@ class AssetManagement(QMainWindow):
     _run_download_pre_hook: Optional[Callable] = None
     _run_download_post_hook: Optional[Callable] = None
 
-    def _init_workers(self, assets_dir = ASSETS_DIR):
+    def _init_workers(self,
+                      assets_dir = ASSETS_DIR,
+                      select_sanskrit_bundle = False,
+                      add_languages: List[str] = [],
+                      auto_start_download = False):
 
         self.assets_dir = assets_dir
         self.index_dir = assets_dir.joinpath('index')
         self.courses_dir = assets_dir.joinpath('courses')
+
+        self.init_select_sanskrit_bundle = select_sanskrit_bundle
+        self.init_add_languages = add_languages
+        self.auto_start_download = auto_start_download
 
         self.thread_pool = QThreadPool()
         self.releases_worker = ReleasesWorker()
@@ -130,12 +138,16 @@ class AssetManagement(QMainWindow):
         self._layout.addWidget(self._animation)
 
     def _setup_selection(self):
+        # Implemented in the window class, e.g. DownloadAppdataWindow
         raise NotImplementedError
 
     def _releases_finished(self, info: ReleasesInfo):
         self.releases_info = info
         self.compat_release = get_latest_app_compatible_assets_release(self.releases_info)
         self._setup_selection()
+
+        if self.auto_start_download:
+            self._validate_and_run_download()
 
     def _setup_progress_bar_frame(self):
         frame = QFrame()
@@ -188,7 +200,12 @@ class AssetManagement(QMainWindow):
         self.add_languages_select_layout.addWidget(self.add_languages_msg)
 
         self.add_languages_input = QLineEdit()
-        self.add_languages_input.setPlaceholderText("E.g.: it, fr, pt, th")
+
+        if len(self.init_add_languages) > 0:
+            self.add_languages_input.setText(", ".join(self.init_add_languages))
+        else:
+            self.add_languages_input.setPlaceholderText("E.g.: it, fr, pt, th")
+
         self.add_languages_select_layout.addWidget(self.add_languages_input)
 
         self.add_languages_select_layout.addWidget(QLabel("<p>Available languages:</p>"))

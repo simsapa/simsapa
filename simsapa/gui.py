@@ -13,7 +13,7 @@ from simsapa.app.api import start_server, find_available_port
 from simsapa import logger
 from simsapa import SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import create_app_dirs, ensure_empty_graphs_cache
+from simsapa.app.helpers import check_delete_files, create_app_dirs, ensure_empty_graphs_cache
 from .app.types import AppData, QueryType
 from .app.windows import AppWindows
 from .layouts.download_appdata import DownloadAppdataWindow
@@ -35,8 +35,8 @@ def excepthook(exc_type, exc_value, exc_tb):
 
 sys.excepthook = excepthook
 
+check_delete_files()
 create_app_dirs()
-
 
 def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.info("gui::start()")

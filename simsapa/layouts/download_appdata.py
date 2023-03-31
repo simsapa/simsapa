@@ -1,7 +1,7 @@
 from functools import partial
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import Qt
@@ -14,7 +14,13 @@ from simsapa import ASSETS_DIR, APP_DB_PATH
 from simsapa.layouts.asset_management import AssetManagement
 
 class DownloadAppdataWindow(AssetManagement):
-    def __init__(self, assets_dir: Path = ASSETS_DIR, releases_info: Optional[ReleasesInfo] = None) -> None:
+    def __init__(self,
+                 assets_dir: Path = ASSETS_DIR,
+                 releases_info: Optional[ReleasesInfo] = None,
+                 select_sanskrit_bundle = False,
+                 add_languages: List[str] = [],
+                 auto_start_download = False) -> None:
+
         super().__init__()
         self.setWindowTitle("Download Application Assets")
         self.setFixedSize(500, 700)
@@ -25,7 +31,33 @@ class DownloadAppdataWindow(AssetManagement):
 
         self.releases_info = releases_info
 
-        self._init_workers(self.assets_dir)
+        p = ASSETS_DIR.joinpath("auto_start_download.txt")
+        if p.exists():
+            self.auto_start_download = True
+            p.unlink()
+        else:
+            self.auto_start_download = auto_start_download
+
+        p = ASSETS_DIR.joinpath("download_select_sanskrit_bundle.txt")
+        if p.exists():
+            self.init_select_sanskrit_bundle = True
+            p.unlink()
+        else:
+            self.init_select_sanskrit_bundle = select_sanskrit_bundle
+
+        p = ASSETS_DIR.joinpath("download_languages.txt")
+        if p.exists():
+            with open(p, 'r') as f:
+                langs = f.read().strip()
+                self.init_add_languages = [i.strip() for i in langs.split(",")]
+            p.unlink()
+        else:
+            self.init_add_languages = add_languages
+
+        self._init_workers(self.assets_dir,
+                           self.init_select_sanskrit_bundle,
+                           self.init_add_languages,
+                           self.auto_start_download)
         self._setup_ui()
 
         self.add_languages_title_text = "Include Languages"
@@ -44,6 +76,9 @@ class DownloadAppdataWindow(AssetManagement):
             self.thread_pool.start(self.releases_worker)
         else:
             self._releases_finished(self.releases_info)
+
+        if self.init_select_sanskrit_bundle:
+            self.select_sanskrit_bundle()
 
     def _setup_ui(self):
         self._central_widget = QWidget(self)
@@ -135,6 +170,11 @@ class DownloadAppdataWindow(AssetManagement):
         chk.setDisabled(True)
         self.chk_sanskrit_texts = chk
         self.text_select_layout.addWidget(self.chk_sanskrit_texts)
+
+    def select_sanskrit_bundle(self):
+        self.sel_additional.setChecked(True)
+        self.chk_sanskrit_texts.setChecked(True)
+        self._toggled_general_bundle()
 
     def _is_additional_urls_selected(self) -> bool:
         return (self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked())

@@ -21,7 +21,7 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, logger
+from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
 
 
 class SuttaRange(TypedDict):
@@ -52,6 +52,25 @@ def ensure_empty_graphs_cache():
         shutil.rmtree(GRAPHS_DIR)
 
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+def check_delete_files():
+    p = ASSETS_DIR.joinpath("delete_files_for_upgrade.txt")
+    if not p.exists():
+        return
+
+    p.unlink()
+
+    if APP_DB_PATH.exists():
+        APP_DB_PATH.unlink()
+
+    if USER_DB_PATH.exists():
+        USER_DB_PATH.unlink()
+
+    if INDEX_DIR.exists():
+        shutil.rmtree(INDEX_DIR)
+
+    if COURSES_DIR.exists():
+        shutil.rmtree(COURSES_DIR)
 
 def download_file(url: str, folder_path: Path) -> Path:
     logger.info(f"download_file() : {url}, {folder_path}")
@@ -268,13 +287,13 @@ def get_releases_info() -> ReleasesInfo:
 def get_latest_release(info: ReleasesInfo, entry_type: EntryType) -> Optional[ReleaseEntry]:
     if entry_type == EntryType.Application:
         releases = info['application']['releases']
-    else:
-        releases = info['assets']['releases']
+        if len(releases) > 0:
+            return releases[0]
+        else:
+            return None
 
-    if len(releases) > 0:
-        return releases[0]
     else:
-        return None
+        return get_latest_app_compatible_assets_release(info)
 
 def get_latest_app_compatible_assets_release(info: ReleasesInfo) -> Optional[ReleaseEntry]:
     s = get_app_version()
@@ -312,13 +331,6 @@ def is_app_version_compatible_with_db_version(app: Version, db: Version) -> bool
 def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo]:
     logger.info(f"has_update(): {entry_type}")
 
-    entry = get_latest_release(info, entry_type)
-
-    if entry is None:
-        return None
-
-    remote = to_version(entry['version_tag'])
-
     if entry_type == EntryType.Application:
         s = get_app_version()
     else:
@@ -328,6 +340,13 @@ def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo
         return None
 
     local = to_version(s)
+
+    entry = get_latest_release(info, entry_type)
+
+    if entry is None:
+        return None
+
+    remote = to_version(entry['version_tag'])
 
     # If remote version is not greater, do nothing.
     # Semver doesn't use 'v' prefix.
@@ -359,6 +378,30 @@ def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo
         visit_url = visit_url,
     )
 
+def is_local_db_obsolete() -> Optional[UpdateInfo]:
+    logger.info("is_local_db_obsolete()")
+
+    app_s = get_app_version()
+    db_s = get_db_version()
+
+    if app_s is None or db_s is None:
+        return None
+
+    # If db version is not lesser, do nothing.
+    if semver.compare(db_s, app_s) >= 0:
+        logger.info(f'DB version {db_s} not lesser than app version {app_s}')
+        return None
+
+    message = f"<h1>The local database is older than the application</h1>"
+    message += f"<h3>DB version: {db_s}</h3>"
+    message += f"<h3>App version: {app_s}</h3>"
+    message += f"It is recommended to download a new database which is compatible with the app version."
+
+    return UpdateInfo(
+        version = app_s,
+        message = message,
+        visit_url = None,
+    )
 
 def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
     # logger.info(f"sutta_range_from_ref(): {ref}")

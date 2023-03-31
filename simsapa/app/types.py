@@ -638,6 +638,10 @@ class AppData:
             return APP_DB_PATH
 
     def import_bookmarks(self, file_path: str) -> int:
+        p = Path(file_path)
+        if not p.exists():
+            return 0
+
         rows = []
 
         with open(file_path) as f:
@@ -776,6 +780,10 @@ class AppData:
         return len(rows)
 
     def import_prompts(self, file_path: str) -> int:
+        p = Path(file_path)
+        if not p.exists():
+            return 0
+
         rows = []
 
         with open(file_path) as f:
@@ -794,7 +802,14 @@ class AppData:
 
         try:
             for i in prompts:
+                # GPT Prompt name_path is unique, unlike the bookmark name.
+                r = self.db_session.query(Um.GptPrompt).filter(Um.GptPrompt.name_path == i.name_path).first()
+                if r is not None:
+                    self.db_session.delete(r)
+                    self.db_session.commit()
+
                 self.db_session.add(i)
+
             self.db_session.commit()
         except Exception as e:
             logger.error(e)
@@ -832,6 +847,32 @@ class AppData:
             return 0
 
         return len(rows)
+
+    def export_app_settings(self, file_path: str):
+        if not file_path.endswith(".json"):
+            file_path = f"{file_path}.json"
+
+        try:
+            with open(file_path, 'w') as f:
+                s = json.dumps(self.app_settings)
+                f.write(s)
+        except Exception as e:
+            logger.error(e)
+            return 0
+
+    def import_app_settings(self, file_path: str):
+        p = Path(file_path)
+        if not p.exists():
+            return
+
+        with open(p, 'r') as f:
+            value = json.loads(f.read())
+
+            d = default_app_settings()
+            d.update(value)
+            self.app_settings = d
+
+            self._save_app_settings()
 
     def parse_toml(self, path: Path) -> Optional[TOMLDocument]:
         with open(path) as f:

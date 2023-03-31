@@ -4,6 +4,7 @@ import re
 import shutil
 from functools import partial
 from typing import List, Optional
+from datetime import datetime
 import queue
 import json
 import webbrowser
@@ -15,7 +16,7 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBo
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
-from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, make_active_window, show_work_in_progress
+from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, is_local_db_obsolete, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.types import AppData, AppMessage, AppWindowInterface, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
 from simsapa.layouts.download_appdata import DownloadAppdataWindow
@@ -40,6 +41,8 @@ from simsapa.layouts.gpt_prompts import GptPromptsWindow
 from simsapa.layouts.word_scan_popup import WordScanPopup
 from simsapa.layouts.help_info import open_simsapa_website, show_about
 
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 class AppWindows:
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
@@ -63,10 +66,13 @@ class AppWindows:
         self.thread_pool = QThreadPool()
 
         self.check_updates_worker = CheckUpdatesWorker()
+        self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
         self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
         self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
 
         self.word_scan_popup: Optional[WordScanPopup] = None
+
+        self.import_user_data_from_assets()
 
     def handle_messages(self):
         try:
@@ -726,9 +732,134 @@ class AppWindows:
 
         box.exec()
 
+    def show_warning(self, msg: str):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(msg)
+        box.setWindowTitle("Warning")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
     def check_updates(self):
         if self._app_data.app_settings.get('notify_about_updates'):
             self.thread_pool.start(self.check_updates_worker)
+
+    def show_local_db_obsolete_message(self, value: dict):
+        update_info: UpdateInfo = value['update_info']
+
+        update_info['message'] += "<h3>Download the new database and migrate data now?</h3>"
+
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Local Database Needs Upgrade")
+        box.setText(update_info['message'])
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        reply = box.exec()
+        if reply == QMessageBox.StandardButton.Yes:
+            self.export_user_data_to_assets()
+
+            # Can't delete the db and index without triggering file-lock problems on Windows.
+            # Write a file to assets to signal deleting them on next start.
+
+            p = ASSETS_DIR.joinpath("delete_files_for_upgrade.txt")
+            with open(p, 'w') as f:
+                f.write("")
+
+            p = ASSETS_DIR.joinpath("auto_start_download.txt")
+            with open(p, 'w') as f:
+                f.write("")
+
+            box = QMessageBox()
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("Closing")
+            box.setText("The application will now quit. Start it again to begin the database download.")
+            box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            box.exec()
+
+            self._quit_app()
+
+    def export_user_data_to_assets(self):
+        export_dir = ASSETS_DIR.joinpath("import-me")
+        if not export_dir.exists():
+            export_dir.mkdir()
+
+        self._app_data.export_bookmarks(str(export_dir.joinpath("bookmarks.csv")))
+        self._app_data.export_prompts(str(export_dir.joinpath("prompts.csv")))
+        self._app_data.export_app_settings(str(export_dir.joinpath("app_settings.json")))
+
+        # FIXME: export and import courses data and assets
+
+        res = []
+
+        r = self._app_data.db_session.query(Am.Sutta.language.distinct()).all()
+        res.extend(r)
+
+        r = self._app_data.db_session.query(Um.Sutta.language.distinct()).all()
+        res.extend(r)
+
+        languages: List[str] = list(sorted(set(map(lambda x: str(x[0]).lower(), res))))
+        languages = [i for i in languages if i not in ['pli', 'en']]
+
+        if 'san' in languages:
+            # User has been using the Sanskrit language bundle
+            p = ASSETS_DIR.joinpath("download_select_sanskrit_bundle.txt")
+            with open(p, 'w') as f:
+                f.write("True")
+
+            languages.remove('san')
+
+        if len(languages) > 0:
+            p = ASSETS_DIR.joinpath("download_languages.txt")
+            with open(p, 'w') as f:
+                f.write(", ".join(languages))
+
+    def import_user_data_from_assets(self):
+        import_dir = ASSETS_DIR.joinpath("import-me")
+        if not import_dir.exists():
+            return
+
+        try:
+            # We are restoring the user's data to the state before the upgrade.
+            # Remove existing records in userdata, which are default content from the new download.
+            self._app_data.db_session.query(Um.Bookmark).delete()
+            self._app_data.db_session.query(Um.GptPrompt).delete()
+            self._app_data.db_session.commit()
+
+            self._app_data.import_bookmarks(str(import_dir.joinpath("bookmarks.csv")))
+            self._app_data.import_prompts(str(import_dir.joinpath("prompts.csv")))
+            self._app_data.import_app_settings(str(import_dir.joinpath("app_settings.json")))
+
+        except Exception as e:
+            time = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            export_dir = ASSETS_DIR.joinpath(f"exported_user_data_{time}")
+
+            shutil.move(import_dir, export_dir)
+
+            msg = f"""
+            <p>Importing previous user data into the new database failed.</p>
+            <p>The exported data has been saved, and the next application start will skip this step.</p>
+            <p>The exported user data is found at: {export_dir}</p>
+
+            <p>
+                You can submit an issue report at:<br>
+                <a href="https://github.com/simsapa/simsapa/issues">https://github.com/simsapa/simsapa/issues</a>
+            </p>
+            <p>
+                Or send an email to <a href="mailto:profound.labs@gmail.com">profound.labs@gmail.com</a>
+            </p>
+            <p>
+                Please include the text or a screenshot of the error mesage in your bug report.
+            </p>
+
+            <p>Error:</p>
+            <p>{e}</p>
+            """
+
+            self.show_warning(msg)
+            return
+
+        shutil.rmtree(import_dir)
 
     def show_app_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -779,25 +910,31 @@ class AppWindows:
         reply = box.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            # temp_assets = ASSETS_DIR.parent.joinpath("assets-temp")
-            # if not temp_assets.exists():
-            #     temp_assets.mkdir()
+            res = []
 
-            w = DownloadAppdataWindow(ASSETS_DIR, releases_info)
+            r = self._app_data.db_session.query(Am.Sutta.language.distinct()).all()
+            res.extend(r)
+
+            r = self._app_data.db_session.query(Um.Sutta.language.distinct()).all()
+            res.extend(r)
+
+            languages: List[str] = list(sorted(set(map(lambda x: str(x[0]).lower(), res))))
+            languages = [i for i in languages if i not in ['pli', 'en']]
+
+            select_sanskrit_bundle = False
+            if 'san' in languages:
+                # User has been using the Sanskrit language bundle
+                select_sanskrit_bundle = True
+                languages.remove('san')
+
+            w = DownloadAppdataWindow(ASSETS_DIR,
+                                      releases_info,
+                                      select_sanskrit_bundle,
+                                      languages,
+                                      auto_start_download = True)
+
             w._quit_action = self._quit_app
-
             w.show()
-
-            # determine if using Sanskrit bundle
-            # determine downloaded languages
-
-            w.sel_additional.setChecked(True)
-            w.chk_sanskrit_texts.setChecked(True)
-            w._toggled_general_bundle()
-
-            w.add_languages_input.setText("de, hu")
-
-            w._validate_and_run_download()
 
     def _reindex_database_dialog(self, _ = None):
         show_work_in_progress()
@@ -1111,6 +1248,7 @@ class AppWindows:
 class UpdatesWorkerSignals(QObject):
     have_app_update = pyqtSignal(dict)
     have_db_update = pyqtSignal(dict)
+    local_db_obsolete = pyqtSignal(dict)
 
 class CheckUpdatesWorker(QRunnable):
     signals: UpdatesWorkerSignals
@@ -1131,10 +1269,17 @@ class CheckUpdatesWorker(QRunnable):
         try:
             info = get_releases_info()
 
+            update_info = is_local_db_obsolete()
+            if update_info is not None:
+                value = {"update_info": update_info, "releases_info": info}
+                self.signals.local_db_obsolete.emit(value)
+                return
+
             update_info = has_update(info, EntryType.Application)
             if update_info is not None:
                 value = {"update_info": update_info, "releases_info": info}
                 self.signals.have_app_update.emit(value)
+                return
 
             update_info = has_update(info, EntryType.Assets)
             if update_info is not None:

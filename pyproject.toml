@@ -8,8 +8,8 @@ license = "GPLv3"
 
 # NOTE: Version updates:
 # - tool.poetry.version (above)
-# - simsapa.db_version
-# - tool.briefcase.version
+# - simsapa.db_version (below)
+# - tool.briefcase.version (below)
 # - simsapa/__init__.py SIMSAPA_APP_VERSION
 
 [simsapa]
