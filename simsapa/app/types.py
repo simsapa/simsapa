@@ -1067,6 +1067,7 @@ class AppData:
         return segments_json
 
 class AppWindowInterface(QMainWindow):
+    action_Check_for_Updates: QAction
     action_Notify_About_Updates: QAction
     action_Show_Toolbar: QAction
     action_Link_Preview: QAction

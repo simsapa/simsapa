@@ -65,10 +65,7 @@ class AppWindows:
 
         self.thread_pool = QThreadPool()
 
-        self.check_updates_worker = CheckUpdatesWorker()
-        self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
-        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
-        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
+        self._init_check_updates()
 
         self.word_scan_popup: Optional[WordScanPopup] = None
 
@@ -732,6 +729,14 @@ class AppWindows:
 
         box.exec()
 
+    def show_info(self, msg: str):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(msg)
+        box.setWindowTitle("Info")
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
     def show_warning(self, msg: str):
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Warning)
@@ -743,6 +748,22 @@ class AppWindows:
     def check_updates(self):
         if self._app_data.app_settings.get('notify_about_updates'):
             self.thread_pool.start(self.check_updates_worker)
+
+    def _init_check_updates(self, include_no_updates = False):
+        self.check_updates_worker = CheckUpdatesWorker()
+        self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
+        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
+        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
+
+        if include_no_updates:
+            self.check_updates_worker.signals.no_updates.connect(partial(self.show_no_updates_message))
+
+    def _handle_check_updates(self):
+        self._init_check_updates(include_no_updates=True)
+        self.thread_pool.start(self.check_updates_worker)
+
+    def show_no_updates_message(self):
+        self.show_info("Application and database are up to date.")
 
     def show_local_db_obsolete_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -1221,6 +1242,10 @@ class AppWindows:
             search_completion = self._app_data.app_settings.get('search_completion', True)
             view.action_Search_Completion.setChecked(search_completion)
 
+        if hasattr(view, 'action_Check_for_Updates'):
+            view.action_Check_for_Updates \
+                .triggered.connect(partial(self._handle_check_updates))
+
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
             logger.info("no wip features")
@@ -1249,6 +1274,7 @@ class UpdatesWorkerSignals(QObject):
     have_app_update = pyqtSignal(dict)
     have_db_update = pyqtSignal(dict)
     local_db_obsolete = pyqtSignal(dict)
+    no_updates = pyqtSignal()
 
 class CheckUpdatesWorker(QRunnable):
     signals: UpdatesWorkerSignals
@@ -1285,6 +1311,9 @@ class CheckUpdatesWorker(QRunnable):
             if update_info is not None:
                 value = {"update_info": update_info, "releases_info": info}
                 self.signals.have_db_update.emit(value)
+                return
+
+            self.signals.no_updates.emit()
 
         except Exception as e:
             logger.error(e)

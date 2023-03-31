@@ -522,6 +522,7 @@
      <string>&amp;Help</string>
     </property>
     <addaction name="action_Search_Query_Terms"/>
+    <addaction name="action_Check_for_Updates"/>
     <addaction name="action_Notify_About_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
@@ -1063,6 +1064,11 @@
    </property>
    <property name="text">
     <string>&amp;Ebook Reader</string>
+   </property>
+  </action>
+  <action name="action_Check_for_Updates">
+   <property name="text">
+    <string>Check for Updates...</string>
    </property>
   </action>
  </widget>
