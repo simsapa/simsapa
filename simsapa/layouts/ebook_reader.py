@@ -603,7 +603,7 @@ class SuttaLinksWorker(QRunnable):
                     content = content,
                 ))
 
-            _, _, db_session = get_db_engine_connection_session()
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
 
             for i in chapter_read_contents:
                 w = self.add_links_to_content(db_session, i)
@@ -617,7 +617,9 @@ class SuttaLinksWorker(QRunnable):
                     f.write(w['content'])
                     self.signals.done_chapter_path.emit(w['path'])
 
+            db_conn.close()
             db_session.close()
+            db_eng.dispose()
 
             if self.will_emit_finished:
                 self.signals.finished.emit()

@@ -188,7 +188,7 @@ class SearchQueryWorker(QRunnable):
                  self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
             elif self.search_mode == SearchMode.ExactMatch:
-                _, _, db_session = get_db_engine_connection_session()
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 if self.search_query.ix.indexname == 'suttas':
 
@@ -278,11 +278,13 @@ class SearchQueryWorker(QRunnable):
 
                     self._all_results = list(map(self._db_word_to_result, res))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
             elif self.search_mode == SearchMode.TitleMatch:
                 # NOTE: SearchMode.TitleMatch only applies to suttas.
-                _, _, db_session = get_db_engine_connection_session()
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 res_suttas: List[USutta] = []
 
@@ -326,11 +328,13 @@ class SearchQueryWorker(QRunnable):
 
                 self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
             elif self.search_mode == SearchMode.HeadwordMatch:
                 # NOTE: SearchMode.HeadwordMatch only applies to dictionary words.
-                _, _, db_session = get_db_engine_connection_session()
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 res: List[UDictWord] = []
 
@@ -394,7 +398,9 @@ class SearchQueryWorker(QRunnable):
 
                 self._all_results = list(map(self._db_word_to_result, res))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
             self.query_finished = datetime.now()
             if self.will_emit_finished:

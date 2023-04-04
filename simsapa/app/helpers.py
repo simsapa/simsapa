@@ -152,12 +152,14 @@ def get_app_version() -> Optional[str]:
 
 def get_db_version() -> Optional[str]:
     if APP_DB_PATH.exists():
-        _, _, db_session = get_db_engine_connection_session()
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
         res = db_session \
             .query(Am.AppSetting.value) \
             .filter(Am.AppSetting.key == 'db_version') \
             .first()
+        db_conn.close()
         db_session.close()
+        db_eng.dispose()
     else:
         return None
 

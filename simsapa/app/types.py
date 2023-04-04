@@ -1,5 +1,4 @@
 from enum import Enum
-from functools import partial
 import csv, re, json, os, shutil
 import os.path
 from pathlib import Path
@@ -15,13 +14,13 @@ from sqlalchemy.sql import func, text
 from sqlalchemy import and_
 
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QSize, QThreadPool, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
 
 from simsapa import COURSES_DIR, IS_MAC, DbSchemaName, ShowLabels, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session, get_db_session_with_schema, upgrade_db
+from simsapa.app.db_helpers import find_or_create_db, get_db_session_with_schema, upgrade_db
 from simsapa.app.helpers import bilara_text_to_segments
 
 from .db.search import SearchIndexed
@@ -430,12 +429,6 @@ class AppData:
             dict_words=[],
         )
 
-        self.thread_pool = QThreadPool()
-
-        self.completion_cache_worker = CompletionCacheWorker()
-        self.completion_cache_worker.signals.finished.connect(partial(self._set_completion_cache))
-        self.thread_pool.start(self.completion_cache_worker)
-
         self.graph_gen_pool = QThreadPool()
 
         self.api_url: Optional[str] = None
@@ -677,12 +670,14 @@ class AppData:
         return len(bookmarks)
 
     def import_suttas_to_userdata(self, db_path: str) -> int:
-        import_db_session = get_db_session_with_schema(Path(db_path), DbSchemaName.UserData)
+        import_db_eng, import_db_conn, import_db_session = get_db_session_with_schema(Path(db_path), DbSchemaName.UserData)
 
         import_suttas = import_db_session.query(Um.Sutta).all()
 
         if len(import_suttas) == 0:
+            import_db_conn.close()
             import_db_session.close()
+            import_db_eng.dispose()
             return 0
 
         for i in import_suttas:
@@ -733,7 +728,10 @@ class AppData:
         self.db_session.commit()
 
         n = len(import_suttas)
+
+        import_db_conn.close()
         import_db_session.close()
+        import_db_eng.dispose()
 
         return n
 
@@ -1146,55 +1144,6 @@ class GraphRequest(TypedDict):
     min_links: Optional[int]
     width: int
     height: int
-
-class CompletionCacheWorkerSignals(QObject):
-    finished = pyqtSignal(dict)
-
-class CompletionCacheWorker(QRunnable):
-    signals: CompletionCacheWorkerSignals
-
-    def __init__(self):
-        super().__init__()
-        self.signals = CompletionCacheWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            _, _, db_session = get_db_engine_connection_session()
-
-            res = []
-            r = db_session.query(Am.Sutta.title).all()
-            res.extend(r)
-
-            r = db_session.query(Um.Sutta.title).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            titles = list(set(b))
-
-            res = []
-            r = db_session.query(Am.DictWord.word).all()
-            res.extend(r)
-
-            r = db_session.query(Um.DictWord.word).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            words = list(set(b))
-
-            db_session.close()
-
-            self.signals.finished.emit(CompletionCache(
-                sutta_titles=titles,
-                dict_words=words,
-            ))
-
-        except Exception as e:
-            logger.error(e)
 
 
 QFixed = QtWidgets.QSizePolicy.Policy.Fixed

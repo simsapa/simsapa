@@ -177,7 +177,7 @@ def get_related_suttas(db_session: Session, sutta: USutta) -> List[USutta]:
 def sutta_nodes_and_edges(sutta: USutta, distance: int = 1):
     # NOTE: Don't pass Db Session in the argument. Db Session must remain within the same thread, otherwise causes exception:
     # Exception closing connection <sqlite3.Connection object at 0x7f7b83c6a4e0>
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     links = {'appdata.suttas': [], 'userdata.suttas': []}
     sutta_ids = {'appdata.suttas': [], 'userdata.suttas': []}
@@ -243,7 +243,9 @@ def sutta_nodes_and_edges(sutta: USutta, distance: int = 1):
 
     # Close the session here, so that it's not the context manager in another
     # thread that has to close it.
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     # Collect links from other nodes
 
@@ -260,7 +262,7 @@ def sutta_nodes_and_edges(sutta: USutta, distance: int = 1):
 
 
 def dict_word_nodes_and_edges(dict_word: UDictWord, distance: int = 1):
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     schema = dict_word.metadata.schema
 
@@ -302,7 +304,9 @@ def dict_word_nodes_and_edges(dict_word: UDictWord, distance: int = 1):
 
     edges = list(map(to_edge, suttas))
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     # Collect links from other nodes
 
@@ -320,7 +324,7 @@ def dict_word_nodes_and_edges(dict_word: UDictWord, distance: int = 1):
 
 
 def document_page_nodes_and_edges(db_doc: Am.Document, page_number: int, distance: int = 1):
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     links = db_session \
         .query(Um.Link.to_id) \
@@ -349,7 +353,9 @@ def document_page_nodes_and_edges(db_doc: Am.Document, page_number: int, distanc
 
     edges = list(map(to_edge, suttas))
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     # Collect links from other nodes
 
@@ -486,7 +492,7 @@ def _documents_and_pages_from_links(db_session: Session, links: List[Um.Link]) -
 
 
 def all_nodes_and_edges():
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     links = []
     r = db_session.query(Am.Link).all()
@@ -498,7 +504,9 @@ def all_nodes_and_edges():
     words = _dict_words_from_links(db_session, links)
     documents_and_pages = _documents_and_pages_from_links(db_session, links)
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     nodes = []
     nodes.extend(list(map(sutta_to_node, suttas)))

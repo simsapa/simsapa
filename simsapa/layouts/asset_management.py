@@ -838,7 +838,7 @@ class AssetsWorker(QRunnable):
                 else:
                     target_db_path = USER_DB_PATH
 
-            target_db_session = get_db_session_with_schema(target_db_path, schema)
+            target_db_eng, target_db_conn, target_db_session = get_db_session_with_schema(target_db_path, schema)
 
             import_db_eng = create_engine("sqlite+pysqlite://", echo=False)
             import_db_conn = import_db_eng.connect()
@@ -881,10 +881,12 @@ class AssetsWorker(QRunnable):
                 except Exception as e:
                     logger.error(f"Import problem: {e}")
 
-            target_db_session.close_all()
+            target_db_conn.close()
+            target_db_session.close()
+            target_db_eng.dispose()
 
-            import_db_session.close()
             import_db_conn.close()
+            import_db_session.close()
             import_db_eng.dispose()
 
         except Exception as e:

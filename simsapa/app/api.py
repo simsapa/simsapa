@@ -1,9 +1,5 @@
-import queue
 from pathlib import Path
-import json
-import socket
-import os
-import sys
+import queue, json, socket, os, sys
 from typing import Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
@@ -72,7 +68,7 @@ def assets(path):
 
 
 def _get_sutta_by_uid(uid: str) -> Optional[USutta]:
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     results: List[USutta] = []
 
@@ -88,7 +84,9 @@ def _get_sutta_by_uid(uid: str) -> Optional[USutta]:
         .all()
     results.extend(res)
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     if len(results) == 0:
         logger.warn("No Sutta found with uid: %s" % uid)
@@ -97,7 +95,7 @@ def _get_sutta_by_uid(uid: str) -> Optional[USutta]:
     return results[0]
 
 def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
     results: List[UDictWord] = []
 
@@ -113,7 +111,9 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
         .all()
     results.extend(res)
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     if len(results) == 0:
         logger.warn("No DictWord found with uid: %s" % uid)
@@ -215,7 +215,7 @@ def get_bookmarks_with_quote_only_for_sutta():
 
 
 def _get_bookmarks_with_quote_only_for_sutta(sutta_uid: str, except_quote: str = "") -> List[UBookmark]:
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
     res = []
 
     r = db_session \
@@ -244,13 +244,15 @@ def _get_bookmarks_with_quote_only_for_sutta(sutta_uid: str, except_quote: str =
         .all()
     res.extend(r)
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     return res
 
 
 def _get_bookmarks_with_range_for_sutta(sutta_uid: str, except_quote = "") -> List[UBookmark]:
-    _, _, db_session = get_db_engine_connection_session()
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
     res = []
 
     r = db_session \
@@ -279,7 +281,9 @@ def _get_bookmarks_with_range_for_sutta(sutta_uid: str, except_quote = "") -> Li
         .all()
     res.extend(r)
 
+    db_conn.close()
     db_session.close()
+    db_eng.dispose()
 
     return res
 

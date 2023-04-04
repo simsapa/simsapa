@@ -86,11 +86,11 @@ def find_or_create_db(db_path: Path, schema_name: str):
         else:
             Am.metadata.create_all(bind=engine)
 
-        db_conn.close()
-        engine.dispose()
-
         # generate the Alembic version table, "stamping" it with the most recent rev:
         command.stamp(alembic_cfg, "head")
+
+        db_conn.close()
+        engine.dispose()
 
     else:
         engine = create_engine(db_url, echo=False)
@@ -154,7 +154,7 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
 
     return (db_eng, db_conn, db_session)
 
-def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Session:
+def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Tuple[Engine, Connection, Session]:
     if not os.path.isfile(db_path):
         logger.error(f"Database file doesn't exist: {db_path}")
         sys.exit(1)
@@ -175,7 +175,7 @@ def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Session:
         print(f"Can't connect to database: {e}")
         sys.exit(1)
 
-    return db_session
+    return (db_eng, db_conn, db_session)
 
 def is_db_revision_at_head(alembic_cfg: Config, e: Engine) -> bool:
     directory = ScriptDirectory.from_config(alembic_cfg)

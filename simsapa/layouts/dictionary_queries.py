@@ -418,7 +418,7 @@ class ExactQueryWorker(QRunnable):
         logger.info("ExactQueryWorker::run()")
         res: List[UDictWord] = []
         try:
-            _, _, db_session = get_db_engine_connection_session()
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
 
             r = db_session \
                 .query(Am.DictWord) \
@@ -438,7 +438,9 @@ class ExactQueryWorker(QRunnable):
                 .all()
             res.extend(r)
 
+            db_conn.close()
             db_session.close()
+            db_eng.dispose()
 
         except Exception as e:
             logger.error(f"DB query failed: {e}")

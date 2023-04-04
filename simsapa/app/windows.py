@@ -16,9 +16,10 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBo
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
+from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, is_local_db_obsolete, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.app.types import AppData, AppMessage, AppWindowInterface, CompletionCache, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
 from simsapa.layouts.download_appdata import DownloadAppdataWindow
 from simsapa.layouts.ebook_reader import EbookReaderWindow
 from simsapa.layouts.preview_window import PreviewWindow
@@ -64,6 +65,10 @@ class AppWindows:
         self.timer.start(TIMER_SPEED)
 
         self.thread_pool = QThreadPool()
+
+        self.completion_cache_worker = CompletionCacheWorker()
+        self.completion_cache_worker.signals.finished.connect(partial(self._set_completion_cache))
+        self.thread_pool.start(self.completion_cache_worker)
 
         self._init_check_updates()
 
@@ -1081,6 +1086,10 @@ class AppWindows:
             if hasattr(w,'action_Search_Completion'):
                 w.action_Search_Completion.setChecked(checked)
 
+    def _set_completion_cache(self, values: CompletionCache):
+        logger.info(f"_set_completion_cache(): sutta_titles: {len(values['sutta_titles'])}, dict_words: {len(values['dict_words'])}")
+        self._app_data.completion_cache = values
+
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
@@ -1314,6 +1323,57 @@ class CheckUpdatesWorker(QRunnable):
                 return
 
             self.signals.no_updates.emit()
+
+        except Exception as e:
+            logger.error(e)
+
+class CompletionCacheWorkerSignals(QObject):
+    finished = pyqtSignal(dict)
+
+class CompletionCacheWorker(QRunnable):
+    signals: CompletionCacheWorkerSignals
+
+    def __init__(self):
+        super().__init__()
+        self.signals = CompletionCacheWorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+            res = []
+            r = db_session.query(Am.Sutta.title).all()
+            res.extend(r)
+
+            r = db_session.query(Um.Sutta.title).all()
+            res.extend(r)
+
+            a: List[str] = list(map(lambda x: x[0] or 'none', res))
+            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
+            b.sort()
+            titles = list(set(b))
+
+            res = []
+            r = db_session.query(Am.DictWord.word).all()
+            res.extend(r)
+
+            r = db_session.query(Um.DictWord.word).all()
+            res.extend(r)
+
+            a: List[str] = list(map(lambda x: x[0] or 'none', res))
+            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
+            b.sort()
+            words = list(set(b))
+
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
+
+            self.signals.finished.emit(CompletionCache(
+                sutta_titles=titles,
+                dict_words=words,
+            ))
 
         except Exception as e:
             logger.error(e)
