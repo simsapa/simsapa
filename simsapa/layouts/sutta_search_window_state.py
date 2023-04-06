@@ -1023,21 +1023,18 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.pw.lookup_in_dictionary_signal.emit(text)
 
     def _create_qwe_context_menu(self, menu: QMenu):
-        self.qwe_copy_menu = QMenu("Copy")
-        menu.addMenu(self.qwe_copy_menu)
-
-        self.qwe_copy_selection = QAction("Selection")
+        self.qwe_copy_selection = QAction("Copy Selection")
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
         self.qwe_copy_selection.triggered.connect(partial(self._handle_copy))
-        self.qwe_copy_menu.addAction(self.qwe_copy_selection)
+        menu.addAction(self.qwe_copy_selection)
 
-        self.qwe_copy_link_to_sutta = QAction("Link to Sutta and Selection")
+        self.qwe_copy_link_to_sutta = QAction("Copy Link to Sutta and Selection")
         self.qwe_copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
-        self.qwe_copy_menu.addAction(self.qwe_copy_link_to_sutta)
+        menu.addAction(self.qwe_copy_link_to_sutta)
 
-        self.qwe_copy_uid = QAction("uid")
+        self.qwe_copy_uid = QAction("Copy uid")
         self.qwe_copy_uid.triggered.connect(partial(self._handle_copy_uid))
-        self.qwe_copy_menu.addAction(self.qwe_copy_uid)
+        menu.addAction(self.qwe_copy_uid)
 
         self.qwe_bookmark = QAction("Create Bookmark from Selection")
         self.qwe_bookmark.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
