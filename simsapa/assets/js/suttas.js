@@ -280,6 +280,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
         });
 
         arr.forEach(el => add_hover_events(el, channel));
+
+        let body = document.querySelector("body");
+        body.addEventListener("dblclick", function(body) {
+            channel.objects.helper.page_dblclick();
+        });
     });
 
 });

@@ -76,7 +76,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         search_box = QHBoxLayout()
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Type or copy to clipboard")
+        self.search_input.setPlaceholderText("Search in dictionary")
         self.search_input.setClearButtonEnabled(True)
 
         self.search_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -216,10 +216,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         page = ReaderWebEnginePage(self)
 
-        # FIXME preview appears over the link
-        # page.helper.mouseover.connect(partial(self._link_mouseover))
-        # page.helper.mouseleave.connect(partial(self._link_mouseleave))
-
+        page.helper.mouseover.connect(partial(self._link_mouseover))
+        page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         self.qwe.setPage(page)
@@ -362,14 +361,37 @@ class WordScanPopupState(QWidget, HasFulltextList):
         # path: /American pasqueflower
         query = url.path().replace('/', '')
         logger.info(f"Show Word: {query}")
-        self._set_query(query)
-        self._handle_query()
-        self._handle_exact_query()
+        self.lookup_in_dictionary(query)
 
     def _show_word_by_uid(self, uid: str):
         results = self.queries.get_words_by_uid(uid)
         if len(results) > 0:
             self._show_word(results[0])
+
+    def _get_selection(self) -> Optional[str]:
+        text = self.qwe.selectedText()
+        # U+2029 Paragraph Separator to blank line
+        text = text.replace('\u2029', "\n\n")
+        text = text.strip()
+        if len(text) > 0:
+            return text
+        else:
+            return None
+
+    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
+        text = self._get_selection()
+        if text is not None:
+            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+
+    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
+        self._set_query(query)
+        self._handle_query()
+
+        if include_exact_query:
+            self._handle_exact_query()
+
+        if show_results_tab:
+            self.tabs.setCurrentIndex(1)
 
     def _update_fulltext_page_btn(self, hits: int):
         if hits == 0:
@@ -565,7 +587,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._app_data._save_app_settings()
 
     def _connect_signals(self):
-        if self._clipboard is not None:
+        if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))

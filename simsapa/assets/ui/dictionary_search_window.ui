@@ -520,12 +520,14 @@
     <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
-   <widget class="QMenu" name="menu_Go">
+   <widget class="QMenu" name="menu_Find">
     <property name="title">
-     <string>&amp;Go</string>
+     <string>F&amp;ind</string>
     </property>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
+    <addaction name="action_Double_Click_on_a_Word_for_Dictionary_Lookup"/>
+    <addaction name="action_Clipboard_Monitoring_for_Dictionary_Lookup"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
    </widget>
@@ -541,7 +543,7 @@
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_View"/>
-   <addaction name="menu_Go"/>
+   <addaction name="menu_Find"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Dictionary"/>
    <addaction name="menu_Help"/>
@@ -936,6 +938,25 @@
   <action name="action_Check_for_Updates">
    <property name="text">
     <string>Check for Updates...</string>
+   </property>
+  </action>
+  <action name="action_Double_Click_on_a_Word_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Double Click on a Word for Dictionary Lookup</string>
+   </property>
+  </action>
+  <action name="action_Clipboard_Monitoring_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Clipboard Monitoring for Dictionary Lookup</string>
    </property>
   </action>
  </widget>

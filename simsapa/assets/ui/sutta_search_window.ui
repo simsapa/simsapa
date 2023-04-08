@@ -548,6 +548,8 @@
     </property>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
+    <addaction name="action_Double_Click_on_a_Word_for_Dictionary_Lookup"/>
+    <addaction name="action_Clipboard_Monitoring_for_Dictionary_Lookup"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
     <addaction name="action_Previous_Tab"/>
@@ -1069,6 +1071,25 @@
   <action name="action_Check_for_Updates">
    <property name="text">
     <string>Check for Updates...</string>
+   </property>
+  </action>
+  <action name="action_Double_Click_on_a_Word_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Double Click on a Word for Dictionary Lookup</string>
+   </property>
+  </action>
+  <action name="action_Clipboard_Monitoring_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Clipboard Monitoring for Dictionary Lookup</string>
    </property>
   </action>
  </widget>

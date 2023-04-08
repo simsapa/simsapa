@@ -266,7 +266,6 @@ class HasBookmarkDialog:
                 return
 
             bookmark.name = bookmark_name
-            bookmark.updated_at = func.now()
 
             if bookmark_quote:
                 bookmark.quote = bookmark_quote

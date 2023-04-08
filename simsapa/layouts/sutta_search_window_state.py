@@ -58,6 +58,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     open_in_study_window_signal = pyqtSignal([str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    page_dblclick = pyqtSignal()
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
     open_gpt_prompt = pyqtSignal(dict)
@@ -375,6 +376,10 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
+    def _page_dblclick(self):
+        if self._app_data.app_settings['double_click_dict_lookup']:
+            self.page_dblclick.emit()
+
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
@@ -382,6 +387,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))

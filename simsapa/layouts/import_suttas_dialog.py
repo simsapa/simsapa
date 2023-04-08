@@ -200,7 +200,6 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             sutta.title = sutta_row['title']
             sutta.content_html = content_html
             sutta.author = author
-            sutta.updated_at = func.now()
 
             try:
                 logger.info(f"Updating sutta: {sutta.uid}")

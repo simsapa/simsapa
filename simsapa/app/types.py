@@ -307,6 +307,8 @@ class AppSettings(TypedDict):
     search_result_sizes: SearchResultSizes
     search_as_you_type: bool
     search_completion: bool
+    double_click_dict_lookup: bool
+    clipboard_monitoring_for_dict: bool
     sutta_search_mode: SearchMode
     dictionary_search_mode: SearchMode
     word_scan_search_mode: SearchMode
@@ -361,6 +363,8 @@ def default_app_settings() -> AppSettings:
         search_result_sizes = default_search_result_sizes(),
         search_as_you_type = True,
         search_completion = True,
+        double_click_dict_lookup = True,
+        clipboard_monitoring_for_dict = False,
         sutta_search_mode = SearchMode.FulltextMatch,
         dictionary_search_mode = SearchMode.FulltextMatch,
         word_scan_search_mode = SearchMode.FulltextMatch,
@@ -532,7 +536,6 @@ class AppData:
         try:
             if x is not None:
                 x.value = json.dumps(self.app_settings)
-                x.updated_at = func.now()
                 self.db_session.commit()
             else:
                 x = Um.AppSetting(
@@ -592,7 +595,6 @@ class AppData:
         try:
             if r is not None:
                 r.value = json.dumps(self.pali_groups_stats[schema])
-                r.updated_at = func.now()
                 self.db_session.commit()
             else:
                 r = Um.AppSetting(
@@ -1072,6 +1074,8 @@ class AppWindowInterface(QMainWindow):
     action_Show_Word_Scan_Popup: QAction
     action_Search_As_You_Type: QAction
     action_Search_Completion: QAction
+    action_Double_Click_on_a_Word_for_Dictionary_Lookup: QAction
+    action_Clipboard_Monitoring_for_Dictionary_Lookup: QAction
     action_Re_index_database: QAction
     action_Re_download_database: QAction
     action_Focus_Search_Input: QAction

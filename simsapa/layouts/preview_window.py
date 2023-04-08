@@ -38,6 +38,8 @@ class PreviewWindow(QDialog):
     open_new = pyqtSignal(str)
     make_windowed = pyqtSignal()
 
+    show_words_by_url = pyqtSignal(QUrl)
+
     def __init__(self, app_data: AppData,
                  hover_data: Optional[LinkHoverData] = None,
                  frameless: bool = True) -> None:
@@ -405,8 +407,14 @@ class PreviewWindow(QDialog):
         if url.host() == QueryType.suttas:
             self._show_sutta_by_url(url)
 
-        # elif url.host() == QueryType.words:
-        #     self._show_words_by_url(url)
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
+
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.show_words_by_url.emit(url)
 
     def _show_sutta_by_url(self, url: QUrl):
         self.open_new.emit(url.toString())

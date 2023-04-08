@@ -6,13 +6,13 @@ from simsapa.layouts.dictionary_queries import DictionaryQueries
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 
-from ..app.types import AppData, SuttaSearchWindowInterface, USutta
+from ..app.types import AppData, QueryType, SuttaSearchWindowInterface, USutta
 from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 from .word_scan_popup import WordScanPopupState
 
@@ -25,6 +25,14 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
     sutta_two_layout: QVBoxLayout
     dict_layout: QVBoxLayout
     _show_sutta: Callable
+
+    show_sutta_by_url = pyqtSignal(QUrl)
+    link_mouseover = pyqtSignal(dict)
+    link_mouseleave = pyqtSignal(str)
+    page_dblclick = pyqtSignal()
+    hide_preview = pyqtSignal()
+
+    lookup_in_dictionary_signal = pyqtSignal(str)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
@@ -115,6 +123,8 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_find_panel=False,
                                                       show_query_results_in_active_tab=True)
 
+        self.sutta_one_state.page_dblclick.connect(partial(self.sutta_one_state._lookup_selection_in_dictionary))
+
         # Two
 
         self.sutta_two_layout_widget = QWidget(self.splitter)
@@ -145,6 +155,8 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_find_panel=False,
                                                       show_query_results_in_active_tab=True)
 
+        self.sutta_two_state.page_dblclick.connect(partial(self.sutta_two_state._lookup_selection_in_dictionary))
+
         # Focus the first input field
 
         self.sutta_one_state.search_input.setFocus()
@@ -163,10 +175,38 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
 
+        self.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_by_url))
+        self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))
+
+        def _dict(text: str):
+            self.dictionary_state.lookup_in_dictionary(text, show_results_tab = True, include_exact_query = False)
+
+        # Sutta states emit this signal via parent window's handle
+        self.lookup_in_dictionary_signal.connect(partial(_dict))
+
         # Tab order for input fields
 
         self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
         self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
+
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
+
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.dictionary_state._show_word_by_url(url)
+
+    def _show_sutta_by_url(self, url: QUrl):
+        if url.host() != QueryType.suttas:
+            return
+
+        self.show_sutta_by_url.emit(url)
 
     def start_loading_animation(self):
         pass
@@ -199,15 +239,16 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                 self.sutta_two_state._set_query(text)
                 self.sutta_two_state._handle_query()
 
-    def _lookup_selection_in_dictionary(self):
+    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
         text = self.sutta_one_state._get_selection()
         if text is None:
             text = self.sutta_two_state._get_selection()
 
         if text is not None:
-            self.dictionary_state._set_query(text)
-            self.dictionary_state._handle_query()
-            self.dictionary_state._handle_exact_query()
+            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+
+    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
+        self.dictionary_state.lookup_in_dictionary(query, show_results_tab, include_exact_query)
 
     def _handle_copy(self):
         text = self.sutta_one_state._get_selection()

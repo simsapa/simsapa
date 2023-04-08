@@ -20,6 +20,7 @@ class Helper(QObject):
 
     mouseover = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
+    dblclick = pyqtSignal()
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
@@ -27,7 +28,6 @@ class Helper(QObject):
     do_close = pyqtSignal()
     open_new = pyqtSignal()
     make_windowed = pyqtSignal()
-
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,6 +67,9 @@ class Helper(QObject):
     def link_mouseleave(self, msg: str):
         self.mouseleave.emit(msg)
 
+    @pyqtSlot()
+    def page_dblclick(self):
+        self.dblclick.emit()
 
     @pyqtSlot(str)
     def send_bookmark_edit(self, schema_and_id: str):
@@ -88,7 +91,6 @@ class ReaderWebEnginePage(QWebEnginePage):
         self.event_channel.registerObject("helper", self.helper)
 
         self.setWebChannel(self.event_channel)
-
 
     def acceptNavigationRequest(self, url: QUrl, _type: QWebEnginePage.NavigationType, isMainFrame):
         if _type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:

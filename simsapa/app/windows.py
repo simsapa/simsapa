@@ -54,8 +54,12 @@ class AppWindows:
         self._windowed_previews: List[PreviewWindow] = []
         self._preview_window = PreviewWindow(self._app_data)
 
+        def _words(url: QUrl):
+            self._show_words_by_url(url, show_results_tab=True, include_exact_query=False)
+
         self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
         self._preview_window.make_windowed.connect(partial(self._new_windowed_preview))
+        self._preview_window.show_words_by_url.connect(partial(_words))
 
         self.queue_id = 'app_windows'
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -166,7 +170,10 @@ class AppWindows:
         if sutta:
             self._new_sutta_search_window(f"uid:{sutta.uid}")
 
-    def _show_words_by_url(self, url: QUrl) -> bool:
+    def _show_words_by_url(self,
+                           url: QUrl,
+                           show_results_tab = True,
+                           include_exact_query = True) -> bool:
         if url.host() != QueryType.words:
             return False
 
@@ -183,9 +190,15 @@ class AppWindows:
         if view is None:
             self._new_dictionary_search_window(query)
         else:
-            view._show_word_by_url(url)
+            view._show_word_by_url(url, show_results_tab, include_exact_query)
 
         return True
+
+    def _show_words_url_noret(self, url: QUrl):
+        self._show_words_by_url(url)
+
+    def _show_sutta_url_noret(self, url: QUrl):
+        self._show_sutta_by_url_in_search(url)
 
     def _show_sutta_by_url_in_search(self, url: QUrl) -> bool:
         if url.host() != QueryType.suttas:
@@ -327,7 +340,6 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-
         view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
         view.s.open_in_study_window_signal.connect(partial(self._study_msg))
         view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
@@ -339,6 +351,8 @@ class AppWindows:
 
         view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+
+        view.s.page_dblclick.connect(partial(self._sutta_search_quick_lookup_selection, view = view))
 
         view.s.hide_preview.connect(partial(self._preview_window._do_hide))
 
@@ -380,8 +394,15 @@ class AppWindows:
 
         view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
         view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+
         view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
         view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+
+        view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+
+        view.dictionary_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        view.dictionary_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+        view.dictionary_state.hide_preview.connect(partial(self._preview_window._do_hide))
 
         if self._hotkeys_manager is not None:
             try:
@@ -415,20 +436,15 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-        def _show_sutta_url(url: QUrl):
-            self._show_sutta_by_url_in_search(url)
-
-        def _show_words_url(url: QUrl):
-            self._show_words_by_url(url)
-
-        view.show_sutta_by_url.connect(partial(_show_sutta_url))
-        view.show_words_by_url.connect(partial(_show_words_url))
+        view.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+        view.show_words_by_url.connect(partial(self._show_words_url_noret))
 
         view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
         view.open_words_new_signal.connect(partial(self.open_words_new))
 
         view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+        view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
 
         view.hide_preview.connect(partial(self._preview_window._do_hide))
 
@@ -453,8 +469,7 @@ class AppWindows:
 
         return view
 
-
-    def _toggle_word_scan_popup(self):
+    def _init_word_scan_popup(self):
         if self.word_scan_popup is None:
             self.word_scan_popup = WordScanPopup(self._app_data)
 
@@ -470,11 +485,16 @@ class AppWindows:
 
             self.word_scan_popup.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
             self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+            self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 
             self.word_scan_popup.s.hide_preview.connect(partial(self._preview_window._do_hide))
 
-            self.word_scan_popup.show()
-            self.word_scan_popup.activateWindow()
+    def _toggle_word_scan_popup(self):
+        if self.word_scan_popup is None:
+            self._init_word_scan_popup()
+            if self.word_scan_popup is not None:
+                self.word_scan_popup.show()
+                self.word_scan_popup.activateWindow()
 
         else:
             self.word_scan_popup.close()
@@ -484,6 +504,24 @@ class AppWindows:
         for w in self._windows:
             if hasattr(w, 'action_Show_Word_Scan_Popup'):
                 w.action_Show_Word_Scan_Popup.setChecked(is_on)
+
+    def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindow):
+        query = view.s._get_selection()
+        self._show_word_scan_popup(query = query, show_results_tab = True, include_exact_query = False)
+
+    def _show_word_scan_popup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
+        if not self._app_data.app_settings['double_click_dict_lookup']:
+            return
+
+        if self.word_scan_popup is None:
+            self._init_word_scan_popup()
+
+        if self.word_scan_popup is not None:
+            self.word_scan_popup.show()
+            self.word_scan_popup.activateWindow()
+
+            if query is not None:
+                self.word_scan_popup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
 
     def _toggle_show_dictionary_sidebar(self, view):
         is_on = view.action_Show_Sidebar.isChecked()
@@ -1086,6 +1124,24 @@ class AppWindows:
             if hasattr(w,'action_Search_Completion'):
                 w.action_Search_Completion.setChecked(checked)
 
+    def _set_double_click_dict_lookup_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.isChecked()
+        self._app_data.app_settings['double_click_dict_lookup'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Double_Click_on_a_Word_for_Dictionary_Lookup'):
+                w.action_Double_Click_on_a_Word_for_Dictionary_Lookup.setChecked(checked)
+
+    def _set_clipboard_monitoring_for_dict_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Clipboard_Monitoring_for_Dictionary_Lookup.isChecked()
+        self._app_data.app_settings['clipboard_monitoring_for_dict'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
+                w.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
+
     def _set_completion_cache(self, values: CompletionCache):
         logger.info(f"_set_completion_cache(): sutta_titles: {len(values['sutta_titles'])}, dict_words: {len(values['dict_words'])}")
         self._app_data.completion_cache = values
@@ -1250,6 +1306,20 @@ class AppWindows:
 
             search_completion = self._app_data.app_settings.get('search_completion', True)
             view.action_Search_Completion.setChecked(search_completion)
+
+        if hasattr(view, 'action_Double_Click_on_a_Word_for_Dictionary_Lookup'):
+            view.action_Double_Click_on_a_Word_for_Dictionary_Lookup \
+                .triggered.connect(partial(self._set_double_click_dict_lookup_setting, view))
+
+            checked = self._app_data.app_settings.get('double_click_dict_lookup', True)
+            view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.setChecked(checked)
+
+        if hasattr(view, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
+            view.action_Clipboard_Monitoring_for_Dictionary_Lookup \
+                .triggered.connect(partial(self._set_clipboard_monitoring_for_dict_setting, view))
+
+            checked = self._app_data.app_settings.get('clipboard_monitoring_for_dict', True)
+            view.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
 
         if hasattr(view, 'action_Check_for_Updates'):
             view.action_Check_for_Updates \

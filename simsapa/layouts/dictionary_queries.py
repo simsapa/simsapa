@@ -134,6 +134,42 @@ class DictionaryQueries:
 
         return page_html
 
+    def _add_sandhi_links(self, html_page: str) -> str:
+        """
+        <div class="sandhi">
+            <a class="sandhi_feedback" href="" target="_blank"><abbr title=""></abbr></a>
+            <p class="sandhi">
+                viharatā + yasmā<br>
+                viharatā + āyasmā<br>
+                viharati + āyasmā<br>
+                viharatu + āyasmā<br>
+                viharatā + asmā
+            </p>
+        </div>
+        """
+
+        sandhi = re.findall(r'(<p class=[\'"]sandhi[\'"]>(.+?)</p>)', html_page)
+
+        if len(sandhi) == 0:
+            return html_page
+
+        def _to_link(w: str) -> str:
+            w = w.strip()
+            url = QUrl(f"ssp://{QueryType.words.value}/{w}")
+            return f'<a href="{url.toString()}">{w}</a>'
+
+        def _to_linked_row(row: str) -> str:
+            return " + ".join([_to_link(i) for i in row.split('+')])
+
+        p_content = sandhi[0][1]
+        sandhi_rows = [i.strip() for i in p_content.split('<br/>')]
+
+        linked_content = "<br/>".join([_to_linked_row(i) for i in sandhi_rows])
+
+        html_page = html_page.replace(sandhi[0][0], f'<p class="sandhi">{linked_content}</p>')
+
+        return html_page
+
     def _add_grammar_links(self, html_page: str) -> str:
         """
         <tr>
@@ -293,6 +329,7 @@ class DictionaryQueries:
             # dpd-grammar doesn't have a declension div.
             body = self._add_grammar_links(body)
 
+        body = self._add_sandhi_links(body)
 
         body = self._add_epd_pali_words_links(body)
 
