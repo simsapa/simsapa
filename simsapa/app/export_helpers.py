@@ -346,11 +346,17 @@ def add_sutta_links(db_session: Session, html_content: str) -> str:
     # - else, if the link text is a sutta ref, parse it and replace link href to a ssp://
     # - replace link text with escaped text block overlapping replacements later
 
-    soup = BeautifulSoup(html_content, 'html.parser')
+    # NOTE: html.parser mangles href url params
+    # kālaṁ&quote_scope=nikaya becomes kālaṁ"e_scope=nikaya
+    soup = BeautifulSoup(html_content)
 
     links: ResultSet[Tag] = soup.find_all(name = 'a', href = True)
     for link in links:
-        if 'suttacentral.net' in str(link.get('href')):
+        if 'ssp://' in str(link.get('href')):
+            if link.string is not None:
+                link.string = f":ESCAPE_START:{link.string}:ESCAPE_END:"
+
+        elif 'suttacentral.net' in str(link.get('href')):
 
             sc_url = QUrl(link.attrs['href'])
 

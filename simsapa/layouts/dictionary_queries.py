@@ -91,8 +91,6 @@ class DictionaryQueries:
         for w in words:
             word_html = self.get_word_html(w)
 
-            word_html['body'] = add_sutta_links(self._app_data.db_session, word_html['body'])
-
             if w.source_uid == "cpd":
                 word_html['body'] = self._add_word_links_to_bold(word_html['body'])
 
@@ -332,6 +330,8 @@ class DictionaryQueries:
         body = self._add_sandhi_links(body)
 
         body = self._add_epd_pali_words_links(body)
+
+        body = add_sutta_links(self._app_data.db_session, body)
 
         html = str(page_tmpl.render(content=body,
                                     css_head=css_head,

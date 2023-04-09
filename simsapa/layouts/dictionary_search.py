@@ -17,7 +17,6 @@ from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.find_panel import FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
@@ -764,7 +763,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
 
-        body = add_sutta_links(self._app_data.db_session, word_html['body'])
+        body = word_html['body']
 
         if word.source_uid == "cpd":
             body = self.queries._add_word_links_to_bold(body)
