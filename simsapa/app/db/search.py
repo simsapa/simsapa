@@ -260,7 +260,17 @@ class SearchQuery:
                 number = m.group(2)
                 query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
 
-        self.all_results = self._search_field(field_name = 'content', query = query)
+        results = self._search_field(field_name = 'content', query = query)
+
+        for k in ['word', 'title', 'title_pali', 'title_trans']:
+            q = query.strip('*')
+            q = f"*{q}*"
+
+            if k in self.ix.schema._fields.keys():
+                res = self._search_field(field_name = k, query = q)
+                results.upgrade_and_extend(res)
+
+        self.all_results = results
 
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
