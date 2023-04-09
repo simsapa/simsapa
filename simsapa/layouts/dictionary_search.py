@@ -13,12 +13,12 @@ from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardIte
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
-from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -671,13 +671,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.insertItems(0, titles)
 
-    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
-    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
-        def callback(found):
-            if text and not found:
-                logger.info('Not found')
-
-        self.qwe.findText(text, flag, callback)
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
+        tab = self._get_active_tab()
+        if find_searched['flag'] is None:
+            tab.qwe.findText(find_searched['text'])
+        else:
+            tab.qwe.findText(find_searched['text'], find_searched['flag'])
 
     def _handle_result_select(self):
         logger.info("_handle_result_select()")
@@ -1036,7 +1036,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
-        self._find_panel.searched.connect(self.on_searched) # type: ignore
+        self._find_panel.searched.connect(self.on_searched)
         self._find_panel.closed.connect(self.find_toolbar.hide)
 
         def _handle_sidebar():

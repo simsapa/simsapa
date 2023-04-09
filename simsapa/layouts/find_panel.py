@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional, TypedDict
 from PyQt6 import QtCore, QtWidgets, QtWebEngineCore
 from PyQt6.QtWebEngineCore import QWebEnginePage
 
@@ -7,8 +8,12 @@ from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
 
 # Based on https://stackoverflow.com/a/54888872/195141
 
+class FindSearched(TypedDict):
+    text: str
+    flag: Optional[QWebEnginePage.FindFlag]
+
 class FindPanel(QtWidgets.QWidget):
-    searched = QtCore.pyqtSignal(str, QWebEnginePage.FindFlag)
+    searched = QtCore.pyqtSignal(dict)
     closed = QtCore.pyqtSignal()
 
     search_input: QLineEdit
@@ -56,11 +61,15 @@ class FindPanel(QtWidgets.QWidget):
         self.update_searching(QWebEnginePage.FindFlag.FindBackward) # type: ignore
 
     @QtCore.pyqtSlot()
-    def update_searching(self, direction=QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively):
-        flag = direction
+    def update_searching(self, flag: Optional[QtWebEngineCore.QWebEnginePage.FindFlag] = None):
         if self.case_button.isChecked():
-            flag |= QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively
-        self.searched.emit(self.search_input.text(), flag)
+            if flag is None:
+                flag = QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively
+            else:
+                flag |= QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively
+
+        find_searched = FindSearched(text=self.search_input.text(), flag=flag)
+        self.searched.emit(find_searched)
 
     def showEvent(self, event):
         super(FindPanel, self).showEvent(event)

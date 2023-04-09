@@ -9,14 +9,13 @@ from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget)
-from PyQt6.QtWebEngineCore import QWebEnginePage
 
 from sqlalchemy import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
-from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
@@ -710,14 +709,13 @@ QWidget:focus { border: 1px solid #1092C3; }
                                   .first()
         return sutta
 
-    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
-    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
-        def callback(found):
-            if text and not found:
-                logger.info('Not found')
-
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
         tab = self._get_active_tab()
-        tab.qwe.findText(text, flag, callback)
+        if find_searched['flag'] is None:
+            tab.qwe.findText(find_searched['text'])
+        else:
+            tab.qwe.findText(find_searched['text'], find_searched['flag'])
 
     def _select_prev_tab(self):
         selected_idx = self.sutta_tabs.currentIndex()
@@ -1200,7 +1198,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.sutta_source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:
-            self._find_panel.searched.connect(self.on_searched) # type: ignore
+            self._find_panel.searched.connect(self.on_searched)
             self._find_panel.closed.connect(self.find_toolbar.hide)
 
             self.pw.action_Find_in_Page \
