@@ -983,9 +983,11 @@ class CoursePracticeWindow(AppWindowInterface):
 
         event.accept()
 
+    def _handle_close(self):
+        self.close()
 
     def _connect_signals(self):
-        self.close_btn.clicked.connect(self.close)
+        self.close_btn.clicked.connect(partial(self._handle_close))
 
         self.continue_btn.clicked.connect(partial(self._handle_continue))
 

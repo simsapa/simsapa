@@ -81,6 +81,8 @@ class ReaderWebEnginePage(QWebEnginePage):
 
     helper: Helper
 
+    show_url_signal = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super(ReaderWebEnginePage, self).__init__(parent)
         self._parent_window = parent
@@ -125,10 +127,15 @@ class ReaderWebEnginePage(QWebEnginePage):
                     return
 
                 if hasattr(self._parent_window, '_show_url'):
+                    logger.info(f"self._parent_window._show_url(): {url}")
                     self._parent_window._show_url(url)
 
+                elif hasattr(self._parent_window, 'show_url_signal'):
+                    logger.info(f"self._parent_window.show_url_signal.emit(): {url}")
+                    self._parent_window.show_url_signal.emit(url.toString())
+
                 else:
-                    logger.info("Unrecognized host: %s" % url)
+                    logger.info(f"No handler found on parent window: {self._parent_window} for url: {url}")
                     return False
 
             elif url.scheme() == 'bword':

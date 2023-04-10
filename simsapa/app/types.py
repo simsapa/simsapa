@@ -1082,6 +1082,7 @@ class AppWindowInterface(QMainWindow):
     action_Quit: QAction
     action_Sutta_Search: QAction
     action_Sutta_Study: QAction
+    action_Sutta_Index: QAction
     action_Dictionary_Search: QAction
     action_Bookmarks: QAction
     action_Pali_Courses: QAction

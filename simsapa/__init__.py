@@ -65,6 +65,9 @@ COURSES_DIR = ASSETS_DIR.joinpath('courses')
 
 EBOOK_UNZIP_DIR = ASSETS_DIR.joinpath('ebook_unzip')
 
+HTML_RESOURCES_APPDATA_DIR = ASSETS_DIR.joinpath('html_resources/appdata/')
+HTML_RESOURCES_USERDATA_DIR = ASSETS_DIR.joinpath('html_resources/userdata/')
+
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
 APP_QUEUES: Dict[str, queue.Queue] = {}

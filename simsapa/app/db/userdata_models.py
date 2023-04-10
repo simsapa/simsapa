@@ -481,3 +481,11 @@ class MultiRef(Base):
     verse_end: Mapped[Optional[int]]
 
     suttas: Mapped[List[Sutta]] = relationship("Sutta", secondary=assoc_sutta_multi_refs, back_populates="multi_refs")
+
+class HtmlResource(Base):
+    __tablename__ = "html_resources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
+
+    resource_dirname: Mapped[Optional[str]]

@@ -64,6 +64,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Sutta_Study"/>
+    <addaction name="action_Sutta_Index"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Bookmarks"/>
@@ -590,6 +591,15 @@
    </property>
    <property name="text">
     <string>Clipboard Monitoring for Dictionary Lookup</string>
+   </property>
+  </action>
+  <action name="action_Sutta_Index">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>Sutta Index</string>
    </property>
   </action>
  </widget>

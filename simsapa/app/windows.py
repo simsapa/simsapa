@@ -1,14 +1,7 @@
-import os
-import sys
-import re
-import shutil
+import os, sys, re, shutil, queue, json, webbrowser, requests
 from functools import partial
 from typing import List, Optional
 from datetime import datetime
-import queue
-import json
-import webbrowser
-import requests
 from urllib.parse import parse_qs
 
 from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
@@ -27,6 +20,7 @@ from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
+from simsapa.layouts.sutta_index import SuttaIndexWindow
 from simsapa.layouts.dictionary_search import DictionarySearchWindow
 # from simsapa.layouts.dictionaries_manager import DictionariesManagerWindow
 # from simsapa.layouts.document_reader import DocumentReaderWindow
@@ -53,6 +47,7 @@ class AppWindows:
         self._windows: List[AppWindowInterface] = []
         self._windowed_previews: List[PreviewWindow] = []
         self._preview_window = PreviewWindow(self._app_data)
+        self._sutta_index_window: Optional[SuttaIndexWindow] = None
 
         def _words(url: QUrl):
             self._show_words_by_url(url, show_results_tab=True, include_exact_query=False)
@@ -75,6 +70,7 @@ class AppWindows:
         self.thread_pool.start(self.completion_cache_worker)
 
         self._init_check_updates()
+        self._init_sutta_index_window()
 
         self.word_scan_popup: Optional[WordScanPopup] = None
 
@@ -418,6 +414,26 @@ class AppWindows:
         self._windows.append(view)
 
         return view
+
+    def _init_sutta_index_window(self):
+        if self._sutta_index_window is not None:
+            return
+
+        self._sutta_index_window = SuttaIndexWindow(self._app_data)
+
+        self._sutta_index_window.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+
+        self._sutta_index_window.link_mouseover.connect(partial(self._preview_window.link_mouseover))
+        self._sutta_index_window.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+        self._sutta_index_window.hide_preview.connect(partial(self._preview_window._do_hide))
+
+        self._windows.append(self._sutta_index_window)
+
+    def _show_sutta_index_window(self):
+        if self._sutta_index_window is None:
+            logger.error("No index window")
+        else:
+            make_active_window(self._sutta_index_window)
 
     def _new_dictionary_search_window_noret(self, query: Optional[str] = None) -> None:
         self._new_dictionary_search_window(query)
@@ -1191,6 +1207,10 @@ class AppWindows:
             .triggered.connect(partial(self._new_memos_browser_window_noret))
         view.action_Links \
             .triggered.connect(partial(self._new_links_browser_window_noret))
+
+        if hasattr(view, 'action_Sutta_Index'):
+            view.action_Sutta_Index \
+                .triggered.connect(partial(self._show_sutta_index_window))
 
         if hasattr(view, 'action_Bookmarks'):
             view.action_Bookmarks \

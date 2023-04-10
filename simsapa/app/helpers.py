@@ -21,7 +21,7 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
+from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
 
 
 class SuttaRange(TypedDict):
@@ -32,20 +32,16 @@ class SuttaRange(TypedDict):
 
 
 def create_app_dirs():
-    if not SIMSAPA_DIR.exists():
-        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
+    for d in [SIMSAPA_DIR,
+              ASSETS_DIR,
+              GRAPHS_DIR,
+              COURSES_DIR,
+              EBOOK_UNZIP_DIR,
+              HTML_RESOURCES_APPDATA_DIR,
+              HTML_RESOURCES_USERDATA_DIR]:
 
-    if not ASSETS_DIR.exists():
-        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not GRAPHS_DIR.exists():
-        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not COURSES_DIR.exists():
-        COURSES_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not EBOOK_UNZIP_DIR.exists():
-        EBOOK_UNZIP_DIR.mkdir(parents=True, exist_ok=True)
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
 
 def ensure_empty_graphs_cache():
     if GRAPHS_DIR.exists():

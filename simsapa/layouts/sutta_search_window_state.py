@@ -823,6 +823,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         if sutta:
             self._show_sutta(sutta, sutta_quote)
             self._add_recent(sutta)
+        else:
+            logger.info(f"Sutta not found: {uid}")
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []

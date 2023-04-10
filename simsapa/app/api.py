@@ -59,12 +59,12 @@ def queues(queue_id):
 
     return 'OK', 200
 
-@app.route('/assets/<path:path>', methods=['GET'])
-def assets(path):
-    if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, path)): # type: ignore
+@app.route('/assets/<path:filename>', methods=['GET'])
+def assets(filename):
+    if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, filename)): # type: ignore
         abort(404)
 
-    return send_from_directory(PACKAGE_ASSETS_DIR, path) # type: ignore
+    return send_from_directory(PACKAGE_ASSETS_DIR, filename) # type: ignore
 
 
 def _get_sutta_by_uid(uid: str) -> Optional[USutta]:
@@ -294,7 +294,7 @@ def resp_bad_request(e):
     return msg, 400
 
 @app.errorhandler(404)
-def reps_not_found(e):
+def resp_not_found(e):
     msg = f"Not Found: {e}"
     logger.error(msg)
     return msg, 404

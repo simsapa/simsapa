@@ -78,11 +78,15 @@ echo "=== Copy Userdata to DIST folder ==="
 cp "$ASSETS_DIR"/userdata.sqlite3 "$DIST_DIR"
 cp -r "$ASSETS_DIR"/courses "$DIST_DIR"
 
+echo "=== Copy HTML Resources to DIST folder ==="
+
+cp -r "$ASSETS_DIR"/html_resources/ "$DIST_DIR"
+
 echo "=== Create userdata.tar.bz2 ==="
 
 cd "$DIST_DIR" || exit
 
-tar cjf userdata.tar.bz2 userdata.sqlite3 courses/
+tar cjf userdata.tar.bz2 userdata.sqlite3 courses/ html_resources/
 
 mv userdata.tar.bz2 "$RELEASE_DIR"
 
