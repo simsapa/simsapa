@@ -433,7 +433,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         else:
             self.tabs.setTabText(1, "Results")
 
-        self.render_fulltext_page()
+        self.render_fulltext_page(sort_title = True)
 
         results = self.search_query_worker.results_page(0)
 

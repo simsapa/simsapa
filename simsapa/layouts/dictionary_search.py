@@ -546,7 +546,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
-        self.render_fulltext_page()
+        self.render_fulltext_page(sort_title = True)
 
         results = self.search_query_worker.results_page(0)
 

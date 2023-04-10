@@ -77,7 +77,7 @@ class HasFulltextList:
 
         self._ui_set_search_icon()
 
-    def render_fulltext_page(self):
+    def render_fulltext_page(self, sort_title = False):
         page_num = self.fulltext_page_input.value() - 1
         logger.info(f"render_fulltext_page(), page_num: {page_num}")
         if page_num < 0:
@@ -96,6 +96,9 @@ class HasFulltextList:
             return
 
         results = self.results_page(page_num)
+
+        if sort_title:
+            results = sorted(results, key = lambda x: x['title'])
 
         msg = f"Showing {page_start+1}-{page_end} out of {self.query_hits()} results"
         self.fulltext_label.setText(msg)
