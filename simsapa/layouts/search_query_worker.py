@@ -187,7 +187,9 @@ class SearchQueryWorker(QRunnable):
                  self.search_query.new_query(self.query, self.disabled_labels, self.only_lang, self.only_source)
                  self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
-            elif self.search_mode == SearchMode.ExactMatch:
+            elif self.search_mode == SearchMode.ExactMatch or \
+                 self.search_mode == SearchMode.RegexMatch:
+
                 db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 if self.search_query.ix.indexname == 'suttas':
@@ -200,21 +202,30 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.Sutta)
                         for i in and_terms:
-                            p = expand_quote_to_pattern_str(i)
+                            if self.search_mode == SearchMode.ExactMatch:
+                                p = expand_quote_to_pattern_str(i)
+                            else:
+                                p = i
                             q = q.filter(Am.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                         q = db_session.query(Um.Sutta)
                         for i in and_terms:
-                            p = expand_quote_to_pattern_str(i)
+                            if self.search_mode == SearchMode.ExactMatch:
+                                p = expand_quote_to_pattern_str(i)
+                            else:
+                                p = i
                             q = q.filter(Um.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                     else:
 
-                        p = expand_quote_to_pattern_str(self.query)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            p = expand_quote_to_pattern_str(self.query)
+                        else:
+                            p = self.query
 
                         r = db_session \
                             .query(Am.Sutta) \
@@ -246,28 +257,40 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.DictWord)
                         for i in and_terms:
-                            q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                            if self.search_mode == SearchMode.ExactMatch:
+                                q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                            else:
+                                q = q.filter(Am.DictWord.definition_plain.regexp_match(i))
                         r = q.all()
                         res.extend(r)
 
                         q = db_session.query(Um.DictWord)
                         for i in and_terms:
-                            q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                            if self.search_mode == SearchMode.ExactMatch:
+                                q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                            else:
+                                q = q.filter(Um.DictWord.definition_plain.regexp_match(i))
                         r = q.all()
                         res.extend(r)
 
                     else:
 
-                        r = db_session \
-                            .query(Am.DictWord) \
-                            .filter(Am.DictWord.definition_plain.like(f"%{self.query}%")) \
-                            .all()
+                        q = db_session.query(Am.DictWord)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query}%"))
+                        else:
+                            q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query))
+
+                        r = q.all()
                         res.extend(r)
 
-                        r = db_session \
-                            .query(Um.DictWord) \
-                            .filter(Um.DictWord.definition_plain.like(f"%{self.query}%")) \
-                            .all()
+                        q = db_session.query(Um.DictWord)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query}%"))
+                        else:
+                            q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query))
+
+                        r = q.all()
                         res.extend(r)
 
                     if self.only_source is not None:

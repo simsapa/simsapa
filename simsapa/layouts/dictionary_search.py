@@ -673,11 +673,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     @QtCore.pyqtSlot(dict)
     def on_searched(self, find_searched: FindSearched):
-        tab = self._get_active_tab()
         if find_searched['flag'] is None:
-            tab.qwe.findText(find_searched['text'])
+            self.qwe.findText(find_searched['text'])
         else:
-            tab.qwe.findText(find_searched['text'], find_searched['flag'])
+            self.qwe.findText(find_searched['text'], find_searched['flag'])
 
     def _handle_result_select(self):
         logger.info("_handle_result_select()")

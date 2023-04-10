@@ -77,17 +77,20 @@ class SearchMode(int, Enum):
     ExactMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
+    RegexMatch = 4
 
 SuttaSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
     "Exact Match": SearchMode.ExactMatch,
     "Title Match": SearchMode.TitleMatch,
+    "Regex Match": SearchMode.RegexMatch,
 }
 
 DictionarySearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
     "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,
+    "Regex Match": SearchMode.RegexMatch,
 }
 
 class SearchResultSizes(TypedDict):
