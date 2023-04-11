@@ -241,30 +241,140 @@ def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
     )
 
 class OpenAIModel(str, Enum):
-    TextDavinci = "TextDavinci"
-    TextCurie = "TextCurie"
-    TextBabbage = "TextBabbage"
-    TextAda = "TextAda"
-    CodeDavinci = "CodeDavinci"
-    CodeCushman = "CodeCushman"
+    Gpt3_5_Turbo = "GPT 3.5 Turbo"
+    Gpt4_8k = "GPT-4 (8k)"
+    Gpt4_32k = "GPT-4 (32k)"
+    TextDavinci = "Text Davinci"
+    TextCurie = "Text Curie"
+    TextBabbage = "Text Babbage"
+    TextAda = "Text Ada"
+    CodeDavinci = "Code Davinci"
+    CodeCushman = "Code Cushman"
+
+CHAT_MODELS = [
+    OpenAIModel.Gpt3_5_Turbo,
+    OpenAIModel.Gpt4_8k,
+    OpenAIModel.Gpt4_32k,
+]
+
+def model_max_tokens(model: OpenAIModel) -> int:
+    if model == OpenAIModel.Gpt4_8k:
+        return 8192
+
+    if model == OpenAIModel.Gpt4_32k:
+        return 32768
+
+    else:
+        return 4096
 
 OpenAIModelToEnum = {
-    "TextDavinci": OpenAIModel.TextDavinci,
-    "TextCurie": OpenAIModel.TextCurie,
-    "TextBabbage": OpenAIModel.TextBabbage,
-    "TextAda": OpenAIModel.TextAda,
-    "CodeDavinci": OpenAIModel.CodeDavinci,
-    "CodeCushman": OpenAIModel.CodeCushman,
+    "GPT 3.5 Turbo": OpenAIModel.Gpt3_5_Turbo,
+    "GPT-4 (8k)": OpenAIModel.Gpt4_8k,
+    "GPT-4 (32k)": OpenAIModel.Gpt4_32k,
+    "Text Davinci": OpenAIModel.TextDavinci,
+    "Text Curie": OpenAIModel.TextCurie,
+    "Text Babbage": OpenAIModel.TextBabbage,
+    "Text Ada": OpenAIModel.TextAda,
+    "Code Davinci": OpenAIModel.CodeDavinci,
+    "Code Cushman": OpenAIModel.CodeCushman,
 }
 
 OpenAIModelLatest = {
-    "TextDavinci": "text-davinci-003",
-    "TextCurie": "text-curie-001",
-    "TextBabbage": "text-babbage-001",
-    "TextAda": "text-ada-001",
-    "CodeDavinci": "code-davinci-002",
-    "CodeCushman": "code-cushman-001",
+    "GPT 3.5 Turbo": "gpt-3.5-turbo",
+    "GPT-4 (8k)": "gpt-4",
+    "GPT-4 (32k)": "gpt-4-32k",
+    "Text Davinci": "text-davinci-003",
+    "Text Curie": "text-curie-001",
+    "Text Babbage": "text-babbage-001",
+    "Text Ada": "text-ada-001",
+    "Code Davinci": "code-davinci-002",
+    "Code Cushman": "code-cushman-001",
 }
+
+"""
+https://platform.openai.com/docs/api-reference/completions/create
+
+Text Completion Response:
+
+{
+  "id": "cmpl-uqkvlQyYK7bGYrRHQ0eXlWi7",
+  "object": "text_completion",
+  "created": 1589478378,
+  "model": "text-davinci-003",
+  "choices": [
+    {
+      "text": "\n\nThis is indeed a test",
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 5,
+    "completion_tokens": 7,
+    "total_tokens": 12
+  }
+}
+"""
+
+class TextChoice(TypedDict):
+    text: str
+    index: int
+    finish_reason: str
+
+class TextResponse(TypedDict):
+    id: str
+    object: str
+    created: int
+    model: str
+    usage: dict
+    choices: List[TextChoice]
+
+"""
+https://platform.openai.com/docs/api-reference/chat
+
+Chat Completion Response:
+
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "\n\nHello there, how may I assist you today?",
+    },
+    "finish_reason": "stop"
+  }],
+  "usage": {
+    "prompt_tokens": 9,
+    "completion_tokens": 12,
+    "total_tokens": 21
+  }
+}
+"""
+
+class ChatRole(str, Enum):
+    System = 'system'
+    User = 'user'
+
+class ChatMessage(TypedDict):
+    role: str
+    content: str
+
+class ChatChoice(TypedDict):
+    message: ChatMessage
+    finish_reason: str
+    index: int
+
+class ChatResponse(TypedDict):
+    id: str
+    object: str
+    created: int
+    model: str
+    usage: dict
+    choices: List[ChatChoice]
 
 class OpenAISettings(TypedDict):
     api_key: Optional[str]
@@ -279,7 +389,7 @@ class OpenAISettings(TypedDict):
 def default_openai_settings() -> OpenAISettings:
     return OpenAISettings(
         api_key = None,
-        model = OpenAIModel.TextDavinci,
+        model = OpenAIModel.Gpt3_5_Turbo,
         temperature = 0.0,
         max_tokens = 256,
         auto_max_tokens = False,

@@ -361,7 +361,7 @@ class GptPrompt(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name_path:       Mapped[str] = mapped_column(unique=True)
-    prompt_text:     Mapped[Optional[str]]
+    messages_json:   Mapped[Optional[str]]
     show_in_context: Mapped[Optional[bool]]
 
     created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -372,8 +372,7 @@ class GptHistory(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name_path:       Mapped[Optional[str]]
-    prompt_text:     Mapped[Optional[str]]
-    completion_text: Mapped[Optional[str]]
+    messages_json:   Mapped[Optional[str]]
 
     created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())

@@ -1,4 +1,4 @@
-import re
+import re, json
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
@@ -9,15 +9,16 @@ from typing import Any, List, Optional, TypedDict
 from datetime import datetime
 
 from transformers import GPT2TokenizerFast
+import tiktoken
 
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import IS_MAC, IS_SWAY, SEARCH_TIMER_SPEED, logger
 from simsapa.app.export_helpers import sutta_content_plain
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings
+from simsapa.app.types import CHAT_MODELS, AppData, AppWindowInterface, ChatMessage, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, TextResponse, USutta, default_openai_settings, model_max_tokens
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -111,9 +112,7 @@ class PromptItem(QStandardItem):
         self.show_in_context = show_in_context
 
         # Not storing db_schema, assuming all prompts are in userdata.
-        self.data = PromptData(
-            db_id = db_id,
-        )
+        self.data = PromptData(db_id = db_id)
 
         self.setEditable(False)
         self.setText(self.name_path)
@@ -215,7 +214,9 @@ class GptPromptsWindow(AppWindowInterface):
         self.openai_max_tokens_input = QSpinBox()
         self.openai_max_tokens_input.setToolTip("Max tokens to generate")
         self.openai_max_tokens_input.setMinimum(16)
-        self.openai_max_tokens_input.setMaximum(4096)
+
+        model_max = model_max_tokens(self._app_data.app_settings['openai']['model'])
+        self.openai_max_tokens_input.setMaximum(model_max)
 
         label = QLabel("M:")
         label.setToolTip("Max tokens to generate")
@@ -229,7 +230,7 @@ class GptPromptsWindow(AppWindowInterface):
         self.token_count_msg = QLabel()
         self._bottom_buttons_box.addWidget(self.token_count_msg)
 
-        self.token_warning_msg = QLabel("Warning: max total tokens is 4096")
+        self.token_warning_msg = QLabel(f"Warning: max total tokens for {self._app_data.app_settings['openai']['model']} is {model_max}")
         self._bottom_buttons_box.addWidget(self.token_warning_msg)
         self.token_warning_msg.setVisible(False)
 
@@ -310,13 +311,20 @@ class GptPromptsWindow(AppWindowInterface):
         self.prompt_name_input.setPlaceholderText("Prompt name, e.g. summarize text")
         self.prompt_input_layout.addWidget(self.prompt_name_input)
 
-        self.prompt_input_layout.addWidget(QLabel("Prompt:"))
+        self.prompt_input_layout.addWidget(QLabel("System:"))
 
-        self.prompt_input = QTextEdit()
-        self.prompt_input.setFont(font)
-        self.prompt_input_layout.addWidget(self.prompt_input)
+        self.system_prompt_input = QTextEdit("You are a helpful assistant in understanding the teachings of the Buddha.")
+        self.system_prompt_input.setFont(font)
+        self.system_prompt_input.setMaximumHeight(100)
+        self.prompt_input_layout.addWidget(self.system_prompt_input)
 
-        self.prompt_input.setFocus()
+        self.prompt_input_layout.addWidget(QLabel("User:"))
+
+        self.user_prompt_input = QTextEdit()
+        self.user_prompt_input.setFont(font)
+        self.prompt_input_layout.addWidget(self.user_prompt_input)
+
+        self.user_prompt_input.setFocus()
 
         self.completion_text_layout.addWidget(QLabel("Completion:"))
 
@@ -419,19 +427,50 @@ class GptPromptsWindow(AppWindowInterface):
                                .query(Um.GptPrompt) \
                                .filter(Um.GptPrompt.id == db_id) \
                                .first()
-        if prompt is None:
+        if prompt is None or prompt.messages_json is None:
             return
 
         self.prompt_name_input.setText(prompt.name_path)
-        prompt = self._parse_prompt_variables(prompt.prompt_text)
-        self.prompt_input.setPlainText(prompt)
+
+        messages: List[ChatMessage] = json.loads(prompt.messages_json)
+        self._set_prompt_inputs(messages)
+
+    def _set_prompt_inputs(self,
+                           messages: List[ChatMessage],
+                           parse_sutta_in_text = False,
+                           sutta_uid: Optional[str] = None,
+                           selection_text: Optional[str] = None):
+
+        if len(messages) == 0:
+            self.system_prompt_input.setPlainText("")
+            self.user_prompt_input.setPlainText("")
+            self.completion_text.setPlainText("")
+
+            return
+
+        if len(messages) > 0:
+            self.system_prompt_input.setPlainText(messages[0]['content'])
+
+        if len(messages) > 1:
+            prompt = messages[1]['content']
+
+            user_prompt = self._parse_prompt_variables(
+                prompt = prompt,
+                parse_sutta_in_text = parse_sutta_in_text,
+                sutta_uid = sutta_uid,
+                selection_text = selection_text)
+
+            self.user_prompt_input.setPlainText(user_prompt)
+
+        if len(messages) > 2:
+            self.completion_text.setPlainText(messages[2]['content'])
 
     def _show_prompt_by_params(self, params: OpenPromptParams):
         prompt = self._app_data.db_session \
                                .query(Um.GptPrompt) \
                                .filter(Um.GptPrompt.id == params['prompt_db_id']) \
                                .first()
-        if prompt is None:
+        if prompt is None or prompt.messages_json is None:
             return
 
         if params['with_name'] is None:
@@ -439,12 +478,8 @@ class GptPromptsWindow(AppWindowInterface):
         else:
             self.prompt_name_input.setText(params['with_name'])
 
-        prompt = self._parse_prompt_variables(prompt.prompt_text,
-                                              False,
-                                              params['sutta_uid'],
-                                              params['selection_text'])
-
-        self.prompt_input.setPlainText(prompt)
+        messages: List[ChatMessage] = json.loads(prompt.messages_json)
+        self._set_prompt_inputs(messages, False, params['sutta_uid'], params['selection_text'])
 
     def _handle_prompts_tree_clicked(self, val: QModelIndex):
         item: PromptItem = self.prompts_tree_model.itemFromIndex(val) # type: ignore
@@ -511,8 +546,17 @@ class GptPromptsWindow(AppWindowInterface):
 
         def _model_data_item(x: Um.GptHistory) -> List[str]:
             # Return values ordered as in HistoryModelColToIdx
+            if x.messages_json is None:
+                text = ""
+            else:
+                m = json.loads(x.messages_json)
+                if len(m) > 1:
+                    text = m[1]['content'][0:20]
+                else:
+                    text = ""
+
             return ["" if x.name_path is None else str(x.name_path[0:20]),
-                    "" if x.prompt_text is None else str(x.prompt_text[0:20]),
+                    text,
                     str(x.created_at),
                     str(x.id)]
 
@@ -628,6 +672,13 @@ class GptPromptsWindow(AppWindowInterface):
 
         self._app_data.app_settings['openai'] = openai_settings
         self._app_data._save_app_settings()
+
+    def _update_model_max(self):
+        model = self._app_data.app_settings['openai']['model']
+        model_max = model_max_tokens(model)
+        self.openai_max_tokens_input.setMaximum(model_max)
+        self.token_warning_msg.setText(f"Warning: max total tokens for {model} is {model_max}")
+        self._update_token_count()
 
     def _chat_mode_toggled(self):
         self._update_horiz_splitter_widths()
@@ -769,16 +820,30 @@ class GptPromptsWindow(AppWindowInterface):
             self._show_warning("<p>Please add your OpenAI key in the Settings tab.</p>")
             return
 
-        text = self.prompt_input.toPlainText().strip()
-        prompt = self._parse_prompt_variables(text, parse_sutta_in_text=True)
+        messages: List[ChatMessage] = []
 
-        if len(prompt) < 4:
+        messages.append(
+            ChatMessage(
+                role=ChatRole.System,
+                content=self.system_prompt_input.toPlainText().strip(),
+            ))
+
+        text = self.user_prompt_input.toPlainText().strip()
+        user_prompt = self._parse_prompt_variables(text, parse_sutta_in_text=True)
+
+        if len(user_prompt) < 4:
             return
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.User,
+                content=user_prompt,
+            ))
 
         if self.completion_worker is not None:
             self.completion_worker.will_emit_finished = False
 
-        self.completion_worker = CompletionWorker(prompt, openai_settings)
+        self.completion_worker = CompletionWorker(messages, openai_settings)
 
         self.completion_worker.signals.finished.connect(partial(self._completion_finished))
 
@@ -795,31 +860,83 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.thread_pool.start(self.completion_worker)
 
-    def _completion_finished(self, result: str):
+    def _completion_finished(self, results: List[str]):
         self.stop_loading_animation()
+
+        if len(results) == 0:
+            return
+
+        # TODO: Add interface elements to show all returned choices.
+        # Only using the first returned choice for now.
+        result = results[0]
 
         chat_mode = self._app_data.app_settings['openai']['chat_mode']
 
         name_path = self.prompt_name_input.text()
-        prompt = self.prompt_input.toPlainText()
+        user_prompt = self.user_prompt_input.toPlainText()
 
         if chat_mode:
-            self.prompt_input.setPlainText(prompt + "\n\n" + result + "\n\n\n\n")
-            self.completion_text.setPlainText(result)
+            self.user_prompt_input.setPlainText(user_prompt + "\n\n" + result + "\n\n\n\n")
+            self.completion_text.setPlainText("")
 
-            self.prompt_input.verticalScrollBar().setValue(self.prompt_input.verticalScrollBar().maximum())
+            self.user_prompt_input.verticalScrollBar().setValue(self.user_prompt_input.verticalScrollBar().maximum())
 
         else:
             self.completion_text.setPlainText(result)
 
-        log = Um.GptHistory(name_path = name_path,
-                            prompt_text = prompt,
-                            completion_text = result)
+        messages: List[ChatMessage] = []
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.System,
+                content=self.system_prompt_input.toPlainText().strip(),
+            ))
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.User,
+                content=user_prompt,
+            ))
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.System,
+                content=result,
+            ))
+
+        log = Um.GptHistory(name_path = name_path, messages_json = json.dumps(messages))
 
         self._app_data.db_session.add(log)
         self._app_data.db_session.commit()
 
         self.reload_history_table()
+
+    def _inputs_to_messages(self, parse_variables = False) -> List[ChatMessage]:
+        messages: List[ChatMessage] = []
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.System,
+                content=self.system_prompt_input.toPlainText().strip(),
+            ))
+
+        text = self.user_prompt_input.toPlainText().strip()
+        if parse_variables:
+            text = self._parse_prompt_variables(text)
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.User,
+                content=text,
+            ))
+
+        messages.append(
+            ChatMessage(
+                role=ChatRole.System,
+                content=self.completion_text.toPlainText().strip(),
+            ))
+
+        return messages
 
     def _user_typed(self):
         if not self._input_timer.isActive():
@@ -833,10 +950,11 @@ class GptPromptsWindow(AppWindowInterface):
         # p = prompt token count
 
         auto_max = self._app_data.app_settings['openai']['auto_max_tokens']
+        model_max = model_max_tokens(self._app_data.app_settings['openai']['model'])
         if auto_max:
             min_val = self.openai_max_tokens_input.minimum()
             max_val = self.openai_max_tokens_input.maximum()
-            m = min(max(4096 - p, min_val), max_val)
+            m = min(max(model_max - p, min_val), max_val)
             self.openai_max_tokens_input.setValue(m)
 
         else:
@@ -845,15 +963,16 @@ class GptPromptsWindow(AppWindowInterface):
         total = p+m
         self.token_count_msg.setText(f"{p} (prompt) + {m} = {total} tokens")
 
-        self.token_warning_msg.setVisible(total > 4096)
+        self.token_warning_msg.setVisible(total > model_max)
 
     def _update_token_count(self):
         if self.tokenizer_worker is not None:
             self.tokenizer_worker.will_emit_finished = False
 
-        prompt = self._parse_prompt_variables(self.prompt_input.toPlainText())
+        messages = self._inputs_to_messages(parse_variables=True)
 
-        self.tokenizer_worker = TokenizerWorker(prompt)
+        model = self._app_data.app_settings['openai']['model']
+        self.tokenizer_worker = TokenizerWorker(model, messages)
 
         self.tokenizer_worker.signals.finished.connect(partial(self._tokenizer_finished))
         self.tokenizer_worker.signals.error.connect(partial(self._show_warning))
@@ -886,7 +1005,8 @@ class GptPromptsWindow(AppWindowInterface):
 
     def _prompt_clear_all(self):
         self.prompt_name_input.setText("")
-        self.prompt_input.setPlainText("")
+        self.system_prompt_input.setPlainText("")
+        self.user_prompt_input.setPlainText("")
         self.completion_text.setPlainText("")
 
     def _prompt_save(self):
@@ -907,13 +1027,13 @@ class GptPromptsWindow(AppWindowInterface):
         if prompt is None:
             prompt = Um.GptPrompt(
                 name_path = name_path,
-                prompt_text = self.prompt_input.toPlainText(),
+                messages_json = json.dumps(self._inputs_to_messages()),
                 show_in_context = False,
             )
             self._app_data.db_session.add(prompt)
 
         else:
-            prompt.prompt_text = self.prompt_input.toPlainText()
+            prompt.messages_json = json.dumps(self._inputs_to_messages())
 
         self._app_data.db_session.commit()
         self.reload_prompts_tree()
@@ -959,9 +1079,9 @@ class GptPromptsWindow(AppWindowInterface):
         self.reload_prompts_tree()
 
     def _prompt_copy(self):
-        prompt_text = self.prompt_input.toPlainText().strip()
-        if prompt_text != "":
-            self._app_data.clipboard_setText(prompt_text)
+        user_prompt_text = self.user_prompt_input.toPlainText().strip()
+        if user_prompt_text != "":
+            self._app_data.clipboard_setText(user_prompt_text)
 
     def _prompt_copy_completion(self):
         completion_text = self.completion_text.toPlainText().strip()
@@ -970,11 +1090,12 @@ class GptPromptsWindow(AppWindowInterface):
 
     def _prompt_copy_all(self):
         prompt_name = self.prompt_name_input.text().strip()
-        prompt_text = self.prompt_input.toPlainText().strip()
+        system_prompt_text = self.user_prompt_input.toPlainText().strip()
+        user_prompt_text = self.user_prompt_input.toPlainText().strip()
         completion_text = self.completion_text.toPlainText().strip()
 
-        if prompt_text != "" or completion_text != "":
-            all_text = f"{prompt_name}\n\n{prompt_text}\n\n{completion_text}".strip()
+        if system_prompt_text != "" or user_prompt_text != "" or completion_text != "":
+            all_text = f"{prompt_name}\n\n{system_prompt_text}\n\n{user_prompt_text}\n\n{completion_text}".strip()
             self._app_data.clipboard_setText(all_text)
 
     def _prompt_toggle_menu(self):
@@ -983,9 +1104,9 @@ class GptPromptsWindow(AppWindowInterface):
             return
 
         if prompt.show_in_context is None or not prompt.show_in_context:
-            prompt.show_in_context = True # type: ignore
+            prompt.show_in_context = True
         else:
-            prompt.show_in_context = False # type: ignore
+            prompt.show_in_context = False
 
         self._app_data.db_session.commit()
 
@@ -1003,11 +1124,12 @@ class GptPromptsWindow(AppWindowInterface):
 
     def _prompt_show_parsed(self):
         prompt_name = self.prompt_name_input.text().strip()
-        text = self.prompt_input.toPlainText().strip()
-        prompt_text = self._parse_prompt_variables(text, parse_sutta_in_text=True)
+        system_prompt_text = self.system_prompt_input.toPlainText().strip()
+        text = self.user_prompt_input.toPlainText().strip()
+        user_prompt_text = self._parse_prompt_variables(text, parse_sutta_in_text=True)
         completion_text = self.completion_text.toPlainText().strip()
 
-        text = f"{prompt_name}\n\n{prompt_text}\n\n{completion_text}".strip()
+        text = f"{prompt_name}\n\n{system_prompt_text}\n\n{user_prompt_text}\n\n{completion_text}".strip()
 
         d = ShowPromptDialog(text)
         d.exec()
@@ -1030,8 +1152,13 @@ class GptPromptsWindow(AppWindowInterface):
             return
 
         self.prompt_name_input.setText("" if res.name_path is None else res.name_path)
-        self.prompt_input.setPlainText("" if res.prompt_text is None else res.prompt_text)
-        self.completion_text.setPlainText("" if res.completion_text is None else res.completion_text)
+
+        if res.messages_json is None:
+            messages = []
+        else:
+            messages = json.loads(res.messages_json)
+
+        self._set_prompt_inputs(messages)
 
     def _history_delete_selected(self):
         a = self.history_table.selectedIndexes()
@@ -1159,9 +1286,11 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.settings_reset_btn.clicked.connect(partial(self._reset_settings))
 
-        self.prompt_input.textChanged.connect(partial(self._user_typed))
+        self.system_prompt_input.textChanged.connect(partial(self._user_typed))
+        self.user_prompt_input.textChanged.connect(partial(self._user_typed))
 
         self.openai_model_select.currentIndexChanged.connect(partial(self._save_all_settings))
+        self.openai_model_select.currentIndexChanged.connect(partial(self._update_model_max))
 
         self.openai_chat_mode.toggled.connect(partial(self._chat_mode_toggled))
         self.openai_auto_max.toggled.connect(partial(self._auto_max_toggled))
@@ -1177,12 +1306,13 @@ class GptPromptsWindow(AppWindowInterface):
 
 class CompletionWorkerSignals(QObject):
     error = pyqtSignal(str)
-    finished = pyqtSignal(str)
+    warning = pyqtSignal(str)
+    finished = pyqtSignal(list)
 
 class CompletionWorker(QRunnable):
     signals: CompletionWorkerSignals
 
-    def __init__(self, prompt: str, openai_settings: OpenAISettings):
+    def __init__(self, messages: List[ChatMessage], openai_settings: OpenAISettings):
         super().__init__()
 
         api_key = openai_settings['api_key']
@@ -1196,7 +1326,7 @@ class CompletionWorker(QRunnable):
         self.openai.api_key = openai_settings['api_key']
 
         self.signals = CompletionWorkerSignals()
-        self.prompt = prompt
+        self.messages = messages
         self.openai_settings = openai_settings
 
         self.query_started: datetime = datetime.now()
@@ -1208,28 +1338,106 @@ class CompletionWorker(QRunnable):
     def run(self):
         logger.info("CompletionWorker::run()")
         try:
-            model = OpenAIModelLatest[self.openai_settings['model']]
-
-            completion = self.openai.Completion.create(
-                model = model,
-                prompt = self.prompt,
-                temperature = self.openai_settings['temperature'],
-                max_tokens = self.openai_settings['max_tokens'],
-                n = self.openai_settings['n_completions'],
-                stop = None,
-                stream = False,
-                echo = False,
-            )
-
-            result: str = completion.choices[0].text # type: ignore
+            if self.openai_settings['model'] in CHAT_MODELS:
+                results = self.chat_completion()
+            else:
+                results = self.text_completion()
 
             if self.will_emit_finished:
                 logger.info("CompletionWorker::run() signals.finished.emit()")
-                self.signals.finished.emit(result)
+                self.signals.finished.emit(results)
 
         except Exception as e:
             logger.error(e)
             self.signals.error.emit(f"<p>OpenAI Completion error:</p><p>{e}</p>")
+
+    def text_completion(self, max_retries = 10) -> List[str]:
+        logger.info("text_completion()")
+
+        content: List[str] = []
+        try_count = 1
+        while try_count <= max_retries:
+            try:
+                logger.info(f"Request ChatCompletion, try_count {try_count}")
+
+                # https://platform.openai.com/docs/api-reference/completions/create
+                resp: TextResponse = self.openai.Completion.create( # type: ignore
+                    model = OpenAIModelLatest[self.openai_settings['model']],
+                    prompt = messages_to_prompt_text(self.messages),
+                    temperature = self.openai_settings['temperature'],
+                    max_tokens = self.openai_settings['max_tokens'],
+                    n = self.openai_settings['n_completions'],
+                    stop = None,
+                    stream = False,
+                    echo = False,
+                )
+
+                content = [i['text'].strip() for i in resp['choices']]
+                break
+
+            except Exception as e:
+                logger.error(f"---\n{e}\n---")
+                # The model: `gpt-4` does not exist
+                if "does not exist" in str(e):
+                    raise Exception(f"ChatGPT request failed. Error: {e}")
+
+                if "maximum context length" in str(e):
+                    # Return the exception text as a response, so the script can continue.
+                    return [str(e)]
+
+                msg = f"ChatGPT Request failed, retrying ({try_count})."
+                self.signals.warning.emit(msg)
+                logger.error(msg)
+
+            try_count += 1
+
+        if len(content) > 0:
+            return content
+        else:
+            raise Exception(f"ChatGPT request failed, max_retries {max_retries} reached.")
+
+    def chat_completion(self, max_retries = 10) -> List[str]:
+        logger.info("gpt3_chat()")
+
+        content: List[str] = []
+        try_count = 1
+        while try_count <= max_retries:
+            try:
+                logger.info(f"Request ChatCompletion, try_count {try_count}")
+
+                # https://platform.openai.com/docs/api-reference/chat/create
+                resp: ChatResponse = self.openai.ChatCompletion.create( # type: ignore
+                    model =  OpenAIModelLatest[self.openai_settings['model']],
+                    messages = self.messages,
+                    temperature = self.openai_settings['temperature'],
+                    max_tokens = self.openai_settings['max_tokens'],
+                    n = self.openai_settings['n_completions'],
+                    stream = False,
+                )
+
+                content = [i['message']['content'].strip() for i in resp['choices']]
+                break
+
+            except Exception as e:
+                logger.error(f"---\n{e}\n---")
+                # The model: `gpt-4` does not exist
+                if "does not exist" in str(e):
+                    raise Exception(f"ChatGPT request failed. Error: {e}")
+
+                if "maximum context length" in str(e):
+                    # Return the exception text as a response, so the script can continue.
+                    return [str(e)]
+
+                msg = f"ChatGPT Request failed, retrying ({try_count})."
+                self.signals.warning.emit(msg)
+                logger.error(msg)
+
+            try_count += 1
+
+        if len(content) > 0:
+            return content
+        else:
+            raise Exception(f"ChatGPT request failed, max_retries {max_retries} reached.")
 
 class TokenizerWorkerSignals(QObject):
     error = pyqtSignal(str)
@@ -1238,12 +1446,17 @@ class TokenizerWorkerSignals(QObject):
 class TokenizerWorker(QRunnable):
     signals: TokenizerWorkerSignals
 
-    def __init__(self, text: str):
+    def __init__(self,
+                 model: OpenAIModel,
+                 messages: List[ChatMessage]):
+
         super().__init__()
 
         self.signals = TokenizerWorkerSignals()
 
-        self.text = text
+        self.model = model
+        self.messages = messages
+
         self.tokenizer: Optional[Any] = None
 
         self.will_emit_finished = True
@@ -1252,15 +1465,70 @@ class TokenizerWorker(QRunnable):
     def run(self):
         # logger.info("TokenizerWorker::run()")
         try:
-            if self.tokenizer is None:
-                self.tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+            if self.model in CHAT_MODELS:
+                count = num_tokens_from_messages(self.messages, model=OpenAIModelLatest[self.model])
+                if self.will_emit_finished:
+                    self.signals.finished.emit(count)
 
-            count = len(self.tokenizer(self.text)['input_ids'])
+            else:
+                if self.tokenizer is None:
+                    self.tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
 
-            if self.will_emit_finished:
-                # logger.info("TokenizerWorker::run() signals.finished.emit()")
-                self.signals.finished.emit(count)
+                count = len(self.tokenizer(messages_to_prompt_text(self.messages))['input_ids'])
+
+                if self.will_emit_finished:
+                    self.signals.finished.emit(count)
 
         except Exception as e:
             logger.error(e)
             self.signals.error.emit(f"<p>Tokenizer error:</p><p>{e}</p>")
+
+def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301") -> int:
+    """
+    Returns the number of tokens used by a list of messages.
+
+    https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+    """
+
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+
+    except KeyError:
+        logger.warn("Warning: model not found. Using cl100k_base encoding.")
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    if model == "gpt-3.5-turbo":
+        # logger.warn("Warning: gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301.")
+        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301")
+
+    elif model == "gpt-4" or model == "gpt-4-32k":
+        # logger.warn("Warning: gpt-4 may change over time. Returning num tokens assuming gpt-4-0314.")
+        return num_tokens_from_messages(messages, model="gpt-4-0314")
+
+    elif model == "gpt-3.5-turbo-0301":
+        tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+        tokens_per_name = -1  # if there's a name, the role is omitted
+
+    elif model == "gpt-4-0314":
+        tokens_per_message = 3
+        tokens_per_name = 1
+
+    else:
+        raise NotImplementedError(f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")
+
+    num_tokens = 0
+
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens += tokens_per_name
+
+    num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+
+    return num_tokens
+
+def messages_to_prompt_text(messages: List[ChatMessage]) -> str:
+    prompt = "\n\n".join([i["content"] for i in messages])
+    return prompt

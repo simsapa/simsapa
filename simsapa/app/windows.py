@@ -1222,7 +1222,7 @@ class AppWindows:
 
         if hasattr(view, 'action_Prompts'):
             view.action_Prompts \
-                .triggered.connect(partial(self._new_gpt_prompts_window_noret))
+                .triggered.connect(partial(self._new_gpt_prompts_window_noret, None))
 
         if hasattr(view, 'action_Ebook_Reader'):
             view.action_Ebook_Reader \
