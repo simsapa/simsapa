@@ -298,7 +298,7 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.prompt_input_top_buttons_layout.addWidget(QLabel("Copy:"))
 
-        self.prompt_copy_btn = QPushButton("Prompt")
+        self.prompt_copy_btn = QPushButton("User Prompt")
         self.prompt_input_top_buttons_layout.addWidget(self.prompt_copy_btn)
 
         self.prompt_copy_completion_btn = QPushButton("Completion")
@@ -876,7 +876,7 @@ class GptPromptsWindow(AppWindowInterface):
         user_prompt = self.user_prompt_input.toPlainText()
 
         if append_mode:
-            self.user_prompt_input.setPlainText(user_prompt + "\n\n" + result + "\n\n\n\n")
+            self.user_prompt_input.setPlainText(user_prompt + "\n\n[SYSTEM]:\n" + result + "\n\n[USER]:\n")
             self.completion_text.setPlainText("")
 
             self.user_prompt_input.verticalScrollBar().setValue(self.user_prompt_input.verticalScrollBar().maximum())
@@ -1363,7 +1363,7 @@ class CompletionWorker(QRunnable):
                 # https://platform.openai.com/docs/api-reference/completions/create
                 resp: TextResponse = self.openai.Completion.create( # type: ignore
                     model = OpenAIModelLatest[self.openai_settings['model']],
-                    prompt = messages_to_prompt_text(self.messages),
+                    prompt = messages_concat(self.messages),
                     temperature = self.openai_settings['temperature'],
                     max_tokens = self.openai_settings['max_tokens'],
                     n = self.openai_settings['n_completions'],
@@ -1474,7 +1474,7 @@ class TokenizerWorker(QRunnable):
                 if self.tokenizer is None:
                     self.tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
 
-                count = len(self.tokenizer(messages_to_prompt_text(self.messages))['input_ids'])
+                count = len(self.tokenizer(messages_concat(self.messages))['input_ids'])
 
                 if self.will_emit_finished:
                     self.signals.finished.emit(count)
@@ -1529,6 +1529,6 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301") -> int:
 
     return num_tokens
 
-def messages_to_prompt_text(messages: List[ChatMessage]) -> str:
+def messages_concat(messages: List[ChatMessage]) -> str:
     prompt = "\n\n".join([i["content"] for i in messages])
     return prompt
