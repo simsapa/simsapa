@@ -23,6 +23,7 @@ import cst4
 import dhammatalks_org
 import dhammapada_munindo
 import dhammapada_tipitaka_net
+import nyanadipa
 import multi_refs
 import create_links
 
@@ -126,6 +127,8 @@ def main():
     dhammapada_munindo.populate_suttas_from_dhammapada_munindo(appdata_db, limit)
 
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db, limit)
+
+    nyanadipa.populate_suttas_from_nyanadipa(appdata_db, limit)
 
     suttacentral.add_sc_multi_refs(appdata_db, sc_db)
 

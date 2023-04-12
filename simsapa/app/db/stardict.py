@@ -4,11 +4,14 @@
 from typing import Optional, List, TypedDict
 
 from sqlalchemy.sql import func
+from sqlalchemy.orm.session import Session
 from sqlalchemy.dialects.sqlite import insert
 from simsapa.app.db.search import SearchIndexed
 from simsapa.app.helpers import latinize
 
-from simsapa.app.stardict import DictEntry, StarDictPaths, stardict_to_dict_entries, parse_ifo
+from simsapa.app.stardict import DictEntry, StarDictPaths, parse_bword_links_to_ssp, stardict_to_dict_entries, parse_ifo
+from simsapa.app.dict_link_helpers import add_epd_pali_words_links, add_example_links, add_grammar_links, add_sandhi_links
+from simsapa.app.export_helpers import add_sutta_links
 from simsapa.app.types import UDictWord
 from simsapa import DbSchemaName, logger
 
@@ -134,9 +137,35 @@ def import_stardict_update_existing(db_session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, w)
+        search_index.index_dict_words(schema_name, db_session, w)
 
-def import_stardict_as_new(db_session,
+def add_links_to_words(db_session: Session,
+                       words: List[DictEntry]) -> List[DictEntry]:
+    logger.info(f"add_links_to_words(): len(words) = {len(words)}")
+
+    for w in words:
+        html = w['definition_html']
+
+        html = parse_bword_links_to_ssp(html)
+
+        if 'id="example__' in html:
+            html = add_example_links(html)
+
+        if 'id="declension__' not in html:
+            # dpd-grammar doesn't have a declension div.
+            html = add_grammar_links(html)
+
+        html = add_sandhi_links(html)
+
+        html = add_epd_pali_words_links(html)
+
+        html = add_sutta_links(db_session, html)
+
+        w['definition_html'] = html
+
+    return words
+
+def import_stardict_as_new(db_session: Session,
                            schema_name: str,
                            search_index: Optional[SearchIndexed],
                            paths: StarDictPaths,
@@ -154,6 +183,9 @@ def import_stardict_as_new(db_session,
     # https://docs.sqlalchemy.org/en/14/orm/persistence_techniques.html#using-postgresql-on-conflict-with-returning-to-return-upserted-orm-objects
 
     words: List[DictEntry] = stardict_to_dict_entries(paths, limit)
+
+    words = add_links_to_words(db_session, words)
+
     ifo = parse_ifo(paths)
     title = ifo['bookname']
     if label is None:
@@ -197,4 +229,4 @@ def import_stardict_as_new(db_session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, w)
+        search_index.index_dict_words(schema_name, db_session, w)

@@ -261,7 +261,7 @@ def apply_escape(text: str) -> str:
         if m.group(0) in already_replaced:
             continue
 
-        text = re.sub(m.group(0), text_all_escaped(m.group(1)), text)
+        text = text.replace(m.group(0), text_all_escaped(m.group(1)))
 
         already_replaced.append(m.group(0))
 

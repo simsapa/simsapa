@@ -17,6 +17,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.app.dict_link_helpers import add_word_links_to_bold
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
@@ -765,7 +766,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         body = word_html['body']
 
         if word.source_uid == "cpd":
-            body = self.queries._add_word_links_to_bold(body)
+            body = add_word_links_to_bold(body)
 
         page_html = self.queries.render_html_page(
             body = body,

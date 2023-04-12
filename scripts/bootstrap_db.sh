@@ -212,7 +212,7 @@ echo "=== Release Info ==="
 
 cd "$DIST_DIR" || exit
 
-suttas_lang=$(ls -1 suttas_lang_*.tar.bz2 | sed 's/^suttas_lang_/\\"/' | perl -0777 -pe 's/\.tar\.bz2\n/\\", /g' | sed -e 's/^/[/; s/, *$/]/')
+suttas_lang=$(ls -1 suttas_lang_*.sqlite3 | sed 's/^suttas_lang_/\\"/' | perl -0777 -pe 's/\.sqlite3\n/\\", /g' | sed -e 's/^/[/; s/, *$/]/')
 datetime=$(date +%FT%T)
 
 release_info="[[assets.releases]]
