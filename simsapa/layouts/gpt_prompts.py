@@ -196,9 +196,19 @@ class GptPromptsWindow(AppWindowInterface):
         self.prompt_submit.setMinimumSize(QSize(80, 40))
         self._bottom_buttons_box.addWidget(self.prompt_submit)
 
-        self.openai_append_mode = QCheckBox("Append mode", self)
+        self.openai_append_mode = QCheckBox("Append", self)
         self.openai_append_mode.setToolTip("Append the completion to the prompt")
         self._bottom_buttons_box.addWidget(self.openai_append_mode)
+
+        label = QLabel("Model:")
+        self._bottom_buttons_box.addWidget(label)
+
+        self.openai_model_select = QComboBox()
+        items = [i.value for i in OpenAIModel]
+        self.openai_model_select.addItems(items)
+        self.openai_model_select.setCurrentText(self._app_data.app_settings['openai']['model'])
+
+        self._bottom_buttons_box.addWidget(self.openai_model_select)
 
         self.openai_temperature_input = QDoubleSpinBox()
         self.openai_temperature_input.setToolTip("Temperature")
@@ -239,6 +249,9 @@ class GptPromptsWindow(AppWindowInterface):
 
         self._loading_bar_anim = QMovie(':loading-bar')
         self._loading_bar_empty_anim = QMovie(':loading-bar-empty')
+
+        self.completion_warning_msg = QLabel()
+        self._bottom_buttons_box.addWidget(self.completion_warning_msg)
 
         self._bottom_buttons_box.addItem(QSpacerItem(20, 0, QExpanding, QMinimum))
 
@@ -589,19 +602,6 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.settings_tab_layout.addWidget(self.openai_sign_up_info)
 
-        label = QLabel("<p>Language model:</p>")
-        label.setWordWrap(True)
-        self.settings_tab_layout.addWidget(label)
-
-        self.openai_model_select = QComboBox()
-        items = [i.value for i in OpenAIModel]
-        self.openai_model_select.addItems(items)
-
-        self.settings_tab_layout.addWidget(self.openai_model_select)
-
-        self.openai_model_latest_name = QLabel()
-        self.settings_tab_layout.addWidget(self.openai_model_latest_name)
-
         label = QLabel("<p>Number of completions to generate:</p>")
         label.setWordWrap(True)
         self.settings_tab_layout.addWidget(label)
@@ -638,9 +638,6 @@ class GptPromptsWindow(AppWindowInterface):
         self.openai_auto_max.setChecked(s['auto_max_tokens'])
         self.openai_append_mode.setChecked(s['append_mode'])
 
-        self.openai_model_select.setCurrentText(s['model'])
-        m = OpenAIModelLatest[self.openai_model_select.currentText()]
-        self.openai_model_latest_name.setText(f"Latest: {m}")
 
         self.openai_temperature_input.setValue(s['temperature'])
         self.openai_max_tokens_input.setValue(s['max_tokens'])
@@ -653,9 +650,6 @@ class GptPromptsWindow(AppWindowInterface):
         api_key = self.openai_api_key_input.text()
         if api_key == "":
             api_key = None
-
-        s = OpenAIModelLatest[self.openai_model_select.currentText()]
-        self.openai_model_latest_name.setText(f"Latest: {s}")
 
         self.openai_max_tokens_input.setDisabled(self.openai_auto_max.isChecked())
 
@@ -854,7 +848,11 @@ class GptPromptsWindow(AppWindowInterface):
             self.stop_loading_animation()
             self._show_warning(msg)
 
+        def _completion_warning(msg: str):
+            self.completion_warning_msg.setText(msg)
+
         self.completion_worker.signals.error.connect(partial(_completion_error))
+        self.completion_worker.signals.warning.connect(partial(_completion_warning))
 
         self.start_loading_animation()
 
@@ -862,6 +860,7 @@ class GptPromptsWindow(AppWindowInterface):
 
     def _completion_finished(self, results: List[str]):
         self.stop_loading_animation()
+        self.completion_warning_msg.setText("")
 
         if len(results) == 0:
             return
@@ -1008,6 +1007,7 @@ class GptPromptsWindow(AppWindowInterface):
         self.system_prompt_input.setPlainText("")
         self.user_prompt_input.setPlainText("")
         self.completion_text.setPlainText("")
+        self.completion_warning_msg.setText("")
 
     def _prompt_save(self):
         name_path = self.prompt_name_input.text().strip()
