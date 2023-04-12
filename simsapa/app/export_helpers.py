@@ -21,7 +21,8 @@ from simsapa.app.db import appdata_models as Am
 
 def sutta_content_plain(sutta: USutta, join_short_lines: int = 80) -> str:
     if sutta.content_json is not None and sutta.content_json != '':
-        lines = json.loads(str(sutta.content_json))
+        # {'an4.10:0.1': 'Numbered Discourses 4.10 ', 'an4.10:0.2': '1. At Bhaṇḍa Village ', ... }
+        lines = json.loads(str(sutta.content_json)).values()
         content = "\n\n".join(lines)
 
     elif sutta.content_html is not None and sutta.content_html != '':
