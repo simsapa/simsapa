@@ -37,7 +37,6 @@ def ref_notation_convert(ref: str) -> str:
     ref = ref.replace('_', '.').lower()
     ref = ref.replace('.html', '').lower()
     ref = ref.replace('stnp', 'snp')
-    ref = re.sub(r'ud(\d)', r'uda\1', ref)
     ref = re.sub(r'khp(\d)', r'kp\1', ref)
 
     # remove leading zeros, dn02
