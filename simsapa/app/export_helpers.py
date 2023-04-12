@@ -28,6 +28,8 @@ def sutta_content_plain(sutta: USutta, join_short_lines: int = 80) -> str:
         html = str(sutta.content_html)
         html = re.sub(r'<style(.*?)</style>', '', html, flags=re.DOTALL)
         html = re.sub(r'<footer(.*?)</footer>', '', html, flags=re.DOTALL)
+        # <a class="ref sc" href="#sc2" id="sc2">SC 2</a>
+        html = re.sub(r'<a class="ref sc"[^>]+>(.*?)</a>', '', html)
         content = strip_html(html)
 
     elif sutta.content_plain is not None and sutta.content_plain != '':

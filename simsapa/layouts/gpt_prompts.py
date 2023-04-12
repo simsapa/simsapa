@@ -196,9 +196,9 @@ class GptPromptsWindow(AppWindowInterface):
         self.prompt_submit.setMinimumSize(QSize(80, 40))
         self._bottom_buttons_box.addWidget(self.prompt_submit)
 
-        self.openai_chat_mode = QCheckBox("Chat mode", self)
-        self.openai_chat_mode.setToolTip("Append the completion to the prompt")
-        self._bottom_buttons_box.addWidget(self.openai_chat_mode)
+        self.openai_append_mode = QCheckBox("Append mode", self)
+        self.openai_append_mode.setToolTip("Append the completion to the prompt")
+        self._bottom_buttons_box.addWidget(self.openai_append_mode)
 
         self.openai_temperature_input = QDoubleSpinBox()
         self.openai_temperature_input.setToolTip("Temperature")
@@ -636,7 +636,7 @@ class GptPromptsWindow(AppWindowInterface):
             self.openai_sign_up_info.setVisible(True)
 
         self.openai_auto_max.setChecked(s['auto_max_tokens'])
-        self.openai_chat_mode.setChecked(s['chat_mode'])
+        self.openai_append_mode.setChecked(s['append_mode'])
 
         self.openai_model_select.setCurrentText(s['model'])
         m = OpenAIModelLatest[self.openai_model_select.currentText()]
@@ -667,7 +667,7 @@ class GptPromptsWindow(AppWindowInterface):
             auto_max_tokens = self.openai_auto_max.isChecked(),
             n_completions = self.openai_n_completions_input.value(),
             join_short_lines = self.openai_join_lines_under_input.value(),
-            chat_mode = self.openai_chat_mode.isChecked(),
+            append_mode = self.openai_append_mode.isChecked(),
         )
 
         self._app_data.app_settings['openai'] = openai_settings
@@ -680,7 +680,7 @@ class GptPromptsWindow(AppWindowInterface):
         self.token_warning_msg.setText(f"Warning: max total tokens for {model} is {model_max}")
         self._update_token_count()
 
-    def _chat_mode_toggled(self):
+    def _append_mode_toggled(self):
         self._update_horiz_splitter_widths()
         self._save_all_settings()
 
@@ -701,7 +701,7 @@ class GptPromptsWindow(AppWindowInterface):
             self.vert_splitter.setSizes([2000, 0])
 
     def _update_horiz_splitter_widths(self):
-        if self.openai_chat_mode.isChecked():
+        if self.openai_append_mode.isChecked():
             self.horiz_splitter.setSizes([2000, 0])
         else:
             self.horiz_splitter.setSizes([2000, 2000])
@@ -870,12 +870,12 @@ class GptPromptsWindow(AppWindowInterface):
         # Only using the first returned choice for now.
         result = results[0]
 
-        chat_mode = self._app_data.app_settings['openai']['chat_mode']
+        append_mode = self._app_data.app_settings['openai']['append_mode']
 
         name_path = self.prompt_name_input.text()
         user_prompt = self.user_prompt_input.toPlainText()
 
-        if chat_mode:
+        if append_mode:
             self.user_prompt_input.setPlainText(user_prompt + "\n\n" + result + "\n\n\n\n")
             self.completion_text.setPlainText("")
 
@@ -1292,7 +1292,7 @@ class GptPromptsWindow(AppWindowInterface):
         self.openai_model_select.currentIndexChanged.connect(partial(self._save_all_settings))
         self.openai_model_select.currentIndexChanged.connect(partial(self._update_model_max))
 
-        self.openai_chat_mode.toggled.connect(partial(self._chat_mode_toggled))
+        self.openai_append_mode.toggled.connect(partial(self._append_mode_toggled))
         self.openai_auto_max.toggled.connect(partial(self._auto_max_toggled))
 
         for i in [self.openai_temperature_input,

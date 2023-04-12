@@ -76,6 +76,7 @@ setuptools = "65.7.0"
 pytz = "2022.7.0"
 # 2023.0 failed to install
 pyinstaller-hooks-contrib = "2022.14"
+deepmerge = "^1.1.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -165,10 +166,12 @@ requires = [
 "charset-normalizer == 2.1.0",
 "ebooklib           >= 0.18.0,   < 0.19.0",
 "openai             >= 0.26.5,   < 0.27.0",
-"transformers       >= 4.26.1,   < 4.27.0",
+"tiktoken           >= 0.3.3,    < 0.4.0",
+"transformers       >= 4.27.4,   < 4.28.0",
 "setuptools         >= 65.7.0,   < 66.0.0",
 "pytz               >= 2022.7.0, < 2022.7.1",
 "pyinstaller-hooks-contrib >= 2022.14.0, < 2023.0.0",
+"deepmerge          >= 1.1.0,    < 1.2.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

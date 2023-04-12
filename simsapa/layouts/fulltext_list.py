@@ -79,7 +79,7 @@ class HasFulltextList:
 
     def render_fulltext_page(self, sort_title = False):
         page_num = self.fulltext_page_input.value() - 1
-        logger.info(f"render_fulltext_page(), page_num: {page_num}")
+        logger.info(f"render_fulltext_page(), page_num: {page_num}, sort_title: {sort_title}")
         if page_num < 0:
             return
 

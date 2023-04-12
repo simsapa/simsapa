@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, TypedDict, Union
 from urllib.parse import parse_qs
 
+from deepmerge import always_merger
 import tomlkit
 from tomlkit.toml_document import TOMLDocument
 
@@ -384,18 +385,18 @@ class OpenAISettings(TypedDict):
     auto_max_tokens: bool
     n_completions: int
     join_short_lines: int
-    chat_mode: bool
+    append_mode: bool
 
 def default_openai_settings() -> OpenAISettings:
     return OpenAISettings(
         api_key = None,
         model = OpenAIModel.Gpt3_5_Turbo,
-        temperature = 0.0,
+        temperature = 0.7,
         max_tokens = 256,
         auto_max_tokens = False,
         n_completions = 1,
         join_short_lines = 80,
-        chat_mode = False,
+        append_mode = False,
     )
 
 class AppSettings(TypedDict):
@@ -629,10 +630,12 @@ class AppData:
                 .first()
 
         if x is not None and x.value is not None:
-            # Ensure that keys are not missing by updating a default value.
-            d = default_app_settings()
-            d.update(json.loads(x.value))
-            self.app_settings = d
+            default_settings = default_app_settings()
+            stored_settings = json.loads(x.value)
+
+            # Ensure that keys are not missing by updating the default value.
+            s = always_merger.merge(default_settings, stored_settings)
+            self.app_settings = s
 
         else:
             self.app_settings = default_app_settings()
@@ -907,7 +910,7 @@ class AppData:
         def _to_prompt(x: Dict[str, str]) -> Um.GptPrompt:
             return Um.GptPrompt(
                 name_path       = x['name_path']       if x['name_path']       != 'None' else None,
-                prompt_text     = x['prompt_text']     if x['prompt_text']     != 'None' else None,
+                messages_json   = x['messages_json']   if x['messages_json']   != 'None' else None,
                 show_in_context = True                 if x['show_in_context'] == 'True' else False,
             )
 
@@ -942,7 +945,7 @@ class AppData:
         def _to_row(x: Um.GptPrompt) -> Dict[str, str]:
             return {
                 "name_path": str(x.name_path),
-                "prompt_text": str(x.prompt_text),
+                "messages_json": str(x.messages_json),
                 "show_in_context": str(x.show_in_context),
             }
 
