@@ -30,7 +30,7 @@ rm "$SIMSAPA_DIR"/*.tar.bz2
 
 rm "$RELEASE_DIR"/*.tar.bz2
 
-rm -r "$DIST_DIR"/courses
+rm -r "$DIST_DIR"/courses "$DIST_DIR"/html_resources
 rm "$DIST_DIR"/*
 
 dotenv="SIMSAPA_DIR=/home/yume/.local/share/simsapa
@@ -73,16 +73,14 @@ echo "=== Import User Data ==="
 
 ./run.py import-prompts "$BOOTSTRAP_ASSETS_DIR/prompts/prompts.csv"
 
-echo "=== Copy Userdata to DIST folder ==="
+echo "=== Create userdata.tar.bz2 ==="
 
 cp "$ASSETS_DIR"/userdata.sqlite3 "$DIST_DIR"
 cp -r "$ASSETS_DIR"/courses "$DIST_DIR"
+cp -r "$BOOTSTRAP_ASSETS_DIR"/html_resources/ "$DIST_DIR"
 
-echo "=== Copy HTML Resources to DIST folder ==="
-
-cp -r "$ASSETS_DIR"/html_resources/ "$DIST_DIR"
-
-echo "=== Create userdata.tar.bz2 ==="
+# Also copy to local assets dir for testing.
+cp -r "$BOOTSTRAP_ASSETS_DIR"/html_resources/ "$ASSETS_DIR"
 
 cd "$DIST_DIR" || exit
 
