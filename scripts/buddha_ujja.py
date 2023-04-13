@@ -127,7 +127,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
 
         content_text = consistent_nasal_m(str(x.markdown_content))
         # line break is two trailing spaces, not trailing \
-        content_text = re.sub(r'\\$', '  ', content_text)
+        content_text = re.sub(r'\\\n', '  \n', content_text)
 
         content_main = markdown.markdown(
             text = content_text,
