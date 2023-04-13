@@ -8,7 +8,6 @@ from functools import partial
 from typing import Any, List, Optional, TypedDict
 from datetime import datetime
 
-from transformers import GPT2TokenizerFast
 import tiktoken
 
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
@@ -18,7 +17,7 @@ from simsapa.app.export_helpers import sutta_content_plain
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import CHAT_MODELS, AppData, AppWindowInterface, ChatMessage, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, TextResponse, USutta, default_openai_settings, model_max_tokens
+from simsapa.app.types import AppData, AppWindowInterface, ChatMessage, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings, model_max_tokens
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -1338,10 +1337,7 @@ class CompletionWorker(QRunnable):
     def run(self):
         logger.info("CompletionWorker::run()")
         try:
-            if self.openai_settings['model'] in CHAT_MODELS:
-                results = self.chat_completion()
-            else:
-                results = self.text_completion()
+            results = self.chat_completion()
 
             if self.will_emit_finished:
                 logger.info("CompletionWorker::run() signals.finished.emit()")
@@ -1350,51 +1346,6 @@ class CompletionWorker(QRunnable):
         except Exception as e:
             logger.error(e)
             self.signals.error.emit(f"<p>OpenAI Completion error:</p><p>{e}</p>")
-
-    def text_completion(self, max_retries = 10) -> List[str]:
-        logger.info("text_completion()")
-
-        content: List[str] = []
-        try_count = 1
-        while try_count <= max_retries:
-            try:
-                logger.info(f"Request ChatCompletion, try_count {try_count}")
-
-                # https://platform.openai.com/docs/api-reference/completions/create
-                resp: TextResponse = self.openai.Completion.create( # type: ignore
-                    model = OpenAIModelLatest[self.openai_settings['model']],
-                    prompt = messages_concat(self.messages),
-                    temperature = self.openai_settings['temperature'],
-                    max_tokens = self.openai_settings['max_tokens'],
-                    n = self.openai_settings['n_completions'],
-                    stop = None,
-                    stream = False,
-                    echo = False,
-                )
-
-                content = [i['text'].strip() for i in resp['choices']]
-                break
-
-            except Exception as e:
-                logger.error(f"---\n{e}\n---")
-                # The model: `gpt-4` does not exist
-                if "does not exist" in str(e):
-                    raise Exception(f"ChatGPT request failed. Error: {e}")
-
-                if "maximum context length" in str(e):
-                    # Return the exception text as a response, so the script can continue.
-                    return [str(e)]
-
-                msg = f"ChatGPT Request failed, retrying ({try_count})."
-                self.signals.warning.emit(msg)
-                logger.error(msg)
-
-            try_count += 1
-
-        if len(content) > 0:
-            return content
-        else:
-            raise Exception(f"ChatGPT request failed, max_retries {max_retries} reached.")
 
     def chat_completion(self, max_retries = 10) -> List[str]:
         logger.info("gpt3_chat()")
@@ -1465,19 +1416,9 @@ class TokenizerWorker(QRunnable):
     def run(self):
         # logger.info("TokenizerWorker::run()")
         try:
-            if self.model in CHAT_MODELS:
-                count = num_tokens_from_messages(self.messages, model=OpenAIModelLatest[self.model])
-                if self.will_emit_finished:
-                    self.signals.finished.emit(count)
-
-            else:
-                if self.tokenizer is None:
-                    self.tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
-
-                count = len(self.tokenizer(messages_concat(self.messages))['input_ids'])
-
-                if self.will_emit_finished:
-                    self.signals.finished.emit(count)
+            count = num_tokens_from_messages(self.messages, model=OpenAIModelLatest[self.model])
+            if self.will_emit_finished:
+                self.signals.finished.emit(count)
 
         except Exception as e:
             logger.error(e)
