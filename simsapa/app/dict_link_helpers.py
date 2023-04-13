@@ -73,7 +73,10 @@ def add_example_links(html_page: str) -> str:
     if len(example_ids) == 0:
         return html_page
 
-    soup = BeautifulSoup(html_page, 'html.parser')
+    # NOTE: html.parser mangles href url params,
+    # replacing &quot with "
+    # kālaṁ&quote_scope=nikaya becomes kālaṁ"e_scope=nikaya
+    soup = BeautifulSoup(html_page, 'lxml')
     for div_id in example_ids:
         div_el = soup.find(id = div_id)
         if div_el is None:
@@ -124,7 +127,7 @@ def add_example_links(html_page: str) -> str:
                 # count=1 so that two links to the same sutta doesn't get overwritten by the first
                 linked_content = linked_content.replace(m[1], f'<p class="sutta">{link}</p>', 1)
 
-            div_el.replace_with(BeautifulSoup(linked_content, 'html.parser'))
+            div_el.replace_with(BeautifulSoup(linked_content, 'lxml'))
 
     return soup.decode()
 
