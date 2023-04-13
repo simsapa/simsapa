@@ -98,6 +98,7 @@ class AssetManagement(QMainWindow):
         self.assets_dir = assets_dir
         self.index_dir = assets_dir.joinpath('index')
         self.courses_dir = assets_dir.joinpath('courses')
+        self.html_resources_dir = assets_dir.joinpath('html_resources')
 
         self.init_select_sanskrit_bundle = select_sanskrit_bundle
         self.init_add_languages = add_languages
@@ -107,7 +108,8 @@ class AssetManagement(QMainWindow):
         self.releases_worker = ReleasesWorker()
         self.asset_worker = AssetsWorker(assets_dir = self.assets_dir,
                                          index_dir = self.index_dir,
-                                         courses_dir = self.courses_dir)
+                                         courses_dir = self.courses_dir,
+                                         html_resources_dir = self.html_resources_dir)
 
         self.releases_worker.signals.finished.connect(partial(self._releases_finished))
 
@@ -655,7 +657,7 @@ class AssetsWorker(QRunnable):
     download_started: threading.Event
     download_stop: threading.Event
 
-    def __init__(self, assets_dir: Path, index_dir: Path, courses_dir: Path):
+    def __init__(self, assets_dir: Path, index_dir: Path, courses_dir: Path, html_resources_dir: Path):
         super(AssetsWorker, self).__init__()
 
         self.signals = AssetsWorkerSignals()
@@ -663,6 +665,7 @@ class AssetsWorker(QRunnable):
         self.assets_dir = assets_dir
         self.index_dir = index_dir
         self.courses_dir = courses_dir
+        self.html_resources_dir = html_resources_dir
 
         self.user_db_path = assets_dir.joinpath("userdata.sqlite3")
 
@@ -792,6 +795,12 @@ class AssetsWorker(QRunnable):
             for p in glob.glob(f"{extract_temp_dir}/courses/*"):
                 shutil.move(p, self.courses_dir)
 
+    def import_move_html_resources_data(self, extract_temp_dir: Path):
+        if extract_temp_dir.joinpath("html_resources").exists():
+            for i in ['appdata', 'userdata']:
+                for p in glob.glob(f"{extract_temp_dir}/html_resources/{i}/*"):
+                    shutil.move(p, self.html_resources_dir.joinpath(i))
+
     def import_move_index(self, extract_temp_dir: Path):
         # If indexed segments were included (e.g. with sutta languages), move
         # the segment files to the index folder.
@@ -822,6 +831,7 @@ class AssetsWorker(QRunnable):
     def import_assets_from_extract_temp(self, extract_temp_dir: Path):
         self.import_move_appdata(extract_temp_dir)
         self.import_move_courses_data(extract_temp_dir)
+        self.import_move_html_resources_data(extract_temp_dir)
         self.import_move_index(extract_temp_dir)
         self.import_move_userdata(extract_temp_dir)
         self.import_suttas_lang_to_userdata(extract_temp_dir)
