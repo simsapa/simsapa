@@ -26,7 +26,7 @@ from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_grou
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, UChallenge, UChallengeGroup
+from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, QueryType, UChallenge, UChallengeGroup
 
 
 class ChoiceButton(QPushButton):
@@ -136,7 +136,7 @@ class CoursePracticeWindow(AppWindowInterface):
             return
 
         self._setup_audio()
-        self._ui_setup()
+        self._setup_ui()
         self._load_challenge_content()
         self._connect_signals()
 
@@ -236,7 +236,7 @@ class CoursePracticeWindow(AppWindowInterface):
         return r
 
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Pali Courses Browser")
         self.resize(850, 650)
 
@@ -472,6 +472,14 @@ class CoursePracticeWindow(AppWindowInterface):
 
     def _emit_hide_preview(self):
         self.hide_preview.emit()
+
+
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        # elif url.host() == QueryType.words:
+        #     self._show_words_by_url(url)
 
 
     def _show_sutta_by_url(self, url: QUrl):
@@ -975,9 +983,11 @@ class CoursePracticeWindow(AppWindowInterface):
 
         event.accept()
 
+    def _handle_close(self):
+        self.close()
 
     def _connect_signals(self):
-        self.close_btn.clicked.connect(self.close)
+        self.close_btn.clicked.connect(partial(self._handle_close))
 
         self.continue_btn.clicked.connect(partial(self._handle_continue))
 

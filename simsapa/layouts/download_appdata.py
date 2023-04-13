@@ -1,54 +1,96 @@
-import os
-import glob
 from functools import partial
-from pathlib import Path
 import shutil
-import tarfile
-import requests
-import threading
+from pathlib import Path
 from typing import List, Optional
 from PyQt6 import QtWidgets
 
-from PyQt6.QtCore import QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
-from PyQt6.QtWidgets import (QCheckBox, QFrame, QMessageBox, QRadioButton, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
-from PyQt6.QtGui import QMovie
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm.session import make_transient
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QPushButton, QLabel)
+from simsapa.app.helpers import ReleasesInfo
 
 from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
-from simsapa.app.db import appdata_models as Am
-from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import filter_compatible_db_entries, get_feed_entries_with_requests
+from simsapa import ASSETS_DIR, APP_DB_PATH
+from simsapa.layouts.asset_management import AssetManagement
 
-from simsapa import logger, INDEX_DIR, ASSETS_DIR, COURSES_DIR, APP_DB_PATH, USER_DB_PATH
+class DownloadAppdataWindow(AssetManagement):
+    def __init__(self,
+                 assets_dir: Path = ASSETS_DIR,
+                 releases_info: Optional[ReleasesInfo] = None,
+                 select_sanskrit_bundle = False,
+                 add_languages: List[str] = [],
+                 auto_start_download = False) -> None:
 
-from simsapa.assets import icons_rc
-
-
-class DownloadAppdataWindow(QMainWindow):
-    _msg: QLabel
-
-    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Download Application Assets")
-        self.setFixedSize(350, 400)
+        self.setFixedSize(500, 700)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
-        self.thread_pool = QThreadPool()
+        self.assets_dir = assets_dir
+        self.index_dir = assets_dir.joinpath("index")
 
-        self.download_worker = Worker()
+        self.releases_info = releases_info
 
+        p = ASSETS_DIR.joinpath("auto_start_download.txt")
+        if p.exists():
+            self.auto_start_download = True
+            p.unlink()
+        else:
+            self.auto_start_download = auto_start_download
+
+        p = ASSETS_DIR.joinpath("download_select_sanskrit_bundle.txt")
+        if p.exists():
+            self.init_select_sanskrit_bundle = True
+            p.unlink()
+        else:
+            self.init_select_sanskrit_bundle = select_sanskrit_bundle
+
+        p = ASSETS_DIR.joinpath("download_languages.txt")
+        if p.exists():
+            with open(p, 'r') as f:
+                langs = f.read().strip()
+                self.init_add_languages = [i.strip() for i in langs.split(",")]
+            p.unlink()
+        else:
+            self.init_add_languages = add_languages
+
+        self._init_workers(self.assets_dir,
+                           self.init_select_sanskrit_bundle,
+                           self.init_add_languages,
+                           self.auto_start_download)
         self._setup_ui()
+
+        self.add_languages_title_text = "Include Languages"
+        self.include_appdata_downloads = True
+
+        def _pre_hook():
+            # Remove existing indexes with this. Can't safely clear and remove them
+            # in windows._redownload_database_dialog().
+            self._remove_old_index()
+
+            self.bundles_frame.hide()
+
+        self._run_download_pre_hook = _pre_hook
+
+        if self.releases_info is None:
+            self.thread_pool.start(self.releases_worker)
+        else:
+            self._releases_finished(self.releases_info)
+
+        if self.init_select_sanskrit_bundle:
+            self.select_sanskrit_bundle()
 
     def _setup_ui(self):
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
 
         self._layout = QVBoxLayout()
+        self._layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._central_widget.setLayout(self._layout)
+
+        # Create it here, add it to a layout later
+        self._close_button = QPushButton("Close")
+        self._close_button.clicked.connect(partial(self._handle_quit))
 
         spc1 = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc1)
@@ -58,36 +100,46 @@ class DownloadAppdataWindow(QMainWindow):
         spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc2)
 
-        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
+        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Checking for available sources to download...<p>")
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.addWidget(self._msg)
 
-        self._setup_info_frame()
+        self.spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(self.spc3)
+
+        self.spc4 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
+        self._layout.addItem(self.spc4)
+
+    def _setup_selection(self):
+        self.spc3 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
+        self.spc4 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
+
+        self._msg.setText("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
+
+        self._setup_progress_bar_frame()
+
+        self._setup_bundles_frame()
+        self._setup_add_languages_frame()
 
         spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc3)
 
-        self._progress_bar = QProgressBar()
-        self._progress_bar.hide()
-        self._layout.addWidget(self._progress_bar)
-
         spacerItem = QtWidgets.QSpacerItem(20, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spacerItem)
 
-        self._setup_buttons()
+        self._setup_add_buttons()
 
-
-    def _setup_info_frame(self):
+    def _setup_bundles_frame(self):
         frame = QFrame()
         frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         frame.setLineWidth(0)
 
-        self.info_frame = frame
-        self._layout.addWidget(self.info_frame)
+        self.bundles_frame = frame
+        self._layout.addWidget(self.bundles_frame)
 
         self.text_select_layout = QVBoxLayout()
-        self.info_frame.setLayout(self.text_select_layout)
+        self.bundles_frame.setLayout(self.text_select_layout)
 
         rad = QRadioButton("General bundle")
         rad.setChecked(True)
@@ -119,11 +171,13 @@ class DownloadAppdataWindow(QMainWindow):
         self.chk_sanskrit_texts = chk
         self.text_select_layout.addWidget(self.chk_sanskrit_texts)
 
-        # NOTE: At the moment, the Sanskrit texts also include the index. Will need this when downloading other languages.
-        # self.index_info = QLabel("(The search index will be generated on first-time\n start. This may take 30-60 mins.)")
-        # self.index_info.setDisabled(True)
-        # self.text_select_layout.addWidget(self.index_info)
+    def select_sanskrit_bundle(self):
+        self.sel_additional.setChecked(True)
+        self.chk_sanskrit_texts.setChecked(True)
+        self._toggled_general_bundle()
 
+    def _is_additional_urls_selected(self) -> bool:
+        return (self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked())
 
     def _toggled_general_bundle(self):
         checked = self.sel_general_bundle.isChecked()
@@ -133,147 +187,9 @@ class DownloadAppdataWindow(QMainWindow):
         self.chk_sanskrit_texts.setDisabled(checked)
         # self.index_info.setDisabled(checked)
 
-
-    def _setup_animation(self):
-        self._animation = QLabel(self)
-        self._animation.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._layout.addWidget(self._animation)
-
-
-    def _setup_buttons(self):
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setContentsMargins(0, 20, 0, 10)
-
-        self._download_button = QPushButton("Download")
-        self._download_button.setFixedSize(100, 30)
-        self._quit_button = QPushButton("Quit")
-        self._quit_button.setFixedSize(100, 30)
-
-        self._download_button.clicked.connect(partial(self._run_download))
-        self._quit_button.clicked.connect(partial(self._handle_quit))
-
-        buttons_layout.addWidget(self._quit_button)
-        buttons_layout.addWidget(self._download_button)
-
-        self._layout.addLayout(buttons_layout)
-
-
-    def setup_animation(self):
-        self._msg.setText("Downloading ...")
-        self._download_button.setEnabled(False)
-
-        self._movie = QMovie(':simsapa-loading')
-        self._animation.setMovie(self._movie)
-
-
-    def start_animation(self):
-        self._movie.start()
-
-
-    def stop_animation(self):
-        self._movie.stop()
-
-
-    def _run_download(self):
-        # Retreive released asset versions from github.
-        # Filter for app-compatible db versions, major and minor version number must agree.
-
-        try:
-            requests.head("https://github.com/", timeout=5)
-        except Exception as e:
-            msg = "No connection, cannot download database: %s" % e
-            QMessageBox.information(self,
-                                    "No Connection",
-                                    msg,
-                                    QMessageBox.StandardButton.Ok)
-            logger.error(msg)
-            return
-
-        try:
-            stable_entries = get_feed_entries_with_requests("https://github.com/simsapa/simsapa-assets/releases.atom")
-            logger.info(f"stable entries: {stable_entries}")
-        except Exception as e:
-            msg = "Download failed: %s" % e
-            QMessageBox.information(self,
-                                    "Error",
-                                    msg,
-                                    QMessageBox.StandardButton.Ok)
-            logger.error(msg)
-            return
-
-        if len(stable_entries) == 0:
-            return
-
-        compat_entries = filter_compatible_db_entries(stable_entries)
-        logger.info(f"compatible entries: {compat_entries}")
-
-        if len(compat_entries) == 0:
-            return
-
-        version = compat_entries[0]["version"]
-
-        # ensure 'v' prefix
-        if version[0] != 'v':
-            version = 'v' + version
-
-        appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/appdata.tar.bz2"
-        userdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/userdata.tar.bz2"
-        index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/index.tar.bz2"
-
-        sanskrit_appdata_tar_url  = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-appdata.tar.bz2"
-        sanskrit_index_tar_url    = f"https://github.com/simsapa/simsapa-assets/releases/download/{version}/sanskrit-index.tar.bz2"
-
-        # Default: General bundle
-        urls = [
-            appdata_tar_url,
-            index_tar_url,
-        ]
-
-        if self.sel_additional.isChecked() and self.chk_sanskrit_texts.isChecked():
-            urls = [
-                sanskrit_appdata_tar_url,
-                sanskrit_index_tar_url,
-            ]
-
-
-        if not USER_DB_PATH.exists():
-            urls.append(userdata_tar_url)
-
-        # Remove existing indexes here. Can't safely clear and remove them in
-        # windows._redownload_database_dialog().
-        self._remove_old_index()
-
-        self.download_worker.urls = urls
-
-        self.download_worker.signals.msg_update.connect(partial(self._msg_update))
-
-        self.download_worker.signals.finished.connect(partial(self._download_finished))
-        self.download_worker.signals.cancelled.connect(partial(self._download_cancelled))
-
-        self.download_worker.signals.set_current_progress.connect(partial(self._progress_bar.setValue))
-        self.download_worker.signals.set_total_progress.connect(partial(self._progress_bar.setMaximum))
-        self.download_worker.signals.download_max.connect(partial(self._download_max))
-
-        logger.info("Show progress bar")
-        self._progress_bar.show()
-
-        logger.info("Start download worker")
-        self.thread_pool.start(self.download_worker)
-
-        self.info_frame.hide()
-
-        self.setup_animation()
-        self.start_animation()
-
-    def _download_max(self):
-        self._progress_bar.setValue(self._progress_bar.maximum())
-
-    def _msg_update(self, msg: str):
-        self._msg.setText(msg)
-
     def _remove_old_index(self):
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if self.index_dir.exists():
+            shutil.rmtree(self.index_dir)
 
         # FIXME When removing the previous index, test if there were user imported
         # data in the userdata database, and if so, tell the user that they have to
@@ -290,212 +206,9 @@ class DownloadAppdataWindow(QMainWindow):
         # Don't remove assets dir, it may contain userdata.sqlite3 with user's
         # memos, bookmarks, settings, etc.
 
-        if INDEX_DIR.exists():
-            shutil.rmtree(INDEX_DIR)
+        if self.index_dir.exists():
+            shutil.rmtree(self.index_dir)
 
         if APP_DB_PATH.exists():
             APP_DB_PATH.unlink()
 
-    def _download_finished(self):
-        self.stop_animation()
-        self._animation.deleteLater()
-
-        self._msg.setText("<p>Download completed.</p><p>Quit and start the application again.</p>")
-
-    def _download_cancelled(self):
-        self.stop_animation()
-        self._animation.deleteLater()
-        self._cancelled_cleanup_files()
-        self.close()
-
-    def _handle_quit(self):
-        if self.download_worker.download_started.isSet():
-            self._msg.setText("<p>Setup cancelled, waiting for subprocesses to end ...</p>")
-            self.download_worker.download_stop.set()
-            # Don't .close() here, wait for _download_cancelled() to do it.
-            #
-            # Otherwise, triggering .close() while the extraction is not finished will cause a threading error.
-            #
-            # RuntimeError: wrapped C/C++ object of type WorkerSignals has been deleted
-            # QObject: Cannot create children for a parent that is in a different thread.
-            # (Parent is QApplication(0x4050170), parent's thread is QThread(0x2785280), current thread is QThreadPoolThread(0x51dbd00)
-            # fish: Job 1, './run.py' terminated by signal SIGSEGV (Address boundary error)
-
-        else:
-            self.close()
-
-class WorkerSignals(QObject):
-    finished = pyqtSignal()
-    cancelled = pyqtSignal()
-    msg_update = pyqtSignal(str)
-    set_total_progress = pyqtSignal(int)
-    set_current_progress = pyqtSignal(int)
-    download_max = pyqtSignal()
-
-
-class Worker(QRunnable):
-    urls: List[str]
-    signals: WorkerSignals
-    download_started: threading.Event
-    download_stop: threading.Event
-
-    def __init__(self):
-        super(Worker, self).__init__()
-
-        self.signals = WorkerSignals()
-
-        self.download_started = threading.Event()
-        self.download_stop = threading.Event()
-
-    @pyqtSlot()
-    def run(self):
-        logger.info("Worker::run()")
-        try:
-            self.download_started.set()
-
-            logger.info(f"Download urls: {self.urls}")
-
-            for i in self.urls:
-                self.download_extract_tar_bz2(i)
-                if self.download_stop.is_set():
-                    logger.info("run(): Cancelling")
-                    self.signals.cancelled.emit()
-                    return
-
-            def _not_core_db(s: str) -> bool:
-                p = Path(s)
-                return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
-
-            # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
-            p = ASSETS_DIR.joinpath("*.sqlite3")
-            sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
-
-            for i in sqlite_files:
-                self.import_suttas_to_appdata(Path(i))
-
-            for i in sqlite_files:
-                Path(i).unlink()
-
-        except Exception as e:
-            # FIXME return error to download window and show the user
-            msg = "%s" % e
-            logger.error(msg)
-
-        finally:
-            self.download_started.clear()
-            self.signals.finished.emit()
-
-    def download_file(self, url: str, folder_path: Path) -> Optional[Path]:
-
-        logger.info(f"download_file() : {url}, {folder_path}")
-        file_name = url.split('/')[-1]
-        file_path = folder_path.joinpath(file_name)
-
-        try:
-            with requests.get(url, stream=True) as r:
-                chunk_size = 8192
-                read_bytes = 0
-                total_bytes = int(r.headers['Content-Length'])
-                self.signals.set_total_progress.emit(total_bytes)
-
-                total_mb = "%.2f" % (total_bytes / 1024 / 1024)
-
-                r.raise_for_status()
-                with open(file_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        f.write(chunk)
-                        read_bytes += chunk_size
-                        read_mb = "%.2f" % (read_bytes / 1024 / 1024)
-
-                        self.signals.set_current_progress.emit(read_bytes)
-                        self.signals.msg_update.emit(f"<p>Downloading {file_name}</p><p>({read_mb} / {total_mb} MB) ...</p>")
-
-                        if self.download_stop.is_set():
-                            logger.info("download_file(): Stopping download, removing partial file.")
-                            file_path.unlink()
-                            return None
-        except Exception as e:
-            raise e
-
-        self.signals.download_max.emit()
-        return file_path
-
-    def download_extract_tar_bz2(self, url):
-        try:
-            tar_file_path = self.download_file(url, ASSETS_DIR)
-        except Exception as e:
-            raise e
-
-        if tar_file_path is None:
-            return False
-
-        file_name = url.split('/')[-1]
-        self.signals.msg_update.emit(f"Extracting {file_name} ...")
-
-        tar = tarfile.open(tar_file_path, "r:bz2")
-        temp_dir = ASSETS_DIR.joinpath('extract_temp')
-        tar.extractall(temp_dir)
-        tar.close()
-
-        # FIXME on Mac, it downloads the extra database (i.e.
-        # sanskrit-texts.sqlite3) but then deletes it. Path name problems?
-
-        os.remove(tar_file_path)
-
-        for p in glob.glob(f"{temp_dir}/*.sqlite3"):
-            shutil.move(p, ASSETS_DIR)
-
-        if temp_dir.joinpath("courses").exists():
-            for p in glob.glob(f"{temp_dir}/courses/*"):
-                shutil.move(p, COURSES_DIR)
-
-        temp_index = temp_dir.joinpath("index")
-        if temp_index.exists():
-            shutil.move(temp_index, ASSETS_DIR)
-
-        shutil.rmtree(temp_dir)
-
-
-    def import_suttas_to_appdata(self, db_path: Path):
-        if not db_path.exists():
-            logger.error(f"Doesn't exist: {db_path}")
-            return
-
-        try:
-            app_db_eng, app_db_conn, app_db_session = get_db_engine_connection_session(include_userdata=False)
-
-            db_eng = create_engine("sqlite+pysqlite://", echo=False)
-            db_conn = db_eng.connect()
-            db_conn.execute(f"ATTACH DATABASE '{db_path}' AS appdata;")
-            Session = sessionmaker(db_eng)
-            Session.configure(bind=db_eng)
-
-            import_db_session = Session()
-
-            res = import_db_session.query(Am.Sutta).all()
-
-            logger.info(f"Importing to Appdata, {len(res)} suttas from {db_path}")
-
-            # https://stackoverflow.com/questions/28871406/how-to-clone-a-sqlalchemy-object-with-new-primary-key
-
-            for i in res:
-                try:
-                    import_db_session.expunge(i)
-                    make_transient(i)
-                    i.id = None
-
-                    app_db_session.add(i)
-                    app_db_session.commit()
-                except Exception as e:
-                    logger.error(f"Import problem: {e}")
-
-            app_db_session.close_all()
-            app_db_conn.close()
-            app_db_eng.dispose()
-
-            import_db_session.close()
-            db_conn.close()
-            db_eng.dispose()
-
-        except Exception as e:
-            logger.error(f"Database problem: {e}")

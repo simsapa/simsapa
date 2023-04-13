@@ -488,6 +488,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Sutta_Study"/>
+    <addaction name="action_Sutta_Index"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Bookmarks"/>
@@ -495,6 +496,7 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
+    <addaction name="action_Ebook_Reader"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
@@ -506,6 +508,7 @@
      <string>&amp;Help</string>
     </property>
     <addaction name="action_Search_Query_Terms"/>
+    <addaction name="action_Check_for_Updates"/>
     <addaction name="action_Notify_About_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
@@ -518,12 +521,14 @@
     <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
-   <widget class="QMenu" name="menu_Go">
+   <widget class="QMenu" name="menu_Find">
     <property name="title">
-     <string>&amp;Go</string>
+     <string>F&amp;ind</string>
     </property>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
+    <addaction name="action_Double_Click_on_a_Word_for_Dictionary_Lookup"/>
+    <addaction name="action_Clipboard_Monitoring_for_Dictionary_Lookup"/>
     <addaction name="action_Previous_Result"/>
     <addaction name="action_Next_Result"/>
    </widget>
@@ -539,7 +544,7 @@
    <addaction name="menu_File"/>
    <addaction name="menu_Edit"/>
    <addaction name="menu_View"/>
-   <addaction name="menu_Go"/>
+   <addaction name="menu_Find"/>
    <addaction name="menu_Windows"/>
    <addaction name="menu_Dictionary"/>
    <addaction name="menu_Help"/>
@@ -920,6 +925,48 @@
    </property>
    <property name="text">
     <string>Link Preview</string>
+   </property>
+  </action>
+  <action name="action_Ebook_Reader">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Ebook Reader</string>
+   </property>
+  </action>
+  <action name="action_Check_for_Updates">
+   <property name="text">
+    <string>Check for Updates...</string>
+   </property>
+  </action>
+  <action name="action_Double_Click_on_a_Word_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Double Click on a Word for Dictionary Lookup</string>
+   </property>
+  </action>
+  <action name="action_Clipboard_Monitoring_for_Dictionary_Lookup">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Clipboard Monitoring for Dictionary Lookup</string>
+   </property>
+  </action>
+  <action name="action_Sutta_Index">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>Sutta Index</string>
    </property>
   </action>
  </widget>

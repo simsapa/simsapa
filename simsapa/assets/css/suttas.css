@@ -470,7 +470,7 @@ div.btn a {
   font-size: 0.8em;
 }
 
-html {
+html, body {
   font-size: 22px;
   line-height: 1.5;
   font-family: "Crimson Pro SSP";
@@ -512,10 +512,10 @@ h4 {
   font-size: 1rem;
 }
 
-.lang-skr {
+.lang-san {
   font-family: "DejaVu Serif", "Georgia", serif;
 }
-.lang-skr h1, .lang-skr h2, .lang-skr h3, .lang-skr h4, .lang-skr h5, .lang-skr h6 {
+.lang-san h1, .lang-san h2, .lang-san h3, .lang-san h4, .lang-san h5, .lang-san h6 {
   font-family: "DejaVu Serif", "Georgia", serif;
 }
 

@@ -17,9 +17,12 @@ if p != '':
 # When running the prod app, the value below is used.
 #
 # In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
-SIMSAPA_APP_VERSION = "0.2.0-alpha.1"
+SIMSAPA_APP_VERSION = "0.3.0-alpha.1"
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
+
+# No trailing slash
+SIMSAPA_RELEASES_BASE_URL = "https://simsapa.a-buddha-ujja.hu"
 
 PACKAGE_ASSETS_RSC_DIR = Path('assets')
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
@@ -59,6 +62,11 @@ APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
 
 COURSES_DIR = ASSETS_DIR.joinpath('courses')
+
+EBOOK_UNZIP_DIR = ASSETS_DIR.joinpath('ebook_unzip')
+
+HTML_RESOURCES_APPDATA_DIR = ASSETS_DIR.joinpath('html_resources/appdata/')
+HTML_RESOURCES_USERDATA_DIR = ASSETS_DIR.joinpath('html_resources/userdata/')
 
 STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 
@@ -110,6 +118,18 @@ if b is None:
     DICTIONARY_JS = ""
 else:
     DICTIONARY_JS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/ebook_extra.css')))
+if b is None:
+    EBOOK_EXTRA_CSS = ""
+else:
+    EBOOK_EXTRA_CSS = b.decode("utf-8")
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/ebook_extra.js')))
+if b is None:
+    EBOOK_EXTRA_JS = ""
+else:
+    EBOOK_EXTRA_JS = b.decode("utf-8")
 
 class DbSchemaName(str, Enum):
     AppData = 'appdata'

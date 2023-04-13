@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from whoosh.index import FileIndex
 
-from sqlalchemy.sql.elements import and_, or_, not_
+from sqlalchemy import and_, or_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
@@ -33,7 +33,8 @@ class SearchQueryWorker(QRunnable):
         self.search_mode = search_mode
 
         self.query = ""
-        self.query_started = datetime.now()
+        self.query_started: datetime = datetime.now()
+        self.query_finished: Optional[datetime] = None
         self.disabled_labels = None
         self.only_source = None
 
@@ -48,6 +49,8 @@ class SearchQueryWorker(QRunnable):
 
         self.query = consistent_nasal_m(query.lower())
         self.query_started = query_started
+        self.query_finished = None
+        self.will_emit_finished = True
         self.disabled_labels = disabled_labels
         self.only_lang = None if only_lang is None else only_lang.lower()
         self.only_source = None if only_source is None else only_source.lower()
@@ -82,7 +85,7 @@ class SearchQueryWorker(QRunnable):
     def results_page(self, page_num: int) -> List[SearchResult]:
         if page_num not in self._highlighted_result_pages:
             if self.search_mode == SearchMode.FulltextMatch:
-                self._highlighted_result_pages[page_num] = self.search_query.highlight_results_page(page_num)
+                self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
             else:
                 page_start = page_num * self._page_len
                 page_end = page_start + self._page_len
@@ -96,9 +99,6 @@ class SearchQueryWorker(QRunnable):
                 self._highlighted_result_pages[page_num] = page
 
         return self._highlighted_result_pages[page_num]
-
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        return self.results_page(page_num)
 
     def _fragment_around_query(self, query: str, content: str) -> str:
         n = content.lower().find(query.lower())
@@ -185,10 +185,12 @@ class SearchQueryWorker(QRunnable):
 
             if self.search_mode == SearchMode.FulltextMatch:
                  self.search_query.new_query(self.query, self.disabled_labels, self.only_lang, self.only_source)
-                 self._highlighted_result_pages[0] = self.search_query.highlight_results_page(0)
+                 self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
-            elif self.search_mode == SearchMode.ExactMatch:
-                _, _, db_session = get_db_engine_connection_session()
+            elif self.search_mode == SearchMode.ExactMatch or \
+                 self.search_mode == SearchMode.RegexMatch:
+
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 if self.search_query.ix.indexname == 'suttas':
 
@@ -200,21 +202,30 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.Sutta)
                         for i in and_terms:
-                            p = expand_quote_to_pattern_str(i)
+                            if self.search_mode == SearchMode.ExactMatch:
+                                p = expand_quote_to_pattern_str(i)
+                            else:
+                                p = i
                             q = q.filter(Am.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                         q = db_session.query(Um.Sutta)
                         for i in and_terms:
-                            p = expand_quote_to_pattern_str(i)
+                            if self.search_mode == SearchMode.ExactMatch:
+                                p = expand_quote_to_pattern_str(i)
+                            else:
+                                p = i
                             q = q.filter(Um.Sutta.content_plain.regexp_match(p))
                         r = q.all()
                         res_suttas.extend(r)
 
                     else:
 
-                        p = expand_quote_to_pattern_str(self.query)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            p = expand_quote_to_pattern_str(self.query)
+                        else:
+                            p = self.query
 
                         r = db_session \
                             .query(Am.Sutta) \
@@ -246,28 +257,40 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.DictWord)
                         for i in and_terms:
-                            q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                            if self.search_mode == SearchMode.ExactMatch:
+                                q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                            else:
+                                q = q.filter(Am.DictWord.definition_plain.regexp_match(i))
                         r = q.all()
                         res.extend(r)
 
                         q = db_session.query(Um.DictWord)
                         for i in and_terms:
-                            q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                            if self.search_mode == SearchMode.ExactMatch:
+                                q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                            else:
+                                q = q.filter(Um.DictWord.definition_plain.regexp_match(i))
                         r = q.all()
                         res.extend(r)
 
                     else:
 
-                        r = db_session \
-                            .query(Am.DictWord) \
-                            .filter(Am.DictWord.definition_plain.like(f"%{self.query}%")) \
-                            .all()
+                        q = db_session.query(Am.DictWord)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query}%"))
+                        else:
+                            q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query))
+
+                        r = q.all()
                         res.extend(r)
 
-                        r = db_session \
-                            .query(Um.DictWord) \
-                            .filter(Um.DictWord.definition_plain.like(f"%{self.query}%")) \
-                            .all()
+                        q = db_session.query(Um.DictWord)
+                        if self.search_mode == SearchMode.ExactMatch:
+                            q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query}%"))
+                        else:
+                            q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query))
+
+                        r = q.all()
                         res.extend(r)
 
                     if self.only_source is not None:
@@ -278,11 +301,13 @@ class SearchQueryWorker(QRunnable):
 
                     self._all_results = list(map(self._db_word_to_result, res))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
             elif self.search_mode == SearchMode.TitleMatch:
                 # NOTE: SearchMode.TitleMatch only applies to suttas.
-                _, _, db_session = get_db_engine_connection_session()
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 res_suttas: List[USutta] = []
 
@@ -326,11 +351,13 @@ class SearchQueryWorker(QRunnable):
 
                 self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
             elif self.search_mode == SearchMode.HeadwordMatch:
                 # NOTE: SearchMode.HeadwordMatch only applies to dictionary words.
-                _, _, db_session = get_db_engine_connection_session()
+                db_eng, db_conn, db_session = get_db_engine_connection_session()
 
                 res: List[UDictWord] = []
 
@@ -394,10 +421,14 @@ class SearchQueryWorker(QRunnable):
 
                 self._all_results = list(map(self._db_word_to_result, res))
 
+                db_conn.close()
                 db_session.close()
+                db_eng.dispose()
 
-            logger.info("signals.finished.emit()")
-            self.signals.finished.emit()
+            self.query_finished = datetime.now()
+            if self.will_emit_finished:
+                logger.info("signals.finished.emit()")
+                self.signals.finished.emit()
 
         except Exception as e:
             logger.error(e)

@@ -45,10 +45,10 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
         self.suttas_wb = None
         self.sheet_file_path = None
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._layout = QVBoxLayout()
 
         self.open_spreadsheet_button = QPushButton("Open Spreadsheet (.xlsx) ...")
@@ -136,8 +136,8 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             if sutta_row['html_last_line'] <= 0:
                 content_html = gretil_header_to_footer(content_html)
 
-        if sutta_row['language'] == 'skr':
-            content_classes.append('lang-skr')
+        if sutta_row['language'] == 'san':
+            content_classes.append('lang-san')
 
         if len(content_classes) > 0:
             s = " ".join(content_classes)
@@ -200,7 +200,6 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
             sutta.title = sutta_row['title']
             sutta.content_html = content_html
             sutta.author = author
-            sutta.updated_at = func.now()
 
             try:
                 logger.info(f"Updating sutta: {sutta.uid}")
@@ -213,7 +212,11 @@ class ImportSuttasWithSpreadsheetDialog(QDialog):
                           .filter(Um.Sutta.uid == uid) \
                           .all()
 
-        self._app_data.search_indexed.index_suttas(DbSchemaName.UserData.value, s)
+        self._app_data.search_indexed.index_suttas(
+            self._app_data.search_indexed.suttas_index,
+            DbSchemaName.UserData.value,
+            self._app_data.db_session,
+            s)
 
     def import_sheet(self, sheet: Worksheet):
         logger.info("=== import_sheet() ===")

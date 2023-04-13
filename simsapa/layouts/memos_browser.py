@@ -5,10 +5,8 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt6.QtCore import QAbstractListModel, Qt, QItemSelectionModel
-from PyQt6.QtWidgets import (QLabel, QLineEdit, QMessageBox)
+from PyQt6.QtWidgets import (QLineEdit, QMessageBox)
 from sqlalchemy.sql import func
-
-from simsapa.assets import icons_rc  # noqa: F401
 
 from simsapa import DbSchemaName, logger
 from ..app.db import appdata_models as Am
@@ -54,10 +52,10 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.memos_list.setModel(self.model)
         self.sel_model = self.memos_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         s = os.getenv('ENABLE_WIP_FEATURES')
         if s is not None and s.lower() == 'true':
             pass

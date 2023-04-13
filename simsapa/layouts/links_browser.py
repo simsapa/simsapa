@@ -62,7 +62,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
     def closeEvent(self, event: QCloseEvent):
@@ -91,7 +91,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
             except queue.Empty:
                 pass
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         # self._setup_pali_buttons() # TODO: reimplement as hover window
 
         self.setup_links_controls()

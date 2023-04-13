@@ -6,7 +6,6 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebChannel import QWebChannel
 
 from simsapa import logger
-from simsapa.app.types import QueryType
 
 
 class LinkHoverData(TypedDict):
@@ -21,6 +20,7 @@ class Helper(QObject):
 
     mouseover = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
+    dblclick = pyqtSignal()
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
@@ -28,7 +28,6 @@ class Helper(QObject):
     do_close = pyqtSignal()
     open_new = pyqtSignal()
     make_windowed = pyqtSignal()
-
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -68,6 +67,9 @@ class Helper(QObject):
     def link_mouseleave(self, msg: str):
         self.mouseleave.emit(msg)
 
+    @pyqtSlot()
+    def page_dblclick(self):
+        self.dblclick.emit()
 
     @pyqtSlot(str)
     def send_bookmark_edit(self, schema_and_id: str):
@@ -78,6 +80,8 @@ class ReaderWebEnginePage(QWebEnginePage):
     """ Custom WebEnginePage to customize how we handle link navigation """
 
     helper: Helper
+
+    show_url_signal = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super(ReaderWebEnginePage, self).__init__(parent)
@@ -90,17 +94,21 @@ class ReaderWebEnginePage(QWebEnginePage):
 
         self.setWebChannel(self.event_channel)
 
-
     def acceptNavigationRequest(self, url: QUrl, _type: QWebEnginePage.NavigationType, isMainFrame):
         if _type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
 
             self.helper.hide_preview.emit()
 
-            # Don't follow relative URLs. It's usually from static content
-            # linking to files (which are now not present) such as
+            # Allow following relative URLs. Ebooks have HTML Contents pages and
+            # cross-links between chapter files.
+            #
+            # The path sometimes fails when it is from static content linking to
+            # files which are now not present such as
             # '../pages/dhamma.html#anatta'
-            if url.isRelative():
-                logger.info("Not following relative links: %s" % url)
+
+            if url.isRelative() or url.scheme() == 'file':
+                logger.info("Following relative link: %s" % url)
+                return super().acceptNavigationRequest(url, _type, isMainFrame)
 
             elif url.scheme() == 'http' or \
                url.scheme() == 'https' or \
@@ -118,18 +126,16 @@ class ReaderWebEnginePage(QWebEnginePage):
                 if self._parent_window is None:
                     return
 
-                if url.host() == QueryType.suttas:
+                if hasattr(self._parent_window, '_show_url'):
+                    logger.info(f"self._parent_window._show_url(): {url}")
+                    self._parent_window._show_url(url)
 
-                    if hasattr(self._parent_window, '_show_sutta_by_url'):
-                        self._parent_window._show_sutta_by_url(url)
-
-                elif url.host() == QueryType.words:
-
-                    if hasattr(self._parent_window, '_show_words_by_url'):
-                        self._parent_window._show_words_by_url(url)
+                elif hasattr(self._parent_window, 'show_url_signal'):
+                    logger.info(f"self._parent_window.show_url_signal.emit(): {url}")
+                    self._parent_window.show_url_signal.emit(url.toString())
 
                 else:
-                    logger.info("Unrecognized host: %s" % url)
+                    logger.info(f"No handler found on parent window: {self._parent_window} for url: {url}")
                     return False
 
             elif url.scheme() == 'bword':

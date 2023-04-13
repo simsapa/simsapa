@@ -1,3 +1,4 @@
+from pathlib import Path
 import re
 import subprocess
 from PyQt6 import QtWidgets
@@ -8,18 +9,20 @@ from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
 from functools import partial
 from typing import Dict, List, Optional
 from urllib.parse import quote_plus
+import shutil
 
-from sqlalchemy.sql.elements import and_, or_, not_
+from sqlalchemy import and_, or_, not_
 
 from PyQt6.QtCore import QAbstractTableModel, Qt
 from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
 
-from simsapa import IS_SWAY, logger
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+from simsapa import IS_SWAY, DbSchemaName, logger
+from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
-# from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark
+from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark, USutta
 
 # Keys with underscore prefix will not be shown in table columns.
 SuttaModelColToIdx = {
@@ -101,10 +104,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self.init_bookmark_dialog()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowTitle("Bookmarks Browser")
         self.resize(850, 650)
 
@@ -156,19 +159,26 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.menubar = QMenuBar()
         self.setMenuBar(self.menubar)
 
-        self.menu_File = QMenu(self.menubar)
-        self.menu_File.setTitle("&File")
+        self.menu_file = QMenu("&File", self.menubar)
+        self.menubar.addMenu(self.menu_file)
 
-        self.menubar.addAction(self.menu_File.menuAction())
+        self.action_close_window = QAction("&Close Window")
+        self.menu_file.addAction(self.action_close_window)
 
-        self.action_Close_Window = QAction("&Close Window")
-        self.menu_File.addAction(self.action_Close_Window)
+        self.action_import_csv = QAction("&Import Bookmarks from CSV...")
+        self.menu_file.addAction(self.action_import_csv)
 
-        self.action_Import = QAction("&Import from CSV...")
-        self.menu_File.addAction(self.action_Import)
+        self.action_export_csv = QAction("&Export Bookmarks as CSV...")
+        self.menu_file.addAction(self.action_export_csv)
 
-        self.action_Export = QAction("&Export as CSV...")
-        self.menu_File.addAction(self.action_Export)
+        self.menu_bookmarks = QMenu("&Bookmarks", self.menubar)
+        self.menubar.addMenu(self.menu_bookmarks)
+
+        self.action_export_suttas_as_epub = QAction("&Export Suttas Under Selected Bookmark as Epub...")
+        self.menu_bookmarks.addAction(self.action_export_suttas_as_epub)
+
+        self.action_export_suttas_as_mobi = QAction("&Export Suttas Under Selected Bookmark as Mobi...")
+        self.menu_bookmarks.addAction(self.action_export_suttas_as_mobi)
 
     def _setup_tree_search(self):
         self.tree_search_input = QLineEdit()
@@ -366,7 +376,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
             name = re.sub(r'/+$', '', name)
             parts = list(map(lambda x: x.strip(), name.split("/")))
 
-            for level, name in enumerate(parts):
+            for level, _ in enumerate(parts):
 
                 path = "/".join(parts[0:level+1])
 
@@ -432,9 +442,11 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
         self._add_nodes_from_names(model, names)
 
-    def _data_items_for_bookmark_path(self, path: str, query: Optional[str] = None) -> List[List[str]]:
+    def _bookmarks_for_path(self, path: str, query: Optional[str] = None) -> List[UBookmark]:
         # ensure trailing / for db value
-        path += '/'
+        if not path.endswith("/"):
+            path += '/'
+
         if query:
             res = self._app_data.db_session \
                                 .query(Um.Bookmark) \
@@ -458,7 +470,13 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
                                     Um.Bookmark.name.like(f"{path}%"),
                                 )) \
                                 .all()
-        if len(res) == 0:
+
+        return res
+
+    def _data_items_for_bookmark_path(self, path: str, query: Optional[str] = None) -> List[List[str]]:
+        bookmarks = self._bookmarks_for_path(path, query)
+
+        if len(bookmarks) == 0:
             return []
 
         def _model_data_item(x: UBookmark) -> List[str]:
@@ -471,9 +489,32 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
                     "" if x.selection_range is None else str(x.selection_range),
                     str(x.id)]
 
-        data = list(map(_model_data_item, res))
+        data = list(map(_model_data_item, bookmarks))
 
         return data
+
+    def _suttas_for_path(self, path: str, query: Optional[str] = None) -> List[USutta]:
+        bookmarks = self._bookmarks_for_path(path, query)
+        suttas: List[USutta] = []
+
+        for i in bookmarks:
+            r: Optional[USutta] = None
+            if i.sutta_schema == DbSchemaName.AppData.value:
+                r = self._app_data.db_session \
+                                  .query(Am.Sutta) \
+                                  .filter(Am.Sutta.uid == str(i.sutta_uid)) \
+                                  .first()
+
+            elif i.sutta_schema == DbSchemaName.UserData.value:
+                r = self._app_data.db_session \
+                                  .query(Um.Sutta) \
+                                  .filter(Um.Sutta.uid == str(i.sutta_uid)) \
+                                  .first()
+
+            if r is not None:
+                suttas.append(r)
+
+        return suttas
 
     def _handle_tree_clicked(self, val: QModelIndex):
         item: BookmarkItem = self.tree_model.itemFromIndex(val) # type: ignore
@@ -610,13 +651,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         bm = list(filter(lambda x: x.sutta_id is not None, bookmarks))
         n = len(bm)
         if n > 1:
-            box = QMessageBox()
-            box.setIcon(QMessageBox.Icon.Warning)
-            box.setWindowTitle("Delete Confirmation")
-            box.setText(f"Delete {n} bookmarks?")
-            box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-
-            reply = box.exec()
+            reply = self._ask_question(f"Delete {n} bookmarks?", "Delete Confirmation")
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
@@ -631,6 +666,30 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.tree_view.clearSelection()
 
         self.reload_table()
+
+    def _show_info(self, msg: str, title = "Info"):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(title)
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+    def _ask_question(self, msg: str, title = "Warning") -> int:
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(title)
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return box.exec()
+
+    def _show_warning(self, msg: str, title = "Warning"):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(title)
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
 
     def _edit_row(self, values: dict):
         if not values['db_id']:
@@ -721,7 +780,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.reload_bookmarks()
         self.reload_table()
 
-    def _handle_import(self):
+    def _handle_import_csv(self):
         file_path, _ = QFileDialog \
             .getOpenFileName(self,
                             "Import from CSV...",
@@ -744,7 +803,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         box.exec()
 
 
-    def _handle_export(self):
+    def _handle_export_csv(self):
         file_path, _ = QFileDialog \
             .getSaveFileName(self,
                              "Export as CSV...",
@@ -763,6 +822,87 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.exec()
 
+    def _handle_export_suttas_epub(self):
+        if not self.current_bookmark_item:
+            return
+
+        file_path, _ = QFileDialog \
+            .getSaveFileName(self,
+                             "Export Suttas Under Selected Bookmark as Epub...",
+                             "",
+                             "Epub Files (*.epub)")
+
+        if len(file_path) == 0:
+            return
+
+        if not file_path.lower().endswith(".epub"):
+            file_path += ".epub"
+
+        suttas = self._suttas_for_path(self.current_bookmark_item.path)
+
+        try:
+            save_suttas_as_epub(
+                self._app_data,
+                Path(file_path),
+                suttas,
+                title = f"Bookmark: {self.current_bookmark_item.path}")
+
+        except Exception as e:
+            self._show_warning(f"<p>Export error:</p><p>{e}</p>", "Export Error")
+            return
+
+        self._show_info("Export completed.")
+
+    def _handle_export_suttas_mobi(self):
+        if not self.current_bookmark_item:
+            return
+
+        s = self._app_data.app_settings
+        ebook_convert = None
+        if s['path_to_ebook_convert'] is None:
+            p = shutil.which('ebook-convert')
+            if p:
+                s['path_to_ebook_convert'] = str(p)
+                ebook_convert = str(p)
+                self._app_data.app_settings = s
+                self._app_data._save_app_settings()
+
+        else:
+            ebook_convert = s['path_to_ebook_convert']
+
+        if ebook_convert is None:
+            self._show_warning("<p>The ebook-convert tool was not found. For MOBI conversion, Calibre Ebook Reader's ebook-convert must be available in PATH.</p>")
+            return
+
+        file_path, _ = QFileDialog \
+            .getSaveFileName(self,
+                             "Export Suttas Under Selected Bookmark as Mobi...",
+                             "",
+                             "Mobi Files (*.mobi)")
+
+        if len(file_path) == 0:
+            return
+
+        if not file_path.lower().endswith(".mobi"):
+            file_path += ".mobi"
+
+        suttas = self._suttas_for_path(self.current_bookmark_item.path)
+
+        try:
+            save_suttas_as_mobi(
+                self._app_data,
+                Path(file_path),
+                suttas,
+                title = f"Bookmark: {self.current_bookmark_item.path}")
+
+        except Exception as e:
+            self._show_warning(f"<p>Export error:</p><p>{e}</p>", "Export Error")
+            return
+
+        self._show_info("Export completed.")
+
+    def _handle_close(self):
+        self.close()
 
     def _connect_signals(self):
         self.tree_view.clicked.connect(self._handle_tree_clicked)
@@ -790,11 +930,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.copy_link_btn.clicked.connect(partial(self._handle_copy_link_to_sutta))
         self.delete_row_btn.clicked.connect(partial(self._handle_row_delete))
 
-        self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+        self.action_close_window.triggered.connect(partial(self._handle_close))
 
-        self.action_Import \
-            .triggered.connect(partial(self._handle_import))
+        self.action_import_csv.triggered.connect(partial(self._handle_import_csv))
+        self.action_export_csv.triggered.connect(partial(self._handle_export_csv))
 
-        self.action_Export \
-            .triggered.connect(partial(self._handle_export))
+        self.action_export_suttas_as_epub.triggered.connect(partial(self._handle_export_suttas_epub))
+        self.action_export_suttas_as_mobi.triggered.connect(partial(self._handle_export_suttas_mobi))

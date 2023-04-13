@@ -55,12 +55,12 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.focus_input = focus_input
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_fulltext_list()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         search_box = QHBoxLayout()
 
         self.search_input = QLineEdit()
@@ -366,11 +366,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
 
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
+    def results_page(self, page_num: int) -> List[SearchResult]:
         if self.search_query_worker is None:
             return []
         else:
-            return self.search_query_worker.search_query.highlight_results_page(page_num)
+            return self.search_query_worker.results_page(page_num)
 
     def query_hits(self) -> int:
         if self.search_query_worker is None:
@@ -435,12 +435,12 @@ class WordScanPopup(QDialog):
 
         self.focus_input = focus_input
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         top_buttons_box = QHBoxLayout()
         self.wrap_layout.addLayout(top_buttons_box)
 

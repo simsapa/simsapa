@@ -16,7 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, dhp_verse_to_chapter
 
 load_dotenv()
 
@@ -118,7 +118,7 @@ def get_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
     sorted_keys.sort()
 
     for dhp_num in sorted_keys:
-        ref = helpers.dhp_chapter_ref_for_verse_num(dhp_num)
+        ref = dhp_verse_to_chapter(dhp_num)
         if ref is None:
             logger.error(f"Can't get chapter ref: {dhp_num}")
             continue

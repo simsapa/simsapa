@@ -132,8 +132,12 @@ class Worker(QRunnable):
     def run(self):
         try:
             search_indexed = SearchIndexed()
-            _, _, db_session = get_db_engine_connection_session()
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
             search_indexed.index_all(db_session, only_if_empty=True)
+
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
 
         except Exception as e:
             logger.error("Indexing problem: %s" % e)

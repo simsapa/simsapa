@@ -1,3 +1,4 @@
+from enum import Enum
 from pathlib import Path
 import shutil
 from typing import Dict, List, Optional, TypedDict
@@ -5,21 +6,22 @@ import html
 from bs4 import BeautifulSoup
 import json
 import requests
-import feedparser
 import semver
+import os
 import sys
 import re
+import platform
 
 import tomlkit
 
 from PyQt6.QtWidgets import QMainWindow, QMessageBox
-from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QUrl, QUrlQuery
 
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import ASSETS_DIR, COURSES_DIR, GRAPHS_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
 
 
 class SuttaRange(TypedDict):
@@ -30,23 +32,41 @@ class SuttaRange(TypedDict):
 
 
 def create_app_dirs():
-    if not SIMSAPA_DIR.exists():
-        SIMSAPA_DIR.mkdir(parents=True, exist_ok=True)
+    for d in [SIMSAPA_DIR,
+              ASSETS_DIR,
+              GRAPHS_DIR,
+              COURSES_DIR,
+              EBOOK_UNZIP_DIR,
+              HTML_RESOURCES_APPDATA_DIR,
+              HTML_RESOURCES_USERDATA_DIR]:
 
-    if not ASSETS_DIR.exists():
-        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not GRAPHS_DIR.exists():
-        GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not COURSES_DIR.exists():
-        COURSES_DIR.mkdir(parents=True, exist_ok=True)
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
 
 def ensure_empty_graphs_cache():
     if GRAPHS_DIR.exists():
         shutil.rmtree(GRAPHS_DIR)
 
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+
+def check_delete_files():
+    p = ASSETS_DIR.joinpath("delete_files_for_upgrade.txt")
+    if not p.exists():
+        return
+
+    p.unlink()
+
+    if APP_DB_PATH.exists():
+        APP_DB_PATH.unlink()
+
+    if USER_DB_PATH.exists():
+        USER_DB_PATH.unlink()
+
+    if INDEX_DIR.exists():
+        shutil.rmtree(INDEX_DIR)
+
+    if COURSES_DIR.exists():
+        shutil.rmtree(COURSES_DIR)
 
 def download_file(url: str, folder_path: Path) -> Path:
     logger.info(f"download_file() : {url}, {folder_path}")
@@ -127,20 +147,24 @@ def get_app_version() -> Optional[str]:
     return ver
 
 def get_db_version() -> Optional[str]:
-    _, _, db_session = get_db_engine_connection_session()
-
-    res = db_session \
-        .query(Am.AppSetting.value) \
-        .filter(Am.AppSetting.key == 'db_version') \
-        .first()
-
-    db_session.close()
+    if APP_DB_PATH.exists():
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+        res = db_session \
+            .query(Am.AppSetting.value) \
+            .filter(Am.AppSetting.key == 'db_version') \
+            .first()
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+    else:
+        return None
 
     if res is None:
-        # An old version number before db_version was stored.
-        ver = "v0.1.8-alpha.1"
-    else:
-        ver = str(res[0])
+        # A database exists but retreiving the db_version failed.
+        # Probably a very old db when version was not yet stored.
+        return None
+
+    ver = str(res[0])
 
     # 'v' prefix is invalid semver string
     # v0.1.7-alpha.1 -> 0.1.7-alpha.1
@@ -156,115 +180,35 @@ class UpdateInfo(TypedDict):
     message: str
     visit_url: Optional[str]
 
-def get_app_update_info() -> Optional[UpdateInfo]:
-    logger.info("get_app_update_info()")
+class EntryType(str, Enum):
+    Application = 'application'
+    Assets = 'assets'
+    Dpd = 'dpd'
 
-    # Test if connection to github is working.
-    try:
-        requests.head("https://github.com/", timeout=5)
-    except Exception as e:
-        logger.error("No Connection: Update info unavailable: %s" % e)
-        return None
+class ReleaseEntry(TypedDict):
+    version_tag: str
+    github_repo: str
+    suttas_lang: List[str]
+    date: str
+    title: str
+    description: str
 
-    try:
-        d = feedparser.parse("https://github.com/simsapa/simsapa/releases.atom")
+class DpdEntry(TypedDict):
+    releases_feed_url: str
 
-        def _id_to_version(id: str):
-            return re.sub(r'.*/([^/]+)$', r'\1', id).replace('v', '')
+class ReleaseSection(TypedDict):
+    releases: List[ReleaseEntry]
 
-        def _is_version_stable(ver: str):
-            return not ('.dev' in ver or '.rc' in ver)
-
-        def _is_entry_version_stable(x):
-            ver = _id_to_version(x.id)
-            return _is_version_stable(ver)
-
-        # filter entries with .dev or .rc version tags
-        stable_entries = list(filter(_is_entry_version_stable, d.entries))
-
-        if len(stable_entries) == 0:
-            return None
-
-        entry = stable_entries[0]
-
-        # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
-        remote_version = _id_to_version(entry.id)
-        content = entry.content[0]
-
-        app_version_str = get_app_version()
-        if app_version_str is None:
-            return None
-
-        # if remote version is not greater, do nothing
-        if semver.compare(remote_version, app_version_str) != 1:
-            return None
-
-        message = f"<h1>An application update is available</h1>"
-        message += f"<h3>Current: {app_version_str}</h3>"
-        message += f"<h3>Available: {remote_version}</h3>"
-        message += f"<p>Download from the <a href='{entry.link}'>Relases page</a></p>"
-        message += f"<div>{content.value}</div>"
-
-        return UpdateInfo(
-            version = remote_version,
-            message = message,
-            visit_url = entry.link,
-        )
-    except Exception as e:
-        logger.error(e)
-        return None
-
-def _id_to_version(id: str):
-    return re.sub(r'.*/([^/]+)$', r'\1', id).replace('v', '')
+class ReleasesInfo(TypedDict):
+    application: ReleaseSection
+    assets: ReleaseSection
+    dpd: DpdEntry
 
 def _is_version_stable(ver: str):
     return not ('.dev' in ver or '.rc' in ver)
 
-def _is_entry_version_stable(x):
-    ver = _id_to_version(x.id)
-    return _is_version_stable(ver)
-
-class FeedEntry(TypedDict):
-    title: str
-    version: str
-    content: str
-
-def get_feed_entries(url: str, stable_only: bool = True) -> List[FeedEntry]:
-    logger.info(f"get_feed_entries(): {url}, {stable_only}")
-
-    # NOTE: MacOS 11 seems to have a problem with feeparser.
-    # The returned entries list is empty, []
-
-    try:
-        d = feedparser.parse(url)
-        if d:
-            logger.info(f"Feedparser Entries: {d.entries}")
-        else:
-            logger.info("Feedparser result is None")
-    except Exception as e:
-        logger.error(e)
-        raise e
-
-    if stable_only:
-        # filter entries with .dev or .rc version tags
-        a = list(filter(_is_entry_version_stable, d.entries))
-    else:
-        a = d.entries
-
-    def _to_entry(x) -> FeedEntry:
-        return FeedEntry(
-            title=x.title,
-            # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
-            version=_id_to_version(x.id),
-            content=x.content[0].value,
-        )
-
-    entries: List[FeedEntry] = list(map(_to_entry, a))
-
-    return entries
-
-def get_feed_entries_with_requests(url: str, stable_only: bool = True) -> List[FeedEntry]:
-    logger.info(f"get_feed_entries_with_requests(): {url}, {stable_only}")
+def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> List[str]:
+    logger.info(f"get_version_tags_from_github_feed(): {url}, {stable_only}")
 
     try:
         r = requests.get(url)
@@ -282,95 +226,180 @@ def get_feed_entries_with_requests(url: str, stable_only: bool = True) -> List[F
     matches = re.finditer(r'<id>tag:github.com,2008:Repository/469025679/([^<]+)</id>', data)
     for m in matches:
         ver = m.group(1)
-        if _is_version_stable(ver):
+        if stable_only and _is_version_stable(ver):
+            versions.append(ver)
+        else:
             versions.append(ver)
 
-    def _to_entry(ver: str) -> FeedEntry:
-        return FeedEntry(
-            title="Updates available",
-            # <id>tag:github.com,2008:Repository/364995446/v0.1.6</id>
-            version=ver.replace('v', ''),
-            content="",
-        )
+    return versions
 
-    entries: List[FeedEntry] = list(map(_to_entry, versions))
+def get_release_channel() -> str:
+    s = os.getenv('RELEASES_CHANNEL')
+    if s is not None and s == 'development':
+        channel = s
+    else:
+        channel = 'main'
 
-    return entries
+    return channel
 
-def filter_compatible_db_entries(feed_entries: List[FeedEntry]) -> List[FeedEntry]:
-    s = get_app_version()
-    if s is None:
-        return []
+def get_releases_info() -> ReleasesInfo:
+    logger.info("get_releases_info()")
 
-    app_version = to_version(s)
+    channel = get_release_channel()
 
-    def _is_compat_entry(x: FeedEntry) -> bool:
-        v = to_version(x['version'])
-        return (v["major"] == app_version["major"] and v["minor"] == app_version["minor"])
+    logger.info(f"Channel: {channel}")
 
-    compat_entries = list(filter(_is_compat_entry, feed_entries))
+    s = os.getenv('NO_STATS')
+    if s is not None and s == 'true':
+        no_stats = True
+    else:
+        no_stats = False
 
-    return compat_entries
+    url = QUrl(f"{SIMSAPA_RELEASES_BASE_URL}/releases.php")
+    query = QUrlQuery()
+    query.addQueryItem('app_version', str(get_app_version()))
+    query.addQueryItem('channel', channel)
 
-def get_db_update_info() -> Optional[UpdateInfo]:
-    logger.info("get_db_update_info()")
+    query.addQueryItem('system', platform.system())
+    query.addQueryItem('machine', platform.machine())
 
-    # Test if connection to github is working.
+    if no_stats:
+        query.addQueryItem('no_stats', '')
+
+    url.setQuery(query)
+
+    logger.info(url.toString())
+
     try:
-        requests.head("https://github.com/", timeout=5)
-    except Exception as e:
-        logger.error("No Connection: Update info unavailable: %s" % e)
-        return None
-
-    try:
-        stable_entries = get_feed_entries_with_requests("https://github.com/simsapa/simsapa-assets/releases.atom")
-
-        if len(stable_entries) == 0:
-            return None
-
-        db_version_str = get_db_version()
-        if db_version_str is None:
-            return None
-
-        db_version = to_version(db_version_str)
-
-        compat_entries = filter_compatible_db_entries(stable_entries)
-
-        if len(compat_entries) == 0:
-            return None
-
-        entry = compat_entries[0]
-
-        v = to_version(entry['version'])
-        # if patch number is less or equal, do nothing
-        if v['patch'] <= db_version['patch']:
-            # if remote has no alpha version, do nothing
-            if v['alpha'] is None:
-                return None
-            # if local does not have alpha version, that supersedes a remote alpha
-            # v0.1.8 > v0.1.8-alpha.1
-            if db_version['alpha'] is None:
-                return None
-            # if both local and remote has alpha version, but not greater, do nothing
-            if v['alpha'] <= db_version['alpha']:
-                return None
-
-        # Either patch number or alpha number is greater.
-
-        message = f"<h1>A database update is available</h1>"
-        message += f"<h3>Current: {db_version_str}</h3>"
-        message += f"<h3>Available: {entry['version']}</h3>"
-        message += f"<div>{entry['content']}</div>"
-
-        return UpdateInfo(
-            version = entry['version'],
-            message = message,
-            visit_url = None,
-        )
+        r = requests.get(url.toString())
+        if r.ok:
+            data: ReleasesInfo = r.json()
+        else:
+            raise Exception(f"Response: {r.status_code}")
     except Exception as e:
         logger.error(e)
+        raise e
+
+    return data
+
+def get_latest_release(info: ReleasesInfo, entry_type: EntryType) -> Optional[ReleaseEntry]:
+    if entry_type == EntryType.Application:
+        releases = info['application']['releases']
+        if len(releases) > 0:
+            return releases[0]
+        else:
+            return None
+
+    else:
+        return get_latest_app_compatible_assets_release(info)
+
+def get_latest_app_compatible_assets_release(info: ReleasesInfo) -> Optional[ReleaseEntry]:
+    s = get_app_version()
+    if s is None:
+        return None
+    assets_releases = info['assets']['releases']
+
+    # Compare app version with the latest available db version.
+
+    app_v = to_version(s)
+
+    def _is_compat(x: ReleaseEntry) -> bool:
+        db_v = to_version(x['version_tag'])
+        return (db_v["major"] == app_v["major"] and db_v["minor"] == app_v["minor"])
+
+    compat = list(filter(_is_compat, assets_releases))
+
+    if len(compat) > 0:
+        return compat[0]
+    else:
         return None
 
+def is_app_version_compatible_with_db_version(app: Version, db: Version) -> bool:
+    # Major number difference implies major breaking changes.
+    if app['major'] != db['major']:
+        return False
+
+    # Minor number difference implies db schema change.
+    if app['minor'] != db['minor']:
+        return False
+
+    # Patch- or alpha number difference is OK, implies data content change.
+    return True
+
+def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo]:
+    logger.info(f"has_update(): {entry_type}")
+
+    if entry_type == EntryType.Application:
+        s = get_app_version()
+    else:
+        s = get_db_version()
+
+    if s is None:
+        return None
+
+    local = to_version(s)
+
+    entry = get_latest_release(info, entry_type)
+
+    if entry is None:
+        return None
+
+    remote = to_version(entry['version_tag'])
+
+    # If remote version is not greater, do nothing.
+    # Semver doesn't use 'v' prefix.
+    sans_v = re.sub(r'^v', '', entry['version_tag'])
+    if semver.compare(sans_v, s) != 1:
+        logger.info(f'Not new:\nlocal:  {s} >=\nremote: {sans_v}')
+        return None
+
+    if entry_type == EntryType.Assets \
+       and not is_app_version_compatible_with_db_version(local, remote):
+            logger.info(f'Not compatible:\nlocal:  {local}\nremote: {remote}')
+            return None
+
+    visit_url = None
+
+    message = f"<h1>An update is available</h1>"
+    message += f"<h3>Current: {s}</h3>"
+    message += f"<h3>Available: {entry['version_tag']}</h3>"
+
+    if entry_type == EntryType.Application:
+        visit_url = f"https://github.com/{entry['github_repo']}/releases/tag/{entry['version_tag']}"
+        message += f"<p>Download from the <a href='{visit_url}'>Relases page</a></p>"
+
+    message += f"<div><p><b>{entry['title']}</b></p><br>{entry['description']}</div>"
+
+    return UpdateInfo(
+        version = entry['version_tag'],
+        message = message,
+        visit_url = visit_url,
+    )
+
+def is_local_db_obsolete() -> Optional[UpdateInfo]:
+    logger.info("is_local_db_obsolete()")
+
+    app_s = get_app_version()
+    db_s = get_db_version()
+
+    if app_s is None or db_s is None:
+        return None
+
+    # If db version is not lesser, do nothing.
+    if semver.compare(db_s, app_s) >= 0:
+        logger.info(f'DB version {db_s} not lesser than app version {app_s}')
+        return None
+
+    message = f"<h1>The local database is older than the application</h1>"
+    message += f"<h3>DB version: {db_s}</h3>"
+    message += f"<h3>App version: {app_s}</h3>"
+    message += f"It is recommended to download a new database which is compatible with the app version."
+
+    return UpdateInfo(
+        version = app_s,
+        message = message,
+        visit_url = None,
+    )
 
 def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
     # logger.info(f"sutta_range_from_ref(): {ref}")
@@ -401,6 +430,17 @@ def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
         ref = ref.split('/')[0]
 
     ref = ref.replace('--', '-')
+
+    # sn22.57_a -> sn22.57
+    ref = re.sub(r'_a$', '', ref)
+
+    # an2.19_an3.29 -> an2.19
+    # an3.29_sn22.57 -> an3.29
+    ref = re.sub(r'_[as]n.*$', '', ref)
+
+    # snp1.2(33-34) -> snp1.2
+    if ref == "snp1.2(33-34)":
+        ref = "snp1.2"
 
     # Atthakata
     if ref.endswith('-a'):
@@ -453,11 +493,12 @@ def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
 
 def normalize_sutta_ref(ref: str) -> str:
     ref = ref.lower()
+
     ref = re.sub(r'ud *(\d)', r'uda \1', ref)
     ref = re.sub(r'khp *(\d)', r'kp \1', ref)
     ref = re.sub(r'th *(\d)', r'thag \1', ref)
 
-    ref = re.sub(r'\.([ivx]+)\.', r' \1 ', ref)
+    ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
     ref = re.sub(r'^d ', 'dn ', ref)
     ref = re.sub(r'^m ', 'mn ', ref)
     ref = re.sub(r'^s ', 'sn ', ref)
@@ -609,7 +650,6 @@ def strip_html(text: str) -> str:
     text = re.sub(r'  +', ' ', text)
 
     return text
-
 
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
@@ -798,6 +838,14 @@ def dhp_verse_to_chapter(verse_num: int) -> Optional[str]:
         b = lim[1]
         if verse_num >= a and verse_num <= b:
             return f"dhp{a}-{b}"
+
+    return None
+
+
+def dhp_chapter_ref_for_verse_num(num: int) -> Optional[str]:
+    for ch, verses in DHP_CHAPTERS_TO_RANGE.items():
+        if num >= ch and num <= ch:
+            return f"dhp{verses[0]}-{verses[1]}"
 
     return None
 

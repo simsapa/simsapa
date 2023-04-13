@@ -12,6 +12,10 @@ from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.db.search import SearchResult
+from simsapa.layouts.send_to_kindle import SendToKindleWindow
+from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
+from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
+from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, USutta, SuttaSearchWindowInterface
 from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
@@ -56,7 +60,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
 
         self.s = SuttaSearchWindowState(app_data,
                                         self,
@@ -73,7 +77,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.init_memos_sidebar()
         self.init_links_sidebar()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -144,23 +148,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if text is not None:
             self.lookup_in_dictionary_signal.emit(text)
 
-    def _lookup_selection_in_suttas(self):
-        self.activateWindow()
-        text = self.s._get_selection()
-        if text is not None:
-            self.s._set_query(text)
-            self.s._handle_query()
-
-    def _lookup_selection_in_dictionary(self):
-        text = self.s._get_selection()
-        if text is not None:
-            self.lookup_in_dictionary_signal.emit(text)
-
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        if self.s.search_query_worker is None:
-            return []
-        else:
-            return self.s.search_query_worker.highlight_results_page(page_num)
+    def results_page(self, page_num: int) -> List[SearchResult]:
+        return self.s.results_page(page_num)
 
     def query_hits(self) -> int:
         return self.s.query_hits()
@@ -371,9 +360,48 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         else:
             self.splitter.setSizes([2000, 0])
 
+    def _show_sutta_languages(self):
+        w = SuttaLanguagesWindow(self._app_data, parent = self)
+        w.show()
+
+    def _show_send_to_kindle(self):
+        tab = self.s._get_active_tab()
+
+        def _open_send(html: str):
+            w = SendToKindleWindow(self._app_data,
+                                   tab_sutta = tab.sutta,
+                                   tab_html = html,
+                                   parent = self)
+            w.show()
+
+        tab.qwe.page().toHtml(_open_send)
+
+    def _show_send_to_remarkable(self):
+        tab = self.s._get_active_tab()
+
+        def _open_send(html: str):
+            w = SendToRemarkableWindow(self._app_data,
+                                       tab_sutta = tab.sutta,
+                                       tab_html = html,
+                                       parent = self)
+            w.show()
+
+        tab.qwe.page().toHtml(_open_send)
+
+    def _show_export_as(self):
+        tab = self.s._get_active_tab()
+        if tab.sutta is None:
+            return
+
+        d = SuttaExportDialog(self._app_data, tab.sutta)
+        d.exec()
+
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Copy \
             .triggered.connect(partial(self.s._handle_copy))
@@ -391,7 +419,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             .triggered.connect(partial(self.s._handle_show_related_suttas))
 
         self.action_Lookup_Selection_in_Dictionary \
-            .triggered.connect(partial(self._lookup_selection_in_dictionary))
+            .triggered.connect(partial(self.s._lookup_selection_in_dictionary))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))
@@ -431,14 +459,26 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.action_Decrease_Text_Margins \
             .triggered.connect(partial(self._decrease_text_margins))
 
-        self.action_Import_Suttas_with_Spreadsheet \
-            .triggered.connect(partial(self._show_import_suttas_dialog))
+        # self.action_Import_Suttas_with_Spreadsheet \
+        #     .triggered.connect(partial(self._show_import_suttas_dialog))
 
-        self.action_Remove_Imported_Suttas \
-            .triggered.connect(partial(self._remove_imported_suttas))
+        # self.action_Remove_Imported_Suttas \
+        #     .triggered.connect(partial(self._remove_imported_suttas))
 
         self.action_Search_Result_Sizes \
             .triggered.connect(partial(self._show_search_result_sizes_dialog))
 
         self.action_Show_Sidebar \
             .triggered.connect(partial(self._toggle_sidebar))
+
+        self.action_Sutta_Languages \
+            .triggered.connect(partial(self._show_sutta_languages))
+
+        self.action_Send_to_Kindle \
+            .triggered.connect(partial(self._show_send_to_kindle))
+
+        self.action_Send_to_reMarkable \
+            .triggered.connect(partial(self._show_send_to_remarkable))
+
+        self.action_Export_As \
+            .triggered.connect(partial(self._show_export_as))

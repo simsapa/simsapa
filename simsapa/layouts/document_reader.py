@@ -38,7 +38,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_memos_sidebar()
@@ -66,7 +66,7 @@ class DocumentReaderWindow(QMainWindow, Ui_DocumentReaderWindow, HasLinksSidebar
             except queue.Empty:
                 pass
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.links_tab_idx = 0
         self.memos_tab_idx = 1
 

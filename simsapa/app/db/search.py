@@ -1,16 +1,20 @@
+import sys
 import shutil
-from typing import Callable, List, Optional, TypedDict, Union
+from typing import Callable, Dict, List, Optional, TypedDict, Union
 import re
 from bs4 import BeautifulSoup
 
 from whoosh import writing
 from whoosh.highlight import SCORE, HtmlFormatter
-from whoosh.index import FileIndex, create_in, open_dir
+from whoosh.index import FileIndex, create_in, open_dir, exists_in
 from whoosh.fields import SchemaClass, NUMERIC, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
 from whoosh.searching import Results, Hit
 from whoosh.analysis import CharsetFilter, StemmingAnalyzer
 from whoosh.support.charset import accent_map
+
+from sqlalchemy.sql import func
+from sqlalchemy.orm.session import Session
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import compact_rich_text, compact_plain_text
@@ -24,10 +28,11 @@ UDictWord = Union[Am.DictWord, Um.DictWord]
 # Add an accent-folding filter to the stemming analyzer
 folding_analyzer = StemmingAnalyzer() | CharsetFilter(accent_map)
 
-# MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
-RE_ALL_BOOK_SUTTA_REF = re.compile(r'\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]+)\b', re.IGNORECASE)
-# Vin.iii.40; AN.i.78; D iii 264; SN i 190
-RE_ALL_PTS_VOL_SUTTA_REF = re.compile(r'\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]([ivxIVX]+)[ \.](\d[\d\.]+)\b', re.IGNORECASE)
+# MN44; MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
+# Must not match part of the path in a url, <a class="link" href="ssp://suttas/mn44/en/sujato">
+RE_ALL_BOOK_SUTTA_REF = re.compile(r'(?<!/)\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]+)\b', re.IGNORECASE)
+# Vin.iii.40; AN.i.78; D iii 264; SN i 190; M. III. 203.
+RE_ALL_PTS_VOL_SUTTA_REF = re.compile(r'(?<!/)\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]+([ivxIVX]+)[ \.]+(\d[\d\.]+)\b', re.IGNORECASE)
 
 class SuttasIndexSchema(SchemaClass):
     index_key = ID(stored = True, unique = True)
@@ -73,6 +78,8 @@ class SearchResult(TypedDict):
     snippet: str
     # page number in a document
     page_number: Optional[int]
+    score: Optional[float]
+    rank: Optional[int]
 
 def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
     return SearchResult(
@@ -86,6 +93,8 @@ def sutta_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         author = None,
         snippet = snippet,
         page_number = None,
+        score = x.score,
+        rank = x.rank,
     )
 
 def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
@@ -100,6 +109,8 @@ def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
         author = None,
         snippet = snippet,
         page_number = None,
+        score = None,
+        rank = None,
     )
 
 def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
@@ -114,6 +125,8 @@ def dict_word_hit_to_search_result(x: Hit, snippet: str) -> SearchResult:
         author = None,
         snippet = snippet,
         page_number = None,
+        score = x.score,
+        rank = x.rank,
     )
 
 def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
@@ -128,6 +141,8 @@ def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
         author = None,
         snippet = snippet,
         page_number = None,
+        score = None,
+        rank = None,
     )
 
 class SearchQuery:
@@ -224,8 +239,8 @@ class SearchQuery:
 
         return self.searcher.search(q, limit=None)
 
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        logger.info(f"highlight_results_page({page_num})")
+    def highlighted_results_page(self, page_num: int) -> List[SearchResult]:
+        logger.info(f"app.db.search:: highlighted_results_page({page_num})")
         page_start = page_num * self.page_len
         page_end = page_start + self.page_len
         return list(map(self._result_with_snippet_highlight, self.filtered[page_start:page_end]))
@@ -245,7 +260,17 @@ class SearchQuery:
                 number = m.group(2)
                 query = query.replace(m.group(0), f"uid:{nikaya}{number}/* ")
 
-        self.all_results = self._search_field(field_name = 'content', query = query)
+        results = self._search_field(field_name = 'content', query = query)
+
+        for k in ['word', 'title', 'title_pali', 'title_trans']:
+            q = query.strip('*')
+            q = f"*{q}*"
+
+            if k in self.ix.schema._fields.keys():
+                res = self._search_field(field_name = k, query = q)
+                results.upgrade_and_extend(res)
+
+        self.all_results = results
 
         def _not_in_disabled(x: Hit):
             if disabled_labels is not None:
@@ -304,35 +329,96 @@ class SearchQuery:
 class SearchIndexed:
     suttas_index: FileIndex
     dict_words_index: FileIndex
+    suttas_lang_index: Dict[str, FileIndex] = dict()
 
     def __init__(self):
         self.open_all()
 
     def has_empty_index(self) -> bool:
-        return (self.suttas_index.is_empty() or self.dict_words_index.is_empty())
+        if self.suttas_index.is_empty() or self.dict_words_index.is_empty():
+            return True
+        a = [i for i in self.suttas_lang_index.values() if i.is_empty()]
+        return (len(a) > 0)
 
-    def index_all(self, db_session, only_if_empty: bool = False):
+    def index_all(self, db_session: Session, only_if_empty: bool = False):
         if (not only_if_empty) or (only_if_empty and self.suttas_index.is_empty()):
-            logger.info("Indexing suttas ...")
+            general_langs = ['en', 'pli', 'san']
+            logger.info(f"Indexing {', '.join(general_langs)} suttas ...")
 
-            suttas: List[USutta] = db_session.query(Am.Sutta).all()
-            self.index_suttas(DbSchemaName.AppData.value, suttas)
+            suttas: List[USutta] = db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.language.in_(general_langs)) \
+                .all()
+            self.index_suttas(self.suttas_index, DbSchemaName.AppData.value, db_session, suttas)
 
-            suttas: List[USutta] = db_session.query(Um.Sutta).all()
-            self.index_suttas(DbSchemaName.UserData.value, suttas)
+            suttas: List[USutta] = db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.language.in_(general_langs)) \
+                .all()
+            self.index_suttas(self.suttas_index, DbSchemaName.UserData.value, db_session, suttas)
+
+            for index_name, ix in self.suttas_lang_index.items():
+                lang = index_name.replace('suttas_lang_', '')
+
+                logger.info(f"Indexing {lang} suttas ...")
+
+                suttas: List[USutta] = db_session \
+                    .query(Am.Sutta) \
+                    .filter(Am.Sutta.language == lang) \
+                    .all()
+                self.index_suttas(ix, DbSchemaName.AppData.value, db_session, suttas)
+
+                suttas: List[USutta] = db_session \
+                    .query(Um.Sutta) \
+                    .filter(Um.Sutta.language == lang) \
+                    .all()
+                self.index_suttas(ix, DbSchemaName.UserData.value, db_session, suttas)
 
         if (not only_if_empty) or (only_if_empty and self.dict_words_index.is_empty()):
             logger.info("Indexing dict_words ...")
 
             words: List[UDictWord] = db_session.query(Am.DictWord).all()
-            self.index_dict_words(DbSchemaName.AppData.value, words)
+            self.index_dict_words(DbSchemaName.AppData.value, db_session, words)
 
             words: List[UDictWord] = db_session.query(Um.DictWord).all()
-            self.index_dict_words(DbSchemaName.UserData.value, words)
+            self.index_dict_words(DbSchemaName.UserData.value, db_session, words)
+
+    def index_all_suttas_lang(self, db_session: Session, lang: str, only_if_empty: bool = False):
+        lang_index = self.open_or_create_index(f'suttas_lang_{lang}', SuttasIndexSchema) # type: ignore
+        if lang_index is None:
+            return
+        self.suttas_lang_index[lang] = lang_index
+
+        if (not only_if_empty) or (only_if_empty and self.suttas_lang_index[lang].is_empty()):
+            logger.info(f"Indexing suttas: {lang} in appdata ...")
+
+            suttas: List[USutta] = db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.language == lang) \
+                .all()
+
+            self.index_suttas_lang(DbSchemaName.AppData.value, lang, db_session, suttas)
+
+            logger.info(f"Indexing suttas: {lang} in userdata ...")
+
+            suttas: List[USutta] = db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.language == lang) \
+                .all()
+
+            self.index_suttas_lang(DbSchemaName.UserData.value, lang, db_session, suttas)
+
+    def get_suttas_lang_index_names(self) -> set[str]:
+        """Find suttas_lang_(lang) indexes in the INDEX_DIR"""
+        return set(map(lambda x: re.sub(r'^(suttas_lang_[a-z]+)_.*', r'\1', x.name),
+                       INDEX_DIR.glob('suttas_lang_*.seg')))
 
     def open_all(self):
-        self.suttas_index: FileIndex = self._open_or_create_index('suttas', SuttasIndexSchema) # type: ignore
-        self.dict_words_index: FileIndex = self._open_or_create_index('dict_words', DictWordsIndexSchema) # type: ignore
+        self.suttas_index: FileIndex = self.open_or_create_index('suttas', SuttasIndexSchema) # type: ignore
+        self.dict_words_index: FileIndex = self.open_or_create_index('dict_words', DictWordsIndexSchema) # type: ignore
+
+        for i in self.get_suttas_lang_index_names():
+            self.suttas_lang_index[i] = self.open_or_create_index(i, SuttasIndexSchema) # type: ignore
 
     def clear_all(self):
         w = self.suttas_index.writer()
@@ -341,46 +427,54 @@ class SearchIndexed:
         w = self.dict_words_index.writer()
         w.commit(mergetype=writing.CLEAR)
 
+        for i in self.suttas_lang_index.keys():
+            w = self.suttas_lang_index[i].writer()
+            w.commit(mergetype=writing.CLEAR)
+
     def close_all(self):
         self.suttas_index.close()
         self.dict_words_index.close()
+        for i in self.suttas_lang_index.keys():
+            self.suttas_lang_index[i].close()
 
     def create_all(self, remove_if_exists: bool = True):
         if remove_if_exists and INDEX_DIR.exists():
             shutil.rmtree(INDEX_DIR)
         self.open_all()
 
-    def _open_or_create_index(self, index_name: str, index_schema: SchemaClass) -> FileIndex:
+    def open_or_create_index(self, index_name: str, index_schema: SchemaClass) -> Optional[FileIndex]:
         if not INDEX_DIR.exists():
             INDEX_DIR.mkdir(exist_ok=True)
 
-        try:
-            ix = open_dir(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
-            return ix
-        except Exception as e:
-            logger.warn(f"Can't open the index: {index_name}, {e}")
+        if exists_in(dirname = INDEX_DIR, indexname = index_name):
+            try:
+                ix = open_dir(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
+                return ix
+            except Exception as e:
+                logger.warn(f"Can't open the index: {index_name}, {e}")
 
-        try:
-            logger.info(f"Creating the index: {index_name}")
-            ix = create_in(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
-        except Exception as e:
-            logger.error(f"Can't create the index: {index_name}, {e}")
-            exit(1)
+        else:
+            try:
+                logger.info(f"Creating the index: {index_name}")
+                ix = create_in(dirname = INDEX_DIR, indexname = index_name, schema = index_schema)
+                return ix
+            except Exception as e:
+                logger.error(f"Can't create the index: {index_name}, {e}")
+                sys.exit(1)
 
-        return ix
+        return None
 
-    def index_suttas(self, schema_name: str, suttas: List[USutta]):
+    def index_suttas(self, ix: FileIndex, schema_name: str, db_session: Session, suttas: List[USutta]):
         logger.info(f"index_suttas() len: {len(suttas)}")
-        ix = self.suttas_index
 
         try:
             # NOTE: Only use multisegment=True when indexing from scratch.
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
-            total = len(suttas)
-            for idx, i in enumerate(suttas):
-                percent = idx/(total/100)
+            # total = len(suttas)
+            for _, i in enumerate(suttas):
+                # percent = idx/(total/100)
                 # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
                 # Prefer the html content field if not empty.
                 if i.content_html is not None and len(i.content_html.strip()) > 0:
@@ -446,14 +540,25 @@ class SearchIndexed:
                     ref = sutta_ref,
                 )
 
+                i.indexed_at = func.now() # type: ignore
+
                 # logger.info(f"updated: {i.uid}")
 
             writer.commit()
+            db_session.commit()
 
         except Exception as e:
             logger.error(f"Can't index: {e}")
 
-    def index_dict_words(self, schema_name: str, words: List[UDictWord]):
+    def index_suttas_lang(self, schema_name: str, lang: str, db_session: Session, suttas: List[USutta]):
+        logger.info(f"index_suttas_lang() lang: {lang} len: {len(suttas)}")
+
+        if lang in self.suttas_lang_index.keys():
+            self.index_suttas(self.suttas_lang_index[lang], schema_name, db_session, suttas)
+        else:
+            logger.warn(f"Index is not in suttas_lang_index: {lang}")
+
+    def index_dict_words(self, schema_name: str, db_session: Session, words: List[UDictWord]):
         logger.info(f"index_dict_words('{schema_name}')")
         ix = self.dict_words_index
 
@@ -462,9 +567,9 @@ class SearchIndexed:
             # Memory limit applies to each process individually.
             writer = ix.writer(procs=4, limitmb=256, multisegment=True)
 
-            total = len(words)
-            for idx, i in enumerate(words):
-                percent = idx/(total/100)
+            # total = len(words)
+            for _, i in enumerate(words):
+                # percent = idx/(total/100)
                 # logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
 
                 # Prefer the html content field if not empty
@@ -495,7 +600,10 @@ class SearchIndexed:
                     synonyms = i.synonyms,
                     content = content,
                 )
+                i.indexed_at = func.now() # type: ignore
+
             writer.commit()
+            db_session.commit()
 
         except Exception as e:
             logger.error(f"Can't index: {e}")

@@ -1,4 +1,6 @@
-DHP_CHAPTERS_TO_RANGE = {
+from typing import Dict, Tuple
+
+DHP_CHAPTERS_TO_RANGE: Dict[int, Tuple[int, int]] = {
     1: (1, 20),
     2: (21, 32),
     3: (33, 43),
@@ -28,7 +30,7 @@ DHP_CHAPTERS_TO_RANGE = {
 }
 
 # v1 - v120 are thag1.x
-THAG_UID_TO_RANGE = {
+THAG_UID_TO_RANGE: Dict[str, Tuple[int, int]] = {
     'thag2.1': (121, 122),
     'thag2.2': (123, 124),
     'thag2.3': (125, 126),
@@ -176,7 +178,7 @@ THAG_UID_TO_RANGE = {
 }
 
 # v1 - v18 are thig1.x
-THIG_UID_TO_RANGE = {
+THIG_UID_TO_RANGE: Dict[str, Tuple[int, int]] = {
     'thig2.1': (19, 20),
     'thig2.2': (21, 22),
     'thig2.3': (23, 24),
@@ -235,7 +237,7 @@ THIG_UID_TO_RANGE = {
 }
 
 # https://www.digitalpalireader.online/_dprhtml/index.html?loc=k.4.m
-SNP_UID_TO_RANGE = {
+SNP_UID_TO_RANGE: Dict[str, Tuple[int, int]] = {
     'snp1.1': (1, 17),
     'snp1.2': (18, 34),
     'snp1.3': (35, 75),
@@ -309,4 +311,64 @@ SNP_UID_TO_RANGE = {
     'snp5.17': (1126, 1129),
     'snp5.18': (1130, 1136),
     'snp5.19': (1137, 1155),
+}
+
+# LET docs = (FOR x IN language RETURN [x._key, x.name]) RETURN docs
+
+LANG_CODE_TO_NAME: Dict[str, str] = {
+    "lzh": "Chinese",
+    "pli": "Pāli",
+    "san": "Sanskrit",
+    "xct": "Tibetan",
+    "pgd": "Gāndhārī",
+    "pra": "Prākrit",
+    "uig": "Uighur",
+    "kho": "Khotanese",
+    "xto": "Tocharian A",
+    "af": "Afrikaans",
+    "ar": "Arabic",
+    "au": "Aurebesh",
+    "bn": "Bengali",
+    "ca": "Català",
+    "cs": "Čeština",
+    "ev": "Sindarin",
+    "kln": "Klingon",
+    "vu": "Vulcan",
+    "es": "Español",
+    "fa": "Farsi",
+    "fi": "Suomi",
+    "haw": "ʻŌlelo Hawaiʻi",
+    "he": "Hebrew",
+    "hi": "हिन्दी",
+    "hr": "Hrvatski",
+    "hu": "Magyar",
+    "id": "Indonesian",
+    "it": "Italiano",
+    "jpn": "日本語",
+    "kan": "ಕನ್ನಡ",
+    "ko": "한국어/조선말",
+    "nl": "Nederlands",
+    "no": "Norsk",
+    "ru": "Ру́сский язы́к",
+    "si": "සිංහල",
+    "sk": "Slovenčina",
+    "sl": "Slovenščina",
+    "sld": "Saarländisch",
+    "sr": "Srpski",
+    "sv": "Svenska",
+    "ta": "தமிழ்",
+    "th": "ไทย",
+    "my": "မြန်မာဘာသာ",
+    "mr": "मराठी",
+    "ro": "Română",
+    "la": "Latine",
+    "lt": "Lietuvių Kalba",
+    "gu": "ગુજરાતી",
+    "de": "Deutsch",
+    "pt": "Português",
+    "en": "English",
+    "fr": "Français",
+    "vi": "Tiếng Việt",
+    "zh": "汉语",
+    "pl": "Polski",
 }

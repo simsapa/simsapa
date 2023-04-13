@@ -196,6 +196,7 @@
     </property>
     <addaction name="action_Sutta_Search"/>
     <addaction name="action_Sutta_Study"/>
+    <addaction name="action_Sutta_Index"/>
     <addaction name="action_Dictionary_Search"/>
     <addaction name="action_Show_Word_Scan_Popup"/>
     <addaction name="action_Bookmarks"/>
@@ -203,6 +204,7 @@
     <addaction name="action_Dictionaries_Manager"/>
     <addaction name="action_Document_Reader"/>
     <addaction name="action_Library"/>
+    <addaction name="action_Ebook_Reader"/>
     <addaction name="action_Memos"/>
     <addaction name="action_Links"/>
     <addaction name="action_First_Window_on_Startup"/>
@@ -213,6 +215,7 @@
     <property name="title">
      <string>&amp;Help</string>
     </property>
+    <addaction name="action_Check_for_Updates"/>
     <addaction name="action_Notify_About_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
@@ -523,6 +526,29 @@
    </property>
    <property name="text">
     <string>Link Preview</string>
+   </property>
+  </action>
+  <action name="action_Ebook_Reader">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Ebook Reader</string>
+   </property>
+  </action>
+  <action name="action_Check_for_Updates">
+   <property name="text">
+    <string>Check for Updates...</string>
+   </property>
+  </action>
+  <action name="action_Sutta_Index">
+   <property name="icon">
+    <iconset resource="../icons.qrc">
+     <normaloff>:/book</normaloff>:/book</iconset>
+   </property>
+   <property name="text">
+    <string>Sutta Index</string>
    </property>
   </action>
  </widget>

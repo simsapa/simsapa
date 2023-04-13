@@ -28,4 +28,4 @@ bootstrap-db:
 	./scripts/bootstrap_db.sh
 
 count-code:
-	tokei --type Python --exclude simsapa/layouts/word_scan_popup_borderless.py --exclude simsapa/assets/ --exclude simsapa/keyboard/ . | grep -vE '===|Total'
+	tokei --type Python --exclude simsapa/layouts/word_scan_popup_borderless.py --exclude simsapa/assets/ --exclude simsapa/keyboard/ --exclude simsapa/app/lookup.py . | grep -vE '===|Total'

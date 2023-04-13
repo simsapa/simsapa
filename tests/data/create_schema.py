@@ -3,6 +3,7 @@
 import sys
 
 from sqlalchemy import create_engine
+from sqlalchemy.sql import text
 from sqlalchemy.engine import Engine
 from sqlalchemy_utils import create_database
 from alembic import command
@@ -28,7 +29,7 @@ def create_schema(schema: str = DbSchemaName.UserData.value,
     if isinstance(engine, Engine):
         db_conn = engine.connect()
         create_database(db_url)
-        db_conn.execute(f"ATTACH DATABASE '{db_path}' AS {schema};")
+        db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS {schema};"))
 
         if schema == DbSchemaName.UserData.value:
             Um.metadata.create_all(bind=engine)

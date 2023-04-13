@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (QLabel, QMainWindow,
 
 from simsapa import logger
 from simsapa import ASSETS_DIR
-from simsapa.assets import icons_rc  # noqa: F401
 
 from ..app.db_models import DictionarySource
 from ..app.types import AppData, DictWord
@@ -56,10 +55,10 @@ class DictionariesManagerWindow(QMainWindow, Ui_DictionariesManagerWindow):
         self.dictionary_sources_list.setModel(self.model)
         self.sel_model = self.dictionary_sources_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._show_dictionary_source_clear()
 
     def _get_all_dictionary_sources(self) -> List[DictionarySource]:

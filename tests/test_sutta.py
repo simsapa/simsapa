@@ -1,7 +1,7 @@
 """Basic Sutta test cases
 """
 
-from sqlalchemy import func
+from sqlalchemy.sql import func, text
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -30,7 +30,7 @@ def test_fts_sutta_search():
     app_data = get_app_data()
 
     query = "evaṃ me sutaṃ"
-    res = app_data.db_session.execute(f"""
+    res = app_data.db_session.execute(text(f"""
 SELECT
     suttas.id,
     suttas.title,
@@ -39,7 +39,7 @@ SELECT
 FROM fts_suttas
 INNER JOIN suttas ON suttas.id = fts_suttas.rowid
 WHERE fts_suttas MATCH '{query}'
-ORDER BY rank;""").all()
+ORDER BY rank;""")).all()
 
     assert '<b class="highlight">Evaṃ</b>' in res[0].content_snippet
 

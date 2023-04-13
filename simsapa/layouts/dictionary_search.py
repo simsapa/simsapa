@@ -13,12 +13,13 @@ from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItem, QStandardIte
 from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.app.dict_link_helpers import add_word_links_to_bold
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
-from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
@@ -58,10 +59,11 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     show_sutta_by_url = pyqtSignal(QUrl)
     show_words_by_url = pyqtSignal(QUrl)
-    lookup_in_suttas_signal = pyqtSignal(str)
+    lookup_in_new_sutta_window_signal = pyqtSignal(str)
     open_words_new_signal = pyqtSignal(list)
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    page_dblclick = pyqtSignal()
     hide_preview = pyqtSignal()
 
     def __init__(self, app_data: AppData, parent=None) -> None:
@@ -96,7 +98,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_fulltext_list()
@@ -139,7 +141,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def _lookup_clipboard_in_suttas(self):
         text = self._app_data.clipboard_getText()
         if text is not None:
-            self.lookup_in_suttas_signal.emit(text)
+            self.lookup_in_new_sutta_window_signal.emit(text)
 
     def _lookup_clipboard_in_dictionary(self):
         self.activateWindow()
@@ -152,15 +154,23 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def _lookup_selection_in_suttas(self):
         text = self._get_selection()
         if text is not None:
-            self.lookup_in_suttas_signal.emit(text)
+            self.lookup_in_new_sutta_window_signal.emit(text)
 
-    def _lookup_selection_in_dictionary(self):
+    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
         self.activateWindow()
         text = self._get_selection()
         if text is not None:
-            self._set_query(text)
-            self._handle_query()
-            self._handle_exact_query()
+            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+
+    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True, add_recent = True):
+        self._set_query(query)
+        self._handle_query()
+
+        if include_exact_query:
+            self._handle_exact_query(add_recent)
+
+        if show_results_tab:
+            self.rightside_tabs.setCurrentIndex(0)
 
     def _get_selection(self) -> Optional[str]:
         text = self.qwe.selectedText()
@@ -171,12 +181,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             return text
         else:
             return None
-
-    def highlight_results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_query_worker is None:
-            return []
-        else:
-            return self.search_query_worker.highlight_results_page(page_num)
 
     def query_hits(self) -> int:
         if self.search_query_worker is None:
@@ -239,7 +243,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             except queue.Empty:
                 pass
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -394,6 +398,9 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
+    def _page_dblclick(self):
+        if self._app_data.app_settings['double_click_dict_lookup']:
+            self.page_dblclick.emit()
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
@@ -401,6 +408,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         self.qwe.setPage(page)
@@ -664,13 +672,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.insertItems(0, titles)
 
-    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
-    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
-        def callback(found):
-            if text and not found:
-                logger.info('Not found')
-
-        self.qwe.findText(text, flag, callback)
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
+        if find_searched['flag'] is None:
+            self.qwe.findText(find_searched['text'])
+        else:
+            self.qwe.findText(find_searched['text'], find_searched['flag'])
 
     def _handle_result_select(self):
         logger.info("_handle_result_select()")
@@ -756,10 +763,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
 
-        body = self.queries._add_sutta_links(word_html['body'])
+        body = word_html['body']
 
         if word.source_uid == "cpd":
-            body = self.queries._add_word_links_to_bold(body)
+            body = add_word_links_to_bold(body)
 
         page_html = self.queries.render_html_page(
             body = body,
@@ -822,6 +829,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.sutta_to_open = sutta
         self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
+
     def _show_words_by_url(self, url: QUrl):
         if url.host() != QueryType.words:
             return
@@ -853,16 +867,18 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._app_data.sutta_to_open = results[0]
             self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
-    def _show_word_by_url(self, url: QUrl):
+    def _show_word_by_url(self, url: QUrl, show_results_tab = True, include_exact_query = True):
         # ssp://words/dhammacakkhu
         # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
         query = url.path().strip('/')
         logger.info(f"Show Word: {query}")
-        self._set_query(query)
-        self._handle_query()
-        self._handle_exact_query(add_recent=True)
+
+        self.lookup_in_dictionary(query,
+                                  show_results_tab,
+                                  include_exact_query,
+                                  add_recent=True)
 
     def _show_word_by_uid(self, uid: str):
         results = self.queries.get_words_by_uid(uid)
@@ -994,9 +1010,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         else:
             self.splitter.setSizes([2000, 0])
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
@@ -1017,7 +1036,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.recent_list.itemSelectionChanged.connect(partial(self._handle_recent_select))
 
-        self._find_panel.searched.connect(self.on_searched) # type: ignore
+        self._find_panel.searched.connect(self.on_searched)
         self._find_panel.closed.connect(self.find_toolbar.hide)
 
         def _handle_sidebar():

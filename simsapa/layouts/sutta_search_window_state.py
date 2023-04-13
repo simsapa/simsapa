@@ -3,28 +3,27 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 from functools import partial
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout, QWidget)
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
-from sqlalchemy.sql.elements import and_
+from sqlalchemy import and_
 # from tomlkit import items
 
 from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
-from simsapa.layouts.find_panel import FindPanel
+from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
+from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_ALL_BOOK_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.types import AppData, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
+from ..app.types import AppData, OpenPromptParams, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
 from .sutta_tab import SuttaTabWidget
 from .memo_dialog import HasMemoDialog
 from .html_content import html_page
@@ -50,14 +49,18 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     _related_tabs: List[SuttaTabWidget]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: Optional[SearchQueryWorker] = None
+    search_query_workers: List[SearchQueryWorker] = []
     search_mode_dropdown: QComboBox
+    show_url_action_fn: Callable
 
+    open_sutta_new_signal = pyqtSignal(str)
     open_in_study_window_signal = pyqtSignal([str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
+    page_dblclick = pyqtSignal()
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
+    open_gpt_prompt = pyqtSignal(dict)
 
     def __init__(self,
                  app_data: AppData,
@@ -70,7 +73,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
                  enable_search_extras: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
-                 show_query_results_in_active_tab: bool = False) -> None:
+                 show_query_results_in_active_tab: bool = False,
+                 custom_create_context_menu_fn: Optional[Callable] = None) -> None:
         super().__init__()
 
         self.pw = parent_window
@@ -87,8 +91,12 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.query_in_tab = show_query_results_in_active_tab
         self.showing_query_in_tab = False
 
+        self.custom_create_context_menu_fn = custom_create_context_menu_fn
+
         self.features: List[str] = []
         self._app_data: AppData = app_data
+
+        self.show_url_action_fn = self._show_sutta_by_url
 
         self.queries = SuttaQueries(self._app_data)
 
@@ -105,13 +113,13 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self.focus_input = focus_input
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
         self.init_bookmark_dialog()
         self.init_memo_dialog()
 
-    def _init_search_query_worker(self, query: str = ""):
+    def _init_search_query_workers(self, query: str = ""):
         if self.enable_search_extras:
             idx = self.sutta_language_filter_dropdown.currentIndex()
             language = self.sutta_language_filter_dropdown.itemText(idx)
@@ -141,20 +149,47 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         s = self.search_mode_dropdown.itemText(idx)
         mode = SuttaSearchModeNameToType[s]
 
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            mode,
-            sutta_hit_to_search_result)
+        for i in self.search_query_workers:
+            i.will_emit_finished = False
 
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           only_lang,
-                                           only_source)
+        self.search_query_workers = []
 
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
+        # Sutta query worker
 
+        w = SearchQueryWorker(self._app_data.search_indexed.suttas_index,
+                              self.page_len,
+                              mode,
+                              sutta_hit_to_search_result)
+
+        w.set_query(query,
+                    self._last_query_time,
+                    disabled_labels,
+                    only_lang,
+                    only_source)
+
+        w.signals.finished.connect(partial(self._search_query_finished))
+
+        self.search_query_workers.append(w)
+
+        # Language query workers
+
+        index_names = self._app_data.search_indexed.suttas_lang_index.keys()
+        for i in index_names:
+
+            w = SearchQueryWorker(self._app_data.search_indexed.suttas_lang_index[i],
+                                  self.page_len,
+                                  mode,
+                                  sutta_hit_to_search_result)
+
+            w.set_query(query,
+                        self._last_query_time,
+                        disabled_labels,
+                        only_lang,
+                        only_source)
+
+            w.signals.finished.connect(partial(self._search_query_finished))
+
+            self.search_query_workers.append(w)
 
     def _get_active_tab(self) -> SuttaTabWidget:
         current_idx = self.sutta_tabs.currentIndex()
@@ -176,7 +211,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         else:
             return None
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self._setup_search_bar();
 
         self._setup_sutta_tabs()
@@ -340,30 +375,26 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _link_mouseleave(self, href: str):
         self.link_mouseleave.emit(href)
 
+    def _page_dblclick(self):
+        if self._app_data.app_settings['double_click_dict_lookup']:
+            self.page_dblclick.emit()
+
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
-    def _new_webengine(self) -> QWebEngineView:
-        qwe = QWebEngineView()
-
+    def _new_webengine(self) -> SimsapaWebEngine:
         page = ReaderWebEnginePage(self)
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
+        page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
 
-        qwe.setPage(page)
-
-        qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-        # Enable dev tools
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
-
-        self._setup_qwe_context_menu(qwe)
+        if self.custom_create_context_menu_fn:
+            qwe = SimsapaWebEngine(page, self.custom_create_context_menu_fn)
+        else:
+            qwe = SimsapaWebEngine(page, self._create_qwe_context_menu)
 
         return qwe
 
@@ -505,25 +536,42 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setFocus()
 
     def query_hits(self) -> int:
-        if self.search_query_worker is None:
+        if len(self.search_query_workers) == 0:
             return 0
         else:
-            return self.search_query_worker.query_hits()
+            return sum([i.query_hits() for i in self.search_query_workers])
 
     def results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_query_worker is None:
+        logger.info(f"results_page(): page_num = {page_num}")
+        n = len(self.running_queries())
+        if n != 0:
+            logger.info(f"Running queries: {n}, return empty results")
             return []
         else:
-            return self.search_query_worker.results_page(page_num)
+            a: List[SearchResult] = []
+            for i in self.search_query_workers:
+                a.extend(i.results_page(page_num))
+
+            # The higher the score, the better. Reverse to get descending order.
+            res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+            return res
+
+    def running_queries(self) -> List[SearchQueryWorker]:
+        return [i for i in self.search_query_workers if i.query_finished is None]
 
     def _search_query_finished(self):
-        logger.info("_search_query_finished()")
-        self.pw.stop_loading_animation()
+        n = len(self.running_queries())
+        logger.info(f"_search_query_finished(), still running: {n}")
 
-        if self.search_query_worker is None:
+        if n > 0:
             return
 
-        if self._last_query_time != self.search_query_worker.query_started:
+        self.pw.stop_loading_animation()
+
+        if len(self.search_query_workers) == 0:
+            return
+
+        if self._last_query_time != self.search_query_workers[0].query_started:
             return
 
         # Restore the search icon, processing finished
@@ -535,7 +583,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self.enable_sidebar:
             self.pw._update_sidebar_fulltext(self.query_hits())
 
-        results = self.search_query_worker.results_page(0)
+        results = self.results_page(0)
 
         if self.query_hits() == 1 and results[0]['uid'] is not None:
             self._show_sutta_by_uid(results[0]['uid'])
@@ -547,9 +595,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         logger.info("_start_query_worker()")
         self.pw.start_loading_animation()
 
-        self._init_search_query_worker(query)
-        if self.search_query_worker is not None:
-            self.thread_pool.start(self.search_query_worker)
+        self._init_search_query_workers(query)
+        for i in self.search_query_workers:
+            self.thread_pool.start(i)
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text()
@@ -585,8 +633,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         self.showing_query_in_tab = True
-        if self.search_query_worker is not None:
-            self._get_active_tab().render_search_results(self.search_query_worker.all_results())
+        if len(self.running_queries()) == 0:
+            a = []
+            for i in self.search_query_workers:
+                a.extend(i.all_results())
+            res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+            self._get_active_tab().render_search_results(res)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         if not self.pw.action_Search_Completion.isChecked():
@@ -611,17 +663,19 @@ QWidget:focus { border: 1px solid #1092C3; }
         # TODO This is a synchronous version of _start_query_worker(), still
         # used in links_browser.py. Update and use the background thread worker.
 
-        if self.search_query_worker is None:
-            self._init_search_query_worker(query)
+        self._init_search_query_workers(query)
 
         disabled_labels = self._app_data.app_settings.get('disabled_sutta_labels', None)
 
-        first_page_results = []
-        if self.search_query_worker is not None:
-            self.search_query_worker.search_query.new_query(query, disabled_labels, only_lang, only_source)
-            first_page_results = self.search_query_worker.search_query.highlight_results_page(0)
+        # first page results
+        a = []
+        for i in self.search_query_workers:
+            i.search_query.new_query(query, disabled_labels, only_lang, only_source)
+            a.extend(i.results_page(0))
 
-        return first_page_results
+        res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
+
+        return res
 
     def _set_qwe_html(self, html: str):
         self.sutta_tab.set_qwe_html(html)
@@ -646,23 +700,22 @@ QWidget:focus { border: 1px solid #1092C3; }
         if x['schema_name'] == DbSchemaName.AppData.value:
             sutta = self._app_data.db_session \
                                   .query(Am.Sutta) \
-                                  .filter(Am.Sutta.id == x['db_id']) \
+                                  .filter(Am.Sutta.uid == x['uid']) \
                                   .first()
         else:
             sutta = self._app_data.db_session \
                                   .query(Um.Sutta) \
-                                  .filter(Um.Sutta.id == x['db_id']) \
+                                  .filter(Um.Sutta.uid == x['uid']) \
                                   .first()
         return sutta
 
-    @QtCore.pyqtSlot(str, QWebEnginePage.FindFlag)
-    def on_searched(self, text: str, flag: QWebEnginePage.FindFlag):
-        def callback(found):
-            if text and not found:
-                logger.info('Not found')
-
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
         tab = self._get_active_tab()
-        tab.qwe.findText(text, flag, callback)
+        if find_searched['flag'] is None:
+            tab.qwe.findText(find_searched['text'])
+        else:
+            tab.qwe.findText(find_searched['text'], find_searched['flag'])
 
     def _select_prev_tab(self):
         selected_idx = self.sutta_tabs.currentIndex()
@@ -679,6 +732,13 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.sutta_tabs.setCurrentIndex(0)
         elif selected_idx + 1 < len(self.sutta_tabs):
             self.sutta_tabs.setCurrentIndex(selected_idx + 1)
+
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self.show_url_action_fn(url)
+
+        # elif url.host() == QueryType.words:
+        #     self._show_words_by_url(url)
 
     def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
@@ -763,6 +823,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         if sutta:
             self._show_sutta(sutta, sutta_quote)
             self._add_recent(sutta)
+        else:
+            logger.info(f"Sutta not found: {uid}")
 
     def _show_word_by_uid(self, uid: str):
         results: List[UDictWord] = []
@@ -859,7 +921,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # read state from the window action, not from app_data.app_settings, b/c
         # that will be set from windows.py
-        if not self.pw.action_Show_Related_Suttas.isChecked():
+        if hasattr(self.pw, 'action_Show_Related_Suttas') \
+           and not self.pw.action_Show_Related_Suttas.isChecked():
             return
 
         uid_ref = re.sub('^([^/]+)/.*', r'\1', str(sutta.uid))
@@ -948,53 +1011,133 @@ QWidget:focus { border: 1px solid #1092C3; }
         uid: str = sutta.uid # type: ignore
         self.open_in_study_window_signal.emit(side, uid)
 
-    def _setup_qwe_context_menu(self, qwe: QWebEngineView):
-        qwe.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+    def _lookup_selection_in_suttas(self):
+        self.pw.activateWindow()
+        text = self._get_selection()
+        if text is not None:
+            self._set_query(text)
+            self._handle_query()
 
-        copyAction = QAction("Copy Selection", qwe)
+    def _lookup_selection_in_new_sutta_window(self):
+        text = self._get_selection()
+        if text is not None:
+            self.pw.lookup_in_new_sutta_window_signal.emit(text)
+
+    def _lookup_selection_in_dictionary(self):
+        text = self._get_selection()
+        if text is not None:
+            self.pw.lookup_in_dictionary_signal.emit(text)
+
+    def _create_qwe_context_menu(self, menu: QMenu):
+        self.qwe_copy_selection = QAction("Copy Selection")
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
-        copyAction.triggered.connect(partial(self._handle_copy))
+        self.qwe_copy_selection.triggered.connect(partial(self._handle_copy))
+        menu.addAction(self.qwe_copy_selection)
 
-        qwe.addAction(copyAction)
+        self.qwe_copy_link_to_sutta = QAction("Copy Link to Sutta and Selection")
+        self.qwe_copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
+        menu.addAction(self.qwe_copy_link_to_sutta)
 
-        copy_link_to_sutta = QAction("Copy Link to Sutta and Selection", qwe)
-        copy_link_to_sutta.triggered.connect(partial(self._handle_copy_link_to_sutta))
-        qwe.addAction(copy_link_to_sutta)
+        self.qwe_copy_uid = QAction("Copy uid")
+        self.qwe_copy_uid.triggered.connect(partial(self._handle_copy_uid))
+        menu.addAction(self.qwe_copy_uid)
 
-        copyUidAction = QAction("Copy uid", qwe)
-        copyUidAction.triggered.connect(partial(self._handle_copy_uid))
+        self.qwe_bookmark = QAction("Create Bookmark from Selection")
+        self.qwe_bookmark.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
+        menu.addAction(self.qwe_bookmark)
 
-        qwe.addAction(copyUidAction)
+        self.qwe_memo = QAction("Create Memo")
+        self.qwe_memo.triggered.connect(partial(self.handle_create_memo_for_sutta))
+        menu.addAction(self.qwe_memo)
 
-        bookmark_Action = QAction("Create Bookmark from Selection", qwe)
-        bookmark_Action.triggered.connect(partial(self.handle_create_bookmark_for_sutta))
+        self.qwe_study_menu = QMenu("Open in Study Window")
+        menu.addMenu(self.qwe_study_menu)
 
-        qwe.addAction(bookmark_Action)
+        self.qwe_study_left = QAction("Left")
+        self.qwe_study_left.triggered.connect(partial(self._open_in_study_window, 'left'))
+        self.qwe_study_menu.addAction(self.qwe_study_left)
 
-        memoAction = QAction("Create Memo", qwe)
-        memoAction.triggered.connect(partial(self.handle_create_memo_for_sutta))
+        self.qwe_study_middle = QAction("Middle")
+        self.qwe_study_middle.triggered.connect(partial(self._open_in_study_window, 'middle'))
+        self.qwe_study_menu.addAction(self.qwe_study_middle)
 
-        qwe.addAction(memoAction)
+        self.qwe_lookup_menu = QMenu("Lookup Selection")
+        menu.addMenu(self.qwe_lookup_menu)
 
-        studyLeftAction = QAction("Open in Study Window: Left", qwe)
-        studyLeftAction.triggered.connect(partial(self._open_in_study_window, 'left'))
+        self.qwe_lookup_in_suttas = QAction("In Suttas")
+        self.qwe_lookup_in_suttas.triggered.connect(partial(self._lookup_selection_in_suttas))
+        self.qwe_lookup_menu.addAction(self.qwe_lookup_in_suttas)
 
-        qwe.addAction(studyLeftAction)
+        self.qwe_lookup_in_dictionary = QAction("In Dictionary")
+        self.qwe_lookup_in_dictionary.triggered.connect(partial(self._lookup_selection_in_dictionary))
+        self.qwe_lookup_menu.addAction(self.qwe_lookup_in_dictionary)
 
-        studyMiddleAction = QAction("Open in Study Window: Middle", qwe)
-        studyMiddleAction.triggered.connect(partial(self._open_in_study_window, 'middle'))
+        self.gpt_prompts_menu = QMenu("GPT Prompts")
+        menu.addMenu(self.gpt_prompts_menu)
 
-        qwe.addAction(studyMiddleAction)
+        prompts = self._app_data.db_session \
+                                .query(Um.GptPrompt) \
+                                .filter(Um.GptPrompt.show_in_context == True) \
+                                .all()
 
-        lookupSelectionInSuttas = QAction("Lookup Selection in Suttas", qwe)
-        lookupSelectionInSuttas.triggered.connect(partial(self.pw._lookup_selection_in_suttas))
+        self.gpt_prompts_actions = []
 
-        qwe.addAction(lookupSelectionInSuttas)
+        def _add_action_to_menu(x: Um.GptPrompt):
+            a = QAction(str(x.name_path))
+            db_id: int = x.id # type: ignore
+            a.triggered.connect(partial(self._open_gpt_prompt_with_params, db_id))
+            self.gpt_prompts_actions.append(a)
+            self.gpt_prompts_menu.addAction(a)
 
-        lookupSelectionInDictionary = QAction("Lookup Selection in Dictionary", qwe)
-        lookupSelectionInDictionary.triggered.connect(partial(self.pw._lookup_selection_in_dictionary))
+        for i in prompts:
+            _add_action_to_menu(i)
 
-        qwe.addAction(lookupSelectionInDictionary)
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/new-window"))
+
+        self.qwe_open_new_action = QAction("Open in New Window")
+        self.qwe_open_new_action.setIcon(icon)
+        self.qwe_open_new_action.triggered.connect(partial(self._handle_open_content_new))
+        menu.addAction(self.qwe_open_new_action)
+
+        tab = self._get_active_tab()
+
+        self.qwe_devtools = QAction("Show Inspector")
+        self.qwe_devtools.setCheckable(True)
+        self.qwe_devtools.setChecked(tab.devtools_open)
+        self.qwe_devtools.triggered.connect(partial(self._toggle_devtools_inspector))
+        menu.addAction(self.qwe_devtools)
+
+    def _open_gpt_prompt_with_params(self, prompt_db_id: int):
+        tab = self._get_active_tab()
+        if tab.sutta is None:
+            uid = None
+        else:
+            uid = str(tab.sutta.uid)
+
+        params = OpenPromptParams(
+            prompt_db_id = prompt_db_id,
+            with_name = '', # Empty string to clear existing name
+            sutta_uid = uid,
+            selection_text = self._get_selection(),
+        )
+
+        self.open_gpt_prompt.emit(params)
+
+    def _toggle_devtools_inspector(self):
+        tab = self._get_active_tab()
+
+        if self.qwe_devtools.isChecked():
+            tab._show_devtools()
+        else:
+            tab._hide_devtools()
+
+    def _handle_open_content_new(self):
+        tab = self._get_active_tab()
+        if tab.sutta is not None:
+            self.open_sutta_new_signal.emit(str(tab.sutta.uid))
+        else:
+            logger.warn("Sutta is not set")
 
     def _handle_show_related_suttas(self):
         if self._current_sutta is not None:
@@ -1025,26 +1168,30 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data._save_app_settings()
 
     def _connect_signals(self):
-        self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_input.textEdited.connect(partial(self._user_typed))
+        if hasattr(self, 'search_button'):
+            self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
 
-        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        if hasattr(self, 'search_input'):
+            self.search_input.textEdited.connect(partial(self._user_typed))
+            self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
+            self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
 
-        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
+        if hasattr(self, 'search_mode_dropdown'):
+            self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
-        if self.enable_sidebar:
-            self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
-            self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
+        if hasattr(self, 'back_recent_button'):
+            if self.enable_sidebar:
+                self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
+                self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
 
-            def _handle_sidebar():
-                self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+                def _handle_sidebar():
+                    self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
 
-            self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
+                self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
 
-        else:
-            self.back_recent_button.clicked.connect(partial(self._show_next_recent))
-            self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
+            else:
+                self.back_recent_button.clicked.connect(partial(self._show_next_recent))
+                self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
         if self.enable_language_filter and hasattr(self, 'sutta_language_filter_dropdown'):
             self.sutta_language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
@@ -1053,7 +1200,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.sutta_source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:
-            self._find_panel.searched.connect(self.on_searched) # type: ignore
+            self._find_panel.searched.connect(self.on_searched)
             self._find_panel.closed.connect(self.find_toolbar.hide)
 
             self.pw.action_Find_in_Page \

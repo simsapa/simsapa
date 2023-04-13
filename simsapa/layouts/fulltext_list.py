@@ -26,7 +26,7 @@ class HasFulltextList:
     _handle_result_select: Callable
     page_len: int
     query_hits: Callable
-    highlight_results_page: Callable
+    results_page: Callable
     rightside_tabs: QTabWidget
     tabs: QTabWidget
 
@@ -95,7 +95,7 @@ class HasFulltextList:
             self.fulltext_label.clear()
             return
 
-        results = self.highlight_results_page(page_num)
+        results = self.results_page(page_num)
 
         msg = f"Showing {page_start+1}-{page_end} out of {self.query_hits()} results"
         self.fulltext_label.setText(msg)

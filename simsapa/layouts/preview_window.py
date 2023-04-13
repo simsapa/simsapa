@@ -38,6 +38,8 @@ class PreviewWindow(QDialog):
     open_new = pyqtSignal(str)
     make_windowed = pyqtSignal()
 
+    show_words_by_url = pyqtSignal(QUrl)
+
     def __init__(self, app_data: AppData,
                  hover_data: Optional[LinkHoverData] = None,
                  frameless: bool = True) -> None:
@@ -59,7 +61,7 @@ class PreviewWindow(QDialog):
         self._hide_timer.timeout.connect(partial(self.hide))
         self._hide_timer.setSingleShot(True)
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
     def _set_title(self):
@@ -83,7 +85,7 @@ class PreviewWindow(QDialog):
         self._hide_timer.stop()
         self.hide()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.wrap_layout = QVBoxLayout()
         self.wrap_layout.setContentsMargins(1, 1, 1, 8)
         self.setLayout(self.wrap_layout)
@@ -401,6 +403,18 @@ class PreviewWindow(QDialog):
 
         self.set_qwe_html(html)
 
+    def _show_url(self, url: QUrl):
+        if url.host() == QueryType.suttas:
+            self._show_sutta_by_url(url)
+
+        elif url.host() == QueryType.words:
+            self._show_words_by_url(url)
+
+    def _show_words_by_url(self, url: QUrl):
+        if url.host() != QueryType.words:
+            return
+
+        self.show_words_by_url.emit(url)
 
     def _show_sutta_by_url(self, url: QUrl):
         self.open_new.emit(url.toString())

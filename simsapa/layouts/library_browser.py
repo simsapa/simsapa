@@ -5,9 +5,8 @@ from sqlalchemy.sql import func
 
 from PyQt6.QtCore import QAbstractListModel, Qt
 from PyQt6.QtGui import QIcon, QImage, QPixmap
-from PyQt6.QtWidgets import (QFileDialog, QLabel, QMainWindow,
+from PyQt6.QtWidgets import (QFileDialog, QMainWindow,
                              QMessageBox)
-from simsapa.assets import icons_rc  # noqa: F401
 
 from simsapa import DbSchemaName, logger
 from ..app.file_doc import FileDoc
@@ -50,10 +49,10 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
         self.documents_list.setModel(self.model)
         self.sel_model = self.documents_list.selectionModel()
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.search_input.setFocus()
         self._show_document_clear()
 

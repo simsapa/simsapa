@@ -34,7 +34,6 @@ def gui(url: Optional[str] = None):
     from simsapa.gui import start
     start(url=url)
 
-
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
     """Query the database."""
@@ -69,14 +68,12 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
         for i in search_query.get_all_results(highlight=False):
             print(i['title'])
 
-
 @index_app.command("create")
 def index_create():
     """Create database indexes, removing existing ones."""
     from simsapa.app.db.search import SearchIndexed
     search_indexed = SearchIndexed()
     search_indexed.create_all()
-
 
 @index_app.command("reindex")
 def index_reindex():
@@ -89,6 +86,15 @@ def index_reindex():
     search_indexed.create_all()
     search_indexed.index_all(app_data.db_session)
 
+@index_app.command("suttas-lang")
+def index_suttas_lang(lang: str):
+    """Create a separate index and index suttas from appdata of the given language."""
+    from simsapa.app.db.search import SearchIndexed
+    from simsapa.app.types import AppData
+    search_indexed = SearchIndexed()
+    app_data = AppData()
+
+    search_indexed.index_all_suttas_lang(app_data.db_session, lang)
 
 @app.command("import-bookmarks")
 def import_bookmarks(path_to_csv: str):
@@ -98,6 +104,29 @@ def import_bookmarks(path_to_csv: str):
     bookmarks = app_data.import_bookmarks(path_to_csv)
     print(f"Imported {bookmarks} bookmarks.")
 
+@app.command("import-suttas-to-userdata")
+def import_suttas_to_userdata(path_to_db: str):
+    """Import suttas from an sqlite3 db to userdata."""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    suttas = app_data.import_suttas_to_userdata(path_to_db)
+    print(f"Imported {suttas} suttas.")
+
+@app.command("export-prompts")
+def export_prompts(path_to_csv: str):
+    """Export prompts to a CSV file"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    prompts = app_data.export_prompts(path_to_csv)
+    print(f"Exported {prompts} prompts.")
+
+@app.command("import-prompts")
+def import_prompts(path_to_csv: str):
+    """Import prompts from a CSV file (such as an earlier export)"""
+    from simsapa.app.types import AppData
+    app_data = AppData()
+    prompts = app_data.import_prompts(path_to_csv)
+    print(f"Imported {prompts} prompts.")
 
 @app.command("export-bookmarks")
 def export_bookmarks(path_to_csv: str):
@@ -106,7 +135,6 @@ def export_bookmarks(path_to_csv: str):
     app_data = AppData()
     bookmarks = app_data.export_bookmarks(path_to_csv)
     print(f"Exported {bookmarks} bookmarks.")
-
 
 @app.command("import-pali-course")
 def import_pali_course(path_to_toml: str):
@@ -121,9 +149,14 @@ def import_pali_course(path_to_toml: str):
 
     print(f"Imported Pali Course: {name}")
 
-
 def main():
-    logger.info("runner::main()", start_new=True)
+    s = os.getenv('START_NEW_LOG')
+    if s is not None and s.lower() == 'false':
+       start_new = False
+    else:
+        start_new = True
+
+    logger.info("runner::main()", start_new = start_new)
 
     if len(sys.argv) == 1:
         gui()

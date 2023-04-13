@@ -5,7 +5,7 @@ from typing import Callable, List, Optional, TypedDict
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QMessageBox, QTabWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import show_work_in_progress
@@ -46,10 +46,10 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
 
         self.dict_select_data: List[DictData] = []
 
-        self._ui_setup()
+        self._setup_ui()
         self._connect_signals()
 
-    def _ui_setup(self):
+    def _setup_ui(self):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
         self.title.setFixedSize(500, 40)

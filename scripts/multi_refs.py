@@ -66,6 +66,8 @@ def populate_sutta_multi_refs(appdata_db: Session, limit: Optional[int] = None):
 
     multi_refs = []
 
+    added = []
+
     for ref in pts_refs:
         if ref['collection'] is None:
             logger.warn(f"Missing collection: {ref['sc_uid']}")
@@ -79,14 +81,25 @@ def populate_sutta_multi_refs(appdata_db: Session, limit: Optional[int] = None):
             elif edition == 'somaratne':
                 edition = "2nd ed. Somaratne (1998)"
 
-            item = Am.MultiRef(
-                collection = ref['collection'],
-                ref_type = "pts",
-                ref = normalize_sutta_ref(ref['pts_ref']),
-                sutta_uid = ref['sc_uid'],
-                edition = edition,
-            )
-            multi_refs.append(item)
+            # NOTE: The PTS + SC + EDITION could be a unique db constraint.
+            r1 = normalize_sutta_ref(ref['pts_ref'])
+            r2 = ref['sc_uid']
+            s = f"{r1}_{r2}_{edition}"
+
+            if ref['sc_uid'] == "":
+                logger.warn(f"sc_uid is empty: {ref}")
+
+            if s not in added:
+                added.append(s)
+
+                item = Am.MultiRef(
+                    collection = ref['collection'],
+                    ref_type = "pts",
+                    ref = r1,
+                    sutta_uid = r2,
+                    edition = edition,
+                )
+                multi_refs.append(item)
 
     try:
         for ref in multi_refs:

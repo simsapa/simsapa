@@ -1,19 +1,19 @@
 [tool.poetry]
 name = "simsapa"
-version = "0.2.0-alpha.1"
+version = "0.3.0-alpha.1"
 description = "Simsapa Dhamma Reader - Buddhist suttas and Pali dictionary"
 # pypi identification
 authors = ["Gambhiro <profound.labs@gmail.com>"]
-license = "MIT"
+license = "GPLv3"
 
 # NOTE: Version updates:
 # - tool.poetry.version (above)
-# - simsapa.db_version
-# - tool.briefcase.version
+# - simsapa.db_version (below)
+# - tool.briefcase.version (below)
 # - simsapa/__init__.py SIMSAPA_APP_VERSION
 
 [simsapa]
-db_version = "0.2.0-alpha.1"
+db_version = "0.3.0-alpha.1"
 
 [tool.poetry.dependencies]
 python = "~3.11"
@@ -23,11 +23,9 @@ PyQt6-Qt6 = "~6.4.2"
 PyQt6-WebEngine = "~6.4.0"
 PyQt6-WebEngine-Qt6 = "~6.4.2"
 PyYAML = "~6.0.0"
-SQLAlchemy = "~1.4.45"
-SQLAlchemy-Utils = "~0.39.0"
-types-sqlalchemy-utils = "~1.0.1"
-sqlalchemy2-stubs = "^0.0.2a31"
-alembic = "~1.8.1"
+SQLAlchemy = "~2.0.7"
+SQLAlchemy-Utils = "~0.40.0"
+alembic = "~1.10.2"
 requests = "~2"
 appdirs = "~1.4.4"
 PyPDF2 = "~1.26.0"
@@ -67,6 +65,18 @@ chardet = "^5.1.0"
 # ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
 # https://stackoverflow.com/questions/74182807/no-module-named-charset-normalizer-md-mypyc
 charset-normalizer = "==2.1.0"
+ebooklib = "^0.18"
+openai = "^0.27.4"
+tiktoken = "^0.3.3"
+transformers = "^4.27.4"
+
+# 67.4.0 failed to install
+setuptools = "65.7.0"
+# 2022.7.1 failed to install
+pytz = "2022.7.0"
+# 2023.0 failed to install
+pyinstaller-hooks-contrib = "2022.14"
+deepmerge = "^1.1.0"
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
@@ -75,11 +85,10 @@ simsapa = 'simsapa.runner:main'
 pyinstaller = "^5.7"
 tuna = { git = "https://github.com/nschloe/tuna.git" }
 
-# nuitka = "^1.2"
-# orderedset = "^2.0.3"
 # scalene = "^1.5.14"
 
-pytest = "~7.2.0"
+# 7.2.1 failed to install
+pytest = "7.2.0"
 pyArango = "~2.0.0"
 html5lib = "^1.1"
 selenium = "^4.7.2"
@@ -101,7 +110,7 @@ to = {format = "setuppy", path = "setup.py"}
 project_name = "Simsapa Dhamma Reader"
 bundle = "io.github"
 # briefcase requires PEP440 version strings
-version = "0.2.0a1"
+version = "0.3.0a1"
 url = "https://github.com/simsapa/simsapa"
 license = "MIT license"
 # Package will display this info
@@ -120,11 +129,9 @@ requires = [
 "PyQt6-WebEngine    >= 6.4.0,    < 6.5.0",
 "PyQt6-WebEngine-Qt6 == 6.4.2",
 "PyYAML             >= 6.0.0,    < 6.1.0",
-"SQLAlchemy         >= 1.4.45,   < 1.5.0",
-"SQLAlchemy-Utils   >= 0.39.0,   < 0.40.0",
-"types-sqlalchemy-utils >= 1.0.1, < 1.1.0",
-"sqlalchemy2-stubs  >= 0.0.2a31, < 0.1.0",
-"alembic            >= 1.8.1,    < 1.9.0",
+"SQLAlchemy         >= 2.0.7,   < 2.1.0",
+"SQLAlchemy-Utils   >= 0.40.0,   < 0.41.0",
+"alembic            >= 1.10.2,    < 1.11.0",
 "requests           >= 2.25.0,   < 3.0.0",
 "appdirs            >= 1.4.4,    < 1.5.0",
 "PyPDF2             >= 1.26.0,   < 1.27.0",
@@ -157,6 +164,14 @@ requires = [
 "roman              >= 3.3,      < 4.0",
 "chardet            >= 5.1.0,    < 5.2.0",
 "charset-normalizer == 2.1.0",
+"ebooklib           >= 0.18.0,   < 0.19.0",
+"openai             >= 0.26.5,   < 0.27.0",
+"tiktoken           >= 0.3.3,    < 0.4.0",
+"transformers       >= 4.27.4,   < 4.28.0",
+"setuptools         >= 65.7.0,   < 66.0.0",
+"pytz               >= 2022.7.0, < 2022.7.1",
+"pyinstaller-hooks-contrib >= 2022.14.0, < 2023.0.0",
+"deepmerge          >= 1.1.0,    < 1.2.0",
 ]
 
 [tool.briefcase.app.simsapa.macOS]
