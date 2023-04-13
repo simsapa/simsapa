@@ -75,11 +75,11 @@ def add_example_links(html_page: str) -> str:
 
     soup = BeautifulSoup(html_page, 'html.parser')
     for div_id in example_ids:
-        h = soup.find(id = div_id)
-        if h is None:
+        div_el = soup.find(id = div_id)
+        if div_el is None:
             logger.error(f"Can't find #{div_id}")
         else:
-            example_content = h.decode_contents() # type: ignore
+            example_content = div_el.decode() # type: ignore
 
             # FIXME: DPD dict. exmple text <p> tags are not closed before the sutta <p>.
             # FIXME: DPD dict. sutta refs format doesn't match.
@@ -122,11 +122,11 @@ def add_example_links(html_page: str) -> str:
                 link = f'<a href="{url.toString()}">{m[2]}</a>'
 
                 # count=1 so that two links to the same sutta doesn't get overwritten by the first
-                linked_content = re.sub(m[1], f'<p class="sutta">{link}</p>', linked_content, count=1)
+                linked_content = linked_content.replace(m[1], f'<p class="sutta">{link}</p>', 1)
 
-            html_page = html_page.replace(example_content, linked_content)
+            div_el.replace_with(BeautifulSoup(linked_content, 'html.parser'))
 
-    return html_page
+    return soup.decode()
 
 def add_epd_pali_words_links(html_page: str) -> str:
     if '<div class="epd">' not in html_page:

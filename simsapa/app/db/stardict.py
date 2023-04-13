@@ -143,6 +143,8 @@ def add_links_to_words(db_session: Session,
                        words: List[DictEntry]) -> List[DictEntry]:
     logger.info(f"add_links_to_words(): len(words) = {len(words)}")
 
+    results: List[DictEntry] = []
+
     for w in words:
         html = w['definition_html']
 
@@ -163,7 +165,9 @@ def add_links_to_words(db_session: Session,
 
         w['definition_html'] = html
 
-    return words
+        results.append(w)
+
+    return results
 
 def import_stardict_as_new(db_session: Session,
                            schema_name: str,
