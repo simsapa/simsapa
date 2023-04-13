@@ -182,6 +182,11 @@ def save_html_as_mobi(ebook_convert_path: Path, output_path: Path, sanitized_htm
 def sanitized_sutta_html_for_export(tab_html: str) -> str:
     clean_html = tab_html
     clean_html = re.sub(r'<script(.*?)</script>', '', clean_html, flags=re.DOTALL)
+    # <a class="ref sc" href="#sc2" id="sc2">SC 2</a>
+    clean_html = re.sub(r'<a class="ref sc"[^>]+>(.*?)</a>', '', clean_html)
+
+    # convert ssp://suttas/... links back to suttacentral
+    clean_html = clean_html.replace('ssp://suttas/', 'https://suttacentral.net/')
 
     # Remove bg/fg color
     """
