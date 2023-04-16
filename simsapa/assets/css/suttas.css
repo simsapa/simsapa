@@ -225,6 +225,7 @@ div.btn a {
 .suttacentral span.segment span.translated {
   display: block;
   padding-top: 0.5rem;
+  font-size: 1rem;
 }
 .suttacentral span.segment span.pali {
   display: block;
@@ -307,7 +308,7 @@ div.btn a {
 }
 .suttacentral blockquote.gatha {
   font-style: normal;
-  margin-left: 3em;
+  margin-left: 2rem;
 }
 .suttacentral blockquote.gatha .verse-line {
   display: block;
@@ -479,10 +480,11 @@ html, body {
 
 #ssp_main {
   padding-bottom: 4rem;
+  font-size: 1rem;
 }
 
 body {
-  padding: 0 2rem;
+  padding: 0 1rem;
   max-width: 75ex;
   margin: 0 auto;
 }
