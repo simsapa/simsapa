@@ -10,7 +10,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa import IS_SWAY, SIMSAPA_PACKAGE_DIR
+from simsapa import IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
 from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
 from simsapa.layouts.dictionary_queries import DictionaryQueries
@@ -32,6 +32,10 @@ body {{ padding: 0.5rem; max-width: 100%; }}
 h1 {{ font-size: 22px; margin-top: 0pt; }}
 """
 
+if IS_MAC:
+    HOVER_DIST = 60
+else:
+    HOVER_DIST = 30
 
 class PreviewWindow(QDialog):
 
@@ -223,9 +227,9 @@ class PreviewWindow(QDialog):
                 x_max = self._app_data.screen_size.width() - 10
 
                 if x_hover + preview_width < x_max:
-                    x = x_hover + 30
+                    x = x_hover + HOVER_DIST
                 else:
-                    x = x_hover - preview_width + 30
+                    x = x_hover - preview_width + HOVER_DIST
 
                 # y_hover = self._hover_data['y'] + 130
                 y_hover = cursor_pos.y()
@@ -234,7 +238,7 @@ class PreviewWindow(QDialog):
                 if y_hover + preview_height < y_max:
                     y = y_hover
                 else:
-                    y = y_hover - preview_height - 30
+                    y = y_hover - preview_height - HOVER_DIST
 
             else:
                 x = self._app_data.screen_size.width() - preview_width - 10
