@@ -4,7 +4,7 @@ from functools import partial
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox, QStyle, QTabWidget, QVBoxLayout, QWidget)
 
 from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, sanitized_sutta_html_for_export, sutta_content_plain
@@ -175,9 +175,19 @@ class SendToKindleWindow(QMainWindow):
         self.smtp_password_visible = QCheckBox()
         self.smtp_password_visible.setChecked(False)
 
-        info = QLabel("<p>Leave the password empty to ask on each request. If you wish to save the password here, it is recommended to create an app-specific password. (See instructions for <a href='https://support.google.com/accounts/answer/185833?hl=en'>Google Mail</a>.)</p>")
+        info_box = QHBoxLayout()
+
+        icon_label = QLabel()
+        icon = icon_label.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        pixmap = icon.pixmap(QtCore.QSize(40, 40))
+        icon_label.setPixmap(pixmap)
+        info_box.addWidget(icon_label)
+        icon_label.setMaximumWidth(60)
+
+        info = QLabel("<p>Leave the password empty to ask on each request. The general account password may be blocked if 2FA is enabled. It is recommended to create app-specific passwords. (See instructions for <a href='https://support.google.com/accounts/answer/185833?hl=en'>Google Mail</a>.)</p>")
         info.setWordWrap(True)
-        self.settings_tab_layout.addWidget(info)
+        info_box.addWidget(info)
+        self.settings_tab_layout.addLayout(info_box)
 
         self.smtp_form_layout.addRow(QLabel("Use defaults for:"), self.select_smtp_preset)
         self.smtp_form_layout.addRow(QLabel("Host:"), self.smtp_host)
