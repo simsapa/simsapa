@@ -963,6 +963,15 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.token_warning_msg.setVisible(total > model_max)
 
+    def _tokenizer_error(self, msg: str):
+        self.token_count_msg.setText(msg)
+
+        auto_max = self._app_data.app_settings['openai']['auto_max_tokens']
+        if auto_max:
+            self.openai_auto_max.setChecked(False)
+            self._app_data.app_settings['openai']['auto_max_tokens'] = False
+            self._app_data._save_app_settings()
+
     def _update_token_count(self):
         if self.tokenizer_worker is not None:
             self.tokenizer_worker.will_emit_finished = False
@@ -973,7 +982,7 @@ class GptPromptsWindow(AppWindowInterface):
         self.tokenizer_worker = TokenizerWorker(model, messages)
 
         self.tokenizer_worker.signals.finished.connect(partial(self._tokenizer_finished))
-        self.tokenizer_worker.signals.error.connect(partial(self._show_warning))
+        self.tokenizer_worker.signals.error.connect(partial(self._tokenizer_error))
 
         self.thread_pool.start(self.tokenizer_worker)
 
@@ -1414,15 +1423,15 @@ class TokenizerWorker(QRunnable):
 
     @pyqtSlot()
     def run(self):
-        # logger.info("TokenizerWorker::run()")
         try:
             count = num_tokens_from_messages(self.messages, model=OpenAIModelLatest[self.model])
             if self.will_emit_finished:
                 self.signals.finished.emit(count)
 
         except Exception as e:
-            logger.error(e)
-            self.signals.error.emit(f"<p>Tokenizer error:</p><p>{e}</p>")
+            msg = f"Tokenizer error: {e}"
+            logger.error(msg)
+            self.signals.error.emit(msg)
 
 def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301") -> int:
     """
