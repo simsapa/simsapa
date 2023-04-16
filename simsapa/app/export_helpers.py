@@ -70,11 +70,18 @@ def save_suttas_as_epub(app_data: AppData,
     book.set_identifier(output_path.name)
     book.set_title(title)
 
+    # NOTE: Always set language and author.
+    # Missing language is an error in epubcheck, and the Kindle Library rejects the epub.
+
     if language:
         book.set_language(language)
+    else:
+        book.set_language('en')
 
     if author:
         book.add_author(author)
+    else:
+        book.add_author('Unknown')
 
     toc = []
 
