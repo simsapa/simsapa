@@ -11,7 +11,9 @@ pyinstaller run.py ^
     -i "simsapa\assets\icons\appicons\simsapa.ico" ^
     --add-data "simsapa\assets;simsapa\assets" ^
     --add-data "simsapa\alembic;simsapa\alembic" ^
-    --add-data "simsapa\alembic.ini;simsapa\alembic.ini"
+    --add-data "simsapa\alembic.ini;simsapa\alembic.ini" ^
+    --hidden-import=tiktoken_ext ^
+    --hidden-import=tiktoken_ext.openai_public
 
 :: Ensure blank line after cmd with caret
 echo ""
