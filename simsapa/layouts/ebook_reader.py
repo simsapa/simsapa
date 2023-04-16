@@ -478,7 +478,7 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
         """
 
         for p in files:
-            with open(p, 'r') as f:
+            with open(p, 'r', encoding='utf-8') as f:
                 content = f.read()
 
             content = re.sub('<style(.*?)</style>', '', content)
@@ -594,7 +594,7 @@ class SuttaLinksWorker(QRunnable):
             chapter_read_contents: List[LinkWorkItem] = []
 
             for i in self.chapter_init_items:
-                with open(i['path'], 'r') as f:
+                with open(i['path'], 'r', encoding='utf-8') as f:
                     content = f.read()
 
                 chapter_read_contents.append(LinkWorkItem(
