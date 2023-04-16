@@ -406,7 +406,7 @@ def default_app_settings() -> AppSettings:
         show_dictionary_sidebar = True,
         show_related_suttas = True,
         show_translation_and_pali_line_by_line = False,
-        show_all_variant_readings = True,
+        show_all_variant_readings = False,
         show_bookmarks = True,
         sutta_font_size = 22,
         sutta_max_width = 75,
