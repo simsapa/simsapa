@@ -619,7 +619,7 @@ class WordScanPopup(QDialog):
         self.wrap_layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self.wrap_layout)
 
-        self.setWindowTitle("Clipboard Scanning Word Lookup")
+        self.setWindowTitle("Word Lookup")
         self.setMinimumSize(50, 50)
 
         self._restore_size_pos()
