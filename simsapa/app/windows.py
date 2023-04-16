@@ -948,12 +948,20 @@ class AppWindows:
 
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
-        box.setText(update_info['message'])
+
+        msg = ""
+        if update_info['visit_url'] is not None:
+            msg = f"<p>Open the following URL to download the update:</p><p><a href='{update_info['visit_url']}' target='_blank'>{update_info['visit_url']}</a></p>"
+
+        msg += update_info['message']
+
+        box.setText(msg)
         box.setWindowTitle("Application Update Available")
-        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
 
         reply = box.exec()
         if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
+            # NOTE: This doesn't work on some OSes, or the user doesn't see the new page, hence the above link.
             webbrowser.open_new(update_info['visit_url'])
 
     def show_db_update_message(self, value: dict):
