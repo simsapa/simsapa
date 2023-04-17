@@ -149,9 +149,27 @@ class PreviewWindow(QDialog):
 
 
     def link_mouseover(self, hover_data: LinkHoverData):
+        if self.isVisible() and \
+           self._hover_data is not None and \
+           self._hover_data['href'] == hover_data['href']:
+            return
+
         if self.render_hover_data(hover_data):
             self._do_show()
 
+    def graph_link_mouseover(self, hover_data: LinkHoverData):
+        if self.isVisible() and \
+           self._hover_data is not None and \
+           self._hover_data['href'] == hover_data['href']:
+            return
+
+        if self.render_hover_data(hover_data):
+            self._do_show()
+
+            self._link_mouseleave = True
+            self._mouseover = False
+
+            self._hide_timer.start(2000)
 
     def render_hover_data(self, hover_data: Optional[LinkHoverData] = None) -> bool:
         if self._hover_data is not None and \

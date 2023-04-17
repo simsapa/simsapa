@@ -40,6 +40,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     rightside_tabs: QTabWidget
 
     lookup_in_dictionary_signal = pyqtSignal(str)
+    graph_link_mouseover = pyqtSignal(dict)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)

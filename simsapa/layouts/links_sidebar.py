@@ -9,10 +9,15 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
+from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+
 # from ..app.file_doc import FileDoc
 # from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, GraphRequest, USutta, UDictWord
+from simsapa.app.types import AppData, GraphRequest, QueryType, USutta, UDictWord
+
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
 
@@ -100,12 +105,12 @@ class GraphGenerator(QRunnable):
             self.signals.finished.emit()
 
 
-class HasLinksSidebar:
+class HasLinksSidebar(QObject):
     _app_data: AppData
     links_layout: QVBoxLayout
     rightside_tabs: QTabWidget
     links_tab_idx: int
-    content_graph: QWebEngineView
+    qwe: QWebEngineView
     label_select: QComboBox
     distance_input: QSpinBox
     min_links_input: QSpinBox
@@ -116,11 +121,13 @@ class HasLinksSidebar:
     _show_selected: Callable
     _last_graph_gen_timestamp: float
 
+    graph_link_mouseover: pyqtSignal
+
     def init_links_sidebar(self):
         self._last_graph_gen_timestamp = 0.0
 
         self.setup_links_controls()
-        self.setup_content_graph()
+        self.setup_qwe()
 
     def setup_links_controls(self):
         self.distance_input.setMinimum(1)
@@ -148,18 +155,46 @@ class HasLinksSidebar:
         self.open_selected_link_button \
             .clicked.connect(partial(self._show_selected))
 
-    def setup_content_graph(self):
-        self.content_graph = QWebEngineView()
+    def _link_mouseover_graph_node(self, data: dict):
+        # {'table': 'appdata.suttas', 'id': 19707}
 
-        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        self.content_graph.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        if data['table'].startswith('appdata'):
+            r = self._app_data.db_session.query(Am.Sutta) \
+                                         .filter(Am.Sutta.id == int(data['id'])) \
+                                         .first()
+        else:
+            r = self._app_data.db_session.query(Um.Sutta) \
+                                         .filter(Um.Sutta.id == int(data['id'])) \
+                                         .first()
 
-        self.content_graph.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.content_graph.setHtml('')
-        self.content_graph.show()
-        self.links_layout.addWidget(self.content_graph)
+        if r is None:
+            return
+
+        hover_data = LinkHoverData(
+            href = f"ssp://{QueryType.suttas.value}/{r.uid}",
+            # Coords not necessary. The preview is rendered next to the mouse cursor's position.
+            x = 0, y = 0, width = 0, height = 0,
+        )
+
+        self.graph_link_mouseover.emit(hover_data)
+
+    def setup_qwe(self):
+        self.qwe = QWebEngineView()
+
+        page = ReaderWebEnginePage(self)
+        page.helper.mouseover_graph_node.connect(partial(self._link_mouseover_graph_node))
+
+        self.qwe.setPage(page)
+
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+
+        self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.qwe.setHtml('')
+        self.qwe.show()
+        self.links_layout.addWidget(self.qwe)
 
     def _graph_finished(self, result: Tuple[float, int, Path]):
         result_timestamp = result[0]
@@ -175,7 +210,7 @@ class HasLinksSidebar:
         else:
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        self.content_graph.load(QUrl(str(graph_path.absolute().as_uri())))
+        self.qwe.load(QUrl(str(graph_path.absolute().as_uri())))
 
     def generate_and_show_graph(self,
                                 sutta: Optional[USutta],
@@ -224,7 +259,7 @@ class HasLinksSidebar:
         if self.rightside_tabs.tabText(self.links_tab_idx) != "Links":
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
 
-        self.content_graph.setHtml(LOADING_HTML)
+        self.qwe.setHtml(LOADING_HTML)
 
         self._app_data.graph_gen_pool.start(graph_gen)
 

@@ -345,6 +345,8 @@ class AppWindows:
         view.s.bookmark_created.connect(partial(view.s.reload_page))
         view.s.bookmark_updated.connect(partial(view.s.reload_page))
 
+        view.graph_link_mouseover.connect(partial(self._preview_window.graph_link_mouseover))
+
         view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
 

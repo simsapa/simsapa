@@ -695,18 +695,20 @@ def generate_graph(nodes,
         'id': [nodes[i][1]['id'] for i in range(len(x))],
     })
 
+    cr = plot.circle(x='x', y='y', source=source, size=25,
+                     fill_color=None, line_color=None,
+                     hover_fill_color=selection_color,
+                     hover_alpha=0.8, hover_line_color="white")
+
     tooltips = [
         # ('Title', '@title'),
         # No need for the 'Title:' ... prefix
         ('', '@title'),
     ]
 
-    cr = plot.circle(x='x', y='y', source=source, size=25,
-                     fill_color=None, line_color=None,
-                     hover_fill_color=selection_color,
-                     hover_alpha=0.8, hover_line_color="white")
+    hover = HoverTool(tooltips=tooltips, renderers=[cr])
 
-    plot.add_tools(HoverTool(tooltips=tooltips, renderers=[cr]))
+    plot.add_tools(hover)
 
     if show_labels != ShowLabels.NoLabels:
 
@@ -729,6 +731,24 @@ def generate_graph(nodes,
         )
 
         plot.renderers.append(labels)
+
+    hover_js_code = """
+const indices = cb_data.index.indices;
+if (indices.length > 0) {
+    const table = source.data['table'][indices[0]];
+    const id = source.data['id'][indices[0]];
+
+    const data = {
+        table: table,
+        id: id,
+    };
+
+    document.qt_channel.objects.helper.link_mouseover_graph_node(JSON.stringify(data));
+}
+"""
+
+    hover_cb = CustomJS(args=dict(source=source), code=hover_js_code)
+    hover.callback = hover_cb
 
     network_graph.node_renderer.data_source.selected.indices = selected_indices
 

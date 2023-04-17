@@ -171,6 +171,26 @@ def api_generate_graph():
 
         hits = len(nodes) - 1
 
+        # Append extra JS here, no idea how to include it in the bokeh template.
+        with open(p['graph_path'], 'r', encoding='utf-8') as f:
+            html = f.read()
+
+        extra_js = """
+<script src='qrc:///qtwebchannel/qwebchannel.js'></script>
+<script>
+document.addEventListener("DOMContentLoaded", function(event) {
+    new QWebChannel(qt.webChannelTransport, function (channel) {
+        document.qt_channel = channel;
+    });
+});
+</script>
+        """.strip()
+
+        html = html.replace("</head>", f"{extra_js}</head>")
+
+        with open(p['graph_path'], 'w', encoding='utf-8') as f:
+            f.write(html)
+
         result = (p['graph_gen_timestamp'], hits, str(p['graph_path']))
 
         return jsonify(result), 200

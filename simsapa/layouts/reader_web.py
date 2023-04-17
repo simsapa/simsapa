@@ -19,6 +19,7 @@ class LinkHoverData(TypedDict):
 class Helper(QObject):
 
     mouseover = pyqtSignal(dict)
+    mouseover_graph_node = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
     dblclick = pyqtSignal()
 
@@ -62,6 +63,10 @@ class Helper(QObject):
 
         self.mouseover.emit(hover_data)
 
+    @pyqtSlot(str)
+    def link_mouseover_graph_node(self, msg: str):
+        d: dict = json.loads(msg)
+        self.mouseover_graph_node.emit(d)
 
     @pyqtSlot(str)
     def link_mouseleave(self, msg: str):
