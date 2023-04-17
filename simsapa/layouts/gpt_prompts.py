@@ -1366,7 +1366,14 @@ class CompletionWorker(QRunnable):
                 logger.info(f"Request ChatCompletion, try_count {try_count}")
 
                 # https://platform.openai.com/docs/api-reference/chat/create
-                resp: ChatResponse = self.openai.ChatCompletion.create( # type: ignore
+
+                # https://github.com/openai/openai-python/issues/253
+                # NOTE: Python import complications, AppImage is missing the ChatCompletion attribute
+                # module 'openai' has no attribute 'ChatCompletion'
+                #
+                # resp: ChatResponse = self.openai.ChatCompletion.create( # type: ignore
+
+                resp: ChatResponse = self.openai.api_resources.chat_completion.ChatCompletion.create( # type: ignore
                     model =  OpenAIModelLatest[self.openai_settings['model']],
                     messages = self.messages,
                     temperature = self.openai_settings['temperature'],
