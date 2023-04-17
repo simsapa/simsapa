@@ -283,6 +283,8 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 author=None,
                 snippet=snippet,
                 page_number=None,
+                score=None,
+                rank=None,
             )
 
         return list(map(to_search_result, db_results))
@@ -321,6 +323,8 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 author=None,
                 snippet=snippet,
                 page_number=None,
+                score=None,
+                rank=None,
             )
 
         return list(map(to_search_result, db_results))
@@ -345,9 +349,9 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         db_results.extend(r)
 
         def to_search_result(x: UDocument):
-            title = x.title
+            title = str(x.title)
             if x.author:
-                title += ', ' + x.author
+                title += ', ' + str(x.author)
 
             return SearchResult(
                 db_id=int(str(x.id)),
@@ -360,6 +364,8 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
                 author=None,
                 snippet='',
                 page_number=None,
+                score=None,
+                rank=None,
             )
 
         return list(map(to_search_result, db_results))
@@ -591,9 +597,12 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         else:
             self.splitter.setSizes([100,0])
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
         self.search_input.textChanged.connect(partial(self._handle_query, min_length=4))
