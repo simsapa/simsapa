@@ -95,6 +95,8 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         # One
 
         self.splitter = QSplitter(self.central_widget)
+        # Allow the splitter to be squeezed on small screens.
+        self.splitter.setMinimumWidth(800)
         self.splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
 
         self.sutta_one_layout_widget = QWidget(self.splitter)
