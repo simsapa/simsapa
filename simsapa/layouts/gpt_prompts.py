@@ -17,7 +17,7 @@ from simsapa.app.export_helpers import sutta_content_plain
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import AppData, AppWindowInterface, ChatMessage, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings, model_max_tokens
+from simsapa.app.types import AppData, AppWindowInterface, ChatMessage, ChatResponse, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings, model_max_tokens
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -1329,7 +1329,10 @@ class CompletionWorker(QRunnable):
             return
 
         import openai
+        from openai.api_resources.chat_completion import ChatCompletion
+
         self.openai = openai
+        self.openai_chat_completion = ChatCompletion
 
         self.openai.api_key = openai_settings['api_key']
 
@@ -1373,7 +1376,7 @@ class CompletionWorker(QRunnable):
                 #
                 # resp: ChatResponse = self.openai.ChatCompletion.create( # type: ignore
 
-                resp: ChatResponse = self.openai.api_resources.chat_completion.ChatCompletion.create( # type: ignore
+                resp: ChatResponse = self.openai_chat_completion.create( # type: ignore
                     model =  OpenAIModelLatest[self.openai_settings['model']],
                     messages = self.messages,
                     temperature = self.openai_settings['temperature'],
