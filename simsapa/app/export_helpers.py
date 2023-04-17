@@ -177,7 +177,7 @@ def convert_mobi_to_epub(ebook_convert_path: Path, mobi_path: Path, epub_path: P
         raise Exception(f"<p>ebook-convert returned with status {res.returncode}:</p><p>{res.stderr.decode()}</p><p>{res.stderr.decode()}</p>")
 
 def save_html_as_mobi(ebook_convert_path: Path, output_path: Path, sanitized_html: str, title: str, author: str, language: str):
-    epub_path = output_path.with_suffix(".mobi")
+    epub_path = output_path.with_suffix(".epub")
     save_html_as_epub(output_path = epub_path,
                       sanitized_html = sanitized_html,
                       title = title,
