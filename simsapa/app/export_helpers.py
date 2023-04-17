@@ -186,6 +186,9 @@ def save_html_as_mobi(ebook_convert_path: Path, output_path: Path, sanitized_htm
 
     convert_epub_to_mobi(ebook_convert_path, epub_path, output_path)
 
+    if epub_path.exists():
+        epub_path.unlink()
+
 def sanitized_sutta_html_for_export(tab_html: str) -> str:
     clean_html = tab_html
     clean_html = re.sub(r'<script(.*?)</script>', '', clean_html, flags=re.DOTALL)
