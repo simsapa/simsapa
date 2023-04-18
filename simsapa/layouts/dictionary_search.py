@@ -740,6 +740,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         elif selected_idx + 1 < len(self.fulltext_list):
             self.fulltext_list.setCurrentRow(selected_idx + 1)
 
+    def _focus_search_input(self):
+        self.search_input.setFocus()
+
     def _render_words(self, words: List[UDictWord]):
         self._current_words = words
         if len(self._current_words) == 0:

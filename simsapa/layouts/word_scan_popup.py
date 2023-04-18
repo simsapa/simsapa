@@ -1,12 +1,12 @@
 from datetime import datetime
 from functools import partial
-import math
+import math, subprocess
 from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QPixmap, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QKeySequence, QPixmap, QShortcut, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
@@ -342,6 +342,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
     def _set_query(self, s: str):
         self.search_input.setText(s)
 
+    def _focus_search_input(self):
+        self.search_input.setFocus()
+
     def _show_word(self, word: UDictWord):
         self.tabs.setTabText(0, str(word.uid))
 
@@ -622,6 +625,10 @@ class WordScanPopup(QDialog):
         self.setWindowTitle("Word Lookup")
         self.setMinimumSize(50, 50)
 
+        if IS_SWAY:
+            cmd = f"""swaymsg 'for_window [title="Word Lookup"] floating enable'"""
+            subprocess.Popen(cmd, shell=True)
+
         self._restore_size_pos()
 
         flags = Qt.WindowType.Dialog | \
@@ -637,6 +644,9 @@ class WordScanPopup(QDialog):
         self.focus_input = focus_input
 
         self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
+
+        self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
+        self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
