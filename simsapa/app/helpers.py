@@ -390,6 +390,14 @@ def is_local_db_obsolete() -> Optional[UpdateInfo]:
         logger.info(f'DB version {db_s} not lesser than app version {app_s}')
         return None
 
+    # Only warn for major and minor version number differences, not for patch versions.
+
+    app_s_part = re.sub(r'^(\d+\.\d+\.).*', r'\1', app_s)
+    db_s_part = re.sub(r'^(\d+\.\d+\.).*', r'\1', db_s)
+
+    if app_s_part == db_s_part:
+        return None
+
     message = f"<h1>The local database is older than the application</h1>"
     message += f"<h3>DB version: {db_s}</h3>"
     message += f"<h3>App version: {app_s}</h3>"
