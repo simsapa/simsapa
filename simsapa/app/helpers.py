@@ -12,6 +12,7 @@ import sys
 import re
 import platform
 
+import markdown
 import tomlkit
 
 from PyQt6.QtWidgets import QMainWindow, QMessageBox
@@ -366,9 +367,14 @@ def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo
 
     if entry_type == EntryType.Application:
         visit_url = f"https://github.com/{entry['github_repo']}/releases/tag/{entry['version_tag']}"
-        message += f"<p>Download from the <a href='{visit_url}'>Relases page</a></p>"
+        message += f"<p>Download from the <a href='{visit_url}'>Releases page</a></p>"
 
-    message += f"<div><p><b>{entry['title']}</b></p><br>{entry['description']}</div>"
+    if len(entry['description'].strip()) > 0:
+        html_description = markdown.markdown(text = entry['description'], extensions = ['smarty'])
+    else:
+        html_description = ""
+
+    message += f"<div><p><b>{entry['title']}</b></p>{html_description}</div>"
 
     return UpdateInfo(
         version = entry['version_tag'],
