@@ -17,7 +17,7 @@ if p != '':
 # When running the prod app, the value below is used.
 #
 # In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
-SIMSAPA_APP_VERSION = "0.3.1-alpha.1"
+SIMSAPA_APP_VERSION = "0.3.2-alpha.1"
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
