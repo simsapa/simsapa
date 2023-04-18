@@ -124,7 +124,7 @@ class AssetManagement(QMainWindow):
         self.releases_worker.signals.error_msg.connect(partial(_show_error_retry))
 
     def closeEvent(self, event: QCloseEvent):
-        self._handle_quit()
+        self._handle_close()
         event.accept()
 
     def _setup_ui(self):
@@ -601,6 +601,9 @@ class AssetManagement(QMainWindow):
         # QObject: Cannot create children for a parent that is in a different thread.
         # (Parent is QApplication(0x4050170), parent's thread is QThread(0x2785280), current thread is QThreadPoolThread(0x51dbd00)
         # fish: Job 1, './run.py' terminated by signal SIGSEGV (Address boundary error)
+
+    def _handle_close(self):
+        self.close()
 
     def _handle_quit(self):
         self._stop_download()
