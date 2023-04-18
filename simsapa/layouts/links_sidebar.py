@@ -179,22 +179,22 @@ class HasLinksSidebar(QObject):
         self.graph_link_mouseover.emit(hover_data)
 
     def setup_qwe(self):
-        self.qwe = QWebEngineView()
+        self.links_graph_qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
         page.helper.mouseover_graph_node.connect(partial(self._link_mouseover_graph_node))
 
-        self.qwe.setPage(page)
+        self.links_graph_qwe.setPage(page)
 
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        self.links_graph_qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        self.links_graph_qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        self.links_graph_qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        self.links_graph_qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
-        self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.qwe.setHtml('')
-        self.qwe.show()
-        self.links_layout.addWidget(self.qwe)
+        self.links_graph_qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.links_graph_qwe.setHtml('')
+        self.links_graph_qwe.show()
+        self.links_layout.addWidget(self.links_graph_qwe)
 
     def _graph_finished(self, result: Tuple[float, int, Path]):
         result_timestamp = result[0]
@@ -210,7 +210,7 @@ class HasLinksSidebar(QObject):
         else:
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        self.qwe.load(QUrl(str(graph_path.absolute().as_uri())))
+        self.links_graph_qwe.load(QUrl(str(graph_path.absolute().as_uri())))
 
     def generate_and_show_graph(self,
                                 sutta: Optional[USutta],
@@ -259,7 +259,7 @@ class HasLinksSidebar(QObject):
         if self.rightside_tabs.tabText(self.links_tab_idx) != "Links":
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
 
-        self.qwe.setHtml(LOADING_HTML)
+        self.links_graph_qwe.setHtml(LOADING_HTML)
 
         self._app_data.graph_gen_pool.start(graph_gen)
 
