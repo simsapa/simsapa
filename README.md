@@ -4,7 +4,7 @@ A sutta reader and Pali dictionary application.
 
 Project website: <https://simsapa.github.io/>
 
-A short feature demo: <https://www.youtube.com/watch?v=PWFoB6W5Ot0>
+A short feature demo: <https://www.youtube.com/watch?v=Wu4T_CANnns>
 
 ![Sutta Search](docs/images/sutta-search-screenshot.jpg)
 
