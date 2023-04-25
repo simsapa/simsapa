@@ -1159,9 +1159,15 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.pw.action_Search_As_You_Type.isChecked():
             return
 
+        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text())
+        if matches is not None:
+            min_length = 1
+        else:
+            min_length = 4
+
         if not self._search_timer.isActive():
             self._search_timer = QTimer()
-            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=min_length))
             self._search_timer.setSingleShot(True)
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
