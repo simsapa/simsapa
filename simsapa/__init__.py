@@ -17,7 +17,7 @@ if p != '':
 # When running the prod app, the value below is used.
 #
 # In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
-SIMSAPA_APP_VERSION = "0.3.2-alpha.1"
+SIMSAPA_APP_VERSION = "0.3.3-alpha.1"
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
@@ -82,6 +82,13 @@ if IS_LINUX:
     IS_SWAY = s is not None and s == 'sway'
 else:
     IS_SWAY = False
+
+b =  pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("releases_fallback.json")))
+if b is None:
+    RELEASES_FALLBACK_JSON = ""
+else:
+    # Value to use in case the network request fails.
+    RELEASES_FALLBACK_JSON = b.decode("utf-8")
 
 READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"

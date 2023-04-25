@@ -22,7 +22,7 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, GRAPHS_DIR, HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
+from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, RELEASES_FALLBACK_JSON, GRAPHS_DIR, HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
 
 
 class SuttaRange(TypedDict):
@@ -276,7 +276,12 @@ def get_releases_info() -> ReleasesInfo:
         if r.ok:
             data: ReleasesInfo = r.json()
         else:
-            raise Exception(f"Response: {r.status_code}")
+            # Don't raise an exception, use a sane default value instead.
+            # Network timeouts can cause the request to fail, and the user gets
+            # confused, especially when they encounter it in the first asset
+            # download window.
+            data: ReleasesInfo = json.loads(RELEASES_FALLBACK_JSON)
+
     except Exception as e:
         logger.error(e)
         raise e
