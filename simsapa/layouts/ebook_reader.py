@@ -91,6 +91,10 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
 
         self._top_buttons_box.addWidget(self.toggle_toc_panel_btn)
 
+        self._open_btn = QPushButton("Open...")
+        self._open_btn.setMinimumSize(QSize(80, 40))
+        self._top_buttons_box.addWidget(self._open_btn)
+
         self._top_buttons_box.addItem(QSpacerItem(0, 0, QExpanding, QMinimum))
 
         self.toggle_sutta_panel_btn = QPushButton()
@@ -545,7 +549,9 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
         self.action_close_window \
             .triggered.connect(partial(self._handle_close))
 
-        self.action_open.triggered.connect(self._handle_open_ebook)
+        self.action_open.triggered.connect(partial(self._handle_open_ebook))
+
+        self._open_btn.clicked.connect(partial(self._handle_open_ebook))
 
         self.toggle_toc_panel_btn.clicked.connect(partial(self._toggle_toc_panel))
         self.toggle_sutta_panel_btn.clicked.connect(partial(self._toggle_sutta_panel))
