@@ -106,7 +106,6 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         self._recent: List[USutta] = []
 
-        self._current_sutta: Optional[USutta] = None
         self._related_tabs: List[SuttaTabWidget] = []
 
         self._autocomplete_model = QStandardItemModel()
@@ -614,8 +613,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # Re-render the current sutta, in case user is trying to restore sutta
         # after a search in the Study Window with the clear input button.
-        if len(query) == 0 and self.showing_query_in_tab and self._current_sutta is not None:
-            self._show_sutta(self._current_sutta)
+        if len(query) == 0 and self.showing_query_in_tab and self._get_active_tab().sutta is not None:
+            self._get_active_tab().render_sutta_content()
             return
 
         if re.search(RE_ALL_BOOK_SUTTA_REF, query) is None and len(query) < min_length:
@@ -848,7 +847,6 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _show_sutta(self, sutta: USutta, sutta_quote: Optional[SuttaQuote] = None):
         logger.info(f"_show_sutta() : {sutta.uid}")
         self.showing_query_in_tab = False
-        self._current_sutta = sutta
         self.sutta_tab.sutta = sutta
         self.sutta_tab.render_sutta_content(sutta_quote)
 
@@ -861,10 +859,11 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.pw.show_network_graph(sutta)
 
     def _show_next_recent(self):
-        if self._current_sutta is None:
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
             return
 
-        res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
+        res = [x for x in range(len(self._recent)) if self._recent[x].uid == active_sutta.uid]
 
         if len(res) == 0:
             return
@@ -882,10 +881,11 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._show_sutta(self._recent[current_idx + 1])
 
     def _show_prev_recent(self):
-        if self._current_sutta is None:
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
             return
 
-        res = [x for x in range(len(self._recent)) if self._recent[x].uid == self._current_sutta.uid]
+        res = [x for x in range(len(self._recent)) if self._recent[x].uid == active_sutta.uid]
 
         if len(res) == 0:
             return
@@ -978,10 +978,11 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._app_data.clipboard_setText(text)
 
     def _handle_copy_link_to_sutta(self):
-        if self._current_sutta is None:
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
             return
 
-        url = QUrl(f"ssp://{QueryType.suttas.value}/{self._current_sutta.uid}")
+        url = QUrl(f"ssp://{QueryType.suttas.value}/{active_sutta.uid}")
 
         quote = self._get_selection()
         if quote is not None and len(quote) > 0:
@@ -990,10 +991,11 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.clipboard_setText(url.toString())
 
     def _handle_copy_uid(self):
-        if self._current_sutta is None:
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
             return
 
-        uid = 'uid:' + self._current_sutta.uid
+        uid = 'uid:' + active_sutta.uid
         self._app_data.clipboard_setText(uid)
 
     def _handle_paste(self):
@@ -1140,8 +1142,12 @@ QWidget:focus { border: 1px solid #1092C3; }
             logger.warn("Sutta is not set")
 
     def _handle_show_related_suttas(self):
-        if self._current_sutta is not None:
-            self._add_related_tabs(self._current_sutta)
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
+            return
+
+        if active_sutta is not None:
+            self._add_related_tabs(active_sutta)
 
     def _handle_show_find_panel(self):
         self.find_toolbar.show()

@@ -157,10 +157,11 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     def show_network_graph(self, sutta: Optional[USutta] = None):
         if sutta is None:
-            if self.s._current_sutta is None:
+            active_sutta = self.s._get_active_tab().sutta
+            if active_sutta is None:
                 return
             else:
-                sutta = self.s._current_sutta
+                sutta = active_sutta
 
         self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 

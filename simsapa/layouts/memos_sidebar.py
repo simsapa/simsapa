@@ -1,5 +1,5 @@
 from functools import partial
-from typing import List, Optional
+from typing import Callable, List, Optional
 import json
 from PyQt6 import QtWidgets
 
@@ -45,7 +45,7 @@ class HasMemosSidebar:
     back: QPlainTextEdit
     features: List[str] = []
     memos_list: QListView
-    _current_sutta: Optional[USutta]
+    _get_active_tab: Callable
     _current_word: Optional[UDictWord]
     # file_doc: Optional[FileDoc]
     file_doc = None
@@ -353,8 +353,11 @@ QListView::item:selected { background-color: %s; color: %s; }
         self.back_input.clear()
 
     def add_memo_for_sutta(self):
-        if self._current_sutta is None:
+        active_sutta = self._get_active_tab().sutta
+        if active_sutta is None:
             return
+
+        assert(isinstance(active_sutta, USutta))
 
         self.sel_model.clearSelection()
 
@@ -392,7 +395,7 @@ QListView::item:selected { background-color: %s; color: %s; }
             memo_assoc = Um.MemoAssociation(
                 memo_id=memo.id,
                 associated_table='appdata.suttas',
-                associated_id=self._current_sutta.id,
+                associated_id=active_sutta.id,
             )
 
             self._app_data.db_session.add(memo_assoc)
