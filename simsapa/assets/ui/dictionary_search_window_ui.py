@@ -13,7 +13,6 @@ class Ui_DictionarySearchWindow(object):
     def setupUi(self, DictionarySearchWindow):
         DictionarySearchWindow.setObjectName("DictionarySearchWindow")
         DictionarySearchWindow.resize(1068, 642)
-        DictionarySearchWindow.setBaseSize(QtCore.QSize(800, 600))
         self.central_widget = QtWidgets.QWidget(parent=DictionarySearchWindow)
         self.central_widget.setObjectName("central_widget")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.central_widget)

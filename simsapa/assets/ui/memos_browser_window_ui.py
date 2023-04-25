@@ -13,7 +13,6 @@ class Ui_MemosBrowserWindow(object):
     def setupUi(self, MemosBrowserWindow):
         MemosBrowserWindow.setObjectName("MemosBrowserWindow")
         MemosBrowserWindow.resize(856, 623)
-        MemosBrowserWindow.setBaseSize(QtCore.QSize(800, 600))
         self.central_widget = QtWidgets.QWidget(parent=MemosBrowserWindow)
         self.central_widget.setObjectName("central_widget")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.central_widget)

@@ -13,7 +13,6 @@ class Ui_SuttaStudyWindow(object):
     def setupUi(self, SuttaStudyWindow):
         SuttaStudyWindow.setObjectName("SuttaStudyWindow")
         SuttaStudyWindow.resize(1068, 625)
-        SuttaStudyWindow.setBaseSize(QtCore.QSize(800, 600))
         self.central_widget = QtWidgets.QWidget(parent=SuttaStudyWindow)
         self.central_widget.setObjectName("central_widget")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.central_widget)

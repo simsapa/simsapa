@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
@@ -287,7 +287,6 @@ class AppWindows:
 
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
-        view.setBaseSize(QSize(1200, 800))
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 

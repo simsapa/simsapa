@@ -68,7 +68,6 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
     def _setup_ui(self):
         self.setWindowTitle("Ebook Reader")
         self.resize(1068, 625)
-        self.setBaseSize(QtCore.QSize(800, 600))
 
         self._central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(self._central_widget)

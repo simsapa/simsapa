@@ -13,7 +13,6 @@ class Ui_SuttaSearchWindow(object):
     def setupUi(self, SuttaSearchWindow):
         SuttaSearchWindow.setObjectName("SuttaSearchWindow")
         SuttaSearchWindow.resize(1068, 625)
-        SuttaSearchWindow.setBaseSize(QtCore.QSize(800, 600))
         self.central_widget = QtWidgets.QWidget(parent=SuttaSearchWindow)
         self.central_widget.setObjectName("central_widget")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.central_widget)

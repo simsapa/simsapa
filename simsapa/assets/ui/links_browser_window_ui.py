@@ -13,7 +13,6 @@ class Ui_LinksBrowserWindow(object):
     def setupUi(self, LinksBrowserWindow):
         LinksBrowserWindow.setObjectName("LinksBrowserWindow")
         LinksBrowserWindow.resize(1146, 643)
-        LinksBrowserWindow.setBaseSize(QtCore.QSize(800, 600))
         self.central_widget = QtWidgets.QWidget(parent=LinksBrowserWindow)
         self.central_widget.setObjectName("central_widget")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.central_widget)
