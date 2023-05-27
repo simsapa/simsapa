@@ -160,11 +160,25 @@ class DictionaryQueries:
 
         return html
 
+    def esq(self, s: str) -> str:
+        # escape single quote
+        return s.replace("'", "\\'")
+
     def word_heading(self, w: UDictWord) -> str:
         return f"""
         <div class="word-heading">
-            <h1>{w.word}</h1>
-            <div class="uid">{w.uid}</div>
+            <h1>
+                <span class="btn" title="Copy to clipboard" onclick="copy_clipboard('{self.esq(w.word)}')">
+                    <a href="#"><svg class="icon"><use xlink:href="#icon-copy-solid"></use></svg></a>
+                </span>
+                {w.word}
+            </h1>
+            <div class="uid">
+                <span class="btn" title="Copy to clipboard" onclick="copy_clipboard('{self.esq(w.uid)}')">
+                    <a href="#"><svg class="icon"><use xlink:href="#icon-copy-solid"></use></svg></a>
+                </span>
+                {w.uid}
+            </div>
         </div>
         <div class="clear"></div>
         """

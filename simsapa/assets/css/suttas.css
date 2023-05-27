@@ -129,12 +129,12 @@ a {
   fill: currentColor;
 }
 
-div.btn {
+div.btn, span.btn {
   display: inline-block;
   padding: 0;
   margin: 0;
 }
-div.btn a {
+div.btn a, span.btn a {
   cursor: pointer;
   text-decoration: none;
 }

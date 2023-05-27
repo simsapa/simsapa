@@ -402,6 +402,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self._app_data.app_settings['double_click_dict_lookup']:
             self.page_dblclick.emit()
 
+    def _copy_clipboard(self, text: str):
+        self._app_data.clipboard_setText(text)
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
 
@@ -410,6 +413,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
+        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
 
         self.qwe.setPage(page)
 

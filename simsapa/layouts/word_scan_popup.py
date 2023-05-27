@@ -211,6 +211,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
+    def _copy_clipboard(self, text: str):
+        self._app_data.clipboard_setText(text)
+
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
 
@@ -220,6 +223,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
+        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
 
         self.qwe.setPage(page)
 

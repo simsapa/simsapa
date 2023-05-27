@@ -22,6 +22,10 @@ function add_hover_events (el, channel) {
     }
 }
 
+function copy_clipboard(text) {
+    document.qt_channel.objects.helper.emit_copy_clipboard(text);
+}
+
 document.addEventListener("DOMContentLoaded", function(event) {
     new QWebChannel(qt.webChannelTransport, function (channel) {
         document.qt_channel = channel;

@@ -129,12 +129,12 @@ a {
   fill: currentColor;
 }
 
-div.btn {
+div.btn, span.btn {
   display: inline-block;
   padding: 0;
   margin: 0;
 }
-div.btn a {
+div.btn a, span.btn a {
   cursor: pointer;
   text-decoration: none;
 }
@@ -452,6 +452,10 @@ h1, h2, h3, h4, h5, h6 {
   padding-top: 20pt;
   margin-top: 0;
 }
+.word-heading h1 .btn a {
+  color: #282828;
+  margin-right: 5pt;
+}
 .word-heading .uid {
   float: right;
   font-size: 0.9em;
@@ -459,6 +463,10 @@ h1, h2, h3, h4, h5, h6 {
   color: #aaa;
   padding-top: 20pt;
   margin-top: 0;
+}
+.word-heading .uid .btn a {
+  color: #aaa;
+  margin-right: 5pt;
 }
 
 .word-definition b.epd a {

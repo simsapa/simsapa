@@ -22,6 +22,7 @@ class Helper(QObject):
     mouseover_graph_node = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
     dblclick = pyqtSignal()
+    copy_clipboard = pyqtSignal(str)
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
@@ -79,6 +80,10 @@ class Helper(QObject):
     @pyqtSlot(str)
     def send_bookmark_edit(self, schema_and_id: str):
         self.bookmark_edit.emit(schema_and_id)
+
+    @pyqtSlot(str)
+    def emit_copy_clipboard(self, text: str):
+        self.copy_clipboard.emit(text)
 
 
 class ReaderWebEnginePage(QWebEnginePage):
