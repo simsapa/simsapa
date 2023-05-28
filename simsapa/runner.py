@@ -152,7 +152,7 @@ def import_pali_course(path_to_toml: str):
 def main():
     s = os.getenv('START_NEW_LOG')
     if s is not None and s.lower() == 'false':
-       start_new = False
+        start_new = False
     else:
         start_new = True
 
