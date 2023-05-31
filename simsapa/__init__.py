@@ -1,4 +1,4 @@
-import os
+import os, sys
 from pathlib import Path
 from typing import Dict, TypedDict
 from enum import Enum
@@ -32,11 +32,21 @@ ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
 ICONS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('assets/icons/')
 
-s = os.getenv('SIMSAPA_DIR')
-if s is not None and s != '':
-    SIMSAPA_DIR = Path(s)
+s = ""
+if len(sys.argv) >= 2:
+    s = sys.argv[1]
+
+if s.startswith("--simsapa-dir="):
+    # Remove it so typer can parse other cli options.
+    del sys.argv[1]
+    SIMSAPA_DIR = Path(s.replace("--simsapa-dir=", "")).expanduser()
+
 else:
-    SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
+    s = os.getenv('SIMSAPA_DIR')
+    if s is not None and s != '':
+        SIMSAPA_DIR = Path(s)
+    else:
+        SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 

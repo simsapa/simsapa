@@ -1,9 +1,10 @@
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 import typer
 
-from simsapa import logger
+from simsapa import SIMSAPA_DIR, logger
 from simsapa.app.types import QueryType
 from simsapa.app.helpers import create_app_dirs
 
@@ -157,6 +158,10 @@ def main():
         start_new = True
 
     logger.info("runner::main()", start_new = start_new)
+
+    p = Path(".").absolute()
+    logger.info(f"Current folder: {p}")
+    logger.info(f"SIMSAPA_DIR: {SIMSAPA_DIR}")
 
     if len(sys.argv) == 1:
         gui()
