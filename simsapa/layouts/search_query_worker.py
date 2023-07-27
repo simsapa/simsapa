@@ -47,7 +47,7 @@ class SearchQueryWorker(QRunnable):
                   only_lang: Optional[str] = None,
                   only_source: Optional[str] = None):
 
-        self.query = consistent_nasal_m(query.lower())
+        self.query = consistent_nasal_m(query.strip().lower())
         self.query_started = query_started
         self.query_finished = None
         self.will_emit_finished = True

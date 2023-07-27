@@ -527,7 +527,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setText(s)
 
     def _append_to_query(self, s: str):
-        a = self.search_input.text()
+        a = self.search_input.text().strip()
         n = self.search_input.cursorPosition()
         pre = a[:n]
         post = a[n:]
@@ -600,7 +600,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.thread_pool.start(i)
 
     def _handle_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
         logger.info(f"_handle_query(): {query}, {min_length}")
 
         idx = self.sutta_language_filter_dropdown.currentIndex()
@@ -644,7 +644,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.pw.action_Search_Completion.isChecked():
             return
 
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -1160,7 +1160,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.pw.action_Search_As_You_Type.isChecked():
             return
 
-        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text())
+        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text().strip())
         if matches is not None:
             min_length = 1
         else:

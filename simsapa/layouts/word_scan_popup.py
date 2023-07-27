@@ -456,7 +456,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -473,7 +473,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._start_query_worker(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -505,7 +505,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
             .all()
         res.extend(r)
 
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
         self.tabs.setTabText(0, query)
 
         self._render_words(res)
@@ -530,7 +530,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.thread_pool.start(self.exact_query_worker)
 
     def _handle_exact_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
