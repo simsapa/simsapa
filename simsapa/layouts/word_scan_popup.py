@@ -444,7 +444,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         results = self.search_query_worker.results_page(0)
 
-        if self.query_hits() == 1 and results[0]['uid'] is not None:
+        if len(results) > 0 and self.query_hits() == 1 and results[0]['uid'] is not None:
             self._show_word_by_uid(results[0]['uid'])
 
         self._update_fulltext_page_btn(self.query_hits())
