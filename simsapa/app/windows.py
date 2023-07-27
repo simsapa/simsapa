@@ -244,7 +244,13 @@ class AppWindows:
             view = self._new_sutta_study_window()
 
         data = json.dumps(msg)
-        APP_QUEUES[view.queue_id].put_nowait(data)
+
+        if msg['queue_id'] == 'all':
+            queue_id = view.queue_id
+        else:
+            queue_id = msg['queue_id']
+
+        APP_QUEUES[queue_id].put_nowait(data)
         view.handle_messages()
 
     def _lookup_clipboard_in_suttas(self, msg: ApiMessage):
@@ -317,7 +323,7 @@ class AppWindows:
                             data = query)
         self._lookup_clipboard_in_dictionary(msg)
 
-    def _study_msg(self, side: str, uid: str):
+    def _study_msg_to_all(self, queue_id: str, side: str, uid: str):
         data = {'side': side, 'uid': uid}
         msg = ApiMessage(queue_id = 'all',
                          action = ApiAction.open_in_study_window,
@@ -336,7 +342,7 @@ class AppWindows:
         self._connect_signals(view)
 
         view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
-        view.s.open_in_study_window_signal.connect(partial(self._study_msg))
+        view.s.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
         view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
         view.s.bookmark_created.connect(partial(self._reload_bookmarks))
@@ -382,9 +388,9 @@ class AppWindows:
         self._set_size_and_maximize(view)
         self._connect_signals(view)
 
-        def _study(side: str, uid: str):
+        def _study(queue_id: str, side: str, uid: str):
             data = {'side': side, 'uid': uid}
-            msg = ApiMessage(queue_id = 'all',
+            msg = ApiMessage(queue_id = queue_id,
                              action = ApiAction.open_in_study_window,
                              data = json.dumps(obj=data))
             self._show_sutta_by_uid_in_side(msg)
@@ -719,14 +725,14 @@ class AppWindows:
         view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
         view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
 
-        view.reading_state.open_in_study_window_signal.connect(partial(self._study_msg))
+        view.reading_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
         view.reading_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
         view.reading_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.reading_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
         view.reading_state.hide_preview.connect(partial(self._preview_window._do_hide))
         view.reading_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
-        view.sutta_state.open_in_study_window_signal.connect(partial(self._study_msg))
+        view.sutta_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
         view.sutta_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
         view.sutta_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
         view.sutta_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))

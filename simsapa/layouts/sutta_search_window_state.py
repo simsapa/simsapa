@@ -54,7 +54,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     show_url_action_fn: Callable
 
     open_sutta_new_signal = pyqtSignal(str)
-    open_in_study_window_signal = pyqtSignal([str, str])
+    # queue_id, side, uid
+    open_in_study_window_signal = pyqtSignal([str, str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
     page_dblclick = pyqtSignal()
@@ -1011,7 +1012,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         uid: str = sutta.uid # type: ignore
-        self.open_in_study_window_signal.emit(side, uid)
+        self.open_in_study_window_signal.emit(self.pw.queue_id, side, uid)
 
     def _lookup_selection_in_suttas(self):
         self.pw.activateWindow()
