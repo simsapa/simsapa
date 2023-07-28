@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-import math, subprocess
+import math, subprocess, json, queue
 from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, 
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
 from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
 from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
@@ -56,6 +56,14 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._app_data: AppData = app_data
         self._current_words = []
 
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        APP_QUEUES[self.queue_id] = queue.Queue()
+        self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.handle_messages)
+        self.timer.start(TIMER_SPEED)
+
         self.page_len = 20
 
         self.thread_pool = QThreadPool()
@@ -71,6 +79,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._connect_signals()
 
         self.init_fulltext_list()
+
+    def handle_messages(self):
+        # No behaviour atm in this window relies on receiving messages.
+        pass
 
     def _setup_ui(self):
         search_box = QHBoxLayout()
@@ -680,6 +692,10 @@ class WordScanPopup(QDialog):
         )
         self._app_data.app_settings['word_scan_popup_pos'] = p
         self._app_data._save_app_settings()
+
+        msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.closed_word_scan_popup, data = '')
+        s = json.dumps(msg)
+        APP_QUEUES['app_windows'].put_nowait(s)
 
         if self.s._clipboard is not None:
             self.s._clipboard.dataChanged.connect(partial(self._noop))

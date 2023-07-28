@@ -101,6 +101,9 @@ class AppWindows:
                 if msg['action'] == ApiAction.show_word_scan_popup:
                     self._toggle_word_scan_popup()
 
+                if msg['action'] == ApiAction.closed_word_scan_popup:
+                    self._closed_word_scan_popup()
+
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
 
@@ -527,6 +530,15 @@ class AppWindows:
         for w in self._windows:
             if hasattr(w, 'action_Show_Word_Scan_Popup'):
                 w.action_Show_Word_Scan_Popup.setChecked(is_on)
+
+    def _closed_word_scan_popup(self):
+        if self.word_scan_popup is not None:
+            self.word_scan_popup.close()
+            self.word_scan_popup = None
+
+        for w in self._windows:
+            if hasattr(w, 'action_Show_Word_Scan_Popup'):
+                w.action_Show_Word_Scan_Popup.setChecked(False)
 
     def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindow):
         query = view.s._get_selection()
