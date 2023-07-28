@@ -212,7 +212,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
             return None
 
     def _setup_ui(self):
-        self._setup_search_bar();
+        self._setup_search_bar()
 
         self._setup_sutta_tabs()
 
@@ -743,7 +743,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _show_sutta_from_message(self, info: Any):
         sutta: Optional[USutta] = None
 
-        if not 'table' in info.keys() or not 'id' in info.keys():
+        if 'table' not in info.keys() or 'id' not in info.keys():
             return
 
         if info['table'] == 'appdata.suttas':

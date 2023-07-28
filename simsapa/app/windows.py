@@ -327,7 +327,7 @@ class AppWindows:
         self._lookup_clipboard_in_dictionary(msg)
 
     def _study_msg_to_all(self, queue_id: str, side: str, uid: str):
-        data = {'side': side, 'uid': uid}
+        data = {'queue_id': queue_id, 'side': side, 'uid': uid}
         msg = ApiMessage(queue_id = 'all',
                          action = ApiAction.open_in_study_window,
                          data = json.dumps(obj=data))
@@ -486,7 +486,7 @@ class AppWindows:
             view._show_word(self._app_data.dict_word_to_open)
             self._app_data.dict_word_to_open = None
         elif query is not None:
-            logger.info(f"Set and handle query: " + query)
+            logger.info("Set and handle query: " + query)
             view._set_query(query)
             view._handle_query()
             view._handle_exact_query()
@@ -981,7 +981,7 @@ class AppWindows:
         reply = box.exec()
         if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
             # NOTE: This doesn't work on some OSes, or the user doesn't see the new page, hence the above link.
-            webbrowser.open_new(update_info['visit_url'])
+            webbrowser.open_new(str(update_info['visit_url']))
 
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']

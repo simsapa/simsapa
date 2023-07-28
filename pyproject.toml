@@ -102,6 +102,10 @@ build-backend = "poetry.core.masonry.api"
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 
+[tool.ruff]
+ignore = ["E401", "E501", "E712"]
+target-version = "py311"
+
 [tool.dephell.main]
 from = {format = "poetry", path = "pyproject.toml"}
 to = {format = "setuppy", path = "setup.py"}
