@@ -54,7 +54,8 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
     show_url_action_fn: Callable
 
     open_sutta_new_signal = pyqtSignal(str)
-    open_in_study_window_signal = pyqtSignal([str, str])
+    # queue_id, side, uid
+    open_in_study_window_signal = pyqtSignal([str, str, str])
     link_mouseover = pyqtSignal(dict)
     link_mouseleave = pyqtSignal(str)
     page_dblclick = pyqtSignal()
@@ -526,7 +527,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setText(s)
 
     def _append_to_query(self, s: str):
-        a = self.search_input.text()
+        a = self.search_input.text().strip()
         n = self.search_input.cursorPosition()
         pre = a[:n]
         post = a[n:]
@@ -599,7 +600,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.thread_pool.start(i)
 
     def _handle_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
         logger.info(f"_handle_query(): {query}, {min_length}")
 
         idx = self.sutta_language_filter_dropdown.currentIndex()
@@ -643,7 +644,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.pw.action_Search_Completion.isChecked():
             return
 
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -1011,7 +1012,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         uid: str = sutta.uid # type: ignore
-        self.open_in_study_window_signal.emit(side, uid)
+        self.open_in_study_window_signal.emit(self.pw.queue_id, side, uid)
 
     def _lookup_selection_in_suttas(self):
         self.pw.activateWindow()
@@ -1159,7 +1160,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.pw.action_Search_As_You_Type.isChecked():
             return
 
-        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text())
+        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text().strip())
         if matches is not None:
             min_length = 1
         else:

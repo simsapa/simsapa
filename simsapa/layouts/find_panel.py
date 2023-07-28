@@ -68,7 +68,7 @@ class FindPanel(QtWidgets.QWidget):
             else:
                 flag |= QtWebEngineCore.QWebEnginePage.FindFlag.FindCaseSensitively
 
-        find_searched = FindSearched(text=self.search_input.text(), flag=flag)
+        find_searched = FindSearched(text=self.search_input.text().strip(), flag=flag)
         self.searched.emit(find_searched)
 
     def showEvent(self, event):

@@ -1179,6 +1179,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     action_Show_Bookmarks: QAction
     action_Find_in_Page: QAction
 
+    queue_id: str
     lookup_in_dictionary_signal: pyqtSignal
     lookup_in_new_sutta_window_signal: pyqtSignal
 

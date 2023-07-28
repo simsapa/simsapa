@@ -522,7 +522,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_input.setText(s)
 
     def _append_to_query(self, s: str):
-        a = self.search_input.text()
+        a = self.search_input.text().strip()
         n = self.search_input.cursorPosition()
         pre = a[:n]
         post = a[n:]
@@ -555,7 +555,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         results = self.search_query_worker.results_page(0)
 
-        if self.query_hits() == 1 and results[0]['uid'] is not None:
+        if len(results) > 0 and self.query_hits() == 1 and results[0]['uid'] is not None:
             self._show_word_by_uid(results[0]['uid'])
 
         self._update_fulltext_page_btn(self.query_hits())
@@ -567,7 +567,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.thread_pool.start(self.search_query_worker)
 
     def _handle_query(self, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -587,7 +587,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self.action_Search_Completion.isChecked():
             return
 
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
@@ -649,7 +649,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.thread_pool.start(self.exact_query_worker)
 
     def _handle_exact_query(self, add_recent: bool = False, min_length: int = 4):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
 
         if len(query) < min_length:
             return
