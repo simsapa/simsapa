@@ -366,7 +366,7 @@ def has_update(info: ReleasesInfo, entry_type: EntryType) -> Optional[UpdateInfo
 
     visit_url = None
 
-    message = f"<h1>An update is available</h1>"
+    message = "<h1>An update is available</h1>"
     message += f"<h3>Current: {s}</h3>"
     message += f"<h3>Available: {entry['version_tag']}</h3>"
 
@@ -409,10 +409,10 @@ def is_local_db_obsolete() -> Optional[UpdateInfo]:
     if app_s_part == db_s_part:
         return None
 
-    message = f"<h1>The local database is older than the application</h1>"
+    message = "<h1>The local database is older than the application</h1>"
     message += f"<h3>DB version: {db_s}</h3>"
     message += f"<h3>App version: {app_s}</h3>"
-    message += f"It is recommended to download a new database which is compatible with the app version."
+    message += "It is recommended to download a new database which is compatible with the app version."
 
     return UpdateInfo(
         version = app_s,
@@ -555,16 +555,16 @@ def consistent_nasal_m(text: Optional[str] = None) -> str:
 def expand_quote_to_pattern_str(text: str) -> str:
     s = text
     # Normalize quote marks to '
-    s = s.replace('"', "'");
+    s = s.replace('"', "'")
     # Quote mark should match all types, and may not be present
-    s = s.replace("'", r'[\'"“”‘’]*');
+    s = s.replace("'", r'[\'"“”‘’]*')
     # Normalize spaces
     s = re.sub(r' +', " ", s)
     # Common spelling variations
     s = re.sub(r'[iī]', '[iī]', s)
     # Punctuation may not be present
     # Space may have punctuation in the text, but not in the link quote param
-    s = re.sub(r'[ \.,;\?\!…—-]', r'[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s);
+    s = re.sub(r'[ \.,;\?\!…—-]', r'[ \\n\'"“”‘’\\.,;\\?\\!…—-]*', s)
 
     return s
 
