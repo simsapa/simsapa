@@ -376,7 +376,8 @@ def get_suttas(db: DBHandle, schema: DbSchemaName, sc_data_dir: Path, language =
                 known_dup += 1
                 suttas[uid] = f_to_sutta(r, schema, title, tmpl_json)
 
-            elif r['_id'].startswith('sc_bilara_texts/') and suttas[uid].source_info.startswith('html_text/'):
+            elif r['_id'].startswith('sc_bilara_texts/') and \
+                 suttas[uid].source_info.startswith('html_text/'): # type: ignore
                 # keeping the Bilara version
                 known_dup += 1
                 suttas[uid] = f_to_sutta(r, schema, title, tmpl_json)

@@ -20,7 +20,7 @@ from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.search_query_worker import SearchQueryWorker
 from simsapa.layouts.sutta_queries import QuoteScope, SuttaQueries
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
-from ..app.db.search import SearchResult, sutta_hit_to_search_result, RE_ALL_BOOK_SUTTA_REF
+from ..app.db.search_helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import AppData, OpenPromptParams, QFixed, QMinimum, QExpanding, QueryType, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
@@ -158,8 +158,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
         w = SearchQueryWorker(self._app_data.search_indexed.suttas_index,
                               self.page_len,
-                              mode,
-                              sutta_hit_to_search_result)
+                              mode)
 
         w.set_query(query,
                     self._last_query_time,
@@ -178,8 +177,7 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
 
             w = SearchQueryWorker(self._app_data.search_indexed.suttas_lang_index[i],
                                   self.page_len,
-                                  mode,
-                                  sutta_hit_to_search_result)
+                                  mode)
 
             w.set_query(query,
                         self._last_query_time,
@@ -669,9 +667,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         # first page results
         a = []
-        for i in self.search_query_workers:
-            i.search_query.new_query(query, disabled_labels, only_lang, only_source)
-            a.extend(i.results_page(0))
+        # FIXME
+        # for i in self.search_query_workers:
+        #     i.search_query.new_query(query, disabled_labels, only_lang, only_source)
+        #     a.extend(i.results_page(0))
 
         res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
 

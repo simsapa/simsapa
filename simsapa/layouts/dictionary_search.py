@@ -23,7 +23,8 @@ from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.db.search import SearchIndexed, SearchResult, dict_word_hit_to_search_result
+from simsapa.app.db.search_helpers import SearchResult
+from simsapa.app.db.search_tantivy import TantivySearchIndexed
 from ..app.types import AppData, DictionarySearchWindowInterface, QExpanding, QFixed, QMinimum, QueryType, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
 from ..assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 from .memo_dialog import HasMemoDialog
@@ -125,10 +126,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         mode = DictionarySearchModeNameToType[s]
 
         self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
+            self._app_data.search_indexed.suttas_index,
             self.page_len,
-            mode,
-            dict_word_hit_to_search_result)
+            mode)
 
         self.search_query_worker.set_query(query,
                                            self._last_query_time,
@@ -204,7 +204,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         event.accept()
 
     def reinit_index(self):
-        self._app_data.search_indexed = SearchIndexed()
+        self._app_data.search_indexed = TantivySearchIndexed()
         self._init_search_query_worker()
 
     def handle_messages(self):
@@ -818,7 +818,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
 
-        if not 'table' in info.keys() or not 'id' in info.keys():
+        if 'table' not in info.keys() or 'id' not in info.keys():
             return
 
         if info['table'] == 'appdata.suttas':

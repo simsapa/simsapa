@@ -15,7 +15,7 @@ from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
-from simsapa.app.db.search import SearchResult, dict_word_hit_to_search_result
+from simsapa.app.db.search_helpers import SearchResult
 from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
 from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
@@ -176,10 +176,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         mode = DictionarySearchModeNameToType[s]
 
         self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.dict_words_index,
+            self._app_data.search_indexed.suttas_index,
             self.page_len,
-            mode,
-            dict_word_hit_to_search_result)
+            mode)
 
         self.search_query_worker.set_query(query,
                                            self._last_query_time,
@@ -642,7 +641,7 @@ class WordScanPopup(QDialog):
         self.setMinimumSize(50, 50)
 
         if IS_SWAY:
-            cmd = f"""swaymsg 'for_window [title="Word Lookup"] floating enable'"""
+            cmd = """swaymsg 'for_window [title="Word Lookup"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
 
         self._restore_size_pos()

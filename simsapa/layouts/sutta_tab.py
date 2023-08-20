@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
-from simsapa.app.db.search import SearchResult
+from simsapa.app.db.search_helpers import SearchResult
 from simsapa.app.export_helpers import render_sutta_content
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from ..app.types import AppData, QueryType, SuttaQuote, USutta

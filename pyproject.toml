@@ -46,7 +46,6 @@ scipy = "~1.10.0"
 # For building on MacOS 11
 #scipy = { file = "scipy-1.10.0-cp311-cp311-macosx_11_0_arm64.whl" }
 python-idzip = "~0.3.7"
-Whoosh = "~2.7.4"
 typer = "~0.7.0"
 tomlkit = "~0.11.6"
 feedparser = "~6.0.10"
@@ -61,6 +60,9 @@ markdown = "^3.4.1"
 psutil = "^5.9.4"
 roman = "^3.3"
 chardet = "^5.1.0"
+urllib3 = "2.0.2"
+datetime = "5.1"
+deepmerge = "^1.1.0"
 
 # NOTE: charset-normalizer = "^3.0.1" errors with PyInstaller
 # ModuleNotFoundError: No module named 'charset_normalizer.md__mypyc'
@@ -76,13 +78,20 @@ setuptools = "65.7.0"
 pytz = "2022.7.0"
 # 2023.0 failed to install
 pyinstaller-hooks-contrib = "2022.14"
-deepmerge = "^1.1.0"
+# 2.3.7 failed to install
+werkzeug = "2.3.6"
+# 6.3.3 failed to install
+tornado = "6.3.2"
+
+tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa" }
+# tantivy = { path = "../libs-src/tantivy-py-gambhiro", develop = true }
+# tantivy = { path = "../libs-src/tantivy-py-gambhiro/target/wheels/tantivy-0.20.2rc3-cp311-cp311-manylinux_2_34_x86_64.whl" }
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = "^5.7"
+pyinstaller = "5.11"
 tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 # scalene = "^1.5.14"
@@ -153,7 +162,6 @@ requires = [
 "bokeh              >= 2.4.0,    < 3.0.0",
 "scipy              >= 1.10.0,   < 2.0.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
-"Whoosh             >= 2.7.4,    < 2.8.0",
 "typer              >= 0.7.0,    < 0.8.0",
 "tomlkit            >= 0.11.0,   < 0.12.0",
 "feedparser         >= 6.0.10,   < 6.1.0",
@@ -167,14 +175,19 @@ requires = [
 "psutil             >= 5.9.4,    < 5.10.0",
 "roman              >= 3.3,      < 4.0",
 "chardet            >= 5.1.0,    < 5.2.0",
+"urllib3            == 2.0.2",
+"datetime           == 5.1",
+"deepmerge          == 1.1.0",
 "charset-normalizer == 2.1.0",
 "ebooklib           >= 0.18.0,   < 0.19.0",
 "openai             >= 0.27.0,   < 0.28.0",
 "tiktoken           >= 0.3.3,    < 0.4.0",
-"setuptools         >= 65.7.0,   < 66.0.0",
-"pytz               >= 2022.7.0, < 2022.7.1",
-"pyinstaller-hooks-contrib >= 2022.14.0, < 2023.0.0",
-"deepmerge          >= 1.1.0,    < 1.2.0",
+"setuptools         == 65.7.0",
+"pytz               == 2022.7.0",
+"pyinstaller-hooks-contrib == 2022.14.0",
+"werkzeug           == 2.3.6",
+"tornado            == 6.3.2",
+"./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_34_x86_64.whl",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

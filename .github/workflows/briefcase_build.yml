@@ -53,6 +53,25 @@ jobs:
           python -m pip install briefcase==0.3.11
           python -m pip install MarkupSafe==2.1.1
 
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+
+      - name: Install maturin
+        run: |
+          pip install maturin==1.2.3
+
+      - name: build and install tantivy-py wheel
+        run: |
+          git clone https://github.com/simsapa/tantivy-py.git
+          ls -l
+          cd tantivy-py
+          git checkout simsapa
+          make build
+          python -m pip install $(ls -1 target/wheels/*.whl)
+
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'
         run: |

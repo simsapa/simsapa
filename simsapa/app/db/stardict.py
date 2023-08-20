@@ -6,7 +6,7 @@ from typing import Optional, List, TypedDict
 from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 from sqlalchemy.dialects.sqlite import insert
-from simsapa.app.db.search import SearchIndexed
+from simsapa.app.db.search_tantivy import TantivySearchIndexed
 from simsapa.app.helpers import latinize
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, parse_bword_links_to_ssp, stardict_to_dict_entries, parse_ifo
@@ -111,7 +111,7 @@ def insert_db_words(db_session,
 
 def import_stardict_update_existing(db_session,
                                     schema_name: str,
-                                    search_index: Optional[SearchIndexed],
+                                    search_index: Optional[TantivySearchIndexed],
                                     paths: StarDictPaths,
                                     dictionary_id: int,
                                     label: str,
@@ -137,7 +137,7 @@ def import_stardict_update_existing(db_session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, db_session, w)
+        search_index.index_dict_words(schema_name, w)
 
 def add_links_to_words(db_session: Session,
                        words: List[DictEntry]) -> List[DictEntry]:
@@ -171,7 +171,7 @@ def add_links_to_words(db_session: Session,
 
 def import_stardict_as_new(db_session: Session,
                            schema_name: str,
-                           search_index: Optional[SearchIndexed],
+                           search_index: Optional[TantivySearchIndexed],
                            paths: StarDictPaths,
                            label: Optional[str] = None,
                            batch_size = 1000,
@@ -233,4 +233,4 @@ def import_stardict_as_new(db_session: Session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, db_session, w)
+        search_index.index_dict_words(schema_name, w)

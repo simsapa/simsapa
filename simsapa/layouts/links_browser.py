@@ -22,7 +22,7 @@ from simsapa.app.helpers import compact_rich_text
 from simsapa.layouts.links_sidebar import GraphGenerator
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
-from ..app.db.search import SearchResult
+from ..app.db.search_helpers import SearchResult
 from ..app.types import AppData, AppWindowInterface, USutta, UDictWord, UDocument, default_search_result_sizes
 from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 from .search_item import SearchItemWidget

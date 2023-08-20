@@ -1,17 +1,18 @@
 import re
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
-from whoosh.index import FileIndex
+import tantivy
 
 from sqlalchemy import and_, or_, not_
 
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
-from ..app.db.search import SearchQuery, SearchResult, dict_word_to_search_result, sutta_to_search_result
+from ..app.db.search_helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
+from ..app.db.search_tantivy import TantivySearchQuery
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 from ..app.types import Labels, SearchMode, UDictWord, USutta
@@ -26,7 +27,11 @@ class SearchQueryWorker(QRunnable):
     _all_results: List[SearchResult] = []
     _highlighted_result_pages: Dict[int, List[SearchResult]] = dict()
 
-    def __init__(self, ix: FileIndex, page_len: int, search_mode: SearchMode, hit_to_result_fn: Callable):
+    def __init__(self,
+                 ix: tantivy.Index,
+                 page_len: int,
+                 search_mode: SearchMode):
+
         super().__init__()
         self.signals = WorkerSignals()
         self._page_len = page_len
@@ -38,7 +43,7 @@ class SearchQueryWorker(QRunnable):
         self.disabled_labels = None
         self.only_source = None
 
-        self.search_query = SearchQuery(ix, self._page_len, hit_to_result_fn)
+        self.search_query = TantivySearchQuery(ix, self._page_len)
 
     def set_query(self,
                   query: str,
@@ -57,25 +62,27 @@ class SearchQueryWorker(QRunnable):
         self._all_results = []
         self._highlighted_result_pages = dict()
 
-    def query_hits(self):
+    def query_hits(self) -> int:
         if self.search_mode == SearchMode.FulltextMatch:
             return self.search_query.hits
+
         else:
             return len(self._all_results)
 
     def all_results(self) -> List[SearchResult]:
         if self.search_mode == SearchMode.FulltextMatch:
             return self.search_query.get_all_results(highlight=False)
+
         else:
             return self._all_results
 
     def _highlight_query_in_content(self, query: str, content: str) -> str:
-        l = len(query)
+        ll = len(query)
         n = 0
         a = content.lower().find(query.lower(), n)
         while a != -1:
-            highlight = "<span class='match'>" + content[a:a+l] + "</span>"
-            content = content[0:a] + highlight + content[a+l:-1]
+            highlight = "<span class='match'>" + content[a:a+ll] + "</span>"
+            content = content[0:a] + highlight + content[a+ll:-1]
 
             n = a+len(highlight)
             a = content.lower().find(query.lower(), n)
@@ -86,6 +93,7 @@ class SearchQueryWorker(QRunnable):
         if page_num not in self._highlighted_result_pages:
             if self.search_mode == SearchMode.FulltextMatch:
                 self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
+
             else:
                 page_start = page_num * self._page_len
                 page_end = page_start + self._page_len
@@ -192,7 +200,7 @@ class SearchQueryWorker(QRunnable):
 
                 db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-                if self.search_query.ix.indexname == 'suttas':
+                if self.search_query.index_name == 'suttas':
 
                     res_suttas: List[USutta] = []
 
@@ -247,7 +255,7 @@ class SearchQueryWorker(QRunnable):
 
                     self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
-                elif self.search_query.ix.indexname == 'dict_words':
+                elif self.search_query.index_name == 'dict_words':
 
                     res: List[UDictWord] = []
 

@@ -24,7 +24,7 @@ from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_helpers import find_or_create_db, get_db_session_with_schema, upgrade_db
 from simsapa.app.helpers import bilara_text_to_segments
 
-from .db.search import SearchIndexed
+from .db.search_tantivy import TantivySearchIndexed
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um
@@ -496,7 +496,7 @@ class AppData:
 
         self._connect_to_db(app_db_path, user_db_path)
 
-        self.search_indexed = SearchIndexed()
+        self.search_indexed = TantivySearchIndexed()
 
         self._read_app_settings()
         self._find_cli_paths()

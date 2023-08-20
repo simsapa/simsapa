@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import or_
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search import SearchResult
+from simsapa.app.db.search_helpers import SearchResult
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 from ..app.types import AppData, Labels, QueryType, UDictWord

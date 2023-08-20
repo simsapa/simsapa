@@ -39,22 +39,20 @@ def gui(url: Optional[str] = None):
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
     """Query the database."""
 
-    from simsapa.app.db import search
+    from simsapa.app.db import search_tantivy
     from simsapa.app.types import AppData
 
     app_data = AppData()
 
     if query_type == QueryType.suttas:
-        search_query = search.SearchQuery(
+        search_query = search_tantivy.TantivySearchQuery(
             app_data.search_indexed.suttas_index,
             20,
-            search.sutta_hit_to_search_result,
         )
     elif query_type == QueryType.words:
-        search_query = search.SearchQuery(
+        search_query = search_tantivy.TantivySearchQuery(
             app_data.search_indexed.dict_words_index,
             20,
-            search.dict_word_hit_to_search_result,
         )
     else:
         print("Unrecognized query type.")
@@ -72,16 +70,16 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
 @index_app.command("create")
 def index_create():
     """Create database indexes, removing existing ones."""
-    from simsapa.app.db.search import SearchIndexed
-    search_indexed = SearchIndexed()
+    from simsapa.app.db.search_tantivy import TantivySearchIndexed
+    search_indexed = TantivySearchIndexed()
     search_indexed.create_all()
 
 @index_app.command("reindex")
 def index_reindex():
     """Clear and rebuild database indexes."""
-    from simsapa.app.db.search import SearchIndexed
+    from simsapa.app.db.search_tantivy import TantivySearchIndexed
     from simsapa.app.types import AppData
-    search_indexed = SearchIndexed()
+    search_indexed = TantivySearchIndexed()
     app_data = AppData()
 
     search_indexed.create_all()
@@ -90,9 +88,9 @@ def index_reindex():
 @index_app.command("suttas-lang")
 def index_suttas_lang(lang: str):
     """Create a separate index and index suttas from appdata of the given language."""
-    from simsapa.app.db.search import SearchIndexed
+    from simsapa.app.db.search_tantivy import TantivySearchIndexed
     from simsapa.app.types import AppData
-    search_indexed = SearchIndexed()
+    search_indexed = TantivySearchIndexed()
     app_data = AppData()
 
     search_indexed.index_all_suttas_lang(app_data.db_session, lang)

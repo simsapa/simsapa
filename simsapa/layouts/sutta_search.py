@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, 
 
 from simsapa import logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.db.search import SearchResult
+from simsapa.app.db.search_helpers import SearchResult
 from simsapa.layouts.send_to_kindle import SendToKindleWindow
 from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
 from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
