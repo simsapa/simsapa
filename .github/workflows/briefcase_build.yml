@@ -71,7 +71,7 @@ jobs:
           git checkout simsapa
           make build
           cp $(ls -1 target/wheels/*.whl) tantivy.whl
-          python -m pip install tantivy.whl
+          python -m pip install ./tantivy.whl
 
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'
