@@ -187,7 +187,7 @@ requires = [
 "pyinstaller-hooks-contrib == 2022.14.0",
 "werkzeug           == 2.3.6",
 "tornado            == 6.3.2",
-"./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_34_x86_64.whl",
+"./tantivy.whl",
 ]
 
 [tool.briefcase.app.simsapa.macOS]

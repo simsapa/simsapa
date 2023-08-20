@@ -70,7 +70,8 @@ jobs:
           cd tantivy-py
           git checkout simsapa
           make build
-          python -m pip install $(ls -1 target/wheels/*.whl)
+          cp $(ls -1 target/wheels/*.whl) tantivy.whl
+          python -m pip install tantivy.whl
 
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'
