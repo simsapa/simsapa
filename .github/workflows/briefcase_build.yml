@@ -70,8 +70,17 @@ jobs:
           cd tantivy-py
           git checkout simsapa
           make build
-          cp $(ls -1 target/wheels/*.whl) tantivy.whl
-          python -m pip install ./tantivy.whl
+          python -m pip install $(ls -1 target/wheels/*.whl)
+
+      # Wheel name on Ubuntu 22.04:
+      # "./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_34_x86_64.whl",
+      # Wheel name on Ubuntu 20.04:
+      # "./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_31_x86_64.whl"
+
+      - name: correct wheel file name
+        if: runner.os == 'Linux'
+        run: |
+          if [[ $(lsb_release --release | grep '20.04') != "" ]]; then sed -i 's/\(tantivy-.*-manylinux\)_2_34_x86_64.whl/\1_2_31_x86_64.whl/' pyproject.toml; fi
 
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'
