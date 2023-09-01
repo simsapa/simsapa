@@ -16,7 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
 from simsapa.app.types import QueryType
 
@@ -127,6 +127,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     title = title.replace('&nbsp;', '')
     title = title.replace('&amp;', 'and')
     title = consistent_nasal_m(title)
+    title_ascii = pali_to_ascii(title)
 
     if '/Ud/' in f"{p}":
         # 2 Appāyuka Sutta | Short-lived
@@ -154,6 +155,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     sutta = Am.Sutta(
         source_uid = author,
         title = title,
+        title_ascii = title,
         title_pali = title_pali,
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),

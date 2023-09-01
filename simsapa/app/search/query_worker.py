@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
@@ -11,15 +11,15 @@ from sqlalchemy import and_, or_, not_
 from simsapa import logger
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
-from ..app.db.search_helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
-from ..app.db.search_tantivy import TantivySearchQuery
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-from ..app.types import Labels, SearchMode, UDictWord, USutta
-
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+from simsapa.app.types import SearchParams
+from simsapa.app.types import SearchMode, UDictWord, USutta
+from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
+from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class WorkerSignals(QObject):
-    finished = pyqtSignal()
+    finished = pyqtSignal(datetime)
 
 
 class SearchQueryWorker(QRunnable):
@@ -29,49 +29,60 @@ class SearchQueryWorker(QRunnable):
 
     def __init__(self,
                  ix: tantivy.Index,
-                 page_len: int,
-                 search_mode: SearchMode):
+                 query_text: str,
+                 query_started_time: datetime,
+                 finished_fn: Callable,
+                 params: SearchParams):
 
         super().__init__()
+
+        self.ix = ix
         self.signals = WorkerSignals()
-        self._page_len = page_len
-        self.search_mode = search_mode
+        self.query_finished_time: Optional[datetime] = None
 
-        self.query = ""
-        self.query_started: datetime = datetime.now()
-        self.query_finished: Optional[datetime] = None
-        self.disabled_labels = None
-        self.only_source = None
-
-        self.search_query = TantivySearchQuery(ix, self._page_len)
+        self.set_query(query_text,
+                       query_started_time,
+                       finished_fn,
+                       params)
 
     def set_query(self,
-                  query: str,
-                  query_started: datetime,
-                  disabled_labels: Labels,
-                  only_lang: Optional[str] = None,
-                  only_source: Optional[str] = None):
+                  query_text: str,
+                  query_started_time: datetime,
+                  finished_fn: Callable,
+                  params: SearchParams):
 
-        self.query = consistent_nasal_m(query.strip().lower())
-        self.query_started = query_started
-        self.query_finished = None
+        self.query_text = consistent_nasal_m(query_text.strip().lower())
+        self.query_started_time = query_started_time
+        self.query_finished_time = None
         self.will_emit_finished = True
-        self.disabled_labels = disabled_labels
-        self.only_lang = None if only_lang is None else only_lang.lower()
-        self.only_source = None if only_source is None else only_source.lower()
+
+        self.signals.finished.connect(finished_fn)
+
+        self.search_mode = params['mode']
+        self._page_len = params['page_len'] if params['page_len'] is not None else 20
+
+        s = params['only_lang']
+        self.only_lang = None if s is None else s.lower()
+        s = params['only_source']
+        self.only_source = None if s is None else s.lower()
         self._all_results = []
         self._highlighted_result_pages = dict()
 
+        self.search_query = TantivySearchQuery(self.ix, self._page_len)
+
     def query_hits(self) -> int:
         if self.search_mode == SearchMode.FulltextMatch:
-            return self.search_query.hits
+            if self.search_query.hits_count is None:
+                return 0
+            else:
+                return self.search_query.hits_count
 
         else:
             return len(self._all_results)
 
     def all_results(self) -> List[SearchResult]:
         if self.search_mode == SearchMode.FulltextMatch:
-            return self.search_query.get_all_results(highlight=False)
+            return self.search_query.get_all_results()
 
         else:
             return self._all_results
@@ -99,7 +110,7 @@ class SearchQueryWorker(QRunnable):
                 page_end = page_start + self._page_len
 
                 def _add_highlight(x: SearchResult) -> SearchResult:
-                    x['snippet'] = self._highlight_query_in_content(self.query, x['snippet'])
+                    x['snippet'] = self._highlight_query_in_content(self.query_text, x['snippet'])
                     return x
 
                 page = list(map(_add_highlight, self._all_results[page_start:page_end]))
@@ -136,7 +147,7 @@ class SearchQueryWorker(QRunnable):
         else:
             content = str(x.content_html)
 
-        snippet = self._fragment_around_query(self.query, content)
+        snippet = self._fragment_around_query(self.query_text, content)
 
         return sutta_to_search_result(x, snippet)
 
@@ -148,7 +159,7 @@ class SearchQueryWorker(QRunnable):
         else:
             content = str(x.definition_html)
 
-        snippet = self._fragment_around_query(self.query, content)
+        snippet = self._fragment_around_query(self.query_text, content)
 
         return dict_word_to_search_result(x, snippet)
 
@@ -158,29 +169,9 @@ class SearchQueryWorker(QRunnable):
         else:
             return True
 
-    def _sutta_not_in_disabled(self, x: USutta):
-        if self.disabled_labels is not None:
-            for schema in self.disabled_labels.keys():
-                for label in self.disabled_labels[schema]:
-                    if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
-                        return False
-            return True
-        else:
-            return True
-
     def _word_only_in_source(self, x: UDictWord):
         if self.only_source is not None:
             return str(x.uid).endswith(f'/{self.only_source.lower()}')
-        else:
-            return True
-
-    def _word_not_in_disabled(self, x: UDictWord):
-        if self.disabled_labels is not None:
-            for schema in self.disabled_labels.keys():
-                for label in self.disabled_labels[schema]:
-                    if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
-                        return False
-            return True
         else:
             return True
 
@@ -192,7 +183,7 @@ class SearchQueryWorker(QRunnable):
             self._highlighted_result_pages = dict()
 
             if self.search_mode == SearchMode.FulltextMatch:
-                 self.search_query.new_query(self.query, self.disabled_labels, self.only_lang, self.only_source)
+                 self.search_query.new_query(self.query_text, self.only_source)
                  self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
             elif self.search_mode == SearchMode.ExactMatch or \
@@ -200,13 +191,13 @@ class SearchQueryWorker(QRunnable):
 
                 db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-                if self.search_query.index_name == 'suttas':
+                if self.search_query.is_sutta_index():
 
                     res_suttas: List[USutta] = []
 
-                    if 'AND' in self.query:
+                    if 'AND' in self.query_text:
 
-                        and_terms = list(map(lambda x: x.strip(), self.query.split('AND')))
+                        and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
                         q = db_session.query(Am.Sutta)
                         for i in and_terms:
@@ -231,9 +222,9 @@ class SearchQueryWorker(QRunnable):
                     else:
 
                         if self.search_mode == SearchMode.ExactMatch:
-                            p = expand_quote_to_pattern_str(self.query)
+                            p = expand_quote_to_pattern_str(self.query_text)
                         else:
-                            p = self.query
+                            p = self.query_text
 
                         r = db_session \
                             .query(Am.Sutta) \
@@ -250,18 +241,15 @@ class SearchQueryWorker(QRunnable):
                     if self.only_source is not None:
                         res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
 
-                    elif self.disabled_labels is not None:
-                        res_suttas = list(filter(self._sutta_not_in_disabled, res_suttas))
-
                     self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
-                elif self.search_query.index_name == 'dict_words':
+                elif self.search_query.is_dict_word_index():
 
                     res: List[UDictWord] = []
 
-                    if 'AND' in self.query:
+                    if 'AND' in self.query_text:
 
-                        and_terms = list(map(lambda x: x.strip(), self.query.split('AND')))
+                        and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
                         q = db_session.query(Am.DictWord)
                         for i in and_terms:
@@ -285,27 +273,24 @@ class SearchQueryWorker(QRunnable):
 
                         q = db_session.query(Am.DictWord)
                         if self.search_mode == SearchMode.ExactMatch:
-                            q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query}%"))
+                            q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query_text}%"))
                         else:
-                            q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query))
+                            q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query_text))
 
                         r = q.all()
                         res.extend(r)
 
                         q = db_session.query(Um.DictWord)
                         if self.search_mode == SearchMode.ExactMatch:
-                            q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query}%"))
+                            q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query_text}%"))
                         else:
-                            q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query))
+                            q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query_text))
 
                         r = q.all()
                         res.extend(r)
 
                     if self.only_source is not None:
                         res = list(filter(self._word_only_in_source, res))
-
-                    elif self.disabled_labels is not None:
-                        res = list(filter(self._word_not_in_disabled, res))
 
                     self._all_results = list(map(self._db_word_to_result, res))
 
@@ -321,13 +306,13 @@ class SearchQueryWorker(QRunnable):
 
                 r = db_session \
                     .query(Am.Sutta) \
-                    .filter(Am.Sutta.title.like(f"{self.query}%")) \
+                    .filter(Am.Sutta.title.like(f"{self.query_text}%")) \
                     .all()
                 res_suttas.extend(r)
 
                 r = db_session \
                     .query(Um.Sutta) \
-                    .filter(Um.Sutta.title.like(f"{self.query}%")) \
+                    .filter(Um.Sutta.title.like(f"{self.query_text}%")) \
                     .all()
                 res_suttas.extend(r)
 
@@ -336,7 +321,7 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Am.Sutta) \
                     .filter(and_(
-                        Am.Sutta.title.like(f"%{self.query}%"),
+                        Am.Sutta.title.like(f"%{self.query_text}%"),
                         not_(Am.Sutta.id.in_(ids)),
                     )) \
                     .all()
@@ -345,7 +330,7 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Um.Sutta) \
                     .filter(and_(
-                        Um.Sutta.title.like(f"%{self.query}%"),
+                        Um.Sutta.title.like(f"%{self.query_text}%"),
                         not_(Um.Sutta.id.in_(ids)),
                     )) \
                     .all()
@@ -353,9 +338,6 @@ class SearchQueryWorker(QRunnable):
 
                 if self.only_source is not None:
                     res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
-
-                elif self.disabled_labels is not None:
-                    res_suttas = list(filter(self._sutta_not_in_disabled, res_suttas))
 
                 self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
@@ -372,12 +354,12 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Am.DictWord) \
                     .filter(or_(
-                        Am.DictWord.word.like(f"{self.query}%"),
-                        Am.DictWord.word_nom_sg.like(f"{self.query}%"),
-                        Am.DictWord.inflections.like(f"{self.query}%"),
-                        Am.DictWord.phonetic.like(f"{self.query}%"),
-                        Am.DictWord.transliteration.like(f"{self.query}%"),
-                        Am.DictWord.also_written_as.like(f"{self.query}%"),
+                        Am.DictWord.word.like(f"{self.query_text}%"),
+                        Am.DictWord.word_nom_sg.like(f"{self.query_text}%"),
+                        Am.DictWord.inflections.like(f"{self.query_text}%"),
+                        Am.DictWord.phonetic.like(f"{self.query_text}%"),
+                        Am.DictWord.transliteration.like(f"{self.query_text}%"),
+                        Am.DictWord.also_written_as.like(f"{self.query_text}%"),
                     )) \
                     .all()
                 res.extend(r)
@@ -385,12 +367,12 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Um.DictWord) \
                     .filter(or_(
-                        Um.DictWord.word.like(f"{self.query}%"),
-                        Um.DictWord.word_nom_sg.like(f"{self.query}%"),
-                        Um.DictWord.inflections.like(f"{self.query}%"),
-                        Um.DictWord.phonetic.like(f"{self.query}%"),
-                        Um.DictWord.transliteration.like(f"{self.query}%"),
-                        Um.DictWord.also_written_as.like(f"{self.query}%"),
+                        Um.DictWord.word.like(f"{self.query_text}%"),
+                        Um.DictWord.word_nom_sg.like(f"{self.query_text}%"),
+                        Um.DictWord.inflections.like(f"{self.query_text}%"),
+                        Um.DictWord.phonetic.like(f"{self.query_text}%"),
+                        Um.DictWord.transliteration.like(f"{self.query_text}%"),
+                        Um.DictWord.also_written_as.like(f"{self.query_text}%"),
                     )) \
                     .all()
                 res.extend(r)
@@ -406,7 +388,7 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Am.DictWord) \
                     .filter(and_(
-                        Am.DictWord.word.like(f"%{self.query}%"),
+                        Am.DictWord.word.like(f"%{self.query_text}%"),
                         not_(Am.DictWord.id.in_(ids)),
                     )) \
                     .all()
@@ -415,7 +397,7 @@ class SearchQueryWorker(QRunnable):
                 r = db_session \
                     .query(Um.DictWord) \
                     .filter(and_(
-                        Um.DictWord.word.like(f"%{self.query}%"),
+                        Um.DictWord.word.like(f"%{self.query_text}%"),
                         not_(Um.DictWord.id.in_(ids)),
                     )) \
                     .all()
@@ -424,19 +406,15 @@ class SearchQueryWorker(QRunnable):
                 if self.only_source is not None:
                     res = list(filter(self._word_only_in_source, res))
 
-                elif self.disabled_labels is not None:
-                    res = list(filter(self._word_not_in_disabled, res))
-
                 self._all_results = list(map(self._db_word_to_result, res))
 
                 db_conn.close()
                 db_session.close()
                 db_eng.dispose()
 
-            self.query_finished = datetime.now()
+            self.query_finished_time = datetime.now()
             if self.will_emit_finished:
-                logger.info("signals.finished.emit()")
-                self.signals.finished.emit()
+                self.signals.finished.emit(self.query_started_time)
 
         except Exception as e:
             logger.error(e)

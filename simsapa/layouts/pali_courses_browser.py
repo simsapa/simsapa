@@ -15,10 +15,11 @@ from sqlalchemy import null
 from simsapa import COURSES_DIR, DbSchemaName, logger
 from simsapa.layouts.pali_course_helpers import count_remaining_challenges_in_group, get_groups_in_course
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, PaliCourseGroup, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
+from simsapa.app.types import AppWindowInterface, PaliCourseGroup, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
+from simsapa.app.app_data import AppData
 
 
 class ListItem(QStandardItem):

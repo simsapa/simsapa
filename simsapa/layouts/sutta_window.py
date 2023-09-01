@@ -7,10 +7,11 @@ from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 from simsapa import SIMSAPA_PACKAGE_DIR, logger
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from ..app.types import AppData, AppWindowInterface, USutta
+from simsapa.app.types import AppWindowInterface, USutta
+from simsapa.app.app_data import AppData
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 class SuttaWindow(AppWindowInterface):
     def __init__(self, app_data: AppData, sutta_uid: str, parent=None) -> None:

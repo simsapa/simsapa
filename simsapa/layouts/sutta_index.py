@@ -12,7 +12,8 @@ from simsapa import HTML_RESOURCES_APPDATA_DIR, IS_SWAY, SIMSAPA_PACKAGE_DIR, lo
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 
 from simsapa.app.html_resources_server import HtmlResourcesServer
-from simsapa.app.types import AppData, AppWindowInterface, QueryType
+from simsapa.app.types import AppWindowInterface, QueryType
+from simsapa.app.app_data import AppData
 
 class SuttaIndexWindow(AppWindowInterface):
 
@@ -41,7 +42,7 @@ class SuttaIndexWindow(AppWindowInterface):
         self.resize(850, 650)
 
         if IS_SWAY:
-            cmd = f"""swaymsg 'for_window [title="Sutta Index"] floating enable'"""
+            cmd = """swaymsg 'for_window [title="Sutta Index"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
 
         self._central_widget = QtWidgets.QWidget(self)

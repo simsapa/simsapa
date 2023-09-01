@@ -11,7 +11,7 @@ import threading
 from typing import Callable, List, Optional
 from PyQt6 import QtWidgets
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRunnable, QThreadPool, pyqtSlot, QObject, pyqtSignal
 from PyQt6.QtWidgets import (QAbstractItemView, QFrame, QHeaderView, QLineEdit, QMessageBox, QTableView, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
 
 from sqlalchemy import create_engine
@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 from simsapa.app.lookup import LANG_CODE_TO_NAME
 
-from simsapa.app.types import AppData
+from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

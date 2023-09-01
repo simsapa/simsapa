@@ -1,6 +1,10 @@
 from typing import List, Optional, TypedDict, Union
 import re
 
+import tantivy
+
+from sqlalchemy.orm.session import Session
+
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
@@ -113,3 +117,40 @@ def search_oneline(content: str) -> str:
     s = re.sub(r'  +', ' ', s)
 
     return s
+
+def is_index_empty(ix: tantivy.Index) -> bool:
+    # FIXME requires dir path as argument
+    # if not ix.exists():
+    #     return True
+
+    # FIXME returns 0
+    # if ix.searcher().num_docs == 0:
+    #     return True
+
+    return False
+
+def get_sutta_languages(db_session: Session) -> List[str]:
+    res = []
+
+    r = db_session.query(Am.Sutta.language.distinct()).all()
+    res.extend(r)
+
+    r = db_session.query(Um.Sutta.language.distinct()).all()
+    res.extend(r)
+
+    langs = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+
+    return langs
+
+def get_dict_word_languages(db_session: Session) -> List[str]:
+    res = []
+
+    r = db_session.query(Am.DictWord.language.distinct()).all()
+    res.extend(r)
+
+    r = db_session.query(Um.DictWord.language.distinct()).all()
+    res.extend(r)
+
+    langs = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+
+    return langs

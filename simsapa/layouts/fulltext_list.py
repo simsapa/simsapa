@@ -7,7 +7,8 @@ from PyQt6.QtGui import QColor, QMovie
 from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTabWidget
 from simsapa import logger
 
-from simsapa.app.types import AppData, default_search_result_sizes
+from simsapa.app.types import default_search_result_sizes
+from simsapa.app.app_data import AppData
 from simsapa.layouts.search_item import SearchItemWidget
 
 class HasFulltextList:
@@ -26,6 +27,7 @@ class HasFulltextList:
     _handle_result_select: Callable
     page_len: int
     query_hits: Callable
+    result_pages_count: Callable
     results_page: Callable
     rightside_tabs: QTabWidget
     tabs: QTabWidget
@@ -83,21 +85,18 @@ class HasFulltextList:
         if page_num < 0:
             return
 
-        page_start = page_num * self.page_len
-
-        page_end = page_start + self.page_len
-        if page_end > self.query_hits():
-            page_end = self.query_hits()
+        pages_count = self.fulltext_page_input.maximum()
+        query_hits = self.query_hits()
 
         self.fulltext_list.clear()
 
-        if self.query_hits() == 0:
+        if query_hits == 0:
             self.fulltext_label.clear()
             return
 
         results = self.results_page(page_num)
 
-        msg = f"Showing {page_start+1}-{page_end} out of {self.query_hits()} results"
+        msg = f"Page {page_num+1} / {pages_count} of {query_hits} results"
         self.fulltext_label.setText(msg)
 
         colors = ["#ffffff", "#efefef"]

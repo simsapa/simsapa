@@ -10,7 +10,8 @@ from sqlalchemy.sql import func
 # from simsapa.app.file_doc import FileDoc
 from simsapa import logger
 
-from simsapa.app.types import AppData, UDictWord
+from simsapa.app.types import UDictWord
+from simsapa.app.app_data import AppData
 from simsapa.layouts.memos_sidebar import MemoPlainListModel
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 

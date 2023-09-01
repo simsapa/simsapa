@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, gretil_header_to_footer
+from simsapa.app.helpers import compact_rich_text, consistent_nasal_m, gretil_header_to_footer, pali_to_ascii
 from simsapa.app.db import appdata_models as Am
 
 import helpers
@@ -81,7 +81,8 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
             logger.error("Missing <title> from html page in %s" % html_path)
             title = html_path.stem.replace('sa_', '')
 
-        title = title.strip()
+        title = consistent_nasal_m(title.strip())
+        title_ascii = pali_to_ascii(title)
 
         ref = html_path.stem.replace('sa_', '')
         lang = "san"
@@ -97,6 +98,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
         sutta = Am.Sutta(
             source_uid = author,
             title = title,
+            title_ascii = title_ascii,
             title_pali = "",
             uid = uid,
             sutta_ref = "",

@@ -1,30 +1,28 @@
-import json
-import math
-from pathlib import Path
-import queue
-
 from functools import partial
+import json, queue
 from typing import Any, Callable, List, Optional
+from pathlib import Path
+
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, QVBoxLayout)
 
-from simsapa import logger, ApiAction, ApiMessage
-from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.db.search_helpers import SearchResult
+from simsapa import logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
+
+from simsapa.app.search.helpers import SearchResult
+from simsapa.app.app_data import AppData
+from simsapa.app.types import USutta, SuttaSearchWindowInterface
+
 from simsapa.layouts.send_to_kindle import SendToKindleWindow
 from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
 from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
 from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
-from ..app.db import userdata_models as Um
-from ..app.types import AppData, USutta, SuttaSearchWindowInterface
-from ..assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
-from .memos_sidebar import HasMemosSidebar
-from .links_sidebar import HasLinksSidebar
-from .fulltext_list import HasFulltextList
-from .help_info import show_search_info
-from .sutta_search_window_state import SuttaSearchWindowState
-
+from simsapa.layouts.memos_sidebar import HasMemosSidebar
+from simsapa.layouts.links_sidebar import HasLinksSidebar
+from simsapa.layouts.fulltext_list import HasFulltextList
+from simsapa.layouts.help_info import show_search_info
+from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 
 class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLinksSidebar,
                         HasMemosSidebar, HasFulltextList):
@@ -34,10 +32,11 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     tabs_layout: QVBoxLayout
     selected_info: Any
     recent_list: QListWidget
-    _show_sutta: Callable
     s: SuttaSearchWindowState
     fulltext_results_tab_idx: int = 0
     rightside_tabs: QTabWidget
+    _app_data: AppData
+    _show_sutta: Callable
 
     lookup_in_dictionary_signal = pyqtSignal(str)
     graph_link_mouseover = pyqtSignal(dict)
@@ -150,10 +149,13 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.lookup_in_dictionary_signal.emit(text)
 
     def results_page(self, page_num: int) -> List[SearchResult]:
-        return self.s.results_page(page_num)
+        return self.s._queries.results_page(page_num)
 
     def query_hits(self) -> int:
-        return self.s.query_hits()
+        return self.s._queries.query_hits()
+
+    def result_pages_count(self) -> int:
+        return self.s._queries.result_pages_count()
 
     def show_network_graph(self, sutta: Optional[USutta] = None):
         if sutta is None:
@@ -186,7 +188,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.fulltext_last_page_btn.setEnabled(False)
 
         else:
-            pages = math.floor(hits / self.page_len) + 1
+            pages = self.result_pages_count()
             self.fulltext_page_input.setMinimum(1)
             self.fulltext_page_input.setMaximum(pages)
             self.fulltext_first_page_btn.setEnabled(True)
@@ -204,7 +206,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             return
 
         page_num = self.fulltext_page_input.value() - 1
-        results = self.s.results_page(page_num)
+        results = self.results_page(page_num)
 
         selected_idx = self.fulltext_list.currentRow()
         logger.info(f"selected_idx: {selected_idx}")
@@ -303,42 +305,42 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         if d.exec() and self.s.enable_sidebar:
             self._update_sidebar_fulltext(self.query_hits())
 
-    def _show_import_suttas_dialog(self):
-        from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
-        d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
-        if d.exec():
-            logger.info("Finished importing suttas")
-            self._show_quit_and_restart()
+    # def _show_import_suttas_dialog(self):
+    #     from simsapa.layouts.import_suttas_dialog import ImportSuttasWithSpreadsheetDialog
+    #     d = ImportSuttasWithSpreadsheetDialog(self._app_data, self)
+    #     if d.exec():
+    #         logger.info("Finished importing suttas")
+    #         self._show_quit_and_restart()
 
-    def _remove_imported_suttas(self):
-        msg = """
-        <p>Remove all imported suttas from the user database?</p>
-        <p>(Suttas stored in the default application database will remain.)</p>
-        """
+    # def _remove_imported_suttas(self):
+    #     msg = """
+    #     <p>Remove all imported suttas from the user database?</p>
+    #     <p>(Suttas stored in the default application database will remain.)</p>
+    #     """
 
-        reply = QMessageBox.question(self,
-                                     "Remove Imported Suttas",
-                                     msg,
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
+    #     reply = QMessageBox.question(self,
+    #                                  "Remove Imported Suttas",
+    #                                  msg,
+    #                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+    #                                  QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.StandardButton.Yes:
-            suttas = self._app_data.db_session.query(Um.Sutta).all()
+    #     if reply == QMessageBox.StandardButton.Yes:
+    #         suttas = self._app_data.db_session.query(Um.Sutta).all()
 
-            uids = list(map(lambda x: x.uid, suttas))
+    #         uids = list(map(lambda x: x.uid, suttas))
 
-            for db_item in suttas:
-                self._app_data.db_session.delete(db_item)
+    #         for db_item in suttas:
+    #             self._app_data.db_session.delete(db_item)
 
-            self._app_data.db_session.commit()
+    #         self._app_data.db_session.commit()
 
-            w = self._app_data.search_indexed.suttas_index.writer()
-            for x in uids:
-                w.delete_by_term('uid', x)
+    #         w = self._queries.search_indexes.suttas_index.writer()
+    #         for x in uids:
+    #             w.delete_by_term('uid', x)
 
-            w.commit()
+    #         w.commit()
 
-            self._show_quit_and_restart()
+    #         self._show_quit_and_restart()
 
     def _show_quit_and_restart(self):
         msg = """
@@ -413,9 +415,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.action_Search_Query_Terms \
             .triggered.connect(partial(show_search_info, self))
-
-        self.action_Select_Sutta_Authors \
-            .triggered.connect(partial(self.s._show_sutta_select_dialog))
 
         self.action_Show_Related_Suttas \
             .triggered.connect(partial(self.s._handle_show_related_suttas))

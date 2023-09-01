@@ -17,7 +17,8 @@ from simsapa.app.export_helpers import sutta_content_plain
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import AppData, AppWindowInterface, ChatMessage, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings, model_max_tokens
+from simsapa.app.types import AppWindowInterface, ChatMessage, ChatResponse, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, USutta, default_openai_settings, model_max_tokens
+from simsapa.app.app_data import AppData
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -1336,8 +1337,8 @@ class CompletionWorker(QRunnable):
         self.messages = messages
         self.openai_settings = openai_settings
 
-        self.query_started: datetime = datetime.now()
-        self.query_finished: Optional[datetime] = None
+        self.query_started_time: datetime = datetime.now()
+        self.query_finished_time: Optional[datetime] = None
 
         self.will_emit_finished = True
 

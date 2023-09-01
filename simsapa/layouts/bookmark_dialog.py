@@ -12,11 +12,11 @@ from sqlalchemy.sql import func
 from simsapa import IS_SWAY, DbSchemaName, logger
 from simsapa.app.helpers import compact_plain_text
 
-from simsapa.app.types import AppData
+from simsapa.app.app_data import AppData
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 
 class SelectionData(TypedDict):

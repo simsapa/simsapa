@@ -14,7 +14,7 @@ from pyArango.database import DBHandle
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, html_get_sutta_page_body, compact_rich_text, sutta_range_from_ref
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, html_get_sutta_page_body, compact_rich_text, pali_to_ascii, sutta_range_from_ref
 
 import helpers
 from simsapa.app.types import USutta
@@ -67,6 +67,9 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
+    title = consistent_nasal_m(title)
+    title_ascii = pali_to_ascii(title)
+
     body = html_get_sutta_page_body(page)
     body = bilara_html_post_process(body)
     content_html = '<div class="suttacentral html-text">' + consistent_nasal_m(body) + '</div>'
@@ -84,7 +87,8 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             source_uid = source_uid,
             source_info = x['_id'],
             # The All-embracing Net of Views
-            title = consistent_nasal_m(title),
+            title = title,
+            title_ascii = title_ascii,
             # dn1/en/bodhi
             uid = uid,
             # SN 12.23
@@ -103,7 +107,8 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             source_uid = source_uid,
             source_info = x['_id'],
             # The All-embracing Net of Views
-            title = consistent_nasal_m(title),
+            title = title,
+            title_ascii = title_ascii,
             # dn1/en/bodhi
             uid = uid,
             # SN 12.23
@@ -136,6 +141,9 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
         content_html = bilara_text_to_html(content, tmpl_json)
         content_plain = compact_rich_text(content_html)
 
+    title = consistent_nasal_m(title)
+    title_ascii = pali_to_ascii(title)
+
     uid = bilara_text_uid(x)
     source_uid = uid.split('/')[-1]
 
@@ -147,7 +155,8 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
         sutta = Am.Sutta(
             source_uid = source_uid,
             source_info = x['_id'],
-            title = consistent_nasal_m(title),
+            title = title,
+            title_ascii = title_ascii,
             # mn123/pli/ms
             uid = uid,
             # SN 12.23
@@ -170,7 +179,8 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
         sutta = Um.Sutta(
             source_uid = source_uid,
             source_info = x['_id'],
-            title = consistent_nasal_m(title),
+            title = title,
+            title_ascii = title_ascii,
             # mn123/pli/ms
             uid = uid,
             # SN 12.23

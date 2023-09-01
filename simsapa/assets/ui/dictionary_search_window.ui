@@ -512,7 +512,6 @@
      <string>&amp;Dictionary</string>
     </property>
     <addaction name="action_Show_Sidebar"/>
-    <addaction name="action_Select_Dictionaries"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
@@ -689,11 +688,6 @@
   <action name="action_Search_Query_Terms">
    <property name="text">
     <string>Search Query Terms</string>
-   </property>
-  </action>
-  <action name="action_Select_Dictionaries">
-   <property name="text">
-    <string>&amp;Select Dictionaries...</string>
    </property>
   </action>
   <action name="action_Lookup_Clipboard_in_Dictionary">

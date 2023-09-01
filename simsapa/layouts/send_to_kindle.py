@@ -10,7 +10,8 @@ from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, sanitized_sutta_html_for_export, sutta_content_plain
 from simsapa.app.simsapa_smtp import SimsapaSMTP
 
-from ..app.types import AppData, KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
+from simsapa.app.types import KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
+from simsapa.app.app_data import AppData
 
 class SendToKindleWindow(QMainWindow):
 
@@ -74,7 +75,7 @@ class SendToKindleWindow(QMainWindow):
             self.sutta_title_input.setText(f'{self.tab_sutta.sutta_ref} {self.tab_sutta.title}')
             self.send_tab_layout.addWidget(self.sutta_title_input)
         else:
-            self.send_tab_layout.addWidget(QLabel(f'<b>No selected sutta</b>'))
+            self.send_tab_layout.addWidget(QLabel('<b>No selected sutta</b>'))
 
         self.send_tab_layout.addItem(QtWidgets.QSpacerItem(0, 40, QSizeMinimum, QSizeMinimum))
 

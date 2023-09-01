@@ -23,7 +23,8 @@ from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 
-from ..app.types import AppData, QExpanding, QMinimum, QueryType, SuttaSearchWindowInterface, sutta_quote_from_url
+from simsapa.app.types import QExpanding, QMinimum, QueryType, SuttaSearchWindowInterface, sutta_quote_from_url
+from simsapa.app.app_data import AppData
 
 class ChapterItem(QStandardItem):
     title: str

@@ -551,6 +551,17 @@ def consistent_nasal_m(text: Optional[str] = None) -> str:
 
     return text.replace('ṃ', 'ṁ')
 
+def pali_to_ascii(text: Optional[str] = None) -> str:
+    if text is None:
+        return ''
+
+    # including √ (root sign) and replacing it with space, which gets stripped
+    # if occurs at the beginning or end
+    from_chars = "āīūṁṃṅñṭḍṇḷṛṣśĀĪŪṀṂṄÑṬḌṆḶṚṢŚ√"
+    to_chars   = "aiummnntdnlrssAIUMMNNTDNLRSS "
+
+    trans = str.maketrans(from_chars, to_chars)
+    return text.translate(trans).strip()
 
 def expand_quote_to_pattern_str(text: str) -> str:
     s = text

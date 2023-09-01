@@ -50,11 +50,19 @@ else:
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
+s = os.getenv('LOG_PERCENT_PROGRESS')
+if s is not None and s == 'true':
+    LOG_PERCENT_PROGRESS = True
+else:
+    LOG_PERCENT_PROGRESS = False
+
 TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
 TIMER_SPEED = 30
 
 SEARCH_TIMER_SPEED = 500
+
+INDEX_WRITER_MEMORY_MB = 512
 
 #s = os.getenv('USE_TEST_DATA')
 #if s is not None and s.lower() == 'true':
@@ -65,6 +73,8 @@ SEARCH_TIMER_SPEED = 500
 ASSETS_DIR = SIMSAPA_DIR.joinpath('assets')
 
 INDEX_DIR = ASSETS_DIR.joinpath('index')
+SUTTAS_INDEX_DIR = INDEX_DIR.joinpath('suttas')
+DICT_WORDS_INDEX_DIR = INDEX_DIR.joinpath('dict_words')
 
 GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 

@@ -29,12 +29,12 @@ SQLAlchemy-Utils = "~0.40.0"
 alembic = "~1.10.2"
 requests = "~2"
 appdirs = "~1.4.4"
-PyPDF2 = "~1.26.0"
+# PyPDF2 = "~1.26.0"
+# PyMuPDF = "~1"
 epub_meta = "~0.0.7"
-PyMuPDF = "~1"
 Pillow = "~9.3.0"
-pandas = "~1"
-openpyxl = "~3.0.10"
+# pandas = "~1"
+# openpyxl = "~3.0.10"
 semver = "~2.13.0"
 pyglossary = "~4"
 lxml = "~4.9.2"
@@ -84,6 +84,7 @@ werkzeug = "2.3.6"
 tornado = "6.3.2"
 
 tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa" }
+# tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa", rev = "229c10213b32de3ad4c905c2e968798f693afc28" }
 # tantivy = { path = "../libs-src/tantivy-py-gambhiro", develop = true }
 # tantivy = { path = "../libs-src/tantivy-py-gambhiro/target/wheels/tantivy-0.20.2rc3-cp311-cp311-manylinux_2_34_x86_64.whl" }
 
@@ -147,12 +148,12 @@ requires = [
 "alembic            >= 1.10.2,    < 1.11.0",
 "requests           >= 2.25.0,   < 3.0.0",
 "appdirs            >= 1.4.4,    < 1.5.0",
-"PyPDF2             >= 1.26.0,   < 1.27.0",
+# "PyPDF2             >= 1.26.0,   < 1.27.0",
+# "PyMuPDF            >= 1.18.0,   < 2.0.0",
 "epub_meta          >= 0.0.7,    < 0.1.0",
-"PyMuPDF            >= 1.18.0,   < 2.0.0",
 "Pillow             >= 9.3.0,    < 9.4.0",
-"pandas             >= 1.2.0,    < 2.0.0",
-"openpyxl           >= 3.0.10,   < 3.1.0",
+# "pandas             >= 1.2.0,    < 2.0.0",
+# "openpyxl           >= 3.0.10,   < 3.1.0",
 "semver             >= 2.13.0,   < 2.14.0",
 "pyglossary         >= 4.0.0,    < 5.0.0",
 "lxml               >= 4.9.2,    < 5.0.0",

@@ -5,22 +5,26 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import QPoint, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QKeySequence, QPixmap, QShortcut, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
-from simsapa.app.db.search_helpers import SearchResult
-from simsapa.app.types import AppData, DictionarySearchModeNameToType, QueryType, SearchMode, UDictWord, WindowPosSize
-from simsapa.layouts.dictionary_queries import DictionaryQueries, ExactQueryResult, ExactQueryWorker
+
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+from simsapa.app.search.helpers import SearchResult
+from simsapa.app.search.queries import SearchQueries
+
+from simsapa.app.types import DictionarySearchModeNameToType, QueryType, SearchArea, SearchMode, UDictWord, WindowPosSize
+from simsapa.app.app_data import AppData
+from simsapa.app.types import SearchParams
+from simsapa.app.search.dictionary_queries import ExactQueryResult
+
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
-from .search_query_worker import SearchQueryWorker
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
@@ -37,8 +41,6 @@ class WordScanPopupState(QWidget, HasFulltextList):
     _current_words: List[UDictWord]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
-    search_query_worker: Optional[SearchQueryWorker] = None
-    exact_query_worker: Optional[ExactQueryWorker] = None
 
     show_sutta_by_url = pyqtSignal(QUrl)
     show_words_by_url = pyqtSignal(QUrl)
@@ -56,6 +58,10 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._app_data: AppData = app_data
         self._current_words = []
 
+        self._queries = SearchQueries(self._app_data.db_session, self._app_data.api_url)
+        # FIXME do this in a way that font size updates when user changes the value
+        self._queries.dictionary_queries.dictionary_font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
+
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()
         self.messages_url = f'{self._app_data.api_url}/queues/{self.queue_id}'
@@ -66,9 +72,6 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.page_len = 20
 
-        self.thread_pool = QThreadPool()
-
-        self.queries = DictionaryQueries(self._app_data)
         self._autocomplete_model = QStandardItemModel()
 
         self._clipboard = self._app_data.clipboard
@@ -160,34 +163,6 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.dict_filter_dropdown = cmb
         self.search_extras.addWidget(self.dict_filter_dropdown)
 
-    def _init_search_query_worker(self, query: str = ""):
-        idx = self.dict_filter_dropdown.currentIndex()
-        source = self.dict_filter_dropdown.itemText(idx)
-        if source == "Dictionaries":
-            only_source = None
-        else:
-            only_source = source
-
-        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
-        self._last_query_time = datetime.now()
-
-        idx = self.search_mode_dropdown.currentIndex()
-        s = self.search_mode_dropdown.itemText(idx)
-        mode = DictionarySearchModeNameToType[s]
-
-        self.search_query_worker = SearchQueryWorker(
-            self._app_data.search_indexed.suttas_index,
-            self.page_len,
-            mode)
-
-        self.search_query_worker.set_query(query,
-                                           self._last_query_time,
-                                           disabled_labels,
-                                           None,
-                                           only_source)
-
-        self.search_query_worker.signals.finished.connect(partial(self._search_query_finished))
-
     def _get_css_extra(self) -> str:
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }} " + CSS_EXTRA_BODY
@@ -246,7 +221,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
     When the clipboard content changes, this window will display dictionary lookup results.
 </p>
 """
-        page_html = self.queries.render_html_page(body=msg, css_extra=self._get_css_extra())
+        page_html = self._queries.dictionary_queries.render_html_page(body=msg, css_extra=self._get_css_extra())
         self._set_qwe_html(page_html)
 
         self.qwe.show()
@@ -257,13 +232,19 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
         self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
+    def results_page(self, page_num: int) -> List[SearchResult]:
+        return self._queries.results_page(page_num)
+
+    def query_hits(self) -> int:
+        return self._queries.query_hits()
+
     def _set_qwe_html(self, html: str):
         self._current_html = html
         self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_temp_content_msg(self, html_body: str):
         self.tabs.setCurrentIndex(0)
-        page_html = self.queries.render_html_page(body=html_body, css_extra=self._get_css_extra())
+        page_html = self._queries.dictionary_queries.render_html_page(body=html_body, css_extra=self._get_css_extra())
         self.qwe.setHtml(page_html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_current_html(self):
@@ -274,7 +255,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         if len(words) == 0:
             return
 
-        page_html = self.queries.words_to_html_page(words, self._get_css_extra())
+        page_html = self._queries.dictionary_queries.words_to_html_page(words, self._get_css_extra())
         self._set_qwe_html(page_html)
 
     def _setup_search_tabs(self):
@@ -364,9 +345,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.tabs.setTabText(0, str(word.uid))
 
         self._current_words = [word]
-        word_html = self.queries.get_word_html(word)
+        word_html = self._queries.dictionary_queries.get_word_html(word)
 
-        page_html = self.queries.render_html_page(
+        page_html = self._queries.dictionary_queries.render_html_page(
             body = word_html['body'],
             css_head = word_html['css'],
             css_extra = self._get_css_extra(),
@@ -382,7 +363,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self.lookup_in_dictionary(query)
 
     def _show_word_by_uid(self, uid: str):
-        results = self.queries.get_words_by_uid(uid)
+        results = self._queries.dictionary_queries.get_words_by_uid(uid)
         if len(results) > 0:
             self._show_word(results[0])
 
@@ -431,40 +412,72 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self.fulltext_first_page_btn.setEnabled(True)
             self.fulltext_last_page_btn.setEnabled(True)
 
-    def _search_query_finished(self):
-        logger.info("_search_query_finished()")
+    def _search_query_finished(self, query_started_time: datetime):
+        if query_started_time != self._last_query_time:
+            return
+
+        if not self._queries.all_finished():
+            return
+
         self.stop_loading_animation()
 
-        if self.search_query_worker is None:
-            return
-
-        if self._last_query_time != self.search_query_worker.query_started:
-            return
-
+        # Restore the search icon, processing finished
         icon_search = QtGui.QIcon()
         icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
 
         self.search_button.setIcon(icon_search)
 
-        if self.query_hits() > 0:
-            self.tabs.setTabText(1, f"Results ({self.query_hits()})")
+        hits = self.query_hits()
+        if hits > 0:
+            self.tabs.setTabText(1, f"Results ({hits})")
         else:
             self.tabs.setTabText(1, "Results")
 
         self.render_fulltext_page()
 
-        results = self.search_query_worker.results_page(0)
+        results = self.results_page(0)
 
-        if len(results) > 0 and self.query_hits() == 1 and results[0]['uid'] is not None:
+        if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
             self._show_word_by_uid(results[0]['uid'])
 
-        self._update_fulltext_page_btn(self.query_hits())
+        self._update_fulltext_page_btn(hits)
 
-    def _start_query_worker(self, query: str):
+    def _get_search_params(self) -> SearchParams:
+        idx = self.dict_filter_dropdown.currentIndex()
+        source = self.dict_filter_dropdown.itemText(idx)
+        if source == "Dictionaries":
+            only_source = None
+        else:
+            only_source = source
+
+        idx = self.search_mode_dropdown.currentIndex()
+        s = self.search_mode_dropdown.itemText(idx)
+        mode = DictionarySearchModeNameToType[s]
+
+        return SearchParams(
+            mode = mode,
+            page_len = self.page_len,
+            # FIXME UI for selecting language
+            only_lang = None,
+            only_source = only_source,
+        )
+
+    def _start_query_workers(self, query_text: str = ""):
+        if len(query_text) == 0:
+            return
+        logger.info(f"_start_query_workers(): {query_text}")
+
         self.start_loading_animation()
-        self._init_search_query_worker(query)
-        if self.search_query_worker is not None:
-            self.thread_pool.start(self.search_query_worker)
+
+        self._last_query_time = datetime.now()
+
+        self._queries.start_search_query_workers(
+            query_text,
+            SearchArea.DictWords,
+            self._last_query_time,
+            partial(self._search_query_finished),
+            self._get_search_params(),
+        )
 
     def _handle_query(self, min_length: int = 4):
         query = self.search_input.text().strip()
@@ -481,7 +494,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
         icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self.search_button.setIcon(icon_processing)
 
-        self._start_query_worker(query)
+        self._start_query_workers(query)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text().strip()
@@ -491,8 +504,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._autocomplete_model.clear()
 
-        a = self.queries.autocomplete_hits(query)
+        a = self._queries.dictionary_queries.autocomplete_hits(query)
 
+        # FIXME can these be assigned without a loop?
         for i in a:
             self._autocomplete_model.appendRow(QStandardItem(i))
 
@@ -521,32 +535,17 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self._render_words(res)
 
-    def _init_exact_query_worker(self, query: str):
-        idx = self.dict_filter_dropdown.currentIndex()
-        source = self.dict_filter_dropdown.itemText(idx)
-        if source == "Dictionaries":
-            only_source = None
-        else:
-            only_source = source
-
-        disabled_labels = self._app_data.app_settings.get('disabled_dict_labels', None)
-
-        self.exact_query_worker = ExactQueryWorker(query, only_source, disabled_labels)
-
-        self.exact_query_worker.signals.finished.connect(partial(self._exact_query_finished))
-
-    def _start_exact_query_worker(self, query: str):
-        self._init_exact_query_worker(query)
-        if self.exact_query_worker is not None:
-            self.thread_pool.start(self.exact_query_worker)
-
     def _handle_exact_query(self, min_length: int = 4):
-        query = self.search_input.text().strip()
+        query_text = self.search_input.text().strip()
 
-        if len(query) < min_length:
+        if len(query_text) < min_length:
             return
 
-        self._start_exact_query_worker(query)
+        self._queries.start_exact_query_worker(
+            query_text,
+            partial(self._exact_query_finished),
+            self._get_search_params(),
+        )
 
     def _handle_result_select(self):
         logger.info("_handle_result_select()")
@@ -559,7 +558,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         selected_idx = self.fulltext_list.currentRow()
         if selected_idx < len(results):
-            word = self.queries.dict_word_from_result(results[selected_idx])
+            word = self._queries.dictionary_queries.dict_word_from_result(results[selected_idx])
             if word is not None:
                 self._show_word(word)
 
@@ -584,18 +583,6 @@ class WordScanPopupState(QWidget, HasFulltextList):
             self._search_timer.setSingleShot(True)
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
-
-    def query_hits(self) -> int:
-        if self.search_query_worker is None:
-            return 0
-        else:
-            return self.search_query_worker.query_hits()
-
-    def results_page(self, page_num: int) -> List[SearchResult]:
-        if self.search_query_worker is None:
-            return []
-        else:
-            return self.search_query_worker.results_page(page_num)
 
     def _handle_search_mode_changed(self):
         idx = self.search_mode_dropdown.currentIndex()

@@ -8,6 +8,9 @@ from simsapa import logger
 
 class HtmlResourcesServer:
     def __init__(self, resources_base_dir: Path):
+        if not resources_base_dir.exists():
+            logger.error(f"(HtmlResourcesServer) Path doesn't exist: {resources_base_dir}")
+
         self.resources_base_dir = resources_base_dir
 
         self.port = find_available_port_html_resources()
@@ -23,12 +26,12 @@ class HtmlResourcesServer:
         self.app.register_error_handler(404, self.resp_not_found)
 
     def resp_bad_request(self, e):
-        msg = f"Bad Request: {e}"
+        msg = f"(HtmlResourcesServer) Bad Request: {e}"
         logger.error(msg)
         return msg, 400
 
     def resp_not_found(self, e):
-        msg = f"Not Found: {e}"
+        msg = f"(HtmlResourcesServer) Not Found: {e}"
         logger.error(msg)
         return msg, 404
 
@@ -44,7 +47,7 @@ class HtmlResourcesServer:
         self.server_daemon.start()
 
     def _start_server_html_resources(self):
-        logger.info(f'Starting server on port {self.port}')
+        logger.info(f'(HtmlResourcesServer) Starting server on port {self.port}')
         os.environ["FLASK_ENV"] = "development"
 
         # Error in click.utils.echo() when console is unavailable

@@ -1,19 +1,21 @@
 import re
-from typing import List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict
 from binascii import crc32
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
+from sqlalchemy.orm.session import Session
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.app.db.search_helpers import SearchResult
+from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
-from ..app.types import AppData, Labels, QueryType, UDictWord
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-from .html_content import page_tmpl
+from simsapa.app.types import SearchParams
+from simsapa.app.types import QueryType, UDictWord
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+from simsapa.layouts.html_content import page_tmpl
 
 class ResultHtml(TypedDict):
     body: str
@@ -21,8 +23,14 @@ class ResultHtml(TypedDict):
     js: str
 
 class DictionaryQueries:
-    def __init__(self, app_data: AppData):
-        self._app_data = app_data
+    db_session: Session
+    api_url: Optional[str] = None
+    completion_cache: List[str] = []
+    dictionary_font_size = 18
+
+    def __init__(self, db_session: Session, api_url: Optional[str]):
+        self.db_session = db_session
+        self.api_url = api_url
 
     def is_complete_uid(self, uid: str) -> bool:
         # Check if uid contains a /, i.e. if it specifies the dictionary
@@ -34,13 +42,13 @@ class DictionaryQueries:
 
         if self.is_complete_uid(uid):
 
-            res = self._app_data.db_session \
+            res = self.db_session \
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid == uid) \
                 .all()
             results.extend(res)
 
-            res = self._app_data.db_session \
+            res = self.db_session \
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.uid == uid) \
                 .all()
@@ -48,13 +56,13 @@ class DictionaryQueries:
 
         else:
 
-            res = self._app_data.db_session \
+            res = self.db_session \
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid.like(f"{uid}/%")) \
                 .all()
             results.extend(res)
 
-            res = self._app_data.db_session \
+            res = self.db_session \
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.uid.like(f"{uid}/%")) \
                 .all()
@@ -64,12 +72,12 @@ class DictionaryQueries:
 
     def dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
         if x['schema_name'] == DbSchemaName.AppData.value:
-            word = self._app_data.db_session \
+            word = self.db_session \
                                  .query(Am.DictWord) \
                                  .filter(Am.DictWord.uid == x['uid']) \
                                  .first()
         else:
-            word = self._app_data.db_session \
+            word = self.db_session \
                                  .query(Um.DictWord) \
                                  .filter(Um.DictWord.uid == x['uid']) \
                                  .first()
@@ -103,8 +111,7 @@ class DictionaryQueries:
             if js_sum not in page_js.keys():
                 page_js[js_sum] = word_html['js']
 
-        font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
-        css = f"html {{ font-size: {font_size}px; }}"
+        css = f"html {{ font-size: {self.dictionary_font_size}px; }}"
         if css_extra:
             css_extra += css
         else:
@@ -138,8 +145,8 @@ class DictionaryQueries:
         try:
             with open(SIMSAPA_PACKAGE_DIR.joinpath('assets/css/dictionary.css'), 'r') as f: # type: ignore
                 css = f.read()
-                if self._app_data.api_url is not None:
-                    css = css.replace("http://localhost:8000", self._app_data.api_url)
+                if self.api_url is not None:
+                    css = css.replace("http://localhost:8000", self.api_url)
         except Exception as e:
             logger.error(f"Can't read dictionary.css: {e}")
             css = ""
@@ -156,7 +163,7 @@ class DictionaryQueries:
                                     css_head=css_head,
                                     js_head=js_head,
                                     js_body=js_body,
-                                    api_url=self._app_data.api_url))
+                                    api_url=self.api_url))
 
         return html
 
@@ -256,7 +263,7 @@ class DictionaryQueries:
         )
 
     def autocomplete_hits(self, query: str) -> set[str]:
-        a = set(filter(lambda x: x.lower().startswith(query.lower()), self._app_data.completion_cache['dict_words']))
+        a = set(filter(lambda x: x.lower().startswith(query.lower()), self.completion_cache))
         return a
 
 class ExactQueryResult(TypedDict):
@@ -272,16 +279,18 @@ class ExactQueryWorker(QRunnable):
 
     def __init__(self,
                  query: str,
-                 only_source: Optional[str] = None,
-                 disabled_labels: Optional[Labels] = None,
+                 finished_fn: Callable,
+                 params: SearchParams,
                  add_recent: bool = True):
 
         super().__init__()
         self.signals = ExactQueryWorkerSignals()
         self.query = query
-        self.only_source = only_source
-        self.disabled_labels = disabled_labels
+        self.only_lang = params['only_lang']
+        self.only_source = params['only_source']
         self.add_recent = add_recent
+
+        self.signals.finished.connect(finished_fn)
 
     @pyqtSlot()
     def run(self):
@@ -316,27 +325,23 @@ class ExactQueryWorker(QRunnable):
             logger.error(f"DB query failed: {e}")
 
         try:
+            def _only_lang(x: UDictWord):
+                if self.only_lang is not None:
+                    return (str(x.language) == self.only_lang)
+                else:
+                    return True
+
             def _only_in_source(x: UDictWord):
                 if self.only_source is not None:
                     return str(x.uid).endswith(f'/{self.only_source.lower()}')
                 else:
                     return True
 
-            def _not_in_disabled(x: UDictWord):
-                if self.disabled_labels is not None:
-                    for schema in self.disabled_labels.keys():
-                        for label in self.disabled_labels[schema]:
-                            if x.metadata.schema == schema and str(x.uid).endswith(f'/{label.lower()}'):
-                                return False
-                    return True
-                else:
-                    return True
+            if self.only_lang is not None:
+                res = list(filter(_only_lang, res))
 
             if self.only_source is not None:
                 res = list(filter(_only_in_source, res))
-
-            elif self.disabled_labels is not None:
-                res = list(filter(_not_in_disabled, res))
 
             ch = "." * len(self.query)
             # for 'dhamma' also match 'dhammā'

@@ -14,7 +14,8 @@ from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 # from ..app.file_doc import FileDoc
 # from ..app.db import userdata_models as Um
 
-from simsapa.app.types import AppData, GraphRequest, QueryType, USutta, UDictWord
+from simsapa.app.types import GraphRequest, QueryType, USutta, UDictWord
+from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

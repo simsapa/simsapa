@@ -382,7 +382,7 @@ def parse_dict(paths: StarDictPaths,
     dict_path = paths['dic_path']
 
     if dict_path is None:
-        msg = f"dict file is None"
+        msg = "dict file is None"
         logger.error(msg)
         raise DictError(msg)
 

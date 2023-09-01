@@ -55,20 +55,27 @@ def populate_dict_words_from_stardict(appdata_db: Session,
                                       limit: Optional[int] = None):
     logger.info("=== populate_dict_words_from_stardict() ===")
 
-    for d in stardict_base_path.glob("*.zip"):
-        logger.info(d)
-        # use label as the ZIP file name without the .zip extension
-        label = os.path.basename(d).replace('.zip', '')
-        paths = parse_stardict_zip(Path(d))
+    # Folder structure: stardict_base_path/lang/en/DPD.zip
 
-        import_stardict_as_new(appdata_db,
-                               DbSchemaName.AppData.value,
-                               None,
-                               paths,
-                               label,
-                               10000,
-                               ignore_synonyms,
-                               limit)
+    languages = [str(p.name) for p in stardict_base_path.joinpath('lang').iterdir()]
+
+    for lang in languages:
+
+        for d in stardict_base_path.joinpath("lang").joinpath(lang).glob("*.zip"):
+            logger.info(d)
+            # use label as the ZIP file name without the .zip extension
+            label = os.path.basename(d).replace('.zip', '')
+            paths = parse_stardict_zip(Path(d))
+
+            import_stardict_as_new(appdata_db,
+                                   DbSchemaName.AppData.value,
+                                   None,
+                                   paths,
+                                   lang,
+                                   label,
+                                   10000,
+                                   ignore_synonyms,
+                                   limit)
 
 
 def insert_db_version(appdata_db: Session):

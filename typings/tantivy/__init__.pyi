@@ -13,6 +13,7 @@ https://github.com/microsoft/pyright/blob/main/docs/type-stubs.md
 """
 
 from typing import List, Dict, Optional, Tuple, Union
+from pathlib import Path
 
 # from tantivy import *
 
@@ -66,12 +67,16 @@ class SearchResult:
     def __init__(self): ...
 
 class Searcher:
+    num_docs: int
+
     def __init__(self): ...
 
     def search(self,
                query: Query,
-               top_n: Optional[int] = None,
-               order_by_field: Optional[str] = None) -> SearchResult: ...
+               limit = 10,
+               count = True,
+               order_by_field: Optional[str] = None,
+               offset = 0) -> SearchResult: ...
 
     def doc(self, doc_address: DocAddress) -> Document: ...
 
@@ -101,6 +106,8 @@ class Index:
     def parse_query(self,
                     query: str,
                     fields: Optional[List[str]] = None) -> Query: ...
+
+    def exists(self, dir: Path) -> bool: ...
 
 class Snippet:
     def __init__(self): ...

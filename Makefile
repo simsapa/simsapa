@@ -21,6 +21,9 @@ sass-build:
 sass-watch:
 	sass --no-source-map --watch './simsapa/assets/sass/:./simsapa/assets/css/'
 
+requirements.txt:
+	poetry export --without-hashes -o requirements.txt
+
 tests:
 	USE_TEST_DATA=true pytest tests/
 

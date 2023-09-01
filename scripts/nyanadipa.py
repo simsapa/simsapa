@@ -15,7 +15,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
 
 load_dotenv()
 
@@ -52,11 +52,15 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     # logger.info(f"{ref} -- {title}")
 
+    title = consistent_nasal_m(title)
+    title_ascii = pali_to_ascii(title)
+
     content_html = consistent_nasal_m(html_text)
 
     sutta = Am.Sutta(
         source_uid = source_uid,
-        title = consistent_nasal_m(title),
+        title = title,
+        title_ascii = title_ascii,
         title_pali = '',
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),

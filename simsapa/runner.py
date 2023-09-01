@@ -39,66 +39,75 @@ def gui(url: Optional[str] = None):
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):
     """Query the database."""
 
-    from simsapa.app.db import search_tantivy
-    from simsapa.app.types import AppData
+    from simsapa.app.search.tantivy_index import TantivySearchQuery
+    from simsapa.app.search.queries import SearchQueries
+    from simsapa.app.db_helpers import get_db_engine_connection_session
 
-    app_data = AppData()
+    _, _, db_session = get_db_engine_connection_session()
+    queries = SearchQueries(db_session)
 
     if query_type == QueryType.suttas:
-        search_query = search_tantivy.TantivySearchQuery(
-            app_data.search_indexed.suttas_index,
-            20,
-        )
+
+        for _, ix in queries.search_indexes.suttas_lang_index.items():
+
+            search_query = TantivySearchQuery(ix, 20)
+            search_query.new_query(query)
+
+            if print_count:
+                print(f"Results count: {search_query.hits_count}")
+
+            if print_titles:
+                for i in search_query.get_all_results():
+                    print(i['title'])
+
     elif query_type == QueryType.words:
-        search_query = search_tantivy.TantivySearchQuery(
-            app_data.search_indexed.dict_words_index,
-            20,
-        )
+
+        for _, ix in queries.search_indexes.dict_words_lang_index.items():
+            search_query = TantivySearchQuery(ix, 20)
+            search_query.new_query(query)
+
+            if print_count:
+                print(f"Results count: {search_query.hits_count}")
+
+            if print_titles:
+                for i in search_query.get_all_results():
+                    print(i['title'])
+
     else:
         print("Unrecognized query type.")
         return
 
-    search_query.new_query(query)
-
-    if print_count:
-        print(f"Results count: {search_query.hits}")
-
-    if print_titles:
-        for i in search_query.get_all_results(highlight=False):
-            print(i['title'])
-
 @index_app.command("create")
 def index_create():
     """Create database indexes, removing existing ones."""
-    from simsapa.app.db.search_tantivy import TantivySearchIndexed
-    search_indexed = TantivySearchIndexed()
-    search_indexed.create_all()
+    from simsapa.app.search.tantivy_index import TantivySearchIndexes
+    from simsapa.app.app_data import AppData
+    app_data = AppData()
+    search_indexes = TantivySearchIndexes(app_data.db_session, remove_if_exists=True)
+    print(f"Has emtpy index: {search_indexes.has_empty_index()}")
 
 @index_app.command("reindex")
 def index_reindex():
     """Clear and rebuild database indexes."""
-    from simsapa.app.db.search_tantivy import TantivySearchIndexed
-    from simsapa.app.types import AppData
-    search_indexed = TantivySearchIndexed()
+    from simsapa.app.search.tantivy_index import TantivySearchIndexes
+    from simsapa.app.app_data import AppData
     app_data = AppData()
-
-    search_indexed.create_all()
-    search_indexed.index_all(app_data.db_session)
+    search_indexes = TantivySearchIndexes(app_data.db_session, remove_if_exists=True)
+    search_indexes.index_all()
 
 @index_app.command("suttas-lang")
 def index_suttas_lang(lang: str):
     """Create a separate index and index suttas from appdata of the given language."""
-    from simsapa.app.db.search_tantivy import TantivySearchIndexed
-    from simsapa.app.types import AppData
-    search_indexed = TantivySearchIndexed()
+    from simsapa.app.search.tantivy_index import TantivySearchIndexes
+    from simsapa.app.app_data import AppData
     app_data = AppData()
-
-    search_indexed.index_all_suttas_lang(app_data.db_session, lang)
+    search_indexes = TantivySearchIndexes(app_data.db_session)
+    search_indexes.index_all_suttas_lang(lang)
 
 @app.command("import-bookmarks")
 def import_bookmarks(path_to_csv: str):
     """Import bookmarks from a CSV file (such as an earlier export)"""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     bookmarks = app_data.import_bookmarks(path_to_csv)
     print(f"Imported {bookmarks} bookmarks.")
@@ -106,7 +115,7 @@ def import_bookmarks(path_to_csv: str):
 @app.command("import-suttas-to-userdata")
 def import_suttas_to_userdata(path_to_db: str):
     """Import suttas from an sqlite3 db to userdata."""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     suttas = app_data.import_suttas_to_userdata(path_to_db)
     print(f"Imported {suttas} suttas.")
@@ -114,7 +123,7 @@ def import_suttas_to_userdata(path_to_db: str):
 @app.command("export-prompts")
 def export_prompts(path_to_csv: str):
     """Export prompts to a CSV file"""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     prompts = app_data.export_prompts(path_to_csv)
     print(f"Exported {prompts} prompts.")
@@ -122,7 +131,7 @@ def export_prompts(path_to_csv: str):
 @app.command("import-prompts")
 def import_prompts(path_to_csv: str):
     """Import prompts from a CSV file (such as an earlier export)"""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     prompts = app_data.import_prompts(path_to_csv)
     print(f"Imported {prompts} prompts.")
@@ -130,7 +139,7 @@ def import_prompts(path_to_csv: str):
 @app.command("export-bookmarks")
 def export_bookmarks(path_to_csv: str):
     """Export bookmarks to a CSV file"""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     bookmarks = app_data.export_bookmarks(path_to_csv)
     print(f"Exported {bookmarks} bookmarks.")
@@ -138,7 +147,7 @@ def export_bookmarks(path_to_csv: str):
 @app.command("import-pali-course")
 def import_pali_course(path_to_toml: str):
     """Import a Pali Cource from a TOML file"""
-    from simsapa.app.types import AppData
+    from simsapa.app.app_data import AppData
     app_data = AppData()
     try:
         name = app_data.import_pali_course(path_to_toml)

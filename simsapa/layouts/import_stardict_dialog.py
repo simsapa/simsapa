@@ -9,7 +9,8 @@ from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, 
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import show_work_in_progress
-from simsapa.app.types import AppData
+from simsapa.app.app_data import AppData
+from simsapa.app.search.queries import SearchQueries
 
 from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 
@@ -42,6 +43,7 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         self.setupUi(self)
 
         self._app_data: AppData = app_data
+        self._queries = SearchQueries(self._app_data.db_session)
         self.reinit_index_fn = reinit_index_fn
 
         self.dict_select_data: List[DictData] = []
@@ -206,18 +208,24 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         action = values['action']
         label = values['label']
 
+        # FIXME select language
+        lang = 'en'
+
         if action == 'import_new':
             import_stardict_as_new(self._app_data.db_session,
                                    DbSchemaName.UserData.value,
-                                   self._app_data.search_indexed,
+                                   self._queries.search_indexes,
                                    paths,
+                                   lang,
                                    label)
+
         elif action == 'update_existing':
             id = values['dictionary_id']
             import_stardict_update_existing(self._app_data.db_session,
                                             DbSchemaName.UserData.value,
-                                            self._app_data.search_indexed,
+                                            self._queries.search_indexes,
                                             paths,
+                                            lang,
                                             id,
                                             label)
 

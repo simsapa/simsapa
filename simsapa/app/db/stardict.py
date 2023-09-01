@@ -6,8 +6,8 @@ from typing import Optional, List, TypedDict
 from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 from sqlalchemy.dialects.sqlite import insert
-from simsapa.app.db.search_tantivy import TantivySearchIndexed
-from simsapa.app.helpers import latinize
+from simsapa.app.search.tantivy_index import TantivySearchIndexes
+from simsapa.app.helpers import latinize, pali_to_ascii
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, parse_bword_links_to_ssp, stardict_to_dict_entries, parse_ifo
 from simsapa.app.dict_link_helpers import add_epd_pali_words_links, add_example_links, add_grammar_links, add_sandhi_links
@@ -20,6 +20,8 @@ from . import userdata_models as Um
 
 class DbDictEntry(TypedDict):
     word: str
+    word_ascii: str
+    language: str
     definition_plain: str
     definition_html: str
     synonyms: str
@@ -27,7 +29,7 @@ class DbDictEntry(TypedDict):
     source_uid: str
     dictionary_id: int
 
-def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDictEntry:
+def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str, lang: str) -> DbDictEntry:
     # TODO should we check for conflicting uids? generate with meaning count?
     w = x['word'].replace("'", "").replace('"', '').replace(' ', '-')
     uid = f"{w}/{dictionary_label}".lower()
@@ -41,6 +43,8 @@ def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str) -> DbDic
     return DbDictEntry(
         # copy values
         word = x['word'],
+        word_ascii = pali_to_ascii(x['word']),
+        language = lang,
         definition_plain = x['definition_plain'],
         definition_html = x['definition_html'],
         synonyms = ", ".join(syn),
@@ -79,6 +83,8 @@ def insert_db_words(db_session,
                 set_ = dict(
                     source_uid = stmt.excluded.source_uid,
                     word = stmt.excluded.word,
+                    word_ascii = stmt.excluded.word_ascii,
+                    language = stmt.excluded.language,
                     word_nom_sg = stmt.excluded.word_nom_sg,
                     inflections = stmt.excluded.inflections,
                     phonetic = stmt.excluded.phonetic,
@@ -111,8 +117,9 @@ def insert_db_words(db_session,
 
 def import_stardict_update_existing(db_session,
                                     schema_name: str,
-                                    search_index: Optional[TantivySearchIndexed],
+                                    search_indexes: Optional[TantivySearchIndexes],
                                     paths: StarDictPaths,
+                                    lang: str,
                                     dictionary_id: int,
                                     label: str,
                                     batch_size = 1000,
@@ -122,10 +129,10 @@ def import_stardict_update_existing(db_session,
         paths['syn_path'] = None
 
     words: List[DictEntry] = stardict_to_dict_entries(paths)
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label), words))
+    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, dictionary_id, label, lang), words))
     uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
-    if search_index is not None:
+    if search_indexes is not None:
         if schema_name == DbSchemaName.AppData.value:
             w: List[UDictWord] = db_session \
                 .query(Am.DictWord) \
@@ -137,7 +144,7 @@ def import_stardict_update_existing(db_session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, w)
+        search_indexes.index_dict_words(search_indexes.dict_words_lang_index[lang], schema_name, w)
 
 def add_links_to_words(db_session: Session,
                        words: List[DictEntry]) -> List[DictEntry]:
@@ -171,8 +178,9 @@ def add_links_to_words(db_session: Session,
 
 def import_stardict_as_new(db_session: Session,
                            schema_name: str,
-                           search_index: Optional[TantivySearchIndexed],
+                           search_indexes: Optional[TantivySearchIndexes],
                            paths: StarDictPaths,
+                           lang: str,
                            label: Optional[str] = None,
                            batch_size = 1000,
                            ignore_synonyms = False,
@@ -218,10 +226,10 @@ def import_stardict_as_new(db_session: Session,
         logger.error(e)
 
     d_id: int = int(str(dictionary.id))
-    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label), words))
+    db_words: List[DbDictEntry] = list(map(lambda x: db_entries(x, d_id, label, lang), words))
     uids = insert_db_words(db_session, schema_name, db_words, batch_size)
 
-    if search_index is not None:
+    if search_indexes is not None:
         if schema_name == DbSchemaName.AppData.value:
             w: List[UDictWord] = db_session \
                 .query(Am.DictWord) \
@@ -233,4 +241,4 @@ def import_stardict_as_new(db_session: Session,
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
 
-        search_index.index_dict_words(schema_name, w)
+        search_indexes.index_dict_words(search_indexes.dict_words_lang_index[lang], schema_name, w)

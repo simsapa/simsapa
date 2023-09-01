@@ -6,10 +6,10 @@ from bs4 import BeautifulSoup
 from PyQt6.QtCore import QUrl
 
 from simsapa import logger
-from simsapa.app.db.search_helpers import RE_ALL_BOOK_SUTTA_REF
+from simsapa.app.search.helpers import RE_ALL_BOOK_SUTTA_REF
 from simsapa.app.helpers import strip_html
-from simsapa.layouts.sutta_queries import QuoteScope
 from simsapa.app.types import QueryType
+from simsapa.app.search.sutta_queries import QuoteScope
 
 def add_sandhi_links(html_page: str) -> str:
     """

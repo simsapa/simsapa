@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QDialog, QLabe
 
 from simsapa import ASSETS_DIR
 from simsapa.app.export_helpers import save_sutta_as_html, save_suttas_as_epub, save_suttas_as_mobi, sutta_content_plain
-from simsapa.app.types import AppData, ExportFileFormat, ExportFileFormatToEnum, QSizeExpanding, QSizeMinimum, USutta
+from simsapa.app.types import ExportFileFormat, ExportFileFormatToEnum, QSizeExpanding, QSizeMinimum, USutta
+from simsapa.app.app_data import AppData
 
 class SuttaExportDialog(QDialog):
 

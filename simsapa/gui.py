@@ -9,15 +9,18 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 
+from simsapa import logger, SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
+
 from simsapa.app.api import start_server, find_available_port
-from simsapa import logger
-from simsapa import SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import check_delete_files, create_app_dirs, ensure_empty_graphs_cache
-from .app.types import AppData, QueryType
-from .app.windows import AppWindows
-from .layouts.download_appdata import DownloadAppdataWindow
-from .layouts.error_message import ErrorMessageWindow
+from simsapa.app.search.queries import SearchQueries
+from simsapa.app.types import QueryType
+from simsapa.app.app_data import AppData
+from simsapa.app.windows import AppWindows
+
+from simsapa.layouts.download_appdata import DownloadAppdataWindow
+from simsapa.layouts.error_message import ErrorMessageWindow
 from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
 # NOTE: Importing icons_rc is necessary once, in order for icon assets,
@@ -89,13 +92,14 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
         hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
+    queries = SearchQueries(app_data.db_session)
 
     if len(app.screens()) > 0:
         app_data.screen_size = app.primaryScreen().size()
         logger.info(f"Screen size: {app_data.screen_size}")
         logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
 
-    if app_data.search_indexed.has_empty_index():
+    if queries.search_indexes.has_empty_index():
         w = CreateSearchIndexWindow()
         w.show()
         status = app.exec()

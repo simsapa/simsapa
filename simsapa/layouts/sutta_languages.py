@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel)
 
-from simsapa.app.types import AppData
+from simsapa.app.app_data import AppData
 
 from simsapa.layouts.asset_management import AssetManagement
 

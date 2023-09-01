@@ -6,11 +6,14 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import DbSchemaName, GRAPHS_DIR, SIMSAPA_PACKAGE_DIR, logger
-from simsapa.app.db.search_helpers import SearchResult
+
+from simsapa.app.types import QueryType, SuttaQuote, USutta
+from simsapa.app.app_data import AppData
+from simsapa.app.search.helpers import SearchResult
 from simsapa.app.export_helpers import render_sutta_content
+
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
-from ..app.types import AppData, QueryType, SuttaQuote, USutta
-from .html_content import html_page
+from simsapa.layouts.html_content import html_page
 
 class SuttaTabWidget(QWidget):
 
@@ -85,6 +88,8 @@ class SuttaTabWidget(QWidget):
         self.set_qwe_html(html)
 
     def render_search_results(self, results: List[SearchResult]):
+        if len(results) == 0:
+            return
         content = ""
         colors = ["#fdf6e2", "#fae6b2"]
 

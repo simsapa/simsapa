@@ -7,7 +7,8 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
 from simsapa import DbSchemaName
-from simsapa.app.types import AppData, PaliGroupStats, UChallengeCourse, UChallengeGroup, UChallenge
+from simsapa.app.types import PaliGroupStats, UChallengeCourse, UChallengeGroup, UChallenge
+from simsapa.app.app_data import AppData
 
 
 def get_groups_in_course(db_session: Session, course: UChallengeCourse) -> List[UChallengeGroup]:

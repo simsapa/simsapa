@@ -5,11 +5,13 @@ from enum import Enum
 
 from PyQt6.QtCore import QUrl
 
+from sqlalchemy.orm.session import Session
+
 from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import consistent_nasal_m, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
-from simsapa.app.types import AppData, QueryType, SuttaQuote, USutta, sutta_quote_from_url
+from simsapa.app.types import QueryType, SuttaQuote, USutta, sutta_quote_from_url
 
 
 class QuoteScope(str, Enum):
@@ -26,9 +28,12 @@ QuoteScopeValues = {
 
 
 class SuttaQueries:
-    def __init__(self, app_data: AppData):
-        self._app_data = app_data
+    db_session: Session
+    api_url: Optional[str] = None
+    completion_cache: List[str] = []
 
+    def __init__(self, db_session: Session):
+        self.db_session = db_session
 
     def get_sutta_by_url(self, url: QUrl) -> Optional[USutta]:
         if url.host() != QueryType.suttas:
@@ -106,13 +111,13 @@ class SuttaQueries:
 
         results: List[USutta] = []
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Am.Sutta) \
             .filter(Am.Sutta.uid == uid) \
             .all()
         results.extend(res)
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Um.Sutta) \
             .filter(Um.Sutta.uid == uid) \
             .all()
@@ -126,13 +131,13 @@ class SuttaQueries:
 
                 nikaya_uid = re.sub(r'[0-9\.-]+$', '', uid)
 
-                res = self._app_data.db_session \
+                res = self.db_session \
                     .query(Am.Sutta) \
                     .filter(Am.Sutta.uid.like(f"{nikaya_uid}%")) \
                     .all()
                 results.extend(res)
 
-                res = self._app_data.db_session \
+                res = self.db_session \
                     .query(Um.Sutta) \
                     .filter(Um.Sutta.uid.like(f"{nikaya_uid}%")) \
                     .all()
@@ -161,7 +166,7 @@ class SuttaQueries:
         ref = normalize_sutta_ref(ref)
         ref = re.sub(r'pts *', '', ref)
 
-        multi_refs = self._app_data.db_session \
+        multi_refs = self.db_session \
             .query(Am.MultiRef) \
             .filter(Am.MultiRef.ref.like(f"%{ref}%")) \
             .all()
@@ -225,13 +230,13 @@ class SuttaQueries:
 
         results: List[USutta] = []
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Am.Sutta) \
             .filter(Am.Sutta.uid.like(f"{sutta_ref}/%")) \
             .all()
         results.extend(res)
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Um.Sutta) \
             .filter(Um.Sutta.uid.like(f"{sutta_ref}/%")) \
             .all()
@@ -245,13 +250,13 @@ class SuttaQueries:
 
                 nikaya_uid = re.sub(r'[0-9\.-]+$', '', sutta_ref)
 
-                res = self._app_data.db_session \
+                res = self.db_session \
                     .query(Am.Sutta) \
                     .filter(Am.Sutta.uid.like(f"{nikaya_uid}%")) \
                     .all()
                 results.extend(res)
 
-                res = self._app_data.db_session \
+                res = self.db_session \
                     .query(Um.Sutta) \
                     .filter(Um.Sutta.uid.like(f"{nikaya_uid}%")) \
                     .all()
@@ -280,13 +285,13 @@ class SuttaQueries:
 
         results: List[USutta] = []
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Am.Sutta) \
             .filter(Am.Sutta.content_plain.like(f"%{highlight_text}%")) \
             .all()
         results.extend(res)
 
-        res = self._app_data.db_session \
+        res = self.db_session \
             .query(Um.Sutta) \
             .filter(Um.Sutta.content_plain.like(f"%{highlight_text}%")) \
             .all()
@@ -296,3 +301,6 @@ class SuttaQueries:
 
         return results
 
+    def autocomplete_hits(self, query: str) -> set[str]:
+        a = set(filter(lambda x: x.lower().startswith(query.lower()), self.completion_cache))
+        return a

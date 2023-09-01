@@ -11,10 +11,11 @@ from sqlalchemy.sql import func
 
 from simsapa import DbSchemaName, logger
 # from ..app.file_doc import FileDoc
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, USutta, UDictWord, UMemo
+from simsapa.app.types import USutta, UDictWord, UMemo
+from simsapa.app.app_data import AppData
 
 
 class MemoPlainListModel(QAbstractListModel):

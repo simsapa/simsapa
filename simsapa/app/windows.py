@@ -9,14 +9,18 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBo
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
+
 from simsapa.app.db_helpers import get_db_engine_connection_session
 from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, is_local_db_obsolete, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, CompletionCache, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.app.search.queries import SearchQueries
+from simsapa.app.types import AppMessage, AppWindowInterface, CompletionCacheResult, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
+from simsapa.app.app_data import AppData
+from simsapa.app.search.sutta_queries import QuoteScope, QuoteScopeValues
+
 from simsapa.layouts.download_appdata import DownloadAppdataWindow
 from simsapa.layouts.ebook_reader import EbookReaderWindow
 from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.sutta_search import SuttaSearchWindow
 from simsapa.layouts.sutta_study import SuttaStudyWindow
@@ -43,6 +47,7 @@ class AppWindows:
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
         self._app = app
         self._app_data = app_data
+        self._queries = SearchQueries(self._app_data.db_session, self._app_data.api_url)
         self._hotkeys_manager = hotkeys_manager
         self._windows: List[AppWindowInterface] = []
         self._windowed_previews: List[PreviewWindow] = []
@@ -1185,9 +1190,10 @@ class AppWindows:
             if hasattr(w, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
                 w.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
 
-    def _set_completion_cache(self, values: CompletionCache):
+    def _set_completion_cache(self, values: CompletionCacheResult):
         logger.info(f"_set_completion_cache(): sutta_titles: {len(values['sutta_titles'])}, dict_words: {len(values['dict_words'])}")
-        self._app_data.completion_cache = values
+        self._queries.sutta_queries.completion_cache = values['sutta_titles']
+        self._queries.dictionary_queries.completion_cache = values['dict_words']
 
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
@@ -1487,7 +1493,7 @@ class CompletionCacheWorker(QRunnable):
             db_session.close()
             db_eng.dispose()
 
-            self.signals.finished.emit(CompletionCache(
+            self.signals.finished.emit(CompletionCacheResult(
                 sutta_titles=titles,
                 dict_words=words,
             ))

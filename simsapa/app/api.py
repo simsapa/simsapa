@@ -10,15 +10,15 @@ from simsapa import PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
 from simsapa import logger
 from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session
 
-from .types import GraphRequest, UBookmark, USutta, UDictWord
+from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
 from sqlalchemy import and_, or_
 
-from .db import appdata_models as Am
-from .db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from .graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
-                    dict_word_nodes_and_edges, sutta_graph_id)
+from simsapa.app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
+                               dict_word_nodes_and_edges, sutta_graph_id)
 
 app = Flask(__name__)
 app.config['ENV'] = 'development'
@@ -62,6 +62,7 @@ def queues(queue_id):
 @app.route('/assets/<path:filename>', methods=['GET'])
 def assets(filename):
     if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, filename)): # type: ignore
+        logger.error(f"api::assets(): File Not Found: {filename}")
         abort(404)
 
     return send_from_directory(PACKAGE_ASSETS_DIR, filename) # type: ignore

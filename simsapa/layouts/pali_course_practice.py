@@ -23,10 +23,11 @@ from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, QueryType, UChallenge, UChallengeGroup
+from simsapa.app.types import AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, QueryType, UChallenge, UChallengeGroup
+from simsapa.app.app_data import AppData
 
 
 class ChoiceButton(QPushButton):

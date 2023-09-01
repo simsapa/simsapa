@@ -2,7 +2,6 @@ import json
 import queue
 
 from functools import partial
-from simsapa.layouts.dictionary_queries import DictionaryQueries
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
@@ -10,11 +9,14 @@ from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
-from simsapa.layouts.sutta_search import SuttaSearchWindowState
+from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from ..app.types import AppData, QueryType, SuttaSearchWindowInterface, USutta
-from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
-from .word_scan_popup import WordScanPopupState
+from simsapa.app.types import QueryType, SuttaSearchWindowInterface, USutta
+from simsapa.app.app_data import AppData
+from simsapa.app.search.dictionary_queries import DictionaryQueries
+
+from simsapa.layouts.sutta_search import SuttaSearchWindowState
+from simsapa.layouts.word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
@@ -52,7 +54,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.page_len = 20
 
-        self.queries = DictionaryQueries(self._app_data)
+        self.queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
         self._setup_ui()
         self._connect_signals()

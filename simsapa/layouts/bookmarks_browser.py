@@ -4,8 +4,10 @@ import subprocess
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
-from PyQt6.QtCore import QModelIndex, QSize, QUrl, QUrlQuery, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QSize, QUrl, QUrlQuery, Qt, QAbstractTableModel, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
+
 from functools import partial
 from typing import Dict, List, Optional
 from urllib.parse import quote_plus
@@ -13,16 +15,14 @@ import shutil
 
 from sqlalchemy import and_, or_, not_
 
-from PyQt6.QtCore import QAbstractTableModel, Qt
-from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
-
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa import IS_SWAY, DbSchemaName, logger
 from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
-from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark, USutta
+from simsapa.app.types import AppWindowInterface, QueryType, UBookmark, USutta
+from simsapa.app.app_data import AppData
 
 # Keys with underscore prefix will not be shown in table columns.
 SuttaModelColToIdx = {
@@ -112,7 +112,7 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.resize(850, 650)
 
         if IS_SWAY:
-            cmd = f"""swaymsg 'for_window [title="Bookmarks Browser"] floating enable'"""
+            cmd = """swaymsg 'for_window [title="Bookmarks Browser"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
 
         self._central_widget = QtWidgets.QWidget(self)

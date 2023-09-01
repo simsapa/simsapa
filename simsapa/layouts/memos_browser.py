@@ -9,11 +9,12 @@ from PyQt6.QtWidgets import (QLineEdit, QMessageBox)
 from sqlalchemy.sql import func
 
 from simsapa import DbSchemaName, logger
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, UMemo
-from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
+from simsapa.app.types import AppWindowInterface, UMemo
+from simsapa.app.app_data import AppData
+from simsapa.assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
 
 
 class MemoListModel(QAbstractListModel):
