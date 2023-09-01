@@ -46,7 +46,8 @@ scipy = "~1.10.0"
 # For building on MacOS 11
 #scipy = { file = "scipy-1.10.0-cp311-cp311-macosx_11_0_arm64.whl" }
 python-idzip = "~0.3.7"
-typer = "~0.7.0"
+typer = "~0.9.0"
+click = "~8.1.7"
 tomlkit = "~0.11.6"
 feedparser = "~6.0.10"
 #pyqtkeybind = [{ version = "~0.0.9", platform = "linux" },]
@@ -163,7 +164,8 @@ requires = [
 "bokeh              >= 2.4.0,    < 3.0.0",
 "scipy              >= 1.10.0,   < 2.0.0",
 "python-idzip       >= 0.3.7,    < 0.4.0",
-"typer              >= 0.7.0,    < 0.8.0",
+"typer              >= 0.9.0,    < 0.10.0",
+"click              >= 8.1.7,    < 9.0.0",
 "tomlkit            >= 0.11.0,   < 0.12.0",
 "feedparser         >= 6.0.10,   < 6.1.0",
 "beautifulsoup4     >= 4.11.1,   < 4.12.0",

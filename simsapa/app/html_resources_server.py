@@ -50,13 +50,6 @@ class HtmlResourcesServer:
         logger.info(f'(HtmlResourcesServer) Starting server on port {self.port}')
         os.environ["FLASK_ENV"] = "development"
 
-        # Error in click.utils.echo() when console is unavailable
-        # https://github.com/pallets/click/issues/2415
-        if getattr(sys, 'frozen', False):
-            f = open(os.devnull, 'w')
-            sys.stdin = f
-            sys.stdout = f
-
         self.app.run(host='127.0.0.1', port=self.port, debug=False, load_dotenv=False)
 
 def find_available_port_html_resources() -> int:

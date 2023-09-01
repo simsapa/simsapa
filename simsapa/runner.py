@@ -8,13 +8,6 @@ from simsapa import SIMSAPA_DIR, logger
 from simsapa.app.types import QueryType
 from simsapa.app.helpers import create_app_dirs
 
-# Error in click.utils.echo() when console is unavailable
-# https://github.com/pallets/click/issues/2415
-if getattr(sys, 'frozen', False):
-    f = open(os.devnull, 'w')
-    sys.stdin = f
-    sys.stdout = f
-
 app = typer.Typer()
 index_app = typer.Typer()
 app.add_typer(index_app, name="index")
