@@ -192,7 +192,7 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Sutta_Index"/>
     <addaction name="action_Dictionary_Search"/>
-    <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Show_Word_Lookup"/>
     <addaction name="action_Bookmarks"/>
     <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
@@ -464,12 +464,12 @@
     <string>Ctrl+L</string>
    </property>
   </action>
-  <action name="action_Show_Word_Scan_Popup">
+  <action name="action_Show_Word_Lookup">
    <property name="checkable">
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Show Word Scan Popup</string>
+    <string>Show Word Lookup</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>

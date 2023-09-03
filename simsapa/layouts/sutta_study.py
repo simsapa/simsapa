@@ -17,7 +17,7 @@ from simsapa.app.search.dictionary_queries import DictionaryQueries
 
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
-from simsapa.layouts.word_scan_popup import WordScanPopupState
+from simsapa.layouts.word_lookup import WordLookupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
@@ -178,7 +178,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
-        self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
+        self.dictionary_state = WordLookupState(self._app_data, self.dictionary_layout, focus_input = False)
 
         self.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_by_url))
         self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))

@@ -18,7 +18,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.search.queries import SearchQueries
 
-from simsapa.app.types import DictionarySearchModeNameToType, QueryType, SearchArea, SearchMode, UDictWord, WindowPosSize, WordScanPopupInterface, WordScanPopupStateInterface
+from simsapa.app.types import DictionarySearchModeNameToType, QueryType, SearchArea, SearchMode, UDictWord, WindowPosSize, WordLookupInterface, WordLookupStateInterface
 from simsapa.app.app_data import AppData
 from simsapa.app.types import SearchParams
 from simsapa.app.search.dictionary_queries import ExactQueryResult
@@ -29,7 +29,7 @@ from simsapa.layouts.fulltext_list import HasFulltextList
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
-class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
+class WordLookupState(WordLookupStateInterface, HasFulltextList):
 
     search_input: QLineEdit
     wrap_layout: QBoxLayout
@@ -122,7 +122,7 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
         self.search_mode_dropdown.addItems(items)
         self.search_mode_dropdown.setFixedHeight(35)
 
-        mode = self._app_data.app_settings.get('word_scan_search_mode', SearchMode.FulltextMatch)
+        mode = self._app_data.app_settings.get('word_lookup_search_mode', SearchMode.FulltextMatch)
         values = list(map(lambda x: x[1], DictionarySearchModeNameToType.items()))
         idx = values.index(mode)
         self.search_mode_dropdown.setCurrentIndex(idx)
@@ -158,7 +158,7 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
         cmb = QComboBox()
         items = ["Dictionaries",]
         items.extend(self._get_filter_labels())
-        idx = self._app_data.app_settings.get('word_scan_dict_filter_idx', 0)
+        idx = self._app_data.app_settings.get('word_lookup_dict_filter_idx', 0)
 
         cmb.addItems(items)
         cmb.setFixedHeight(35)
@@ -219,11 +219,10 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
         self.qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         msg = """
-<p>
-    Select a word or phrase and copy to clipboard with Ctrl+C.
-    When the clipboard content changes, this window will display dictionary lookup results.
-</p>
-"""
+<p>Type in a word or phrase for dictionary lookup.</p>
+<p>When 'Find > Double Click ...' is enabled, double clicking on a word in a text will open this Word Lookup window.</p>
+<p>When 'Find > Cliboard Monitoring ...' is enabled, this window will automatically lookup words in the dictionary when the clipboard content changes.</p>
+        """
         page_html = self._queries.dictionary_queries.render_html_page(body=msg, css_extra=self._get_css_extra())
         self._set_qwe_html(page_html)
 
@@ -489,7 +488,7 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
             return
 
         idx = self.dict_filter_dropdown.currentIndex()
-        self._app_data.app_settings['word_scan_dict_filter_idx'] = idx
+        self._app_data.app_settings['word_lookup_dict_filter_idx'] = idx
         self._app_data._save_app_settings()
 
         # Not aborting, show the user that the app started processsing
@@ -591,7 +590,7 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
 
-        self._app_data.app_settings['word_scan_search_mode'] = DictionarySearchModeNameToType[m]
+        self._app_data.app_settings['word_lookup_search_mode'] = DictionarySearchModeNameToType[m]
         self._app_data._save_app_settings()
 
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
@@ -620,7 +619,7 @@ class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
 
         self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
-class WordScanPopup(WordScanPopupInterface):
+class WordLookup(WordLookupInterface):
     oldPos: QPoint
 
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
@@ -646,20 +645,20 @@ class WordScanPopup(WordScanPopupInterface):
 
         self.setWindowFlags(Qt.WindowType(flags))
 
-        self.setObjectName("WordScanPopup")
-        self.setStyleSheet("#WordScanPopup { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.setObjectName("WordLookup")
+        self.setStyleSheet("#WordLookup { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self._margin = 8
 
         self.focus_input = focus_input
 
-        self.s = WordScanPopupState(app_data, self.wrap_layout, self.focus_input)
+        self.s = WordLookupState(app_data, self.wrap_layout, self.focus_input)
 
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
 
     def _restore_size_pos(self):
-        p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_scan_popup_pos', None)
+        p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_lookup_pos', None)
         if p is not None:
             self.resize(p['width'], p['height'])
             self.move(p['x'], p['y'])
@@ -684,10 +683,10 @@ class WordScanPopup(WordScanPopupInterface):
             width = qr.width(),
             height = qr.height(),
         )
-        self._app_data.app_settings['word_scan_popup_pos'] = p
+        self._app_data.app_settings['word_lookup_pos'] = p
         self._app_data._save_app_settings()
 
-        msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.closed_word_scan_popup, data = '')
+        msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.closed_word_lookup, data = '')
         s = json.dumps(msg)
         APP_QUEUES['app_windows'].put_nowait(s)
 

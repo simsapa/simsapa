@@ -126,7 +126,7 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
         _translate = QtCore.QCoreApplication.translate
 
-        ac0 = QAction("Show Word Scan Popup")
+        ac0 = QAction("Show Word Lookup")
         ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
         menu.addAction(ac0)
 
@@ -139,7 +139,7 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
         menu.addAction(ac2)
 
         if hotkeys_manager is not None:
-            ac0.triggered.connect(hotkeys_manager.show_word_scan_popup)
+            ac0.triggered.connect(hotkeys_manager.show_word_lookup)
             ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
             ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
 

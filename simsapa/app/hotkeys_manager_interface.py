@@ -8,14 +8,15 @@ class HotkeysManagerInterface:
     def __init__(self, actions_manager: ActionsManager):
         self.actions_manager = actions_manager
 
-    def setup_window(self, window: QMainWindow):
+    # First arg: window
+    def setup_window(self, _: QMainWindow):
         raise NotImplementedError
 
     def unregister_all_hotkeys(self):
         raise NotImplementedError
 
-    def show_word_scan_popup(self):
-        self.actions_manager.show_word_scan_popup()
+    def show_word_lookup(self):
+        self.actions_manager.show_word_lookup()
 
     def lookup_clipboard_in_suttas(self):
         self.actions_manager.lookup_clipboard_in_suttas()

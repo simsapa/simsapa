@@ -182,8 +182,8 @@ class ApiAction(str, Enum):
     show_sutta_by_uid = 'show_sutta_by_uid'
     show_sutta = 'show_sutta'
     show_word_by_uid = 'show_word_by_uid'
-    show_word_scan_popup = 'show_word_scan_popup'
-    closed_word_scan_popup = 'closed_word_scan_popup'
+    show_word_lookup = 'show_word_lookup'
+    closed_word_lookup = 'closed_word_lookup'
     set_selected = "set_selected"
 
 # Messages sent via the localhost web API

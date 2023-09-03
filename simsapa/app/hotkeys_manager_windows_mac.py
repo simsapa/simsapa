@@ -11,13 +11,14 @@ class HotkeysManagerWindowsMac(HotkeysManagerInterface):
         super().__init__(actions_manager)
 
         try:
-            keyboard.add_hotkey("ctrl+shift+f6", self.show_word_scan_popup, suppress=True)
+            keyboard.add_hotkey("ctrl+shift+f6", self.show_word_lookup, suppress=True)
             keyboard.add_hotkey("ctrl+shift+s", self.lookup_clipboard_in_suttas, suppress=True)
             keyboard.add_hotkey("ctrl+shift+g", self.lookup_clipboard_in_dictionary, suppress=True)
         except Exception as e:
             logger.error(f"Can't init hotkeys: {e}")
 
-    def setup_window(self, window: QMainWindow):
+    # First arg: window
+    def setup_window(self, _: QMainWindow):
         pass
 
     def unregister_all_hotkeys(self):

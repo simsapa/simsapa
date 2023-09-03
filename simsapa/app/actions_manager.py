@@ -10,8 +10,8 @@ class ActionsManager:
     def __init__(self, api_port: int):
         self.api_url = f'http://localhost:{api_port}'
 
-    def show_word_scan_popup(self):
-        msg = ApiMessage(queue_id = 'all', action = ApiAction.show_word_scan_popup, data = '')
+    def show_word_lookup(self):
+        msg = ApiMessage(queue_id = 'all', action = ApiAction.show_word_lookup, data = '')
         self._send_to_all(msg)
 
     def lookup_clipboard_in_suttas(self):

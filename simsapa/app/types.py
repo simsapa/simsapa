@@ -334,94 +334,89 @@ def default_openai_settings() -> OpenAISettings:
     )
 
 class AppSettings(TypedDict):
-    notify_about_updates: bool
-    suttas_show_pali_buttons: bool
-    dictionary_show_pali_buttons: bool
-    show_toolbar: bool
-    link_preview: bool
-    first_window_on_startup: WindowType
-    word_scan_popup_pos: WindowPosSize
-    show_sutta_sidebar: bool
-    show_dictionary_sidebar: bool
-    show_related_suttas: bool
-    show_translation_and_pali_line_by_line: bool
-    show_all_variant_readings: bool
-    show_bookmarks: bool
-    sutta_font_size: int
-    sutta_max_width: int
+    audio_device_desc: str
+    audio_volume: float
+    clipboard_monitoring_for_dict: bool
+    dict_filter_idx: int
     dictionary_font_size: int
-    search_result_sizes: SearchResultSizes
+    dictionary_search_mode: SearchMode
+    dictionary_show_pali_buttons: bool
+    double_click_word_lookup: bool
+    export_format: ExportFileFormat
+    first_window_on_startup: WindowType
+    link_preview: bool
+    notify_about_updates: bool
+    openai: OpenAISettings
+    path_to_curl: Optional[str]
+    path_to_ebook_convert: Optional[str]
+    path_to_scp: Optional[str]
     search_as_you_type: bool
     search_completion: bool
-    double_click_dict_lookup: bool
-    clipboard_monitoring_for_dict: bool
-    sutta_search_mode: SearchMode
-    dictionary_search_mode: SearchMode
-    word_scan_search_mode: SearchMode
-    sutta_language_filter_idx: int
-    sutta_source_filter_idx: int
-    dict_filter_idx: int
-    word_scan_dict_filter_idx: int
-    audio_volume: float
-    audio_device_desc: str
-    path_to_curl: Optional[str]
-    path_to_scp: Optional[str]
-    path_to_ebook_convert: Optional[str]
-    smtp_sender_email: Optional[str]
-    smtp_preset: SmtpServicePreset
-    smtp_login_data: Optional[SmtpLoginData]
-    export_format: ExportFileFormat
+    search_result_sizes: SearchResultSizes
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
-    openai: OpenAISettings
+    show_all_variant_readings: bool
+    show_bookmarks: bool
+    show_dictionary_sidebar: bool
+    show_related_suttas: bool
+    show_sutta_sidebar: bool
+    show_toolbar: bool
+    show_translation_and_pali_line_by_line: bool
+    smtp_login_data: Optional[SmtpLoginData]
+    smtp_preset: SmtpServicePreset
+    smtp_sender_email: Optional[str]
+    sutta_font_size: int
+    sutta_language_filter_idx: int
+    sutta_max_width: int
+    sutta_search_mode: SearchMode
+    sutta_source_filter_idx: int
+    suttas_show_pali_buttons: bool
+    word_lookup_dict_filter_idx: int
+    word_lookup_pos: WindowPosSize
+    word_lookup_search_mode: SearchMode
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
-        notify_about_updates = True,
-        suttas_show_pali_buttons = True,
-        dictionary_show_pali_buttons = True,
-        show_toolbar = False,
-        link_preview = True,
-        first_window_on_startup = WindowType.SuttaSearch,
-        word_scan_popup_pos = WindowPosSize(
-            x = 100,
-            y = 100,
-            width = 400,
-            height = 500,
-        ),
-        show_sutta_sidebar = True,
-        show_dictionary_sidebar = True,
-        show_related_suttas = True,
-        show_translation_and_pali_line_by_line = False,
-        show_all_variant_readings = False,
-        show_bookmarks = True,
-        sutta_font_size = 22,
-        sutta_max_width = 75,
+        audio_device_desc = '',
+        audio_volume = 0.9,
+        clipboard_monitoring_for_dict = False,
+        dict_filter_idx = 0,
         dictionary_font_size = 18,
-        search_result_sizes = default_search_result_sizes(),
+        dictionary_search_mode = SearchMode.FulltextMatch,
+        dictionary_show_pali_buttons = True,
+        double_click_word_lookup = True,
+        export_format = ExportFileFormat.EPUB,
+        first_window_on_startup = WindowType.SuttaSearch,
+        link_preview = True,
+        notify_about_updates = True,
+        openai = default_openai_settings(),
+        path_to_curl = None,
+        path_to_ebook_convert = None,
+        path_to_scp = None,
         search_as_you_type = True,
         search_completion = True,
-        double_click_dict_lookup = True,
-        clipboard_monitoring_for_dict = False,
-        sutta_search_mode = SearchMode.FulltextMatch,
-        dictionary_search_mode = SearchMode.FulltextMatch,
-        word_scan_search_mode = SearchMode.FulltextMatch,
-        sutta_language_filter_idx = 0,
-        sutta_source_filter_idx = 0,
-        dict_filter_idx = 0,
-        word_scan_dict_filter_idx = 0,
-        audio_volume = 0.9,
-        audio_device_desc = '',
-        path_to_curl = None,
-        path_to_scp = None,
-        path_to_ebook_convert = None,
-        smtp_sender_email = None,
-        smtp_preset = SmtpServicePreset.NoPreset,
-        smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
-        export_format = ExportFileFormat.EPUB,
+        search_result_sizes = default_search_result_sizes(),
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
-        openai = default_openai_settings(),
+        show_all_variant_readings = False,
+        show_bookmarks = True,
+        show_dictionary_sidebar = True,
+        show_related_suttas = True,
+        show_sutta_sidebar = True,
+        show_toolbar = False,
+        show_translation_and_pali_line_by_line = False,
+        smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
+        smtp_preset = SmtpServicePreset.NoPreset,
+        smtp_sender_email = None,
+        sutta_font_size = 22,
+        sutta_language_filter_idx = 0,
+        sutta_max_width = 75,
+        sutta_search_mode = SearchMode.FulltextMatch,
+        sutta_source_filter_idx = 0,
+        suttas_show_pali_buttons = True,
+        word_lookup_dict_filter_idx = 0,
+        word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 400, height = 500),
+        word_lookup_search_mode = SearchMode.FulltextMatch,
     )
 
 # Message to show to the user.
@@ -434,7 +429,7 @@ class AppWindowInterface(QMainWindow):
     action_Notify_About_Updates: QAction
     action_Show_Toolbar: QAction
     action_Link_Preview: QAction
-    action_Show_Word_Scan_Popup: QAction
+    action_Show_Word_Lookup: QAction
     action_Search_As_You_Type: QAction
     action_Search_Completion: QAction
     action_Double_Click_on_a_Word_for_Dictionary_Lookup: QAction
@@ -548,7 +543,7 @@ class DictionaryQueriesInterface:
     get_words_by_uid: Callable
     words_to_html_page: Callable
 
-class WordScanPopupStateInterface(QWidget):
+class WordLookupStateInterface(QWidget):
     lookup_in_dictionary: Callable
     connect_preview_window_signals: Callable
 
@@ -562,9 +557,9 @@ class WordScanPopupStateInterface(QWidget):
     link_mouseover: pyqtSignal
     hide_preview: pyqtSignal
 
-class WordScanPopupInterface(QDialog):
+class WordLookupInterface(QDialog):
     center: Callable
-    s: WordScanPopupStateInterface
+    s: WordLookupStateInterface
 
 class LinkHoverData(TypedDict):
     href: str

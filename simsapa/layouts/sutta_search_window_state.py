@@ -358,7 +358,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.link_mouseleave.emit(href)
 
     def _page_dblclick(self):
-        if self._app_data.app_settings['double_click_dict_lookup']:
+        if self._app_data.app_settings['double_click_word_lookup']:
             self.page_dblclick.emit()
 
     def _emit_hide_preview(self):

@@ -20,7 +20,7 @@ from simsapa.app.types import (AppMessage, AppWindowInterface, BookmarksBrowserW
                                DictionarySearchWindowInterface, CompletionCacheResult, EbookReaderWindowInterface,
                                OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, QuoteScope, QuoteScopeValues,
                                SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType,
-                               WordScanPopupInterface, sutta_quote_from_url)
+                               WordLookupInterface, sutta_quote_from_url)
 
 from simsapa.app.app_data import AppData
 
@@ -44,7 +44,7 @@ class AppWindows:
         self._windowed_previews: List[PreviewWindow] = []
         self._sutta_index_window: Optional[AppWindowInterface] = None
 
-        self.word_scan_popup: Optional[WordScanPopupInterface] = None
+        self.word_lookup: Optional[WordLookupInterface] = None
 
         # Init PreviewWindow here, so that the first window can connect signals to it.
         self._init_preview_window()
@@ -72,7 +72,7 @@ class AppWindows:
     def _init_tasks(self):
         logger.profile("AppWindows::_init_tasks(): start")
 
-        self._init_word_scan_popup()
+        self._init_word_lookup()
         self._init_sutta_index_window()
         self._init_check_updates()
         self._check_updates()
@@ -103,11 +103,11 @@ class AppWindows:
                 msg: ApiMessage = json.loads(s)
                 logger.info("Handle message: %s" % msg)
 
-                if msg['action'] == ApiAction.show_word_scan_popup:
-                    self._toggle_word_scan_popup()
+                if msg['action'] == ApiAction.show_word_lookup:
+                    self._toggle_word_lookup()
 
-                if msg['action'] == ApiAction.closed_word_scan_popup:
-                    self._closed_word_scan_popup()
+                if msg['action'] == ApiAction.closed_word_lookup:
+                    self._closed_word_lookup()
 
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
@@ -489,76 +489,76 @@ class AppWindows:
 
         return self._finalize_view(view)
 
-    def _init_word_scan_popup(self):
-        if self.word_scan_popup is not None:
+    def _init_word_lookup(self):
+        if self.word_lookup is not None:
             return
 
-        logger.profile("AppWindows::_init_word_scan_popup()")
-        from simsapa.layouts.word_scan_popup import WordScanPopup
+        logger.profile("AppWindows::_init_word_lookup()")
+        from simsapa.layouts.word_lookup import WordLookup
 
-        self.word_scan_popup = WordScanPopup(self._app_data)
+        self.word_lookup = WordLookup(self._app_data)
 
         def _show_sutta_url(url: QUrl):
             self._show_sutta_by_url_in_search(url)
 
         def _show_words_url(url: QUrl):
-            if self.word_scan_popup:
-                self.word_scan_popup.s._show_word_by_url(url)
+            if self.word_lookup:
+                self.word_lookup.s._show_word_by_url(url)
 
-        self.word_scan_popup.s.show_sutta_by_url.connect(partial(_show_sutta_url))
-        self.word_scan_popup.s.show_words_by_url.connect(partial(_show_words_url))
+        self.word_lookup.s.show_sutta_by_url.connect(partial(_show_sutta_url))
+        self.word_lookup.s.show_words_by_url.connect(partial(_show_words_url))
 
-        self.word_scan_popup.s.connect_preview_window_signals(self._preview_window)
+        self.word_lookup.s.connect_preview_window_signals(self._preview_window)
 
-    def _toggle_word_scan_popup(self):
-        if self.word_scan_popup is None:
-            self._init_word_scan_popup()
+    def _toggle_word_lookup(self):
+        if self.word_lookup is None:
+            self._init_word_lookup()
 
-        assert(self.word_scan_popup is not None)
+        assert(self.word_lookup is not None)
 
-        if self.word_scan_popup.isVisible():
-            self.word_scan_popup.hide()
+        if self.word_lookup.isVisible():
+            self.word_lookup.hide()
 
         else:
-            self.word_scan_popup.show()
-            self.word_scan_popup.activateWindow()
+            self.word_lookup.show()
+            self.word_lookup.activateWindow()
 
-        self._set_all_show_word_scan_checked()
+        self._set_all_show_word_lookup_checked()
 
-    def _set_all_show_word_scan_checked(self):
-        if self.word_scan_popup is None:
+    def _set_all_show_word_lookup_checked(self):
+        if self.word_lookup is None:
             is_on = False
         else:
-            is_on = self.word_scan_popup.isVisible()
+            is_on = self.word_lookup.isVisible()
 
         for w in self._windows:
-            if hasattr(w, 'action_Show_Word_Scan_Popup'):
-                w.action_Show_Word_Scan_Popup.setChecked(is_on)
+            if hasattr(w, 'action_Show_Word_Lookup'):
+                w.action_Show_Word_Lookup.setChecked(is_on)
 
-    def _closed_word_scan_popup(self):
-        if self.word_scan_popup is not None:
-            self.word_scan_popup.close()
-            self.word_scan_popup = None
+    def _closed_word_lookup(self):
+        if self.word_lookup is not None:
+            self.word_lookup.close()
+            self.word_lookup = None
 
-        self._set_all_show_word_scan_checked()
+        self._set_all_show_word_lookup_checked()
 
     def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindowInterface):
         query = view.s._get_selection()
-        self._show_word_scan_popup(query = query, show_results_tab = True, include_exact_query = False)
+        self._show_word_lookup(query = query, show_results_tab = True, include_exact_query = False)
 
-    def _show_word_scan_popup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
-        if not self._app_data.app_settings['double_click_dict_lookup']:
+    def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
+        if not self._app_data.app_settings['double_click_word_lookup']:
             return
 
-        if self.word_scan_popup is None:
-            self._init_word_scan_popup()
+        if self.word_lookup is None:
+            self._init_word_lookup()
 
         else:
-            self.word_scan_popup.show()
-            self.word_scan_popup.activateWindow()
+            self.word_lookup.show()
+            self.word_lookup.activateWindow()
 
             if query is not None:
-                self.word_scan_popup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
+                self.word_lookup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
 
     def _toggle_show_dictionary_sidebar(self, view):
         is_on = view.action_Show_Sidebar.isChecked()
@@ -1149,9 +1149,9 @@ class AppWindows:
             if hasattr(w,'action_Search_Completion'):
                 w.action_Search_Completion.setChecked(checked)
 
-    def _set_double_click_dict_lookup_setting(self, view: AppWindowInterface):
+    def _set_double_click_word_lookup_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.isChecked()
-        self._app_data.app_settings['double_click_dict_lookup'] = checked
+        self._app_data.app_settings['double_click_word_lookup'] = checked
         self._app_data._save_app_settings()
 
         for w in self._windows:
@@ -1308,15 +1308,15 @@ class AppWindows:
                 view.action_Show_Bookmarks \
                     .triggered.connect(partial(self._toggle_show_bookmarks, view))
 
-        if hasattr(view, 'action_Show_Word_Scan_Popup'):
-            view.action_Show_Word_Scan_Popup \
-                .triggered.connect(partial(self._toggle_word_scan_popup))
-            if self.word_scan_popup is None:
+        if hasattr(view, 'action_Show_Word_Lookup'):
+            view.action_Show_Word_Lookup \
+                .triggered.connect(partial(self._toggle_word_lookup))
+            if self.word_lookup is None:
                 is_on = False
             else:
-                is_on = self.word_scan_popup.isVisible()
+                is_on = self.word_lookup.isVisible()
 
-            view.action_Show_Word_Scan_Popup.setChecked(is_on)
+            view.action_Show_Word_Lookup.setChecked(is_on)
 
         if hasattr(view, 'action_First_Window_on_Startup'):
             view.action_First_Window_on_Startup \
@@ -1370,9 +1370,9 @@ class AppWindows:
 
         if hasattr(view, 'action_Double_Click_on_a_Word_for_Dictionary_Lookup'):
             view.action_Double_Click_on_a_Word_for_Dictionary_Lookup \
-                .triggered.connect(partial(self._set_double_click_dict_lookup_setting, view))
+                .triggered.connect(partial(self._set_double_click_word_lookup_setting, view))
 
-            checked = self._app_data.app_settings.get('double_click_dict_lookup', True)
+            checked = self._app_data.app_settings.get('double_click_word_lookup', True)
             view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.setChecked(checked)
 
         if hasattr(view, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
