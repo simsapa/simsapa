@@ -184,6 +184,7 @@ class ApiAction(str, Enum):
     show_word_by_uid = 'show_word_by_uid'
     show_word_lookup = 'show_word_lookup'
     closed_word_lookup = 'closed_word_lookup'
+    hidden_word_lookup = 'hidden_word_lookup'
     set_selected = "set_selected"
 
 # Messages sent via the localhost web API

@@ -5,8 +5,8 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
-from PyQt6.QtCore import QPoint, QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QKeySequence, QPixmap, QShortcut, QStandardItemModel, QStandardItem, QScreen
+from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QComboBox, QCompleter, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
@@ -620,8 +620,6 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
         self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
 class WordLookup(WordLookupInterface):
-    oldPos: QPoint
-
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
         super().__init__()
 
@@ -675,7 +673,7 @@ class WordLookup(WordLookupInterface):
     def _noop(self):
         pass
 
-    def closeEvent(self, event: QCloseEvent):
+    def hideEvent(self, event: QHideEvent) -> None:
         qr = self.frameGeometry()
         p = WindowPosSize(
             x = qr.x(),
@@ -686,11 +684,19 @@ class WordLookup(WordLookupInterface):
         self._app_data.app_settings['word_lookup_pos'] = p
         self._app_data._save_app_settings()
 
-        msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.closed_word_lookup, data = '')
+        msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.hidden_word_lookup, data = '')
         s = json.dumps(msg)
         APP_QUEUES['app_windows'].put_nowait(s)
 
-        if self.s._clipboard is not None:
-            self.s._clipboard.dataChanged.connect(partial(self._noop))
+        return super().hideEvent(event)
 
-        event.accept()
+    def closeEvent(self, _: QCloseEvent) -> None:
+        # Don't close, hide the window so it doesn't have to be re-created.
+        self.hide()
+
+        # NOTE: if we did close, the clipboard dataChanged signal would also
+        # need to be connected to _noop()
+        #
+        # if self.s._clipboard is not None:
+        #     self.s._clipboard.dataChanged.connect(partial(self._noop))
+        # return super().closeEvent(event)

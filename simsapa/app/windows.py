@@ -109,6 +109,9 @@ class AppWindows:
                 if msg['action'] == ApiAction.closed_word_lookup:
                     self._closed_word_lookup()
 
+                if msg['action'] == ApiAction.hidden_word_lookup:
+                    self._hidden_word_lookup()
+
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
 
@@ -539,6 +542,15 @@ class AppWindows:
         if self.word_lookup is not None:
             self.word_lookup.close()
             self.word_lookup = None
+
+        self._set_all_show_word_lookup_checked()
+
+    def _hidden_word_lookup(self):
+        if self.word_lookup is None:
+            return
+
+        if self.word_lookup.isVisible():
+            self.word_lookup.hide()
 
         self._set_all_show_word_lookup_checked()
 
