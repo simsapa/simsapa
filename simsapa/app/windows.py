@@ -4,16 +4,17 @@ from typing import List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QThreadPool, QTimer, QUrl
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
-from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
+from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 
-from simsapa.app.db_session import get_db_engine_connection_session
-from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, is_local_db_obsolete, make_active_window, show_work_in_progress
+from simsapa.app.helpers import ReleasesInfo, UpdateInfo, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.search.queries import SearchQueries
+from simsapa.app.check_updates_worker import CheckUpdatesWorker
+from simsapa.app.completion_cache_worker import CompletionCacheWorker
 
 from simsapa.app.types import (AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface,
                                DictionarySearchWindowInterface, CompletionCacheResult, EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
@@ -1415,105 +1416,3 @@ class AppWindows:
 
         if hasattr(view, 'action_Library'):
             view.action_Library.setVisible(False)
-
-
-class UpdatesWorkerSignals(QObject):
-    have_app_update = pyqtSignal(dict)
-    have_db_update = pyqtSignal(dict)
-    local_db_obsolete = pyqtSignal(dict)
-    no_updates = pyqtSignal()
-
-class CheckUpdatesWorker(QRunnable):
-    signals: UpdatesWorkerSignals
-
-    def __init__(self):
-        super().__init__()
-        self.signals = UpdatesWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        logger.profile("CheckUpdatesWorker::run()")
-        # Test if connection to is working.
-        try:
-            import requests
-            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
-        except Exception as e:
-            logger.error("No Connection: Update info unavailable: %s" % e)
-            return None
-
-        try:
-            info = get_releases_info()
-
-            update_info = is_local_db_obsolete()
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.local_db_obsolete.emit(value)
-                return
-
-            update_info = has_update(info, EntryType.Application)
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.have_app_update.emit(value)
-                return
-
-            update_info = has_update(info, EntryType.Assets)
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.have_db_update.emit(value)
-                return
-
-            self.signals.no_updates.emit()
-
-        except Exception as e:
-            logger.error(e)
-
-class CompletionCacheWorkerSignals(QObject):
-    finished = pyqtSignal(dict)
-
-class CompletionCacheWorker(QRunnable):
-    signals: CompletionCacheWorkerSignals
-
-    def __init__(self):
-        super().__init__()
-        self.signals = CompletionCacheWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            db_eng, db_conn, db_session = get_db_engine_connection_session()
-
-            res = []
-            r = db_session.query(Am.Sutta.title).all()
-            res.extend(r)
-
-            r = db_session.query(Um.Sutta.title).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            titles = list(set(b))
-
-            res = []
-            r = db_session.query(Am.DictWord.word).all()
-            res.extend(r)
-
-            r = db_session.query(Um.DictWord.word).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            words = list(set(b))
-
-            db_conn.close()
-            db_session.close()
-            db_eng.dispose()
-
-            self.signals.finished.emit(CompletionCacheResult(
-                sutta_titles=titles,
-                dict_words=words,
-            ))
-
-        except Exception as e:
-            logger.error(e)
