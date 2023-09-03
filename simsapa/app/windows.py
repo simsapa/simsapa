@@ -512,15 +512,24 @@ class AppWindows:
     def _toggle_word_scan_popup(self):
         if self.word_scan_popup is None:
             self._init_word_scan_popup()
-            if self.word_scan_popup is not None:
-                self.word_scan_popup.show()
-                self.word_scan_popup.activateWindow()
+
+        assert(self.word_scan_popup is not None)
+
+        if self.word_scan_popup.isVisible():
+            self.word_scan_popup.hide()
 
         else:
-            self.word_scan_popup.close()
-            self.word_scan_popup = None
+            self.word_scan_popup.show()
+            self.word_scan_popup.activateWindow()
 
-        is_on = self.word_scan_popup is not None
+        self._set_all_show_word_scan_checked()
+
+    def _set_all_show_word_scan_checked(self):
+        if self.word_scan_popup is None:
+            is_on = False
+        else:
+            is_on = self.word_scan_popup.isVisible()
+
         for w in self._windows:
             if hasattr(w, 'action_Show_Word_Scan_Popup'):
                 w.action_Show_Word_Scan_Popup.setChecked(is_on)
@@ -530,9 +539,7 @@ class AppWindows:
             self.word_scan_popup.close()
             self.word_scan_popup = None
 
-        for w in self._windows:
-            if hasattr(w, 'action_Show_Word_Scan_Popup'):
-                w.action_Show_Word_Scan_Popup.setChecked(False)
+        self._set_all_show_word_scan_checked()
 
     def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindowInterface):
         query = view.s._get_selection()
@@ -545,7 +552,7 @@ class AppWindows:
         if self.word_scan_popup is None:
             self._init_word_scan_popup()
 
-        if self.word_scan_popup is not None:
+        else:
             self.word_scan_popup.show()
             self.word_scan_popup.activateWindow()
 
@@ -1303,7 +1310,11 @@ class AppWindows:
         if hasattr(view, 'action_Show_Word_Scan_Popup'):
             view.action_Show_Word_Scan_Popup \
                 .triggered.connect(partial(self._toggle_word_scan_popup))
-            is_on = self.word_scan_popup is not None
+            if self.word_scan_popup is None:
+                is_on = False
+            else:
+                is_on = self.word_scan_popup.isVisible()
+
             view.action_Show_Word_Scan_Popup.setChecked(is_on)
 
         if hasattr(view, 'action_First_Window_on_Startup'):
