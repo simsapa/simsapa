@@ -1,6 +1,7 @@
 import csv, re, json, os, shutil
 import os.path
 from pathlib import Path
+from functools import partial
 from typing import Dict, List, Optional, Tuple
 
 from deepmerge import always_merger
@@ -15,13 +16,14 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func, text
 from sqlalchemy import and_
 
-from PyQt6.QtCore import QSize, QThreadPool
+from PyQt6.QtCore import QSize, QThreadPool, QTimer
 from PyQt6.QtGui import QClipboard
 
 from simsapa import COURSES_DIR, DbSchemaName, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.db_helpers import find_or_create_db, get_db_session_with_schema, upgrade_db
+from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import bilara_text_to_segments
+from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
 from simsapa.app.types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup, USutta, UDictWord, UBookmark
 
@@ -38,6 +40,7 @@ class AppData:
     db_session: Session
     # Keys are db schema, and course group id
     pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()
+    search_indexes: Optional[TantivySearchIndexes] = None
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -45,6 +48,7 @@ class AppData:
                  app_db_path: Optional[Path] = None,
                  user_db_path: Optional[Path] = None,
                  api_port: Optional[int] = None):
+        logger.profile("AppData::__init__(): start")
 
         self.clipboard: Optional[QClipboard] = app_clipboard
 
@@ -55,14 +59,15 @@ class AppData:
         self._remove_marked_indexes()
 
         if app_db_path is None:
-            app_db_path = self._find_app_data_or_exit()
+            self._app_db_path = self._find_app_data_or_exit()
 
         if user_db_path is None:
-            user_db_path = USER_DB_PATH
+            self._user_db_path = USER_DB_PATH
         else:
-            user_db_path = user_db_path
+            self._user_db_path = user_db_path
 
-        find_or_create_db(user_db_path, DbSchemaName.UserData.value)
+        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path)
+        self._read_app_settings()
 
         self.graph_gen_pool = QThreadPool()
 
@@ -74,12 +79,45 @@ class AppData:
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
 
-        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(app_db_path, user_db_path)
+        # Wait 0.5s, then run slowish initialize tasks, e.g. search indexes, db check, upgrade and init, etc.
+        # By that time the first window will be opened and will not delay app.exec().
+        self.init_timer = QTimer()
+        self.init_timer.setSingleShot(True)
+        self.init_timer.timeout.connect(partial(self._init_tasks))
+        self.init_timer.start(500)
 
-        self._read_app_settings()
+        logger.profile("AppData::__init__(): end")
+
+    def _init_tasks(self):
+        self._init_search_indexes()
+        self._check_db()
         self._find_cli_paths()
         self._read_pali_groups_stats()
         self._ensure_user_memo_deck()
+
+    def _init_search_indexes(self):
+        logger.profile("_init_search_indexes()")
+        self.search_indexes = TantivySearchIndexes(self.db_session)
+        self._check_empty_index(self.search_indexes)
+
+    def _check_empty_index(self, search_indexes: TantivySearchIndexes):
+        if search_indexes.has_empty_index():
+            from simsapa.layouts.create_search_index import CreateSearchIndexWindow
+            w = CreateSearchIndexWindow()
+            w.show()
+            # FIXME handle empty index action
+            # logger.info(f"open_simsapa: {w.open_simsapa}")
+            # logger.info(f"app status: {status}")
+            # if not w.open_simsapa:
+            #     logger.info("Exiting.")
+            #     sys.exit(status)
+
+    def _check_db(self):
+        from simsapa.app.db_helpers import find_or_create_db
+        find_or_create_db(self._user_db_path, DbSchemaName.UserData.value)
+
+    def get_search_indexes(self) -> Optional[TantivySearchIndexes]:
+        return self.search_indexes
 
     def _remove_marked_indexes(self):
         p = ASSETS_DIR.joinpath('indexes_to_remove.txt')
@@ -109,13 +147,15 @@ class AppData:
             logger.error(f"Database file doesn't exist: {app_db_path}")
             exit(1)
 
-        upgrade_db(app_db_path, DbSchemaName.AppData.value)
+        # FIXME avoid loading alembic just for getting a db session
+        # upgrade_db(app_db_path, DbSchemaName.AppData.value)
 
         if not os.path.isfile(user_db_path):
             logger.error(f"Database file doesn't exist: {user_db_path}")
             exit(1)
 
-        upgrade_db(user_db_path, DbSchemaName.UserData.value)
+        # FIXME avoid loading alembic just for getting a db session
+        # upgrade_db(user_db_path, DbSchemaName.UserData.value)
 
         try:
             # Create an in-memory database

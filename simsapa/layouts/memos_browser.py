@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 from functools import partial
 from typing import List, Optional
 
@@ -30,7 +29,8 @@ class MemoListModel(QAbstractListModel):
             text = text[0:200] + " ..."
             return text
 
-    def rowCount(self, index):
+    # First arg: index
+    def rowCount(self, _):
         if self.memos:
             return len(self.memos)
         else:
@@ -141,7 +141,8 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.front_input.clear()
         self.back_input.clear()
 
-    def _memos_search_query(self, query: str):
+    # First arg: query
+    def _memos_search_query(self, _: str):
         return []
 
     def add_memo(self):
@@ -281,9 +282,12 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
                 memo.anki_note_id = res
                 self._app_data.db_session.commit()
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Add \
             .triggered.connect(partial(self.add_memo))
@@ -307,6 +311,7 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
 
 def is_anki_live() -> bool:
     try:
+        import requests
         res = requests.get('http://localhost:8765')
     except Exception:
         return False
@@ -319,6 +324,7 @@ def anki_request(action, **params):
 
 
 def anki_invoke(action, **params):
+    import requests
     res = requests.get(url='http://localhost:8765', json=anki_request(action, **params))
     response = res.json()
 

@@ -2,16 +2,15 @@ import re
 from typing import Callable, List, Optional, TypedDict
 from binascii import crc32
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
-from bs4 import BeautifulSoup
 
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
 from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.search.helpers import SearchResult
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
-from simsapa.app.types import SearchParams
+from simsapa.app.types import DictionaryQueriesInterface, SearchParams
 from simsapa.app.types import QueryType, UDictWord
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -22,7 +21,7 @@ class ResultHtml(TypedDict):
     css: str
     js: str
 
-class DictionaryQueries:
+class DictionaryQueries(DictionaryQueriesInterface):
     db_session: Session
     api_url: Optional[str] = None
     completion_cache: List[str] = []
@@ -159,11 +158,11 @@ class DictionaryQueries:
 
         js_head += DICTIONARY_JS
 
-        html = str(page_tmpl.render(content=body,
-                                    css_head=css_head,
-                                    js_head=js_head,
-                                    js_body=js_body,
-                                    api_url=self.api_url))
+        html = str(page_tmpl.substitute(content=body,
+                                        css_head=css_head,
+                                        js_head=js_head,
+                                        js_body=js_body,
+                                        api_url=self.api_url))
 
         return html
 
@@ -191,6 +190,8 @@ class DictionaryQueries:
         """
 
     def get_word_html(self, word: UDictWord) -> ResultHtml:
+        from bs4 import BeautifulSoup
+
         if word.definition_html is not None and word.definition_html != '':
             definition = str(word.definition_html)
 

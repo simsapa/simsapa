@@ -14,10 +14,7 @@ from simsapa.app.search.helpers import SearchResult
 from simsapa.app.app_data import AppData
 from simsapa.app.types import USutta, SuttaSearchWindowInterface
 
-from simsapa.layouts.send_to_kindle import SendToKindleWindow
-from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
-from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
-from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.links_sidebar import HasLinksSidebar
 from simsapa.layouts.fulltext_list import HasFulltextList
@@ -40,11 +37,12 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     lookup_in_dictionary_signal = pyqtSignal(str)
     graph_link_mouseover = pyqtSignal(dict)
+    lookup_in_new_sutta_window_signal = pyqtSignal(str)
 
     def __init__(self, app_data: AppData, parent=None) -> None:
         super().__init__(parent)
         self.setupUi(self)
-        logger.info("SuttaSearchWindow()")
+        logger.info("SuttaSearchWindow::__init__()")
 
         self._app_data = app_data
 
@@ -76,6 +74,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.init_fulltext_list()
         self.init_memos_sidebar()
         self.init_links_sidebar()
+
+        logger.profile("SuttaSearchWindow::__init__() end")
 
     def _setup_ui(self):
         self.links_tab_idx = 1
@@ -365,11 +365,14 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.splitter.setSizes([2000, 0])
 
     def _show_sutta_languages(self):
+        from simsapa.layouts.sutta_languages import SuttaLanguagesWindow
         w = SuttaLanguagesWindow(self._app_data, parent = self)
         w.show()
 
     def _show_send_to_kindle(self):
         tab = self.s._get_active_tab()
+
+        from simsapa.layouts.send_to_kindle import SendToKindleWindow
 
         def _open_send(html: str):
             w = SendToKindleWindow(self._app_data,
@@ -383,6 +386,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     def _show_send_to_remarkable(self):
         tab = self.s._get_active_tab()
 
+        from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
+
         def _open_send(html: str):
             w = SendToRemarkableWindow(self._app_data,
                                        tab_sutta = tab.sutta,
@@ -393,12 +398,18 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         tab.qwe.page().toHtml(_open_send)
 
     def _show_export_as(self):
+        from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
+
         tab = self.s._get_active_tab()
         if tab.sutta is None:
             return
 
         d = SuttaExportDialog(self._app_data, tab.sutta)
         d.exec()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.graph_link_mouseover.connect(partial(preview_window.graph_link_mouseover))
+        self.s.connect_preview_window_signals(preview_window)
 
     def _handle_close(self):
         self.close()

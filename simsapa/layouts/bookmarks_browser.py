@@ -21,7 +21,7 @@ from simsapa import IS_SWAY, DbSchemaName, logger
 from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
-from simsapa.app.types import AppWindowInterface, QueryType, UBookmark, USutta
+from simsapa.app.types import BookmarksBrowserWindowInterface, QueryType, UBookmark, USutta
 from simsapa.app.app_data import AppData
 
 # Keys with underscore prefix will not be shown in table columns.
@@ -88,7 +88,7 @@ class BookmarkItem(QStandardItem):
         self.setText(self.name)
 
 
-class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
+class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog):
 
     show_sutta_by_url = pyqtSignal(QUrl)
     current_bookmark_item: Optional[BookmarkItem] = None

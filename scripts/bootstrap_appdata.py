@@ -11,7 +11,7 @@ from sqlalchemy.orm.session import Session
 
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import create_app_dirs
+from simsapa.app.dir_helpers import create_app_dirs
 
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new

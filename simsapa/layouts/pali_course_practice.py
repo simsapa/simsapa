@@ -19,6 +19,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolButton, QVBoxLayout
 
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
@@ -983,6 +984,11 @@ class CoursePracticeWindow(AppWindowInterface):
         self.finished.emit()
 
         event.accept()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.hide_preview.connect(partial(preview_window._do_hide))
 
     def _handle_close(self):
         self.close()

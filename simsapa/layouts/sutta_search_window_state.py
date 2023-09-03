@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout)
 
 from sqlalchemy import and_
 
@@ -17,13 +17,14 @@ from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.queries import SearchQueries
-from simsapa.app.types import SearchParams
+from simsapa.app.types import SearchParams, SuttaSearchWindowStateInterface
 
 from simsapa.app.types import OpenPromptParams, QFixed, QMinimum, QExpanding, QueryType, SearchArea, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
 from simsapa.app.app_data import AppData
 from simsapa.app.search.sutta_queries import QuoteScope
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_sutta_languages
 
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
@@ -34,7 +35,7 @@ from simsapa.layouts.html_content import html_page
 from simsapa.layouts.help_info import setup_info_button
 
 
-class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
+class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, HasBookmarkDialog):
 
     searchbar_layout: Optional[QHBoxLayout]
     sutta_tabs_layout: Optional[QVBoxLayout]
@@ -99,7 +100,9 @@ class SuttaSearchWindowState(QWidget, HasMemoDialog, HasBookmarkDialog):
         self.features: List[str] = []
         self._app_data: AppData = app_data
 
-        self._queries = SearchQueries(self._app_data.db_session, self._app_data.api_url)
+        self._queries = SearchQueries(self._app_data.db_session,
+                                      self._app_data.get_search_indexes,
+                                      self._app_data.api_url)
 
         self.show_url_action_fn = self._show_sutta_by_url
 
@@ -1091,6 +1094,11 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._app_data.app_settings['sutta_search_mode'] = SuttaSearchModeNameToType[s]
         self._app_data._save_app_settings()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.hide_preview.connect(partial(preview_window._do_hide))
 
     def _connect_signals(self):
         if hasattr(self, 'search_button'):

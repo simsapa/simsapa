@@ -1,7 +1,6 @@
 import re
 from urllib.parse import parse_qs
 from typing import List, Optional
-from enum import Enum
 
 from PyQt6.QtCore import QUrl
 
@@ -11,23 +10,10 @@ from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import consistent_nasal_m, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
-from simsapa.app.types import QueryType, SuttaQuote, USutta, sutta_quote_from_url
+from simsapa.app.types import QueryType, SuttaQueriesInterface, SuttaQuote, USutta, sutta_quote_from_url, QuoteScope, QuoteScopeValues
 
 
-class QuoteScope(str, Enum):
-    Sutta = 'sutta'
-    Nikaya = 'nikaya'
-    All = 'all'
-
-
-QuoteScopeValues = {
-    'sutta': QuoteScope.Sutta,
-    'nikaya': QuoteScope.Nikaya,
-    'all': QuoteScope.All,
-}
-
-
-class SuttaQueries:
+class SuttaQueries(SuttaQueriesInterface):
     db_session: Session
     api_url: Optional[str] = None
     completion_cache: List[str] = []

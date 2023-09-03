@@ -1,5 +1,5 @@
 from pathlib import Path
-import socket, os, sys, threading
+import socket, os, threading
 from flask import Flask
 from flask_cors import CORS
 import logging

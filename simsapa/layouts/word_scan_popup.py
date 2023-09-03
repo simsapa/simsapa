@@ -9,7 +9,7 @@ from PyQt6.QtCore import QPoint, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QClipboard, QCloseEvent, QIcon, QKeySequence, QPixmap, QShortcut, QStandardItemModel, QStandardItem, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QComboBox, QCompleter, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
 
@@ -18,17 +18,18 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.search.queries import SearchQueries
 
-from simsapa.app.types import DictionarySearchModeNameToType, QueryType, SearchArea, SearchMode, UDictWord, WindowPosSize
+from simsapa.app.types import DictionarySearchModeNameToType, QueryType, SearchArea, SearchMode, UDictWord, WindowPosSize, WordScanPopupInterface, WordScanPopupStateInterface
 from simsapa.app.app_data import AppData
 from simsapa.app.types import SearchParams
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.fulltext_list import HasFulltextList
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 
-class WordScanPopupState(QWidget, HasFulltextList):
+class WordScanPopupState(WordScanPopupStateInterface, HasFulltextList):
 
     search_input: QLineEdit
     wrap_layout: QBoxLayout
@@ -58,7 +59,9 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._app_data: AppData = app_data
         self._current_words = []
 
-        self._queries = SearchQueries(self._app_data.db_session, self._app_data.api_url)
+        self._queries = SearchQueries(self._app_data.db_session,
+                                      self._app_data.get_search_indexes,
+                                      self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value
         self._queries.dictionary_queries.dictionary_font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
 
@@ -591,6 +594,11 @@ class WordScanPopupState(QWidget, HasFulltextList):
         self._app_data.app_settings['word_scan_search_mode'] = DictionarySearchModeNameToType[m]
         self._app_data._save_app_settings()
 
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.hide_preview.connect(partial(preview_window._do_hide))
+
     def _connect_signals(self):
         if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
@@ -612,7 +620,7 @@ class WordScanPopupState(QWidget, HasFulltextList):
 
         self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
 
-class WordScanPopup(QDialog):
+class WordScanPopup(WordScanPopupInterface):
     oldPos: QPoint
 
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:

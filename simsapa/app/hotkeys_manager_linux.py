@@ -1,4 +1,5 @@
-from PyQt6.QtCore import QAbstractNativeEventFilter, QAbstractEventDispatcher
+from PyQt6.QtCore import QAbstractNativeEventFilter
+# from PyQt6.QtCore import QAbstractEventDispatcher
 from PyQt6.QtWidgets import QMainWindow
 
 # from pyqtkeybind.x11 import X11KeyBinder

@@ -11,16 +11,17 @@ from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QW
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from simsapa.app.types import QueryType, SuttaSearchWindowInterface, USutta
+from simsapa.app.types import QueryType, SuttaStudyWindowInterface, USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_scan_popup import WordScanPopupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
+class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
     sutta_one_layout: QVBoxLayout
@@ -316,6 +317,11 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.sutta_one_state._get_active_tab().render_sutta_content()
         self.sutta_two_state._get_active_tab().render_sutta_content()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.dictionary_state.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.dictionary_state.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.dictionary_state.hide_preview.connect(partial(preview_window._do_hide))
 
     def _handle_close(self):
         self.close()

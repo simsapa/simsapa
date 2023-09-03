@@ -1,6 +1,5 @@
 import json
 from typing import List
-import requests
 
 from simsapa import logger
 from simsapa import ApiAction, ApiMessage
@@ -55,6 +54,7 @@ class ActionsManager:
         self._send_to_all(msg)
 
     def _send_to_all(self, msg: ApiMessage):
+        import requests
         url = f"{self.api_url}/queues/all"
         logger.info(f"_send_to_all(): {url}, {msg}")
         try:

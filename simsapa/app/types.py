@@ -4,8 +4,8 @@ from urllib.parse import parse_qs
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar
+from PyQt6.QtGui import QAction, QClipboard
+from PyQt6.QtWidgets import QDialog, QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName, ShowLabels
 
@@ -468,6 +468,20 @@ class AppWindowInterface(QMainWindow):
 
     _focus_search_input: Callable
 
+class SuttaSearchWindowStateInterface(QWidget):
+    open_sutta_new_signal: pyqtSignal
+    open_in_study_window_signal: pyqtSignal
+    link_mouseover: pyqtSignal
+    link_mouseleave: pyqtSignal
+    page_dblclick: pyqtSignal
+    hide_preview: pyqtSignal
+    bookmark_edit: pyqtSignal
+    open_gpt_prompt: pyqtSignal
+
+    _show_sutta_by_uid: Callable
+    _get_selection: Callable
+    _get_active_tab: Callable
+
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
     _update_sidebar_fulltext: Callable
@@ -481,6 +495,9 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     query_hits: Callable
     result_pages_count: Callable
 
+    queue_id: str
+    handle_messages: Callable
+
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
     action_Reload_Page: QAction
@@ -492,20 +509,69 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     action_Show_Bookmarks: QAction
     action_Find_in_Page: QAction
 
-    queue_id: str
     lookup_in_dictionary_signal: pyqtSignal
+    graph_link_mouseover: pyqtSignal
     lookup_in_new_sutta_window_signal: pyqtSignal
+
+    s: SuttaSearchWindowStateInterface
+
+class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
+    reload_sutta_pages: Callable
+
+class EbookReaderWindowInterface(SuttaSearchWindowInterface):
+    addToolBar: Callable
 
 class DictionarySearchWindowInterface(AppWindowInterface):
     action_Show_Sidebar: QAction
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
     action_Reload_Page: QAction
-    _toggle_sidebar: Callable
     results_page: Callable
     query_hits: Callable
     result_pages_count: Callable
+    _show_word_by_url: Callable
+    _toggle_sidebar: Callable
 
+    queue_id: str
+    handle_messages: Callable
+
+class BookmarksBrowserWindowInterface(AppWindowInterface):
+    reload_bookmarks: Callable
+    reload_table: Callable
+
+class SuttaQueriesInterface:
+    completion_cache: List[str]
+    get_sutta_by_url: Callable
+
+class DictionaryQueriesInterface:
+    completion_cache: List[str]
+    get_words_by_uid: Callable
+    words_to_html_page: Callable
+
+class WordScanPopupStateInterface(QWidget):
+    lookup_in_dictionary: Callable
+    connect_preview_window_signals: Callable
+
+    _clipboard: Optional[QClipboard]
+    _show_word_by_url: Callable
+    _current_words: List[UDictWord]
+
+    show_sutta_by_url: pyqtSignal
+    show_words_by_url: pyqtSignal
+    link_mouseleave: pyqtSignal
+    link_mouseover: pyqtSignal
+    hide_preview: pyqtSignal
+
+class WordScanPopupInterface(QDialog):
+    center: Callable
+    s: WordScanPopupStateInterface
+
+class LinkHoverData(TypedDict):
+    href: str
+    x: int
+    y: int
+    width: int
+    height: int
 
 class GraphRequest(TypedDict):
     sutta_uid: Optional[str]
@@ -557,6 +623,18 @@ class PaliChallengeType(str, Enum):
 class QueryType(str, Enum):
     suttas = "suttas"
     words = "words"
+
+class QuoteScope(str, Enum):
+    Sutta = 'sutta'
+    Nikaya = 'nikaya'
+    All = 'all'
+
+
+QuoteScopeValues = {
+    'sutta': QuoteScope.Sutta,
+    'nikaya': QuoteScope.Nikaya,
+    'all': QuoteScope.All,
+}
 
 class SuttaQuote(TypedDict):
     quote: str

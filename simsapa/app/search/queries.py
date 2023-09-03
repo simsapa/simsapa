@@ -17,7 +17,6 @@ from simsapa.app.types import SearchArea, SearchParams
 class SearchQueries:
     db_session: Session
     api_url: Optional[str] = None
-    search_indexes: TantivySearchIndexes
     search_query_workers: List[SearchQueryWorker] = []
     exact_query_worker: Optional[ExactQueryWorker] = None
     _page_len_per_worker: int = 20
@@ -25,19 +24,31 @@ class SearchQueries:
     sutta_queries: SuttaQueries
     dictionary_queries: DictionaryQueries
 
-    def __init__(self, db_session: Session, api_url: Optional[str] = None, page_len = 20):
+    def __init__(self,
+                 db_session: Session,
+                 search_indexes_getter_fn: Callable,
+                 api_url: Optional[str] = None,
+                 page_len = 20):
+        logger.profile("SearchQueries::__init__(): start")
+
         self.db_session = db_session
         self.api_url = api_url
-        self.search_indexes = TantivySearchIndexes(self.db_session)
         self.sutta_queries = SuttaQueries(self.db_session)
         self.dictionary_queries = DictionaryQueries(self.db_session, self.api_url)
+        self._search_indexes_getter_fn = search_indexes_getter_fn
+        self._search_indexes: Optional[TantivySearchIndexes] = None
 
         self.thread_pool = QThreadPool()
 
         self._page_len = page_len
 
-    def reinit_index(self):
-        self.search_indexes = TantivySearchIndexes(self.db_session)
+        logger.profile("SearchQueries::__init__(): end")
+
+    def reinit_indexes(self):
+        self._search_indexes = TantivySearchIndexes(self.db_session)
+
+    def set_search_indexes(self):
+        self._search_indexes = self._search_indexes_getter_fn()
 
     def running_queries(self) -> List[SearchQueryWorker]:
         return [i for i in self.search_query_workers if i.query_finished_time is None]
@@ -60,6 +71,12 @@ class SearchQueries:
                                    query_started_time: datetime,
                                    finished_fn: Callable,
                                    params: SearchParams):
+        self.set_search_indexes()
+        if self._search_indexes is None:
+            logger.error("self._search_indexes is None")
+            return
+
+        assert(self._search_indexes is not None)
 
         for i in self.search_query_workers:
             i.will_emit_finished = False
@@ -76,12 +93,12 @@ class SearchQueries:
             if params['only_lang'] is not None:
                 languages =  [params['only_lang']]
             else:
-                languages = self.search_indexes.suttas_lang_index.keys()
+                languages = self._search_indexes.suttas_lang_index.keys()
 
             for lang in languages:
 
                 logger.info(f"SearchQueryWorker for {lang}")
-                w = SearchQueryWorker(self.search_indexes.suttas_lang_index[lang],
+                w = SearchQueryWorker(self._search_indexes.suttas_lang_index[lang],
                                     query_text,
                                     query_started_time,
                                     finished_fn,
@@ -94,12 +111,12 @@ class SearchQueries:
             if params['only_lang'] is not None:
                 languages =  [params['only_lang']]
             else:
-                languages = self.search_indexes.dict_words_lang_index.keys()
+                languages = self._search_indexes.dict_words_lang_index.keys()
 
             for lang in languages:
 
                 logger.info(f"SearchQueryWorker for {lang}")
-                w = SearchQueryWorker(self.search_indexes.dict_words_lang_index[lang],
+                w = SearchQueryWorker(self._search_indexes.dict_words_lang_index[lang],
                                     query_text,
                                     query_started_time,
                                     finished_fn,

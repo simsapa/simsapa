@@ -17,7 +17,8 @@ from simsapa import DbSchemaName, logger
 from simsapa.app.db import userdata_models as Um
 
 import helpers
-from simsapa.app.helpers import create_app_dirs, compact_rich_text, consistent_nasal_m, pali_to_ascii, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
+from simsapa.app.helpers import compact_rich_text, consistent_nasal_m, pali_to_ascii, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
+from simsapa.app.dir_helpers import create_app_dirs
 
 load_dotenv()
 

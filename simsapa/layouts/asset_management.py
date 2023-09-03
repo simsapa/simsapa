@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 import tarfile
 from PyQt6.QtGui import QCloseEvent, QMovie
-import requests
 import threading
 from typing import Callable, List, Optional
 from PyQt6 import QtWidgets
@@ -24,7 +23,7 @@ from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_helpers import get_db_session_with_schema
+from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
 from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
@@ -343,6 +342,7 @@ class AssetManagement(QMainWindow):
             return
 
         try:
+            import requests
             requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "No connection, cannot download database: %s" % e
@@ -627,6 +627,7 @@ class ReleasesWorker(QRunnable):
         logger.info("ReleasesWorker::run()")
 
         try:
+            import requests
             requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "<p>Cannot download releases info.</p><p>%s</p>" % e
@@ -749,6 +750,7 @@ class AssetsWorker(QRunnable):
         file_path = folder_path.joinpath(file_name)
 
         try:
+            import requests
             with requests.get(url, stream=True) as r:
                 chunk_size = 8192
                 read_bytes = 0

@@ -1,20 +1,12 @@
 import json
-from typing import TypedDict
+
 from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebChannel import QWebChannel
 
 from simsapa import logger
-
-
-class LinkHoverData(TypedDict):
-    href: str
-    x: int
-    y: int
-    width: int
-    height: int
-
+from simsapa.app.types import LinkHoverData
 
 class Helper(QObject):
 

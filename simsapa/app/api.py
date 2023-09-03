@@ -1,14 +1,14 @@
 from pathlib import Path
-import queue, json, socket, os, sys
+import queue, json, os
 from typing import Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
 import logging
 
-from simsapa import PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
+from simsapa import PACKAGE_ASSETS_DIR
 from simsapa import logger
-from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
@@ -16,9 +16,6 @@ from sqlalchemy import and_, or_
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-
-from simsapa.app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
-                               dict_word_nodes_and_edges, sutta_graph_id)
 
 app = Flask(__name__)
 app.config['ENV'] = 'development'
@@ -124,6 +121,9 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
 
 @app.route('/generate_graph', methods=['POST'])
 def api_generate_graph():
+    from simsapa.app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
+                                   dict_word_nodes_and_edges, sutta_graph_id)
+
     try:
         if request.json is None:
             return "Bad Request", 400
@@ -333,14 +333,4 @@ def start_server(port: int, q: queue.Queue):
     global server_queue
     server_queue = q
 
-    # Run this here, not in AppData.__init__(), so that db_helpers module loads
-    # in this thread and doesn't block the main thread opening the first window.
-    find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
-
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)
-
-def find_available_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('', 0))
-    _, port = sock.getsockname()
-    return port

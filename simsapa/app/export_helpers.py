@@ -7,8 +7,6 @@ from typing import List, Optional, Tuple
 from PyQt6.QtCore import QUrl
 
 from sqlalchemy.orm.session import Session
-from bs4 import BeautifulSoup
-from bs4.element import Tag, ResultSet
 from ebooklib import epub
 from simsapa.app.search.helpers import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
 
@@ -355,6 +353,9 @@ def add_href_sutta_links_in_text(db_session: Session,
     return linked_content
 
 def add_sutta_links(db_session: Session, html_content: str) -> str:
+    from bs4 import BeautifulSoup
+    from bs4.element import Tag, ResultSet
+
     # Interferes with sutta ref linking if &nbsp; is used between the nikaya and section numbers.
     html_content = html_content \
         .replace("&nbsp;", " ") \

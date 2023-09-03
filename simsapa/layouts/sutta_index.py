@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QMenu, QMenuBar, QSizePolicy, QVBoxLayout
 
 from simsapa import HTML_RESOURCES_APPDATA_DIR, IS_SWAY, SIMSAPA_PACKAGE_DIR, logger
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa.layouts.preview_window import PreviewWindow
 
 from simsapa.app.html_resources_server import HtmlResourcesServer
 from simsapa.app.types import AppWindowInterface, QueryType
@@ -133,6 +134,11 @@ class SuttaIndexWindow(AppWindowInterface):
 
     def _handle_hide(self):
         self.close()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.hide_preview.connect(partial(preview_window._do_hide))
 
     def closeEvent(self, event: QCloseEvent):
         event.accept()

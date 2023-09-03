@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
 from PyQt6.QtGui import QMovie
 
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa import logger
 

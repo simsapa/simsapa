@@ -23,7 +23,7 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy import and_
 
 from simsapa import ShowLabels
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from .db import appdata_models as Am
 from .db import userdata_models as Um

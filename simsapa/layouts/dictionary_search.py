@@ -27,6 +27,7 @@ from simsapa.app.types import SearchParams
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 
+from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.memo_dialog import HasMemoDialog
@@ -80,7 +81,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._recent: List[UDictWord] = []
         self._current_words: List[UDictWord] = []
 
-        self._queries = SearchQueries(self._app_data.db_session, self._app_data.api_url)
+        self._queries = SearchQueries(self._app_data.db_session,
+                                      self._app_data.get_search_indexes,
+                                      self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value
         self._queries.dictionary_queries.dictionary_font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
 
@@ -205,7 +208,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         event.accept()
 
     def reinit_index(self):
-        self._queries.reinit_index()
+        self._queries.reinit_indexes()
 
     def handle_messages(self):
         if self.queue_id in APP_QUEUES.keys():
@@ -989,6 +992,11 @@ QWidget:focus { border: 1px solid #1092C3; }
             self.splitter.setSizes([2000, 2000])
         else:
             self.splitter.setSizes([2000, 0])
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.hide_preview.connect(partial(preview_window._do_hide))
 
     def _handle_close(self):
         self.close()

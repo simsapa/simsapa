@@ -1,5 +1,4 @@
 import time
-import requests
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
@@ -74,6 +73,7 @@ class GraphGenerator(QRunnable):
     @pyqtSlot()
     def run(self):
         try:
+            import requests
             p = GraphRequest(
                 sutta_uid=self.sutta_uid,
                 dict_word_uid=self.dict_word_uid,

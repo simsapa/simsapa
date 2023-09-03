@@ -1,16 +1,8 @@
 from enum import Enum
 from pathlib import Path
-import shutil
 from typing import Dict, List, Optional, TypedDict
-import html
-from bs4 import BeautifulSoup
-import json
-import requests
-import semver
-import os
-import sys
-import re
-import platform
+import os, sys, re, platform, socket
+import html, json, semver
 
 import markdown
 import tomlkit
@@ -18,12 +10,12 @@ import tomlkit
 from PyQt6.QtWidgets import QMainWindow, QMessageBox
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QUrl, QUrlQuery
 
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
 from simsapa.app.db import appdata_models as Am
 
-from simsapa import APP_DB_PATH, ASSETS_DIR, COURSES_DIR, EBOOK_UNZIP_DIR, RELEASES_FALLBACK_JSON, GRAPHS_DIR, HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, SIMSAPA_APP_VERSION, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR, SIMSAPA_RELEASES_BASE_URL, USER_DB_PATH, logger
-
+from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
+                     SIMSAPA_RELEASES_BASE_URL, logger)
 
 class SuttaRange(TypedDict):
     # sn30.7-16
@@ -32,44 +24,9 @@ class SuttaRange(TypedDict):
     end: Optional[int] # 16
 
 
-def create_app_dirs():
-    for d in [SIMSAPA_DIR,
-              ASSETS_DIR,
-              GRAPHS_DIR,
-              COURSES_DIR,
-              EBOOK_UNZIP_DIR,
-              HTML_RESOURCES_APPDATA_DIR,
-              HTML_RESOURCES_USERDATA_DIR]:
-
-        if not d.exists():
-            d.mkdir(parents=True, exist_ok=True)
-
-def ensure_empty_graphs_cache():
-    if GRAPHS_DIR.exists():
-        shutil.rmtree(GRAPHS_DIR)
-
-    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
-
-def check_delete_files():
-    p = ASSETS_DIR.joinpath("delete_files_for_upgrade.txt")
-    if not p.exists():
-        return
-
-    p.unlink()
-
-    if APP_DB_PATH.exists():
-        APP_DB_PATH.unlink()
-
-    if USER_DB_PATH.exists():
-        USER_DB_PATH.unlink()
-
-    if INDEX_DIR.exists():
-        shutil.rmtree(INDEX_DIR)
-
-    if COURSES_DIR.exists():
-        shutil.rmtree(COURSES_DIR)
-
 def download_file(url: str, folder_path: Path) -> Path:
+    import requests
+
     logger.info(f"download_file() : {url}, {folder_path}")
     file_name = url.split('/')[-1]
     file_path = folder_path.joinpath(file_name)
@@ -209,6 +166,7 @@ def _is_version_stable(ver: str):
     return not ('.dev' in ver or '.rc' in ver)
 
 def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> List[str]:
+    import requests
     logger.info(f"get_version_tags_from_github_feed(): {url}, {stable_only}")
 
     try:
@@ -272,6 +230,7 @@ def get_releases_info() -> ReleasesInfo:
     logger.info(url.toString())
 
     try:
+        import requests
         r = requests.get(url.toString())
         if r.ok:
             data: ReleasesInfo = r.json()
@@ -717,6 +676,7 @@ def make_active_window(view: QMainWindow):
     view.activateWindow() # bring window to front/unminimize on Windows
 
 def html_get_sutta_page_body(html_page: str):
+    from bs4 import BeautifulSoup
     if '<html' in html_page or '<HTML' in html_page:
         soup = BeautifulSoup(html_page, 'html.parser')
         h = soup.find(name = 'body')
@@ -734,6 +694,7 @@ def html_get_sutta_page_body(html_page: str):
 def bilara_html_post_process(body: str) -> str:
     # add .noindex to <footer> in suttacentral
 
+    # from bs4 import BeautifulSoup
     # soup = BeautifulSoup(body, 'html.parser')
     # h = soup.find(name = 'footer')
     # if h is not None:
@@ -916,3 +877,9 @@ def snp_verse_to_uid(verse_num: int) -> Optional[str]:
             return uid
 
     return None
+
+def find_available_port() -> int:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(('', 0))
+    _, port = sock.getsockname()
+    return port

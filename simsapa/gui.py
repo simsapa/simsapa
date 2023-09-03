@@ -8,20 +8,18 @@ import threading
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import logger, SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
+from simsapa import logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
 
-from simsapa.app.api import start_server, find_available_port
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import check_delete_files, create_app_dirs, ensure_empty_graphs_cache
-from simsapa.app.search.queries import SearchQueries
+from simsapa.app.helpers import find_available_port
+from simsapa.app.dir_helpers import create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa.app.types import QueryType
 from simsapa.app.app_data import AppData
 from simsapa.app.windows import AppWindows
 
-from simsapa.layouts.download_appdata import DownloadAppdataWindow
 from simsapa.layouts.error_message import ErrorMessageWindow
-from simsapa.layouts.create_search_index import CreateSearchIndexWindow
 
 # NOTE: Importing icons_rc is necessary once, in order for icon assets,
 # animation gifs, etc. to be loaded.
@@ -42,7 +40,7 @@ check_delete_files()
 create_app_dirs()
 
 def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
-    logger.info("gui::start()")
+    logger.profile("gui::start()")
 
     ensure_empty_graphs_cache()
 
@@ -50,6 +48,8 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
         if splash_proc is not None:
             if splash_proc.poll() is None:
                 splash_proc.kill()
+
+        from simsapa.layouts.download_appdata import DownloadAppdataWindow
 
         dl_app = QApplication(sys.argv)
         w = DownloadAppdataWindow()
@@ -71,43 +71,43 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     logger.info(f"Available port: {port}")
 
-    daemon = threading.Thread(name='daemon_server',
-                            target=start_server,
-                            args=(port, SERVER_QUEUE))
+    def _start_daemon_server():
+        # This way the import happens in the thread, and doesn't delay app.exec()
+        from simsapa.app.api import start_server
+        start_server(port, SERVER_QUEUE)
+
+    daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
     daemon.setDaemon(True)
     daemon.start()
 
     app = QApplication(sys.argv)
+
+    # Initialize a QWebEngineView(). Otherwise the app errors:
+    #
+    # QtWebEngineWidgets must be imported or Qt.AA_ShareOpenGLContexts must be
+    # set before a QCoreApplication instance is created
+    _ = QWebEngineView()
 
     actions_manager = ActionsManager(port)
 
     # FIXME errors on MacOS
     hotkeys_manager = None
 
-    if IS_LINUX:
-        from .app.hotkeys_manager_linux import HotkeysManagerLinux
-        hotkeys_manager = HotkeysManagerLinux(actions_manager)
-    elif IS_WINDOWS:
-        from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
-        hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
+    # FIXME 'keyboard' lib imports 'requests' which delays app.exec()
+
+    # if IS_LINUX:
+    #     from .app.hotkeys_manager_linux import HotkeysManagerLinux
+    #     hotkeys_manager = HotkeysManagerLinux(actions_manager)
+    # elif IS_WINDOWS:
+    #     from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
+    #     hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
-    queries = SearchQueries(app_data.db_session)
 
     if len(app.screens()) > 0:
         app_data.screen_size = app.primaryScreen().size()
         logger.info(f"Screen size: {app_data.screen_size}")
         logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
-
-    if queries.search_indexes.has_empty_index():
-        w = CreateSearchIndexWindow()
-        w.show()
-        status = app.exec()
-        logger.info(f"open_simsapa: {w.open_simsapa}")
-        logger.info(f"app status: {status}")
-        if not w.open_simsapa:
-            logger.info("Exiting.")
-            sys.exit(status)
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
@@ -115,6 +115,8 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     # Systray doesn't work on MAC
     if not IS_MAC:
+        logger.profile("Create systray: start")
+
         app.setQuitOnLastWindowClosed(True)
 
         tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
@@ -147,6 +149,8 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
         tray.setContextMenu(menu)
 
+        logger.profile("Create systray: end")
+
     # === Create first window ===
 
     ok = False
@@ -163,16 +167,18 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     app_windows.show_startup_message()
 
-    app_windows.check_updates()
-
     if splash_proc is not None:
         if splash_proc.poll() is None:
             splash_proc.kill()
 
+    logger.profile("app.exec()")
     status = app.exec()
 
     if hotkeys_manager is not None:
         hotkeys_manager.unregister_all_hotkeys()
+
+    # This avoids the unused import warning.
+    logger.info(icons_rc.rcc_version)
 
     logger.info(f"start() Exiting with status {status}.")
     sys.exit(status)

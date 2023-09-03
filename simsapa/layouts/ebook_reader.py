@@ -19,11 +19,11 @@ from PyQt6.QtWidgets import QAbstractItemView, QFileDialog, QHBoxLayout, QMenu, 
 from simsapa import EBOOK_EXTRA_CSS, EBOOK_UNZIP_DIR, logger
 # from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 
-from simsapa.app.types import QExpanding, QMinimum, QueryType, SuttaSearchWindowInterface, sutta_quote_from_url
+from simsapa.app.types import EbookReaderWindowInterface, QExpanding, QMinimum, QueryType, sutta_quote_from_url
 from simsapa.app.app_data import AppData
 
 class ChapterItem(QStandardItem):
@@ -41,7 +41,7 @@ class ChapterItem(QStandardItem):
         self.setEditable(False)
         self.setText(self.title)
 
-class EbookReaderWindow(SuttaSearchWindowInterface):
+class EbookReaderWindow(EbookReaderWindowInterface):
 
     lookup_in_dictionary_signal = pyqtSignal(str)
     lookup_in_new_sutta_window_signal = pyqtSignal(str)

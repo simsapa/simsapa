@@ -9,6 +9,9 @@ import platform
 import importlib.resources
 import pkgutil
 
+from datetime import datetime
+INIT_START_TIME = datetime.now()
+
 p = find_dotenv() or find_dotenv('.env.txt')
 if p != '':
     load_dotenv(p)
@@ -114,6 +117,12 @@ READING_TEXT_COLOR = "#1a1a1a" # 90% black
 READING_BACKGROUND_COLOR = "#FAE6B2"
 DARK_READING_BACKGROUND_COLOR = "#F0B211"
 BUTTON_BG_COLOR = "#007564"
+
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/page.html")))
+if b is None:
+    PAGE_HTML = "<b>Missing page.html</b>"
+else:
+    PAGE_HTML = b.decode("utf-8")
 
 b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/loading.html")))
 if b is None:

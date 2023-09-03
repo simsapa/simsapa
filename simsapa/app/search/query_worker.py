@@ -9,7 +9,7 @@ import tantivy
 from sqlalchemy import and_, or_, not_
 
 from simsapa import logger
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

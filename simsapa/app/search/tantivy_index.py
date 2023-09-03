@@ -1,7 +1,6 @@
 import shutil
 from typing import Dict, List, Optional, Union, Tuple
 import re, math
-from bs4 import BeautifulSoup
 
 import tantivy
 
@@ -123,8 +122,8 @@ def dict_words_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tan
 class TantivySearchQuery:
     ix: tantivy.Index
     searcher: tantivy.Searcher
-    hits_count: Optional[int] = None
     page_len: int = 20
+    hits_count: Optional[int] = None
 
     snippet_generator: Optional[tantivy.SnippetGenerator] = None
     parsed_query: Optional[tantivy.Query] = None
@@ -247,8 +246,24 @@ class TantivySearchQuery:
 
         self.snippet_generator.set_max_num_chars(200)
 
+    def get_hits_count(self) -> int:
+        # Request one page, so that hits_count gets set.
+        self.highlighted_results_page(0)
+
+        if self.hits_count is None:
+            return 0
+        else:
+            return self.hits_count
+
     def get_all_results(self) -> List[SearchResult]:
-        if self.hits_count is None or self.hits_count == 0:
+        # If we already queried, and there were no hits.
+        if self.hits_count is not None and self.hits_count == 0:
+            return []
+
+        # Request one page, so that hits_count gets set.
+        self.highlighted_results_page(0)
+
+        if self.hits_count is None:
             return []
 
         page_num = 0
@@ -407,6 +422,7 @@ class TantivySearchIndexes:
         pass
 
     def index_suttas(self, ix: tantivy.Index, db_schema_name: str, suttas: List[USutta]):
+        from bs4 import BeautifulSoup
         logger.info(f"index_suttas() len: {len(suttas)}")
 
         try:
