@@ -1207,15 +1207,17 @@ class AppWindows:
     def _finalize_view(self, view, maximize = True):
         if maximize:
             self._set_size_and_maximize(view)
-            self._connect_signals_to_view(view)
-            make_active_window(view)
-            self._windows.append(view)
+
+        self._connect_signals_to_view(view)
+        make_active_window(view)
+        self._windows.append(view)
+
         return view
 
     def _connect_signals_to_view(self, view):
         # if hasattr(view, 'action_Open'):
         #     view.action_Open \
-            #         .triggered.connect(partial(self._open_file_dialog, view))
+        #         .triggered.connect(partial(self._open_file_dialog, view))
 
         if hasattr(view, 'action_Re_index_database'):
             view.action_Re_index_database \
@@ -1402,19 +1404,19 @@ class AppWindows:
         # if s is not None and s.lower() == 'true':
         #     logger.info("no wip features")
         #     # view.action_Dictionaries_Manager \
-            #     #     .triggered.connect(partial(self._new_dictionaries_manager_window))
-
+        #     #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+        #     #
         #     # view.action_Document_Reader \
-            #     #     .triggered.connect(partial(self._new_document_reader_window))
+        #     #     .triggered.connect(partial(self._new_document_reader_window))
         #     # view.action_Library \
-            #     #     .triggered.connect(partial(self._new_library_browser_window))
-
+        #     #     .triggered.connect(partial(self._new_library_browser_window))
+        #     #
         #     # try:
         #     #     view.action_Open_Selected \
-            #     #         .triggered.connect(partial(self._open_selected_document, view))
+        #     #         .triggered.connect(partial(self._open_selected_document, view))
         #     # except Exception as e:
         #     #     logger.error(e)
-
+        #     #
         # else:
 
         if hasattr(view, 'action_Open'):
