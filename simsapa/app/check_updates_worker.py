@@ -12,9 +12,11 @@ class UpdatesWorkerSignals(QObject):
 class CheckUpdatesWorker(QRunnable):
     signals: UpdatesWorkerSignals
 
-    def __init__(self):
+    def __init__(self, save_stats = True, screen_size = ''):
         super().__init__()
         self.signals = UpdatesWorkerSignals()
+        self._screen_size = screen_size
+        self._save_stats = save_stats
 
     @pyqtSlot()
     def run(self):
@@ -28,7 +30,7 @@ class CheckUpdatesWorker(QRunnable):
             return None
 
         try:
-            info = get_releases_info()
+            info = get_releases_info(save_stats=self._save_stats, screen_size=self._screen_size)
 
             update_info = is_local_db_obsolete()
             if update_info is not None:

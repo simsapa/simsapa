@@ -636,7 +636,7 @@ class ReleasesWorker(QRunnable):
             return
 
         try:
-            info = get_releases_info()
+            info = get_releases_info(save_stats=False)
             self.signals.finished.emit(info)
 
         except Exception as e:

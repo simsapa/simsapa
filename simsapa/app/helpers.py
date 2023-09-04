@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, TypedDict
 import os, sys, re, platform, socket
 import html, json, semver
 
+import psutil
 import markdown
 import tomlkit
 
@@ -201,18 +202,24 @@ def get_release_channel() -> str:
 
     return channel
 
-def get_releases_info() -> ReleasesInfo:
+def get_releases_info(save_stats = True, screen_size = '') -> ReleasesInfo:
     logger.info("get_releases_info()")
 
     channel = get_release_channel()
 
     logger.info(f"Channel: {channel}")
 
+    # Don't save stats if env var asks not to.
+    #
+    # Env var SAVE_STATS=false overrides argument save_stats=True.
+    s = os.getenv('SAVE_STATS')
+    if s is not None and s.lower() == 'false':
+        save_stats = False
+
+    # Env var NO_STATS=true => save_stats=False
     s = os.getenv('NO_STATS')
-    if s is not None and s == 'true':
-        no_stats = True
-    else:
-        no_stats = False
+    if s is not None and s.lower() == 'true':
+        save_stats = False
 
     url = QUrl(f"{SIMSAPA_RELEASES_BASE_URL}/releases.php")
     query = QUrlQuery()
@@ -222,7 +229,21 @@ def get_releases_info() -> ReleasesInfo:
     query.addQueryItem('system', platform.system())
     query.addQueryItem('machine', platform.machine())
 
-    if no_stats:
+    if save_stats:
+        cpu = psutil.cpu_freq()
+        query.addQueryItem('cpu_max', f"{cpu.max:.2f}")
+
+        cores = psutil.cpu_count(logical=True)
+        query.addQueryItem('cpu_cores', str(cores))
+
+        mem = psutil.virtual_memory()
+        query.addQueryItem('mem_total', str(mem.total))
+
+        query.addQueryItem('screen', screen_size)
+
+    else:
+        # The PHP script checks only for the presence of the no_stats GET
+        # parameter, regardless of its value.
         query.addQueryItem('no_stats', '')
 
     url.setQuery(query)

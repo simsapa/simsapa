@@ -910,7 +910,15 @@ class AppWindows:
 
     def _init_check_updates(self, include_no_updates = False):
         logger.profile("AppWindows::_init_check_updates()")
-        self.check_updates_worker = CheckUpdatesWorker()
+
+        if self._app_data.screen_size is not None:
+            w = self._app_data.screen_size.width()
+            h = self._app_data.screen_size.height()
+            screen_size = f"{w} x {h}"
+        else:
+            screen_size = ''
+
+        self.check_updates_worker = CheckUpdatesWorker(screen_size=screen_size)
         self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
         self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
         self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
