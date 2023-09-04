@@ -39,8 +39,7 @@ class WindowType(int, Enum):
     SuttaSearch = 0
     SuttaStudy = 1
     DictionarySearch = 2
-    Memos = 3
-    Links = 4
+    EbookReader = 3
 
 class WindowPosSize(TypedDict):
     x: int
@@ -52,8 +51,7 @@ WindowNameToType = {
     "Sutta Search": WindowType.SuttaSearch,
     "Sutta Study": WindowType.SuttaStudy,
     "Dictionary Search": WindowType.DictionarySearch,
-    "Memos": WindowType.Memos,
-    "Links": WindowType.Links,
+    "Ebook Reader": WindowType.EbookReader,
 }
 
 class CompletionCacheResult(TypedDict):
@@ -457,6 +455,7 @@ class AppWindowInterface(QMainWindow):
     action_Prompts: QAction
 
     toolBar: QToolBar
+    queue_id: str
     search_input: QLineEdit
     start_loading_animation: Callable
     stop_loading_animation: Callable
@@ -476,6 +475,8 @@ class SuttaSearchWindowStateInterface(QWidget):
     _show_sutta_by_uid: Callable
     _get_selection: Callable
     _get_active_tab: Callable
+    _set_query: Callable
+    _handle_query: Callable
 
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
@@ -529,6 +530,9 @@ class DictionarySearchWindowInterface(AppWindowInterface):
 
     queue_id: str
     handle_messages: Callable
+    _set_query: Callable
+    _handle_query: Callable
+    _handle_exact_query: Callable
 
 class BookmarksBrowserWindowInterface(AppWindowInterface):
     reload_bookmarks: Callable

@@ -202,6 +202,12 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
 
+        msg = ApiMessage(queue_id = 'app_windows',
+                         action = ApiAction.remove_closed_window_from_list,
+                         data = self.queue_id)
+        s = json.dumps(msg)
+        APP_QUEUES['app_windows'].put_nowait(s)
+
         if self.graph_path.exists():
             self.graph_path.unlink()
 

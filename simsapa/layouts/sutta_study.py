@@ -5,6 +5,7 @@ from functools import partial
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
@@ -322,6 +323,18 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_state.link_mouseover.connect(partial(preview_window.link_mouseover))
         self.dictionary_state.link_mouseleave.connect(partial(preview_window.link_mouseleave))
         self.dictionary_state.hide_preview.connect(partial(preview_window._do_hide))
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        msg = ApiMessage(queue_id = 'app_windows',
+                         action = ApiAction.remove_closed_window_from_list,
+                         data = self.queue_id)
+        s = json.dumps(msg)
+        APP_QUEUES['app_windows'].put_nowait(s)
+
+        event.accept()
 
     def _handle_close(self):
         self.close()

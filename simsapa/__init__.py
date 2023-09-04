@@ -186,6 +186,7 @@ class ApiAction(str, Enum):
     closed_word_lookup = 'closed_word_lookup'
     hidden_word_lookup = 'hidden_word_lookup'
     set_selected = "set_selected"
+    remove_closed_window_from_list = "remove_closed_window_from_list"
 
 # Messages sent via the localhost web API
 class ApiMessage(TypedDict):
