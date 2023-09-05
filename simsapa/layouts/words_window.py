@@ -6,12 +6,13 @@ from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.search.dictionary_queries import DictionaryQueries
-from simsapa.app.types import AppWindowInterface, UDictWord
+from simsapa.app.types import UDictWord
 from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+from simsapa.layouts.gui_types import AppWindowInterface
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 class WordsWindow(AppWindowInterface):

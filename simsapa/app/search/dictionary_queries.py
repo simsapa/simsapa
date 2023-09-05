@@ -10,8 +10,7 @@ from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
-from simsapa.app.types import DictionaryQueriesInterface, SearchParams
-from simsapa.app.types import QueryType, UDictWord
+from simsapa.app.types import SearchParams, QueryType, UDictWord, DictionaryQueriesInterface
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.layouts.html_content import page_tmpl

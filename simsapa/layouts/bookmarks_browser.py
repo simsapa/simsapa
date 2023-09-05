@@ -21,8 +21,10 @@ from simsapa import IS_SWAY, DbSchemaName, logger
 from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
 from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
-from simsapa.app.types import BookmarksBrowserWindowInterface, QueryType, UBookmark, USutta
+from simsapa.app.types import QueryType, UBookmark, USutta
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import BookmarksBrowserWindowInterface
 
 # Keys with underscore prefix will not be shown in table columns.
 SuttaModelColToIdx = {

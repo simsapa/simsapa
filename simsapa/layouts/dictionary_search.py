@@ -15,21 +15,22 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.app.search.helpers import SearchResult
-from simsapa.app.search.queries import SearchQueries
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import DictionarySearchWindowInterface, QExpanding, QFixed, QMinimum, QueryType, SearchArea, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
+from simsapa.app.types import QueryType, SearchArea, SearchMode, DictionarySearchModeNameToType, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.types import SearchParams
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 
+from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface, QExpanding, QFixed, QMinimum
+from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.memo_dialog import HasMemoDialog
 from simsapa.layouts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.links_sidebar import HasLinksSidebar
@@ -52,7 +53,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     fulltext_results_tab_idx: int = 0
     rightside_tabs: QTabWidget
     _app_data: AppData
-    _queries: SearchQueries
+    _queries: GuiSearchQueries
     _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
     _search_timer = QTimer()
@@ -81,9 +82,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._recent: List[UDictWord] = []
         self._current_words: List[UDictWord] = []
 
-        self._queries = SearchQueries(self._app_data.db_session,
-                                      self._app_data.get_search_indexes,
-                                      self._app_data.api_url)
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value
         self._queries.dictionary_queries.dictionary_font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
 

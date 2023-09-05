@@ -13,8 +13,10 @@ from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
 from simsapa.layouts.preview_window import PreviewWindow
 
 from simsapa.app.html_resources_server import HtmlResourcesServer
-from simsapa.app.types import AppWindowInterface, QueryType
+from simsapa.app.types import QueryType
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import AppWindowInterface
 
 class SuttaIndexWindow(AppWindowInterface):
 

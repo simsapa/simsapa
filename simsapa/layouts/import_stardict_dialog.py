@@ -5,12 +5,10 @@ from typing import Callable, List, Optional, TypedDict
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
+from PyQt6.QtWidgets import QMessageBox, QComboBox, QDialog, QFileDialog, QLabel, QLineEdit, QTabWidget
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import show_work_in_progress
 from simsapa.app.app_data import AppData
-from simsapa.app.search.queries import SearchQueries
 
 from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 
@@ -19,6 +17,7 @@ from ..app.db import userdata_models as Um
 from ..app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
 from ..app.db.stardict import import_stardict_as_new, import_stardict_update_existing
 
+from simsapa.layouts.gui_queries import GuiSearchQueries
 
 class DictData(TypedDict):
     id: int
@@ -43,7 +42,9 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         self.setupUi(self)
 
         self._app_data: AppData = app_data
-        self._queries = SearchQueries(self._app_data.db_session)
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
         self.reinit_index_fn = reinit_index_fn
 
         self.dict_select_data: List[DictData] = []
@@ -214,7 +215,7 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
         if action == 'import_new':
             import_stardict_as_new(self._app_data.db_session,
                                    DbSchemaName.UserData.value,
-                                   self._queries.search_indexes,
+                                   self._queries._search_indexes,
                                    paths,
                                    lang,
                                    label)
@@ -223,7 +224,7 @@ class ImportStarDictDialog(QDialog, Ui_ImportStarDictDialog):
             id = values['dictionary_id']
             import_stardict_update_existing(self._app_data.db_session,
                                             DbSchemaName.UserData.value,
-                                            self._queries.search_indexes,
+                                            self._queries._search_indexes,
                                             paths,
                                             lang,
                                             id,
@@ -250,3 +251,9 @@ class HasImportStarDictDialog():
         d.accepted.connect(d.do_import)
         d.exec()
         """
+
+def show_work_in_progress():
+    d = QMessageBox()
+    d.setWindowTitle("Work in Progress")
+    d.setText("Work in Progress")
+    d.exec()

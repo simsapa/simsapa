@@ -10,8 +10,10 @@ from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import save_html_as_epub, save_html_as_mobi, sanitized_sutta_html_for_export, sutta_content_plain
 from simsapa.app.simsapa_smtp import SimsapaSMTP
 
-from simsapa.app.types import KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum, USutta
+from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import KindleAction, KindleFileFormat, KindleFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToKindleSettings, SmtpLoginData, SmtpLoginDataPreset, SmtpServicePreset, SmtpServicePresetToEnum
 
 class SendToKindleWindow(QMainWindow):
 

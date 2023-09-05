@@ -1,7 +1,8 @@
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from simsapa import logger, SIMSAPA_RELEASES_BASE_URL
-from simsapa.app.helpers import EntryType, get_releases_info, has_update, is_local_db_obsolete
+
+from simsapa.layouts.gui_helpers import EntryType, get_releases_info, has_update, is_local_db_obsolete
 
 class UpdatesWorkerSignals(QObject):
     have_app_update = pyqtSignal(dict)

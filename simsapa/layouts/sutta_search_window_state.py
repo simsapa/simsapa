@@ -16,18 +16,19 @@ from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, 
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.queries import SearchQueries
-from simsapa.app.types import SearchParams, SuttaSearchWindowStateInterface
+from simsapa.app.types import SearchParams
 
-from simsapa.app.types import OpenPromptParams, QFixed, QMinimum, QExpanding, QueryType, SearchArea, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord, SuttaSearchWindowInterface, sutta_quote_from_url
+from simsapa.app.types import QueryType, SearchArea, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.sutta_queries import QuoteScope
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_sutta_languages
 
+from simsapa.layouts.gui_types import OpenPromptParams, QFixed, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, sutta_quote_from_url, LinkHoverData
+from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindSearched, FindPanel
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 from simsapa.layouts.memo_dialog import HasMemoDialog
@@ -50,7 +51,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
     search_mode_dropdown: QComboBox
     show_url_action_fn: Callable
     _app_data: AppData
-    _queries: SearchQueries
+    _queries: GuiSearchQueries
     _autocomplete_model: QStandardItemModel
     _related_tabs: List[SuttaTabWidget]
     _search_timer = QTimer()
@@ -100,9 +101,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self.features: List[str] = []
         self._app_data: AppData = app_data
 
-        self._queries = SearchQueries(self._app_data.db_session,
-                                      self._app_data.get_search_indexes,
-                                      self._app_data.api_url)
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
 
         self.show_url_action_fn = self._show_sutta_by_url
 

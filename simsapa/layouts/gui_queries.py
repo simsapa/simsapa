@@ -7,14 +7,17 @@ from sqlalchemy.orm.session import Session
 from PyQt6.QtCore import QThreadPool
 
 from simsapa import logger
-from simsapa.app.search.query_worker import SearchQueryWorker
+
 from simsapa.app.search.dictionary_queries import DictionaryQueries, ExactQueryWorker
 from simsapa.app.search.helpers import SearchResult
+from simsapa.app.search.query_task import SearchQueryTask
 from simsapa.app.search.sutta_queries import SuttaQueries
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 from simsapa.app.types import SearchArea, SearchParams
 
-class SearchQueries:
+from simsapa.layouts.query_worker import SearchQueryWorker
+
+class GuiSearchQueries:
     db_session: Session
     api_url: Optional[str] = None
     search_query_workers: List[SearchQueryWorker] = []
@@ -29,7 +32,7 @@ class SearchQueries:
                  search_indexes_getter_fn: Callable,
                  api_url: Optional[str] = None,
                  page_len = 20):
-        logger.profile("SearchQueries::__init__(): start")
+        logger.profile("GuiSearchQueries::__init__(): start")
 
         self.db_session = db_session
         self.api_url = api_url
@@ -42,7 +45,7 @@ class SearchQueries:
 
         self._page_len = page_len
 
-        logger.profile("SearchQueries::__init__(): end")
+        logger.profile("GuiSearchQueries::__init__(): end")
 
     def reinit_indexes(self):
         self._search_indexes = TantivySearchIndexes(self.db_session)
@@ -51,7 +54,7 @@ class SearchQueries:
         self._search_indexes = self._search_indexes_getter_fn()
 
     def running_queries(self) -> List[SearchQueryWorker]:
-        return [i for i in self.search_query_workers if i.query_finished_time is None]
+        return [i for i in self.search_query_workers if i.task.query_finished_time is None]
 
     def count_running_queries(self) -> int:
         return len(self.running_queries())
@@ -63,7 +66,7 @@ class SearchQueries:
         if len(self.search_query_workers) == 0:
             return 0
         else:
-            return sum([i.query_hits() for i in self.search_query_workers])
+            return sum([i.task.query_hits() for i in self.search_query_workers])
 
     def start_search_query_workers(self,
                                    query_text: str,
@@ -98,11 +101,13 @@ class SearchQueries:
             for lang in languages:
 
                 logger.info(f"SearchQueryWorker for {lang}")
-                w = SearchQueryWorker(self._search_indexes.suttas_lang_index[lang],
-                                    query_text,
-                                    query_started_time,
-                                    finished_fn,
-                                    params)
+
+                task = SearchQueryTask(self._search_indexes.suttas_lang_index[lang],
+                                       query_text,
+                                       query_started_time,
+                                       params)
+
+                w = SearchQueryWorker(task, finished_fn)
 
                 self.search_query_workers.append(w)
 
@@ -116,11 +121,13 @@ class SearchQueries:
             for lang in languages:
 
                 logger.info(f"SearchQueryWorker for {lang}")
-                w = SearchQueryWorker(self._search_indexes.dict_words_lang_index[lang],
-                                    query_text,
-                                    query_started_time,
-                                    finished_fn,
-                                    params)
+
+                task = SearchQueryTask(self._search_indexes.dict_words_lang_index[lang],
+                                       query_text,
+                                       query_started_time,
+                                       params)
+
+                w = SearchQueryWorker(task, finished_fn)
 
                 self.search_query_workers.append(w)
 
@@ -166,11 +173,11 @@ class SearchQueries:
         if n != 0:
             return 0
         else:
-            worker_max_hits = max([i.query_hits() for i in self.search_query_workers])
+            worker_max_hits = max([i.task.query_hits() for i in self.search_query_workers])
             return ceil(worker_max_hits / self._page_len_per_worker)
 
     def results_page(self, page_num: int) -> List[SearchResult]:
-        logger.info(f"SearchQueries::results_page(): page_num = {page_num}")
+        logger.info(f"GuiSearchQueries::results_page(): page_num = {page_num}")
         n = self.count_running_queries()
         if n != 0:
             logger.info(f"Running queries: {n}, return empty results")
@@ -178,7 +185,7 @@ class SearchQueries:
         else:
             a: List[SearchResult] = []
             for i in self.search_query_workers:
-                a.extend(i.results_page(page_num))
+                a.extend(i.task.results_page(page_num))
 
             # The higher the score, the better. Reverse to get descending order.
             res = sorted(a, key=lambda x: x['score'] or 0, reverse = True)
@@ -186,7 +193,7 @@ class SearchQueries:
             return res
 
     def all_results(self, sort_by_score: bool = True) -> List[SearchResult]:
-        logger.info(f"SearchQueries::all_results(): sort_by_score = {sort_by_score}")
+        logger.info(f"GuiSearchQueries::all_results(): sort_by_score = {sort_by_score}")
         n = self.count_running_queries()
         if n != 0:
             logger.info(f"Running queries: {n}, return empty results")
@@ -194,7 +201,7 @@ class SearchQueries:
         else:
             a: List[SearchResult] = []
             for i in self.search_query_workers:
-                a.extend(i.all_results())
+                a.extend(i.task.all_results())
 
             if sort_by_score:
                 # The higher the score, the better. Reverse to get descending order.

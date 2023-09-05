@@ -12,8 +12,9 @@ from simsapa.assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.app_data import AppData
-from simsapa.app.types import USutta, SuttaSearchWindowInterface
+from simsapa.app.types import USutta
 
+from simsapa.layouts.gui_types import SuttaSearchWindowInterface
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.links_sidebar import HasLinksSidebar

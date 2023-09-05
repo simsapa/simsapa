@@ -25,11 +25,12 @@ from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
-from simsapa.app.types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup, USutta, UDictWord, UBookmark
+from simsapa.app.types import USutta, UDictWord, UBookmark
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+from simsapa.layouts.gui_types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
 
 class AppData:
 

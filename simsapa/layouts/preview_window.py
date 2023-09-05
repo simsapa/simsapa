@@ -11,13 +11,16 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
 from simsapa import IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR
+
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
-from simsapa.app.types import QExpanding, QueryType, UDictWord, USutta
+from simsapa.app.types import QueryType, UDictWord, USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 from simsapa.app.search.sutta_queries import SuttaQueries
+
+from simsapa.layouts.gui_types import QExpanding, LinkHoverData
 from simsapa.layouts.html_content import html_page
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 TITLE_PRE = "Simsapa Preview"
 

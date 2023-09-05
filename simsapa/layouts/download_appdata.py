@@ -6,11 +6,11 @@ from PyQt6 import QtWidgets
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QPushButton, QLabel)
-from simsapa.app.helpers import ReleasesInfo
-
-from simsapa.app.types import QSizeExpanding, QSizeMinimum
 
 from simsapa import ASSETS_DIR, APP_DB_PATH
+
+from simsapa.layouts.gui_types import QSizeExpanding, QSizeMinimum
+from simsapa.layouts.gui_helpers import ReleasesInfo
 from simsapa.layouts.asset_management import AssetManagement
 
 class DownloadAppdataWindow(AssetManagement):

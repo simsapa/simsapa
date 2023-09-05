@@ -8,7 +8,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
+from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
 
 # from ..app.file_doc import FileDoc
 # from ..app.db import userdata_models as Um
@@ -19,7 +19,8 @@ from simsapa.app.app_data import AppData
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
+from simsapa.layouts.gui_types import LinkHoverData
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 
 class GraphGenSignals(QObject):

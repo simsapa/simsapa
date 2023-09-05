@@ -4,7 +4,7 @@ from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
 from PyQt6.QtWidgets import QMessageBox, QPushButton
 from simsapa import SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
 
-from simsapa.app.helpers import get_app_version, get_sys_version
+from simsapa.layouts.gui_helpers import get_app_version, get_sys_version
 
 def setup_info_button(layout, parent=None):
     icon = QIcon()

@@ -1,7 +1,8 @@
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
 
-from ..app.types import AppData, SearchResultSizes, default_search_result_sizes
+from simsapa.app.app_data import AppData
+from simsapa.layouts.gui_types import SearchResultSizes, default_search_result_sizes
 
 
 class SearchResultSizesDialog(QDialog):

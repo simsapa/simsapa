@@ -10,20 +10,22 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBo
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 
-from simsapa.app.helpers import ReleasesInfo, UpdateInfo, make_active_window, show_work_in_progress
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.search.queries import SearchQueries
 from simsapa.app.check_updates_worker import CheckUpdatesWorker
 from simsapa.app.completion_cache_worker import CompletionCacheWorker
 
-from simsapa.app.types import (AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface,
-                               DictionarySearchWindowInterface, CompletionCacheResult, EbookReaderWindowInterface,
-                               OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, QuoteScope, QuoteScopeValues,
-                               SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType,
-                               WordLookupInterface, sutta_quote_from_url)
-
 from simsapa.app.app_data import AppData
 
+from simsapa.app.types import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
+
+from simsapa.layouts.gui_types import (
+    AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
+    CompletionCacheResult, EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
+    SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
+    sutta_quote_from_url)
+
+from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo
+from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.help_info import open_simsapa_website, show_about
 from simsapa.layouts.preview_window import PreviewWindow
 
@@ -36,9 +38,9 @@ class AppWindows:
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
         self._app = app
         self._app_data = app_data
-        self._queries = SearchQueries(self._app_data.db_session,
-                                      self._app_data.get_search_indexes,
-                                      self._app_data.api_url)
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
         self._hotkeys_manager = hotkeys_manager
         self._windows: List[AppWindowInterface] = []
         self._windowed_previews: List[PreviewWindow] = []
@@ -1530,3 +1532,14 @@ class AppWindows:
 
         if hasattr(view, 'action_Library'):
             view.action_Library.setVisible(False)
+
+def make_active_window(view: QMainWindow):
+    view.show() # bring window to top on OSX
+    view.raise_() # bring window from minimized state on OSX
+    view.activateWindow() # bring window to front/unminimize on Windows
+
+def show_work_in_progress():
+    d = QMessageBox()
+    d.setWindowTitle("Work in Progress")
+    d.setText("Work in Progress")
+    d.exec()

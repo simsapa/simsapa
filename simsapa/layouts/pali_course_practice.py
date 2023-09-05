@@ -19,16 +19,18 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolButton, QVBoxLayout
 
 from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.html_content import html_page
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
-from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, QueryType, UChallenge, UChallengeGroup
+from simsapa.app.types import QueryType, UChallenge, UChallengeGroup
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, LinkHoverData
+from simsapa.layouts.preview_window import PreviewWindow
+from simsapa.layouts.html_content import html_page
+from simsapa.layouts.reader_web import ReaderWebEnginePage
+from simsapa.layouts.pali_course_helpers import get_remaining_challenges_in_group
 
 
 class ChoiceButton(QPushButton):

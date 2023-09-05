@@ -17,16 +17,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
-from simsapa.app.lookup import LANG_CODE_TO_NAME
 
+from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+
+from simsapa.app.lookup import LANG_CODE_TO_NAME
 from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db_session import get_db_session_with_schema
-from simsapa.app.helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
-from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa.layouts.gui_helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
 # Keys with underscore prefix will not be shown in table columns.
 LangModelColToIdx = {

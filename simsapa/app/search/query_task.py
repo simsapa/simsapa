@@ -1,8 +1,6 @@
 import re
 from datetime import datetime
-from typing import Dict, List, Optional, Callable
-
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
+from typing import Dict, List, Optional
 
 import tantivy
 
@@ -18,12 +16,7 @@ from simsapa.app.types import SearchMode, UDictWord, USutta
 from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
-class WorkerSignals(QObject):
-    finished = pyqtSignal(datetime)
-
-
-class SearchQueryWorker(QRunnable):
-    signals: WorkerSignals
+class SearchQueryTask:
     _all_results: List[SearchResult] = []
     _highlighted_result_pages: Dict[int, List[SearchResult]] = dict()
 
@@ -31,32 +24,25 @@ class SearchQueryWorker(QRunnable):
                  ix: tantivy.Index,
                  query_text: str,
                  query_started_time: datetime,
-                 finished_fn: Callable,
                  params: SearchParams):
 
         super().__init__()
 
         self.ix = ix
-        self.signals = WorkerSignals()
         self.query_finished_time: Optional[datetime] = None
 
         self.set_query(query_text,
                        query_started_time,
-                       finished_fn,
                        params)
 
     def set_query(self,
                   query_text: str,
                   query_started_time: datetime,
-                  finished_fn: Callable,
                   params: SearchParams):
 
         self.query_text = consistent_nasal_m(query_text.strip().lower())
         self.query_started_time = query_started_time
         self.query_finished_time = None
-        self.will_emit_finished = True
-
-        self.signals.finished.connect(finished_fn)
 
         self.search_mode = params['mode']
         self._page_len = params['page_len'] if params['page_len'] is not None else 20
@@ -175,9 +161,8 @@ class SearchQueryWorker(QRunnable):
         else:
             return True
 
-    @pyqtSlot()
     def run(self):
-        logger.info("SearchQueryWorker::run()")
+        logger.info("SearchQueryTask::run()")
         try:
             self._all_results = []
             self._highlighted_result_pages = dict()
@@ -413,8 +398,6 @@ class SearchQueryWorker(QRunnable):
                 db_eng.dispose()
 
             self.query_finished_time = datetime.now()
-            if self.will_emit_finished:
-                self.signals.finished.emit(self.query_started_time)
 
         except Exception as e:
             logger.error(e)

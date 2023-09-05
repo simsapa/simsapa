@@ -4,11 +4,12 @@ from typing import List
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from simsapa import logger
-from simsapa.app.types import CompletionCacheResult
 from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+
+from simsapa.layouts.gui_types import CompletionCacheResult
 
 class CompletionCacheWorkerSignals(QObject):
     finished = pyqtSignal(dict)

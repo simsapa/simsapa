@@ -13,7 +13,8 @@ from ..app.file_doc import FileDoc
 from ..app.db import appdata_models as Am
 from ..app.db import userdata_models as Um
 
-from ..app.types import AppData, UDocument
+from ..app.types import UDocument
+from ..app.app_data import AppData
 from ..assets.ui.library_browser_window_ui import Ui_LibraryBrowserWindow
 
 

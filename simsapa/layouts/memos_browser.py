@@ -11,10 +11,11 @@ from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import AppWindowInterface, UMemo
+from simsapa.app.types import UMemo
 from simsapa.app.app_data import AppData
 from simsapa.assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
 
+from simsapa.layouts.gui_types import AppWindowInterface
 
 class MemoListModel(QAbstractListModel):
     def __init__(self, *args, memos=None, **kwargs):

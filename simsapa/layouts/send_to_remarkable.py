@@ -11,8 +11,10 @@ from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineE
 from simsapa import ASSETS_DIR, logger
 from simsapa.app.export_helpers import sanitized_sutta_html_for_export, save_html_as_epub, sutta_content_plain
 
-from simsapa.app.types import RemarkableAction, RemarkableFileFormat, RemarkableFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToRemarkableSettings, USutta
+from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import RemarkableAction, RemarkableFileFormat, RemarkableFileFormatToEnum, QFixed, QSizeExpanding, QSizeMinimum, SendToRemarkableSettings
 
 class SendToRemarkableWindow(QMainWindow):
 

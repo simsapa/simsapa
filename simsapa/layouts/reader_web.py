@@ -6,7 +6,8 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebChannel import QWebChannel
 
 from simsapa import logger
-from simsapa.app.types import LinkHoverData
+
+from simsapa.layouts.gui_types import LinkHoverData
 
 class Helper(QObject):
 

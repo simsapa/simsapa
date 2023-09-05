@@ -7,8 +7,9 @@ from PyQt6.QtGui import QColor, QMovie
 from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTabWidget
 from simsapa import logger
 
-from simsapa.app.types import default_search_result_sizes
 from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
 
 class HasFulltextList:

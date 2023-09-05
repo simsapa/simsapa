@@ -12,10 +12,11 @@ from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QW
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from simsapa.app.types import QueryType, SuttaStudyWindowInterface, USutta
+from simsapa.app.types import QueryType, USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
+from simsapa.layouts.gui_types import SuttaStudyWindowInterface
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_lookup import WordLookupState
