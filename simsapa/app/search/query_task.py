@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import tantivy
 
 from sqlalchemy import and_, or_, not_
+from sqlalchemy.orm.session import Session
 
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session
@@ -161,243 +162,270 @@ class SearchQueryTask:
         else:
             return True
 
-    def run(self):
-        logger.info("SearchQueryTask::run()")
+    def _fulltext_search(self):
         try:
-            self._all_results = []
-            self._highlighted_result_pages = dict()
+            self.search_query.new_query(self.query_text, self.only_source)
+            self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
-            if self.search_mode == SearchMode.FulltextMatch:
-                 self.search_query.new_query(self.query_text, self.only_source)
-                 self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
-
-            elif self.search_mode == SearchMode.ExactMatch or \
-                 self.search_mode == SearchMode.RegexMatch:
-
-                db_eng, db_conn, db_session = get_db_engine_connection_session()
-
-                if self.search_query.is_sutta_index():
-
-                    res_suttas: List[USutta] = []
-
-                    if 'AND' in self.query_text:
-
-                        and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
-
-                        q = db_session.query(Am.Sutta)
-                        for i in and_terms:
-                            if self.search_mode == SearchMode.ExactMatch:
-                                p = expand_quote_to_pattern_str(i)
-                            else:
-                                p = i
-                            q = q.filter(Am.Sutta.content_plain.regexp_match(p))
-                        r = q.all()
-                        res_suttas.extend(r)
-
-                        q = db_session.query(Um.Sutta)
-                        for i in and_terms:
-                            if self.search_mode == SearchMode.ExactMatch:
-                                p = expand_quote_to_pattern_str(i)
-                            else:
-                                p = i
-                            q = q.filter(Um.Sutta.content_plain.regexp_match(p))
-                        r = q.all()
-                        res_suttas.extend(r)
-
-                    else:
-
-                        if self.search_mode == SearchMode.ExactMatch:
-                            p = expand_quote_to_pattern_str(self.query_text)
-                        else:
-                            p = self.query_text
-
-                        r = db_session \
-                            .query(Am.Sutta) \
-                            .filter(Am.Sutta.content_plain.regexp_match(p)) \
-                            .all()
-                        res_suttas.extend(r)
-
-                        r = db_session \
-                            .query(Um.Sutta) \
-                            .filter(Um.Sutta.content_plain.regexp_match(p)) \
-                            .all()
-                        res_suttas.extend(r)
-
-                    if self.only_source is not None:
-                        res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
-
-                    self._all_results = list(map(self._db_sutta_to_result, res_suttas))
-
-                elif self.search_query.is_dict_word_index():
-
-                    res: List[UDictWord] = []
-
-                    if 'AND' in self.query_text:
-
-                        and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
-
-                        q = db_session.query(Am.DictWord)
-                        for i in and_terms:
-                            if self.search_mode == SearchMode.ExactMatch:
-                                q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
-                            else:
-                                q = q.filter(Am.DictWord.definition_plain.regexp_match(i))
-                        r = q.all()
-                        res.extend(r)
-
-                        q = db_session.query(Um.DictWord)
-                        for i in and_terms:
-                            if self.search_mode == SearchMode.ExactMatch:
-                                q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
-                            else:
-                                q = q.filter(Um.DictWord.definition_plain.regexp_match(i))
-                        r = q.all()
-                        res.extend(r)
-
-                    else:
-
-                        q = db_session.query(Am.DictWord)
-                        if self.search_mode == SearchMode.ExactMatch:
-                            q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query_text}%"))
-                        else:
-                            q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query_text))
-
-                        r = q.all()
-                        res.extend(r)
-
-                        q = db_session.query(Um.DictWord)
-                        if self.search_mode == SearchMode.ExactMatch:
-                            q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query_text}%"))
-                        else:
-                            q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query_text))
-
-                        r = q.all()
-                        res.extend(r)
-
-                    if self.only_source is not None:
-                        res = list(filter(self._word_only_in_source, res))
-
-                    self._all_results = list(map(self._db_word_to_result, res))
-
-                db_conn.close()
-                db_session.close()
-                db_eng.dispose()
-
-            elif self.search_mode == SearchMode.TitleMatch:
-                # NOTE: SearchMode.TitleMatch only applies to suttas.
-                db_eng, db_conn, db_session = get_db_engine_connection_session()
-
-                res_suttas: List[USutta] = []
-
-                r = db_session \
-                    .query(Am.Sutta) \
-                    .filter(Am.Sutta.title.like(f"{self.query_text}%")) \
-                    .all()
-                res_suttas.extend(r)
-
-                r = db_session \
-                    .query(Um.Sutta) \
-                    .filter(Um.Sutta.title.like(f"{self.query_text}%")) \
-                    .all()
-                res_suttas.extend(r)
-
-                ids = list(map(lambda x: x.id, res_suttas))
-
-                r = db_session \
-                    .query(Am.Sutta) \
-                    .filter(and_(
-                        Am.Sutta.title.like(f"%{self.query_text}%"),
-                        not_(Am.Sutta.id.in_(ids)),
-                    )) \
-                    .all()
-                res_suttas.extend(r)
-
-                r = db_session \
-                    .query(Um.Sutta) \
-                    .filter(and_(
-                        Um.Sutta.title.like(f"%{self.query_text}%"),
-                        not_(Um.Sutta.id.in_(ids)),
-                    )) \
-                    .all()
-                res_suttas.extend(r)
-
-                if self.only_source is not None:
-                    res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
-
-                self._all_results = list(map(self._db_sutta_to_result, res_suttas))
-
-                db_conn.close()
-                db_session.close()
-                db_eng.dispose()
-
-            elif self.search_mode == SearchMode.HeadwordMatch:
-                # NOTE: SearchMode.HeadwordMatch only applies to dictionary words.
-                db_eng, db_conn, db_session = get_db_engine_connection_session()
-
-                res: List[UDictWord] = []
-
-                r = db_session \
-                    .query(Am.DictWord) \
-                    .filter(or_(
-                        Am.DictWord.word.like(f"{self.query_text}%"),
-                        Am.DictWord.word_nom_sg.like(f"{self.query_text}%"),
-                        Am.DictWord.inflections.like(f"{self.query_text}%"),
-                        Am.DictWord.phonetic.like(f"{self.query_text}%"),
-                        Am.DictWord.transliteration.like(f"{self.query_text}%"),
-                        Am.DictWord.also_written_as.like(f"{self.query_text}%"),
-                    )) \
-                    .all()
-                res.extend(r)
-
-                r = db_session \
-                    .query(Um.DictWord) \
-                    .filter(or_(
-                        Um.DictWord.word.like(f"{self.query_text}%"),
-                        Um.DictWord.word_nom_sg.like(f"{self.query_text}%"),
-                        Um.DictWord.inflections.like(f"{self.query_text}%"),
-                        Um.DictWord.phonetic.like(f"{self.query_text}%"),
-                        Um.DictWord.transliteration.like(f"{self.query_text}%"),
-                        Um.DictWord.also_written_as.like(f"{self.query_text}%"),
-                    )) \
-                    .all()
-                res.extend(r)
-
-                # Sort 'dhamma 01' etc. without the numbers.
-
-                a = list(map(lambda x: (re.sub(r"[ 0-9]+$", "", str(x.word).lower()), x), res))
-                b = sorted(a, key=lambda x: x[0])
-                res = list(map(lambda x: x[1], b))
-
-                ids = list(map(lambda x: x.id, res))
-
-                r = db_session \
-                    .query(Am.DictWord) \
-                    .filter(and_(
-                        Am.DictWord.word.like(f"%{self.query_text}%"),
-                        not_(Am.DictWord.id.in_(ids)),
-                    )) \
-                    .all()
-                res.extend(r)
-
-                r = db_session \
-                    .query(Um.DictWord) \
-                    .filter(and_(
-                        Um.DictWord.word.like(f"%{self.query_text}%"),
-                        not_(Um.DictWord.id.in_(ids)),
-                    )) \
-                    .all()
-                res.extend(r)
-
-                if self.only_source is not None:
-                    res = list(filter(self._word_only_in_source, res))
-
-                self._all_results = list(map(self._db_word_to_result, res))
-
-                db_conn.close()
-                db_session.close()
-                db_eng.dispose()
-
-            self.query_finished_time = datetime.now()
+        except ValueError as e:
+            # E.g. invalid query syntax error from tantivy
+            raise e
 
         except Exception as e:
-            logger.error(e)
+            logger.error(f"SearchQueryTask::_fulltext_search(): {e}")
+
+    def _suttas_exact_or_regex_match(self, db_session: Session):
+        try:
+            res_suttas: List[USutta] = []
+
+            if 'AND' in self.query_text:
+
+                and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
+
+                q = db_session.query(Am.Sutta)
+                for i in and_terms:
+                    if self.search_mode == SearchMode.ExactMatch:
+                        p = expand_quote_to_pattern_str(i)
+                    else:
+                        p = i
+                    q = q.filter(Am.Sutta.content_plain.regexp_match(p))
+                r = q.all()
+                res_suttas.extend(r)
+
+                q = db_session.query(Um.Sutta)
+                for i in and_terms:
+                    if self.search_mode == SearchMode.ExactMatch:
+                        p = expand_quote_to_pattern_str(i)
+                    else:
+                        p = i
+                    q = q.filter(Um.Sutta.content_plain.regexp_match(p))
+                r = q.all()
+                res_suttas.extend(r)
+
+            # there is no 'AND' in self.query_text
+            else:
+
+                if self.search_mode == SearchMode.ExactMatch:
+                    p = expand_quote_to_pattern_str(self.query_text)
+                else:
+                    p = self.query_text
+
+                r = db_session \
+                    .query(Am.Sutta) \
+                    .filter(Am.Sutta.content_plain.regexp_match(p)) \
+                    .all()
+                res_suttas.extend(r)
+
+                r = db_session \
+                    .query(Um.Sutta) \
+                    .filter(Um.Sutta.content_plain.regexp_match(p)) \
+                    .all()
+                res_suttas.extend(r)
+
+            if self.only_source is not None:
+                res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+
+            self._all_results = list(map(self._db_sutta_to_result, res_suttas))
+
+        except Exception as e:
+            logger.error(f"SearchQueryTask::_suttas_exact_or_regex_match(): {e}")
+
+    def _dict_word_exact_or_regex_match(self, db_session: Session):
+        try:
+            res: List[UDictWord] = []
+
+            if 'AND' in self.query_text:
+
+                and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
+
+                q = db_session.query(Am.DictWord)
+                for i in and_terms:
+                    if self.search_mode == SearchMode.ExactMatch:
+                        q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
+                    else:
+                        q = q.filter(Am.DictWord.definition_plain.regexp_match(i))
+                r = q.all()
+                res.extend(r)
+
+                q = db_session.query(Um.DictWord)
+                for i in and_terms:
+                    if self.search_mode == SearchMode.ExactMatch:
+                        q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
+                    else:
+                        q = q.filter(Um.DictWord.definition_plain.regexp_match(i))
+                r = q.all()
+                res.extend(r)
+
+            else:
+
+                q = db_session.query(Am.DictWord)
+                if self.search_mode == SearchMode.ExactMatch:
+                    q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query_text}%"))
+                else:
+                    q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query_text))
+
+                r = q.all()
+                res.extend(r)
+
+                q = db_session.query(Um.DictWord)
+                if self.search_mode == SearchMode.ExactMatch:
+                    q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query_text}%"))
+                else:
+                    q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query_text))
+
+                r = q.all()
+                res.extend(r)
+
+            if self.only_source is not None:
+                res = list(filter(self._word_only_in_source, res))
+
+            self._all_results = list(map(self._db_word_to_result, res))
+
+        except Exception as e:
+            logger.error(f"SearchQueryTask::_dict_word_exact_or_regex_match(): {e}")
+
+    def _suttas_title_match(self, db_session: Session):
+        # SearchMode.TitleMatch only applies to suttas.
+        try:
+            res_suttas: List[USutta] = []
+
+            r = db_session \
+                .query(Am.Sutta) \
+                .filter(Am.Sutta.title.like(f"{self.query_text}%")) \
+                .all()
+            res_suttas.extend(r)
+
+            r = db_session \
+                .query(Um.Sutta) \
+                .filter(Um.Sutta.title.like(f"{self.query_text}%")) \
+                .all()
+            res_suttas.extend(r)
+
+            ids = list(map(lambda x: x.id, res_suttas))
+
+            r = db_session \
+                .query(Am.Sutta) \
+                .filter(and_(
+                    Am.Sutta.title.like(f"%{self.query_text}%"),
+                    not_(Am.Sutta.id.in_(ids)),
+                )) \
+                .all()
+            res_suttas.extend(r)
+
+            r = db_session \
+                .query(Um.Sutta) \
+                .filter(and_(
+                    Um.Sutta.title.like(f"%{self.query_text}%"),
+                    not_(Um.Sutta.id.in_(ids)),
+                )) \
+                .all()
+            res_suttas.extend(r)
+
+            if self.only_source is not None:
+                res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+
+            self._all_results = list(map(self._db_sutta_to_result, res_suttas))
+
+        except Exception as e:
+            logger.error(f"SearchQueryTask::_suttas_title_match(): {e}")
+
+    def _dict_words_headword_match(self, db_session: Session):
+        # SearchMode.HeadwordMatch only applies to dictionary words.
+        try:
+            res: List[UDictWord] = []
+
+            r = db_session \
+                .query(Am.DictWord) \
+                .filter(or_(
+                    Am.DictWord.word.like(f"{self.query_text}%"),
+                    Am.DictWord.word_nom_sg.like(f"{self.query_text}%"),
+                    Am.DictWord.inflections.like(f"{self.query_text}%"),
+                    Am.DictWord.phonetic.like(f"{self.query_text}%"),
+                    Am.DictWord.transliteration.like(f"{self.query_text}%"),
+                    Am.DictWord.also_written_as.like(f"{self.query_text}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            r = db_session \
+                .query(Um.DictWord) \
+                .filter(or_(
+                    Um.DictWord.word.like(f"{self.query_text}%"),
+                    Um.DictWord.word_nom_sg.like(f"{self.query_text}%"),
+                    Um.DictWord.inflections.like(f"{self.query_text}%"),
+                    Um.DictWord.phonetic.like(f"{self.query_text}%"),
+                    Um.DictWord.transliteration.like(f"{self.query_text}%"),
+                    Um.DictWord.also_written_as.like(f"{self.query_text}%"),
+                )) \
+                .all()
+            res.extend(r)
+
+            # Sort 'dhamma 01' etc. without the numbers.
+
+            a = list(map(lambda x: (re.sub(r"[ 0-9]+$", "", str(x.word).lower()), x), res))
+            b = sorted(a, key=lambda x: x[0])
+            res = list(map(lambda x: x[1], b))
+
+            ids = list(map(lambda x: x.id, res))
+
+            r = db_session \
+                .query(Am.DictWord) \
+                .filter(and_(
+                    Am.DictWord.word.like(f"%{self.query_text}%"),
+                    not_(Am.DictWord.id.in_(ids)),
+                )) \
+                .all()
+            res.extend(r)
+
+            r = db_session \
+                .query(Um.DictWord) \
+                .filter(and_(
+                    Um.DictWord.word.like(f"%{self.query_text}%"),
+                    not_(Um.DictWord.id.in_(ids)),
+                )) \
+                .all()
+            res.extend(r)
+
+            if self.only_source is not None:
+                res = list(filter(self._word_only_in_source, res))
+
+            self._all_results = list(map(self._db_word_to_result, res))
+
+        except Exception as e:
+            logger.error(f"SearchQueryTask::_dict_words_headword_match(): {e}")
+
+    def run(self):
+        logger.info("SearchQueryTask::run()")
+        self._all_results = []
+        self._highlighted_result_pages = dict()
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        if self.search_mode == SearchMode.FulltextMatch:
+
+            self._fulltext_search()
+
+        elif self.search_mode == SearchMode.ExactMatch or \
+             self.search_mode == SearchMode.RegexMatch:
+
+            if self.search_query.is_sutta_index():
+
+                self._suttas_exact_or_regex_match(db_session)
+
+            elif self.search_query.is_dict_word_index():
+
+                self._dict_word_exact_or_regex_match(db_session)
+
+        elif self.search_mode == SearchMode.TitleMatch:
+
+            self._suttas_title_match(db_session)
+
+        elif self.search_mode == SearchMode.HeadwordMatch:
+
+            self._dict_words_headword_match(db_session)
+
+        self.query_finished_time = datetime.now()
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()

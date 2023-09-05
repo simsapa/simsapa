@@ -85,11 +85,25 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
         self._setup_ui()
         self._connect_signals()
 
+        self.init_icons()
         self.init_fulltext_list()
 
     def handle_messages(self):
         # No behaviour atm in this window relies on receiving messages.
         pass
+
+    def init_icons(self):
+        search_icon = QtGui.QIcon()
+        search_icon.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._normal_search_icon = search_icon
+
+        stopwatch_icon = QtGui.QIcon()
+        stopwatch_icon.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._stopwatch_icon = stopwatch_icon
+
+        warning_icon = QtGui.QIcon()
+        warning_icon.addPixmap(QtGui.QPixmap(":/warning"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._warning_icon = warning_icon
 
     def _setup_ui(self):
         search_box = QHBoxLayout()
@@ -425,10 +439,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
         self.stop_loading_animation()
 
         # Restore the search icon, processing finished
-        icon_search = QtGui.QIcon()
-        icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.search_button.setIcon(icon_search)
+        self._show_search_normal_icon()
 
         hits = self.query_hits()
         if hits > 0:
@@ -470,6 +481,19 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
             return
         logger.info(f"_start_query_workers(): {query_text}")
 
+        if self._app_data.search_indexes is None:
+            return
+
+        params = self._get_search_params()
+
+        if params['mode'] == SearchMode.FulltextMatch:
+            try:
+                self._app_data.search_indexes.test_correct_query_syntax(SearchArea.DictWords, query_text)
+
+            except ValueError as e:
+                self._show_search_warning_icon(str(e))
+                return
+
         self.start_loading_animation()
 
         self._last_query_time = datetime.now()
@@ -493,11 +517,21 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
         self._app_data._save_app_settings()
 
         # Not aborting, show the user that the app started processsing
-        icon_processing = QtGui.QIcon()
-        icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self.search_button.setIcon(icon_processing)
+        self._show_search_stopwatch_icon()
 
         self._start_query_workers(query)
+
+    def _show_search_normal_icon(self):
+        self.search_button.setIcon(self._normal_search_icon)
+        self.search_button.setToolTip("Click to start search")
+
+    def _show_search_stopwatch_icon(self):
+        self.search_button.setIcon(self._stopwatch_icon)
+        self.search_button.setToolTip("Search query running ...")
+
+    def _show_search_warning_icon(self, warning_msg: str = ''):
+        self.search_button.setIcon(self._warning_icon)
+        self.search_button.setToolTip(warning_msg)
 
     def _handle_autocomplete_query(self, min_length: int = 4):
         query = self.search_input.text().strip()
@@ -535,6 +569,9 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
 
         query = self.search_input.text().strip()
         self.tabs.setTabText(0, query)
+
+        self.stop_loading_animation()
+        self._show_search_normal_icon()
 
         self._render_words(res)
 
@@ -577,6 +614,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList):
             self._handle_exact_query(min_length=4)
 
     def _user_typed(self):
+        self._show_search_normal_icon()
         if not self._app_data.app_settings.get('search_as_you_type', True):
             return
 

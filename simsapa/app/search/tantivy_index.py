@@ -12,6 +12,7 @@ from simsapa.app.helpers import compact_rich_text, compact_plain_text
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
+from simsapa.app.types import SearchArea
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -287,11 +288,53 @@ class TantivySearchIndexes:
         self.db_session = db_session
         self.open_all(remove_if_exists)
 
+    def test_correct_query_syntax(self, search_area: SearchArea, query_text: str):
+        """
+        Test if a query_text will parse without syntax errors. Raise the
+        ValueError exception to be handled elsewhere.
+        """
+
+        if search_area == SearchArea.Suttas:
+            languages = list(self.suttas_lang_index.keys())
+
+        elif search_area == SearchArea.DictWords:
+            languages = list(self.dict_words_lang_index.keys())
+
+        else:
+            return
+
+        if len(languages) == 0:
+            logger.error("No index languages")
+            return
+
+        lang = languages[0]
+
+        if search_area == SearchArea.Suttas:
+            ix = self.suttas_lang_index[lang]
+
+        elif search_area == SearchArea.DictWords:
+            ix = self.dict_words_lang_index[lang]
+
+        else:
+            return
+
+        try:
+            _ = ix.parse_query(query_text, ['content'])
+
+        except ValueError as e:
+            logger.error(f"Incorrect query syntax: {e}")
+            raise e
+
+        except Exception as e:
+            logger.error(e)
+
     def has_empty_index(self) -> bool:
-        # The general suttas and dict_words index must exist. Additional lang
-        # indexes don't exist if the user hasn't added them.
-        #
-        # If they exist, they must have greater than 0 documents.
+        """
+        The general suttas and dict_words index must exist. Additional lang
+        indexes don't exist if the user hasn't added them.
+
+        If they exist, they must have greater than 0 documents.
+        """
 
         for i in ['en', 'pli']:
             if i not in self.suttas_lang_index.keys():

@@ -58,5 +58,6 @@
     <file alias="square-check-regular">icons/32x32/fa_square-check-regular.png</file>
     <file alias="square-check-solid">icons/32x32/fa_square-check-solid.png</file>
     <file alias="square-pen-solid">icons/32x32/fa_square-pen-solid.png</file>
+    <file alias="warning">icons/32x32/fa_triangle-exclamation-solid.png</file>
   </qresource>
 </RCC>

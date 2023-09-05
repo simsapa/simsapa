@@ -120,8 +120,22 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self._setup_ui()
         self._connect_signals()
 
+        self.init_icons()
         self.init_bookmark_dialog()
         self.init_memo_dialog()
+
+    def init_icons(self):
+        search_icon = QtGui.QIcon()
+        search_icon.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._normal_search_icon = search_icon
+
+        stopwatch_icon = QtGui.QIcon()
+        stopwatch_icon.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._stopwatch_icon = stopwatch_icon
+
+        warning_icon = QtGui.QIcon()
+        warning_icon.addPixmap(QtGui.QPixmap(":/warning"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+        self._warning_icon = warning_icon
 
     def _get_search_params(self) -> SearchParams:
         if self.enable_search_extras:
@@ -161,6 +175,19 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         if len(query_text) == 0:
             return
         logger.info(f"_start_query_workers(): {query_text}")
+
+        if self._app_data.search_indexes is None:
+            return
+
+        params = self._get_search_params()
+
+        if params['mode'] == SearchMode.FulltextMatch:
+            try:
+                self._app_data.search_indexes.test_correct_query_syntax(SearchArea.Suttas, query_text)
+
+            except ValueError as e:
+                self._show_search_warning_icon(str(e))
+                return
 
         self.pw.start_loading_animation()
 
@@ -500,10 +527,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.pw.stop_loading_animation()
 
         # Restore the search icon, processing finished
-        icon_search = QtGui.QIcon()
-        icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.search_button.setIcon(icon_search)
+        self._show_search_normal_icon()
 
         hits = self._queries.query_hits()
         if self.enable_sidebar:
@@ -540,11 +564,21 @@ QWidget:focus { border: 1px solid #1092C3; }
             return
 
         # Not aborting, show the user that the app started processsing
-        icon_processing = QtGui.QIcon()
-        icon_processing.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self.search_button.setIcon(icon_processing)
+        self._show_search_stopwatch_icon()
 
         self._start_query_workers(query)
+
+    def _show_search_normal_icon(self):
+        self.search_button.setIcon(self._normal_search_icon)
+        self.search_button.setToolTip("Click to start search")
+
+    def _show_search_stopwatch_icon(self):
+        self.search_button.setIcon(self._stopwatch_icon)
+        self.search_button.setToolTip("Search query running ...")
+
+    def _show_search_warning_icon(self, warning_msg: str = ''):
+        self.search_button.setIcon(self._warning_icon)
+        self.search_button.setToolTip(warning_msg)
 
     def _render_results_in_active_tab(self, hits: int):
         if hits == 0:
@@ -1071,6 +1105,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._find_panel.search_input.setFocus()
 
     def _user_typed(self):
+        self._show_search_normal_icon()
         self._handle_autocomplete_query(min_length=4)
 
         if not self.pw.action_Search_As_You_Type.isChecked():

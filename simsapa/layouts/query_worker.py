@@ -23,12 +23,15 @@ class SearchQueryWorker(QRunnable):
 
     @pyqtSlot()
     def run(self):
-        logger.info("SearchQueryTask::run()")
+        logger.info("SearchQueryWorker::run()")
         try:
             self.task.run()
 
             if self.will_emit_finished:
                 self.signals.finished.emit(self.task.query_started_time)
 
+        except ValueError as e:
+            raise e
+
         except Exception as e:
-            logger.error(e)
+            logger.error(f"SearchQueryWorker: {e}")
