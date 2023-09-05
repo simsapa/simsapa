@@ -41,7 +41,7 @@ class SearchQueryTask:
                   query_started_time: datetime,
                   params: SearchParams):
 
-        self.query_text = consistent_nasal_m(query_text.strip().lower())
+        self.query_text = consistent_nasal_m(query_text.strip())
         self.query_started_time = query_started_time
         self.query_finished_time = None
 
