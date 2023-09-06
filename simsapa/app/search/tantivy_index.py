@@ -214,6 +214,8 @@ class TantivySearchQuery:
 
         self.ix.reload()
 
+        query_text = sanitize_user_input(query_text)
+
         if 'uid:' not in query_text:
             # Replace user input sutta refs such as 'SN 56.11' with query language
             matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query_text)
@@ -293,6 +295,8 @@ class TantivySearchIndexes:
         Test if a query_text will parse without syntax errors. Raise the
         ValueError exception to be handled elsewhere.
         """
+
+        query_text = sanitize_user_input(query_text)
 
         if search_area == SearchArea.Suttas:
             languages = list(self.suttas_lang_index.keys())
@@ -616,3 +620,9 @@ class TantivySearchIndexes:
 
         except Exception as e:
             logger.error(f"Can't index: {e}")
+
+def sanitize_user_input(query_text: str) -> str:
+    # In the user input terms for source_uid are easier to type as 'source:'
+    query_text = query_text.replace("source:", "source_uid:")
+
+    return query_text
