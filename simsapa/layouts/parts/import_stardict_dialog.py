@@ -10,12 +10,12 @@ from PyQt6.QtWidgets import QMessageBox, QComboBox, QDialog, QFileDialog, QLabel
 from simsapa import DbSchemaName, logger
 from simsapa.app.app_data import AppData
 
-from ..assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
+from simsapa.assets.ui.import_stardict_dialog_ui import Ui_ImportStarDictDialog
 
-from ..app.db import userdata_models as Um
+from simsapa.app.db import userdata_models as Um
 
-from ..app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
-from ..app.db.stardict import import_stardict_as_new, import_stardict_update_existing
+from simsapa.app.stardict import StarDictPaths, StarDictIfo, parse_stardict_zip, parse_ifo
+from simsapa.app.db.stardict import import_stardict_as_new, import_stardict_update_existing
 
 from simsapa.layouts.gui_queries import GuiSearchQueries
 

@@ -15,16 +15,18 @@ import shutil
 
 from sqlalchemy import and_, or_, not_
 
+from simsapa import IS_SWAY, DbSchemaName, logger
+
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa import IS_SWAY, DbSchemaName, logger
-from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
-from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
-from simsapa.app.types import QueryType, UBookmark, USutta
 from simsapa.app.app_data import AppData
+from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
+from simsapa.app.types import QueryType, UBookmark, USutta
 
 from simsapa.layouts.gui_types import BookmarksBrowserWindowInterface
+
+from simsapa.layouts.parts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
 # Keys with underscore prefix will not be shown in table columns.
 SuttaModelColToIdx = {

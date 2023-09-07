@@ -14,29 +14,30 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from simsapa import SEARCH_TIMER_SPEED, SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
-from simsapa.app.search.helpers import SearchResult, get_dict_word_languages
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+from simsapa.app.search.helpers import SearchResult, get_dict_word_languages
 from simsapa.app.types import QueryType, SearchArea, SearchMode, SearchModeNameToType, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
-from simsapa.layouts.gui_helpers import get_search_params
 
+from simsapa.layouts.gui_helpers import get_search_params
 from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface, QExpanding, QFixed, QMinimum
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from simsapa.layouts.memo_dialog import HasMemoDialog
-from simsapa.layouts.memos_sidebar import HasMemosSidebar
-from simsapa.layouts.links_sidebar import HasLinksSidebar
-from simsapa.layouts.fulltext_list import HasFulltextList
-from simsapa.layouts.import_stardict_dialog import HasImportStarDictDialog
 from simsapa.layouts.help_info import show_search_info, setup_info_button
+
+from simsapa.layouts.parts.memo_dialog import HasMemoDialog
+from simsapa.layouts.parts.memos_sidebar import HasMemosSidebar
+from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
+from simsapa.layouts.parts.fulltext_list import HasFulltextList
+from simsapa.layouts.parts.import_stardict_dialog import HasImportStarDictDialog
 
 class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearchWindow, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar,

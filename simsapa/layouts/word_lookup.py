@@ -26,7 +26,8 @@ from simsapa.layouts.gui_types import LinkHoverData, WindowPosSize, WordLookupIn
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import ReaderWebEnginePage
-from simsapa.layouts.fulltext_list import HasFulltextList
+
+from simsapa.layouts.parts.fulltext_list import HasFulltextList
 
 CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
 

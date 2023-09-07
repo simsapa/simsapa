@@ -30,7 +30,8 @@ from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import AppWindowInterface, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
-from simsapa.layouts.links_sidebar import GraphGenerator
+
+from simsapa.layouts.parts.links_sidebar import GraphGenerator
 
 class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
 

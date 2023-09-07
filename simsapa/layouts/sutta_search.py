@@ -16,11 +16,12 @@ from simsapa.app.types import USutta
 
 from simsapa.layouts.gui_types import SuttaSearchWindowInterface
 from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.memos_sidebar import HasMemosSidebar
-from simsapa.layouts.links_sidebar import HasLinksSidebar
-from simsapa.layouts.fulltext_list import HasFulltextList
 from simsapa.layouts.help_info import show_search_info
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
+
+from simsapa.layouts.parts.memos_sidebar import HasMemosSidebar
+from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
+from simsapa.layouts.parts.fulltext_list import HasFulltextList
 
 class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLinksSidebar,
                         HasMemosSidebar, HasFulltextList):

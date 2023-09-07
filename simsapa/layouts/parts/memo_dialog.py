@@ -12,11 +12,12 @@ from simsapa import logger
 
 from simsapa.app.types import UDictWord
 from simsapa.app.app_data import AppData
-from simsapa.layouts.memos_sidebar import MemoPlainListModel
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 
-# from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.layouts.parts.memos_sidebar import MemoPlainListModel
+
+# from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 
 class MemoDialog(QDialog):

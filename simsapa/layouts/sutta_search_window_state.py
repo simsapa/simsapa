@@ -26,14 +26,15 @@ from simsapa.layouts.gui_helpers import get_search_params
 from simsapa.layouts.gui_types import OpenPromptParams, QFixed, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, sutta_quote_from_url, LinkHoverData
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.bookmark_dialog import HasBookmarkDialog
 from simsapa.layouts.find_panel import FindSearched, FindPanel
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from simsapa.layouts.sutta_tab import SuttaTabWidget
-from simsapa.layouts.memo_dialog import HasMemoDialog
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.help_info import setup_info_button
+
+from simsapa.layouts.parts.memo_dialog import HasMemoDialog
+from simsapa.layouts.parts.bookmark_dialog import HasBookmarkDialog
 
 
 class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, HasBookmarkDialog):
