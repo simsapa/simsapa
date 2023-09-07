@@ -23,35 +23,26 @@ class SearchQueryTask:
 
     def __init__(self,
                  ix: tantivy.Index,
-                 query_text: str,
+                 query_text_orig: str,
                  query_started_time: datetime,
                  params: SearchParams):
 
         super().__init__()
 
         self.ix = ix
-        self.query_finished_time: Optional[datetime] = None
-
-        self.set_query(query_text,
-                       query_started_time,
-                       params)
-
-    def set_query(self,
-                  query_text: str,
-                  query_started_time: datetime,
-                  params: SearchParams):
-
-        self.query_text = consistent_nasal_m(query_text.strip())
+        self.query_text = consistent_nasal_m(query_text_orig)
         self.query_started_time = query_started_time
-        self.query_finished_time = None
+        self.query_finished_time: Optional[datetime] = None
 
         self.search_mode = params['mode']
         self._page_len = params['page_len'] if params['page_len'] is not None else 20
 
-        s = params['only_lang']
-        self.only_lang = None if s is None else s.lower()
-        s = params['only_source']
-        self.only_source = None if s is None else s.lower()
+        s = params['lang']
+        self.lang = None if s is None else s.lower()
+        self.lang_include = params['lang_include']
+        s = params['source']
+        self.source = None if s is None else s.lower()
+        self.source_include = params['source_include']
         self._all_results = []
         self._highlighted_result_pages = dict()
 
@@ -151,20 +142,20 @@ class SearchQueryTask:
         return dict_word_to_search_result(x, snippet)
 
     def _sutta_only_in_source(self, x: USutta):
-        if self.only_source is not None:
-            return str(x.uid).endswith(f'/{self.only_source.lower()}')
-        else:
-            return True
+        return str(x.uid).endswith(f'/{self.source}')
+
+    def _sutta_except_in_source(self, x: USutta):
+        return not self._sutta_only_in_source(x)
 
     def _word_only_in_source(self, x: UDictWord):
-        if self.only_source is not None:
-            return str(x.uid).endswith(f'/{self.only_source.lower()}')
-        else:
-            return True
+        return str(x.uid).endswith(f'/{self.source}')
+
+    def _word_except_in_source(self, x: UDictWord):
+        return not self._word_only_in_source(x)
 
     def _fulltext_search(self):
         try:
-            self.search_query.new_query(self.query_text, self.only_source)
+            self.search_query.new_query(self.query_text, self.source, self.source_include)
             self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
         except ValueError as e:
@@ -222,8 +213,11 @@ class SearchQueryTask:
                     .all()
                 res_suttas.extend(r)
 
-            if self.only_source is not None:
-                res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+            if self.source is not None:
+                if self.source_include:
+                    res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+                else:
+                    res_suttas = list(filter(self._sutta_except_in_source, res_suttas))
 
             self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
@@ -276,8 +270,11 @@ class SearchQueryTask:
                 r = q.all()
                 res.extend(r)
 
-            if self.only_source is not None:
-                res = list(filter(self._word_only_in_source, res))
+            if self.source is not None:
+                if self.source_include:
+                    res = list(filter(self._word_only_in_source, res))
+                else:
+                    res = list(filter(self._word_except_in_source, res))
 
             self._all_results = list(map(self._db_word_to_result, res))
 
@@ -321,8 +318,11 @@ class SearchQueryTask:
                 .all()
             res_suttas.extend(r)
 
-            if self.only_source is not None:
-                res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+            if self.source is not None:
+                if self.source_include:
+                    res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
+                else:
+                    res_suttas = list(filter(self._sutta_except_in_source, res_suttas))
 
             self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
@@ -386,8 +386,11 @@ class SearchQueryTask:
                 .all()
             res.extend(r)
 
-            if self.only_source is not None:
-                res = list(filter(self._word_only_in_source, res))
+            if self.source is not None:
+                if self.source_include:
+                    res = list(filter(self._word_only_in_source, res))
+                else:
+                    res = list(filter(self._word_except_in_source, res))
 
             self._all_results = list(map(self._db_word_to_result, res))
 

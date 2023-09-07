@@ -19,7 +19,7 @@ from sqlalchemy import and_
 from PyQt6.QtCore import QSize, QThreadPool, QTimer
 from PyQt6.QtGui import QClipboard
 
-from simsapa import COURSES_DIR, DbSchemaName, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
+from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import bilara_text_to_segments
@@ -67,6 +67,9 @@ class AppData:
         else:
             self._user_db_path = user_db_path
 
+        # Make sure the user_db exists before getting the db_session handle.
+        self._check_db(self._user_db_path, DbSchemaName.UserData)
+
         self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path)
         self._read_app_settings()
 
@@ -80,18 +83,29 @@ class AppData:
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
 
-        # Wait 0.5s, then run slowish initialize tasks, e.g. search indexes, db check, upgrade and init, etc.
-        # By that time the first window will be opened and will not delay app.exec().
-        self.init_timer = QTimer()
-        self.init_timer.setSingleShot(True)
-        self.init_timer.timeout.connect(partial(self._init_tasks))
-        self.init_timer.start(500)
+        logger.info(f"IS_GUI: {get_is_gui()}")
+        if get_is_gui():
+            # Wait 0.5s, then run slowish initialize tasks, e.g. search indexes, db check, upgrade and init, etc.
+            # By that time the first window will be opened and will not delay app.exec().
+            #
+            # QTimer can only be used when running Qt. Otherwise it errors:
+            #
+            # QObject::startTimer: Timers can only be used with threads started with QThread
+            #
+            # Separate threads also don't work becuase the db_session cannot cross thread boundaries.
+
+            self.init_timer = QTimer()
+            self.init_timer.setSingleShot(True)
+            self.init_timer.timeout.connect(partial(self._init_tasks))
+            self.init_timer.start(500)
+
+        else:
+            self._init_tasks()
 
         logger.profile("AppData::__init__(): end")
 
     def _init_tasks(self):
         self._init_search_indexes()
-        self._check_db()
         self._find_cli_paths()
         self._read_pali_groups_stats()
         self._ensure_user_memo_deck()
@@ -113,9 +127,16 @@ class AppData:
             #     logger.info("Exiting.")
             #     sys.exit(status)
 
-    def _check_db(self):
-        from simsapa.app.db_helpers import find_or_create_db
-        find_or_create_db(self._user_db_path, DbSchemaName.UserData.value)
+    def _check_db(self, db_path: Path, schema: DbSchemaName):
+        """
+        Checks if db at db_path exists. If not, creates it.
+
+        This check avoids loading the db_helpers module if not necessary.
+        """
+
+        if not db_path.exists():
+            from simsapa.app.db_helpers import find_or_create_db
+            find_or_create_db(db_path, schema.value)
 
     def get_search_indexes(self) -> Optional[TantivySearchIndexes]:
         return self.search_indexes

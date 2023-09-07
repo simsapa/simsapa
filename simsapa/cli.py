@@ -86,12 +86,21 @@ def index_reindex():
 
 @index_app.command("suttas-lang")
 def index_suttas_lang(lang: str):
-    """Create a separate index and index suttas from appdata of the given language."""
+    """Index suttas from appdata of the given language."""
     from simsapa.app.search.tantivy_index import TantivySearchIndexes
     from simsapa.app.app_data import AppData
     app_data = AppData()
     search_indexes = TantivySearchIndexes(app_data.db_session)
     search_indexes.index_all_suttas_lang(lang)
+
+@index_app.command("dict-words-lang")
+def index_dict_words_lang(lang: str):
+    """Index dict_words from appdata of the given language."""
+    from simsapa.app.search.tantivy_index import TantivySearchIndexes
+    from simsapa.app.app_data import AppData
+    app_data = AppData()
+    search_indexes = TantivySearchIndexes(app_data.db_session)
+    search_indexes.index_all_dict_words_lang(lang)
 
 @app.command("import-bookmarks")
 def import_bookmarks(path_to_csv: str):

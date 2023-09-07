@@ -36,14 +36,7 @@ class SearchMode(int, Enum):
     TitleMatch = 3
     RegexMatch = 4
 
-SuttaSearchModeNameToType = {
-    "Fulltext Match": SearchMode.FulltextMatch,
-    "Exact Match": SearchMode.ExactMatch,
-    "Title Match": SearchMode.TitleMatch,
-    "Regex Match": SearchMode.RegexMatch,
-}
-
-DictionarySearchModeNameToType = {
+SearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
     "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,
@@ -53,8 +46,10 @@ DictionarySearchModeNameToType = {
 class SearchParams(TypedDict):
     mode: SearchMode
     page_len: Optional[int]
-    only_lang: Optional[str]
-    only_source: Optional[str]
+    lang: Optional[str]
+    lang_include: bool
+    source: Optional[str]
+    source_include: bool
 
 class QueryType(str, Enum):
     suttas = "suttas"

@@ -8,7 +8,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 
 from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, compact_plain_text
+from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_nasal_m
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
@@ -87,17 +87,17 @@ def tantivy_dict_word_doc_to_search_result(x: tantivy.Document,
 def suttas_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy.Schema:
     tk = content_tokenizer_name
     builder = tantivy.SchemaBuilder()
-    builder.add_text_field("index_key", stored=True)
-    builder.add_integer_field("db_id", stored=True)
+    builder.add_text_field("index_key",   stored=True)
+    builder.add_integer_field("db_id",    stored=True)
     builder.add_text_field("schema_name", stored=True)
-    builder.add_text_field("uid", stored=True)
-    builder.add_text_field("language", stored=True)
-    builder.add_text_field("source_uid", stored=True)
-    builder.add_text_field("ref", stored=True)
-    builder.add_text_field("title", stored=True, tokenizer_name=tk)
-    builder.add_text_field("title_pali", stored=True, tokenizer_name="pli_stem_fold")
+    builder.add_text_field("uid",         stored=True)
+    builder.add_text_field("language",    stored=True)
+    builder.add_text_field("source_uid",  stored=True)
+    builder.add_text_field("ref",         stored=True)
+    builder.add_text_field("title",       stored=True, tokenizer_name=tk)
+    builder.add_text_field("title_pali",  stored=True, tokenizer_name="pli_stem_fold")
     builder.add_text_field("title_trans", stored=True, tokenizer_name=tk)
-    builder.add_text_field("content", stored=True, tokenizer_name=tk)
+    builder.add_text_field("content",     stored=True, tokenizer_name=tk)
 
     schema = builder.build()
 
@@ -106,15 +106,15 @@ def suttas_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy
 def dict_words_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy.Schema:
     tk = content_tokenizer_name
     builder = tantivy.SchemaBuilder()
-    builder.add_text_field("index_key", stored=True)
-    builder.add_integer_field("db_id", stored=True)
+    builder.add_text_field("index_key",   stored=True)
+    builder.add_integer_field("db_id",    stored=True)
     builder.add_text_field("schema_name", stored=True)
-    builder.add_text_field("uid", stored=True)
-    builder.add_text_field("language", stored=True)
-    builder.add_text_field("source_uid", stored=True)
-    builder.add_text_field("word", stored=True)
-    builder.add_text_field("synonyms", stored=True)
-    builder.add_text_field("content", stored=True, tokenizer_name=tk)
+    builder.add_text_field("uid",         stored=True)
+    builder.add_text_field("language",    stored=True)
+    builder.add_text_field("source_uid",  stored=True)
+    builder.add_text_field("word",        stored=True, tokenizer_name="simple_fold")
+    builder.add_text_field("synonyms",    stored=True)
+    builder.add_text_field("content",     stored=True, tokenizer_name=tk)
 
     schema = builder.build()
 
@@ -125,6 +125,10 @@ class TantivySearchQuery:
     searcher: tantivy.Searcher
     page_len: int = 20
     hits_count: Optional[int] = None
+
+    # The un-sanitized, un-extended original user input.
+    # Only consistent_nasal_m(query_text.strip()) applied.
+    query_text_orig: Optional[str] = None
 
     snippet_generator: Optional[tantivy.SnippetGenerator] = None
     parsed_query: Optional[tantivy.Query] = None
@@ -187,6 +191,40 @@ class TantivySearchQuery:
     def _result_with_snippet_no_highlight(self, hit: TantivyHit) -> SearchResult:
         return self._result_with_snippet(hit, highlight=False)
 
+    def boost_score_by_headword(self, headword: str, dict_words: List[SearchResult]) -> List[SearchResult]:
+        logger.info(f"boost_score_by_headword() headword: {headword}")
+
+        boosted_results = []
+        starts_with_word = []
+
+        for i in dict_words:
+            if i['title'] == headword:
+
+                if i['score'] is None:
+                    i['score'] = 0.0
+                i['score'] += 1000.0
+
+                boosted_results.append(i)
+
+            elif i['title'].startswith(headword):
+
+                if i['score'] is None:
+                    i['score'] = 0.0
+                i['score'] += 100.0
+
+                starts_with_word.append(i)
+
+            else:
+                boosted_results.append(i)
+
+        starts_with_word.sort(key = lambda x: x['title'], reverse = True)
+        for idx, i in enumerate(starts_with_word):
+            i['score'] += idx*10.0
+
+        boosted_results.extend(starts_with_word)
+
+        return boosted_results
+
     def highlighted_results_page(self, page_num: int) -> List[SearchResult]:
         logger.info(f"TantivySearchQuery::highlighted_results_page({page_num})")
 
@@ -199,47 +237,81 @@ class TantivySearchQuery:
             query = self.parsed_query,
             limit = self.page_len,
             count = True,
+            # Ordering only works for u64 integer fields.
             order_by_field = None,
             offset = page_start_offset,
         )
 
         self.hits_count = tantivy_results.count
 
-        return list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+        results = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+
+        if self.is_sutta_index():
+            return results
+
+        else:
+            # Raise dictionary headword matches:
+            # - exact matches: kamma, kamma 01, kamma 02
+            # - starts with the word: kammaṁ, kammena
+
+            # If the original user input contains query terms, leave the scoring
+            # as returned by tantivy.
+
+            if self.query_text_orig is None:
+                raise Exception("query_text_orig is None")
+
+            has_terms = any([c in self.query_text_orig for c in ['+', '-', ':']])
+            if has_terms:
+                return results
+
+            boosted_results = self.boost_score_by_headword(self.query_text_orig, results)
+
+            return boosted_results
 
     def new_query(self,
                   query_text: str,
-                  only_source: Optional[str] = None):
+                  source: Optional[str] = None,
+                  source_include = True):
         logger.info("TantivySearchQuery::new_query()")
 
         self.ix.reload()
 
-        query_text = sanitize_user_input(query_text)
+        self.query_text_orig = consistent_nasal_m(query_text.strip())
 
-        if 'uid:' not in query_text:
+        query_string = sanitize_user_input(self.query_text_orig)
+
+        if 'uid:' not in query_string:
             # Replace user input sutta refs such as 'SN 56.11' with query language
-            matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query_text)
+            matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query_string)
             for m in matches:
                 nikaya = m.group(1).lower()
                 number = m.group(2)
-                query_text = query_text.replace(m.group(0), f"uid:{nikaya}{number}")
+                query_string = query_string.replace(m.group(0), f"uid:{nikaya}{number}")
 
-        if only_source is not None \
-           and (only_source != "Source" or only_source != "Dictionaries"):
-            query_text += f" +source_uid:{only_source.lower()}"
+        if source is not None \
+           and (source != "Source" or source != "Dictionaries"):
+            sign = '+' if source_include else '-'
+            query_string += f" {sign}source_uid:{source.lower()}"
 
         if self.is_sutta_index():
             # Only search in content. Title search skews results, i.e. 'buddha'
             # will return English title results first, with Pali results
             # 'buddhassa' not visible on first page.
-            self.parsed_query = self.ix.parse_query(query_text, ['content'])
+            #
+            # Also, Pali titles are long words, and since the tokenizer matches
+            # complete words, it will not match the beginning of titles, e.g.
+            # 'silavant' for 'sīlavantasuttaṁ'.
+            self.parsed_query = self.ix.parse_query(query_string, ['content'])
 
         elif self.is_dict_word_index():
-            self.parsed_query = self.ix.parse_query(query_text, ['content'])
-            # self.parsed_query = self.ix.parse_query(query_text, ['content', 'word'])
+            if 'word:' not in self.query_text_orig \
+               and ' ' not in self.query_text_orig:
+                query_string += f" word:{self.query_text_orig}"
+
+            self.parsed_query = self.ix.parse_query(query_string, ['content', 'word'])
 
         else:
-            self.parsed_query = self.ix.parse_query(query_text, ['content'])
+            self.parsed_query = self.ix.parse_query(query_string, ['content'])
 
         self.snippet_generator = tantivy.SnippetGenerator \
                                         .create(self.searcher,
@@ -470,7 +542,7 @@ class TantivySearchIndexes:
 
     def index_suttas(self, ix: tantivy.Index, db_schema_name: str, suttas: List[USutta]):
         from bs4 import BeautifulSoup
-        logger.info(f"index_suttas() len: {len(suttas)}")
+        logger.info(f"index_suttas() schema: {db_schema_name}, len: {len(suttas)}")
 
         try:
             writer = ix.writer(INDEX_WRITER_MEMORY_MB*1024*1024)
@@ -562,6 +634,7 @@ class TantivySearchIndexes:
             logger.warn(f"Index is not in suttas_lang_index: {lang}")
 
     def index_dict_words(self, ix: tantivy.Index, db_schema_name: str, words: List[UDictWord]):
+        from bs4 import BeautifulSoup
         logger.info(f"index_dict_words() len: {len(words)}")
 
         try:
@@ -575,7 +648,22 @@ class TantivySearchIndexes:
 
                 # Prefer the html content field if not empty
                 if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    content = compact_rich_text(str(i.definition_html))
+                    if i.source_uid == "dpd":
+                        # Remove not content related divs from DPD: frequency, feedback
+                        #
+                        # The text in these give false positives when searching the index.
+                        soup = BeautifulSoup(str(i.definition_html), 'html.parser')
+                        h = soup.find_all(class_='content')
+                        for x in h:
+                            if x.has_attr('id'):
+                                s = x['id']
+                                if 'frequency_' in s or 'feedback_' in s:
+                                    x.decompose()
+
+                        content = compact_rich_text(str(soup))
+
+                    else:
+                        content = compact_rich_text(str(i.definition_html))
 
                 elif i.definition_plain is not None:
                     content = compact_plain_text(str(i.definition_plain))

@@ -69,7 +69,7 @@ class GuiSearchQueries:
             return sum([i.task.query_hits() for i in self.search_query_workers])
 
     def start_search_query_workers(self,
-                                   query_text: str,
+                                   query_text_orig: str,
                                    area: SearchArea,
                                    query_started_time: datetime,
                                    finished_fn: Callable,
@@ -92,48 +92,35 @@ class GuiSearchQueries:
         self.search_query_workers = []
 
         if area == SearchArea.Suttas:
+            lang_keys = list(self._search_indexes.suttas_lang_index.keys())
+            lang_indexes = self._search_indexes.suttas_lang_index
+        else:
+            lang_keys = list(self._search_indexes.dict_words_lang_index.keys())
+            lang_indexes = self._search_indexes.dict_words_lang_index
 
-            if params['only_lang'] is not None:
-                languages =  [params['only_lang']]
+        if params['lang'] is not None:
+            if params['lang_include']:
+                languages =  [params['lang']]
             else:
-                languages = self._search_indexes.suttas_lang_index.keys()
+                languages = [i for i in lang_keys if i != params['lang']]
+        else:
+            languages = lang_keys
 
-            for lang in languages:
+        for lang in languages:
 
-                logger.info(f"SearchQueryWorker for {lang}")
+            logger.info(f"SearchQueryWorker for {lang}")
 
-                task = SearchQueryTask(self._search_indexes.suttas_lang_index[lang],
-                                       query_text,
-                                       query_started_time,
-                                       params)
+            task = SearchQueryTask(lang_indexes[lang],
+                                   query_text_orig,
+                                   query_started_time,
+                                   params)
 
-                w = SearchQueryWorker(task, finished_fn)
+            w = SearchQueryWorker(task, finished_fn)
 
-                self.search_query_workers.append(w)
-
-        elif area == SearchArea.DictWords:
-
-            if params['only_lang'] is not None:
-                languages =  [params['only_lang']]
-            else:
-                languages = self._search_indexes.dict_words_lang_index.keys()
-
-            for lang in languages:
-
-                logger.info(f"SearchQueryWorker for {lang}")
-
-                task = SearchQueryTask(self._search_indexes.dict_words_lang_index[lang],
-                                       query_text,
-                                       query_started_time,
-                                       params)
-
-                w = SearchQueryWorker(task, finished_fn)
-
-                self.search_query_workers.append(w)
+            self.search_query_workers.append(w)
 
         for i in self.search_query_workers:
             self.thread_pool.start(i)
-
 
     def start_exact_query_worker(self,
                                  query_text: str,

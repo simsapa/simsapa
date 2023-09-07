@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QDialog, QFrame, QLineEdit, QMainWindow, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName
 from simsapa.app.types import UDictWord, SuttaQuote, SearchMode
@@ -324,7 +324,7 @@ class AppSettings(TypedDict):
     sutta_search_mode: SearchMode
     sutta_source_filter_idx: int
     suttas_show_pali_buttons: bool
-    word_lookup_dict_filter_idx: int
+    word_lookup_source_filter_idx: int
     word_lookup_pos: WindowPosSize
     word_lookup_search_mode: SearchMode
 
@@ -367,7 +367,7 @@ def default_app_settings() -> AppSettings:
         sutta_search_mode = SearchMode.FulltextMatch,
         sutta_source_filter_idx = 0,
         suttas_show_pali_buttons = True,
-        word_lookup_dict_filter_idx = 0,
+        word_lookup_source_filter_idx = 0,
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 400, height = 500),
         word_lookup_search_mode = SearchMode.FulltextMatch,
     )
@@ -443,7 +443,21 @@ class AppWindowInterface(QMainWindow):
 
     _focus_search_input: Callable
 
-class SuttaSearchWindowStateInterface(QWidget):
+class SearchBarInterface:
+    search_input: QLineEdit
+    page_len: int
+    _set_query: Callable
+    _handle_query: Callable
+
+    language_filter_dropdown: QComboBox
+    language_include_btn: QPushButton
+
+    source_filter_dropdown: QComboBox
+    source_include_btn: QPushButton
+
+    search_mode_dropdown: QComboBox
+
+class SuttaSearchWindowStateInterface(QWidget, SearchBarInterface):
     open_sutta_new_signal: pyqtSignal
     open_in_study_window_signal: pyqtSignal
     link_mouseover: pyqtSignal
@@ -456,8 +470,6 @@ class SuttaSearchWindowStateInterface(QWidget):
     _show_sutta_by_uid: Callable
     _get_selection: Callable
     _get_active_tab: Callable
-    _set_query: Callable
-    _handle_query: Callable
 
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
@@ -498,7 +510,7 @@ class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable
 
-class DictionarySearchWindowInterface(AppWindowInterface):
+class DictionarySearchWindowInterface(AppWindowInterface, SearchBarInterface):
     action_Show_Sidebar: QAction
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
@@ -511,15 +523,13 @@ class DictionarySearchWindowInterface(AppWindowInterface):
 
     queue_id: str
     handle_messages: Callable
-    _set_query: Callable
-    _handle_query: Callable
     _handle_exact_query: Callable
 
 class BookmarksBrowserWindowInterface(AppWindowInterface):
     reload_bookmarks: Callable
     reload_table: Callable
 
-class WordLookupStateInterface(QWidget):
+class WordLookupStateInterface(QWidget, SearchBarInterface):
     lookup_in_dictionary: Callable
     connect_preview_window_signals: Callable
 

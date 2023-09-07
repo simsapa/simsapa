@@ -43,6 +43,7 @@ class SchemaBuilder:
     def add_text_field(self,
                        field_name_str: str,
                        stored: bool,
+                       fast: bool = False,
                        tokenizer_name: Optional[str] = None) -> Field: ...
 
     def add_integer_field(self,

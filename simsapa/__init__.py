@@ -96,6 +96,16 @@ STARTUP_MESSAGE_PATH = SIMSAPA_DIR.joinpath("startup_message.json")
 APP_QUEUES: Dict[str, queue.Queue] = {}
 SERVER_QUEUE = queue.Queue()
 
+IS_GUI = False
+
+def set_is_gui(value: bool):
+    global IS_GUI
+    IS_GUI = value
+
+def get_is_gui() -> bool:
+    global IS_GUI
+    return IS_GUI
+
 IS_LINUX = (platform.system() == 'Linux')
 IS_WINDOWS = (platform.system() == 'Windows')
 IS_MAC = (platform.system() == 'Darwin')

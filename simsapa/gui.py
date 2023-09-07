@@ -10,7 +10,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
+from simsapa import set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import find_available_port
@@ -41,6 +41,7 @@ create_app_dirs()
 
 def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.profile("gui::start()")
+    set_is_gui(True)
 
     ensure_empty_graphs_cache()
 

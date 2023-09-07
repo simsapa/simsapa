@@ -2315,7 +2315,7 @@ dev = ["mkdocs", "nox"]
 type = "git"
 url = "https://github.com/simsapa/tantivy-py.git"
 reference = "simsapa"
-resolved_reference = "229c10213b32de3ad4c905c2e968798f693afc28"
+resolved_reference = "43aac3ffd083336cbb86c455d086cc905b38d55e"
 
 [[package]]
 name = "tiktoken"

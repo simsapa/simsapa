@@ -16,12 +16,12 @@ from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, 
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.types import SearchParams
 
-from simsapa.app.types import QueryType, SearchArea, SearchMode, SuttaQuote, SuttaSearchModeNameToType, USutta, UDictWord
+from simsapa.app.types import QueryType, SearchArea, SearchMode, SuttaQuote, SearchModeNameToType, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.sutta_queries import QuoteScope
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_sutta_languages
+from simsapa.layouts.gui_helpers import get_search_params
 
 from simsapa.layouts.gui_types import OpenPromptParams, QFixed, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, sutta_quote_from_url, LinkHoverData
 from simsapa.layouts.gui_queries import GuiSearchQueries
@@ -137,53 +137,19 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         warning_icon.addPixmap(QtGui.QPixmap(":/warning"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
         self._warning_icon = warning_icon
 
-    def _get_search_params(self) -> SearchParams:
-        if self.enable_search_extras:
-            idx = self.sutta_language_filter_dropdown.currentIndex()
-            language = self.sutta_language_filter_dropdown.itemText(idx)
-            if language == "Language":
-                only_lang = None
-            else:
-                only_lang = language
-
-            if hasattr(self, 'sutta_source_filter_dropdown'):
-                idx = self.sutta_source_filter_dropdown.currentIndex()
-                source = self.sutta_source_filter_dropdown.itemText(idx)
-                if source == "Source":
-                    only_source = None
-                else:
-                    only_source = source
-            else:
-                only_source = None
-
-        else:
-            only_lang = None
-            only_source = None
-
-        idx = self.search_mode_dropdown.currentIndex()
-        s = self.search_mode_dropdown.itemText(idx)
-        mode = SuttaSearchModeNameToType[s]
-
-        return SearchParams(
-            mode = mode,
-            page_len = self.page_len,
-            only_lang = only_lang,
-            only_source = only_source,
-        )
-
-    def _start_query_workers(self, query_text: str = ""):
-        if len(query_text) == 0:
+    def _start_query_workers(self, query_text_orig: str):
+        if len(query_text_orig) == 0:
             return
-        logger.info(f"_start_query_workers(): {query_text}")
+        logger.info(f"_start_query_workers(): {query_text_orig}")
 
         if self._app_data.search_indexes is None:
             return
 
-        params = self._get_search_params()
+        params = get_search_params(self)
 
         if params['mode'] == SearchMode.FulltextMatch:
             try:
-                self._app_data.search_indexes.test_correct_query_syntax(SearchArea.Suttas, query_text)
+                self._app_data.search_indexes.test_correct_query_syntax(SearchArea.Suttas, query_text_orig)
 
             except ValueError as e:
                 self._show_search_warning_icon(str(e))
@@ -194,11 +160,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self._last_query_time = datetime.now()
 
         self._queries.start_search_query_workers(
-            query_text,
+            query_text_orig,
             SearchArea.Suttas,
             self._last_query_time,
             partial(self._search_query_finished),
-            self._get_search_params(),
+            get_search_params(self),
         )
 
     def _get_active_tab(self) -> SuttaTabWidget:
@@ -227,9 +193,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self._setup_sutta_tabs()
 
         if self.enable_language_filter:
+            self._setup_language_include_btn()
             self._setup_language_filter()
 
         if self.enable_search_extras:
+            self._setup_source_include_btn()
             self._setup_source_filter()
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             # self._setup_toggle_pali_button() # TODO: reimplement as hover window
@@ -316,12 +284,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self.searchbar_layout.addWidget(self.search_button)
 
         self.search_mode_dropdown = QComboBox()
-        items = SuttaSearchModeNameToType.keys()
+        items = SearchModeNameToType.keys()
         self.search_mode_dropdown.addItems(items)
         self.search_mode_dropdown.setFixedHeight(40)
 
         mode = self._app_data.app_settings.get('sutta_search_mode', SearchMode.FulltextMatch)
-        values = list(map(lambda x: x[1], SuttaSearchModeNameToType.items()))
+        values = list(map(lambda x: x[1], SearchModeNameToType.items()))
         idx = values.index(mode)
         self.search_mode_dropdown.setCurrentIndex(idx)
 
@@ -488,8 +456,68 @@ QWidget:focus { border: 1px solid #1092C3; }
         cmb.addItems(items)
         cmb.setFixedHeight(40)
         cmb.setCurrentIndex(idx)
-        self.sutta_language_filter_dropdown = cmb
-        self.search_extras.addWidget(self.sutta_language_filter_dropdown)
+        self.language_filter_dropdown = cmb
+        self.search_extras.addWidget(self.language_filter_dropdown)
+
+    def _setup_language_include_btn(self):
+        icon_plus = QIcon()
+        icon_plus.addPixmap(QPixmap(":/plus-solid"))
+
+        btn = QPushButton()
+        btn.setFixedSize(40, 40)
+        btn.setIcon(icon_plus)
+        btn.setToolTip("+ means 'must include', - means 'must exclude'")
+        btn.setCheckable(True)
+        btn.setChecked(True)
+
+        self.language_include_btn = btn
+        self.search_extras.addWidget(self.language_include_btn)
+
+        def _clicked():
+            is_on = self.language_include_btn.isChecked()
+
+            if is_on:
+                icon = QIcon()
+                icon.addPixmap(QPixmap(":/plus-solid"))
+            else:
+                icon = QIcon()
+                icon.addPixmap(QPixmap(":/minus-solid"))
+
+            self.language_include_btn.setIcon(icon)
+
+            self._handle_query(min_length=4)
+
+        self.language_include_btn.clicked.connect(partial(_clicked))
+
+    def _setup_source_include_btn(self):
+        icon_plus = QIcon()
+        icon_plus.addPixmap(QPixmap(":/plus-solid"))
+
+        btn = QPushButton()
+        btn.setFixedSize(40, 40)
+        btn.setIcon(icon_plus)
+        btn.setToolTip("+ means 'must include', - means 'must exclude'")
+        btn.setCheckable(True)
+        btn.setChecked(True)
+
+        self.source_include_btn = btn
+        self.search_extras.addWidget(self.source_include_btn)
+
+        def _clicked():
+            is_on = self.source_include_btn.isChecked()
+
+            if is_on:
+                icon = QIcon()
+                icon.addPixmap(QPixmap(":/plus-solid"))
+            else:
+                icon = QIcon()
+                icon.addPixmap(QPixmap(":/minus-solid"))
+
+            self.source_include_btn.setIcon(icon)
+
+            self._handle_query(min_length=4)
+
+        self.source_include_btn.clicked.connect(partial(_clicked))
 
     def _setup_source_filter(self):
         cmb = QComboBox()
@@ -500,8 +528,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         cmb.addItems(items)
         cmb.setFixedHeight(40)
         cmb.setCurrentIndex(idx)
-        self.sutta_source_filter_dropdown = cmb
-        self.search_extras.addWidget(self.sutta_source_filter_dropdown)
+        self.source_filter_dropdown = cmb
+        self.search_extras.addWidget(self.source_filter_dropdown)
 
     def _set_query(self, s: str):
         self.search_input.setText(s)
@@ -542,31 +570,31 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._render_results_in_active_tab(hits)
 
     def _handle_query(self, min_length: int = 4):
-        query = self.search_input.text().strip()
-        logger.info(f"_handle_query(): {query}, {min_length}")
+        query_text_orig = self.search_input.text().strip()
+        logger.info(f"_handle_query(): {query_text_orig}, {min_length}")
 
-        idx = self.sutta_language_filter_dropdown.currentIndex()
+        idx = self.language_filter_dropdown.currentIndex()
         self._app_data.app_settings['sutta_language_filter_idx'] = idx
 
-        if hasattr(self, 'sutta_source_filter_dropdown'):
-            idx = self.sutta_source_filter_dropdown.currentIndex()
+        if hasattr(self, 'source_filter_dropdown'):
+            idx = self.source_filter_dropdown.currentIndex()
             self._app_data.app_settings['sutta_source_filter_idx'] = idx
 
         self._app_data._save_app_settings()
 
         # Re-render the current sutta, in case user is trying to restore sutta
         # after a search in the Study Window with the clear input button.
-        if len(query) == 0 and self.showing_query_in_tab and self._get_active_tab().sutta is not None:
+        if len(query_text_orig) == 0 and self.showing_query_in_tab and self._get_active_tab().sutta is not None:
             self._get_active_tab().render_sutta_content()
             return
 
-        if re.search(RE_ALL_BOOK_SUTTA_REF, query) is None and len(query) < min_length:
+        if re.search(RE_ALL_BOOK_SUTTA_REF, query_text_orig) is None and len(query_text_orig) < min_length:
             return
 
         # Not aborting, show the user that the app started processsing
         self._show_search_stopwatch_icon()
 
-        self._start_query_workers(query)
+        self._start_query_workers(query_text_orig)
 
     def _show_search_normal_icon(self):
         self.search_button.setIcon(self._normal_search_icon)
@@ -1128,7 +1156,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         idx = self.search_mode_dropdown.currentIndex()
         s = self.search_mode_dropdown.itemText(idx)
 
-        self._app_data.app_settings['sutta_search_mode'] = SuttaSearchModeNameToType[s]
+        self._app_data.app_settings['sutta_search_mode'] = SearchModeNameToType[s]
         self._app_data._save_app_settings()
 
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
@@ -1162,11 +1190,11 @@ QWidget:focus { border: 1px solid #1092C3; }
                 self.back_recent_button.clicked.connect(partial(self._show_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
-        if self.enable_language_filter and hasattr(self, 'sutta_language_filter_dropdown'):
-            self.sutta_language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        if self.enable_language_filter and hasattr(self, 'language_filter_dropdown'):
+            self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
-        if self.enable_search_extras and hasattr(self, 'sutta_source_filter_dropdown'):
-            self.sutta_source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
+        if self.enable_search_extras and hasattr(self, 'source_filter_dropdown'):
+            self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:
             self._find_panel.searched.connect(self.on_searched)

@@ -86,8 +86,8 @@ tornado = "6.3.2"
 
 tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa" }
 # tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa", rev = "229c10213b32de3ad4c905c2e968798f693afc28" }
-# tantivy = { path = "../libs-src/tantivy-py-gambhiro", develop = true }
-# tantivy = { path = "../libs-src/tantivy-py-gambhiro/target/wheels/tantivy-0.20.2rc3-cp311-cp311-manylinux_2_34_x86_64.whl" }
+# tantivy = { path = "../libs-src/tantivy-py-simsapa", develop = true }
+# tantivy = { path = "../libs-src/tantivy-py-simsapa/target/wheels/tantivy-0.20.2rc3-cp311-cp311-manylinux_2_34_x86_64.whl" }
 
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'

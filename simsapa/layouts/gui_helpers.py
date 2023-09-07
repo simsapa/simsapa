@@ -14,6 +14,8 @@ from simsapa.app.db import appdata_models as Am
 
 from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, logger)
+from simsapa.app.types import SearchMode, SearchModeNameToType, SearchParams
+from simsapa.layouts.gui_types import SearchBarInterface
 
 
 class Version(TypedDict):
@@ -374,4 +376,51 @@ def is_local_db_obsolete() -> Optional[UpdateInfo]:
         version = app_s,
         message = message,
         visit_url = None,
+    )
+
+def get_search_params(w: SearchBarInterface) -> SearchParams:
+    if hasattr(w, 'language_filter_dropdown'):
+        idx = w.language_filter_dropdown.currentIndex()
+        lang_value = w.language_filter_dropdown.itemText(idx)
+        if lang_value == "Language":
+            lang = None
+        else:
+            lang = lang_value
+    else:
+        lang = None
+
+    if hasattr(w, 'language_include_btn'):
+        lang_include = w.language_include_btn.isChecked()
+    else:
+        lang_include = False
+
+    if hasattr(w, 'source_filter_dropdown'):
+        idx = w.source_filter_dropdown.currentIndex()
+        source_value = w.source_filter_dropdown.itemText(idx)
+        if source_value == "Source" or source_value == "Dictionaries":
+            source = None
+        else:
+            source = source_value
+    else:
+        source = None
+
+    if hasattr(w, 'source_include_btn'):
+        source_include = w.source_include_btn.isChecked()
+    else:
+        source_include = False
+
+    if hasattr(w, 'search_mode_dropdown'):
+        idx = w.search_mode_dropdown.currentIndex()
+        s = w.search_mode_dropdown.itemText(idx)
+        mode = SearchModeNameToType[s]
+    else:
+        mode = SearchMode.FulltextMatch
+
+    return SearchParams(
+        mode = mode,
+        page_len = w.page_len,
+        lang = lang,
+        lang_include = lang_include,
+        source = source,
+        source_include = source_include,
     )

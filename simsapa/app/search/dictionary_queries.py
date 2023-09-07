@@ -286,8 +286,8 @@ class ExactQueryWorker(QRunnable):
         super().__init__()
         self.signals = ExactQueryWorkerSignals()
         self.query = query
-        self.only_lang = params['only_lang']
-        self.only_source = params['only_source']
+        self.only_lang = params['lang']
+        self.only_source = params['source']
         self.add_recent = add_recent
 
         self.signals.finished.connect(finished_fn)
