@@ -289,7 +289,7 @@ class TantivySearchQuery:
                 query_string = query_string.replace(m.group(0), f"uid:{nikaya}{number}")
 
         if source is not None \
-           and (source != "Source" or source != "Dictionaries"):
+           and (source != "Sources" or source != "Dictionaries"):
             sign = '+' if source_include else '-'
             query_string += f" {sign}source_uid:{source.lower()}"
 

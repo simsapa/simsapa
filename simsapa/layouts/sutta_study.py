@@ -125,10 +125,12 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       tabs_layout=None,
                                                       focus_input=False,
                                                       enable_language_filter=True,
-                                                      enable_search_extras=False,
+                                                      enable_search_extras=True,
+                                                      enable_info_button=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
-                                                      show_query_results_in_active_tab=True)
+                                                      show_query_results_in_active_tab=True,
+                                                      search_bar_two_rows_layout=True)
 
         self.sutta_one_state.page_dblclick.connect(partial(self.sutta_one_state._lookup_selection_in_dictionary))
 
@@ -157,10 +159,12 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       tabs_layout=None,
                                                       focus_input=False,
                                                       enable_language_filter=True,
-                                                      enable_search_extras=False,
+                                                      enable_search_extras=True,
+                                                      enable_info_button=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
-                                                      show_query_results_in_active_tab=True)
+                                                      show_query_results_in_active_tab=True,
+                                                      search_bar_two_rows_layout=True)
 
         self.sutta_two_state.page_dblclick.connect(partial(self.sutta_two_state._lookup_selection_in_dictionary))
 

@@ -15,9 +15,10 @@ from simsapa.app.search.sutta_queries import SuttaQueries
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 from simsapa.app.types import SearchArea, SearchParams
 
+from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 from simsapa.layouts.query_worker import SearchQueryWorker
 
-class GuiSearchQueries:
+class GuiSearchQueries(GuiSearchQueriesInterface):
     db_session: Session
     api_url: Optional[str] = None
     search_query_workers: List[SearchQueryWorker] = []

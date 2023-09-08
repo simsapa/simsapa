@@ -1,4 +1,5 @@
 from enum import Enum
+from datetime import datetime
 from typing import Callable, List, Optional, TypedDict, Dict
 from urllib.parse import parse_qs
 
@@ -8,7 +9,8 @@ from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName
-from simsapa.app.types import UDictWord, SuttaQuote, SearchMode
+from simsapa.app.search.helpers import SearchResult
+from simsapa.app.types import DictionaryQueriesInterface, SuttaQueriesInterface, UDictWord, SuttaQuote, SearchMode
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
@@ -290,10 +292,11 @@ class AppSettings(TypedDict):
     audio_device_desc: str
     audio_volume: float
     clipboard_monitoring_for_dict: bool
-    dict_filter_idx: int
     dictionary_font_size: int
+    dictionary_language_filter_idx: int
     dictionary_search_mode: SearchMode
     dictionary_show_pali_buttons: bool
+    dictionary_source_filter_idx: int
     double_click_word_lookup: bool
     export_format: ExportFileFormat
     first_window_on_startup: WindowType
@@ -324,19 +327,21 @@ class AppSettings(TypedDict):
     sutta_search_mode: SearchMode
     sutta_source_filter_idx: int
     suttas_show_pali_buttons: bool
-    word_lookup_source_filter_idx: int
+    word_lookup_language_filter_idx: int
     word_lookup_pos: WindowPosSize
     word_lookup_search_mode: SearchMode
+    word_lookup_source_filter_idx: int
 
 def default_app_settings() -> AppSettings:
     return AppSettings(
         audio_device_desc = '',
         audio_volume = 0.9,
         clipboard_monitoring_for_dict = False,
-        dict_filter_idx = 0,
         dictionary_font_size = 18,
+        dictionary_language_filter_idx = 0,
         dictionary_search_mode = SearchMode.FulltextMatch,
         dictionary_show_pali_buttons = True,
+        dictionary_source_filter_idx = 0,
         double_click_word_lookup = True,
         export_format = ExportFileFormat.EPUB,
         first_window_on_startup = WindowType.SuttaSearch,
@@ -367,9 +372,10 @@ def default_app_settings() -> AppSettings:
         sutta_search_mode = SearchMode.FulltextMatch,
         sutta_source_filter_idx = 0,
         suttas_show_pali_buttons = True,
-        word_lookup_source_filter_idx = 0,
+        word_lookup_language_filter_idx = 0,
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 400, height = 500),
         word_lookup_search_mode = SearchMode.FulltextMatch,
+        word_lookup_source_filter_idx = 0,
     )
 
 # Message to show to the user.
@@ -443,11 +449,28 @@ class AppWindowInterface(QMainWindow):
 
     _focus_search_input: Callable
 
-class SearchBarInterface:
+class GuiSearchQueriesInterface:
+    sutta_queries: SuttaQueriesInterface
+    dictionary_queries: DictionaryQueriesInterface
+
+    start_search_query_workers: Callable
+    start_exact_query_worker: Callable
+    results_page: Callable[[int], List[SearchResult]]
+    query_hits: Callable[[], int]
+    all_finished: Callable[[], bool]
+
+class SearchBarInterface(QWidget):
     search_input: QLineEdit
     page_len: int
     _set_query: Callable
     _handle_query: Callable
+    _handle_exact_query: Callable
+    _search_query_finished: Callable[[datetime], None]
+    _exact_query_finished: Callable
+    _queries: GuiSearchQueriesInterface
+    _search_mode_setting_key: str
+    _language_filter_setting_key: str
+    _source_filter_setting_key: str
 
     language_filter_dropdown: QComboBox
     language_include_btn: QPushButton
@@ -457,7 +480,10 @@ class SearchBarInterface:
 
     search_mode_dropdown: QComboBox
 
-class SuttaSearchWindowStateInterface(QWidget, SearchBarInterface):
+    start_loading_animation: Callable[[], None]
+    stop_loading_animation: Callable[[], None]
+
+class SuttaSearchWindowStateInterface(SearchBarInterface):
     open_sutta_new_signal: pyqtSignal
     open_in_study_window_signal: pyqtSignal
     link_mouseover: pyqtSignal
@@ -529,7 +555,7 @@ class BookmarksBrowserWindowInterface(AppWindowInterface):
     reload_bookmarks: Callable
     reload_table: Callable
 
-class WordLookupStateInterface(QWidget, SearchBarInterface):
+class WordLookupStateInterface(SearchBarInterface):
     lookup_in_dictionary: Callable
     connect_preview_window_signals: Callable
 

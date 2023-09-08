@@ -30,8 +30,7 @@ class MemoListModel(QAbstractListModel):
             text = text[0:200] + " ..."
             return text
 
-    # First arg: index
-    def rowCount(self, _):
+    def rowCount(self, __index__):
         if self.memos:
             return len(self.memos)
         else:
@@ -142,8 +141,7 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.front_input.clear()
         self.back_input.clear()
 
-    # First arg: query
-    def _memos_search_query(self, _: str):
+    def _memos_search_query(self, query: str):
         return []
 
     def add_memo(self):

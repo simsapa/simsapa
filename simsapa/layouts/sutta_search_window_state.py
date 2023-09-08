@@ -6,24 +6,24 @@ import re
 from urllib.parse import urlencode
 
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import (QComboBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout)
+from PyQt6.QtCore import QTimer, QUrl, pyqtSignal, QSize
+from PyQt6.QtGui import QIcon, QPixmap, QStandardItemModel, QAction
+from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout)
 
 from sqlalchemy import and_
 
-from simsapa import READING_BACKGROUND_COLOR, SEARCH_TIMER_SPEED, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import QueryType, SearchArea, SearchMode, SuttaQuote, SearchModeNameToType, USutta, UDictWord
+from simsapa.app.types import QueryType, SearchArea, SuttaQuote, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.sutta_queries import QuoteScope
-from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_sutta_languages
-from simsapa.layouts.gui_helpers import get_search_params
+from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF
 
-from simsapa.layouts.gui_types import OpenPromptParams, QFixed, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, sutta_quote_from_url, LinkHoverData
+from simsapa.layouts.gui_types import OpenPromptParams, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
+from simsapa.layouts.gui_types import sutta_quote_from_url
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
@@ -31,13 +31,14 @@ from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.simsapa_webengine import SimsapaWebEngine
 from simsapa.layouts.sutta_tab import SuttaTabWidget
 from simsapa.layouts.html_content import html_page
-from simsapa.layouts.help_info import setup_info_button
 
+from simsapa.layouts.parts.search_bar import HasSearchBar
 from simsapa.layouts.parts.memo_dialog import HasMemoDialog
 from simsapa.layouts.parts.bookmark_dialog import HasBookmarkDialog
 
 
-class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, HasBookmarkDialog):
+class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
+                             HasSearchBar, HasMemoDialog, HasBookmarkDialog):
 
     searchbar_layout: Optional[QHBoxLayout]
     sutta_tabs_layout: Optional[QVBoxLayout]
@@ -77,9 +78,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
                  focus_input: bool = True,
                  enable_language_filter: bool = True,
                  enable_search_extras: bool = True,
+                 enable_info_button: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
                  show_query_results_in_active_tab: bool = False,
+                 search_bar_two_rows_layout=False,
                  custom_create_context_menu_fn: Optional[Callable] = None) -> None:
         super().__init__()
 
@@ -118,55 +121,35 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
 
         self.focus_input = focus_input
 
+        self._search_mode_setting_key = 'sutta_search_mode'
+        self._language_filter_setting_key = 'sutta_language_filter_idx'
+        self._source_filter_setting_key = 'sutta_source_filter_idx'
+
         self._setup_ui()
+
+        if self.searchbar_layout is not None:
+            self.init_search_bar(wrap_layout            = self.searchbar_layout,
+                                 search_area            = SearchArea.Suttas,
+                                 add_nav_buttons        = True,
+                                 enable_language_filter = enable_language_filter,
+                                 enable_search_extras   = enable_search_extras,
+                                 enable_info_button     = enable_info_button,
+                                 input_fixed_size       = QSize(250, 35),
+                                 icons_height           = 40,
+                                 focus_input            = True,
+                                 two_rows_layout        = search_bar_two_rows_layout)
+
+        self._setup_show_sidebar_btn()
         self._connect_signals()
 
-        self.init_icons()
         self.init_bookmark_dialog()
         self.init_memo_dialog()
 
-    def init_icons(self):
-        search_icon = QtGui.QIcon()
-        search_icon.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self._normal_search_icon = search_icon
-
-        stopwatch_icon = QtGui.QIcon()
-        stopwatch_icon.addPixmap(QtGui.QPixmap(":/stopwatch"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self._stopwatch_icon = stopwatch_icon
-
-        warning_icon = QtGui.QIcon()
-        warning_icon.addPixmap(QtGui.QPixmap(":/warning"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self._warning_icon = warning_icon
-
-    def _start_query_workers(self, query_text_orig: str):
-        if len(query_text_orig) == 0:
-            return
-        logger.info(f"_start_query_workers(): {query_text_orig}")
-
-        if self._app_data.search_indexes is None:
-            return
-
-        params = get_search_params(self)
-
-        if params['mode'] == SearchMode.FulltextMatch:
-            try:
-                self._app_data.search_indexes.test_correct_query_syntax(SearchArea.Suttas, query_text_orig)
-
-            except ValueError as e:
-                self._show_search_warning_icon(str(e))
-                return
-
+    def start_loading_animation(self):
         self.pw.start_loading_animation()
 
-        self._last_query_time = datetime.now()
-
-        self._queries.start_search_query_workers(
-            query_text_orig,
-            SearchArea.Suttas,
-            self._last_query_time,
-            partial(self._search_query_finished),
-            get_search_params(self),
-        )
+    def stop_loading_animation(self):
+        self.pw.start_loading_animation()
 
     def _get_active_tab(self) -> SuttaTabWidget:
         current_idx = self.sutta_tabs.currentIndex()
@@ -189,22 +172,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
             return None
 
     def _setup_ui(self):
-        self._setup_search_bar()
-
         self._setup_sutta_tabs()
-
-        if self.enable_language_filter:
-            self._setup_language_include_btn()
-            self._setup_language_filter()
-
-        if self.enable_search_extras:
-            self._setup_source_include_btn()
-            self._setup_source_filter()
-            # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
-            # self._setup_toggle_pali_button() # TODO: reimplement as hover window
-            setup_info_button(self.search_extras, self)
-
-            # self._setup_pali_buttons() # TODO: reimplement as hover window
 
         if self.enable_find_panel:
             self._find_panel = FindPanel()
@@ -215,89 +183,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
             self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
             self.find_toolbar.hide()
 
-    def _setup_search_bar(self):
+    def _setup_show_sidebar_btn(self):
         if self.searchbar_layout is None:
             return
 
-        self.back_recent_button = QtWidgets.QPushButton()
-        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.back_recent_button.sizePolicy().hasHeightForWidth())
-
-        self.back_recent_button.setSizePolicy(sizePolicy)
-        self.back_recent_button.setMinimumSize(QtCore.QSize(40, 40))
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/arrow-left"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.back_recent_button.setIcon(icon)
-        self.back_recent_button.setObjectName("back_recent_button")
-
-        self.searchbar_layout.addWidget(self.back_recent_button)
-
-        self.forward_recent_button = QtWidgets.QPushButton()
-
-        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.forward_recent_button.sizePolicy().hasHeightForWidth())
-
-        self.forward_recent_button.setSizePolicy(sizePolicy)
-        self.forward_recent_button.setMinimumSize(QtCore.QSize(40, 40))
-
-        icon1 = QtGui.QIcon()
-        icon1.addPixmap(QtGui.QPixmap(":/arrow-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-        self.forward_recent_button.setIcon(icon1)
-
-        self.searchbar_layout.addWidget(self.forward_recent_button)
-
-        self.search_input = QtWidgets.QLineEdit()
-
-        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.search_input.sizePolicy().hasHeightForWidth())
-        self.search_input.setSizePolicy(sizePolicy)
-
-        self.search_input.setMinimumSize(QtCore.QSize(250, 35))
-        self.search_input.setClearButtonEnabled(True)
-
-        self.searchbar_layout.addWidget(self.search_input)
-
-        if self.focus_input:
-            self.search_input.setFocus()
-
-        self.search_button = QtWidgets.QPushButton()
-
-        sizePolicy = QtWidgets.QSizePolicy(QFixed, QFixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.search_button.sizePolicy().hasHeightForWidth())
-
-        self.search_button.setSizePolicy(sizePolicy)
-        self.search_button.setMinimumSize(QtCore.QSize(40, 40))
-
-        icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.search_button.setIcon(icon2)
-        self.searchbar_layout.addWidget(self.search_button)
-
-        self.search_mode_dropdown = QComboBox()
-        items = SearchModeNameToType.keys()
-        self.search_mode_dropdown.addItems(items)
-        self.search_mode_dropdown.setFixedHeight(40)
-
-        mode = self._app_data.app_settings.get('sutta_search_mode', SearchMode.FulltextMatch)
-        values = list(map(lambda x: x[1], SearchModeNameToType.items()))
-        idx = values.index(mode)
-        self.search_mode_dropdown.setCurrentIndex(idx)
-
-        self.searchbar_layout.addWidget(self.search_mode_dropdown)
-
-        self.search_extras = QtWidgets.QHBoxLayout()
-        self.searchbar_layout.addLayout(self.search_extras)
+        if not self.enable_sidebar:
+            return
 
         spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
 
@@ -311,24 +202,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface, HasMemoDialog, Has
         self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
         self.show_sidebar_btn.setToolTip("Toggle Sidebar")
 
-        if self.enable_sidebar:
-            self.searchbar_layout.addWidget(self.show_sidebar_btn)
-
-        style = """
-QWidget { border: 1px solid #272727; }
-QWidget:focus { border: 1px solid #1092C3; }
-        """
-
-        self.search_input.setStyleSheet(style)
-
-        completer = QCompleter(self._autocomplete_model, self)
-        completer.setMaxVisibleItems(20)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setModelSorting(QCompleter.ModelSorting.CaseInsensitivelySortedModel)
-
-        self.search_input.setCompleter(completer)
-
-        self.search_input.setFocus()
+        self.searchbar_layout.addWidget(self.show_sidebar_btn)
 
     def _setup_sutta_tabs(self):
         if self.sutta_tabs_layout is None:
@@ -432,117 +306,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         show = self._app_data.app_settings.get('suttas_show_pali_buttons', False)
         self.pw.palibuttons_frame.setVisible(show)
 
-    def _get_language_labels(self):
-        return get_sutta_languages(self._app_data.db_session)
-
-    def _get_source_uid_labels(self):
-        res = []
-
-        r = self._app_data.db_session.query(Am.Sutta.source_uid.distinct()).all()
-        res.extend(r)
-
-        r = self._app_data.db_session.query(Um.Sutta.source_uid.distinct()).all()
-        res.extend(r)
-
-        labels = sorted(set(map(lambda x: str(x[0]).lower(), res)))
-
-        return labels
-
-    def _setup_language_filter(self):
-        cmb = QComboBox()
-        items = ["Language",]
-        items.extend(self._get_language_labels())
-        idx = self._app_data.app_settings.get('sutta_language_filter_idx', 0)
-
-        cmb.addItems(items)
-        cmb.setFixedHeight(40)
-        cmb.setCurrentIndex(idx)
-        self.language_filter_dropdown = cmb
-        self.search_extras.addWidget(self.language_filter_dropdown)
-
-    def _setup_language_include_btn(self):
-        icon_plus = QIcon()
-        icon_plus.addPixmap(QPixmap(":/plus-solid"))
-
-        btn = QPushButton()
-        btn.setFixedSize(40, 40)
-        btn.setIcon(icon_plus)
-        btn.setToolTip("+ means 'must include', - means 'must exclude'")
-        btn.setCheckable(True)
-        btn.setChecked(True)
-
-        self.language_include_btn = btn
-        self.search_extras.addWidget(self.language_include_btn)
-
-        def _clicked():
-            is_on = self.language_include_btn.isChecked()
-
-            if is_on:
-                icon = QIcon()
-                icon.addPixmap(QPixmap(":/plus-solid"))
-            else:
-                icon = QIcon()
-                icon.addPixmap(QPixmap(":/minus-solid"))
-
-            self.language_include_btn.setIcon(icon)
-
-            self._handle_query(min_length=4)
-
-        self.language_include_btn.clicked.connect(partial(_clicked))
-
-    def _setup_source_include_btn(self):
-        icon_plus = QIcon()
-        icon_plus.addPixmap(QPixmap(":/plus-solid"))
-
-        btn = QPushButton()
-        btn.setFixedSize(40, 40)
-        btn.setIcon(icon_plus)
-        btn.setToolTip("+ means 'must include', - means 'must exclude'")
-        btn.setCheckable(True)
-        btn.setChecked(True)
-
-        self.source_include_btn = btn
-        self.search_extras.addWidget(self.source_include_btn)
-
-        def _clicked():
-            is_on = self.source_include_btn.isChecked()
-
-            if is_on:
-                icon = QIcon()
-                icon.addPixmap(QPixmap(":/plus-solid"))
-            else:
-                icon = QIcon()
-                icon.addPixmap(QPixmap(":/minus-solid"))
-
-            self.source_include_btn.setIcon(icon)
-
-            self._handle_query(min_length=4)
-
-        self.source_include_btn.clicked.connect(partial(_clicked))
-
-    def _setup_source_filter(self):
-        cmb = QComboBox()
-        items = ["Source",]
-        items.extend(self._get_source_uid_labels())
-        idx = self._app_data.app_settings.get('sutta_source_filter_idx', 0)
-
-        cmb.addItems(items)
-        cmb.setFixedHeight(40)
-        cmb.setCurrentIndex(idx)
-        self.source_filter_dropdown = cmb
-        self.search_extras.addWidget(self.source_filter_dropdown)
-
-    def _set_query(self, s: str):
-        self.search_input.setText(s)
-
-    def _append_to_query(self, s: str):
-        a = self.search_input.text().strip()
-        n = self.search_input.cursorPosition()
-        pre = a[:n]
-        post = a[n:]
-        self.search_input.setText(pre + s + post)
-        self.search_input.setCursorPosition(n + len(s))
-        self.search_input.setFocus()
+    def _exact_query_finished(self, _):
+        pass
 
     def _search_query_finished(self, query_started_time: datetime):
         logger.info("_search_query_finished()")
@@ -574,15 +339,6 @@ QWidget:focus { border: 1px solid #1092C3; }
         query_text_orig = self.search_input.text().strip()
         logger.info(f"_handle_query(): {query_text_orig}, {min_length}")
 
-        idx = self.language_filter_dropdown.currentIndex()
-        self._app_data.app_settings['sutta_language_filter_idx'] = idx
-
-        if hasattr(self, 'source_filter_dropdown'):
-            idx = self.source_filter_dropdown.currentIndex()
-            self._app_data.app_settings['sutta_source_filter_idx'] = idx
-
-        self._app_data._save_app_settings()
-
         # Re-render the current sutta, in case user is trying to restore sutta
         # after a search in the Study Window with the clear input button.
         if len(query_text_orig) == 0 and self.showing_query_in_tab and self._get_active_tab().sutta is not None:
@@ -597,17 +353,9 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._start_query_workers(query_text_orig)
 
-    def _show_search_normal_icon(self):
-        self.search_button.setIcon(self._normal_search_icon)
-        self.search_button.setToolTip("Click to start search")
-
-    def _show_search_stopwatch_icon(self):
-        self.search_button.setIcon(self._stopwatch_icon)
-        self.search_button.setToolTip("Search query running ...")
-
-    def _show_search_warning_icon(self, warning_msg: str = ''):
-        self.search_button.setIcon(self._warning_icon)
-        self.search_button.setToolTip(warning_msg)
+    def _handle_exact_query(self, min_length: int = 4):
+        logger.info("STUB: _handle_exact_query() %s" % str(min_length))
+        pass
 
     def _render_results_in_active_tab(self, hits: int):
         if hits == 0:
@@ -617,27 +365,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         res = self._queries.all_results(sort_by_score=True)
         self._get_active_tab().render_search_results(res)
 
-    def _handle_autocomplete_query(self, min_length: int = 4):
-        if not self.pw.action_Search_Completion.isChecked():
-            return
-
-        query = self.search_input.text().strip()
-
-        if len(query) < min_length:
-            return
-
-        self._autocomplete_model.clear()
-
-        a = self._queries.sutta_queries.autocomplete_hits(query)
-
-        # FIXME can these be assigned without a loop?
-        for i in a:
-            self._autocomplete_model.appendRow(QStandardItem(i))
-
-        # NOTE: completion cache is already sorted.
-        # self._autocomplete_model.sort(0)
-
-    def _sutta_search_query(self, query: str, only_lang: Optional[str] = None, only_source: Optional[str] = None) -> List[SearchResult]:
+    def _sutta_search_query(self, __query__: str, __only_lang__: Optional[str] = None, __only_source__: Optional[str] = None) -> List[SearchResult]:
         # TODO This is a synchronous version of _start_query_worker(), still
         # used in links_browser.py. Update and use the background thread worker.
 
@@ -1133,50 +861,12 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
 
-    def _user_typed(self):
-        self._show_search_normal_icon()
-        self._handle_autocomplete_query(min_length=4)
-
-        if not self.pw.action_Search_As_You_Type.isChecked():
-            return
-
-        matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text().strip())
-        if matches is not None:
-            min_length = 1
-        else:
-            min_length = 4
-
-        if not self._search_timer.isActive():
-            self._search_timer = QTimer()
-            self._search_timer.timeout.connect(partial(self._handle_query, min_length=min_length))
-            self._search_timer.setSingleShot(True)
-
-        self._search_timer.start(SEARCH_TIMER_SPEED)
-
-    def _handle_search_mode_changed(self):
-        idx = self.search_mode_dropdown.currentIndex()
-        s = self.search_mode_dropdown.itemText(idx)
-
-        self._app_data.app_settings['sutta_search_mode'] = SearchModeNameToType[s]
-        self._app_data._save_app_settings()
-
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.link_mouseover.connect(partial(preview_window.link_mouseover))
         self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
         self.hide_preview.connect(partial(preview_window._do_hide))
 
     def _connect_signals(self):
-        if hasattr(self, 'search_button'):
-            self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-
-        if hasattr(self, 'search_input'):
-            self.search_input.textEdited.connect(partial(self._user_typed))
-            self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
-            self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-
-        if hasattr(self, 'search_mode_dropdown'):
-            self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
-
         if hasattr(self, 'back_recent_button'):
             if self.enable_sidebar:
                 self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
@@ -1186,16 +876,9 @@ QWidget:focus { border: 1px solid #1092C3; }
                     self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
 
                 self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
-
             else:
                 self.back_recent_button.clicked.connect(partial(self._show_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
-
-        if self.enable_language_filter and hasattr(self, 'language_filter_dropdown'):
-            self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
-
-        if self.enable_search_extras and hasattr(self, 'source_filter_dropdown'):
-            self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
 
         if self.enable_find_panel:
             self._find_panel.searched.connect(self.on_searched)

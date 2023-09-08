@@ -17,8 +17,8 @@ class HotkeysManagerWindowsMac(HotkeysManagerInterface):
         except Exception as e:
             logger.error(f"Can't init hotkeys: {e}")
 
-    # First arg: window
-    def setup_window(self, _: QMainWindow):
+    def setup_window(self, window: QMainWindow):
+        print("NotImplementedError %s" % str(window))
         pass
 
     def unregister_all_hotkeys(self):

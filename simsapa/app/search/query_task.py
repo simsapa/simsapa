@@ -12,8 +12,7 @@ from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.types import SearchParams
-from simsapa.app.types import SearchMode, UDictWord, USutta
+from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
 from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 

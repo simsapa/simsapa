@@ -397,7 +397,7 @@ def get_search_params(w: SearchBarInterface) -> SearchParams:
     if hasattr(w, 'source_filter_dropdown'):
         idx = w.source_filter_dropdown.currentIndex()
         source_value = w.source_filter_dropdown.itemText(idx)
-        if source_value == "Source" or source_value == "Dictionaries":
+        if source_value == "Sources" or source_value == "Dictionaries":
             source = None
         else:
             source = source_value

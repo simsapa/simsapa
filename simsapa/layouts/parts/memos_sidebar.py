@@ -31,7 +31,7 @@ class MemoPlainListModel(QAbstractListModel):
             text = text[0:150] + " ..."
             return text
 
-    def rowCount(self, _):
+    def rowCount(self, __index__):
         if self.memos:
             return len(self.memos)
         else:

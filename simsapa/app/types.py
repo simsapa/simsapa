@@ -4,6 +4,7 @@ from typing import List, Optional, TypedDict, Union, Callable
 from simsapa import ShowLabels
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.search.helpers import SearchResult
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -57,12 +58,17 @@ class QueryType(str, Enum):
 
 class SuttaQueriesInterface:
     completion_cache: List[str]
+    autocomplete_hits: Callable[[str], set[str]]
     get_sutta_by_url: Callable
 
 class DictionaryQueriesInterface:
     completion_cache: List[str]
+    autocomplete_hits: Callable[[str], set[str]]
     get_words_by_uid: Callable
     words_to_html_page: Callable
+    render_html_page: Callable
+    get_word_html: Callable
+    dict_word_from_result: Callable[[SearchResult], Optional[UDictWord]]
 
 class QuoteScope(str, Enum):
     Sutta = 'sutta'

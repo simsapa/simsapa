@@ -8,8 +8,8 @@ class HotkeysManagerInterface:
     def __init__(self, actions_manager: ActionsManager):
         self.actions_manager = actions_manager
 
-    # First arg: window
-    def setup_window(self, _: QMainWindow):
+    def setup_window(self, window: QMainWindow):
+        print("NotImplementedError %s" % str(window))
         raise NotImplementedError
 
     def unregister_all_hotkeys(self):

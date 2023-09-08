@@ -138,7 +138,8 @@ def get_sutta_languages(db_session: Session) -> List[str]:
     r = db_session.query(Um.Sutta.language.distinct()).all()
     res.extend(r)
 
-    langs = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    a = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    langs = list(filter(None, a))
 
     return langs
 
@@ -151,6 +152,35 @@ def get_dict_word_languages(db_session: Session) -> List[str]:
     r = db_session.query(Um.DictWord.language.distinct()).all()
     res.extend(r)
 
-    langs = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    a = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    langs = list(filter(None, a))
 
     return langs
+
+def get_sutta_source_filter_labels(db_session: Session) -> List[str]:
+    res = []
+
+    r = db_session.query(Am.Sutta.source_uid.distinct()).all()
+    res.extend(r)
+
+    r = db_session.query(Um.Sutta.source_uid.distinct()).all()
+    res.extend(r)
+
+    a = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    labels = list(filter(None, a))
+
+    return labels
+
+def get_dict_word_source_filter_labels(db_session: Session) -> List[str]:
+    res = []
+
+    r = db_session.query(Am.Dictionary.label.distinct()).all()
+    res.extend(r)
+
+    r = db_session.query(Um.Dictionary.label.distinct()).all()
+    res.extend(r)
+
+    a = sorted(set(map(lambda x: str(x[0]).lower(), res)))
+    labels = list(filter(None, a))
+
+    return labels
