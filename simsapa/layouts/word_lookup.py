@@ -476,7 +476,7 @@ class WordLookup(WordLookupInterface):
         self.wrap_layout.setContentsMargins(8, 8, 8, 8)
         self.setLayout(self.wrap_layout)
 
-        self.setWindowTitle("Word Lookup")
+        self.setWindowTitle("Word Lookup - Simsapa")
         self.setMinimumSize(50, 50)
 
         if IS_SWAY:

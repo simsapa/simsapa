@@ -146,7 +146,7 @@ class GptPromptsWindow(AppWindowInterface):
             self._show_prompt_by_params(prompt_params)
 
     def _setup_ui(self):
-        self.setWindowTitle("Prompts")
+        self.setWindowTitle("GPT Prompts - Simsapa")
         self.resize(1068, 625)
 
         self._central_widget = QtWidgets.QWidget(self)

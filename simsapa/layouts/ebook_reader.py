@@ -75,7 +75,7 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         self._update_vert_splitter_widths()
 
     def _setup_ui(self):
-        self.setWindowTitle("Ebook Reader")
+        self.setWindowTitle("Ebook Reader - Simsapa")
         self.resize(1068, 625)
 
         self._central_widget = QtWidgets.QWidget(self)

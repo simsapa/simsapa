@@ -112,7 +112,7 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
         self._connect_signals()
 
     def _setup_ui(self):
-        self.setWindowTitle("Bookmarks Browser")
+        self.setWindowTitle("Bookmarks Browser - Simsapa")
         self.resize(850, 650)
 
         if IS_SWAY:

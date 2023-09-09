@@ -175,6 +175,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             return None
 
     def _setup_ui(self):
+        self.pw.setWindowTitle("Sutta Search - Simsapa")
         self._setup_sutta_tabs()
 
         if self.enable_find_panel:
@@ -224,6 +225,8 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.sutta_tab.set_qwe_html(html)
 
         self.sutta_tabs_layout.addWidget(self.sutta_tabs)
+
+        self.sutta_tabs.currentChanged.connect(partial(self._set_window_title_from_active_tab))
 
     def _link_mouseover(self, hover_data: LinkHoverData):
         self.link_mouseover.emit(hover_data)
@@ -566,6 +569,13 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._app_data.dict_word_to_open = results[0]
             self.pw.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)
 
+    def _set_window_title_from_active_tab(self):
+        s = self._get_active_tab().sutta
+        if s is not None:
+            a = [str(i) for i in [s.sutta_ref, s.title, f"({s.uid})"] if i is not None and i != ""]
+            title = " ".join(a)
+            self.pw.setWindowTitle(f"{title} - Simsapa")
+
     def _show_sutta(self, sutta: USutta, sutta_quote: Optional[SuttaQuote] = None):
         logger.info(f"_show_sutta() : {sutta.uid}")
         self.showing_query_in_tab = False
@@ -573,6 +583,8 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.sutta_tab.render_sutta_content(sutta_quote)
 
         self.sutta_tabs.setTabText(0, str(sutta.uid))
+
+        self._set_window_title_from_active_tab()
 
         self._add_related_tabs(sutta)
 

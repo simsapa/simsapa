@@ -367,7 +367,7 @@ class PreviewWindow(QDialog):
             s = sutta.title_trans
         else:
             s = sutta.title
-            self.title = f"{sutta.sutta_ref} {s}"
+            self.title = f"{sutta.sutta_ref} {s} ({sutta.uid})"
 
         if sutta.content_json is not None and sutta.content_json != '':
             segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))

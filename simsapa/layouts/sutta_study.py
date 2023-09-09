@@ -92,6 +92,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self._show_sutta_by_uid_in_side(side, uid)
 
     def _setup_ui(self):
+        self.setWindowTitle("Sutta Study - Simsapa")
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
 

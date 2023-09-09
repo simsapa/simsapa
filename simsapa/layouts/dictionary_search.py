@@ -234,6 +234,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
                 pass
 
     def _setup_ui(self):
+        self.setWindowTitle("Dictionary Search - Simsapa")
+
         self.links_tab_idx = 1
         self.memos_tab_idx = 2
 
@@ -560,6 +562,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._set_qwe_html(page_html)
 
     def _show_word(self, word: UDictWord):
+        self.setWindowTitle(f"{self.search_input.text().strip()} ({word.uid}) - Simsapa")
         self._current_words = [word]
 
         self.update_memos_list_for_dict_word(self._current_words[0])

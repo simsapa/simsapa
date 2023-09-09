@@ -41,7 +41,7 @@ class SuttaIndexWindow(AppWindowInterface):
         self._connect_signals()
 
     def _setup_ui(self):
-        self.setWindowTitle("Sutta Index")
+        self.setWindowTitle("Sutta Index - Simsapa")
         self.resize(850, 650)
 
         if IS_SWAY:
