@@ -51,7 +51,13 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     link_mouseleave = pyqtSignal(str)
     hide_preview = pyqtSignal()
 
-    def __init__(self, app_data: AppData, wrap_layout: QBoxLayout, focus_input: bool = True) -> None:
+    def __init__(self,
+                 app_data: AppData,
+                 wrap_layout: QBoxLayout,
+                 focus_input: bool = True,
+                 language_filter_setting_key = 'word_lookup_language_filter_idx',
+                 search_mode_setting_key = 'word_lookup_search_mode',
+                 source_filter_setting_key = 'word_lookup_source_filter_idx') -> None:
         super().__init__()
 
         self.wrap_layout = wrap_layout
@@ -80,9 +86,9 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         self.focus_input = focus_input
 
-        self._search_mode_setting_key = 'word_lookup_search_mode'
-        self._language_filter_setting_key = 'word_lookup_language_filter_idx'
-        self._source_filter_setting_key = 'word_lookup_source_filter_idx'
+        self._search_mode_setting_key = search_mode_setting_key
+        self._language_filter_setting_key = language_filter_setting_key
+        self._source_filter_setting_key = source_filter_setting_key
 
         self.init_search_bar(wrap_layout            = self.wrap_layout,
                              search_area            = SearchArea.DictWords,

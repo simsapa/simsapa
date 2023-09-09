@@ -83,6 +83,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  enable_find_panel: bool = True,
                  show_query_results_in_active_tab: bool = False,
                  search_bar_two_rows_layout=False,
+                 language_filter_setting_key = 'sutta_language_filter_idx',
+                 search_mode_setting_key = 'sutta_search_mode',
+                 source_filter_setting_key = 'sutta_source_filter_idx',
                  custom_create_context_menu_fn: Optional[Callable] = None) -> None:
         super().__init__()
 
@@ -121,9 +124,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         self.focus_input = focus_input
 
-        self._search_mode_setting_key = 'sutta_search_mode'
-        self._language_filter_setting_key = 'sutta_language_filter_idx'
-        self._source_filter_setting_key = 'sutta_source_filter_idx'
+        self._search_mode_setting_key = search_mode_setting_key
+        self._language_filter_setting_key = language_filter_setting_key
+        self._source_filter_setting_key = source_filter_setting_key
 
         self._setup_ui()
 
@@ -365,7 +368,15 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             return
 
         self.showing_query_in_tab = True
-        res = self._queries.all_results(sort_by_score=True)
+
+        # .all_results() takes too long to highlight and render.
+        # res = self._queries.all_results(sort_by_score=True)
+        #
+        # Collect and render only the first page of results. In the Study
+        # Window, the user is not typically searching around, but wants to
+        # retreive a specific sutta by title or sutta reference.
+
+        res = self._queries.results_page(0)
         self._get_active_tab().render_search_results(res)
 
     def _sutta_search_query(self, __query__: str, __only_lang__: Optional[str] = None, __only_source__: Optional[str] = None) -> List[SearchResult]:

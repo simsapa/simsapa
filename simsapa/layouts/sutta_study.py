@@ -130,7 +130,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
                                                       show_query_results_in_active_tab=True,
-                                                      search_bar_two_rows_layout=True)
+                                                      search_bar_two_rows_layout=True,
+                                                      language_filter_setting_key = 'sutta_study_one_language_filter_idx',
+                                                      search_mode_setting_key = 'sutta_study_one_search_mode',
+                                                      source_filter_setting_key = 'sutta_study_one_source_filter_idx')
 
         self.sutta_one_state.page_dblclick.connect(partial(self.sutta_one_state._lookup_selection_in_dictionary))
 
@@ -164,7 +167,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
                                                       show_query_results_in_active_tab=True,
-                                                      search_bar_two_rows_layout=True)
+                                                      search_bar_two_rows_layout=True,
+                                                      language_filter_setting_key = 'sutta_study_two_language_filter_idx',
+                                                      search_mode_setting_key = 'sutta_study_two_search_mode',
+                                                      source_filter_setting_key = 'sutta_study_two_source_filter_idx')
 
         self.sutta_two_state.page_dblclick.connect(partial(self.sutta_two_state._lookup_selection_in_dictionary))
 
@@ -184,7 +190,12 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
-        self.dictionary_state = WordLookupState(self._app_data, self.dictionary_layout, focus_input = False)
+        self.dictionary_state = WordLookupState(app_data = self._app_data,
+                                                wrap_layout = self.dictionary_layout,
+                                                focus_input = False,
+                                                language_filter_setting_key = 'sutta_study_lookup_language_filter_idx',
+                                                search_mode_setting_key = 'sutta_study_lookup_search_mode',
+                                                source_filter_setting_key = 'sutta_study_lookup_source_filter_idx')
 
         self.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_by_url))
         self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))

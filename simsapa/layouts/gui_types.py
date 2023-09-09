@@ -292,20 +292,12 @@ class AppSettings(TypedDict):
     audio_device_desc: str
     audio_volume: float
     clipboard_monitoring_for_dict: bool
-    dictionary_font_size: int
-    dictionary_language_filter_idx: int
-    dictionary_search_mode: SearchMode
-    dictionary_show_pali_buttons: bool
-    dictionary_source_filter_idx: int
     double_click_word_lookup: bool
     export_format: ExportFileFormat
     first_window_on_startup: WindowType
     link_preview: bool
     notify_about_updates: bool
     openai: OpenAISettings
-    path_to_curl: Optional[str]
-    path_to_ebook_convert: Optional[str]
-    path_to_scp: Optional[str]
     search_as_you_type: bool
     search_completion: bool
     search_result_sizes: SearchResultSizes
@@ -318,17 +310,43 @@ class AppSettings(TypedDict):
     show_sutta_sidebar: bool
     show_toolbar: bool
     show_translation_and_pali_line_by_line: bool
+
+    sutta_font_size: int
+    dictionary_font_size: int
+
+    path_to_curl: Optional[str]
+    path_to_ebook_convert: Optional[str]
+    path_to_scp: Optional[str]
+
     smtp_login_data: Optional[SmtpLoginData]
     smtp_preset: SmtpServicePreset
     smtp_sender_email: Optional[str]
-    sutta_font_size: int
-    sutta_language_filter_idx: int
+
+    dictionary_language_filter_idx: int
+    dictionary_search_mode: SearchMode
+    dictionary_source_filter_idx: int
+    dictionary_show_pali_buttons: bool
+
     sutta_max_width: int
+    sutta_language_filter_idx: int
     sutta_search_mode: SearchMode
     sutta_source_filter_idx: int
     suttas_show_pali_buttons: bool
-    word_lookup_language_filter_idx: int
+
+    sutta_study_one_language_filter_idx: int
+    sutta_study_one_search_mode: SearchMode
+    sutta_study_one_source_filter_idx: int
+
+    sutta_study_two_language_filter_idx: int
+    sutta_study_two_search_mode: SearchMode
+    sutta_study_two_source_filter_idx: int
+
+    sutta_study_lookup_language_filter_idx: int
+    sutta_study_lookup_search_mode: SearchMode
+    sutta_study_lookup_source_filter_idx: int
+
     word_lookup_pos: WindowPosSize
+    word_lookup_language_filter_idx: int
     word_lookup_search_mode: SearchMode
     word_lookup_source_filter_idx: int
 
@@ -337,20 +355,12 @@ def default_app_settings() -> AppSettings:
         audio_device_desc = '',
         audio_volume = 0.9,
         clipboard_monitoring_for_dict = False,
-        dictionary_font_size = 18,
-        dictionary_language_filter_idx = 0,
-        dictionary_search_mode = SearchMode.FulltextMatch,
-        dictionary_show_pali_buttons = True,
-        dictionary_source_filter_idx = 0,
         double_click_word_lookup = True,
         export_format = ExportFileFormat.EPUB,
         first_window_on_startup = WindowType.SuttaSearch,
         link_preview = True,
         notify_about_updates = True,
         openai = default_openai_settings(),
-        path_to_curl = None,
-        path_to_ebook_convert = None,
-        path_to_scp = None,
         search_as_you_type = True,
         search_completion = True,
         search_result_sizes = default_search_result_sizes(),
@@ -363,17 +373,43 @@ def default_app_settings() -> AppSettings:
         show_sutta_sidebar = True,
         show_toolbar = False,
         show_translation_and_pali_line_by_line = False,
+
+        sutta_font_size = 22,
+        dictionary_font_size = 18,
+
+        path_to_curl = None,
+        path_to_ebook_convert = None,
+        path_to_scp = None,
+
         smtp_login_data = SmtpLoginDataPreset[SmtpServicePreset.GoogleMail],
         smtp_preset = SmtpServicePreset.NoPreset,
         smtp_sender_email = None,
-        sutta_font_size = 22,
-        sutta_language_filter_idx = 0,
+
+        dictionary_language_filter_idx = 0,
+        dictionary_search_mode = SearchMode.FulltextMatch,
+        dictionary_source_filter_idx = 0,
+        dictionary_show_pali_buttons = True,
+
         sutta_max_width = 75,
+        sutta_language_filter_idx = 0,
         sutta_search_mode = SearchMode.FulltextMatch,
         sutta_source_filter_idx = 0,
         suttas_show_pali_buttons = True,
-        word_lookup_language_filter_idx = 0,
+
+        sutta_study_one_language_filter_idx = 0,
+        sutta_study_one_search_mode = SearchMode.FulltextMatch,
+        sutta_study_one_source_filter_idx = 0,
+
+        sutta_study_two_language_filter_idx = 0,
+        sutta_study_two_search_mode = SearchMode.FulltextMatch,
+        sutta_study_two_source_filter_idx = 0,
+
+        sutta_study_lookup_language_filter_idx = 0,
+        sutta_study_lookup_search_mode = SearchMode.FulltextMatch,
+        sutta_study_lookup_source_filter_idx = 0,
+
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 400, height = 500),
+        word_lookup_language_filter_idx = 0,
         word_lookup_search_mode = SearchMode.FulltextMatch,
         word_lookup_source_filter_idx = 0,
     )
