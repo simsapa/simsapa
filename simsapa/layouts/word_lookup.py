@@ -460,20 +460,6 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
-        self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-        self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
-
-        self.search_input.textEdited.connect(partial(self._user_typed))
-        self.search_input.textEdited.connect(partial(self._handle_autocomplete_query, min_length=4))
-
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-        self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
-
-        self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
-        self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
-
-        self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
-
 class WordLookup(WordLookupInterface):
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
         super().__init__()
