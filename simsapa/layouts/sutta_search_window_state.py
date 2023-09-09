@@ -345,7 +345,10 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._get_active_tab().render_sutta_content()
             return
 
-        if re.search(RE_ALL_BOOK_SUTTA_REF, query_text_orig) is None and len(query_text_orig) < min_length:
+        if re.match(RE_ALL_BOOK_SUTTA_REF, query_text_orig) is not None:
+            min_length = 1
+
+        if len(query_text_orig) < min_length:
             return
 
         # Not aborting, show the user that the app started processsing

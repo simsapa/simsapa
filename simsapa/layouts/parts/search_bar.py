@@ -1,7 +1,6 @@
 from datetime import datetime
 from functools import partial
 from typing import List, Optional
-import re
 
 from PyQt6 import QtGui
 from PyQt6.QtCore import Qt, QTimer, QSize
@@ -13,7 +12,7 @@ from simsapa import logger, SEARCH_TIMER_SPEED
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.types import SearchModeNameToType, SearchMode, SearchArea
-from simsapa.app.search.helpers import RE_ALL_BOOK_SUTTA_REF, get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
+from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
 from simsapa.layouts.gui_helpers import get_search_params
 from simsapa.layouts.gui_types import QExpanding, SearchBarInterface, QFixed
@@ -349,19 +348,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         if not self._app_data.app_settings.get('search_as_you_type', True):
             return
 
-        if self._search_area == SearchArea.Suttas:
-            matches = re.match(RE_ALL_BOOK_SUTTA_REF, self.search_input.text().strip())
-            if matches is not None:
-                min_length = 1
-            else:
-                min_length = 4
-
-        else:
-            min_length = 4
-
         if not self._search_timer.isActive():
             self._search_timer = QTimer()
-            self._search_timer.timeout.connect(partial(self._handle_query, min_length=min_length))
+            self._search_timer.timeout.connect(partial(self._handle_query, min_length=4))
             self._search_timer.setSingleShot(True)
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
