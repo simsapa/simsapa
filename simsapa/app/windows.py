@@ -1532,6 +1532,12 @@ class AppWindows:
         #     #
         # else:
 
+        if hasattr(view, 'action_Pali_Courses'):
+            view.action_Pali_Courses.setVisible(False)
+
+        if hasattr(view, 'action_Links'):
+            view.action_Links.setVisible(False)
+
         if hasattr(view, 'action_Open'):
             view.action_Open.setVisible(False)
 
