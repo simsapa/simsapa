@@ -22,49 +22,62 @@ def show_search_info(parent=None):
     box = QMessageBox(parent)
     box.setIcon(QMessageBox.Icon.Information)
     msg = """
-<h3>Search Modes</h3>
+<h3>Search Modes in Brief</h3>
 
-<p><b>Fulltext Match:</b> the content is searched for the keywords. Non-accented letters will match accented ones. Globbing expressions (e.g. dhammapad*) are available.</p>
+<p>Sutta references are matched first. Typing 'mn8', 'sn 56.11', 'iti92' will list those suttas.</p>
 
-<p><b>Exact Match:</b> the content is searched for exact matches.</p>
+<p><b>Fulltext Match:</b> it searches the content for keywords using the query expressions, non-accented letters matching accented ones. (I.e. it makes a query in the tantivy fulltext index and assigns scores to the results.)</p>
 
-<p>Joining terms with 'AND' creates filtered queries.</p>
+<p>Fulltext search is faster and more flexible than the Exact Match (SQL) search, but yields many partial matches.</p>
 
-<p>kamma vipāka: will match texts which contain the exact expression 'kamma vipāka' (including the space).</p>
+<p><b>Exact Match:</b> it searches the content for exact matches. (I.e. it makes SQL queries with <b>%query text%</b>.)
 
-<p>kamma AND vipāka: will match texts which contain both 'kamma' and 'vipāka', anywhere in the text (including 'kammavipāka').</p>
-
-<p><b>Title / Headword Match:</b> the title / headword is searched for exact matches.</p>
+<p><b>Title / Headword Match:</b> it searches only the titles of suttas or the headwords of dictionary words. (SQL queries)
 
 <h3>Fulltext Match Queries</h3>
-<p>Search query terms are related as AND by default, <b>kamma vipāka</b> searches for entries containing <b>kamma</b> AND <b>vipāka</b>.</p>
+
+<p>
+Powered by the <a href="https://github.com/quickwit-oss/tantivy">tantivy</a> fulltext search engine.
+Read more in the <a href="https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html">QueryParser</a> docs.
+</p>
+
+<p>The words in a query term are related as OR by default. <b>kamma vipāka</b> searches for entries which SHOULD include <b>kamma</b> OR <b>vipāka</b>, but not MUST include.</p>
+
+<p>Prefixing the word with the '+' sign means a term must be included, the '-' signs means it must be excluded.</p>
+
+<p><b>bhikkhu +kamma -vipaka</b> means should include 'bhikkhu', must include 'kamma', must exclude 'vipaka'.</p>
+
+<p>Word are matched "in full", not "in part", e.g. 'bodhi' will not match 'bodhisatta', but words are stemmed and will match declensions, e.g. 'bodhiṁ / bodhiyā'.</p>
+
+<p>The texts are indexed with Pāli, English, etc. grammar stemmers, so declension forms will also match in the appropriate language.</p>
+
+<p><b>dukkha</b> will match <b>duddkaṁ / dukkhā / dukkhāni / dukkhena</b> etc.,<br>
+<b>bhikkhu kamma vipaka</b> will match <b>bhikkhave kammānaṁ vipāko</b>,<br>
+<b>monk receives robes</b> will match <b>monks receiving robes</b>.
+
 <p>Latin terms are expanded to include diacritics, <b>patipada</b> will match <b>paṭipadā</b>.</p>
-<p>Add * or ? to match inexact terms. * matches a series of letters, ? matches a single letter.</p>
-<p>Add ~ to match fuzzy terms: <b>citta~</b> or <b>citta~2/2</b> (term~pre/post).</p>
-<p>Use <b>title:kamma*</b> to search only in the title, for a term containing 'kamma...'.</p>
 
-<p>Example sutta queries:</p>
+<p>A pharse query is expressed with quote marks: <b>"paṭhamena jhānena"</b></p>.
 
-<p>
-kamma vipāka<br>
-title:vaccha*<br>
-title:'fire sticks'<br>
-ref:'SN 12.21'<br>
-uid:an10.1/*
-</p>
-
-<p>Example dictionary queries:</p>
+<p>The query can match parts of the document:<p>
 
 <p>
-bhavana<br>
-word:kamma*<br>
-synonyms:dharma
+<b>title:sticks cessation</b> - match 'sticks' in the title, 'cessation' in the content<br>
+<b>word:kamma +work</b> - match 'kamma' in the headword, must include 'work' in the content<br>
+<b>uid:pj4</b> - the uid should include 'pj4'<br>
+<b>upekkhindriyaṁ -source:cst4</b> - match 'upekkhindriyaṁ' in the content, exclude all cst4 documents<br>
+<b>calmness +source:thanissaro</b> - match 'calmness' in the content, only in documents by Bh. Thanissaro<br>
+<b>+"buddhas of the past" +source:bodhi</b> - must include the phrase 'buddhas of the past', only in documents by Bh. Bodhi<br>
 </p>
 
-<p>
-Read more about queries at
-<a href="https://whoosh.readthedocs.io/en/latest/querylang.html">whoosh.readthedocs.io</a>
-</p>
+<h3>Exact Match Queries</h3>
+
+<p>Joining terms with <b>AND</b> creates filtered SQL queries.</p>
+
+<p><b>kamma vipāka</b>: will match texts which contain the exact expression 'kamma vipāka' (including the space).</p>
+
+<p><b>kamma AND vipāka</b>: will match texts which contain both 'kamma' and 'vipāka', anywhere in the text (including 'kammavipāka').</p>
+
 """
     box.setText(msg)
     box.setWindowTitle("Search query info")
