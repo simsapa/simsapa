@@ -386,7 +386,9 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindowInterface) and w.isHidden():
+            if str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
+               and isinstance(w, SuttaSearchWindowInterface) \
+               and w.isHidden():
                 is_new = False
                 view = w
 
@@ -433,7 +435,9 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and w.isHidden():
+            if str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
+               and isinstance(w, SuttaStudyWindowInterface) \
+               and w.isHidden():
                 is_new = False
                 view = w
 
@@ -540,7 +544,9 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if isinstance(w, DictionarySearchWindowInterface) and w.isHidden():
+            if str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
+               and isinstance(w, DictionarySearchWindowInterface) \
+               and w.isHidden():
                 is_new = False
                 view = w
 
@@ -820,7 +826,9 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if isinstance(w, EbookReaderWindowInterface) and w.isHidden():
+            if str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
+               and isinstance(w, EbookReaderWindowInterface) \
+               and w.isHidden():
                 is_new = False
                 view = w
 
