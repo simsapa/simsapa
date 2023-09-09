@@ -6,6 +6,9 @@ tests/data/assets/
 build/
 dist/
 
+# memory_profiler output
+*.dat
+
 # VS Code
 .vscode/
 

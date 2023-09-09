@@ -7,7 +7,7 @@ from urllib.parse import parse_qs
 from PyQt6.QtCore import QThreadPool, QTimer, QUrl
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
@@ -74,14 +74,17 @@ class AppWindows:
     def _init_tasks(self):
         logger.profile("AppWindows::_init_tasks(): start")
 
-        self._init_word_lookup()
-        self._init_sutta_index_window()
+        if not START_LOW_MEM:
+            self._init_word_lookup()
+            self._init_sutta_index_window()
+
         self._init_check_updates()
         self._check_updates()
 
         self.import_user_data_from_assets()
 
-        self._init_main_windows()
+        if not START_LOW_MEM:
+            self._init_main_windows()
 
         logger.profile("AppWindows::_init_tasks(): end")
 

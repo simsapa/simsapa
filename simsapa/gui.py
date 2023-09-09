@@ -10,7 +10,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
+from simsapa import START_LOW_MEM, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import find_available_port
@@ -42,6 +42,16 @@ create_app_dirs()
 def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
     logger.profile("gui::start()")
     set_is_gui(True)
+
+    if START_LOW_MEM:
+        import psutil
+        logger.info(f"START_LOW_MEM: {START_LOW_MEM}")
+        mem = psutil.virtual_memory()
+        logger.info(f"Memory: {mem}")
+        cpu = psutil.cpu_freq()
+        logger.info(f"CPU Freq: {cpu}")
+        cores = psutil.cpu_count(logical=True)
+        logger.info(f"CPU Cores: {cores}")
 
     ensure_empty_graphs_cache()
 

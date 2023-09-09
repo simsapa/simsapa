@@ -8,6 +8,7 @@ import appdirs
 import platform
 import importlib.resources
 import pkgutil
+import psutil
 
 from datetime import datetime
 INIT_START_TIME = datetime.now()
@@ -64,6 +65,14 @@ TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 TIMER_SPEED = 30
 
 SEARCH_TIMER_SPEED = 500
+
+LOW_MEM_THRESHOLD = 3*1024*1024*1024
+
+mem = psutil.virtual_memory()
+if mem.available < LOW_MEM_THRESHOLD:
+    START_LOW_MEM = True
+else:
+    START_LOW_MEM = False
 
 INDEX_WRITER_MEMORY_MB = 512
 
