@@ -30,7 +30,11 @@ def show_search_info(parent=None):
 
 <p>Fulltext search is faster and more flexible than the Exact Match (SQL) search, but yields many partial matches.</p>
 
+<p>Fulltext search matches words in full, not in part, e.g. 'bodhi' will not match 'bodhisatta', but words are stemmed and will match declensions, e.g. 'bodhiṁ / bodhiyā'.</p>
+
 <p><b>Exact Match:</b> it searches the content for exact matches. (I.e. it makes SQL queries with <b>%query text%</b>.)
+
+<p>Exact Match (via SQL) matches in part, i.e. if the query is exactly contained somewhere in the content. E.g. 'vitakka' will match 'kāma<b>vitakka</b>ṁ', but there is no stemming, and will not match 'vitakkeyya'.</p>
 
 <p><b>Title / Headword Match:</b> it searches only the titles of suttas or the headwords of dictionary words. (SQL queries)
 
@@ -46,8 +50,6 @@ Read more in the <a href="https://docs.rs/tantivy/latest/tantivy/query/struct.Qu
 <p>Prefixing the word with the '+' sign means a term must be included, the '-' signs means it must be excluded.</p>
 
 <p><b>bhikkhu +kamma -vipaka</b> means should include 'bhikkhu', must include 'kamma', must exclude 'vipaka'.</p>
-
-<p>Word are matched "in full", not "in part", e.g. 'bodhi' will not match 'bodhisatta', but words are stemmed and will match declensions, e.g. 'bodhiṁ / bodhiyā'.</p>
 
 <p>The texts are indexed with Pāli, English, etc. grammar stemmers, so declension forms will also match in the appropriate language.</p>
 
