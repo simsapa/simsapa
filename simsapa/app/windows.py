@@ -724,6 +724,19 @@ class AppWindows:
                 w.action_Show_Bookmarks.setChecked(is_on)
                 w.s._get_active_tab().render_sutta_content()
 
+    def _toggle_generate_links_graph(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Generate_Links_Graph.isChecked()
+        self._app_data.app_settings['generate_links_graph'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindowInterface) and hasattr(w, 'action_Generate_Links_Graph'):
+                w.action_Generate_Links_Graph.setChecked(is_on)
+                if is_on:
+                    w.show_network_graph()
+                else:
+                    w.hide_network_graph()
+
     # def _new_dictionaries_manager_window(self):
     #     from simsapa.layouts.dictionaries_manager import DictionariesManagerWindow
     #     view = DictionariesManagerWindow(self._app_data)
@@ -1434,6 +1447,13 @@ class AppWindows:
 
                 view.action_Show_Bookmarks \
                     .triggered.connect(partial(self._toggle_show_bookmarks, view))
+
+            if hasattr(view, 'action_Generate_Links_Graph'):
+                is_on = self._app_data.app_settings.get('generate_links_graph', False)
+                view.action_Generate_Links_Graph.setChecked(is_on)
+
+                view.action_Generate_Links_Graph \
+                    .triggered.connect(partial(self._toggle_generate_links_graph, view))
 
         if hasattr(view, 'action_Show_Word_Lookup'):
             view.action_Show_Word_Lookup \

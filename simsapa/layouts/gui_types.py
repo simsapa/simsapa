@@ -295,6 +295,7 @@ class AppSettings(TypedDict):
     double_click_word_lookup: bool
     export_format: ExportFileFormat
     first_window_on_startup: WindowType
+    generate_links_graph: bool
     link_preview: bool
     notify_about_updates: bool
     openai: OpenAISettings
@@ -358,6 +359,7 @@ def default_app_settings() -> AppSettings:
         double_click_word_lookup = True,
         export_format = ExportFileFormat.EPUB,
         first_window_on_startup = WindowType.SuttaSearch,
+        generate_links_graph = False,
         link_preview = True,
         notify_about_updates = True,
         openai = default_openai_settings(),
@@ -537,7 +539,10 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
     _update_sidebar_fulltext: Callable
     _set_recent_list: Callable
+    get_links_tab_text: Callable[[], str]
+    set_links_tab_text: Callable[[str], None]
     show_network_graph: Callable
+    hide_network_graph: Callable
     update_memos_list_for_sutta: Callable
     _select_next_recent: Callable
     _select_prev_recent: Callable
@@ -558,6 +563,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     action_Show_Translation_and_Pali_Line_by_Line: QAction
     action_Show_All_Variant_Readings: QAction
     action_Show_Bookmarks: QAction
+    action_Generate_Links_Graph: QAction
     action_Find_in_Page: QAction
 
     lookup_in_dictionary_signal: pyqtSignal

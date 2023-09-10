@@ -164,7 +164,19 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     def result_pages_count(self) -> int:
         return self.s._queries.result_pages_count()
 
-    def show_network_graph(self, sutta: Optional[USutta] = None):
+    def hide_network_graph(self):
+        self.hide_links_graph()
+        self.set_links_tab_text("Links")
+
+    def show_network_graph(self, sutta: Optional[USutta] = None, show_anyway = False):
+        if show_anyway:
+            is_on = True
+        else:
+            is_on = self._app_data.app_settings.get('generate_links_graph', False)
+
+        if not is_on:
+            return
+
         if sutta is None:
             active_sutta = self.s._get_active_tab().sutta
             if active_sutta is None:

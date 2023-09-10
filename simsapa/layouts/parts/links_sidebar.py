@@ -2,8 +2,9 @@ import time
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
+from PyQt6.QtGui import QAction
 
-from PyQt6.QtWidgets import QComboBox, QPushButton, QSizePolicy, QSpinBox, QTabWidget, QVBoxLayout
+from PyQt6.QtWidgets import QComboBox, QFrame, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
@@ -19,7 +20,7 @@ from simsapa.app.app_data import AppData
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.layouts.gui_types import LinkHoverData
+from simsapa.layouts.gui_types import LinkHoverData, QExpanding, QMinimum
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 
@@ -112,7 +113,7 @@ class HasLinksSidebar(QObject):
     links_layout: QVBoxLayout
     rightside_tabs: QTabWidget
     links_tab_idx: int
-    qwe: QWebEngineView
+    links_graph_qwe: Optional[QWebEngineView] = None
     label_select: QComboBox
     distance_input: QSpinBox
     min_links_input: QSpinBox
@@ -121,6 +122,7 @@ class HasLinksSidebar(QObject):
     open_links_new_window_button: QPushButton
     show_network_graph: Callable
     _show_selected: Callable
+    action_Generate_Links_Graph: QAction
     _last_graph_gen_timestamp: float
 
     graph_link_mouseover: pyqtSignal
@@ -128,19 +130,60 @@ class HasLinksSidebar(QObject):
     def init_links_sidebar(self):
         self._last_graph_gen_timestamp = 0.0
 
-        self.setup_links_controls()
-        self.setup_qwe()
+        generate_links = self._app_data.app_settings.get('generate_links_graph', False)
 
-    def setup_links_controls(self):
+        self.setup_links_controls(generate_links)
+        if generate_links:
+            self.setup_links_graph_qwe()
+
+    def _setup_links_graph_button(self):
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+
+        self._links_graph_button_frame = frame
+        self.links_layout.addWidget(self._links_graph_button_frame)
+
+        button_box = QVBoxLayout()
+        self._links_graph_button_frame.setLayout(button_box)
+
+        spacer1 = QSpacerItem(0, 0, QExpanding, QMinimum)
+        button_box.addItem(spacer1)
+
+        links_graph_btn = QPushButton("Generate Links Graph")
+        links_graph_btn.setFixedHeight(40)
+        button_box.addWidget(links_graph_btn)
+
+        spacer2 = QSpacerItem(0, 0, QExpanding, QMinimum)
+        button_box.addItem(spacer2)
+
+        links_graph_btn.clicked.connect(partial(self.show_network_graph, sutta=None, show_anyway=True))
+
+    def setup_links_controls(self, generate_links: bool):
         self.distance_input.setMinimum(1)
         self.distance_input.setValue(2)
 
         self.min_links_input.setMinimum(1)
         self.min_links_input.setValue(1)
 
+        self._setup_links_graph_button()
+        if generate_links:
+            self._links_graph_button_frame.setHidden(True)
+
         def _show_graph(_: Optional[Any] = None):
             # ignore the argument value, will read params somewhere else
-            self.show_network_graph()
+
+            is_on = self._app_data.app_settings.get('generate_links_graph', False)
+            if is_on:
+                self._links_graph_button_frame.setHidden(True)
+
+                if self.links_graph_qwe is None:
+                    self.setup_links_graph_qwe()
+                self.show_network_graph()
+
+            else:
+                self._links_graph_button_frame.setHidden(False)
 
         # "Sutta Ref.", "Ref. + Title", "No Labels"
         self.label_select.currentIndexChanged.connect(partial(_show_graph))
@@ -180,7 +223,7 @@ class HasLinksSidebar(QObject):
 
         self.graph_link_mouseover.emit(hover_data)
 
-    def setup_qwe(self):
+    def setup_links_graph_qwe(self):
         self.links_graph_qwe = QWebEngineView()
 
         page = ReaderWebEnginePage(self)
@@ -212,7 +255,20 @@ class HasLinksSidebar(QObject):
         else:
             self.rightside_tabs.setTabText(self.links_tab_idx, "Links")
 
-        self.links_graph_qwe.load(QUrl(str(graph_path.absolute().as_uri())))
+        if self.links_graph_qwe is not None:
+            self.links_graph_qwe.load(QUrl(str(graph_path.absolute().as_uri())))
+
+    def hide_links_graph(self):
+        if self.links_graph_qwe is not None:
+            self.links_graph_qwe.setHidden(True)
+
+        self._links_graph_button_frame.setHidden(False)
+
+    def get_links_tab_text(self) -> str:
+        return self.rightside_tabs.tabText(self.links_tab_idx)
+
+    def set_links_tab_text(self, text = "Links"):
+        self.rightside_tabs.setTabText(self.links_tab_idx, text)
 
     def generate_and_show_graph(self,
                                 sutta: Optional[USutta],
@@ -220,6 +276,17 @@ class HasLinksSidebar(QObject):
                                 queue_id: str,
                                 graph_path: Path,
                                 messages_url: str):
+
+        self._links_graph_button_frame.setHidden(True)
+
+        if self.links_graph_qwe is None:
+            self.setup_links_graph_qwe()
+        else:
+            self.links_graph_qwe.setVisible(True)
+
+        if self.links_graph_qwe is None:
+            self.setup_links_graph_qwe()
+        assert(self.links_graph_qwe is not None)
 
         # Remove worker threads which are in the queue and not yet started.
         self._app_data.graph_gen_pool.clear()
@@ -258,8 +325,8 @@ class HasLinksSidebar(QObject):
 
         # Only update text when it already has a links number,
         # so that empty results don't cause jumping layout
-        if self.rightside_tabs.tabText(self.links_tab_idx) != "Links":
-            self.rightside_tabs.setTabText(self.links_tab_idx, "Links (...)")
+        if self.get_links_tab_text() != "Links":
+            self.set_links_tab_text("Links (...)")
 
         self.links_graph_qwe.setHtml(LOADING_HTML)
 

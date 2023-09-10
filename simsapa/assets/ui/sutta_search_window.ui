@@ -531,6 +531,7 @@
     <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
     <addaction name="action_Show_All_Variant_Readings"/>
     <addaction name="action_Show_Bookmarks"/>
+    <addaction name="action_Generate_Links_Graph"/>
     <addaction name="action_Sutta_Languages"/>
     <addaction name="action_Send_to_Kindle"/>
     <addaction name="action_Send_to_reMarkable"/>
@@ -1088,6 +1089,14 @@
    </property>
    <property name="text">
     <string>Sutta Index</string>
+   </property>
+  </action>
+  <action name="action_Generate_Links_Graph">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Generate Links Graph</string>
    </property>
   </action>
  </widget>
