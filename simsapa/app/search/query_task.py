@@ -19,14 +19,13 @@ from simsapa.app.search.tantivy_index import TantivySearchQuery
 class SearchQueryTask:
     _all_results: List[SearchResult] = []
     _highlighted_result_pages: Dict[int, List[SearchResult]] = dict()
+    _db_query_hits_count = 0
 
     def __init__(self,
                  ix: tantivy.Index,
                  query_text_orig: str,
                  query_started_time: datetime,
                  params: SearchParams):
-
-        super().__init__()
 
         self.ix = ix
         self.query_text = consistent_nasal_m(query_text_orig)
@@ -53,6 +52,9 @@ class SearchQueryTask:
     def query_hits(self) -> Optional[int]:
         if self.search_mode == SearchMode.FulltextMatch:
             return self.search_query.hits_count
+
+        elif self.search_mode == SearchMode.ExactMatch:
+            return self._db_query_hits_count
 
         else:
             return len(self._all_results)
@@ -83,16 +85,22 @@ class SearchQueryTask:
                 self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
 
             else:
-                page_start = page_num * self._page_len
-                page_end = page_start + self._page_len
+                # page_start = page_num * self._page_len
+                # page_end = page_start + self._page_len
 
                 def _add_highlight(x: SearchResult) -> SearchResult:
                     x['snippet'] = self._highlight_query_in_content(self.query_text, x['snippet'])
                     return x
 
-                page = list(map(_add_highlight, self._all_results[page_start:page_end]))
+                if self.search_query.is_sutta_index():
+                    results = self.suttas_exact_match_page(page_num)
 
-                self._highlighted_result_pages[page_num] = page
+                else:
+                    results = self.dict_words_exact_match_page(page_num)
+
+                # page = list(map(_add_highlight, results[page_start:page_end]))
+
+                self._highlighted_result_pages[page_num] = list(map(_add_highlight, results))
 
         return self._highlighted_result_pages[page_num]
 
@@ -169,96 +177,164 @@ class SearchQueryTask:
         except Exception as e:
             logger.error(f"SearchQueryTask::_fulltext_search(): {e}")
 
-    def _suttas_exact_match(self, db_session: Session):
-        try:
-            res_suttas: List[USutta] = []
+    def suttas_exact_match_page(self, page_num: int) -> List[SearchResult]:
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
 
+        res: List[USutta] = []
+        try:
             if 'AND' in self.query_text:
+
+                query_total = 0
 
                 and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
                 query = db_session.query(Am.Sutta)
                 for i in and_terms:
                     query = query.filter(Am.Sutta.content_plain.contains(i))
+
+                query_total += query.count()
+
+                query = query.offset(page_num * self._page_len).limit(self._page_len)
                 r = query.all()
-                res_suttas.extend(r)
+                res.extend(r)
 
                 query = db_session.query(Um.Sutta)
                 for i in and_terms:
                     query = query.filter(Um.Sutta.content_plain.contains(i))
+
+                query_total += query.count()
+
+                query = query.offset(page_num * self._page_len).limit(self._page_len)
                 r = query.all()
-                res_suttas.extend(r)
+                res.extend(r)
+
+                self._db_query_hits_count = query_total
 
             # there is no 'AND' in self.query_text
             else:
 
-                r = db_session \
+                query_total = 0
+
+                query = db_session \
                     .query(Am.Sutta) \
-                    .filter(Am.Sutta.content_plain.contains(self.query_text)) \
-                    .all()
-                res_suttas.extend(r)
+                    .filter(Am.Sutta.content_plain.contains(self.query_text))
 
-                r = db_session \
+                query_total += query.count()
+
+                r = query \
+                    .offset(page_num * self._page_len) \
+                    .limit(self._page_len) \
+                    .all()
+                res.extend(r)
+
+                query = db_session \
                     .query(Um.Sutta) \
-                    .filter(Um.Sutta.content_plain.contains(self.query_text)) \
+                    .filter(Um.Sutta.content_plain.contains(self.query_text))
+
+                query_total += query.count()
+
+                r = query \
+                    .offset(page_num * self._page_len) \
+                    .limit(self._page_len) \
                     .all()
-                res_suttas.extend(r)
+                res.extend(r)
 
-            if self.source is not None:
-                if self.source_include:
-                    res_suttas = list(filter(self._sutta_only_in_source, res_suttas))
-                else:
-                    res_suttas = list(filter(self._sutta_except_in_source, res_suttas))
-
-            self._all_results = list(map(self._db_sutta_to_result, res_suttas))
+                self._db_query_hits_count = query_total
 
         except Exception as e:
-            logger.error(f"SearchQueryTask::_suttas_exact_match(): {e}")
+            logger.error(f"SearchQueryTask::suttas_exact_match_page(): {e}")
+            return []
 
-    def _dict_word_exact_match(self, db_session: Session):
+        if self.source is not None:
+            if self.source_include:
+                res = list(filter(self._sutta_only_in_source, res))
+            else:
+                res = list(filter(self._sutta_except_in_source, res))
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        return list(map(self._db_sutta_to_result, res))
+
+    def dict_words_exact_match_page(self, page_num: int) -> List[SearchResult]:
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        res: List[UDictWord] = []
         try:
-            res: List[UDictWord] = []
-
             if 'AND' in self.query_text:
+
+                query_total = 0
 
                 and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
                 query = db_session.query(Am.DictWord)
                 for i in and_terms:
                     query = query.filter(Am.DictWord.definition_plain.contains(i))
+
+                query_total += query.count()
+
+                query = query.offset(page_num * self._page_len).limit(self._page_len)
                 r = query.all()
                 res.extend(r)
 
                 query = db_session.query(Um.DictWord)
                 for i in and_terms:
                     query = query.filter(Um.DictWord.definition_plain.contains(i))
+
+                query_total += query.count()
+
+                query = query.offset(page_num * self._page_len).limit(self._page_len)
                 r = query.all()
                 res.extend(r)
 
+                self._db_query_hits_count = query_total
+
+            # there is no 'AND' in self.query_text
             else:
 
-                r = db_session \
+                query_total = 0
+
+                query = db_session \
                     .query(Am.DictWord) \
-                    .filter(Am.DictWord.definition_plain.contains(self.query_text)) \
+                    .filter(Am.DictWord.definition_plain.contains(self.query_text))
+
+                query_total += query.count()
+
+                r = query \
+                    .offset(page_num * self._page_len) \
+                    .limit(self._page_len) \
                     .all()
                 res.extend(r)
 
-                r = db_session \
+                query = db_session \
                     .query(Um.DictWord) \
-                    .filter(Um.DictWord.definition_plain.contains(self.query_text)) \
+                    .filter(Um.DictWord.definition_plain.contains(self.query_text))
+
+                query_total += query.count()
+
+                r = query \
+                    .offset(page_num * self._page_len) \
+                    .limit(self._page_len) \
                     .all()
                 res.extend(r)
 
-            if self.source is not None:
-                if self.source_include:
-                    res = list(filter(self._word_only_in_source, res))
-                else:
-                    res = list(filter(self._word_except_in_source, res))
-
-            self._all_results = list(map(self._db_word_to_result, res))
+                self._db_query_hits_count = query_total
 
         except Exception as e:
-            logger.error(f"SearchQueryTask::_dict_word_exact_or_regex_match(): {e}")
+            logger.error(f"SearchQueryTask::dict_words_exact_match_page(): {e}")
+
+        if self.source is not None:
+            if self.source_include:
+                res = list(filter(self._word_only_in_source, res))
+            else:
+                res = list(filter(self._word_except_in_source, res))
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        return list(map(self._db_word_to_result, res))
 
     def _suttas_title_match(self, db_session: Session):
         # SearchMode.TitleMatch only applies to suttas.
@@ -387,12 +463,7 @@ class SearchQueryTask:
             self._fulltext_search()
 
         elif self.search_mode == SearchMode.ExactMatch:
-
-            if self.search_query.is_sutta_index():
-                self._suttas_exact_match(db_session)
-
-            elif self.search_query.is_dict_word_index():
-                self._dict_word_exact_match(db_session)
+            self.results_page(0)
 
         elif self.search_mode == SearchMode.TitleMatch:
             self._suttas_title_match(db_session)

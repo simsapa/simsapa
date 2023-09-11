@@ -500,6 +500,7 @@ class GuiSearchQueriesInterface:
 class SearchBarInterface(QWidget):
     search_input: QLineEdit
     page_len: int
+    get_page_num: Callable[[], int]
     _set_query: Callable
     _handle_query: Callable
     _handle_exact_query: Callable
@@ -552,7 +553,8 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _toggle_sidebar: Callable
     results_page: Callable
     query_hits: Callable[[], Optional[int]]
-    result_pages_count: Callable
+    result_pages_count: Callable[[], Optional[int]]
+    get_page_num: Callable[[], int]
 
     queue_id: str
     handle_messages: Callable
@@ -588,7 +590,8 @@ class DictionarySearchWindowInterface(AppWindowInterface, SearchBarInterface):
     action_Reload_Page: QAction
     results_page: Callable
     query_hits: Callable[[], Optional[int]]
-    result_pages_count: Callable
+    result_pages_count: Callable[[], Optional[int]]
+    get_page_num: Callable[[], int]
     _show_word_by_url: Callable
     _toggle_sidebar: Callable
 

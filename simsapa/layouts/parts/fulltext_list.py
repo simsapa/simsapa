@@ -50,6 +50,9 @@ class HasFulltextList:
         self._ui_set_search_icon()
         self._ui_setup_loading_bar()
 
+    def get_page_num(self) -> int:
+        return self.fulltext_page_input.value()
+
     def _ui_set_search_icon(self):
         icon_search = QtGui.QIcon()
         icon_search.addPixmap(QtGui.QPixmap(":/search"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)

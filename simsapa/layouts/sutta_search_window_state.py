@@ -153,6 +153,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.init_bookmark_dialog()
         self.init_memo_dialog()
 
+    def get_page_num(self) -> int:
+        return self.pw.get_page_num()
+
     def start_loading_animation(self):
         self.pw.start_loading_animation()
 

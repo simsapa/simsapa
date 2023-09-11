@@ -23,7 +23,6 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
     api_url: Optional[str] = None
     search_query_workers: List[SearchQueryWorker] = []
     exact_query_worker: Optional[ExactQueryWorker] = None
-    _page_len_per_worker: int = 20
 
     sutta_queries: SuttaQueries
     dictionary_queries: DictionaryQueries
@@ -175,7 +174,7 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
 
             a = list(filter(None, [i.task.query_hits() for i in self.search_query_workers]))
             worker_max_hits = max(a)
-            return ceil(worker_max_hits / self._page_len_per_worker)
+            return ceil(worker_max_hits / self._page_len)
 
     def results_page(self, page_num: int) -> List[SearchResult]:
         logger.info(f"GuiSearchQueries::results_page(): page_num = {page_num}")

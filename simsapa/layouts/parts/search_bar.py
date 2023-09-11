@@ -510,6 +510,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         print("NotImplementedError %s" % str(min_length))
         raise NotImplementedError
 
+    def get_page_num(self) -> int:
+        raise NotImplementedError
+
     # start- and stop_loading_animation() are implemented by HasFulltextList, so
     # the class which inherits HasSearchBar, has to first inherit
     # HasFulltextList or implement the functions directly.
