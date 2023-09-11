@@ -12,7 +12,7 @@ from simsapa.app.helpers import compact_rich_text, compact_plain_text, consisten
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
-from simsapa.app.types import SearchArea
+from simsapa.app.types import SearchArea, SearchParams
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
@@ -123,20 +123,23 @@ def dict_words_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tan
 class TantivySearchQuery:
     ix: tantivy.Index
     searcher: tantivy.Searcher
-    page_len: int = 20
+    page_len: int
     hits_count: Optional[int] = None
 
     # The un-sanitized, un-extended original user input.
     # Only consistent_nasal_m(query_text.strip()) applied.
     query_text_orig: Optional[str] = None
 
+    search_params: SearchParams
+
     snippet_generator: Optional[tantivy.SnippetGenerator] = None
     parsed_query: Optional[tantivy.Query] = None
 
-    def __init__(self, ix: tantivy.Index, page_len: int = 20):
+    def __init__(self, ix: tantivy.Index, params: SearchParams):
         self.ix = ix
         self.searcher = ix.searcher()
-        self.page_len = page_len
+        self.page_len = params['page_len'] or 20
+        self.search_params = params
 
     def is_sutta_index(self) -> bool:
         return ('title' in self.ix.schema.field_names())
@@ -228,23 +231,90 @@ class TantivySearchQuery:
     def highlighted_results_page(self, page_num: int) -> List[SearchResult]:
         logger.info(f"TantivySearchQuery::highlighted_results_page({page_num})")
 
-        page_start_offset = page_num * self.page_len
-
         if self.parsed_query is None:
             return []
 
-        tantivy_results = self.searcher.search(
-            query = self.parsed_query,
-            limit = self.page_len,
-            count = True,
-            # Ordering only works for u64 integer fields.
-            order_by_field = None,
-            offset = page_start_offset,
-        )
+        p = self.search_params
 
-        self.hits_count = tantivy_results.count
+        if p['source'] is not None and (p['enable_regex'] or p['fuzzy_distance'] > 0):
 
-        results = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+            total_hits_count = 0
+
+            filtered_page_start_offset = 0
+            # Take more results to save iterations.
+            filtered_page_len = self.page_len*10
+            filtered_page_num = 0
+
+            results = []
+            filtered_results = []
+
+            while True:
+
+                tantivy_results = self.searcher.search(
+                    query = self.parsed_query,
+                    limit = filtered_page_len,
+                    count = True,
+                    order_by_field = None,
+                    offset = filtered_page_start_offset,
+                )
+                # It will be the same total count at every iteration.
+                total_hits_count = tantivy_results.count
+                if total_hits_count is None or total_hits_count == 0:
+                    break
+
+                # Filter the results
+
+                r = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+
+                if p['source_include']:
+                    filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
+                else:
+                    filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
+
+
+                # Stop if the filtered results fill the requested results page.
+                # Filtered results are filled progressively up to the requested results page.
+                # E.g. results page 2 is filled when filtered results have 2*page_len items.
+                #
+                # Unless there are no more items to filter, i.e. no next page.
+                if len(filtered_results) >= page_num * self.page_len \
+                   or filtered_page_start_offset >= total_hits_count:
+
+                    # The results are slice which is requested results page.
+                    res_start = page_num * self.page_len
+                    res_end = (page_num+1) * self.page_len
+
+                    results = filtered_results[res_start:res_end]
+
+                    if filtered_page_len >= total_hits_count:
+                        self.hits_count = len(filtered_results)
+
+                    else:
+                        # Set hits_count to None because we don't know the filtered count
+                        # unless we filter all the results pages.
+                        self.hits_count = None
+
+                    break
+
+                else:
+                    filtered_page_num += 1
+                    filtered_page_start_offset += filtered_page_num * filtered_page_len
+
+        else:
+            page_start_offset = page_num * self.page_len
+
+            tantivy_results = self.searcher.search(
+                query = self.parsed_query,
+                limit = self.page_len,
+                count = True,
+                # Ordering only works for u64 integer fields.
+                order_by_field = None,
+                offset = page_start_offset,
+            )
+
+            self.hits_count = tantivy_results.count
+
+            results = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
 
         if self.is_sutta_index():
             return results
@@ -271,7 +341,9 @@ class TantivySearchQuery:
     def new_query(self,
                   query_text: str,
                   source: Optional[str] = None,
-                  source_include = True):
+                  source_include = True,
+                  enable_regex = False,
+                  fuzzy_distance = 0):
         logger.info("TantivySearchQuery::new_query()")
 
         self.ix.reload()
@@ -289,7 +361,10 @@ class TantivySearchQuery:
                 query_string = query_string.replace(m.group(0), f"uid:{nikaya}{number}")
 
         if source is not None \
+           and not enable_regex \
+           and not fuzzy_distance > 0 \
            and (source != "Sources" or source != "Dictionaries"):
+
             sign = '+' if source_include else '-'
             query_string += f" {sign}source_uid:{source.lower()}"
 
@@ -301,14 +376,31 @@ class TantivySearchQuery:
             # Also, Pali titles are long words, and since the tokenizer matches
             # complete words, it will not match the beginning of titles, e.g.
             # 'silavant' for 'sīlavantasuttaṁ'.
-            self.parsed_query = self.ix.parse_query(query_string, ['content'])
+
+            if enable_regex:
+                self.parsed_query = self.ix.parse_regex_query(query_string, 'content')
+
+            elif fuzzy_distance > 0:
+                self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'content', fuzzy_distance)
+
+            else:
+                self.parsed_query = self.ix.parse_query(query_string, ['content'])
 
         elif self.is_dict_word_index():
             if 'word:' not in self.query_text_orig \
-               and ' ' not in self.query_text_orig:
+               and ' ' not in self.query_text_orig \
+               and not enable_regex \
+               and not fuzzy_distance > 0:
                 query_string += f" word:{self.query_text_orig}"
 
-            self.parsed_query = self.ix.parse_query(query_string, ['content', 'word'])
+            if enable_regex:
+                self.parsed_query = self.ix.parse_regex_query(query_string, 'word')
+
+            elif fuzzy_distance > 0:
+                self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'word', fuzzy_distance)
+
+            else:
+                self.parsed_query = self.ix.parse_query(query_string, ['content', 'word'])
 
         else:
             self.parsed_query = self.ix.parse_query(query_string, ['content'])
@@ -321,36 +413,42 @@ class TantivySearchQuery:
 
         self.snippet_generator.set_max_num_chars(200)
 
-    def get_hits_count(self) -> int:
+    def get_hits_count(self) -> Optional[int]:
         # Request one page, so that hits_count gets set.
         self.highlighted_results_page(0)
-
-        if self.hits_count is None:
-            return 0
-        else:
-            return self.hits_count
+        return self.hits_count
 
     def get_all_results(self) -> List[SearchResult]:
         # If we already queried, and there were no hits.
-        if self.hits_count is not None and self.hits_count == 0:
+        hits_count = self.get_hits_count()
+        if hits_count is not None and hits_count == 0:
             return []
 
-        # Request one page, so that hits_count gets set.
-        self.highlighted_results_page(0)
+        # hits_count None does not mean no results. In the case of filtered
+        # regex results, we may not know the total hits count.
 
         if self.hits_count is None:
-            return []
+            page_num = 0
+            res = []
 
-        page_num = 0
-        total_pages = math.ceil(self.hits_count / self.page_len)
+            while True:
+                r = self.highlighted_results_page(page_num)
+                res.extend(r)
+                page_num += 1
+                if len(r) == 0:
+                    break
 
-        res = []
+        else:
+            page_num = 0
+            total_pages = math.ceil(self.hits_count / self.page_len)
 
-        # Example: for a 108 results with page_len 20, there will be 6
-        # total_pages, indexed as page_num 0 to 5.
-        while page_num < total_pages:
-            res.extend(self.highlighted_results_page(page_num))
-            page_num += 1
+            res = []
+
+            # Example: for a 108 results with page_len 20, there will be 6
+            # total_pages, indexed as page_num 0 to 5.
+            while page_num < total_pages:
+                res.extend(self.highlighted_results_page(page_num))
+                page_num += 1
 
         return res
 

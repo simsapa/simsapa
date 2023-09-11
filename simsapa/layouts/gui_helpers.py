@@ -416,6 +416,16 @@ def get_search_params(w: SearchBarInterface) -> SearchParams:
     else:
         mode = SearchMode.FulltextMatch
 
+    if hasattr(w, 'regex_checkbox'):
+        enable_regex = w.regex_checkbox.isChecked()
+    else:
+        enable_regex = False
+
+    if hasattr(w, 'fuzzy_spin'):
+        fuzzy_distance = w.fuzzy_spin.value()
+    else:
+        fuzzy_distance = 0
+
     return SearchParams(
         mode = mode,
         page_len = w.page_len,
@@ -423,4 +433,6 @@ def get_search_params(w: SearchBarInterface) -> SearchParams:
         lang_include = lang_include,
         source = source,
         source_include = source_include,
+        enable_regex = enable_regex,
+        fuzzy_distance = fuzzy_distance,
     )

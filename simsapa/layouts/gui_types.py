@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName
 from simsapa.app.search.helpers import SearchResult
@@ -494,7 +494,7 @@ class GuiSearchQueriesInterface:
     start_search_query_workers: Callable
     start_exact_query_worker: Callable
     results_page: Callable[[int], List[SearchResult]]
-    query_hits: Callable[[], int]
+    query_hits: Callable[[], Optional[int]]
     all_finished: Callable[[], bool]
 
 class SearchBarInterface(QWidget):
@@ -517,6 +517,9 @@ class SearchBarInterface(QWidget):
     source_include_btn: QPushButton
 
     search_mode_dropdown: QComboBox
+
+    regex_checkbox: QCheckBox
+    fuzzy_spin: QSpinBox
 
     start_loading_animation: Callable[[], None]
     stop_loading_animation: Callable[[], None]
@@ -548,7 +551,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _select_prev_recent: Callable
     _toggle_sidebar: Callable
     results_page: Callable
-    query_hits: Callable
+    query_hits: Callable[[], Optional[int]]
     result_pages_count: Callable
 
     queue_id: str
@@ -584,7 +587,7 @@ class DictionarySearchWindowInterface(AppWindowInterface, SearchBarInterface):
     palibuttons_frame: QFrame
     action_Reload_Page: QAction
     results_page: Callable
-    query_hits: Callable
+    query_hits: Callable[[], Optional[int]]
     result_pages_count: Callable
     _show_word_by_url: Callable
     _toggle_sidebar: Callable

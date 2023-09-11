@@ -158,10 +158,10 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self.s._queries.results_page(page_num)
 
-    def query_hits(self) -> int:
+    def query_hits(self) -> Optional[int]:
         return self.s._queries.query_hits()
 
-    def result_pages_count(self) -> int:
+    def result_pages_count(self) -> Optional[int]:
         return self.s._queries.result_pages_count()
 
     def hide_network_graph(self):
@@ -186,15 +186,23 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
-    def _update_sidebar_fulltext(self, hits: int):
-        if hits > 0:
+    def _update_sidebar_fulltext(self, hits: Optional[int]):
+        if hits is None:
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
+        elif hits > 0:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
         self.render_fulltext_page()
 
-        if hits == 0:
+        if hits is None:
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(99)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
+
+        elif hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
             self.fulltext_first_page_btn.setEnabled(False)
@@ -207,7 +215,12 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.fulltext_last_page_btn.setEnabled(False)
 
         else:
-            pages = self.result_pages_count()
+            n = self.result_pages_count()
+            if n is None:
+                pages = 99
+            else:
+                pages = n
+
             self.fulltext_page_input.setMinimum(1)
             self.fulltext_page_input.setMaximum(pages)
             self.fulltext_first_page_btn.setEnabled(True)

@@ -72,6 +72,24 @@ Read more in the <a href="https://docs.rs/tantivy/latest/tantivy/query/struct.Qu
 <b>+"buddhas of the past" +source:bodhi</b> - must include the phrase 'buddhas of the past', only in documents by Bh. Bodhi<br>
 </p>
 
+<h4>Regex search (.* icon)</h4>
+
+<p>This option will parse the query as a regex pattern, but limited to globbing expressions, e.g. <b>.* .+ a* a+</b></p>
+
+<p>The '.' matches any single character, '*' means 'zero or more' or the previous character, '+' means 'one or more'.</p>
+
+<p>
+<b>a*vitak.*</b> - the word start with zero or more of 'a', followed by 'vitak', followed by zero or more characters<br>
+<b>.*vitak.*</b> - match any word containing 'vitak'<br>
+<b>vitak.*</b> - match starting with 'vitak'<br>
+</p>
+
+<h4>Fuzzy search (~ icon)</h4>
+
+<p>This option allows matching words which may differ from the query by N number of characters (i.e. the <a href="https://devopedia.org/levenshtein-distance">Levenshtein Distance</a>).</p>
+
+<p>Fuzzy search is not availble together with regex patterns.</p>
+
 <h3>Exact Match Queries</h3>
 
 <p>Joining terms with <b>AND</b> creates filtered SQL queries.</p>

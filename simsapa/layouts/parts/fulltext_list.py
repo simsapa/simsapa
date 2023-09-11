@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List
+from typing import Callable, List, Optional
 from PyQt6 import QtGui
 
 from PyQt6.QtCore import Qt
@@ -27,7 +27,7 @@ class HasFulltextList:
     _handle_query: Callable
     _handle_result_select: Callable
     page_len: int
-    query_hits: Callable
+    query_hits: Callable[[], Optional[int]]
     result_pages_count: Callable
     results_page: Callable
     rightside_tabs: QTabWidget
@@ -81,23 +81,29 @@ class HasFulltextList:
         self._ui_set_search_icon()
 
     def render_fulltext_page(self):
+        query_hits = self.query_hits()
+        logger.info(f"render_fulltext_page(), query_hits: {query_hits}")
+
+        if query_hits is not None and query_hits == 0:
+            self.fulltext_label.clear()
+            return
+
         page_num = self.fulltext_page_input.value() - 1
-        logger.info(f"render_fulltext_page(), page_num: {page_num}")
         if page_num < 0:
             return
 
         pages_count = self.fulltext_page_input.maximum()
-        query_hits = self.query_hits()
 
         self.fulltext_list.clear()
 
-        if query_hits == 0:
-            self.fulltext_label.clear()
-            return
-
         results = self.results_page(page_num)
 
-        msg = f"Page {page_num+1} / {pages_count} of {query_hits} results"
+        if query_hits is None:
+            msg = ""
+
+        else:
+            msg = f"Page {page_num+1} / {pages_count} of {query_hits} results"
+
         self.fulltext_label.setText(msg)
 
         colors = ["#ffffff", "#efefef"]

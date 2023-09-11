@@ -9,7 +9,7 @@ from sqlalchemy.orm.session import Session
 
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session
-from simsapa.app.helpers import consistent_nasal_m, expand_quote_to_pattern_str
+from simsapa.app.helpers import consistent_nasal_m
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
@@ -45,14 +45,14 @@ class SearchQueryTask:
         self._all_results = []
         self._highlighted_result_pages = dict()
 
-        self.search_query = TantivySearchQuery(self.ix, self._page_len)
+        self.enable_regex = params['enable_regex']
+        self.fuzzy_distance = params['fuzzy_distance']
 
-    def query_hits(self) -> int:
+        self.search_query = TantivySearchQuery(self.ix, params)
+
+    def query_hits(self) -> Optional[int]:
         if self.search_mode == SearchMode.FulltextMatch:
-            if self.search_query.hits_count is None:
-                return 0
-            else:
-                return self.search_query.hits_count
+            return self.search_query.hits_count
 
         else:
             return len(self._all_results)
@@ -154,7 +154,12 @@ class SearchQueryTask:
 
     def _fulltext_search(self):
         try:
-            self.search_query.new_query(self.query_text, self.source, self.source_include)
+            self.search_query.new_query(self.query_text,
+                                        self.source,
+                                        self.source_include,
+                                        enable_regex = self.enable_regex,
+                                        fuzzy_distance = self.fuzzy_distance)
+
             self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
 
         except ValueError as e:
@@ -164,7 +169,7 @@ class SearchQueryTask:
         except Exception as e:
             logger.error(f"SearchQueryTask::_fulltext_search(): {e}")
 
-    def _suttas_exact_or_regex_match(self, db_session: Session):
+    def _suttas_exact_match(self, db_session: Session):
         try:
             res_suttas: List[USutta] = []
 
@@ -172,43 +177,30 @@ class SearchQueryTask:
 
                 and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
-                q = db_session.query(Am.Sutta)
+                query = db_session.query(Am.Sutta)
                 for i in and_terms:
-                    if self.search_mode == SearchMode.ExactMatch:
-                        p = expand_quote_to_pattern_str(i)
-                    else:
-                        p = i
-                    q = q.filter(Am.Sutta.content_plain.regexp_match(p))
-                r = q.all()
+                    query = query.filter(Am.Sutta.content_plain.contains(i))
+                r = query.all()
                 res_suttas.extend(r)
 
-                q = db_session.query(Um.Sutta)
+                query = db_session.query(Um.Sutta)
                 for i in and_terms:
-                    if self.search_mode == SearchMode.ExactMatch:
-                        p = expand_quote_to_pattern_str(i)
-                    else:
-                        p = i
-                    q = q.filter(Um.Sutta.content_plain.regexp_match(p))
-                r = q.all()
+                    query = query.filter(Um.Sutta.content_plain.contains(i))
+                r = query.all()
                 res_suttas.extend(r)
 
             # there is no 'AND' in self.query_text
             else:
 
-                if self.search_mode == SearchMode.ExactMatch:
-                    p = expand_quote_to_pattern_str(self.query_text)
-                else:
-                    p = self.query_text
-
                 r = db_session \
                     .query(Am.Sutta) \
-                    .filter(Am.Sutta.content_plain.regexp_match(p)) \
+                    .filter(Am.Sutta.content_plain.contains(self.query_text)) \
                     .all()
                 res_suttas.extend(r)
 
                 r = db_session \
                     .query(Um.Sutta) \
-                    .filter(Um.Sutta.content_plain.regexp_match(p)) \
+                    .filter(Um.Sutta.content_plain.contains(self.query_text)) \
                     .all()
                 res_suttas.extend(r)
 
@@ -221,9 +213,9 @@ class SearchQueryTask:
             self._all_results = list(map(self._db_sutta_to_result, res_suttas))
 
         except Exception as e:
-            logger.error(f"SearchQueryTask::_suttas_exact_or_regex_match(): {e}")
+            logger.error(f"SearchQueryTask::_suttas_exact_match(): {e}")
 
-    def _dict_word_exact_or_regex_match(self, db_session: Session):
+    def _dict_word_exact_match(self, db_session: Session):
         try:
             res: List[UDictWord] = []
 
@@ -231,42 +223,30 @@ class SearchQueryTask:
 
                 and_terms = list(map(lambda x: x.strip(), self.query_text.split('AND')))
 
-                q = db_session.query(Am.DictWord)
+                query = db_session.query(Am.DictWord)
                 for i in and_terms:
-                    if self.search_mode == SearchMode.ExactMatch:
-                        q = q.filter(Am.DictWord.definition_plain.like(f"%{i}%"))
-                    else:
-                        q = q.filter(Am.DictWord.definition_plain.regexp_match(i))
-                r = q.all()
+                    query = query.filter(Am.DictWord.definition_plain.contains(i))
+                r = query.all()
                 res.extend(r)
 
-                q = db_session.query(Um.DictWord)
+                query = db_session.query(Um.DictWord)
                 for i in and_terms:
-                    if self.search_mode == SearchMode.ExactMatch:
-                        q = q.filter(Um.DictWord.definition_plain.like(f"%{i}%"))
-                    else:
-                        q = q.filter(Um.DictWord.definition_plain.regexp_match(i))
-                r = q.all()
+                    query = query.filter(Um.DictWord.definition_plain.contains(i))
+                r = query.all()
                 res.extend(r)
 
             else:
 
-                q = db_session.query(Am.DictWord)
-                if self.search_mode == SearchMode.ExactMatch:
-                    q = q.filter(Am.DictWord.definition_plain.like(f"%{self.query_text}%"))
-                else:
-                    q = q.filter(Am.DictWord.definition_plain.regexp_match(self.query_text))
-
-                r = q.all()
+                r = db_session \
+                    .query(Am.DictWord) \
+                    .filter(Am.DictWord.definition_plain.contains(self.query_text)) \
+                    .all()
                 res.extend(r)
 
-                q = db_session.query(Um.DictWord)
-                if self.search_mode == SearchMode.ExactMatch:
-                    q = q.filter(Um.DictWord.definition_plain.like(f"%{self.query_text}%"))
-                else:
-                    q = q.filter(Um.DictWord.definition_plain.regexp_match(self.query_text))
-
-                r = q.all()
+                r = db_session \
+                    .query(Um.DictWord) \
+                    .filter(Um.DictWord.definition_plain.contains(self.query_text)) \
+                    .all()
                 res.extend(r)
 
             if self.source is not None:
@@ -404,26 +384,20 @@ class SearchQueryTask:
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
         if self.search_mode == SearchMode.FulltextMatch:
-
             self._fulltext_search()
 
-        elif self.search_mode == SearchMode.ExactMatch or \
-             self.search_mode == SearchMode.RegexMatch:
+        elif self.search_mode == SearchMode.ExactMatch:
 
             if self.search_query.is_sutta_index():
-
-                self._suttas_exact_or_regex_match(db_session)
+                self._suttas_exact_match(db_session)
 
             elif self.search_query.is_dict_word_index():
-
-                self._dict_word_exact_or_regex_match(db_session)
+                self._dict_word_exact_match(db_session)
 
         elif self.search_mode == SearchMode.TitleMatch:
-
             self._suttas_title_match(db_session)
 
         elif self.search_mode == SearchMode.HeadwordMatch:
-
             self._dict_words_headword_match(db_session)
 
         self.query_finished_time = datetime.now()

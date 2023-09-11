@@ -377,7 +377,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._show_search_normal_icon()
 
         hits = self.query_hits()
-        if hits > 0:
+        if hits is None:
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
+        elif hits > 0:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
@@ -452,10 +454,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self._queries.results_page(page_num)
 
-    def query_hits(self) -> int:
+    def query_hits(self) -> Optional[int]:
         return self._queries.query_hits()
 
-    def result_pages_count(self) -> int:
+    def result_pages_count(self) -> Optional[int]:
         return self._queries.result_pages_count()
 
     def _set_qwe_html(self, html: str):
@@ -595,8 +597,14 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.generate_and_show_graph(None, word, self.queue_id, self.graph_path, self.messages_url)
 
-    def _update_fulltext_page_btn(self, hits: int):
-        if hits == 0:
+    def _update_fulltext_page_btn(self, hits: Optional[int]):
+        if hits is None:
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(99)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
+
+        elif hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
             self.fulltext_first_page_btn.setEnabled(False)

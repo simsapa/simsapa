@@ -35,13 +35,11 @@ class SearchMode(int, Enum):
     ExactMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
-    RegexMatch = 4
 
 SearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
     "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,
-    "Regex Match": SearchMode.RegexMatch,
 }
 
 class SearchParams(TypedDict):
@@ -51,6 +49,8 @@ class SearchParams(TypedDict):
     lang_include: bool
     source: Optional[str]
     source_include: bool
+    enable_regex: bool
+    fuzzy_distance: int
 
 class QueryType(str, Enum):
     suttas = "suttas"

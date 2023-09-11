@@ -63,11 +63,16 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
     def all_finished(self) -> bool:
         return (self.count_running_queries() == 0)
 
-    def query_hits(self) -> int:
+    def query_hits(self) -> Optional[int]:
         if len(self.search_query_workers) == 0:
             return 0
         else:
-            return sum([i.task.query_hits() for i in self.search_query_workers])
+            t = self.search_query_workers[0].task
+            if t.enable_regex or t.fuzzy_distance > 0:
+                return None
+
+            a = list(filter(None, [i.task.query_hits() for i in self.search_query_workers]))
+            return sum(a)
 
     def start_search_query_workers(self,
                                    query_text_orig: str,
@@ -135,12 +140,14 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
 
         self.thread_pool.start(self.exact_query_worker)
 
-    def result_pages_count(self) -> int:
+    def result_pages_count(self) -> Optional[int]:
         # Each query worker stores its result pages, with one page containing
         # page_len items.
         #
         # The total page count is not the total hits / page_len, but the longest
         # page / page_len.
+        #
+        # Page count may be None in the case of filtered regex or fuzzy queries.
         #
         # When requesting the query's combined pages, the first page of each
         # worker is the first page of the combined results page, the second page
@@ -161,7 +168,13 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         if n != 0:
             return 0
         else:
-            worker_max_hits = max([i.task.query_hits() for i in self.search_query_workers])
+            if len(self.search_query_workers) > 0:
+                t = self.search_query_workers[0].task
+                if t.enable_regex or t.fuzzy_distance > 0:
+                    return None
+
+            a = list(filter(None, [i.task.query_hits() for i in self.search_query_workers]))
+            worker_max_hits = max(a)
             return ceil(worker_max_hits / self._page_len_per_worker)
 
     def results_page(self, page_num: int) -> List[SearchResult]:

@@ -181,7 +181,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self._queries.results_page(page_num)
 
-    def query_hits(self) -> int:
+    def query_hits(self) -> Optional[int]:
         return self._queries.query_hits()
 
     def _set_qwe_html(self, html: str):
@@ -332,8 +332,14 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if show_results_tab:
             self.tabs.setCurrentIndex(1)
 
-    def _update_fulltext_page_btn(self, hits: int):
-        if hits == 0:
+    def _update_fulltext_page_btn(self, hits: Optional[int]):
+        if hits is None:
+            self.fulltext_page_input.setMinimum(1)
+            self.fulltext_page_input.setMaximum(99)
+            self.fulltext_first_page_btn.setEnabled(False)
+            self.fulltext_last_page_btn.setEnabled(False)
+
+        elif hits == 0:
             self.fulltext_page_input.setMinimum(0)
             self.fulltext_page_input.setMaximum(0)
             self.fulltext_first_page_btn.setEnabled(False)
@@ -365,7 +371,9 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         self._show_search_normal_icon()
 
         hits = self.query_hits()
-        if hits > 0:
+        if hits is None:
+            self.tabs.setTabText(1, "Results")
+        elif hits > 0:
             self.tabs.setTabText(1, f"Results ({hits})")
         else:
             self.tabs.setTabText(1, "Results")

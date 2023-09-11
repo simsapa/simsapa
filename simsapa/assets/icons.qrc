@@ -79,5 +79,7 @@
     <file alias="volume-off">icons/32x32/fa_volume-off-solid.png</file>
     <file alias="volume-xmark">icons/32x32/fa_volume-xmark-solid.png</file>
     <file alias="warning">icons/32x32/fa_triangle-exclamation-solid.png</file>
+    <file alias="regex">icons/32x32/mdi_regex.png</file>
+    <file alias="tilde">icons/32x32/mdi_tilde.png</file>
   </qresource>
 </RCC>

@@ -131,14 +131,19 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self._setup_ui()
 
         if self.searchbar_layout is not None:
+            if search_bar_two_rows_layout:
+                icons_height = 35
+            else:
+                icons_height = 40
+
             self.init_search_bar(wrap_layout            = self.searchbar_layout,
                                  search_area            = SearchArea.Suttas,
                                  add_nav_buttons        = True,
                                  enable_language_filter = enable_language_filter,
                                  enable_search_extras   = enable_search_extras,
                                  enable_info_button     = enable_info_button,
-                                 input_fixed_size       = QSize(250, 35),
-                                 icons_height           = 40,
+                                 input_fixed_size       = QSize(250, icons_height),
+                                 icons_height           = icons_height,
                                  focus_input            = True,
                                  two_rows_layout        = search_bar_two_rows_layout)
 
@@ -366,8 +371,8 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         logger.info("STUB: _handle_exact_query() %s" % str(min_length))
         pass
 
-    def _render_results_in_active_tab(self, hits: int):
-        if hits == 0:
+    def _render_results_in_active_tab(self, hits: Optional[int]):
+        if hits is not None and hits == 0:
             return
 
         self.showing_query_in_tab = True

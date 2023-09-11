@@ -5,7 +5,8 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItemModel, QStandardItem
-from PyQt6.QtWidgets import QBoxLayout, QComboBox, QCompleter, QHBoxLayout, QLineEdit, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                             QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
 from simsapa import logger, SEARCH_TIMER_SPEED
 
@@ -15,7 +16,7 @@ from simsapa.app.types import SearchModeNameToType, SearchMode, SearchArea
 from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import QExpanding, SearchBarInterface, QFixed
+from simsapa.layouts.gui_types import QExpanding, QSizeMinimum, SearchBarInterface, QFixed
 from simsapa.layouts.help_info import setup_info_button
 
 
@@ -61,10 +62,13 @@ class HasSearchBar(SearchBarInterface):
         if enable_search_extras:
             self._setup_source_include_btn()
             self._setup_source_filter()
+            self._setup_regex_and_fuzzy()
+
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             # self._setup_toggle_pali_button() # TODO: reimplement as hover window
 
             if enable_info_button:
+                self.search_extras.addItem(QSpacerItem(5, 0, QSizeMinimum, QSizeMinimum))
                 setup_info_button(self.search_extras, self)
 
             # self._setup_pali_buttons() # TODO: reimplement as hover window
@@ -229,6 +233,62 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._app_data._save_app_settings()
 
+    def _setup_regex_and_fuzzy(self):
+        # === Frame ===
+
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+
+        box = QHBoxLayout()
+
+        self.regex_fuzzy_frame = frame
+        self.regex_fuzzy_frame.setLayout(box)
+        self.search_extras.addWidget(self.regex_fuzzy_frame)
+
+        # === Regex checkbox ===
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/regex"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        chk = QCheckBox()
+        chk.setIcon(icon)
+        chk.setToolTip("Enable regex globbing patterns in the query (.* .+ a* a+)")
+
+        self.regex_checkbox = chk
+
+        box.addWidget(self.regex_checkbox)
+
+        def _disable_fuzzy():
+            self.fuzzy_spin.setDisabled(self.regex_checkbox.isChecked())
+
+        self.regex_checkbox.clicked.connect(partial(_disable_fuzzy))
+
+        idx = self.search_mode_dropdown.currentIndex()
+        m = self.search_mode_dropdown.itemText(idx)
+        mode = SearchModeNameToType[m]
+
+        is_fulltext = (mode == SearchMode.FulltextMatch)
+        self.regex_fuzzy_frame.setEnabled(is_fulltext)
+
+        # === Fuzzy spinner ===
+        spin = QSpinBox()
+        spin.setMinimum(0)
+        spin.setMaximum(9)
+
+        self.fuzzy_spin = spin
+        box.addWidget(self.fuzzy_spin)
+
+        label = QLabel()
+        p = QPixmap(":/tilde").scaledToWidth(20)
+        label.setPixmap(p)
+        box.addWidget(label)
+
+        msg = "Fuzzy match words with n-character distance"
+        label.setToolTip(msg)
+        spin.setToolTip(msg)
+
     def _setup_language_filter(self):
         cmb = QComboBox()
         items = ["Language",]
@@ -358,9 +418,13 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_search_mode_changed(self):
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
+        mode = SearchModeNameToType[m]
 
-        self._app_data.app_settings[self._search_mode_setting_key] = SearchModeNameToType[m]
+        self._app_data.app_settings[self._search_mode_setting_key] = mode
         self._app_data._save_app_settings()
+
+        is_fulltext = (mode == SearchMode.FulltextMatch)
+        self.regex_fuzzy_frame.setEnabled(is_fulltext)
 
     def _start_query_workers(self, query_text_orig: str):
         if len(query_text_orig) == 0:
@@ -389,7 +453,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             self._search_area,
             self._last_query_time,
             partial(self._search_query_finished),
-            get_search_params(self),
+            params,
         )
 
     def _handle_autocomplete_query(self, min_length: int = 4):

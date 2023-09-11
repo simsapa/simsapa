@@ -108,6 +108,15 @@ class Index:
                     query: str,
                     fields: Optional[List[str]] = None) -> Query: ...
 
+    def parse_regex_query(self,
+                          query_text: str,
+                          field_name: str) -> Query: ...
+
+    def parse_fuzzy_query(self,
+                          query_text: str,
+                          field_name: str,
+                          fuzzy_distance: int) -> Query: ...
+
     def exists(self, dir: Path) -> bool: ...
 
 class Snippet:
