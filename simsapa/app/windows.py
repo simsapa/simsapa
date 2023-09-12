@@ -1,6 +1,6 @@
 import os, sys, re, shutil, queue, json, webbrowser
 from functools import partial
-from typing import List, Optional
+from typing import Callable, List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
@@ -386,9 +386,7 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
-               and isinstance(w, SuttaSearchWindowInterface) \
-               and w.isHidden():
+            if is_sutta_search_window(w) and w.isHidden():
                 is_new = False
                 view = w
 
@@ -419,6 +417,8 @@ class AppWindows:
                 view._show_sutta(self._app_data.sutta_to_open)
                 self._app_data.sutta_to_open = None
 
+        assert(isinstance(view, SuttaSearchWindowInterface))
+
         if query is not None:
             view.s._set_query(query)
             view.s._handle_query()
@@ -435,9 +435,7 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
-               and isinstance(w, SuttaStudyWindowInterface) \
-               and w.isHidden():
+            if is_sutta_study_window(w) and w.isHidden():
                 is_new = False
                 view = w
 
@@ -470,6 +468,8 @@ class AppWindows:
             if self._app_data.sutta_to_open:
                 view._show_sutta(self._app_data.sutta_to_open)
                 self._app_data.sutta_to_open = None
+
+        assert(isinstance(view, SuttaStudyWindowInterface))
 
         return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
 
@@ -509,20 +509,20 @@ class AppWindows:
         # Init one of each of the main windows, so that it only needs to .show()
         # when the user clicks the menu.
 
-        def _not_has_window(_type) -> bool:
-            a = [w for w in self._windows if isinstance(w, _type)]
+        def _not_has_window(_test_fn: Callable[[AppWindowInterface], bool]) -> bool:
+            a = [w for w in self._windows if _test_fn(w)]
             return (len(a) == 0)
 
-        if _not_has_window(SuttaSearchWindowInterface):
+        if _not_has_window(is_sutta_search_window):
             self._new_sutta_search_window(query=None, show=False)
 
-        if _not_has_window(SuttaStudyWindowInterface):
+        if _not_has_window(is_sutta_study_window):
             self._new_sutta_study_window(show=False)
 
-        if _not_has_window(DictionarySearchWindowInterface):
+        if _not_has_window(is_dictionary_search_window):
             self._new_dictionary_search_window(query=None, show=False)
 
-        if _not_has_window(EbookReaderWindowInterface):
+        if _not_has_window(is_ebook_reader_window):
             self._new_ebook_reader_window(show=False)
 
     def _new_dictionary_search_window_noret(self, query: Optional[str] = None) -> None:
@@ -544,9 +544,7 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
-               and isinstance(w, DictionarySearchWindowInterface) \
-               and w.isHidden():
+            if is_dictionary_search_window(w) and w.isHidden():
                 is_new = False
                 view = w
 
@@ -571,6 +569,8 @@ class AppWindows:
             if self._app_data.dict_word_to_open:
                 view._show_word(self._app_data.dict_word_to_open)
                 self._app_data.dict_word_to_open = None
+
+        assert(isinstance(view, DictionarySearchWindowInterface))
 
         if query is not None:
             logger.info("Set and handle query: " + query)
@@ -688,13 +688,16 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
-                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
-                w.reload_sutta_pages()
+            if hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            elif isinstance(w, SuttaSearchWindowInterface) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
-                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
 
     def _toggle_show_all_variant_readings(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_All_Variant_Readings.isChecked()
@@ -702,13 +705,16 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and hasattr(w, 'action_Show_All_Variant_Readings'):
-                w.action_Show_All_Variant_Readings.setChecked(is_on)
-                w.reload_sutta_pages()
+            if hasattr(w, 'action_Show_All_Variant_Readings'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_All_Variant_Readings.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            elif isinstance(w, SuttaSearchWindowInterface) and hasattr(w, 'action_Show_All_Variant_Readings'):
-                w.action_Show_All_Variant_Readings.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_All_Variant_Readings.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
 
     def _toggle_show_bookmarks(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_Bookmarks.isChecked()
@@ -716,13 +722,16 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and hasattr(w, 'action_Show_Bookmarks'):
-                w.action_Show_Bookmarks.setChecked(is_on)
-                w.reload_sutta_pages()
+            if hasattr(w, 'action_Show_Bookmarks'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_Bookmarks.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            elif isinstance(w, SuttaSearchWindowInterface) and hasattr(w, 'action_Show_Bookmarks'):
-                w.action_Show_Bookmarks.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_Bookmarks.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
 
     def _toggle_generate_links_graph(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Generate_Links_Graph.isChecked()
@@ -839,9 +848,7 @@ class AppWindows:
         is_new = True
 
         for w in self._windows:
-            if str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
-               and isinstance(w, EbookReaderWindowInterface) \
-               and w.isHidden():
+            if is_ebook_reader_window(w) and w.isHidden():
                 is_new = False
                 view = w
 
@@ -862,6 +869,8 @@ class AppWindows:
             view.sutta_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
             view.sutta_state.connect_preview_window_signals(self._preview_window)
+
+        assert(isinstance(view, EbookReaderWindowInterface))
 
         return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
 
@@ -1580,3 +1589,23 @@ def show_work_in_progress():
     d.setWindowTitle("Work in Progress")
     d.setText("Work in Progress")
     d.exec()
+
+def is_sutta_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
+         and isinstance(w, SuttaSearchWindowInterface))
+    return r
+
+def is_sutta_study_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
+         and isinstance(w, SuttaStudyWindowInterface))
+    return r
+
+def is_dictionary_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
+         and isinstance(w, DictionarySearchWindowInterface))
+    return r
+
+def is_ebook_reader_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
+         and isinstance(w, EbookReaderWindowInterface))
+    return r
