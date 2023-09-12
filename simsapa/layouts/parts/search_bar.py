@@ -12,7 +12,7 @@ from simsapa import logger, SEARCH_TIMER_SPEED
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
-from simsapa.app.types import SearchModeNameToType, SearchMode, SearchArea
+from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType
 from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
 from simsapa.layouts.gui_helpers import get_search_params
@@ -162,12 +162,18 @@ QWidget:focus { border: 1px solid #1092C3; }
         # === Search Mode ====
 
         self.search_mode_dropdown = QComboBox()
-        items = SearchModeNameToType.keys()
+
+        if self._search_area == SearchArea.Suttas:
+            names = SuttaSearchModeNameToType
+        else:
+            names = DictionarySearchModeNameToType
+
+        items = names.keys()
         self.search_mode_dropdown.addItems(items)
         self.search_mode_dropdown.setFixedHeight(self._icons_height)
 
         mode = self._app_data.app_settings.get(self._search_mode_setting_key, SearchMode.FulltextMatch)
-        values = list(map(lambda x: x[1], SearchModeNameToType.items()))
+        values = list(map(lambda x: x[1], names.items()))
         idx = values.index(mode)
         self.search_mode_dropdown.setCurrentIndex(idx)
 
@@ -267,7 +273,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
-        mode = SearchModeNameToType[m]
+        mode = AllSearchModeNameToType[m]
 
         is_fulltext = (mode == SearchMode.FulltextMatch)
         self.regex_fuzzy_frame.setEnabled(is_fulltext)
@@ -418,7 +424,7 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _handle_search_mode_changed(self):
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
-        mode = SearchModeNameToType[m]
+        mode = AllSearchModeNameToType[m]
 
         self._app_data.app_settings[self._search_mode_setting_key] = mode
         self._app_data._save_app_settings()

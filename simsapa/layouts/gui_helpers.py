@@ -14,7 +14,7 @@ from simsapa.app.db import appdata_models as Am
 
 from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, logger)
-from simsapa.app.types import SearchMode, SearchModeNameToType, SearchParams
+from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
 from simsapa.layouts.gui_types import SearchBarInterface
 
 
@@ -412,7 +412,7 @@ def get_search_params(w: SearchBarInterface) -> SearchParams:
     if hasattr(w, 'search_mode_dropdown'):
         idx = w.search_mode_dropdown.currentIndex()
         s = w.search_mode_dropdown.itemText(idx)
-        mode = SearchModeNameToType[s]
+        mode = AllSearchModeNameToType[s]
     else:
         mode = SearchMode.FulltextMatch
 
