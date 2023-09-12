@@ -1,6 +1,6 @@
 import shutil
 from typing import Dict, List, Optional, Union, Tuple
-import re, math
+import math
 
 import tantivy
 
@@ -8,10 +8,10 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 
 from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_nasal_m
+from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_nasal_m, query_text_to_uid_field_query
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
+from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
 from simsapa.app.types import SearchArea, SearchParams
 
 USutta = Union[Am.Sutta, Um.Sutta]
@@ -353,12 +353,7 @@ class TantivySearchQuery:
         query_string = sanitize_user_input(self.query_text_orig)
 
         if 'uid:' not in query_string:
-            # Replace user input sutta refs such as 'SN 56.11' with query language
-            matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query_string)
-            for m in matches:
-                nikaya = m.group(1).lower()
-                number = m.group(2)
-                query_string = query_string.replace(m.group(0), f"uid:{nikaya}{number}")
+            query_string = query_text_to_uid_field_query(query_string)
 
         if source is not None \
            and not enable_regex \

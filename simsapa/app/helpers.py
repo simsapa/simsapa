@@ -4,8 +4,8 @@ import re, socket
 import html, json
 
 from simsapa import logger
-from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE, SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE
-
+from simsapa.app.lookup import (RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF, DHP_CHAPTERS_TO_RANGE,
+                                SNP_UID_TO_RANGE, THAG_UID_TO_RANGE, THIG_UID_TO_RANGE)
 
 class SuttaRange(TypedDict):
     # sn30.7-16
@@ -27,6 +27,22 @@ def download_file(url: str, folder_path: Path) -> Path:
                 f.write(chunk)
 
     return file_path
+
+def is_book_sutta_ref(ref: str) -> bool:
+    return (re.match(RE_ALL_BOOK_SUTTA_REF, ref) is not None)
+
+def is_pts_sutta_ref(ref: str) -> bool:
+    return (re.match(RE_ALL_PTS_VOL_SUTTA_REF, ref) is not None)
+
+def query_text_to_uid_field_query(query_text: str) -> str:
+    # Replace user input sutta refs such as 'SN 56.11' with query language
+    matches = re.finditer(RE_ALL_BOOK_SUTTA_REF, query_text)
+    for m in matches:
+        nikaya = m.group(1).lower()
+        number = m.group(2)
+        query_text = query_text.replace(m.group(0), f"uid:{nikaya}{number}")
+
+    return query_text
 
 def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
     # logger.info(f"sutta_range_from_ref(): {ref}")

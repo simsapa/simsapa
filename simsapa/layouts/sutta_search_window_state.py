@@ -16,11 +16,12 @@ from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.helpers import is_book_sutta_ref
 
 from simsapa.app.types import QueryType, SearchArea, SuttaQuote, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.sutta_queries import QuoteScope
-from simsapa.app.search.helpers import SearchResult, RE_ALL_BOOK_SUTTA_REF
+from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import OpenPromptParams, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
 from simsapa.layouts.gui_types import sutta_quote_from_url
@@ -359,7 +360,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._get_active_tab().render_sutta_content()
             return
 
-        if re.match(RE_ALL_BOOK_SUTTA_REF, query_text_orig) is not None:
+        if is_book_sutta_ref(query_text_orig):
             min_length = 1
 
         if len(query_text_orig) < min_length:

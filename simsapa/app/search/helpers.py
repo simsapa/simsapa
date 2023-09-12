@@ -11,12 +11,6 @@ from simsapa.app.db import userdata_models as Um
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord]
 
-# MN44; MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
-# Must not match part of the path in a url, <a class="link" href="ssp://suttas/mn44/en/sujato">
-RE_ALL_BOOK_SUTTA_REF = re.compile(r'(?<!/)\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]*)\b', re.IGNORECASE)
-# Vin.iii.40; AN.i.78; D iii 264; SN i 190; M. III. 203.
-RE_ALL_PTS_VOL_SUTTA_REF = re.compile(r'(?<!/)\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]+([ivxIVX]+)[ \.]+(\d[\d\.]*)\b', re.IGNORECASE)
-
 # TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
 class Labels(TypedDict):
     appdata: List[str]

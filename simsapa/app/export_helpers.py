@@ -8,7 +8,7 @@ from PyQt6.QtCore import QUrl
 
 from sqlalchemy.orm.session import Session
 from ebooklib import epub
-from simsapa.app.search.helpers import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
+from simsapa.app.lookup import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
 
 from simsapa.layouts.html_content import html_page
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, normalize_sutta_ref
