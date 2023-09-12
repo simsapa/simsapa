@@ -32,13 +32,13 @@ class SearchArea(int, Enum):
 
 class SearchMode(int, Enum):
     FulltextMatch = 0
-    # FIXME disabled ExactMatch while its buggy.
-    # ExactMatch = 1
+    ExactMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
 
 AllSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
+    # FIXME disabled ExactMatch while its buggy.
     # "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,
     "Title Match": SearchMode.TitleMatch,

@@ -2,7 +2,7 @@ from typing import Optional
 import typer
 
 from simsapa import logger
-from simsapa.app.types import QueryType
+from simsapa.app.types import QueryType, SearchMode, SearchParams
 
 app = typer.Typer()
 index_app = typer.Typer()
@@ -33,11 +33,25 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
 
     search_indexes = TantivySearchIndexes(db_session)
 
+    params = SearchParams(
+        mode = SearchMode.FulltextMatch,
+        page_len = 20,
+        lang = None,
+        lang_include = True,
+        source = None,
+        source_include = True,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
     if query_type == QueryType.suttas:
 
         for lang, ix in search_indexes.suttas_lang_index.items():
 
-            search_query = TantivySearchQuery(ix, 20)
+            p = params
+            p['lang'] = lang
+
+            search_query = TantivySearchQuery(ix, p)
             search_query.new_query(query)
 
             if print_count:
@@ -52,7 +66,7 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
     elif query_type == QueryType.words:
 
         for _, ix in search_indexes.dict_words_lang_index.items():
-            search_query = TantivySearchQuery(ix, 20)
+            search_query = TantivySearchQuery(ix, params)
             search_query.new_query(query)
 
             if print_count:
@@ -70,36 +84,36 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
 def index_create():
     """Create database indexes, removing existing ones."""
     from simsapa.app.search.tantivy_index import TantivySearchIndexes
-    from simsapa.app.app_data import AppData
-    app_data = AppData()
-    search_indexes = TantivySearchIndexes(app_data.db_session, remove_if_exists=True)
+    from simsapa.app.db_session import get_db_engine_connection_session
+    _, _, db_session = get_db_engine_connection_session()
+    search_indexes = TantivySearchIndexes(db_session, remove_if_exists=True)
     print(f"Has emtpy index: {search_indexes.has_empty_index()}")
 
 @index_app.command("reindex")
 def index_reindex():
     """Clear and rebuild database indexes."""
     from simsapa.app.search.tantivy_index import TantivySearchIndexes
-    from simsapa.app.app_data import AppData
-    app_data = AppData()
-    search_indexes = TantivySearchIndexes(app_data.db_session, remove_if_exists=True)
+    from simsapa.app.db_session import get_db_engine_connection_session
+    _, _, db_session = get_db_engine_connection_session()
+    search_indexes = TantivySearchIndexes(db_session, remove_if_exists=True)
     search_indexes.index_all()
 
 @index_app.command("suttas-lang")
 def index_suttas_lang(lang: str):
     """Index suttas from appdata of the given language."""
     from simsapa.app.search.tantivy_index import TantivySearchIndexes
-    from simsapa.app.app_data import AppData
-    app_data = AppData()
-    search_indexes = TantivySearchIndexes(app_data.db_session)
+    from simsapa.app.db_session import get_db_engine_connection_session
+    _, _, db_session = get_db_engine_connection_session()
+    search_indexes = TantivySearchIndexes(db_session)
     search_indexes.index_all_suttas_lang(lang)
 
 @index_app.command("dict-words-lang")
 def index_dict_words_lang(lang: str):
     """Index dict_words from appdata of the given language."""
     from simsapa.app.search.tantivy_index import TantivySearchIndexes
-    from simsapa.app.app_data import AppData
-    app_data = AppData()
-    search_indexes = TantivySearchIndexes(app_data.db_session)
+    from simsapa.app.db_session import get_db_engine_connection_session
+    _, _, db_session = get_db_engine_connection_session()
+    search_indexes = TantivySearchIndexes(db_session)
     search_indexes.index_all_dict_words_lang(lang)
 
 @app.command("import-bookmarks")
