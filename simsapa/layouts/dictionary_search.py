@@ -7,7 +7,7 @@ from pathlib import Path
 from PyQt6 import QtCore, QtGui
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QStandardItemModel, QAction
+from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QAction
 from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
                              QHBoxLayout, QPushButton, QSizePolicy, QTabWidget, QToolBar, QVBoxLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -56,7 +56,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     rightside_tabs: QTabWidget
     _app_data: AppData
     _queries: GuiSearchQueries
-    _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
     _search_timer = QTimer()
     _last_query_time = datetime.now()
@@ -93,8 +92,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._queries.dictionary_queries.dictionary_font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
 
         self.page_len = 20
-
-        self._autocomplete_model = QStandardItemModel()
 
         self.queue_id = 'window_' + str(len(APP_QUEUES))
         APP_QUEUES[self.queue_id] = queue.Queue()

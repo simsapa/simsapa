@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QLineEdit, QM
 
 from simsapa import IS_MAC, DbSchemaName
 from simsapa.app.search.helpers import SearchResult
-from simsapa.app.types import DictionaryQueriesInterface, SuttaQueriesInterface, UDictWord, SuttaQuote, SearchMode
+from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SuttaQuote, SearchMode
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
@@ -501,6 +501,7 @@ class SearchBarInterface(QWidget):
     search_input: QLineEdit
     page_len: int
     get_page_num: Callable[[], int]
+    _search_area: SearchArea
     _set_query: Callable
     _handle_query: Callable
     _handle_exact_query: Callable

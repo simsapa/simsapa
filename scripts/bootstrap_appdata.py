@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 from sqlalchemy.orm.session import Session
 
 from simsapa import DbSchemaName, logger
+
+from simsapa.app.types import SearchArea
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.dir_helpers import create_app_dirs
+from simsapa.app.completion_lists import get_and_save_completions
 
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
@@ -136,6 +139,11 @@ def main():
     dhammapada_tipitaka_net.populate_suttas_from_dhammapada_tipitaka_net(appdata_db, limit)
 
     nyanadipa.populate_suttas_from_nyanadipa(appdata_db, limit)
+
+    # === All suttas are added above ===
+
+    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData)
+    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData)
 
     suttacentral.add_sc_multi_refs(appdata_db, sc_db)
 

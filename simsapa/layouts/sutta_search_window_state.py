@@ -55,7 +55,6 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
     show_url_action_fn: Callable
     _app_data: AppData
     _queries: GuiSearchQueries
-    _autocomplete_model: QStandardItemModel
     _related_tabs: List[SuttaTabWidget]
     _search_timer = QTimer()
     _last_query_time = datetime.now()

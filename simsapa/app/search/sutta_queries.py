@@ -288,6 +288,3 @@ class SuttaQueries(SuttaQueriesInterface):
 
         return results
 
-    def autocomplete_hits(self, query: str) -> set[str]:
-        a = set(filter(lambda x: x.lower().startswith(query.lower()), self.completion_cache))
-        return a

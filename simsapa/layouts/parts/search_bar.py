@@ -3,9 +3,9 @@ from functools import partial
 from typing import List, Optional
 
 from PyQt6 import QtGui
-from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QIcon, QPixmap, QStandardItemModel, QStandardItem
-from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtCore import QTimer, QSize
+from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
 from simsapa import logger, SEARCH_TIMER_SPEED
@@ -15,6 +15,8 @@ from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType
 from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
+from simsapa.layouts.parts.pali_completer import PaliCompleter
+
 from simsapa.layouts.gui_helpers import get_search_params
 from simsapa.layouts.gui_types import QExpanding, QSizeMinimum, SearchBarInterface, QFixed
 from simsapa.layouts.help_info import setup_info_button
@@ -23,6 +25,7 @@ from simsapa.layouts.help_info import setup_info_button
 class HasSearchBar(SearchBarInterface):
     features: List[str]
     _app_data: AppData
+    _search_area: SearchArea
 
     def init_search_bar(self,
                         wrap_layout: QBoxLayout,
@@ -44,13 +47,14 @@ class HasSearchBar(SearchBarInterface):
         self.enable_language_filter = enable_language_filter
         self.enable_search_extras = enable_search_extras
 
-        self._autocomplete_model = QStandardItemModel()
-
         self._init_search_icons()
         self._setup_layout(wrap_layout = wrap_layout,
                            add_nav_buttons = add_nav_buttons,
                            input_fixed_size = input_fixed_size,
                            two_rows_layout = two_rows_layout)
+
+        if self._app_data.app_settings.get('search_completion', True):
+            self._init_search_input_completer()
 
         if focus_input:
             self.search_input.setFocus()
@@ -145,13 +149,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.setStyleSheet(style)
 
-        completer = QCompleter(self._autocomplete_model, self)
-        completer.setMaxVisibleItems(20)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setModelSorting(QCompleter.ModelSorting.CaseInsensitivelySortedModel)
-
-        self.search_input.setCompleter(completer)
-
         self.search_button = QPushButton()
         self.search_button.setFixedSize(self._icons_height, self._icons_height)
         self.search_button.setIcon(self._normal_search_icon)
@@ -215,6 +212,18 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _show_search_warning_icon(self, warning_msg: str = ''):
         self.search_button.setIcon(self._warning_icon)
         self.search_button.setToolTip(warning_msg)
+
+    def _init_search_input_completer(self):
+        if self._search_area == SearchArea.Suttas:
+            items = self._app_data._sutta_titles_completion_cache
+        else:
+            items = self._app_data._dict_words_completion_cache
+
+        completer = PaliCompleter(parent = self, word_sublists = items)
+        self.search_input.setCompleter(completer)
+
+        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
+        self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
 
     def _get_language_labels(self):
         if self._search_area == SearchArea.Suttas:
@@ -409,7 +418,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _user_typed(self):
         self._show_search_normal_icon()
-        self._handle_autocomplete_query(min_length=4)
 
         if not self._app_data.app_settings.get('search_as_you_type', True):
             return
@@ -462,29 +470,6 @@ QWidget:focus { border: 1px solid #1092C3; }
             params,
         )
 
-    def _handle_autocomplete_query(self, min_length: int = 4):
-        if not self._app_data.app_settings.get('search_completion', True):
-            return
-
-        query = self.search_input.text().strip()
-
-        if len(query) < min_length:
-            return
-
-        self._autocomplete_model.clear()
-
-        if self._search_area == SearchArea.Suttas:
-            a = self._queries.sutta_queries.autocomplete_hits(query)
-        else:
-            a = self._queries.dictionary_queries.autocomplete_hits(query)
-
-        # FIXME can these be assigned without a loop?
-        for i in a:
-            self._autocomplete_model.appendRow(QStandardItem(i))
-
-        # NOTE: completion cache is already sorted.
-        # self._autocomplete_model.sort(0)
-
     def _connect_search_bar_signals(self):
         if hasattr(self, 'search_button'):
             self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
@@ -492,10 +477,6 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         if hasattr(self, 'search_input'):
             self.search_input.textEdited.connect(partial(self._user_typed))
-
-            self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-            self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
-
             self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
             self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
 

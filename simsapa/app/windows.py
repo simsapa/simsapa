@@ -12,7 +12,6 @@ from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH,
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.check_updates_worker import CheckUpdatesWorker
-from simsapa.app.completion_cache_worker import CompletionCacheWorker
 
 from simsapa.app.app_data import AppData
 
@@ -20,7 +19,7 @@ from simsapa.app.types import QueryType, SuttaQuote, QuoteScope, QuoteScopeValue
 
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
-    CompletionCacheResult, EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
+    EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
     SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
     sutta_quote_from_url)
 
@@ -59,10 +58,6 @@ class AppWindows:
         self.timer.start(TIMER_SPEED)
 
         self.thread_pool = QThreadPool()
-
-        self.completion_cache_worker = CompletionCacheWorker()
-        self.completion_cache_worker.signals.finished.connect(partial(self._set_completion_cache))
-        self.thread_pool.start(self.completion_cache_worker)
 
         # Wait 0.5s, then run slowish initialize tasks, e.g. init windows, check for updates.
         # By that time the first window will be opened and will not delay app.exec().
@@ -1310,11 +1305,6 @@ class AppWindows:
         for w in self._windows:
             if hasattr(w, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
                 w.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
-
-    def _set_completion_cache(self, values: CompletionCacheResult):
-        logger.info(f"_set_completion_cache(): sutta_titles: {len(values['sutta_titles'])}, dict_words: {len(values['dict_words'])}")
-        self._queries.sutta_queries.completion_cache = values['sutta_titles']
-        self._queries.dictionary_queries.completion_cache = values['dict_words']
 
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()

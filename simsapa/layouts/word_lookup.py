@@ -4,7 +4,7 @@ import math, subprocess, json, queue
 from typing import List, Optional
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QStandardItemModel, QScreen
+from PyQt6.QtGui import QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
@@ -39,7 +39,6 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     _app_data: AppData
     _layout: QVBoxLayout
     _clipboard: Optional[QClipboard]
-    _autocomplete_model: QStandardItemModel
     _current_words: List[UDictWord]
     _search_timer = QTimer()
     _last_query_time = datetime.now()

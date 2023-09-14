@@ -21,11 +21,12 @@ from PyQt6.QtGui import QClipboard
 
 from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
+from simsapa.app.completion_lists import WordSublists
 from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
-from simsapa.app.types import USutta, UDictWord, UBookmark
+from simsapa.app.types import SearchArea, USutta, UDictWord, UBookmark
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -42,6 +43,9 @@ class AppData:
     # Keys are db schema, and course group id
     pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()
     search_indexes: Optional[TantivySearchIndexes] = None
+
+    _sutta_titles_completion_cache: WordSublists = dict()
+    _dict_words_completion_cache: WordSublists = dict()
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -83,6 +87,8 @@ class AppData:
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
 
+        self._init_completion_cache()
+
         logger.info(f"IS_GUI: {get_is_gui()}")
         if get_is_gui():
             # Wait 0.5s, then run slowish initialize tasks, e.g. search indexes, db check, upgrade and init, etc.
@@ -114,6 +120,17 @@ class AppData:
         logger.profile("_init_search_indexes()")
         self.search_indexes = TantivySearchIndexes(self.db_session)
         self._check_empty_index(self.search_indexes)
+
+    def _init_completion_cache(self):
+        from simsapa.app.completion_lists import get_and_save_completions
+
+        sutta_titles = get_and_save_completions(self.db_session, SearchArea.Suttas)
+        dict_words = get_and_save_completions(self.db_session, SearchArea.DictWords)
+
+        logger.info(f"AppData::_init_completion_cache(): sutta_titles: {len(sutta_titles)}, dict_words: {len(dict_words)}")
+
+        self._sutta_titles_completion_cache = sutta_titles
+        self._dict_words_completion_cache = dict_words
 
     def _check_empty_index(self, search_indexes: TantivySearchIndexes):
         if search_indexes.has_empty_index():

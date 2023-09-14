@@ -71,13 +71,9 @@ class QueryType(str, Enum):
     words = "words"
 
 class SuttaQueriesInterface:
-    completion_cache: List[str]
-    autocomplete_hits: Callable[[str], set[str]]
     get_sutta_by_url: Callable
 
 class DictionaryQueriesInterface:
-    completion_cache: List[str]
-    autocomplete_hits: Callable[[str], set[str]]
     get_words_by_uid: Callable
     words_to_html_page: Callable
     render_html_page: Callable

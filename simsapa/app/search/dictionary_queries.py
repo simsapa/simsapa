@@ -262,10 +262,6 @@ class DictionaryQueries(DictionaryQueriesInterface):
             js = js,
         )
 
-    def autocomplete_hits(self, query: str) -> set[str]:
-        a = set(filter(lambda x: x.lower().startswith(query.lower()), self.completion_cache))
-        return a
-
 class ExactQueryResult(TypedDict):
     appdata_ids: List[int]
     userdata_ids: List[int]
