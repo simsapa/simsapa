@@ -511,6 +511,8 @@ class SearchBarInterface(QWidget):
     _search_mode_setting_key: str
     _language_filter_setting_key: str
     _source_filter_setting_key: str
+    _init_search_input_completer: Callable[[], None]
+    _disable_search_input_completer: Callable[[], None]
 
     language_filter_dropdown: QComboBox
     language_include_btn: QPushButton

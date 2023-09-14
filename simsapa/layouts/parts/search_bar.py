@@ -5,7 +5,7 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QSize
 from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
 from simsapa import logger, SEARCH_TIMER_SPEED
@@ -224,6 +224,10 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
         self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+
+    def _disable_search_input_completer(self):
+        empty_completer = QCompleter()
+        self.search_input.setCompleter(empty_completer)
 
     def _get_language_labels(self):
         if self._search_area == SearchArea.Suttas:

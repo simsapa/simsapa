@@ -1288,6 +1288,18 @@ class AppWindows:
             if hasattr(w,'action_Search_Completion'):
                 w.action_Search_Completion.setChecked(checked)
 
+                if is_sutta_search_window(w) and isinstance(w, SuttaSearchWindowInterface):
+                    if checked:
+                        w.s._init_search_input_completer()
+                    else:
+                        w.s._disable_search_input_completer()
+
+                elif is_dictionary_search_window and isinstance(w, DictionarySearchWindowInterface):
+                    if checked:
+                        w._init_search_input_completer()
+                    else:
+                        w._disable_search_input_completer()
+
     def _set_double_click_word_lookup_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.isChecked()
         self._app_data.app_settings['double_click_word_lookup'] = checked

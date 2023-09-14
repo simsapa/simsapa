@@ -112,6 +112,6 @@ def get_and_save_completions(db_session: Session,
         db_session.commit()
 
     else:
-        sublists: WordSublists = json.loads(r)
+        sublists: WordSublists = json.loads(r.value)
 
     return sublists
