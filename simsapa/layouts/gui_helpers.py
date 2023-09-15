@@ -7,7 +7,7 @@ import psutil
 import markdown
 import tomlkit
 
-from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QUrl, QUrlQuery
+from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.db import appdata_models as Am
@@ -23,6 +23,17 @@ class Version(TypedDict):
     minor: int
     patch: int
     alpha: Optional[int]
+
+class ReleasesReqestParams(TypedDict):
+    channel: str
+    app_version: str
+    system: str
+    machine: str
+    cpu_max: str
+    cpu_cores: str
+    mem_total: str
+    screen: str
+    no_stats: bool
 
 def to_version(ver: str) -> Version:
     # v0.1.7-alpha.5
@@ -199,38 +210,21 @@ def get_releases_info(save_stats = True, screen_size = '') -> ReleasesInfo:
     if s is not None and s.lower() == 'true':
         save_stats = False
 
-    url = QUrl(f"{SIMSAPA_RELEASES_BASE_URL}/releases.php")
-    query = QUrlQuery()
-    query.addQueryItem('app_version', str(get_app_version()))
-    query.addQueryItem('channel', channel)
-
-    query.addQueryItem('system', platform.system())
-    query.addQueryItem('machine', platform.machine())
-
-    if save_stats:
-        cpu = psutil.cpu_freq()
-        query.addQueryItem('cpu_max', f"{cpu.max:.2f}")
-
-        cores = psutil.cpu_count(logical=True)
-        query.addQueryItem('cpu_cores', str(cores))
-
-        mem = psutil.virtual_memory()
-        query.addQueryItem('mem_total', str(mem.total))
-
-        query.addQueryItem('screen', screen_size)
-
-    else:
-        # The PHP script checks only for the presence of the no_stats GET
-        # parameter, regardless of its value.
-        query.addQueryItem('no_stats', '')
-
-    url.setQuery(query)
-
-    logger.info(url.toString())
+    params = ReleasesReqestParams(
+        channel = channel,
+        app_version = str(get_app_version()),
+        system = platform.system(),
+        machine = platform.machine(),
+        cpu_max = f"{psutil.cpu_freq().max:.2f}",
+        cpu_cores = str(psutil.cpu_count(logical=True)),
+        mem_total = str(psutil.virtual_memory().total),
+        screen = screen_size,
+        no_stats = (not save_stats),
+    )
 
     try:
         import requests
-        r = requests.get(url.toString())
+        r = requests.post(f"{SIMSAPA_RELEASES_BASE_URL}/releases", json=params)
         if r.ok:
             data: ReleasesInfo = r.json()
         else:

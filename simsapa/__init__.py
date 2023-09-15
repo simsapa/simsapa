@@ -26,7 +26,7 @@ SIMSAPA_APP_VERSION = "0.3.3-alpha.1"
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
 # No trailing slash
-SIMSAPA_RELEASES_BASE_URL = "https://simsapa.a-buddha-ujja.hu"
+SIMSAPA_RELEASES_BASE_URL = "https://simsapa.eu.pythonanywhere.com"
 
 PACKAGE_ASSETS_RSC_DIR = Path('assets')
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
