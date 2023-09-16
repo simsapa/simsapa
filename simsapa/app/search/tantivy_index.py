@@ -355,6 +355,21 @@ class TantivySearchQuery:
         if 'uid:' not in query_string:
             query_string = query_text_to_uid_field_query(query_string)
 
+        # At this point query_string is either:
+        # - the user entered a sutta ref, now converted to a uid:text expression
+        # - the user entered a query expression
+        # - the user entered several words, e.g. a quote
+        # - the user entered a single word
+
+        # Determine if the query was a single word without a query expression.
+        marks = [' ', '"', "'", '+', ':']
+        a = [i for i in marks if i in query_string]
+        is_query_single_word = (len(a) == 0)
+
+        # If it is not a regex or fuzzy query, add source filtering with an
+        # expression. It is much faster, and easier to paginate, when tantivy
+        # returns the already filtered top-n results, then filtering a longer
+        # list in Python.
         if source is not None \
            and not enable_regex \
            and not fuzzy_distance > 0 \
@@ -371,6 +386,14 @@ class TantivySearchQuery:
             # Also, Pali titles are long words, and since the tokenizer matches
             # complete words, it will not match the beginning of titles, e.g.
             # 'silavant' for 'sīlavantasuttaṁ'.
+            #
+            # If the query started with a single word, convert it to a 'must' expression.
+            if is_query_single_word \
+               and not enable_regex \
+               and not fuzzy_distance > 0:
+                query_string = f"+{query_string}"
+
+            logger.info(f"query_string: {query_string}")
 
             if enable_regex:
                 self.parsed_query = self.ix.parse_regex_query(query_string, 'content')
@@ -382,11 +405,15 @@ class TantivySearchQuery:
                 self.parsed_query = self.ix.parse_query(query_string, ['content'])
 
         elif self.is_dict_word_index():
-            if 'word:' not in self.query_text_orig \
-               and ' ' not in self.query_text_orig \
+            if is_query_single_word \
                and not enable_regex \
                and not fuzzy_distance > 0:
-                query_string += f" word:{self.query_text_orig}"
+                query_string = f"+{query_string} word:{self.query_text_orig}"
+
+            # A single word query with a dictionary filter now looks like:
+            # +vitakkaya +source_uid:dpd word:vitakkaya
+
+            logger.info(f"query_string: {query_string}")
 
             if enable_regex:
                 self.parsed_query = self.ix.parse_regex_query(query_string, 'word')
