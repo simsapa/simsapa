@@ -352,7 +352,8 @@ class TantivySearchQuery:
 
         query_string = sanitize_user_input(self.query_text_orig)
 
-        if 'uid:' not in query_string:
+        if 'uid:' not in query_string \
+            and 'ref:' not in query_string:
             query_string = query_text_to_uid_field_query(query_string)
 
         # At this point query_string is either:
@@ -395,14 +396,20 @@ class TantivySearchQuery:
 
             logger.info(f"query_string: {query_string}")
 
-            if enable_regex:
-                self.parsed_query = self.ix.parse_regex_query(query_string, 'content')
+            try:
+                if enable_regex:
+                    self.parsed_query = self.ix.parse_regex_query(query_string, 'content')
 
-            elif fuzzy_distance > 0:
-                self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'content', fuzzy_distance)
+                elif fuzzy_distance > 0:
+                    self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'content', fuzzy_distance)
 
-            else:
-                self.parsed_query = self.ix.parse_query(query_string, ['content'])
+                else:
+                    self.parsed_query = self.ix.parse_query(query_string, ['content'])
+
+            except Exception as e:
+                logger.error(f"TantivySearchQuery: {e}")
+                return
+
 
         elif self.is_dict_word_index():
             if is_query_single_word \
@@ -415,17 +422,27 @@ class TantivySearchQuery:
 
             logger.info(f"query_string: {query_string}")
 
-            if enable_regex:
-                self.parsed_query = self.ix.parse_regex_query(query_string, 'word')
+            try:
+                if enable_regex:
+                    self.parsed_query = self.ix.parse_regex_query(query_string, 'word')
 
-            elif fuzzy_distance > 0:
-                self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'word', fuzzy_distance)
+                elif fuzzy_distance > 0:
+                    self.parsed_query = self.ix.parse_fuzzy_query(query_string, 'word', fuzzy_distance)
 
-            else:
-                self.parsed_query = self.ix.parse_query(query_string, ['content', 'word'])
+                else:
+                    self.parsed_query = self.ix.parse_query(query_string, ['content', 'word'])
+
+            except Exception as e:
+                logger.error(f"TantivySearchQuery: {e}")
+                return
 
         else:
-            self.parsed_query = self.ix.parse_query(query_string, ['content'])
+            try:
+                self.parsed_query = self.ix.parse_query(query_string, ['content'])
+
+            except Exception as e:
+                logger.error(f"TantivySearchQuery: {e}")
+                return
 
         self.snippet_generator = tantivy.SnippetGenerator \
                                         .create(self.searcher,
@@ -487,6 +504,7 @@ class TantivySearchIndexes:
         Test if a query_text will parse without syntax errors. Raise the
         ValueError exception to be handled elsewhere.
         """
+        logger.info(f"test_correct_query_syntax() search_area: {search_area} query_text: {query_text}")
 
         query_text = sanitize_user_input(query_text)
 
