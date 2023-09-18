@@ -149,7 +149,7 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
 
     app.setApplicationName("Simsapa Dhamma Reader")
-    app.setWindowIcon(QIcon(":simsapa-tray"))
+    app.setWindowIcon(QIcon(":simsapa-appicon"))
 
     if DESKTOP_FILE_PATH is not None:
         app.setDesktopFileName(str(DESKTOP_FILE_PATH.with_suffix("")))

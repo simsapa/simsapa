@@ -62,6 +62,7 @@
     <file alias="search">icons/32x32/bx_search_alt_2.png</file>
     <file alias="simsapa-loading">icons/gif/simsapa-loading.gif</file>
     <file alias="simsapa-tray">icons/32x32/simsapa-tray.png</file>
+    <file alias="simsapa-appicon">icons/appicons/simsapa.png</file>
     <file alias="sort-down-solid">icons/32x32/fa_sort-down-solid.png</file>
     <file alias="sort-solid">icons/32x32/fa_sort-solid.png</file>
     <file alias="sort-up-solid">icons/32x32/fa_sort-up-solid.png</file>

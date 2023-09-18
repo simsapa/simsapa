@@ -2,7 +2,7 @@ all:
 	@echo "No default target."
 
 icons:
-	pyrcc5 -o simsapa/assets/icons_rc.py simsapa/assets/icons.qrc
+	./scripts/icons_assets.sh
 
 ui:
 	pyuic6 -o simsapa/assets/ui/sutta_search_window_ui.py simsapa/assets/ui/sutta_search_window.ui && \
