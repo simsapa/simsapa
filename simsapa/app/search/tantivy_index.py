@@ -231,6 +231,9 @@ class TantivySearchQuery:
     def highlighted_results_page(self, page_num: int) -> List[SearchResult]:
         logger.info(f"TantivySearchQuery::highlighted_results_page({page_num})")
 
+        if page_num < 0:
+            page_num = 0
+
         if self.parsed_query is None:
             return []
 
