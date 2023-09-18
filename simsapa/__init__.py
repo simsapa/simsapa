@@ -1,10 +1,10 @@
 import os, sys
 from pathlib import Path
-from typing import Dict, TypedDict
+from typing import Dict, Optional, TypedDict
 from enum import Enum
 import queue
 from dotenv import find_dotenv, load_dotenv
-import appdirs
+from platformdirs import PlatformDirs
 import platform
 import importlib.resources
 import pkgutil
@@ -40,6 +40,8 @@ s = ""
 if len(sys.argv) >= 2:
     s = sys.argv[1]
 
+PLATFORM_DIRS = PlatformDirs(appname="simsapa")
+
 if s.startswith("--simsapa-dir="):
     # Remove it so typer can parse other cli options.
     del sys.argv[1]
@@ -50,9 +52,16 @@ else:
     if s is not None and s != '':
         SIMSAPA_DIR = Path(s)
     else:
-        SIMSAPA_DIR = Path(appdirs.user_data_dir('simsapa'))
+        # Linux: ~/.local/share/simsapa
+        # Mac: ~/Library/Application\ Support/simsapa/simsapa
+        # Windows: C:\Users\%USERNAME%\AppData\Local\simsapa\simsapa
+        SIMSAPA_DIR = Path(PLATFORM_DIRS.user_data_dir)
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
+
+SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("simsapa-api-port.txt")
+
+USER_HOME_DIR = PLATFORM_DIRS.user_desktop_path.parent
 
 s = os.getenv('LOG_PERCENT_PROGRESS')
 if s is not None and s == 'true':
@@ -124,6 +133,12 @@ if IS_LINUX:
     IS_SWAY = s is not None and s == 'sway'
 else:
     IS_SWAY = False
+
+DESKTOP_FILE_PATH: Optional[Path] = None
+
+if IS_LINUX:
+    # ~/.local/share/applications/simsapa.desktop
+    DESKTOP_FILE_PATH = SIMSAPA_DIR.parent.joinpath("applications").joinpath("simsapa.desktop")
 
 b =  pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("releases_fallback.json")))
 if b is None:

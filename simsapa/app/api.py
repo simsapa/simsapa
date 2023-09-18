@@ -1,6 +1,6 @@
 from pathlib import Path
 import queue, json, os
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
@@ -24,6 +24,14 @@ logging.getLogger("werkzeug").disabled = True
 
 global server_queue
 server_queue: Optional[queue.Queue] = None
+
+class AppCallbacks:
+    open_window: Callable[[str], None]
+    def __init__(self):
+        pass
+
+global app_callbacks
+app_callbacks = AppCallbacks()
 
 @app.route('/queues/<string:queue_id>', methods=['POST'])
 def queues(queue_id):
@@ -223,6 +231,11 @@ def get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
+@app.route('/open_window', defaults={'window_type': ''})
+@app.route('/open_window/<string:window_type>', methods=['GET'])
+def open_window(window_type: str = ''):
+    app_callbacks.open_window(window_type)
+    return "OK", 200
 
 @app.route('/get_bookmarks_with_quote_only_for_sutta', methods=['POST'])
 def get_bookmarks_with_quote_only_for_sutta():
@@ -326,11 +339,15 @@ def resp_forbidden(e):
     logger.error(msg)
     return msg, 403
 
-def start_server(port: int, q: queue.Queue):
+def start_server(port: int,
+                 q: queue.Queue,
+                 open_window_fn: Callable):
     logger.info(f'Starting server on port {port}')
-    os.environ["FLASK_ENV"] = "development"
 
     global server_queue
     server_queue = q
+
+    global app_callbacks
+    app_callbacks.open_window = open_window_fn
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)

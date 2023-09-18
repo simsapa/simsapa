@@ -311,6 +311,8 @@ class AppSettings(TypedDict):
     show_sutta_sidebar: bool
     show_toolbar: bool
     show_translation_and_pali_line_by_line: bool
+    keep_running_in_background: bool
+    tray_click_opens_window: WindowType
 
     sutta_font_size: int
     dictionary_font_size: int
@@ -375,6 +377,8 @@ def default_app_settings() -> AppSettings:
         show_sutta_sidebar = True,
         show_toolbar = False,
         show_translation_and_pali_line_by_line = False,
+        keep_running_in_background = True,
+        tray_click_opens_window = WindowType.SuttaSearch,
 
         sutta_font_size = 22,
         dictionary_font_size = 18,
@@ -478,6 +482,9 @@ class AppWindowInterface(QMainWindow):
     action_Document_Reader: QAction
     action_Library: QAction
     action_Prompts: QAction
+    action_Close_Window: QAction
+    action_Keep_Running_in_the_Background: QAction
+    action_Tray_Click_Opens_Window: QAction
 
     toolBar: QToolBar
     queue_id: str

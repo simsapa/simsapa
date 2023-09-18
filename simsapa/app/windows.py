@@ -4,7 +4,7 @@ from typing import Callable, List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QThreadPool, QTimer, QUrl
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, START_LOW_MEM, logger, ApiAction, ApiMessage
@@ -31,10 +31,15 @@ from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+class AppWindowsSignals(QObject):
+    open_window_signal = pyqtSignal(str)
+
 class AppWindows:
     _preview_window: PreviewWindow
+    signals: AppWindowsSignals
 
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
+        self.signals = AppWindowsSignals()
         self._app = app
         self._app_data = app_data
         self._queries = GuiSearchQueries(self._app_data.db_session,
@@ -65,6 +70,8 @@ class AppWindows:
         self.init_timer.setSingleShot(True)
         self.init_timer.timeout.connect(partial(self._init_tasks))
         self.init_timer.start(500)
+
+        self.signals.open_window_signal.connect(partial(self._handle_open_window_signal))
 
     def _init_tasks(self):
         logger.profile("AppWindows::_init_tasks(): start")
@@ -144,6 +151,32 @@ class AppWindows:
 
             except queue.Empty:
                 pass
+
+    def handle_system_tray_clicked(self):
+        logger.info("handle_system_tray_clicked()")
+
+        show_window = True
+        for w in self._windows:
+            if w.isVisible():
+                w.hide()
+                show_window = False
+
+        if show_window:
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            self._open_window_type(window_type)
+
+    def _handle_open_window_signal(self, window_type_name: str = ''):
+        logger.info(f"_handle_open_window_signal(): '{window_type_name}'")
+
+        if len(window_type_name) == 0 \
+           or window_type_name not in WindowNameToType.keys():
+
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            self._open_window_type(window_type)
+            return
+
+        window_type = WindowNameToType[window_type_name]
+        self._open_window_type(window_type)
 
     def _remove_closed_window_from_list(self, window_queue_id: str):
         # Remove the window from self._windows to free up memory, unless it is
@@ -337,9 +370,7 @@ class AppWindows:
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
-    def open_first_window(self) -> QMainWindow:
-        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
-
+    def _open_window_type(self, window_type: WindowType) -> QMainWindow:
         if window_type == WindowType.SuttaSearch:
             return self._new_sutta_search_window()
 
@@ -354,6 +385,10 @@ class AppWindows:
 
         else:
             return self._new_sutta_search_window()
+
+    def open_first_window(self) -> QMainWindow:
+        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+        return self._open_window_type(window_type)
 
     def _lookup_msg(self, query: str):
         msg = ApiMessage(queue_id = 'all',
@@ -934,6 +969,9 @@ class AppWindows:
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.exec()
 
+    def show_setting_after_restart(self):
+        self.show_info("This setting takes effect after restarting the application.")
+
     def _check_updates(self):
         if self._app_data.app_settings.get('notify_about_updates'):
             self.thread_pool.start(self.check_updates_worker)
@@ -1321,16 +1359,53 @@ class AppWindows:
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
+        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+        option_idx = 0
+        for idx, i in enumerate(WindowNameToType.values()):
+            if i == window_type:
+                option_idx = idx
+                break
+
         item, ok = QInputDialog.getItem(view,
                                         "Select Window",
-                                        "Select First Window to Open on Startup:",
+                                        "Select the first window to open when the app is stated:",
                                         options,
-                                        0,
+                                        option_idx,
                                         False)
         if ok and item:
             self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
             self._app_data._save_app_settings()
 
+    def _select_track_click_window_dialog(self, view: AppWindowInterface):
+        options = WindowNameToType.keys()
+
+        window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+        option_idx = 0
+        for idx, i in enumerate(WindowNameToType.values()):
+            if i == window_type:
+                option_idx = idx
+                break
+
+        item, ok = QInputDialog.getItem(view,
+                                        "Select Window",
+                                        "Select the window to open when clicking on the tray icon:",
+                                        options,
+                                        option_idx,
+                                        False)
+        if ok and item:
+            self._app_data.app_settings['tray_click_opens_window'] = WindowNameToType[item]
+            self._app_data._save_app_settings()
+
+    def _toggle_keep_running(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Keep_Running_in_the_Background.isChecked()
+        self._app_data.app_settings['keep_running_in_background'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Keep_Running_in_the_Background'):
+                w.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+        self.show_setting_after_restart()
 
     def _focus_search_input(self, view: AppWindowInterface):
         if hasattr(view, 'search_input'):
@@ -1355,6 +1430,17 @@ class AppWindows:
         # if hasattr(view, 'action_Open'):
         #     view.action_Open \
         #         .triggered.connect(partial(self._open_file_dialog, view))
+
+        if hasattr(view, 'action_Keep_Running_in_the_Background'):
+            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
+            view.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+            view.action_Keep_Running_in_the_Background \
+                .triggered.connect(partial(self._toggle_keep_running, view))
+
+        if hasattr(view, 'action_Tray_Click_Opens_Window'):
+            view.action_Tray_Click_Opens_Window \
+                .triggered.connect(partial(self._select_track_click_window_dialog, view))
 
         if hasattr(view, 'action_Re_index_database'):
             view.action_Re_index_database \

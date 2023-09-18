@@ -4,13 +4,14 @@ import traceback
 from typing import Optional
 from PyQt6 import QtCore
 import threading
+from functools import partial
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import START_LOW_MEM, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH, IS_MAC
+from simsapa import DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.helpers import find_available_port
@@ -24,6 +25,7 @@ from simsapa.layouts.error_message import ErrorMessageWindow
 # NOTE: Importing icons_rc is necessary once, in order for icon assets,
 # animation gifs, etc. to be loaded.
 from simsapa.assets import icons_rc
+from simsapa.layouts.gui_helpers import get_app_version
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -53,6 +55,22 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
         cores = psutil.cpu_count(logical=True)
         logger.info(f"CPU Cores: {cores}")
 
+    if SIMSAPA_API_PORT_PATH.exists():
+        # If there is a running Simsapa app, tell the api server to open a
+        # window. If the request succeeded, quit. If it failed, continue
+        # starting this app.
+        try:
+            with open(SIMSAPA_API_PORT_PATH, mode='r', encoding='utf-8') as f:
+                api_port = int(f.read())
+            import requests
+            r = requests.get(f"http://localhost:{api_port}/open_window")
+            if r.ok:
+                logger.info(f"Running Simsapa instance detected, sent an api request to open a window. Response status: {r.status_code}. Exiting.")
+                sys.exit(0)
+
+        except Exception as e:
+            logger.error(f"Can't read file or port not an integer: {e}")
+
     ensure_empty_graphs_cache()
 
     if not APP_DB_PATH.exists():
@@ -81,15 +99,6 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
             port = 6789
 
     logger.info(f"Available port: {port}")
-
-    def _start_daemon_server():
-        # This way the import happens in the thread, and doesn't delay app.exec()
-        from simsapa.app.api import start_server
-        start_server(port, SERVER_QUEUE)
-
-    daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
-    daemon.setDaemon(True)
-    daemon.start()
 
     app = QApplication(sys.argv)
 
@@ -122,45 +131,74 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
+    def emit_open_window_signal_fn(window_type: str = ''):
+        app_windows.signals.open_window_signal.emit(window_type)
+
+    def _start_daemon_server():
+        # This way the import happens in the thread, and doesn't delay app.exec()
+        from simsapa.app.api import start_server
+
+        with open(SIMSAPA_API_PORT_PATH, mode='w', encoding='utf-8') as f:
+            f.write(str(port))
+
+        start_server(port, SERVER_QUEUE, emit_open_window_signal_fn)
+
+    daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
+    daemon.setDaemon(True)
+    daemon.start()
+
+
+    app.setApplicationName("Simsapa Dhamma Reader")
+    app.setWindowIcon(QIcon(":simsapa-tray"))
+
+    if DESKTOP_FILE_PATH is not None:
+        app.setDesktopFileName(str(DESKTOP_FILE_PATH.with_suffix("")))
+
+    app.setApplicationVersion(get_app_version() or "v0.1.0")
+
+    keep_running = app_data.app_settings.get('keep_running_in_background', True)
+    app.setQuitOnLastWindowClosed((not keep_running))
+
     # === Create systray ===
 
-    # Systray doesn't work on MAC
-    if not IS_MAC:
-        logger.profile("Create systray: start")
+    logger.profile("Create systray: start")
 
-        app.setQuitOnLastWindowClosed(True)
+    tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
+    tray.setVisible(True)
 
-        tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
-        tray.setVisible(True)
+    def _system_tray_clicked():
+        app_windows.handle_system_tray_clicked()
 
-        menu = QMenu()
+    tray.activated.connect(partial(_system_tray_clicked))
 
-        _translate = QtCore.QCoreApplication.translate
+    menu = QMenu()
 
-        ac0 = QAction("Show Word Lookup")
-        ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
-        menu.addAction(ac0)
+    _translate = QtCore.QCoreApplication.translate
 
-        ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
-        ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
-        menu.addAction(ac1)
+    ac0 = QAction("Show Word Lookup")
+    ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
+    menu.addAction(ac0)
 
-        ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
-        ac2.setShortcut(_translate("Systray", "Ctrl+Shift+G"))
-        menu.addAction(ac2)
+    ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
+    ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
+    menu.addAction(ac1)
 
-        if hotkeys_manager is not None:
-            ac0.triggered.connect(hotkeys_manager.show_word_lookup)
-            ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
-            ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
+    ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
+    ac2.setShortcut(_translate("Systray", "Ctrl+Shift+G"))
+    menu.addAction(ac2)
 
-        ac3 = QAction(QIcon(":close"), "Quit")
-        ac3.triggered.connect(app.quit)
-        menu.addAction(ac3)
+    if hotkeys_manager is not None:
+        ac0.triggered.connect(hotkeys_manager.show_word_lookup)
+        ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
+        ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
 
-        tray.setContextMenu(menu)
+    ac3 = QAction(QIcon(":close"), "Quit")
+    ac3.triggered.connect(app.quit)
+    menu.addAction(ac3)
 
-        logger.profile("Create systray: end")
+    tray.setContextMenu(menu)
+
+    logger.profile("Create systray: end")
 
     # === Create first window ===
 
@@ -190,6 +228,9 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     # This avoids the unused import warning.
     logger.info(icons_rc.rcc_version)
+
+    if SIMSAPA_API_PORT_PATH.exists():
+        SIMSAPA_API_PORT_PATH.unlink()
 
     logger.info(f"start() Exiting with status {status}.")
     sys.exit(status)

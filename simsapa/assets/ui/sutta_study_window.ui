@@ -35,6 +35,8 @@
     </property>
     <addaction name="action_Open"/>
     <addaction name="action_Close_Window"/>
+    <addaction name="action_Keep_Running_in_the_Background"/>
+    <addaction name="action_Tray_Click_Opens_Window"/>
     <addaction name="action_Re_index_database"/>
     <addaction name="action_Re_download_database"/>
     <addaction name="separator"/>
@@ -594,6 +596,22 @@
    </property>
    <property name="text">
     <string>Sutta Index</string>
+   </property>
+  </action>
+  <action name="action_Keep_Running_in_the_Background">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Keep Running in the Background</string>
+   </property>
+  </action>
+  <action name="action_Tray_Click_Opens_Window">
+   <property name="text">
+    <string>Tray Click Opens Window...</string>
    </property>
   </action>
  </widget>

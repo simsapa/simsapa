@@ -1,5 +1,5 @@
 from pathlib import Path
-import socket, os, threading
+import socket, threading
 from flask import Flask
 from flask_cors import CORS
 import logging
@@ -48,8 +48,6 @@ class HtmlResourcesServer:
 
     def _start_server_html_resources(self):
         logger.info(f'(HtmlResourcesServer) Starting server on port {self.port}')
-        os.environ["FLASK_ENV"] = "development"
-
         self.app.run(host='127.0.0.1', port=self.port, debug=False, load_dotenv=False)
 
 def find_available_port_html_resources() -> int:
