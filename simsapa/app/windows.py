@@ -370,7 +370,7 @@ class AppWindows:
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
-    def _open_window_type(self, window_type: WindowType) -> QMainWindow:
+    def _open_window_type(self, window_type: WindowType) -> Optional[QMainWindow]:
         if window_type == WindowType.SuttaSearch:
             return self._new_sutta_search_window()
 
@@ -383,12 +383,15 @@ class AppWindows:
         elif window_type == WindowType.EbookReader:
             return self._new_ebook_reader_window()
 
+        elif window_type == WindowType.WordLookup:
+            return self._toggle_word_lookup()
+
         else:
             return self._new_sutta_search_window()
 
-    def open_first_window(self) -> QMainWindow:
+    def open_first_window(self):
         window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
-        return self._open_window_type(window_type)
+        self._open_window_type(window_type)
 
     def _lookup_msg(self, query: str):
         msg = ApiMessage(queue_id = 'all',

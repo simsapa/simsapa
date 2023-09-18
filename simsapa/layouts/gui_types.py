@@ -28,6 +28,7 @@ class WindowType(int, Enum):
     SuttaStudy = 1
     DictionarySearch = 2
     EbookReader = 3
+    WordLookup = 4
 
 class WindowPosSize(TypedDict):
     x: int
@@ -40,6 +41,7 @@ WindowNameToType = {
     "Sutta Study": WindowType.SuttaStudy,
     "Dictionary Search": WindowType.DictionarySearch,
     "Ebook Reader": WindowType.EbookReader,
+    "Word Lookup": WindowType.WordLookup,
 }
 
 class CompletionCacheResult(TypedDict):
