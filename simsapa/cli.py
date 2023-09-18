@@ -9,7 +9,7 @@ index_app = typer.Typer()
 app.add_typer(index_app, name="index")
 
 @app.command()
-def gui(url: Optional[str] = None):
+def gui(url: Optional[str] = None, window_type: Optional[str] = None):
     logger.profile("runner::gui()")
     # import subprocess
     # from simsapa import SIMSAPA_PACKAGE_DIR
@@ -20,7 +20,7 @@ def gui(url: Optional[str] = None):
     #     sys.exit(2)
 
     from simsapa.gui import start
-    start(url=url)
+    start(url=url, window_type_name=window_type)
 
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):

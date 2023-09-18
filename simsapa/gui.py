@@ -26,6 +26,7 @@ from simsapa.layouts.error_message import ErrorMessageWindow
 # animation gifs, etc. to be loaded.
 from simsapa.assets import icons_rc
 from simsapa.layouts.gui_helpers import get_app_version
+from simsapa.layouts.gui_types import WindowNameToType
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -41,7 +42,10 @@ sys.excepthook = excepthook
 check_delete_files()
 create_app_dirs()
 
-def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
+def start(port: Optional[int] = None,
+          url: Optional[str] = None,
+          window_type_name: Optional[str] = None,
+          splash_proc: Optional[Popen] = None):
     logger.profile("gui::start()")
     set_is_gui(True)
 
@@ -55,6 +59,11 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
         cores = psutil.cpu_count(logical=True)
         logger.info(f"CPU Cores: {cores}")
 
+    if window_type_name is not None \
+        and window_type_name not in WindowNameToType.keys():
+        print(f"Invalid window type name: {window_type_name}. Valid names are: {list(WindowNameToType.keys())}")
+        window_type_name = None
+
     if SIMSAPA_API_PORT_PATH.exists():
         # If there is a running Simsapa app, tell the api server to open a
         # window. If the request succeeded, quit. If it failed, continue
@@ -63,7 +72,13 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
             with open(SIMSAPA_API_PORT_PATH, mode='r', encoding='utf-8') as f:
                 api_port = int(f.read())
             import requests
-            r = requests.get(f"http://localhost:{api_port}/open_window")
+
+            api_url = f"http://localhost:{api_port}/open_window"
+            if window_type_name is not None:
+                api_url += f"/{window_type_name.replace(' ', '%20')}"
+                logger.info(f"api_url: {api_url}")
+
+            r = requests.get(api_url)
             if r.ok:
                 logger.info(f"Running Simsapa instance detected, sent an api request to open a window. Response status: {r.status_code}. Exiting.")
                 sys.exit(0)
@@ -147,7 +162,6 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
     daemon.setDaemon(True)
     daemon.start()
 
-
     app.setApplicationName("Simsapa Dhamma Reader")
     app.setWindowIcon(QIcon(":simsapa-appicon"))
 
@@ -212,7 +226,11 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
             ok = app_windows._show_words_by_url(open_url)
 
     if not ok:
-        app_windows.open_first_window()
+        if window_type_name is not None:
+            window_type = WindowNameToType[window_type_name]
+        else:
+            window_type = None
+        app_windows.open_first_window(window_type)
 
     app_windows.show_startup_message()
 

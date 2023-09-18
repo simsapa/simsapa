@@ -389,8 +389,9 @@ class AppWindows:
         else:
             return self._new_sutta_search_window()
 
-    def open_first_window(self):
-        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+    def open_first_window(self, window_type: Optional[WindowType] = None):
+        if window_type is None:
+            window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
         self._open_window_type(window_type)
 
     def _lookup_msg(self, query: str):

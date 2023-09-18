@@ -29,7 +29,7 @@ def main():
         s = sys.argv[1]
 
         if s.startswith("ssp://"):
-            gui(s)
+            gui(url=s)
 
         else:
             app()
