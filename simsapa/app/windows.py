@@ -7,7 +7,7 @@ from urllib.parse import parse_qs
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, START_LOW_MEM, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
@@ -1276,6 +1276,10 @@ class AppWindows:
 
     def _quit_app(self):
         self._close_all_windows()
+
+        if SIMSAPA_API_PORT_PATH.exists():
+            SIMSAPA_API_PORT_PATH.unlink()
+
         self._remove_temp_files()
         self._app.quit()
 
