@@ -2311,7 +2311,7 @@ url = ["furl (>=0.4.1)"]
 
 [[package]]
 name = "tantivy"
-version = "0.20.2rc1"
+version = "0.20.2rc4"
 description = ""
 category = "main"
 optional = false
@@ -2320,13 +2320,13 @@ files = []
 develop = false
 
 [package.extras]
-dev = ["mkdocs", "nox"]
+dev = ["nox"]
 
 [package.source]
 type = "git"
 url = "https://github.com/simsapa/tantivy-py.git"
 reference = "simsapa"
-resolved_reference = "b0b4df2b8321de55fe9b836bf9446507b0bc1878"
+resolved_reference = "cf899ccfca34bef380eac32000bd5d8a236625b2"
 
 [[package]]
 name = "tiktoken"
