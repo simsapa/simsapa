@@ -1700,34 +1700,34 @@ files = [
 
 [[package]]
 name = "pyqt6"
-version = "6.4.2"
+version = "6.5.2"
 description = "Python bindings for the Qt cross platform application toolkit"
 category = "main"
 optional = false
 python-versions = ">=3.6.1"
 files = [
-    {file = "PyQt6-6.4.2-cp37-abi3-macosx_10_14_universal2.whl", hash = "sha256:c128bc0f17833e324593e3db83e99470d451a197dd17ff0333927b946c935bd9"},
-    {file = "PyQt6-6.4.2-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:18d1daf98d9236d55102cdadafd1056f5802f3c9288fcf7238569937b71a89f0"},
-    {file = "PyQt6-6.4.2-cp37-abi3-win_amd64.whl", hash = "sha256:25bd399b4a95dce65d5f937c1aa85d3c7e14a21745ae2a4ca14c0116cd104290"},
-    {file = "PyQt6-6.4.2.tar.gz", hash = "sha256:740244f608fe15ee1d89695c43f31a14caeca41c4f02ac36c86dfba4a5d5813d"},
+    {file = "PyQt6-6.5.2-cp37-abi3-macosx_10_14_universal2.whl", hash = "sha256:5bad1437eb0c1ae801103b32ef04ef62ef1cce505b448525f60089ce36329b89"},
+    {file = "PyQt6-6.5.2-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:70468cca4537756c714a57fa1baa5beabb9b38775f52f9611f49870705672c55"},
+    {file = "PyQt6-6.5.2-cp37-abi3-win_amd64.whl", hash = "sha256:ff1d12767b578f0f0e87cdb12198e7dcad9a176c40d1d1d799984181b0af93cb"},
+    {file = "PyQt6-6.5.2.tar.gz", hash = "sha256:1487ee7350f9ffb66d60ab4176519252c2b371762cbe8f8340fd951f63801280"},
 ]
 
 [package.dependencies]
-PyQt6-Qt6 = ">=6.4.0"
+PyQt6-Qt6 = ">=6.5.0"
 PyQt6-sip = ">=13.4,<14"
 
 [[package]]
 name = "pyqt6-qt6"
-version = "6.4.3"
+version = "6.5.2"
 description = "The subset of a Qt installation needed by PyQt6."
 category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "PyQt6_Qt6-6.4.3-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:b133bbc53e1cc05aafd78bfd3a577826481a976021d041c1c57d7dadc7de1c11"},
-    {file = "PyQt6_Qt6-6.4.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:27cc19976c872ae7111fcab8a9e9eae8c5ec5e55bfb6938a379551148b85f5b0"},
-    {file = "PyQt6_Qt6-6.4.3-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:96f30cca49af18f6863c66576b90f2f29987dc35397994d0575b197226c5b328"},
-    {file = "PyQt6_Qt6-6.4.3-py3-none-win_amd64.whl", hash = "sha256:b0151097aa93235676c0f83ce23916ee31ca8584bd1b45923725068404542cc2"},
+    {file = "PyQt6_Qt6-6.5.2-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:4b37f6f93c0980469ccc570998d3e3de243028bae7389fb6330443ab215ce2f6"},
+    {file = "PyQt6_Qt6-6.5.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:8dad61b4666d91882d7e1c4d619c71e7429c13e19182f8b3bebf3ecf95107d4c"},
+    {file = "PyQt6_Qt6-6.5.2-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:953f3c0e99e486081a6d438b32fbc240da97457226562eb68cf1b11c516386fd"},
+    {file = "PyQt6_Qt6-6.5.2-py3-none-win_amd64.whl", hash = "sha256:5a3c7bb899678bf801136b31cd589ed4d0d54ab32be5fb76c2bdeb161a9662ad"},
 ]
 
 [[package]]
@@ -1758,35 +1758,35 @@ files = [
 
 [[package]]
 name = "pyqt6-webengine"
-version = "6.4.0"
+version = "6.5.0"
 description = "Python bindings for the Qt WebEngine framework"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "PyQt6_WebEngine-6.4.0-cp37-abi3-macosx_10_14_universal2.whl", hash = "sha256:9658919bc1c5279a6fae9e6990448dfe483e136e957e6fb14e8f6265f4e9d1da"},
-    {file = "PyQt6_WebEngine-6.4.0-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:3f17c7b41cceaf7bdeec69121b4ff211b43f62e4a7e89c7143124a4eb3fc9da2"},
-    {file = "PyQt6_WebEngine-6.4.0-cp37-abi3-win_amd64.whl", hash = "sha256:7f6cde52b7b8c00ef2a1522ad92cde66f2bd3a3066646efe4ef96a4907b1b1cd"},
-    {file = "PyQt6_WebEngine-6.4.0.tar.gz", hash = "sha256:4c71c130860abcd11e04cafb22e33983fa9a3aee8323c51909b15a1701828e21"},
+    {file = "PyQt6_WebEngine-6.5.0-cp37-abi3-macosx_10_14_universal2.whl", hash = "sha256:45849365b1ba196724dc6a520ceed3ddaca4e9c09da28eac3c448d26cefdf001"},
+    {file = "PyQt6_WebEngine-6.5.0-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:26ff8d3362328bed09f8f1155c48122b83daf35998d6d299de1dbfcd9d4fc47c"},
+    {file = "PyQt6_WebEngine-6.5.0-cp37-abi3-win_amd64.whl", hash = "sha256:83a7e97a518d4001fb6c22e26a71e28d6d3b38c40ee0cbe21abfa46982b203d3"},
+    {file = "PyQt6_WebEngine-6.5.0.tar.gz", hash = "sha256:8ba9db56c4c181a2a2fab1673ca35e5b63dc69113f085027ddc43c710b6d6ee9"},
 ]
 
 [package.dependencies]
 PyQt6 = ">=6.2.0"
 PyQt6-sip = ">=13.4,<14"
-PyQt6-WebEngine-Qt6 = ">=6.4.0"
+PyQt6-WebEngine-Qt6 = ">=6.5.0"
 
 [[package]]
 name = "pyqt6-webengine-qt6"
-version = "6.4.3"
+version = "6.5.2"
 description = "The subset of a Qt installation needed by PyQt6-WebEngine."
 category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "PyQt6_WebEngine_Qt6-6.4.3-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:c9cb28464216584c97e6a55b601bf99525e3164c31ed8d6f438ce684846b3a38"},
-    {file = "PyQt6_WebEngine_Qt6-6.4.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b7d7bb7497f28a42c6b1790edc952d68f5981ee02fb3e774122e69677aad880f"},
-    {file = "PyQt6_WebEngine_Qt6-6.4.3-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:c220b8db4839a9c16102ac2d52cef9a0eab9142a873d7444529b5c2a4906ca30"},
-    {file = "PyQt6_WebEngine_Qt6-6.4.3-py3-none-win_amd64.whl", hash = "sha256:8a43a75ddf9936ad6e5b23a04862665a93e26b17b829f1fd1c70728c2774c93e"},
+    {file = "PyQt6_WebEngine_Qt6-6.5.2-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:7016225fa9ce1f349e828018e9a0e11164cc7d63a4e853d0bd3ee7d99893ee7f"},
+    {file = "PyQt6_WebEngine_Qt6-6.5.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:03550a3dc85852a1a6ffaa76c172e51965012024624737339f3b7d68e1440b48"},
+    {file = "PyQt6_WebEngine_Qt6-6.5.2-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:6b32b2e70da7bed2ac2affd51d4c5a5428b45f5fb3eb7cf64000e18cde99a269"},
+    {file = "PyQt6_WebEngine_Qt6-6.5.2-py3-none-win_amd64.whl", hash = "sha256:1938f6fc4b9b7fdb3e07af1fa1529f23568682ffdd0f074d7b4c0368820aa799"},
 ]
 
 [[package]]
@@ -2046,14 +2046,14 @@ use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
 name = "roman"
-version = "3.3"
+version = "4.1"
 description = "Integer to Roman numerals converter"
 category = "main"
 optional = false
-python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*"
+python-versions = ">=3.7"
 files = [
-    {file = "roman-3.3-py2.py3-none-any.whl", hash = "sha256:c2a1f14ab47373aecc141edbcdd66595949c9d0ed932fe76bd547df1b55f7278"},
-    {file = "roman-3.3.tar.gz", hash = "sha256:2c46ac8db827d34e4fa9ccc0577e7f0b0d84f16ffe112351bd4f1ec2eb12d73f"},
+    {file = "roman-4.1-py3-none-any.whl", hash = "sha256:f131fd5eee3510f6173b825404eb97875a6c1925f73a2d7d48cfc67823a67c3c"},
+    {file = "roman-4.1.tar.gz", hash = "sha256:4da8a200529a730822a27f1704b3ac70bc907141d3bc558115fb8e36af13b412"},
 ]
 
 [[package]]
@@ -2870,4 +2870,4 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.11"
-content-hash = "092815e5a06f657a249134fa4df7909a812c953630fed73effa8a67be335f806"
+content-hash = "e207ebe3fa3135baac3e95baf9acf6df60cb134cb608f831427771fd712affe8"
