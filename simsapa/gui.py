@@ -10,7 +10,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtWidgets import (QApplication, QMessageBox, QSystemTrayIcon, QMenu)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_session import get_db_version
@@ -54,8 +54,9 @@ def start(port: Optional[int] = None,
         logger.info(f"START_LOW_MEM: {START_LOW_MEM}")
         mem = psutil.virtual_memory()
         logger.info(f"Memory: {mem}")
-        cpu = psutil.cpu_freq()
-        logger.info(f"CPU Freq: {cpu}")
+        if not IS_MAC:
+            cpu = psutil.cpu_freq()
+            logger.info(f"CPU Freq: {cpu}")
         cores = psutil.cpu_count(logical=True)
         logger.info(f"CPU Cores: {cores}")
 

@@ -13,7 +13,7 @@ from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.db import appdata_models as Am
 
 from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
-                     SIMSAPA_RELEASES_BASE_URL, logger)
+                     SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
 from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
 from simsapa.layouts.gui_types import SearchBarInterface
 
@@ -210,12 +210,17 @@ def get_releases_info(save_stats = True, screen_size = '') -> ReleasesInfo:
     if s is not None and s.lower() == 'true':
         save_stats = False
 
+    if IS_MAC:
+        cpu_max = ''
+    else:
+        cpu_max = f"{psutil.cpu_freq().max:.2f}"
+
     params = ReleasesReqestParams(
         channel = channel,
         app_version = str(get_app_version()),
         system = platform.system(),
         machine = platform.machine(),
-        cpu_max = f"{psutil.cpu_freq().max:.2f}",
+        cpu_max = cpu_max,
         cpu_cores = str(psutil.cpu_count(logical=True)),
         mem_total = str(psutil.virtual_memory().total),
         screen = screen_size,

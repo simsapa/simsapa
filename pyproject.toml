@@ -94,7 +94,7 @@ tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa
 simsapa = 'simsapa.runner:main'
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = "5.11"
+pyinstaller = "5.13"
 tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 # scalene = "^1.5.14"
