@@ -170,16 +170,13 @@ class AppData:
         if s == "":
             return
 
+        # Folder structure of indexes:
+        # assets/index/suttas/{en, pli, hu, it}/meta.json
         langs = s.split(',')
         for lang in langs:
-            p = INDEX_DIR.joinpath(f'suttas_lang_{lang}_WRITELOCK')
-            p.unlink()
-
-            for p in INDEX_DIR.glob(f'suttas_lang_{lang}_*.seg'):
-                p.unlink()
-
-            for p in INDEX_DIR.glob(f'_suttas_lang_{lang}_*.toc'):
-                p.unlink()
+            p = INDEX_DIR.joinpath('suttas').joinpath(lang)
+            if p.exists():
+                shutil.rmtree(p)
 
     def _get_db_engine_connection_session(self, app_db_path, user_db_path) -> Tuple[Engine, Connection, Session]:
         if not os.path.isfile(app_db_path):

@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional, Union
 import re, json
 
 from sqlalchemy.orm.session import Session
@@ -12,15 +12,18 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import pali_to_ascii
 from simsapa.app.types import SearchArea
 
+UAppSetting = Union[Am.AppSetting, Um.AppSetting]
+
 WordSublists = Dict[str, List[str]]
 
-def get_sutta_titles_completion_list(db_session: Session) -> WordSublists:
+def get_sutta_titles_completion_list(db_session: Session, load_only_from_appdata = False) -> WordSublists:
     res = []
     r = db_session.query(Am.Sutta.title).all()
     res.extend(r)
 
-    r = db_session.query(Um.Sutta.title).all()
-    res.extend(r)
+    if not load_only_from_appdata:
+        r = db_session.query(Um.Sutta.title).all()
+        res.extend(r)
 
     a: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
     # remove parens from the beginning: "(iv, 6): das kloster"
@@ -32,13 +35,14 @@ def get_sutta_titles_completion_list(db_session: Session) -> WordSublists:
 
     return sublists
 
-def get_dict_words_completion_list(db_session: Session) -> WordSublists:
+def get_dict_words_completion_list(db_session: Session, load_only_from_appdata = False) -> WordSublists:
     res = []
     r = db_session.query(Am.DictWord.word).all()
     res.extend(r)
 
-    r = db_session.query(Um.DictWord.word).all()
-    res.extend(r)
+    if not load_only_from_appdata:
+        r = db_session.query(Um.DictWord.word).all()
+        res.extend(r)
 
     a: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
     # remove trailing numbers: dhamma 01, dhamma 02, etc
@@ -68,7 +72,8 @@ def parse_to_sublists(items: List[str]) -> WordSublists:
 
 def get_and_save_completions(db_session: Session,
                              search_area: SearchArea,
-                             save_to_schema: DbSchemaName = DbSchemaName.UserData) -> WordSublists:
+                             save_to_schema: DbSchemaName = DbSchemaName.UserData,
+                             load_only_from_appdata = False) -> WordSublists:
     if search_area == SearchArea.Suttas:
         setting_key = 'sutta_titles_completions'
     else:
@@ -77,10 +82,13 @@ def get_and_save_completions(db_session: Session,
     # Retreive setting from userdata first, if exists. If the completions are
     # updated after installing the app, they are saved to userdata.
 
-    r = db_session \
-        .query(Um.AppSetting) \
-        .filter(Um.AppSetting.key == setting_key) \
-        .first()
+    r: Optional[UAppSetting] = None
+
+    if not load_only_from_appdata:
+        r = db_session \
+            .query(Um.AppSetting) \
+            .filter(Um.AppSetting.key == setting_key) \
+            .first()
 
     if r is None:
         r = db_session \
@@ -90,9 +98,9 @@ def get_and_save_completions(db_session: Session,
 
     if r is None:
         if search_area == SearchArea.Suttas:
-            sublists = get_sutta_titles_completion_list(db_session)
+            sublists = get_sutta_titles_completion_list(db_session, load_only_from_appdata)
         else:
-            sublists = get_dict_words_completion_list(db_session)
+            sublists = get_dict_words_completion_list(db_session, load_only_from_appdata)
 
         if save_to_schema == DbSchemaName.AppData:
             x = Am.AppSetting(

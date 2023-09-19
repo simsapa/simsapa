@@ -142,15 +142,17 @@ def main():
 
     # === All suttas are added above ===
 
-    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData)
-    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData)
-
     suttacentral.add_sc_multi_refs(appdata_db, sc_db)
 
     multi_refs.populate_sutta_multi_refs(appdata_db, limit)
 
     # FIXME improve synonym parsing
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
+
+    # === All dict words are added above ===
+
+    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
 
     # Create db links from ssp:// links after all suttas have been added.
     create_links.populate_links(appdata_db)

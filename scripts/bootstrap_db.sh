@@ -215,7 +215,7 @@ datetime=$(date +%FT%T)
 
 release_info="[[assets.releases]]
 date = \"$datetime\"
-version_tag = \"v0.3.0-dev.1\"
+version_tag = \"v0.4.0-dev.1\"
 github_repo = \"simsapa/simsapa-assets\"
 suttas_lang = $suttas_lang
 title = \"Updates\"

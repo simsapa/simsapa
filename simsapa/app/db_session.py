@@ -1,6 +1,7 @@
 import os, sys
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
+import sqlite3
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
@@ -10,6 +11,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
 from simsapa import APP_DB_PATH, USER_DB_PATH, logger, DbSchemaName
+
+def get_db_version(db_path: Path) -> Optional[str]:
+    con = sqlite3.connect(db_path)
+    cur = con.cursor()
+    res = cur.execute("SELECT value FROM app_settings WHERE key = 'db_version';")
+    val = res.fetchone()
+    return val[0]
 
 def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Engine, Connection, Session]:
     app_db_path = APP_DB_PATH

@@ -145,7 +145,18 @@ class AssetManagement(QMainWindow):
 
     def _releases_finished(self, info: ReleasesInfo):
         self.releases_info = info
-        self.compat_release = get_latest_app_compatible_assets_release(self.releases_info)
+        compat = get_latest_app_compatible_assets_release(self.releases_info)
+
+        # Filter out the already downloaded languages from the list of available
+        # ones. Otherwise the user might try to re-download a language and cause
+        # an error. To re-download, the language should be removed first.
+        if compat is not None:
+            suttas_index_path = self.index_dir.joinpath('suttas')
+            if suttas_index_path.exists():
+                already_have_langs = [p.name for p in suttas_index_path.iterdir()]
+                compat["suttas_lang"] = [lang for lang in compat["suttas_lang"] if lang not in already_have_langs]
+
+        self.compat_release = compat
         self._setup_selection()
 
         if self.auto_start_download:
@@ -277,9 +288,11 @@ class AssetManagement(QMainWindow):
 
         # Languages in index
         self.removable_suttas_lang = []
-        for p in self.index_dir.glob('_suttas_lang_*.toc'):
-            lang = re.sub(r'.*_suttas_lang_([^_]+)_.*', r'\1', p.name)
-            if lang != "" and lang not in ['en', 'pli', 'san']:
+        # Folder structure of indexes:
+        # assets/index/suttas/{en, pli, hu, it}/meta.json
+        for p in self.index_dir.joinpath('suttas').iterdir():
+            lang = p.name
+            if lang not in ['en', 'pli', 'san']:
                 self.removable_suttas_lang.append(lang)
 
         def _to_item(code: str) -> List[str]:
@@ -802,20 +815,51 @@ class AssetsWorker(QRunnable):
                 shutil.move(p, self.courses_dir)
 
     def import_move_html_resources_data(self, extract_temp_dir: Path):
-        if extract_temp_dir.joinpath("html_resources").exists():
+        temp_html_resources = extract_temp_dir.joinpath("html_resources")
+        if temp_html_resources.exists():
             for i in ['appdata', 'userdata']:
-                for p in glob.glob(f"{extract_temp_dir}/html_resources/{i}/*"):
-                    shutil.move(p, self.html_resources_dir.joinpath(i))
+
+                temp_schema_folder = temp_html_resources.joinpath(i)
+                target_schema_folder = self.html_resources_dir.joinpath(i)
+
+                if not temp_schema_folder.exists():
+                    continue
+
+                if not target_schema_folder.exists():
+                    target_schema_folder.mkdir(parents=True)
+
+                # Expecting the HTML files in their own folder, e.g.
+                # html_resources/appdata/sutta-index-khemaratana/index.html
+                for p in temp_schema_folder.iterdir():
+                    shutil.move(p, target_schema_folder)
 
     def import_move_index(self, extract_temp_dir: Path):
         # If indexed segments were included (e.g. with sutta languages), move
         # the segment files to the index folder.
+        #
+        # Folder structure of indexes:
+        # assets/index/suttas/{en, pli, hu, it}/meta.json
+
         temp_index = extract_temp_dir.joinpath("index")
         if temp_index.exists():
             if self.index_dir.exists():
-                for p in glob.glob(f"{temp_index}/*"):
-                    shutil.move(p, self.index_dir)
+
+                for i in ['suttas', 'dict_words']:
+                    temp_index_sub = temp_index.joinpath(i)
+                    index_sub = self.index_dir.joinpath(i)
+
+                    if not temp_index_sub.exists():
+                        continue
+
+                    for p in temp_index_sub.iterdir():
+                        # If the lang index (en, hu, etc.) folder already
+                        # exists, this will fail and report the error to the
+                        # user.
+                        shutil.move(p, index_sub)
+
             else:
+                # If there is no assets/index/ yet, this is probably first
+                # install, move the temp index/ over as it is.
                 shutil.move(temp_index, self.assets_dir)
 
     def import_move_userdata(self, extract_temp_dir: Path):

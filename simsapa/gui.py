@@ -1,19 +1,19 @@
 from subprocess import Popen
-import sys
+import os, sys, threading, shutil
+from functools import partial
 import traceback
 from typing import Optional
 from PyQt6 import QtCore
-import threading
-from functools import partial
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
+from PyQt6.QtWidgets import (QApplication, QMessageBox, QSystemTrayIcon, QMenu)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
+from simsapa.app.db_session import get_db_version
 from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa.app.types import QueryType
@@ -25,7 +25,7 @@ from simsapa.layouts.error_message import ErrorMessageWindow
 # NOTE: Importing icons_rc is necessary once, in order for icon assets,
 # animation gifs, etc. to be loaded.
 from simsapa.assets import icons_rc
-from simsapa.layouts.gui_helpers import get_app_version
+from simsapa.layouts.gui_helpers import get_app_version, is_app_version_compatible_with_db_version, to_version
 from simsapa.layouts.gui_types import WindowNameToType
 
 
@@ -59,10 +59,61 @@ def start(port: Optional[int] = None,
         cores = psutil.cpu_count(logical=True)
         logger.info(f"CPU Cores: {cores}")
 
+    # There may be a 0-byte size db file remaining from a failed
+    # install attempt.
+
+    for p in [APP_DB_PATH, USER_DB_PATH]:
+        if p.exists() and os.path.getsize(p) == 0:
+            p.unlink()
+
+    # QApplication has to be constructed before other windows or dialogs.
+    app = QApplication(sys.argv)
+
+    # Determine if an old version of the database may need to be removed.
+
+    if APP_DB_PATH.exists():
+        is_db_compatible = False
+        db_ver = get_db_version(APP_DB_PATH)
+        app_ver = get_app_version()
+
+        if db_ver is not None \
+        and app_ver is not None:
+            is_db_compatible = is_app_version_compatible_with_db_version(to_version(app_ver), to_version(db_ver))
+
+        if not is_db_compatible:
+            do_remove = _ask_remove_redownload_db()
+
+            if do_remove:
+                shutil.rmtree(ASSETS_DIR)
+                ASSETS_DIR.mkdir()
+            else:
+                sys.exit(2)
+
+    # Determine if this is the first start and we need to open
+    # DownloadAppdataWindow instead of the main app.
+
+    if not APP_DB_PATH.exists():
+        if splash_proc is not None:
+            if splash_proc.poll() is None:
+                splash_proc.kill()
+
+        from simsapa.layouts.download_appdata import DownloadAppdataWindow
+
+        w = DownloadAppdataWindow()
+        w.show()
+        status = app.exec()
+        logger.info(f"gui::start() Exiting with status {status}.")
+        sys.exit(status)
+
+    # Validate or discard window_type_name.
+
     if window_type_name is not None \
         and window_type_name not in WindowNameToType.keys():
         print(f"Invalid window type name: {window_type_name}. Valid names are: {list(WindowNameToType.keys())}")
         window_type_name = None
+
+    # Determine if we are starting a new app, or one is already running and we
+    # need to tell it to open a window.
 
     if SIMSAPA_API_PORT_PATH.exists():
         # If there is a running Simsapa app, tell the api server to open a
@@ -88,20 +139,6 @@ def start(port: Optional[int] = None,
 
     ensure_empty_graphs_cache()
 
-    if not APP_DB_PATH.exists():
-        if splash_proc is not None:
-            if splash_proc.poll() is None:
-                splash_proc.kill()
-
-        from simsapa.layouts.download_appdata import DownloadAppdataWindow
-
-        dl_app = QApplication(sys.argv)
-        w = DownloadAppdataWindow()
-        w.show()
-        status = dl_app.exec()
-        logger.info(f"gui::start() Exiting with status {status}.")
-        sys.exit(status)
-
     # Start the API server after checking for APP_DB. If this is the first run,
     # the server would create the userdata db, and we can't use it to test in
     # DownloadAppdataWindow() if this is the first ever start.
@@ -114,8 +151,6 @@ def start(port: Optional[int] = None,
             port = 6789
 
     logger.info(f"Available port: {port}")
-
-    app = QApplication(sys.argv)
 
     # Initialize a QWebEngineView(). Otherwise the app errors:
     #
@@ -252,3 +287,18 @@ def start(port: Optional[int] = None,
 
     logger.info(f"start() Exiting with status {status}.")
     sys.exit(status)
+
+def _ask_remove_redownload_db() -> bool:
+    box = QMessageBox()
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Incompatible database version")
+
+    msg = """
+    <p>The current database and index version are not compatible with the app version.</p>
+    <p>Remove them now and download the new version?</p>
+    """
+
+    box.setText(msg)
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+    return (box.exec() == QMessageBox.StandardButton.Yes)
