@@ -3,7 +3,6 @@ import os, sys, threading, shutil
 from functools import partial
 import traceback
 from typing import Optional
-from PyQt6 import QtCore
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon, QAction
@@ -223,28 +222,33 @@ def start(port: Optional[int] = None,
 
     menu = QMenu()
 
-    _translate = QtCore.QCoreApplication.translate
+    action_Sutta_Search = QAction(QIcon(":book"), "Sutta Search")
+    action_Sutta_Search.triggered.connect(partial(app_windows._new_sutta_search_window_noret))
+    menu.addAction(action_Sutta_Search)
 
-    ac0 = QAction("Show Word Lookup")
-    ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
-    menu.addAction(ac0)
+    action_Sutta_Study = QAction(QIcon(":book"), "Sutta Study")
+    action_Sutta_Study.triggered.connect(partial(app_windows._new_sutta_study_window_noret))
+    menu.addAction(action_Sutta_Study)
 
-    ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
-    ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
-    menu.addAction(ac1)
+    action_Sutta_Index = QAction(QIcon(":book"), "Sutta Index")
+    action_Sutta_Index.triggered.connect(partial(app_windows._show_sutta_index_window))
+    menu.addAction(action_Sutta_Index)
 
-    ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
-    ac2.setShortcut(_translate("Systray", "Ctrl+Shift+G"))
-    menu.addAction(ac2)
+    action_Dictionary_Search = QAction(QIcon(":dictionary"), "Dictionary Search")
+    action_Dictionary_Search.triggered.connect(partial(app_windows._new_dictionary_search_window_noret))
+    menu.addAction(action_Dictionary_Search)
 
-    if hotkeys_manager is not None:
-        ac0.triggered.connect(hotkeys_manager.show_word_lookup)
-        ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
-        ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
+    action_Show_Word_Lookup = QAction(QIcon(":dictionary"), "Word Lookup")
+    action_Show_Word_Lookup.triggered.connect(partial(app_windows._toggle_word_lookup))
+    menu.addAction(action_Show_Word_Lookup)
 
-    ac3 = QAction(QIcon(":close"), "Quit")
-    ac3.triggered.connect(app.quit)
-    menu.addAction(ac3)
+    action_Ebook_Reader = QAction(QIcon(":book-open-solid"), "Ebook Reader")
+    action_Ebook_Reader.triggered.connect(partial(app_windows._new_ebook_reader_window_noret))
+    menu.addAction(action_Ebook_Reader)
+
+    action_Quit = QAction(QIcon(":close"), "Quit")
+    action_Quit.triggered.connect(partial(app_windows._quit_app))
+    menu.addAction(action_Quit)
 
     tray.setContextMenu(menu)
 

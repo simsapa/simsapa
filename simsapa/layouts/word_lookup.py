@@ -516,7 +516,7 @@ class WordLookup(WordLookupInterface):
             self.move(p['x'], p['y'])
         else:
             self.center()
-            self.resize(400, 500)
+            self.resize(500, 700)
 
     def center(self):
         qr = self.frameGeometry()
