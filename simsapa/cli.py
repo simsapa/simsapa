@@ -10,6 +10,7 @@ app.add_typer(index_app, name="index")
 
 @app.command()
 def gui(url: Optional[str] = None, window_type: Optional[str] = None):
+    """Start a GUI window."""
     logger.profile("runner::gui()")
     # import subprocess
     # from simsapa import SIMSAPA_PACKAGE_DIR

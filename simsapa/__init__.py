@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Optional, TypedDict
 from enum import Enum
 import queue
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 from platformdirs import PlatformDirs
 import platform
 import importlib.resources
@@ -13,9 +13,13 @@ import psutil
 from datetime import datetime
 INIT_START_TIME = datetime.now()
 
-p = find_dotenv() or find_dotenv('.env.txt')
-if p != '':
-    load_dotenv(p)
+EXEC_FILE_PATH = Path(sys.argv[0])
+
+for i in ['.env', '.env.txt', 'config.txt']:
+    p = EXEC_FILE_PATH.parent.joinpath(i)
+    if p.exists():
+        load_dotenv(p)
+        break
 
 # When running from dev folder, get_app_version() returns t['tool']['poetry']['version'].
 # When running the prod app, the value below is used.
