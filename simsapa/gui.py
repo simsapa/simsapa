@@ -1,12 +1,11 @@
 from subprocess import Popen
 import os, sys, threading, shutil
-from functools import partial
 import traceback
 from typing import Optional
 
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import (QApplication, QMessageBox, QSystemTrayIcon, QMenu)
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
@@ -175,9 +174,11 @@ def start(port: Optional[int] = None,
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
 
     if len(app.screens()) > 0:
-        app_data.screen_size = app.primaryScreen().size()
-        logger.info(f"Screen size: {app_data.screen_size}")
-        logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
+        screen = app.primaryScreen()
+        if screen is not None:
+            app_data.screen_size = screen.size()
+            logger.info(f"Screen size: {app_data.screen_size}")
+            logger.info(f"Device pixel ratio: {screen.devicePixelRatio()}")
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
@@ -207,52 +208,6 @@ def start(port: Optional[int] = None,
 
     keep_running = app_data.app_settings.get('keep_running_in_background', True)
     app.setQuitOnLastWindowClosed((not keep_running))
-
-    # === Create systray ===
-
-    logger.profile("Create systray: start")
-
-    tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
-    tray.setVisible(True)
-
-    def _system_tray_clicked():
-        app_windows.handle_system_tray_clicked()
-
-    tray.activated.connect(partial(_system_tray_clicked))
-
-    menu = QMenu()
-
-    action_Sutta_Search = QAction(QIcon(":book"), "Sutta Search")
-    action_Sutta_Search.triggered.connect(partial(app_windows._new_sutta_search_window_noret))
-    menu.addAction(action_Sutta_Search)
-
-    action_Sutta_Study = QAction(QIcon(":book"), "Sutta Study")
-    action_Sutta_Study.triggered.connect(partial(app_windows._new_sutta_study_window_noret))
-    menu.addAction(action_Sutta_Study)
-
-    action_Sutta_Index = QAction(QIcon(":book"), "Sutta Index")
-    action_Sutta_Index.triggered.connect(partial(app_windows._show_sutta_index_window))
-    menu.addAction(action_Sutta_Index)
-
-    action_Dictionary_Search = QAction(QIcon(":dictionary"), "Dictionary Search")
-    action_Dictionary_Search.triggered.connect(partial(app_windows._new_dictionary_search_window_noret))
-    menu.addAction(action_Dictionary_Search)
-
-    action_Show_Word_Lookup = QAction(QIcon(":dictionary"), "Word Lookup")
-    action_Show_Word_Lookup.triggered.connect(partial(app_windows._toggle_word_lookup))
-    menu.addAction(action_Show_Word_Lookup)
-
-    action_Ebook_Reader = QAction(QIcon(":book-open-solid"), "Ebook Reader")
-    action_Ebook_Reader.triggered.connect(partial(app_windows._new_ebook_reader_window_noret))
-    menu.addAction(action_Ebook_Reader)
-
-    action_Quit = QAction(QIcon(":close"), "Quit")
-    action_Quit.triggered.connect(partial(app_windows._quit_app))
-    menu.addAction(action_Quit)
-
-    tray.setContextMenu(menu)
-
-    logger.profile("Create systray: end")
 
     # === Create first window ===
 

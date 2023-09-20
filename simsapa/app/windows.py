@@ -4,8 +4,9 @@ from typing import Callable, List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
-from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
+from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
@@ -37,6 +38,7 @@ class AppWindowsSignals(QObject):
 class AppWindows:
     _preview_window: PreviewWindow
     signals: AppWindowsSignals
+    tray: QSystemTrayIcon
 
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
         self.signals = AppWindowsSignals()
@@ -51,6 +53,8 @@ class AppWindows:
         self._sutta_index_window: Optional[AppWindowInterface] = None
 
         self.word_lookup: Optional[WordLookupInterface] = None
+
+        self.tray = self._setup_system_tray()
 
         # Init PreviewWindow here, so that the first window can connect signals to it.
         self._init_preview_window()
@@ -200,6 +204,50 @@ class AppWindows:
             del self._windows[view_idx]
         else:
             logger.info(f"Last window of type {view_type}, not removing.")
+
+    def _setup_system_tray(self) -> QSystemTrayIcon:
+        logger.profile("_create_system_tray_menu(): start")
+
+        tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
+        tray.setVisible(True)
+
+        tray.activated.connect(partial(self.handle_system_tray_clicked))
+
+        menu = QMenu()
+
+        action_Sutta_Search = QAction(QIcon(":book"), "Sutta Search")
+        action_Sutta_Search.triggered.connect(partial(self._new_sutta_search_window_noret))
+        menu.addAction(action_Sutta_Search)
+
+        action_Sutta_Study = QAction(QIcon(":book"), "Sutta Study")
+        action_Sutta_Study.triggered.connect(partial(self._new_sutta_study_window_noret))
+        menu.addAction(action_Sutta_Study)
+
+        action_Sutta_Index = QAction(QIcon(":book"), "Sutta Index")
+        action_Sutta_Index.triggered.connect(partial(self._show_sutta_index_window))
+        menu.addAction(action_Sutta_Index)
+
+        action_Dictionary_Search = QAction(QIcon(":dictionary"), "Dictionary Search")
+        action_Dictionary_Search.triggered.connect(partial(self._new_dictionary_search_window_noret))
+        menu.addAction(action_Dictionary_Search)
+
+        action_Show_Word_Lookup = QAction(QIcon(":dictionary"), "Word Lookup")
+        action_Show_Word_Lookup.triggered.connect(partial(self._toggle_word_lookup))
+        menu.addAction(action_Show_Word_Lookup)
+
+        action_Ebook_Reader = QAction(QIcon(":book-open-solid"), "Ebook Reader")
+        action_Ebook_Reader.triggered.connect(partial(self._new_ebook_reader_window_noret))
+        menu.addAction(action_Ebook_Reader)
+
+        action_Quit = QAction(QIcon(":close"), "Quit")
+        action_Quit.triggered.connect(partial(self._quit_app))
+        menu.addAction(action_Quit)
+
+        tray.setContextMenu(menu)
+
+        logger.profile("_create_system_tray_menu(): end")
+
+        return tray
 
     def open_sutta_new(self, uid: str):
         from simsapa.layouts.sutta_window import SuttaWindow
