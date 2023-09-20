@@ -15,6 +15,8 @@ ui:
 	pyuic6 -o simsapa/assets/ui/library_browser_window_ui.py simsapa/assets/ui/library_browser_window.ui && \
 	pyuic6 -o simsapa/assets/ui/import_stardict_dialog_ui.py simsapa/assets/ui/import_stardict_dialog.ui
 
+# Ruby 3.0 sass, version:
+# 1.49.7 compiled with dart2js 2.15.1
 sass-build:
 	sass --no-source-map './simsapa/assets/sass/:./simsapa/assets/css/'
 
