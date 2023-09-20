@@ -458,6 +458,11 @@ div.btn a, span.btn a {
   font-style: italic;
   font-size: 0.9em;
 }
+.dhammatalks_org .suttaCite {
+  font-style: italic;
+  margin-left: 50%;
+  margin-top: 0.6em;
+}
 .dhammatalks_org .verse-add {
   margin-top: 0.4em;
   text-indent: 0;

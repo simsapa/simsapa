@@ -2,23 +2,28 @@ import json
 import queue
 
 from functools import partial
-from simsapa.layouts.dictionary_queries import DictionaryQueries
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
-from simsapa.layouts.sutta_search import SuttaSearchWindowState
+from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from ..app.types import AppData, QueryType, SuttaSearchWindowInterface, USutta
-from ..assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
-from .word_scan_popup import WordScanPopupState
+from simsapa.app.types import QueryType, USutta
+from simsapa.app.app_data import AppData
+from simsapa.app.search.dictionary_queries import DictionaryQueries
+
+from simsapa.layouts.gui_types import SuttaStudyWindowInterface
+from simsapa.layouts.preview_window import PreviewWindow
+from simsapa.layouts.sutta_search import SuttaSearchWindowState
+from simsapa.layouts.word_lookup import WordLookupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
+class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
     sutta_one_layout: QVBoxLayout
@@ -52,7 +57,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.page_len = 20
 
-        self.queries = DictionaryQueries(self._app_data)
+        self.queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
         self._setup_ui()
         self._connect_signals()
@@ -87,6 +92,7 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         self._show_sutta_by_uid_in_side(side, uid)
 
     def _setup_ui(self):
+        self.setWindowTitle("Sutta Study - Simsapa")
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
 
@@ -120,10 +126,15 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       tabs_layout=None,
                                                       focus_input=False,
                                                       enable_language_filter=True,
-                                                      enable_search_extras=False,
+                                                      enable_search_extras=True,
+                                                      enable_info_button=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
-                                                      show_query_results_in_active_tab=True)
+                                                      show_query_results_in_active_tab=True,
+                                                      search_bar_two_rows_layout=True,
+                                                      language_filter_setting_key = 'sutta_study_one_language_filter_idx',
+                                                      search_mode_setting_key = 'sutta_study_one_search_mode',
+                                                      source_filter_setting_key = 'sutta_study_one_source_filter_idx')
 
         self.sutta_one_state.page_dblclick.connect(partial(self.sutta_one_state._lookup_selection_in_dictionary))
 
@@ -152,10 +163,15 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
                                                       tabs_layout=None,
                                                       focus_input=False,
                                                       enable_language_filter=True,
-                                                      enable_search_extras=False,
+                                                      enable_search_extras=True,
+                                                      enable_info_button=False,
                                                       enable_sidebar=False,
                                                       enable_find_panel=False,
-                                                      show_query_results_in_active_tab=True)
+                                                      show_query_results_in_active_tab=True,
+                                                      search_bar_two_rows_layout=True,
+                                                      language_filter_setting_key = 'sutta_study_two_language_filter_idx',
+                                                      search_mode_setting_key = 'sutta_study_two_search_mode',
+                                                      source_filter_setting_key = 'sutta_study_two_source_filter_idx')
 
         self.sutta_two_state.page_dblclick.connect(partial(self.sutta_two_state._lookup_selection_in_dictionary))
 
@@ -175,7 +191,12 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
         spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.dictionary_layout.addItem(spacer)
 
-        self.dictionary_state = WordScanPopupState(self._app_data, self.dictionary_layout, focus_input = False)
+        self.dictionary_state = WordLookupState(app_data = self._app_data,
+                                                wrap_layout = self.dictionary_layout,
+                                                focus_input = False,
+                                                language_filter_setting_key = 'sutta_study_lookup_language_filter_idx',
+                                                search_mode_setting_key = 'sutta_study_lookup_search_mode',
+                                                source_filter_setting_key = 'sutta_study_lookup_source_filter_idx')
 
         self.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_by_url))
         self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))
@@ -314,6 +335,23 @@ class SuttaStudyWindow(SuttaSearchWindowInterface, Ui_SuttaStudyWindow):
 
         self.sutta_one_state._get_active_tab().render_sutta_content()
         self.sutta_two_state._get_active_tab().render_sutta_content()
+
+    def connect_preview_window_signals(self, preview_window: PreviewWindow):
+        self.dictionary_state.link_mouseover.connect(partial(preview_window.link_mouseover))
+        self.dictionary_state.link_mouseleave.connect(partial(preview_window.link_mouseleave))
+        self.dictionary_state.hide_preview.connect(partial(preview_window._do_hide))
+
+    def closeEvent(self, event: QCloseEvent):
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        msg = ApiMessage(queue_id = 'app_windows',
+                         action = ApiAction.remove_closed_window_from_list,
+                         data = self.queue_id)
+        s = json.dumps(msg)
+        APP_QUEUES['app_windows'].put_nowait(s)
+
+        event.accept()
 
     def _handle_close(self):
         self.close()

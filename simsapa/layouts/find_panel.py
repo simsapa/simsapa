@@ -41,7 +41,8 @@ class FindPanel(QtWidgets.QWidget):
 
         for btn in (self.search_input, self.case_button, next_button, prev_button, done_button, done_button):
             lay.addWidget(btn)
-            if isinstance(btn, QtWidgets.QPushButton): btn.clicked.connect(self.setFocus)
+            if isinstance(btn, QtWidgets.QPushButton):
+                btn.clicked.connect(self.setFocus)
 
         self.search_input.textChanged.connect(self.update_searching)
         self.search_input.returnPressed.connect(self.update_searching)

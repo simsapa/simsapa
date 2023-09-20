@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 from functools import partial
 from typing import List, Optional
 
@@ -9,12 +8,14 @@ from PyQt6.QtWidgets import (QLineEdit, QMessageBox)
 from sqlalchemy.sql import func
 
 from simsapa import DbSchemaName, logger
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
-from ..app.types import AppData, AppWindowInterface, UMemo
-from ..assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
+from simsapa.app.types import UMemo
+from simsapa.app.app_data import AppData
+from simsapa.assets.ui.memos_browser_window_ui import Ui_MemosBrowserWindow
 
+from simsapa.layouts.gui_types import AppWindowInterface
 
 class MemoListModel(QAbstractListModel):
     def __init__(self, *args, memos=None, **kwargs):
@@ -29,7 +30,7 @@ class MemoListModel(QAbstractListModel):
             text = text[0:200] + " ..."
             return text
 
-    def rowCount(self, index):
+    def rowCount(self, __index__):
         if self.memos:
             return len(self.memos)
         else:
@@ -280,9 +281,12 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
                 memo.anki_note_id = res
                 self._app_data.db_session.commit()
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Add \
             .triggered.connect(partial(self.add_memo))
@@ -306,6 +310,7 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
 
 def is_anki_live() -> bool:
     try:
+        import requests
         res = requests.get('http://localhost:8765')
     except Exception:
         return False
@@ -318,6 +323,7 @@ def anki_request(action, **params):
 
 
 def anki_invoke(action, **params):
+    import requests
     res = requests.get(url='http://localhost:8765', json=anki_request(action, **params))
     response = res.json()
 

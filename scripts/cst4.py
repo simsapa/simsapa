@@ -17,7 +17,7 @@ from sqlalchemy.orm.session import Session
 from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text
+from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
 
 load_dotenv()
 
@@ -1158,6 +1158,9 @@ def _parse_path(p: Path) -> Am.Sutta:
         logger.error("No <body> in %s" % p)
         sys.exit(1)
 
+    title = consistent_nasal_m(p.stem)
+    title_ascii = pali_to_ascii(title)
+
     body = consistent_nasal_m(body)
 
     # pitaka = get_pitaka(p)
@@ -1171,7 +1174,8 @@ def _parse_path(p: Path) -> Am.Sutta:
 
     return Am.Sutta(
         source_uid = author,
-        title = consistent_nasal_m(p.stem),
+        title = title,
+        title_ascii = title_ascii,
         uid = uid,
         sutta_ref = uid,
         language = lang,
@@ -1272,11 +1276,15 @@ def group_to_sutta(g: Group) -> Am.Sutta:
     author = "cst4"
     uid = f"{ref}/{lang}/{author}"
 
+    title = consistent_nasal_m(g.title)
+    title_ascii = pali_to_ascii(title)
+
     content_html = '<div class="cst4">' + consistent_nasal_m(content_html) + '</div>'
 
     return Am.Sutta(
         source_uid = author,
-        title = consistent_nasal_m(g.title),
+        title = title,
+        title_ascii = title_ascii,
         title_pali = consistent_nasal_m(g.title),
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),

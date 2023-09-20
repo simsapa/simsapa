@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import create_app_dirs
+from simsapa.app.dir_helpers import create_app_dirs
 
 import helpers
 import suttacentral

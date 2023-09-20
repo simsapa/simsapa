@@ -11,12 +11,16 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
 from simsapa import IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR
+
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
-from simsapa.app.types import AppData, QExpanding, QueryType, UDictWord, USutta
-from simsapa.layouts.dictionary_queries import DictionaryQueries
+from simsapa.app.types import QueryType, UDictWord, USutta
+from simsapa.app.app_data import AppData
+from simsapa.app.search.dictionary_queries import DictionaryQueries
+from simsapa.app.search.sutta_queries import SuttaQueries
+
+from simsapa.layouts.gui_types import QExpanding, LinkHoverData
 from simsapa.layouts.html_content import html_page
-from simsapa.layouts.reader_web import LinkHoverData, ReaderWebEnginePage
-from simsapa.layouts.sutta_queries import SuttaQueries
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 TITLE_PRE = "Simsapa Preview"
 
@@ -58,8 +62,8 @@ class PreviewWindow(QDialog):
         self._link_mouseleave = False
         self._mouseover = False
 
-        self.sutta_queries = SuttaQueries(self._app_data)
-        self.dict_queries = DictionaryQueries(self._app_data)
+        self.sutta_queries = SuttaQueries(self._app_data.db_session)
+        self.dict_queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
         self._hide_timer = QTimer()
         self._hide_timer.timeout.connect(partial(self.hide))
@@ -238,7 +242,7 @@ class PreviewWindow(QDialog):
 
         cursor_pos = QCursor.pos()
 
-        if self._app_data.screen_size:
+        if self._app_data.screen_size is not None:
             if self._hover_data:
                 # x_hover = self._hover_data['x']
                 x_hover = cursor_pos.x()
@@ -303,7 +307,7 @@ class PreviewWindow(QDialog):
         self.title = ''
 
         css_extra = PREVIEW_CSS_EXTRA
-        js_extra = "const SHOW_BOOKMARKS = false;";
+        js_extra = "const SHOW_BOOKMARKS = false;"
 
         if self._frameless:
             js_extra += """
@@ -363,7 +367,7 @@ class PreviewWindow(QDialog):
             s = sutta.title_trans
         else:
             s = sutta.title
-            self.title = f"{sutta.sutta_ref} {s}"
+            self.title = f"{sutta.sutta_ref} {s} ({sutta.uid})"
 
         if sutta.content_json is not None and sutta.content_json != '':
             segments_json = bilara_text_to_segments(str(sutta.content_json), str(sutta.content_json_tmpl))
@@ -388,8 +392,8 @@ class PreviewWindow(QDialog):
         h1 {{ font-size: 22px; margin-top: 0pt; }}
         """
 
-        js_extra = f"const SUTTA_UID = '{sutta.uid}';";
-        js_extra += "const SHOW_BOOKMARKS = false;";
+        js_extra = f"const SUTTA_UID = '{sutta.uid}';"
+        js_extra += "const SHOW_BOOKMARKS = false;"
 
         if highlight_text:
             # NOTE highlight_and_scroll_to() replaces #ssp_main.innerHTML and

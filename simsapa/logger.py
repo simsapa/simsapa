@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from typing import Any
 
-from simsapa import IS_MAC, SIMSAPA_LOG_PATH
+from simsapa import IS_MAC, SIMSAPA_LOG_PATH, INIT_START_TIME
 
 s = os.getenv('DISABLE_LOG')
 if s is not None and s.lower() == 'true':
@@ -25,6 +25,9 @@ def warn(msg: Any, start_new = False):
 
 def error(msg: Any, start_new = False):
     _write_log(msg, "ERROR", start_new)
+
+def profile(msg: Any, start_new = False):
+    _write_log(f"{msg}: {datetime.now() - INIT_START_TIME}", "PROFILE", start_new)
 
 def _write_log(msg: Any, level: str = "INFO", start_new: bool = False):
     if DISABLE_LOG:

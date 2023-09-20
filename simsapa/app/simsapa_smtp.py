@@ -6,7 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List
 
-from simsapa.app.types import SmtpLoginData
+from simsapa.layouts.gui_types import SmtpLoginData
 
 class SimsapaSMTP(smtplib.SMTP):
     """A wrapper for handling SMTP connections."""

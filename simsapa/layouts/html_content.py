@@ -1,16 +1,23 @@
 from typing import Optional
+from string import Template
 
-from simsapa import PACKAGE_ASSETS_DIR, SUTTAS_CSS, SUTTAS_JS
-from mako.template import Template
+from simsapa import PAGE_HTML, SUTTAS_CSS, SUTTAS_JS
 
-open_sutta_links_js_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/open_sutta_links.js')))
-page_tmpl = Template(filename=str(PACKAGE_ASSETS_DIR.joinpath('templates/page.html')))
-
+# open_sutta_links_js_tmpl: Optional[Template] = None
+page_tmpl = Template(PAGE_HTML)
 
 def html_page(content: str,
               api_url: Optional[str] = None,
               css_extra: Optional[str] = None,
               js_extra: Optional[str] = None):
+
+    # global open_sutta_links_js_tmpl
+    # if open_sutta_links_js_tmpl is None:
+    #     b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('templates/open_sutta_links.js')))
+    #     if b is not None:
+    #         open_sutta_links_js_tmpl = Template(b.decode("utf-8"))
+
+    global page_tmpl
 
     css = SUTTAS_CSS
     if api_url is not None:
@@ -28,14 +35,14 @@ def html_page(content: str,
         js += "\n\n" + js_extra
 
     if not js_extra or 'SHOW_BOOKMARKS' not in js_extra:
-        js += "const SHOW_BOOKMARKS = false;";
+        js += "const SHOW_BOOKMARKS = false;"
 
     js += SUTTAS_JS
 
-    html = str(page_tmpl.render(content=content,
-                                css_head=css,
-                                js_head=js,
-                                js_body='',
-                                api_url=api_url))
+    html = str(page_tmpl.substitute(content=content,
+                                    css_head=css,
+                                    js_head=js,
+                                    js_body='',
+                                    api_url=api_url))
 
     return html

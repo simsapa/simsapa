@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextBrowser,
                              QPushButton, QLabel, QMainWindow, QSizePolicy)
 
 from simsapa import logger
-from simsapa.app.helpers import get_app_version, get_sys_version
+
+from simsapa.layouts.gui_helpers import get_app_version, get_sys_version
 
 
 class ErrorMessageWindow(QMainWindow):
@@ -80,13 +81,16 @@ class ErrorMessageWindow(QMainWindow):
         self._quit_button = QPushButton("Quit")
         self._quit_button.setFixedSize(100, 30)
 
-        self._continue_button.clicked.connect(partial(self.close))
+        self._continue_button.clicked.connect(partial(self._handle_close))
         self._quit_button.clicked.connect(partial(self._close_and_quit))
 
         buttons_layout.addWidget(self._continue_button)
         buttons_layout.addWidget(self._quit_button)
 
         self._layout.addLayout(buttons_layout)
+
+    def _handle_close(self):
+        self.close()
 
     def _copy(self, text):
         pyperclip.copy(text)

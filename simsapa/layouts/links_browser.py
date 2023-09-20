@@ -18,14 +18,20 @@ from sqlalchemy import or_
 
 from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa.assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
+
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+
+from simsapa.app.types import USutta, UDictWord, UDocument
+from simsapa.app.app_data import AppData
 from simsapa.app.helpers import compact_rich_text
-from simsapa.layouts.links_sidebar import GraphGenerator
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-from ..app.db.search import SearchResult
-from ..app.types import AppData, AppWindowInterface, USutta, UDictWord, UDocument, default_search_result_sizes
-from ..assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
-from .search_item import SearchItemWidget
+from simsapa.app.search.helpers import SearchResult
+
+from simsapa.layouts.gui_types import AppWindowInterface, default_search_result_sizes
+from simsapa.layouts.search_item import SearchItemWidget
+
+from simsapa.layouts.parts.links_sidebar import GraphGenerator
 
 class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
 
@@ -40,7 +46,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
         self.setupUi(self)
         logger.info("LinksBrowserWindow()")
 
-        self.link_table: QComboBox;
+        self.link_table: QComboBox
 
         self.features = []
         self._app_data: AppData = app_data
@@ -376,7 +382,7 @@ class LinksBrowserWindow(AppWindowInterface, Ui_LinksBrowserWindow):
     def _show_sutta_from_message(self, info):
         sutta: Optional[USutta] = None
 
-        if not 'table' in info.keys() or not 'id' in info.keys():
+        if 'table' not in info.keys() or 'id' not in info.keys():
             return
 
         if info['table'] == 'appdata.suttas':

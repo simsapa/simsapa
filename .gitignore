@@ -6,6 +6,9 @@ tests/data/assets/
 build/
 dist/
 
+# memory_profiler output
+*.dat
+
 # VS Code
 .vscode/
 
@@ -52,7 +55,7 @@ eggs/
 .eggs/
 lib/
 lib64/
-parts/
+./parts/
 sdist/
 var/
 wheels/

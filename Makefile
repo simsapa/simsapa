@@ -2,7 +2,7 @@ all:
 	@echo "No default target."
 
 icons:
-	pyrcc5 -o simsapa/assets/icons_rc.py simsapa/assets/icons.qrc
+	./scripts/icons_assets.sh
 
 ui:
 	pyuic6 -o simsapa/assets/ui/sutta_search_window_ui.py simsapa/assets/ui/sutta_search_window.ui && \
@@ -15,11 +15,16 @@ ui:
 	pyuic6 -o simsapa/assets/ui/library_browser_window_ui.py simsapa/assets/ui/library_browser_window.ui && \
 	pyuic6 -o simsapa/assets/ui/import_stardict_dialog_ui.py simsapa/assets/ui/import_stardict_dialog.ui
 
+# Ruby 3.0 sass, version:
+# 1.49.7 compiled with dart2js 2.15.1
 sass-build:
 	sass --no-source-map './simsapa/assets/sass/:./simsapa/assets/css/'
 
 sass-watch:
 	sass --no-source-map --watch './simsapa/assets/sass/:./simsapa/assets/css/'
+
+requirements.txt:
+	poetry export --without-hashes -o requirements.txt
 
 tests:
 	USE_TEST_DATA=true pytest tests/
@@ -28,4 +33,4 @@ bootstrap-db:
 	./scripts/bootstrap_db.sh
 
 count-code:
-	tokei --type Python --exclude simsapa/layouts/word_scan_popup_borderless.py --exclude simsapa/assets/ --exclude simsapa/keyboard/ --exclude simsapa/app/lookup.py . | grep -vE '===|Total'
+	tokei --type Python --exclude simsapa/assets/ --exclude simsapa/keyboard/ --exclude simsapa/app/lookup.py . | grep -vE '===|Total'

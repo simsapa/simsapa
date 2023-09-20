@@ -1,24 +1,21 @@
 from pathlib import Path
-import queue, json, socket, os, sys
-from typing import Dict, List, Optional
+import queue, json, os
+from typing import Callable, Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
 import logging
 
-from simsapa import PACKAGE_ASSETS_DIR, USER_DB_PATH, DbSchemaName
+from simsapa import PACKAGE_ASSETS_DIR
 from simsapa import logger
-from simsapa.app.db_helpers import find_or_create_db, get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
-from .types import GraphRequest, UBookmark, USutta, UDictWord
+from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
 from sqlalchemy import and_, or_
 
-from .db import appdata_models as Am
-from .db import userdata_models as Um
-
-from .graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
-                    dict_word_nodes_and_edges, sutta_graph_id)
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 app = Flask(__name__)
 app.config['ENV'] = 'development'
@@ -27,6 +24,14 @@ logging.getLogger("werkzeug").disabled = True
 
 global server_queue
 server_queue: Optional[queue.Queue] = None
+
+class AppCallbacks:
+    open_window: Callable[[str], None]
+    def __init__(self):
+        pass
+
+global app_callbacks
+app_callbacks = AppCallbacks()
 
 @app.route('/queues/<string:queue_id>', methods=['POST'])
 def queues(queue_id):
@@ -62,6 +67,7 @@ def queues(queue_id):
 @app.route('/assets/<path:filename>', methods=['GET'])
 def assets(filename):
     if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, filename)): # type: ignore
+        logger.error(f"api::assets(): File Not Found: {filename}")
         abort(404)
 
     return send_from_directory(PACKAGE_ASSETS_DIR, filename) # type: ignore
@@ -123,6 +129,9 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
 
 @app.route('/generate_graph', methods=['POST'])
 def api_generate_graph():
+    from simsapa.app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
+                                   dict_word_nodes_and_edges, sutta_graph_id)
+
     try:
         if request.json is None:
             return "Bad Request", 400
@@ -222,6 +231,11 @@ def get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
+@app.route('/open_window', defaults={'window_type': ''})
+@app.route('/open_window/<string:window_type>', methods=['GET'])
+def open_window(window_type: str = ''):
+    app_callbacks.open_window(window_type)
+    return "OK", 200
 
 @app.route('/get_bookmarks_with_quote_only_for_sutta', methods=['POST'])
 def get_bookmarks_with_quote_only_for_sutta():
@@ -325,28 +339,15 @@ def resp_forbidden(e):
     logger.error(msg)
     return msg, 403
 
-def start_server(port: int, q: queue.Queue):
+def start_server(port: int,
+                 q: queue.Queue,
+                 open_window_fn: Callable):
     logger.info(f'Starting server on port {port}')
-    os.environ["FLASK_ENV"] = "development"
 
     global server_queue
     server_queue = q
 
-    # Run this here, not in AppData.__init__(), so that db_helpers module loads
-    # in this thread and doesn't block the main thread opening the first window.
-    find_or_create_db(USER_DB_PATH, DbSchemaName.UserData.value)
-
-    # Error in click.utils.echo() when console is unavailable
-    # https://github.com/pallets/click/issues/2415
-    if getattr(sys, 'frozen', False):
-        f = open(os.devnull, 'w')
-        sys.stdin = f
-        sys.stdout = f
+    global app_callbacks
+    app_callbacks.open_window = open_window_fn
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)
-
-def find_available_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(('', 0))
-    _, port = sock.getsockname()
-    return port

@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 from sqlalchemy.orm.session import Session
 
 from simsapa import DbSchemaName, logger
+
+from simsapa.app.types import SearchArea
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import create_app_dirs
+from simsapa.app.dir_helpers import create_app_dirs
+from simsapa.app.completion_lists import get_and_save_completions
 
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
@@ -55,20 +58,27 @@ def populate_dict_words_from_stardict(appdata_db: Session,
                                       limit: Optional[int] = None):
     logger.info("=== populate_dict_words_from_stardict() ===")
 
-    for d in stardict_base_path.glob("*.zip"):
-        logger.info(d)
-        # use label as the ZIP file name without the .zip extension
-        label = os.path.basename(d).replace('.zip', '')
-        paths = parse_stardict_zip(Path(d))
+    # Folder structure: stardict_base_path/lang/en/DPD.zip
 
-        import_stardict_as_new(appdata_db,
-                               DbSchemaName.AppData.value,
-                               None,
-                               paths,
-                               label,
-                               10000,
-                               ignore_synonyms,
-                               limit)
+    languages = [str(p.name) for p in stardict_base_path.joinpath('lang').iterdir()]
+
+    for lang in languages:
+
+        for d in stardict_base_path.joinpath("lang").joinpath(lang).glob("*.zip"):
+            logger.info(d)
+            # use label as the ZIP file name without the .zip extension
+            label = os.path.basename(d).replace('.zip', '')
+            paths = parse_stardict_zip(Path(d))
+
+            import_stardict_as_new(appdata_db,
+                                   DbSchemaName.AppData.value,
+                                   None,
+                                   paths,
+                                   lang,
+                                   label,
+                                   10000,
+                                   ignore_synonyms,
+                                   limit)
 
 
 def insert_db_version(appdata_db: Session):
@@ -130,12 +140,19 @@ def main():
 
     nyanadipa.populate_suttas_from_nyanadipa(appdata_db, limit)
 
+    # === All suttas are added above ===
+
     suttacentral.add_sc_multi_refs(appdata_db, sc_db)
 
     multi_refs.populate_sutta_multi_refs(appdata_db, limit)
 
     # FIXME improve synonym parsing
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
+
+    # === All dict words are added above ===
+
+    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
 
     # Create db links from ssp:// links after all suttas have been added.
     create_links.populate_links(appdata_db)

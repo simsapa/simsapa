@@ -2,14 +2,12 @@ import re
 from typing import List
 from urllib.parse import urlencode
 
-from bs4 import BeautifulSoup
 from PyQt6.QtCore import QUrl
 
 from simsapa import logger
-from simsapa.app.db.search import RE_ALL_BOOK_SUTTA_REF
 from simsapa.app.helpers import strip_html
-from simsapa.layouts.sutta_queries import QuoteScope
-from simsapa.app.types import QueryType
+from simsapa.app.lookup import RE_ALL_BOOK_SUTTA_REF
+from simsapa.app.types import QueryType, QuoteScope
 
 def add_sandhi_links(html_page: str) -> str:
     """
@@ -69,6 +67,8 @@ def add_grammar_links(html_page: str) -> str:
     return html_page
 
 def add_example_links(html_page: str) -> str:
+    from bs4 import BeautifulSoup
+
     example_ids: List[str] = re.findall(r'id="(example__[^"]+)"', html_page)
     if len(example_ids) == 0:
         return html_page

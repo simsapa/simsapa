@@ -1,28 +1,30 @@
 from subprocess import Popen
-import sys
+import os, sys, threading, shutil
 import traceback
 from typing import Optional
-from PyQt6 import QtCore
-import threading
 
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtWidgets import (QApplication, QSystemTrayIcon, QMenu)
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa.app.api import start_server, find_available_port
-from simsapa import logger
-from simsapa import SERVER_QUEUE, APP_DB_PATH, IS_LINUX, IS_MAC, IS_WINDOWS
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
+
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.helpers import check_delete_files, create_app_dirs, ensure_empty_graphs_cache
-from .app.types import AppData, QueryType
-from .app.windows import AppWindows
-from .layouts.download_appdata import DownloadAppdataWindow
-from .layouts.error_message import ErrorMessageWindow
-from simsapa.layouts.create_search_index import CreateSearchIndexWindow
+from simsapa.app.db_session import get_db_version
+from simsapa.app.helpers import find_available_port
+from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
+from simsapa.app.types import QueryType
+from simsapa.app.app_data import AppData
+from simsapa.app.windows import AppWindows
+
+from simsapa.layouts.error_message import ErrorMessageWindow
 
 # NOTE: Importing icons_rc is necessary once, in order for icon assets,
 # animation gifs, etc. to be loaded.
 from simsapa.assets import icons_rc
+from simsapa.layouts.gui_helpers import get_app_version, is_app_version_compatible_with_db_version, to_version
+from simsapa.layouts.gui_types import WindowNameToType
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -38,22 +40,113 @@ sys.excepthook = excepthook
 check_delete_files()
 create_app_dirs()
 
-def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Optional[Popen] = None):
-    logger.info("gui::start()")
+def start(port: Optional[int] = None,
+          url: Optional[str] = None,
+          window_type_name: Optional[str] = None,
+          splash_proc: Optional[Popen] = None):
+    logger.profile("gui::start()")
+    set_is_gui(True)
 
-    ensure_empty_graphs_cache()
+    if START_LOW_MEM:
+        import psutil
+        logger.info(f"START_LOW_MEM: {START_LOW_MEM}")
+        mem = psutil.virtual_memory()
+        logger.info(f"Memory: {mem}")
+        if not IS_MAC:
+            cpu = psutil.cpu_freq()
+            logger.info(f"CPU Freq: {cpu}")
+        cores = psutil.cpu_count(logical=True)
+        logger.info(f"CPU Cores: {cores}")
+
+    # There may be a 0-byte size db file remaining from a failed
+    # install attempt.
+
+    for p in [APP_DB_PATH, USER_DB_PATH]:
+        if p.exists() and os.path.getsize(p) == 0:
+            p.unlink()
+
+    # QApplication has to be constructed before other windows or dialogs.
+    app = QApplication(sys.argv)
+
+    # Determine if an old version of the database may need to be removed.
+
+    if APP_DB_PATH.exists():
+        is_db_compatible = False
+        db_ver = get_db_version(APP_DB_PATH)
+        app_ver = get_app_version()
+
+        if db_ver is not None \
+        and app_ver is not None:
+            is_db_compatible = is_app_version_compatible_with_db_version(to_version(app_ver), to_version(db_ver))
+
+        if not is_db_compatible:
+            do_remove = _ask_remove_redownload_db()
+
+            if do_remove:
+                shutil.rmtree(ASSETS_DIR)
+                ASSETS_DIR.mkdir()
+            else:
+                sys.exit(2)
+
+    # Determine if this is the first start and we need to open
+    # DownloadAppdataWindow instead of the main app.
 
     if not APP_DB_PATH.exists():
         if splash_proc is not None:
             if splash_proc.poll() is None:
                 splash_proc.kill()
 
-        dl_app = QApplication(sys.argv)
+        from simsapa.layouts.download_appdata import DownloadAppdataWindow
+
         w = DownloadAppdataWindow()
         w.show()
-        status = dl_app.exec()
+        status = app.exec()
         logger.info(f"gui::start() Exiting with status {status}.")
         sys.exit(status)
+
+    # Validate or discard window_type_name.
+
+    if window_type_name is not None \
+        and window_type_name not in WindowNameToType.keys():
+        print(f"Invalid window type name: {window_type_name}. Valid names are: {list(WindowNameToType.keys())}")
+        window_type_name = None
+
+    # Determine if we are starting a new app, or one is already running and we
+    # need to tell it to open a window.
+
+    if SIMSAPA_API_PORT_PATH.exists():
+        # If there is a running Simsapa app, tell the api server to open a
+        # window. If the request succeeded, quit. If it failed, continue
+        # starting this app.
+        try:
+            with open(SIMSAPA_API_PORT_PATH, mode='r', encoding='utf-8') as f:
+                api_port = int(f.read())
+            import requests
+
+            api_url = f"http://localhost:{api_port}/open_window"
+            if window_type_name is not None:
+                api_url += f"/{window_type_name.replace(' ', '%20')}"
+                logger.info(f"api_url: {api_url}")
+
+            r = requests.get(api_url)
+            if r.ok:
+                logger.info(f"Running Simsapa instance detected, sent an api request to open a window. Response status: {r.status_code}. Exiting.")
+                sys.exit(0)
+
+        except Exception as e:
+            logger.error(f"Can't read file or port not an integer: {e}")
+
+    # Linux: Check if the .desktop file should be created or updated. When a
+    # user updates the .AppImage, the file name contains a different version
+    # number.
+
+    create_or_update_linux_desktop_icon_file()
+
+    # Before opening a new window, clear the folder where graph HTML files are
+    # written. The graph HTML files are identified by the filename containing
+    # the windows's queue_id.
+
+    ensure_empty_graphs_cache()
 
     # Start the API server after checking for APP_DB. If this is the first run,
     # the server would create the userdata db, and we can't use it to test in
@@ -68,80 +161,63 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
 
     logger.info(f"Available port: {port}")
 
-    daemon = threading.Thread(name='daemon_server',
-                            target=start_server,
-                            args=(port, SERVER_QUEUE))
-    daemon.setDaemon(True)
-    daemon.start()
-
-    app = QApplication(sys.argv)
+    # Initialize a QWebEngineView(). Otherwise the app errors:
+    #
+    # QtWebEngineWidgets must be imported or Qt.AA_ShareOpenGLContexts must be
+    # set before a QCoreApplication instance is created
+    _ = QWebEngineView()
 
     actions_manager = ActionsManager(port)
 
     # FIXME errors on MacOS
     hotkeys_manager = None
 
-    if IS_LINUX:
-        from .app.hotkeys_manager_linux import HotkeysManagerLinux
-        hotkeys_manager = HotkeysManagerLinux(actions_manager)
-    elif IS_WINDOWS:
-        from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
-        hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
+    # FIXME 'keyboard' lib imports 'requests' which delays app.exec()
+
+    # if IS_LINUX:
+    #     from .app.hotkeys_manager_linux import HotkeysManagerLinux
+    #     hotkeys_manager = HotkeysManagerLinux(actions_manager)
+    # elif IS_WINDOWS:
+    #     from .app.hotkeys_manager_windows_mac import HotkeysManagerWindowsMac
+    #     hotkeys_manager = HotkeysManagerWindowsMac(actions_manager)
 
     app_data = AppData(actions_manager=actions_manager, app_clipboard=app.clipboard(), api_port=port)
 
     if len(app.screens()) > 0:
-        app_data.screen_size = app.primaryScreen().size()
-        logger.info(f"Screen size: {app_data.screen_size}")
-        logger.info(f"Device pixel ratio: {app.primaryScreen().devicePixelRatio()}")
-
-    if app_data.search_indexed.has_empty_index():
-        w = CreateSearchIndexWindow()
-        w.show()
-        status = app.exec()
-        logger.info(f"open_simsapa: {w.open_simsapa}")
-        logger.info(f"app status: {status}")
-        if not w.open_simsapa:
-            logger.info("Exiting.")
-            sys.exit(status)
+        screen = app.primaryScreen()
+        if screen is not None:
+            app_data.screen_size = screen.size()
+            logger.info(f"Screen size: {app_data.screen_size}")
+            logger.info(f"Device pixel ratio: {screen.devicePixelRatio()}")
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
-    # === Create systray ===
+    def emit_open_window_signal_fn(window_type: str = ''):
+        app_windows.signals.open_window_signal.emit(window_type)
 
-    # Systray doesn't work on MAC
-    if not IS_MAC:
-        app.setQuitOnLastWindowClosed(True)
+    def _start_daemon_server():
+        # This way the import happens in the thread, and doesn't delay app.exec()
+        from simsapa.app.api import start_server
 
-        tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
-        tray.setVisible(True)
+        with open(SIMSAPA_API_PORT_PATH, mode='w', encoding='utf-8') as f:
+            f.write(str(port))
 
-        menu = QMenu()
+        start_server(port, SERVER_QUEUE, emit_open_window_signal_fn)
 
-        _translate = QtCore.QCoreApplication.translate
+    daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
+    daemon.setDaemon(True)
+    daemon.start()
 
-        ac0 = QAction("Show Word Scan Popup")
-        ac0.setShortcut(_translate("Systray", "Ctrl+Shift+F6"))
-        menu.addAction(ac0)
+    app.setApplicationName("Simsapa Dhamma Reader")
+    app.setWindowIcon(QIcon(":simsapa-appicon"))
 
-        ac1 = QAction(QIcon(":book"), "Lookup Clipboard in Suttas")
-        ac1.setShortcut(_translate("Systray", "Ctrl+Shift+S"))
-        menu.addAction(ac1)
+    if DESKTOP_FILE_PATH is not None:
+        app.setDesktopFileName(str(DESKTOP_FILE_PATH.with_suffix("")))
 
-        ac2 = QAction(QIcon(":dictionary"), "Lookup Clipboard in Dictionary")
-        ac2.setShortcut(_translate("Systray", "Ctrl+Shift+G"))
-        menu.addAction(ac2)
+    app.setApplicationVersion(get_app_version() or "v0.1.0")
 
-        if hotkeys_manager is not None:
-            ac0.triggered.connect(hotkeys_manager.show_word_scan_popup)
-            ac1.triggered.connect(hotkeys_manager.lookup_clipboard_in_suttas)
-            ac2.triggered.connect(hotkeys_manager.lookup_clipboard_in_dictionary)
-
-        ac3 = QAction(QIcon(":close"), "Quit")
-        ac3.triggered.connect(app.quit)
-        menu.addAction(ac3)
-
-        tray.setContextMenu(menu)
+    keep_running = app_data.app_settings.get('keep_running_in_background', True)
+    app.setQuitOnLastWindowClosed((not keep_running))
 
     # === Create first window ===
 
@@ -155,20 +231,44 @@ def start(port: Optional[int] = None, url: Optional[str] = None, splash_proc: Op
             ok = app_windows._show_words_by_url(open_url)
 
     if not ok:
-        app_windows.open_first_window()
+        if window_type_name is not None:
+            window_type = WindowNameToType[window_type_name]
+        else:
+            window_type = None
+        app_windows.open_first_window(window_type)
 
     app_windows.show_startup_message()
-
-    app_windows.check_updates()
 
     if splash_proc is not None:
         if splash_proc.poll() is None:
             splash_proc.kill()
 
+    logger.profile("app.exec()")
     status = app.exec()
 
     if hotkeys_manager is not None:
         hotkeys_manager.unregister_all_hotkeys()
 
+    # This avoids the unused import warning.
+    logger.info(icons_rc.rcc_version)
+
+    if SIMSAPA_API_PORT_PATH.exists():
+        SIMSAPA_API_PORT_PATH.unlink()
+
     logger.info(f"start() Exiting with status {status}.")
     sys.exit(status)
+
+def _ask_remove_redownload_db() -> bool:
+    box = QMessageBox()
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Incompatible database version")
+
+    msg = """
+    <p>The current database and index version are not compatible with the app version.</p>
+    <p>Remove them now and download the new version?</p>
+    """
+
+    box.setText(msg)
+    box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+    return (box.exec() == QMessageBox.StandardButton.Yes)

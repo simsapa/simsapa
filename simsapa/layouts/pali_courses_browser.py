@@ -13,13 +13,15 @@ import markdown
 from sqlalchemy import null
 
 from simsapa import COURSES_DIR, DbSchemaName, logger
+
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+
+from simsapa.app.types import UChallengeCourse, UChallengeGroup
+from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import AppWindowInterface, PaliCourseGroup, PaliListItem, PaliListModel, QExpanding, QMinimum
 from simsapa.layouts.pali_course_helpers import count_remaining_challenges_in_group, get_groups_in_course
-
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
-
-from ..app.types import AppData, AppWindowInterface, PaliCourseGroup, PaliListItem, PaliListModel, QExpanding, QMinimum, UChallengeCourse, UChallengeGroup
-
 
 class ListItem(QStandardItem):
     name: str
@@ -526,6 +528,9 @@ class CoursesBrowserWindow(AppWindowInterface):
         if len(indexes) > 0:
             self._handle_tree_clicked(indexes[0])
 
+    def _handle_close(self):
+        self.close()
+
     def _connect_signals(self):
         self.tree_view.doubleClicked.connect(partial(self._start_selected))
         self.tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
@@ -538,7 +543,7 @@ class CoursesBrowserWindow(AppWindowInterface):
         self.delete_btn.clicked.connect(partial(self._handle_delete))
 
         self.action_Close_Window \
-            .triggered.connect(partial(self.close))
+            .triggered.connect(partial(self._handle_close))
 
         self.action_Import_Toml \
             .triggered.connect(partial(self._handle_import_toml))

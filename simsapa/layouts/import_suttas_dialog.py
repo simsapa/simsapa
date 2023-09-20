@@ -15,8 +15,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import gretil_header_to_footer
 
-from ..app.types import AppData
-from ..app.db import userdata_models as Um
+from simsapa.app.app_data import AppData
+from simsapa.app.db import userdata_models as Um
 
 
 class SuttaRow(TypedDict):

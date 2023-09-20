@@ -4,8 +4,10 @@ import subprocess
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 from PyQt6 import QtGui
-from PyQt6.QtCore import QModelIndex, QSize, QUrl, QUrlQuery, Qt, pyqtSignal
+from PyQt6.QtCore import QModelIndex, QSize, QUrl, QUrlQuery, Qt, QAbstractTableModel, pyqtSignal
 from PyQt6.QtGui import QAction, QStandardItem, QStandardItemModel
+from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
+
 from functools import partial
 from typing import Dict, List, Optional
 from urllib.parse import quote_plus
@@ -13,16 +15,18 @@ import shutil
 
 from sqlalchemy import and_, or_, not_
 
-from PyQt6.QtCore import QAbstractTableModel, Qt
-from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTableView, QTreeView, QVBoxLayout, QWidget)
+from simsapa import IS_SWAY, DbSchemaName, logger
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa import IS_SWAY, DbSchemaName, logger
-from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
-from simsapa.layouts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
-from ..app.types import AppData, AppWindowInterface, QueryType, UBookmark, USutta
+from simsapa.app.app_data import AppData
+from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
+from simsapa.app.types import QueryType, UBookmark, USutta
+
+from simsapa.layouts.gui_types import BookmarksBrowserWindowInterface
+
+from simsapa.layouts.parts.bookmark_dialog import BookmarkDialog, HasBookmarkDialog
 
 # Keys with underscore prefix will not be shown in table columns.
 SuttaModelColToIdx = {
@@ -88,7 +92,7 @@ class BookmarkItem(QStandardItem):
         self.setText(self.name)
 
 
-class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
+class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog):
 
     show_sutta_by_url = pyqtSignal(QUrl)
     current_bookmark_item: Optional[BookmarkItem] = None
@@ -108,11 +112,11 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self._connect_signals()
 
     def _setup_ui(self):
-        self.setWindowTitle("Bookmarks Browser")
+        self.setWindowTitle("Bookmarks Browser - Simsapa")
         self.resize(850, 650)
 
         if IS_SWAY:
-            cmd = f"""swaymsg 'for_window [title="Bookmarks Browser"] floating enable'"""
+            cmd = """swaymsg 'for_window [title="Bookmarks Browser"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
 
         self._central_widget = QtWidgets.QWidget(self)
@@ -329,8 +333,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         # double-click is used.
         self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
-        self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.suttas_table.horizontalHeader().setStretchLastSection(True)
+        horiz_header = self.suttas_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.suttas_table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
@@ -369,6 +375,8 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
 
     def _add_nodes_from_names(self, model: QStandardItemModel, bookmark_names: List[str]):
         root_node = model.invisibleRootItem()
+        if root_node is None:
+            return
 
         bookmark_names.sort()
 
@@ -526,7 +534,10 @@ class BookmarksBrowserWindow(AppWindowInterface, HasBookmarkDialog):
         self.suttas_table.setModel(self.suttas_model)
 
     def _handle_sutta_open(self, val: QModelIndex):
-        data = val.model().data(val, Qt.ItemDataRole.UserRole)
+        model = val.model()
+        if model is None:
+            return
+        data = model.data(val, Qt.ItemDataRole.UserRole)
         uid = data[val.row()][SuttaModelColToIdx['uid']]
         url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
 

@@ -6,9 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow)
 from PyQt6.QtGui import QMovie
 
-from simsapa.app.db.search import SearchIndexed
-
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa import logger
 
@@ -131,7 +129,8 @@ class Worker(QRunnable):
     @pyqtSlot()
     def run(self):
         try:
-            search_indexed = SearchIndexed()
+            # FIXME
+            search_indexed = SearchIndexes()
             db_eng, db_conn, db_session = get_db_engine_connection_session()
             search_indexed.index_all(db_session, only_if_empty=True)
 

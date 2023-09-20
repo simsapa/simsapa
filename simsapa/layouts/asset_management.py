@@ -6,28 +6,28 @@ from pathlib import Path
 import shutil
 import tarfile
 from PyQt6.QtGui import QCloseEvent, QMovie
-import requests
 import threading
 from typing import Callable, List, Optional
 from PyQt6 import QtWidgets
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRunnable, QThreadPool, Qt, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRunnable, QThreadPool, pyqtSlot, QObject, pyqtSignal
 from PyQt6.QtWidgets import (QAbstractItemView, QFrame, QHeaderView, QLineEdit, QMessageBox, QTableView, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMainWindow, QProgressBar)
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
-from simsapa.app.lookup import LANG_CODE_TO_NAME
 
-from simsapa.app.types import AppData
+from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+
+from simsapa.app.lookup import LANG_CODE_TO_NAME
+from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_helpers import get_db_session_with_schema
-from simsapa.app.helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
+from simsapa.app.db_session import get_db_session_with_schema
 
-from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa.layouts.gui_helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
 
 # Keys with underscore prefix will not be shown in table columns.
 LangModelColToIdx = {
@@ -145,7 +145,18 @@ class AssetManagement(QMainWindow):
 
     def _releases_finished(self, info: ReleasesInfo):
         self.releases_info = info
-        self.compat_release = get_latest_app_compatible_assets_release(self.releases_info)
+        compat = get_latest_app_compatible_assets_release(self.releases_info)
+
+        # Filter out the already downloaded languages from the list of available
+        # ones. Otherwise the user might try to re-download a language and cause
+        # an error. To re-download, the language should be removed first.
+        if compat is not None:
+            suttas_index_path = self.index_dir.joinpath('suttas')
+            if suttas_index_path.exists():
+                already_have_langs = [p.name for p in suttas_index_path.iterdir()]
+                compat["suttas_lang"] = [lang for lang in compat["suttas_lang"] if lang not in already_have_langs]
+
+        self.compat_release = compat
         self._setup_selection()
 
         if self.auto_start_download:
@@ -215,12 +226,17 @@ class AssetManagement(QMainWindow):
         self.add_languages_table = QTableView()
         self.add_languages_table.setShowGrid(False)
         self.add_languages_table.setWordWrap(False)
-        self.add_languages_table.verticalHeader().setVisible(False)
+        vert_header = self.add_languages_table.verticalHeader()
+        if vert_header is not None:
+            vert_header.setVisible(False)
 
         self.add_languages_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.add_languages_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.add_languages_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.add_languages_table.horizontalHeader().setStretchLastSection(True)
+
+        horiz_header = self.add_languages_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.add_languages_select_layout.addWidget(self.add_languages_table)
 
@@ -266,20 +282,26 @@ class AssetManagement(QMainWindow):
         self.remove_languages_table = QTableView()
         self.remove_languages_table.setShowGrid(False)
         self.remove_languages_table.setWordWrap(False)
-        self.remove_languages_table.verticalHeader().setVisible(False)
+        vert_header = self.remove_languages_table.verticalHeader()
+        if vert_header is not None:
+            vert_header.setVisible(False)
 
         self.remove_languages_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.remove_languages_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.remove_languages_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.remove_languages_table.horizontalHeader().setStretchLastSection(True)
+        horiz_header = self.remove_languages_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.remove_languages_select_layout.addWidget(self.remove_languages_table)
 
         # Languages in index
         self.removable_suttas_lang = []
-        for p in self.index_dir.glob('_suttas_lang_*.toc'):
-            lang = re.sub(r'.*_suttas_lang_([^_]+)_.*', r'\1', p.name)
-            if lang != "" and lang not in ['en', 'pli', 'san']:
+        # Folder structure of indexes:
+        # assets/index/suttas/{en, pli, hu, it}/meta.json
+        for p in self.index_dir.joinpath('suttas').iterdir():
+            lang = p.name
+            if lang not in ['en', 'pli', 'san']:
                 self.removable_suttas_lang.append(lang)
 
         def _to_item(code: str) -> List[str]:
@@ -343,6 +365,7 @@ class AssetManagement(QMainWindow):
             return
 
         try:
+            import requests
             requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "No connection, cannot download database: %s" % e
@@ -627,6 +650,7 @@ class ReleasesWorker(QRunnable):
         logger.info("ReleasesWorker::run()")
 
         try:
+            import requests
             requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
         except Exception as e:
             msg = "<p>Cannot download releases info.</p><p>%s</p>" % e
@@ -635,7 +659,7 @@ class ReleasesWorker(QRunnable):
             return
 
         try:
-            info = get_releases_info()
+            info = get_releases_info(save_stats=False)
             self.signals.finished.emit(info)
 
         except Exception as e:
@@ -749,6 +773,7 @@ class AssetsWorker(QRunnable):
         file_path = folder_path.joinpath(file_name)
 
         try:
+            import requests
             with requests.get(url, stream=True) as r:
                 chunk_size = 8192
                 read_bytes = 0
@@ -799,20 +824,51 @@ class AssetsWorker(QRunnable):
                 shutil.move(p, self.courses_dir)
 
     def import_move_html_resources_data(self, extract_temp_dir: Path):
-        if extract_temp_dir.joinpath("html_resources").exists():
+        temp_html_resources = extract_temp_dir.joinpath("html_resources")
+        if temp_html_resources.exists():
             for i in ['appdata', 'userdata']:
-                for p in glob.glob(f"{extract_temp_dir}/html_resources/{i}/*"):
-                    shutil.move(p, self.html_resources_dir.joinpath(i))
+
+                temp_schema_folder = temp_html_resources.joinpath(i)
+                target_schema_folder = self.html_resources_dir.joinpath(i)
+
+                if not temp_schema_folder.exists():
+                    continue
+
+                if not target_schema_folder.exists():
+                    target_schema_folder.mkdir(parents=True)
+
+                # Expecting the HTML files in their own folder, e.g.
+                # html_resources/appdata/sutta-index-khemaratana/index.html
+                for p in temp_schema_folder.iterdir():
+                    shutil.move(p, target_schema_folder)
 
     def import_move_index(self, extract_temp_dir: Path):
         # If indexed segments were included (e.g. with sutta languages), move
         # the segment files to the index folder.
+        #
+        # Folder structure of indexes:
+        # assets/index/suttas/{en, pli, hu, it}/meta.json
+
         temp_index = extract_temp_dir.joinpath("index")
         if temp_index.exists():
             if self.index_dir.exists():
-                for p in glob.glob(f"{temp_index}/*"):
-                    shutil.move(p, self.index_dir)
+
+                for i in ['suttas', 'dict_words']:
+                    temp_index_sub = temp_index.joinpath(i)
+                    index_sub = self.index_dir.joinpath(i)
+
+                    if not temp_index_sub.exists():
+                        continue
+
+                    for p in temp_index_sub.iterdir():
+                        # If the lang index (en, hu, etc.) folder already
+                        # exists, this will fail and report the error to the
+                        # user.
+                        shutil.move(p, index_sub)
+
             else:
+                # If there is no assets/index/ yet, this is probably first
+                # install, move the temp index/ over as it is.
                 shutil.move(temp_index, self.assets_dir)
 
     def import_move_userdata(self, extract_temp_dir: Path):

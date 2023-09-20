@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
 from simsapa import IS_MAC, DbSchemaName
 
-from simsapa.app.db.search import SearchResult
-from simsapa.app.types import SearchResultSizes
+from simsapa.app.search.helpers import SearchResult
+
+from simsapa.layouts.gui_types import SearchResultSizes
 
 class SearchItemWidget(QWidget):
     def __init__(self, sizes: SearchResultSizes, parent=None):

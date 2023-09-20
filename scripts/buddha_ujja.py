@@ -17,7 +17,8 @@ from simsapa import DbSchemaName, logger
 from simsapa.app.db import userdata_models as Um
 
 import helpers
-from simsapa.app.helpers import create_app_dirs, compact_rich_text, consistent_nasal_m, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
+from simsapa.app.helpers import compact_rich_text, consistent_nasal_m, pali_to_ascii, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
+from simsapa.app.dir_helpers import create_app_dirs
 
 load_dotenv()
 
@@ -156,13 +157,17 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         if not sutta_range:
             logger.error(f"Can't determine sutta range: {uid}")
 
+        title = consistent_nasal_m(title)
+        title_ascii = pali_to_ascii(title)
+
         return Um.Sutta(
             uid = uid,
             source_uid = author_ref,
             source_info = x.sutta_pts,
             language = 'hu',
 
-            title = consistent_nasal_m(title),
+            title = title,
+            title_ascii = title_ascii,
             title_pali = consistent_nasal_m(x.sutta_title_pali),
             title_trans = x.sutta_title_trans,
             content_plain = content_plain,

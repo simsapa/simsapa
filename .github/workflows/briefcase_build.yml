@@ -43,7 +43,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v3
         with:
-          version: '6.4.2'
+          version: '6.5.2'
 
       - name: Install Python pip
         run: python -m pip install --upgrade pip
@@ -52,6 +52,35 @@ jobs:
         run: |
           python -m pip install briefcase==0.3.11
           python -m pip install MarkupSafe==2.1.1
+
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+
+      - name: Install maturin
+        run: |
+          pip install maturin==1.2.3
+
+      - name: build and install tantivy-py wheel
+        run: |
+          git clone https://github.com/simsapa/tantivy-py.git
+          ls -l
+          cd tantivy-py
+          git checkout simsapa
+          make build
+          python -m pip install $(ls -1 target/wheels/*.whl)
+
+      # Wheel name on Ubuntu 22.04:
+      # "./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_34_x86_64.whl",
+      # Wheel name on Ubuntu 20.04:
+      # "./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_31_x86_64.whl"
+
+      - name: correct wheel file name
+        if: runner.os == 'Linux'
+        run: |
+          if [[ $(lsb_release --release | grep '20.04') != "" ]]; then sed -i 's/\(tantivy-.*-manylinux\)_2_34_x86_64.whl/\1_2_31_x86_64.whl/' pyproject.toml; fi
 
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'

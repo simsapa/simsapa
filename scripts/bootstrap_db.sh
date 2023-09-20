@@ -40,7 +40,7 @@ DISABLE_LOG=false
 ENABLE_PRINT_LOG=true
 START_NEW_LOG=false
 ENABLE_WIP_FEATURES=false
-NO_STATS=true
+SAVE_STATS=false
 RELEASES_CHANNEL=development"
 
 echo "$dotenv" > .env
@@ -179,7 +179,7 @@ do
     cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
 
     cd "$ASSETS_DIR" || exit
-    tar cjf "$name.tar.bz2" "$name.sqlite3" index/*"$name"_*
+    tar cjf "$name.tar.bz2" "$name.sqlite3" index/suttas/"$lang"/
     mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
     cd - || exit
 done
@@ -198,7 +198,7 @@ name="suttas_lang_$lang"
 cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
 
 cd "$ASSETS_DIR" || exit
-tar cjf "$name.tar.bz2" "$name.sqlite3" index/*"$name"_*
+tar cjf "$name.tar.bz2" "$name.sqlite3" index/suttas/"$lang"/
 mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
 cd - || exit
 
@@ -215,7 +215,7 @@ datetime=$(date +%FT%T)
 
 release_info="[[assets.releases]]
 date = \"$datetime\"
-version_tag = \"v0.3.0-dev.1\"
+version_tag = \"v0.4.0-dev.1\"
 github_repo = \"simsapa/simsapa-assets\"
 suttas_lang = $suttas_lang
 title = \"Updates\"

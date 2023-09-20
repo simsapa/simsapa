@@ -1,60 +1,63 @@
-import os, sys, re, shutil, queue, json, webbrowser, requests
+import os, sys, re, shutil, queue, json, webbrowser
 from functools import partial
-from typing import List, Optional
+from typing import Callable, List, Optional
 from datetime import datetime
 from urllib.parse import parse_qs
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget)
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
+from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, logger, ApiAction, ApiMessage
-from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED, SIMSAPA_RELEASES_BASE_URL
-from simsapa.app.db_helpers import get_db_engine_connection_session
-from simsapa.app.helpers import EntryType, ReleasesInfo, UpdateInfo, get_releases_info, has_update, is_local_db_obsolete, make_active_window, show_work_in_progress
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
+from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
+
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.types import AppData, AppMessage, AppWindowInterface, CompletionCache, OpenPromptParams, PaliCourseGroup, QueryType, SuttaQuote, SuttaSearchWindowInterface, WindowNameToType, WindowType, sutta_quote_from_url
-from simsapa.layouts.download_appdata import DownloadAppdataWindow
-from simsapa.layouts.ebook_reader import EbookReaderWindow
-from simsapa.layouts.preview_window import PreviewWindow
-from simsapa.layouts.sutta_queries import QuoteScope, QuoteScopeValues
+from simsapa.app.check_updates_worker import CheckUpdatesWorker
 
-from simsapa.layouts.sutta_search import SuttaSearchWindow
-from simsapa.layouts.sutta_study import SuttaStudyWindow
-from simsapa.layouts.sutta_index import SuttaIndexWindow
-from simsapa.layouts.dictionary_search import DictionarySearchWindow
-# from simsapa.layouts.dictionaries_manager import DictionariesManagerWindow
-# from simsapa.layouts.document_reader import DocumentReaderWindow
-# from simsapa.layouts.library_browser import LibraryBrowserWindow
-from simsapa.layouts.bookmarks_browser import BookmarksBrowserWindow
-from simsapa.layouts.pali_courses_browser import CoursesBrowserWindow
-from simsapa.layouts.pali_course_practice import CoursePracticeWindow
-from simsapa.layouts.sutta_window import SuttaWindow
-from simsapa.layouts.words_window import WordsWindow
-from simsapa.layouts.memos_browser import MemosBrowserWindow
-from simsapa.layouts.links_browser import LinksBrowserWindow
-from simsapa.layouts.gpt_prompts import GptPromptsWindow
-from simsapa.layouts.word_scan_popup import WordScanPopup
+from simsapa.app.app_data import AppData
+
+from simsapa.app.types import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
+
+from simsapa.layouts.gui_types import (
+    AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
+    EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
+    SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
+    sutta_quote_from_url)
+
+from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo
+from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.help_info import open_simsapa_website, show_about
+from simsapa.layouts.preview_window import PreviewWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
+class AppWindowsSignals(QObject):
+    open_window_signal = pyqtSignal(str)
+
 class AppWindows:
+    _preview_window: PreviewWindow
+    signals: AppWindowsSignals
+    tray: QSystemTrayIcon
+
     def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
+        self.signals = AppWindowsSignals()
         self._app = app
         self._app_data = app_data
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
         self._hotkeys_manager = hotkeys_manager
         self._windows: List[AppWindowInterface] = []
         self._windowed_previews: List[PreviewWindow] = []
-        self._preview_window = PreviewWindow(self._app_data)
-        self._sutta_index_window: Optional[SuttaIndexWindow] = None
+        self._sutta_index_window: Optional[AppWindowInterface] = None
 
-        def _words(url: QUrl):
-            self._show_words_by_url(url, show_results_tab=True, include_exact_query=False)
+        self.word_lookup: Optional[WordLookupInterface] = None
 
-        self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
-        self._preview_window.make_windowed.connect(partial(self._new_windowed_preview))
-        self._preview_window.show_words_by_url.connect(partial(_words))
+        self.tray = self._setup_system_tray()
+
+        # Init PreviewWindow here, so that the first window can connect signals to it.
+        self._init_preview_window()
 
         self.queue_id = 'app_windows'
         APP_QUEUES[self.queue_id] = queue.Queue()
@@ -65,16 +68,31 @@ class AppWindows:
 
         self.thread_pool = QThreadPool()
 
-        self.completion_cache_worker = CompletionCacheWorker()
-        self.completion_cache_worker.signals.finished.connect(partial(self._set_completion_cache))
-        self.thread_pool.start(self.completion_cache_worker)
+        # Wait 0.5s, then run slowish initialize tasks, e.g. init windows, check for updates.
+        # By that time the first window will be opened and will not delay app.exec().
+        self.init_timer = QTimer()
+        self.init_timer.setSingleShot(True)
+        self.init_timer.timeout.connect(partial(self._init_tasks))
+        self.init_timer.start(500)
+
+        self.signals.open_window_signal.connect(partial(self._handle_open_window_signal))
+
+    def _init_tasks(self):
+        logger.profile("AppWindows::_init_tasks(): start")
+
+        if not START_LOW_MEM:
+            self._init_word_lookup()
+            self._init_sutta_index_window()
 
         self._init_check_updates()
-        self._init_sutta_index_window()
-
-        self.word_scan_popup: Optional[WordScanPopup] = None
+        self._check_updates()
 
         self.import_user_data_from_assets()
+
+        if not START_LOW_MEM:
+            self._init_main_windows()
+
+        logger.profile("AppWindows::_init_tasks(): end")
 
     def handle_messages(self):
         try:
@@ -98,11 +116,18 @@ class AppWindows:
                 msg: ApiMessage = json.loads(s)
                 logger.info("Handle message: %s" % msg)
 
-                if msg['action'] == ApiAction.show_word_scan_popup:
-                    self._toggle_word_scan_popup()
+                if msg['action'] == ApiAction.remove_closed_window_from_list:
+                    window_queue_id = msg['data']
+                    self._remove_closed_window_from_list(window_queue_id)
 
-                if msg['action'] == ApiAction.closed_word_scan_popup:
-                    self._closed_word_scan_popup()
+                elif msg['action'] == ApiAction.show_word_lookup:
+                    self._toggle_word_lookup()
+
+                elif msg['action'] == ApiAction.closed_word_lookup:
+                    self._closed_word_lookup()
+
+                elif msg['action'] == ApiAction.hidden_word_lookup:
+                    self._hidden_word_lookup()
 
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
@@ -127,18 +152,112 @@ class AppWindows:
                     self._lookup_clipboard_in_dictionary(msg)
 
                 APP_QUEUES[self.queue_id].task_done()
+
             except queue.Empty:
                 pass
 
+    def handle_system_tray_clicked(self):
+        logger.info("handle_system_tray_clicked()")
+
+        show_window = True
+        for w in self._windows:
+            if w.isVisible():
+                w.hide()
+                show_window = False
+
+        if show_window:
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            self._open_window_type(window_type)
+
+    def _handle_open_window_signal(self, window_type_name: str = ''):
+        logger.info(f"_handle_open_window_signal(): '{window_type_name}'")
+
+        if len(window_type_name) == 0 \
+           or window_type_name not in WindowNameToType.keys():
+
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            self._open_window_type(window_type)
+            return
+
+        window_type = WindowNameToType[window_type_name]
+        self._open_window_type(window_type)
+
+    def _remove_closed_window_from_list(self, window_queue_id: str):
+        # Remove the window from self._windows to free up memory, unless it is
+        # the last of its type, in which case leaving it will allow to use
+        # .show() when the use clicks that menu item again.
+
+        view_idx: Optional[int] = None
+
+        for idx, w in enumerate(self._windows):
+            if hasattr(w, 'queue_id') and w.queue_id == window_queue_id:
+                view_idx = idx
+
+        if view_idx is None:
+            return
+
+        # Is it the last of its type?
+        view_type = type(self._windows[view_idx])
+        a = [type(w) for w in self._windows if type(w) == view_type]
+
+        if len(a) > 1:
+            del self._windows[view_idx]
+        else:
+            logger.info(f"Last window of type {view_type}, not removing.")
+
+    def _setup_system_tray(self) -> QSystemTrayIcon:
+        logger.profile("_create_system_tray_menu(): start")
+
+        tray = QSystemTrayIcon(QIcon(":simsapa-tray"))
+        tray.setVisible(True)
+
+        tray.activated.connect(partial(self.handle_system_tray_clicked))
+
+        menu = QMenu()
+
+        action_Sutta_Search = QAction(QIcon(":book"), "Sutta Search")
+        action_Sutta_Search.triggered.connect(partial(self._new_sutta_search_window_noret))
+        menu.addAction(action_Sutta_Search)
+
+        action_Sutta_Study = QAction(QIcon(":book"), "Sutta Study")
+        action_Sutta_Study.triggered.connect(partial(self._new_sutta_study_window_noret))
+        menu.addAction(action_Sutta_Study)
+
+        action_Sutta_Index = QAction(QIcon(":book"), "Sutta Index")
+        action_Sutta_Index.triggered.connect(partial(self._show_sutta_index_window))
+        menu.addAction(action_Sutta_Index)
+
+        action_Dictionary_Search = QAction(QIcon(":dictionary"), "Dictionary Search")
+        action_Dictionary_Search.triggered.connect(partial(self._new_dictionary_search_window_noret))
+        menu.addAction(action_Dictionary_Search)
+
+        action_Show_Word_Lookup = QAction(QIcon(":dictionary"), "Word Lookup")
+        action_Show_Word_Lookup.triggered.connect(partial(self._toggle_word_lookup))
+        menu.addAction(action_Show_Word_Lookup)
+
+        action_Ebook_Reader = QAction(QIcon(":book-open-solid"), "Ebook Reader")
+        action_Ebook_Reader.triggered.connect(partial(self._new_ebook_reader_window_noret))
+        menu.addAction(action_Ebook_Reader)
+
+        action_Quit = QAction(QIcon(":close"), "Quit")
+        action_Quit.triggered.connect(partial(self._quit_app))
+        menu.addAction(action_Quit)
+
+        tray.setContextMenu(menu)
+
+        logger.profile("_create_system_tray_menu(): end")
+
+        return tray
+
     def open_sutta_new(self, uid: str):
+        from simsapa.layouts.sutta_window import SuttaWindow
         view = SuttaWindow(self._app_data, uid)
-        self._windows.append(view)
-        make_active_window(view)
+        self._finalize_view(view)
 
     def open_words_new(self, schemas_ids: List[tuple[str, int]]):
+        from simsapa.layouts.words_window import WordsWindow
         view = WordsWindow(self._app_data, schemas_ids)
-        self._windows.append(view)
-        make_active_window(view)
+        self._finalize_view(view)
 
     def _new_windowed_preview(self):
         if self._preview_window._hover_data is None:
@@ -180,7 +299,7 @@ class AppWindows:
 
         view = None
         for w in self._windows:
-            if isinstance(w, DictionarySearchWindow) and w.isVisible():
+            if isinstance(w, DictionarySearchWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -225,7 +344,7 @@ class AppWindows:
 
         view = None
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and w.isVisible():
+            if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -237,7 +356,7 @@ class AppWindows:
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindow) and w.isVisible():
+            if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -260,7 +379,7 @@ class AppWindows:
         # Is there a sutta window to handle the message?
         view = None
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and w.isVisible():
+            if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -279,7 +398,7 @@ class AppWindows:
         # Is there a dictionary window to handle the message?
         view = None
         for w in self._windows:
-            if isinstance(w, DictionarySearchWindow) and w.isVisible():
+            if isinstance(w, DictionarySearchWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -299,9 +418,7 @@ class AppWindows:
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
-    def open_first_window(self) -> QMainWindow:
-        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
-
+    def _open_window_type(self, window_type: WindowType) -> Optional[QMainWindow]:
         if window_type == WindowType.SuttaSearch:
             return self._new_sutta_search_window()
 
@@ -311,23 +428,28 @@ class AppWindows:
         elif window_type == WindowType.DictionarySearch:
             return self._new_dictionary_search_window()
 
-        elif window_type == WindowType.Memos:
-            return self._new_memos_browser_window()
+        elif window_type == WindowType.EbookReader:
+            return self._new_ebook_reader_window()
 
-        elif window_type == WindowType.Links:
-            return self._new_links_browser_window()
+        elif window_type == WindowType.WordLookup:
+            return self._toggle_word_lookup()
 
         else:
             return self._new_sutta_search_window()
 
+    def open_first_window(self, window_type: Optional[WindowType] = None):
+        if window_type is None:
+            window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+        self._open_window_type(window_type)
+
     def _lookup_msg(self, query: str):
         msg = ApiMessage(queue_id = 'all',
-                            action = ApiAction.lookup_in_dictionary,
-                            data = query)
+                         action = ApiAction.lookup_in_dictionary,
+                         data = query)
         self._lookup_clipboard_in_dictionary(msg)
 
     def _study_msg_to_all(self, queue_id: str, side: str, uid: str):
-        data = {'side': side, 'uid': uid}
+        data = {'queue_id': queue_id, 'side': side, 'uid': uid}
         msg = ApiMessage(queue_id = 'all',
                          action = ApiAction.open_in_study_window,
                          data = json.dumps(obj=data))
@@ -336,227 +458,291 @@ class AppWindows:
     def _new_sutta_search_window_noret(self, query: Optional[str] = None) -> None:
         self._new_sutta_search_window(query)
 
-    def _new_sutta_search_window(self, query: Optional[str] = None) -> SuttaSearchWindow:
+    def _new_sutta_search_window(self, query: Optional[str] = None, show = True) -> SuttaSearchWindowInterface:
+        from simsapa.layouts.sutta_search import SuttaSearchWindow
+
         if query is not None and not isinstance(query, str):
             query = None
 
-        view = SuttaSearchWindow(self._app_data)
-        self._set_size_and_maximize(view)
-        self._connect_signals(view)
+        view = None
+        is_new = True
 
-        view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
-        view.s.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
-        view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        for w in self._windows:
+            if is_sutta_search_window(w) and w.isHidden():
+                is_new = False
+                view = w
 
-        view.s.bookmark_created.connect(partial(self._reload_bookmarks))
+        if view is None:
+            view = SuttaSearchWindow(self._app_data)
 
-        view.s.bookmark_created.connect(partial(view.s.reload_page))
-        view.s.bookmark_updated.connect(partial(view.s.reload_page))
+            view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
+            view.s.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
+            view.s.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
-        view.graph_link_mouseover.connect(partial(self._preview_window.graph_link_mouseover))
+            view.s.bookmark_created.connect(partial(self._reload_bookmarks))
 
-        view.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
+            view.s.bookmark_created.connect(partial(view.s.reload_page))
+            view.s.bookmark_updated.connect(partial(view.s.reload_page))
 
-        view.s.page_dblclick.connect(partial(self._sutta_search_quick_lookup_selection, view = view))
+            view.s.page_dblclick.connect(partial(self._sutta_search_quick_lookup_selection, view = view))
+            view.s.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
-        view.s.hide_preview.connect(partial(self._preview_window._do_hide))
+            view.connect_preview_window_signals(self._preview_window)
 
-        view.s.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+            if self._hotkeys_manager is not None:
+                try:
+                    self._hotkeys_manager.setup_window(view)
+                except Exception as e:
+                    logger.error(e)
 
-        if self._hotkeys_manager is not None:
-            try:
-                self._hotkeys_manager.setup_window(view)
-            except Exception as e:
-                logger.error(e)
+            if self._app_data.sutta_to_open:
+                view._show_sutta(self._app_data.sutta_to_open)
+                self._app_data.sutta_to_open = None
 
-        make_active_window(view)
+        assert(isinstance(view, SuttaSearchWindowInterface))
 
-        if self._app_data.sutta_to_open:
-            view._show_sutta(self._app_data.sutta_to_open)
-            self._app_data.sutta_to_open = None
-        elif query is not None:
+        if query is not None:
             view.s._set_query(query)
             view.s._handle_query()
 
-        self._windows.append(view)
-
-        return view
+        return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
 
     def _new_sutta_study_window_noret(self) -> None:
         self._new_sutta_study_window()
 
-    def _new_sutta_study_window(self) -> SuttaStudyWindow:
-        view = SuttaStudyWindow(self._app_data)
-        self._set_size_and_maximize(view)
-        self._connect_signals(view)
+    def _new_sutta_study_window(self, show = True) -> SuttaStudyWindowInterface:
+        from simsapa.layouts.sutta_study import SuttaStudyWindow
 
-        def _study(queue_id: str, side: str, uid: str):
-            data = {'side': side, 'uid': uid}
-            msg = ApiMessage(queue_id = queue_id,
-                             action = ApiAction.open_in_study_window,
-                             data = json.dumps(obj=data))
-            self._show_sutta_by_uid_in_side(msg)
+        view = None
+        is_new = True
 
-        view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
-        view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        for w in self._windows:
+            if is_sutta_study_window(w) and w.isHidden():
+                is_new = False
+                view = w
 
-        view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
-        view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+        if view is None:
+            view = SuttaStudyWindow(self._app_data)
 
-        view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+            def _study(queue_id: str, side: str, uid: str):
+                data = {'side': side, 'uid': uid}
+                msg = ApiMessage(queue_id = queue_id,
+                                action = ApiAction.open_in_study_window,
+                                data = json.dumps(obj=data))
+                self._show_sutta_by_uid_in_side(msg)
 
-        view.dictionary_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.dictionary_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-        view.dictionary_state.hide_preview.connect(partial(self._preview_window._do_hide))
+            view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
+            view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
-        if self._hotkeys_manager is not None:
-            try:
-                self._hotkeys_manager.setup_window(view)
-            except Exception as e:
-                logger.error(e)
+            view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
+            view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
-        make_active_window(view)
+            view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
 
-        if self._app_data.sutta_to_open:
-            view._show_sutta(self._app_data.sutta_to_open)
-            self._app_data.sutta_to_open = None
-        self._windows.append(view)
+            view.connect_preview_window_signals(self._preview_window)
 
-        return view
+            if self._hotkeys_manager is not None:
+                try:
+                    self._hotkeys_manager.setup_window(view)
+                except Exception as e:
+                    logger.error(e)
+
+            if self._app_data.sutta_to_open:
+                view._show_sutta(self._app_data.sutta_to_open)
+                self._app_data.sutta_to_open = None
+
+        assert(isinstance(view, SuttaStudyWindowInterface))
+
+        return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
+
+    def _init_preview_window(self):
+        logger.profile("AppWindows::_init_preview_window()")
+
+        self._preview_window = PreviewWindow(self._app_data)
+
+        def _words(url: QUrl):
+            self._show_words_by_url(url, show_results_tab=True, include_exact_query=False)
+
+        self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
+        self._preview_window.make_windowed.connect(partial(self._new_windowed_preview))
+        self._preview_window.show_words_by_url.connect(partial(_words))
 
     def _init_sutta_index_window(self):
+        logger.profile("AppWindows::_init_sutta_index_window()")
+        from simsapa.layouts.sutta_index import SuttaIndexWindow
         if self._sutta_index_window is not None:
             return
 
         self._sutta_index_window = SuttaIndexWindow(self._app_data)
 
         self._sutta_index_window.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+        self._sutta_index_window.connect_preview_window_signals(self._preview_window)
 
-        self._sutta_index_window.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        self._sutta_index_window.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-        self._sutta_index_window.hide_preview.connect(partial(self._preview_window._do_hide))
-
+        self._connect_signals_to_view(self._sutta_index_window)
         self._windows.append(self._sutta_index_window)
 
     def _show_sutta_index_window(self):
         if self._sutta_index_window is None:
-            logger.error("No index window")
+            self._init_sutta_index_window()
         else:
             make_active_window(self._sutta_index_window)
+
+    def _init_main_windows(self):
+        # Init one of each of the main windows, so that it only needs to .show()
+        # when the user clicks the menu.
+
+        def _not_has_window(_test_fn: Callable[[AppWindowInterface], bool]) -> bool:
+            a = [w for w in self._windows if _test_fn(w)]
+            return (len(a) == 0)
+
+        if _not_has_window(is_sutta_search_window):
+            self._new_sutta_search_window(query=None, show=False)
+
+        if _not_has_window(is_sutta_study_window):
+            self._new_sutta_study_window(show=False)
+
+        if _not_has_window(is_dictionary_search_window):
+            self._new_dictionary_search_window(query=None, show=False)
+
+        if _not_has_window(is_ebook_reader_window):
+            self._new_ebook_reader_window(show=False)
 
     def _new_dictionary_search_window_noret(self, query: Optional[str] = None) -> None:
         self._new_dictionary_search_window(query)
 
     def _lookup_in_suttas_msg(self, query: str):
         msg = ApiMessage(queue_id = 'all',
-                            action = ApiAction.lookup_in_suttas,
-                            data = query)
+                         action = ApiAction.lookup_in_suttas,
+                         data = query)
         self._lookup_clipboard_in_suttas(msg)
 
-    def _new_dictionary_search_window(self, query: Optional[str] = None) -> DictionarySearchWindow:
+    def _new_dictionary_search_window(self, query: Optional[str] = None, show = True) -> DictionarySearchWindowInterface:
+        from simsapa.layouts.dictionary_search import DictionarySearchWindow
+
         if query is not None and not isinstance(query, str):
             query = None
 
-        view = DictionarySearchWindow(self._app_data)
-        self._set_size_and_maximize(view)
-        self._connect_signals(view)
+        view = None
+        is_new = True
 
-        view.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
-        view.show_words_by_url.connect(partial(self._show_words_url_noret))
+        for w in self._windows:
+            if is_dictionary_search_window(w) and w.isHidden():
+                is_new = False
+                view = w
 
-        view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
-        view.open_words_new_signal.connect(partial(self.open_words_new))
+        if view is None:
+            view = DictionarySearchWindow(self._app_data)
 
-        view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-        view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
+            view.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+            view.show_words_by_url.connect(partial(self._show_words_url_noret))
 
-        view.hide_preview.connect(partial(self._preview_window._do_hide))
+            view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
+            view.open_words_new_signal.connect(partial(self.open_words_new))
+            view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
 
-        if self._hotkeys_manager is not None:
-            try:
-                self._hotkeys_manager.setup_window(view)
-            except Exception as e:
-                logger.error(e)
+            view.connect_preview_window_signals(self._preview_window)
 
-        make_active_window(view)
+            if self._hotkeys_manager is not None:
+                try:
+                    self._hotkeys_manager.setup_window(view)
+                except Exception as e:
+                    logger.error(e)
 
-        if self._app_data.dict_word_to_open:
-            view._show_word(self._app_data.dict_word_to_open)
-            self._app_data.dict_word_to_open = None
-        elif query is not None:
-            logger.info(f"Set and handle query: " + query)
+            if self._app_data.dict_word_to_open:
+                view._show_word(self._app_data.dict_word_to_open)
+                self._app_data.dict_word_to_open = None
+
+        assert(isinstance(view, DictionarySearchWindowInterface))
+
+        if query is not None:
+            logger.info("Set and handle query: " + query)
             view._set_query(query)
             view._handle_query()
             view._handle_exact_query()
 
-        self._windows.append(view)
+        return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
 
-        return view
-
-    def _init_word_scan_popup(self):
-        if self.word_scan_popup is None:
-            self.word_scan_popup = WordScanPopup(self._app_data)
-
-            def _show_sutta_url(url: QUrl):
-                self._show_sutta_by_url_in_search(url)
-
-            def _show_words_url(url: QUrl):
-                if self.word_scan_popup:
-                    self.word_scan_popup.s._show_word_by_url(url)
-
-            self.word_scan_popup.s.show_sutta_by_url.connect(partial(_show_sutta_url))
-            self.word_scan_popup.s.show_words_by_url.connect(partial(_show_words_url))
-
-            self.word_scan_popup.s.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-            self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-            self.word_scan_popup.s.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-
-            self.word_scan_popup.s.hide_preview.connect(partial(self._preview_window._do_hide))
-
-    def _toggle_word_scan_popup(self):
-        if self.word_scan_popup is None:
-            self._init_word_scan_popup()
-            if self.word_scan_popup is not None:
-                self.word_scan_popup.show()
-                self.word_scan_popup.activateWindow()
-
-        else:
-            self.word_scan_popup.close()
-            self.word_scan_popup = None
-
-        is_on = self.word_scan_popup is not None
-        for w in self._windows:
-            if hasattr(w, 'action_Show_Word_Scan_Popup'):
-                w.action_Show_Word_Scan_Popup.setChecked(is_on)
-
-    def _closed_word_scan_popup(self):
-        if self.word_scan_popup is not None:
-            self.word_scan_popup.close()
-            self.word_scan_popup = None
-
-        for w in self._windows:
-            if hasattr(w, 'action_Show_Word_Scan_Popup'):
-                w.action_Show_Word_Scan_Popup.setChecked(False)
-
-    def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindow):
-        query = view.s._get_selection()
-        self._show_word_scan_popup(query = query, show_results_tab = True, include_exact_query = False)
-
-    def _show_word_scan_popup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
-        if not self._app_data.app_settings['double_click_dict_lookup']:
+    def _init_word_lookup(self):
+        if self.word_lookup is not None:
             return
 
-        if self.word_scan_popup is None:
-            self._init_word_scan_popup()
+        logger.profile("AppWindows::_init_word_lookup()")
+        from simsapa.layouts.word_lookup import WordLookup
 
-        if self.word_scan_popup is not None:
-            self.word_scan_popup.show()
-            self.word_scan_popup.activateWindow()
+        self.word_lookup = WordLookup(self._app_data)
+
+        def _show_sutta_url(url: QUrl):
+            self._show_sutta_by_url_in_search(url)
+
+        def _show_words_url(url: QUrl):
+            if self.word_lookup:
+                self.word_lookup.s._show_word_by_url(url)
+
+        self.word_lookup.s.show_sutta_by_url.connect(partial(_show_sutta_url))
+        self.word_lookup.s.show_words_by_url.connect(partial(_show_words_url))
+
+        self.word_lookup.s.connect_preview_window_signals(self._preview_window)
+
+    def _toggle_word_lookup(self):
+        if self.word_lookup is None:
+            self._init_word_lookup()
+
+        assert(self.word_lookup is not None)
+
+        if self.word_lookup.isVisible():
+            self.word_lookup.hide()
+
+        else:
+            self.word_lookup.show()
+            self.word_lookup.raise_()
+            self.word_lookup.activateWindow()
+
+        self._set_all_show_word_lookup_checked()
+
+    def _set_all_show_word_lookup_checked(self):
+        if self.word_lookup is None:
+            is_on = False
+        else:
+            is_on = self.word_lookup.isVisible()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Show_Word_Lookup'):
+                w.action_Show_Word_Lookup.setChecked(is_on)
+
+    def _closed_word_lookup(self):
+        if self.word_lookup is not None:
+            self.word_lookup.close()
+            self.word_lookup = None
+
+        self._set_all_show_word_lookup_checked()
+
+    def _hidden_word_lookup(self):
+        if self.word_lookup is None:
+            return
+
+        if self.word_lookup.isVisible():
+            self.word_lookup.hide()
+
+        self._set_all_show_word_lookup_checked()
+
+    def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindowInterface):
+        query = view.s._get_selection()
+        self._show_word_lookup(query = query, show_results_tab = True, include_exact_query = False)
+
+    def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
+        if not self._app_data.app_settings['double_click_word_lookup']:
+            return
+
+        if self.word_lookup is None:
+            self._init_word_lookup()
+
+        else:
+            self.word_lookup.show()
+            self.word_lookup.raise_()
+            self.word_lookup.activateWindow()
 
             if query is not None:
-                self.word_scan_popup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
+                self.word_lookup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
 
     def _toggle_show_dictionary_sidebar(self, view):
         is_on = view.action_Show_Sidebar.isChecked()
@@ -574,7 +760,7 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if (isinstance(w, SuttaSearchWindow) or isinstance(w, EbookReaderWindow)) \
+            if isinstance(w, SuttaSearchWindowInterface) \
                and hasattr(w, 'action_Show_Related_Suttas'):
                 w.action_Show_Related_Suttas.setChecked(is_on)
 
@@ -584,13 +770,16 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
-                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+            if hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_Translation_and_Pali_Line_by_Line'):
-                w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
-                w.reload_sutta_pages()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_Translation_and_Pali_Line_by_Line.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
 
     def _toggle_show_all_variant_readings(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_All_Variant_Readings.isChecked()
@@ -598,13 +787,16 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_All_Variant_Readings'):
-                w.action_Show_All_Variant_Readings.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+            if hasattr(w, 'action_Show_All_Variant_Readings'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_All_Variant_Readings.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_All_Variant_Readings'):
-                w.action_Show_All_Variant_Readings.setChecked(is_on)
-                w.reload_sutta_pages()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_All_Variant_Readings.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
 
     def _toggle_show_bookmarks(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Show_Bookmarks.isChecked()
@@ -612,32 +804,44 @@ class AppWindows:
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindow) and hasattr(w, 'action_Show_Bookmarks'):
-                w.action_Show_Bookmarks.setChecked(is_on)
-                w.s._get_active_tab().render_sutta_content()
+            if hasattr(w, 'action_Show_Bookmarks'):
+                if is_sutta_study_window(w):
+                    assert(isinstance(w, SuttaStudyWindowInterface))
+                    w.action_Show_Bookmarks.setChecked(is_on)
+                    w.reload_sutta_pages()
 
-            if isinstance(w, SuttaStudyWindow) and hasattr(w, 'action_Show_Bookmarks'):
-                w.action_Show_Bookmarks.setChecked(is_on)
-                w.reload_sutta_pages()
+                elif is_sutta_search_window(w):
+                    assert(isinstance(w, SuttaSearchWindowInterface))
+                    w.action_Show_Bookmarks.setChecked(is_on)
+                    w.s._get_active_tab().render_sutta_content()
+
+    def _toggle_generate_links_graph(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Generate_Links_Graph.isChecked()
+        self._app_data.app_settings['generate_links_graph'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if isinstance(w, SuttaSearchWindowInterface) and hasattr(w, 'action_Generate_Links_Graph'):
+                w.action_Generate_Links_Graph.setChecked(is_on)
+                if is_on:
+                    w.show_network_graph()
+                else:
+                    w.hide_network_graph()
 
     # def _new_dictionaries_manager_window(self):
+    #     from simsapa.layouts.dictionaries_manager import DictionariesManagerWindow
     #     view = DictionariesManagerWindow(self._app_data)
-    #     self._set_size_and_maximize(view)
-    #     self._connect_signals(view)
-    #     view.show()
-    #     self._windows.append(view)
+    #     return self._finalize_view(view)
 
     # def _new_library_browser_window(self):
+    #     from simsapa.layouts.library_browser import LibraryBrowserWindow
     #     view = LibraryBrowserWindow(self._app_data)
-    #     self._set_size_and_maximize(view)
-    #     self._connect_signals(view)
-    #     view.show()
-    #     self._windows.append(view)
+    #     return self._finalize_view(view)
 
     def _reload_bookmarks(self):
         view = None
         for w in self._windows:
-            if isinstance(w, BookmarksBrowserWindow) and w.isVisible():
+            if isinstance(w, BookmarksBrowserWindowInterface) and w.isVisible():
                 view = w
                 break
 
@@ -648,7 +852,8 @@ class AppWindows:
     def _new_bookmarks_browser_window_noret(self) -> None:
         self._new_bookmarks_browser_window()
 
-    def _new_bookmarks_browser_window(self) -> BookmarksBrowserWindow:
+    def _new_bookmarks_browser_window(self) -> AppWindowInterface:
+        from simsapa.layouts.bookmarks_browser import BookmarksBrowserWindow
         view = BookmarksBrowserWindow(self._app_data)
 
         def _show_url(url: QUrl):
@@ -656,11 +861,12 @@ class AppWindows:
 
         view.show_sutta_by_url.connect(partial(_show_url))
 
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view, maximize=False)
 
-    def _new_course_practice_window(self, group: PaliCourseGroup) -> CoursePracticeWindow:
+    def _new_course_practice_window(self, group: PaliCourseGroup) -> AppWindowInterface:
+        from simsapa.layouts.pali_courses_browser import CoursesBrowserWindow
+        from simsapa.layouts.pali_course_practice import CoursePracticeWindow
+
         view = CoursePracticeWindow(self._app_data, group)
 
         def _show_url(url: QUrl):
@@ -668,18 +874,13 @@ class AppWindows:
 
         view.show_sutta_by_url.connect(partial(_show_url))
 
-        view.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-
-        view.hide_preview.connect(partial(self._preview_window._do_hide))
+        view.connect_preview_window_signals(self._preview_window)
 
         for w in self._windows:
             if isinstance(w, CoursesBrowserWindow):
                 view.finished.connect(partial(w._reload_courses_tree))
 
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view, maximize=False)
 
     def _start_challenge_group(self, group: PaliCourseGroup):
         self._new_course_practice_window(group)
@@ -687,84 +888,80 @@ class AppWindows:
     def _new_courses_browser_window_noret(self) -> None:
         self._new_courses_browser_window()
 
-    def _new_courses_browser_window(self) -> CoursesBrowserWindow:
+    def _new_courses_browser_window(self) -> AppWindowInterface:
+        from simsapa.layouts.pali_courses_browser import CoursesBrowserWindow
         view = CoursesBrowserWindow(self._app_data)
 
         view.start_group.connect(partial(self._start_challenge_group))
 
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view, maximize=False)
 
     def _new_memos_browser_window_noret(self) -> None:
         self._new_memos_browser_window()
 
-    def _new_memos_browser_window(self) -> MemosBrowserWindow:
+    def _new_memos_browser_window(self) -> AppWindowInterface:
+        from simsapa.layouts.memos_browser import MemosBrowserWindow
         view = MemosBrowserWindow(self._app_data)
-        self._set_size_and_maximize(view)
-        self._connect_signals(view)
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view)
 
     def _new_links_browser_window_noret(self) -> None:
         self._new_links_browser_window()
 
-    def _new_links_browser_window(self) -> LinksBrowserWindow:
+    def _new_links_browser_window(self) -> AppWindowInterface:
+        from simsapa.layouts.links_browser import LinksBrowserWindow
         view = LinksBrowserWindow(self._app_data)
-        self._set_size_and_maximize(view)
-        self._connect_signals(view)
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view)
 
     def _new_gpt_prompts_window_noret(self, prompt_params: Optional[OpenPromptParams] = None) -> None:
         self._new_gpt_prompts_window(prompt_params)
 
-    def _new_gpt_prompts_window(self, prompt_params: Optional[OpenPromptParams] = None) -> GptPromptsWindow:
+    def _new_gpt_prompts_window(self, prompt_params: Optional[OpenPromptParams] = None) -> AppWindowInterface:
+        from simsapa.layouts.gpt_prompts import GptPromptsWindow
         view = GptPromptsWindow(self._app_data, prompt_params)
-
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+        return self._finalize_view(view)
 
     def _new_ebook_reader_window_noret(self) -> None:
         self._new_ebook_reader_window()
 
-    def _new_ebook_reader_window(self) -> EbookReaderWindow:
-        view = EbookReaderWindow(self._app_data)
+    def _new_ebook_reader_window(self, show = True) -> EbookReaderWindowInterface:
+        from simsapa.layouts.ebook_reader import EbookReaderWindow
 
-        view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
-        view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
+        view = None
+        is_new = True
 
-        view.reading_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
-        view.reading_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
-        view.reading_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.reading_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-        view.reading_state.hide_preview.connect(partial(self._preview_window._do_hide))
-        view.reading_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+        for w in self._windows:
+            if is_ebook_reader_window(w) and w.isHidden():
+                is_new = False
+                view = w
 
-        view.sutta_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
-        view.sutta_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
-        view.sutta_state.link_mouseover.connect(partial(self._preview_window.link_mouseover))
-        view.sutta_state.link_mouseleave.connect(partial(self._preview_window.link_mouseleave))
-        view.sutta_state.hide_preview.connect(partial(self._preview_window._do_hide))
-        view.sutta_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+        if view is None:
+            view = EbookReaderWindow(self._app_data)
 
-        make_active_window(view)
-        self._windows.append(view)
-        return view
+            view.lookup_in_dictionary_signal.connect(partial(self._lookup_msg))
+            view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
+
+            view.reading_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
+            view.reading_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+            view.reading_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+
+            view.reading_state.connect_preview_window_signals(self._preview_window)
+
+            view.sutta_state.open_in_study_window_signal.connect(partial(self._study_msg_to_all))
+            view.sutta_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+            view.sutta_state.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
+
+            view.sutta_state.connect_preview_window_signals(self._preview_window)
+
+        assert(isinstance(view, EbookReaderWindowInterface))
+
+        return self._finalize_view(view, maximize=is_new, is_new=is_new, show=show)
 
     # def _new_document_reader_window(self, file_path=None):
+    #     from simsapa.layouts.document_reader import DocumentReaderWindow
     #     view = DocumentReaderWindow(self._app_data)
-    #     self._set_size_and_maximize(view)
-    #     self._connect_signals(view)
-    #     view.show()
-
     #     if file_path is not None and file_path is not False and len(file_path) > 0:
     #         view.open_doc(file_path)
-
-    #     self._windows.append(view)
+    #     return self._finalize_view(view)
 
     # def _open_selected_document(self, view: QMainWindow):
     #     doc = view.get_selected_document()
@@ -801,6 +998,7 @@ class AppWindows:
             box.setIcon(QMessageBox.Icon.Warning)
         else:
             box.setIcon(QMessageBox.Icon.Information)
+
         box.setText(msg['text'])
         box.setWindowTitle("Message")
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -823,12 +1021,24 @@ class AppWindows:
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.exec()
 
-    def check_updates(self):
+    def show_setting_after_restart(self):
+        self.show_info("This setting takes effect after restarting the application.")
+
+    def _check_updates(self):
         if self._app_data.app_settings.get('notify_about_updates'):
             self.thread_pool.start(self.check_updates_worker)
 
     def _init_check_updates(self, include_no_updates = False):
-        self.check_updates_worker = CheckUpdatesWorker()
+        logger.profile("AppWindows::_init_check_updates()")
+
+        if self._app_data.screen_size is not None:
+            w = self._app_data.screen_size.width()
+            h = self._app_data.screen_size.height()
+            screen_size = f"{w} x {h}"
+        else:
+            screen_size = ''
+
+        self.check_updates_worker = CheckUpdatesWorker(screen_size=screen_size)
         self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
         self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
         self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
@@ -981,7 +1191,7 @@ class AppWindows:
         reply = box.exec()
         if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
             # NOTE: This doesn't work on some OSes, or the user doesn't see the new page, hence the above link.
-            webbrowser.open_new(update_info['visit_url'])
+            webbrowser.open_new(str(update_info['visit_url']))
 
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -1034,6 +1244,7 @@ class AppWindows:
                 select_sanskrit_bundle = True
                 languages.remove('san')
 
+            from simsapa.layouts.download_appdata import DownloadAppdataWindow
             w = DownloadAppdataWindow(ASSETS_DIR,
                                       releases_info,
                                       select_sanskrit_bundle,
@@ -1113,6 +1324,10 @@ class AppWindows:
 
     def _quit_app(self):
         self._close_all_windows()
+
+        if SIMSAPA_API_PORT_PATH.exists():
+            SIMSAPA_API_PORT_PATH.unlink()
+
         self._remove_temp_files()
         self._app.quit()
 
@@ -1167,9 +1382,21 @@ class AppWindows:
             if hasattr(w,'action_Search_Completion'):
                 w.action_Search_Completion.setChecked(checked)
 
-    def _set_double_click_dict_lookup_setting(self, view: AppWindowInterface):
+                if is_sutta_search_window(w) and isinstance(w, SuttaSearchWindowInterface):
+                    if checked:
+                        w.s._init_search_input_completer()
+                    else:
+                        w.s._disable_search_input_completer()
+
+                elif is_dictionary_search_window and isinstance(w, DictionarySearchWindowInterface):
+                    if checked:
+                        w._init_search_input_completer()
+                    else:
+                        w._disable_search_input_completer()
+
+    def _set_double_click_word_lookup_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.isChecked()
-        self._app_data.app_settings['double_click_dict_lookup'] = checked
+        self._app_data.app_settings['double_click_word_lookup'] = checked
         self._app_data._save_app_settings()
 
         for w in self._windows:
@@ -1185,23 +1412,56 @@ class AppWindows:
             if hasattr(w, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
                 w.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
 
-    def _set_completion_cache(self, values: CompletionCache):
-        logger.info(f"_set_completion_cache(): sutta_titles: {len(values['sutta_titles'])}, dict_words: {len(values['dict_words'])}")
-        self._app_data.completion_cache = values
-
     def _first_window_on_startup_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
+        window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
+        option_idx = 0
+        for idx, i in enumerate(WindowNameToType.values()):
+            if i == window_type:
+                option_idx = idx
+                break
+
         item, ok = QInputDialog.getItem(view,
                                         "Select Window",
-                                        "Select First Window to Open on Startup:",
+                                        "Select the first window to open when the app is stated:",
                                         options,
-                                        0,
+                                        option_idx,
                                         False)
         if ok and item:
             self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
             self._app_data._save_app_settings()
 
+    def _select_track_click_window_dialog(self, view: AppWindowInterface):
+        options = WindowNameToType.keys()
+
+        window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+        option_idx = 0
+        for idx, i in enumerate(WindowNameToType.values()):
+            if i == window_type:
+                option_idx = idx
+                break
+
+        item, ok = QInputDialog.getItem(view,
+                                        "Select Window",
+                                        "Select the window to open when clicking on the tray icon:",
+                                        options,
+                                        option_idx,
+                                        False)
+        if ok and item:
+            self._app_data.app_settings['tray_click_opens_window'] = WindowNameToType[item]
+            self._app_data._save_app_settings()
+
+    def _toggle_keep_running(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Keep_Running_in_the_Background.isChecked()
+        self._app_data.app_settings['keep_running_in_background'] = is_on
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Keep_Running_in_the_Background'):
+                w.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+        self.show_setting_after_restart()
 
     def _focus_search_input(self, view: AppWindowInterface):
         if hasattr(view, 'search_input'):
@@ -1209,31 +1469,70 @@ class AppWindows:
         elif hasattr(view, '_focus_search_input'):
             view._focus_search_input()
 
-    def _connect_signals(self, view: AppWindowInterface):
-        # view.action_Open \
-        #     .triggered.connect(partial(self._open_file_dialog, view))
+    def _finalize_view(self, view, maximize = True, is_new = True, show = True):
+        if maximize or is_new:
+            self._set_size_and_maximize(view)
 
-        view.action_Re_index_database \
-            .triggered.connect(partial(self._reindex_database_dialog, view))
-        view.action_Re_download_database \
-            .triggered.connect(partial(self._redownload_database_dialog, view))
+        if is_new:
+            self._connect_signals_to_view(view)
+            self._windows.append(view)
+
+        if show:
+            make_active_window(view)
+
+        return view
+
+    def _connect_signals_to_view(self, view):
+        # if hasattr(view, 'action_Open'):
+        #     view.action_Open \
+        #         .triggered.connect(partial(self._open_file_dialog, view))
+
+        if hasattr(view, 'action_Keep_Running_in_the_Background'):
+            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
+            view.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+            view.action_Keep_Running_in_the_Background \
+                .triggered.connect(partial(self._toggle_keep_running, view))
+
+        if hasattr(view, 'action_Tray_Click_Opens_Window'):
+            view.action_Tray_Click_Opens_Window \
+                .triggered.connect(partial(self._select_track_click_window_dialog, view))
+
+        if hasattr(view, 'action_Re_index_database'):
+            view.action_Re_index_database \
+                .triggered.connect(partial(self._reindex_database_dialog, view))
+
+        if hasattr(view, 'action_Re_download_database'):
+            view.action_Re_download_database \
+                .triggered.connect(partial(self._redownload_database_dialog, view))
 
         if hasattr(view, 'action_Focus_Search_Input'):
             view.action_Focus_Search_Input \
                 .triggered.connect(partial(self._focus_search_input, view))
 
-        view.action_Quit \
-            .triggered.connect(partial(self._quit_app))
-        view.action_Sutta_Search \
-            .triggered.connect(partial(self._new_sutta_search_window_noret))
-        view.action_Sutta_Study \
-            .triggered.connect(partial(self._new_sutta_study_window_noret))
-        view.action_Dictionary_Search \
-            .triggered.connect(partial(self._new_dictionary_search_window_noret))
-        view.action_Memos \
-            .triggered.connect(partial(self._new_memos_browser_window_noret))
-        view.action_Links \
-            .triggered.connect(partial(self._new_links_browser_window_noret))
+        if hasattr(view, 'action_Quit'):
+            view.action_Quit \
+                .triggered.connect(partial(self._quit_app))
+
+        if hasattr(view, 'action_Sutta_Search'):
+            view.action_Sutta_Search \
+                .triggered.connect(partial(self._new_sutta_search_window_noret))
+
+        if hasattr(view, 'action_Sutta_Study'):
+            view.action_Sutta_Study \
+                .triggered.connect(partial(self._new_sutta_study_window_noret))
+
+        if hasattr(view, 'action_Dictionary_Search'):
+            view.action_Dictionary_Search \
+                .triggered.connect(partial(self._new_dictionary_search_window_noret))
+
+        if hasattr(view, 'action_Memos'):
+            view.action_Memos \
+                .triggered.connect(partial(self._new_memos_browser_window_noret))
+
+        if hasattr(view, 'action_Links'):
+            view.action_Links \
+                .triggered.connect(partial(self._new_links_browser_window_noret))
 
         if hasattr(view, 'action_Sutta_Index'):
             view.action_Sutta_Index \
@@ -1255,7 +1554,7 @@ class AppWindows:
             view.action_Ebook_Reader \
                 .triggered.connect(partial(self._new_ebook_reader_window_noret))
 
-        if isinstance(view, DictionarySearchWindow):
+        if isinstance(view, DictionarySearchWindowInterface):
             if hasattr(view, 'action_Show_Sidebar'):
                 is_on = self._app_data.app_settings.get('show_dictionary_sidebar', True)
                 view.action_Show_Sidebar.setChecked(is_on)
@@ -1263,13 +1562,8 @@ class AppWindows:
                 view.action_Show_Sidebar \
                     .triggered.connect(partial(self._toggle_show_dictionary_sidebar, view))
 
-        if isinstance(view, SuttaSearchWindow) or isinstance(view, SuttaStudyWindow):
-            if hasattr(view, 'action_Show_Sidebar'):
-                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
-                view.action_Show_Sidebar.setChecked(is_on)
-
-                view.action_Show_Sidebar \
-                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
+        if isinstance(view, EbookReaderWindowInterface) \
+           or isinstance(view, SuttaSearchWindowInterface):
 
             if hasattr(view, 'action_Show_Related_Suttas'):
                 is_on = self._app_data.app_settings.get('show_related_suttas', True)
@@ -1277,6 +1571,14 @@ class AppWindows:
 
                 view.action_Show_Related_Suttas \
                     .triggered.connect(partial(self._toggle_show_related_suttas, view))
+
+        if isinstance(view, SuttaSearchWindowInterface):
+            if hasattr(view, 'action_Show_Sidebar'):
+                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
+                view.action_Show_Sidebar.setChecked(is_on)
+
+                view.action_Show_Sidebar \
+                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
 
             if hasattr(view, 'action_Show_Translation_and_Pali_Line_by_Line'):
                 is_on = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
@@ -1299,43 +1601,55 @@ class AppWindows:
                 view.action_Show_Bookmarks \
                     .triggered.connect(partial(self._toggle_show_bookmarks, view))
 
-        if isinstance(view, EbookReaderWindow):
-            if hasattr(view, 'action_Show_Related_Suttas'):
-                is_on = self._app_data.app_settings.get('show_related_suttas', True)
-                view.action_Show_Related_Suttas.setChecked(is_on)
+            if hasattr(view, 'action_Generate_Links_Graph'):
+                is_on = self._app_data.app_settings.get('generate_links_graph', False)
+                view.action_Generate_Links_Graph.setChecked(is_on)
 
-                view.action_Show_Related_Suttas \
-                    .triggered.connect(partial(self._toggle_show_related_suttas, view))
+                view.action_Generate_Links_Graph \
+                    .triggered.connect(partial(self._toggle_generate_links_graph, view))
 
-        if hasattr(view, 'action_Show_Word_Scan_Popup'):
-            view.action_Show_Word_Scan_Popup \
-                .triggered.connect(partial(self._toggle_word_scan_popup))
-            is_on = self.word_scan_popup is not None
-            view.action_Show_Word_Scan_Popup.setChecked(is_on)
+        if hasattr(view, 'action_Show_Word_Lookup'):
+            view.action_Show_Word_Lookup \
+                .triggered.connect(partial(self._toggle_word_lookup))
+            if self.word_lookup is None:
+                is_on = False
+            else:
+                is_on = self.word_lookup.isVisible()
 
-        view.action_First_Window_on_Startup \
-            .triggered.connect(partial(self._first_window_on_startup_dialog, view))
+            view.action_Show_Word_Lookup.setChecked(is_on)
+
+        if hasattr(view, 'action_First_Window_on_Startup'):
+            view.action_First_Window_on_Startup \
+                .triggered.connect(partial(self._first_window_on_startup_dialog, view))
 
         notify = self._app_data.app_settings.get('notify_about_updates', True)
-        view.action_Notify_About_Updates.setChecked(notify)
-        view.action_Notify_About_Updates \
-            .triggered.connect(partial(self._set_notify_setting, view))
 
-        view.action_Website \
-            .triggered.connect(partial(open_simsapa_website))
+        if hasattr(view, 'action_Notify_About_Updates'):
+            view.action_Notify_About_Updates.setChecked(notify)
+            view.action_Notify_About_Updates \
+                .triggered.connect(partial(self._set_notify_setting, view))
 
-        view.action_About \
-            .triggered.connect(partial(show_about, view))
+        if hasattr(view, 'action_Website'):
+            view.action_Website \
+                .triggered.connect(partial(open_simsapa_website))
 
-        show_toolbar = self._app_data.app_settings.get('show_toolbar', True)
-        view.action_Show_Toolbar.setChecked(show_toolbar)
-        view.action_Show_Toolbar \
-            .triggered.connect(partial(self._set_show_toolbar_setting, view))
+        if hasattr(view, 'action_About'):
+            view.action_About \
+                .triggered.connect(partial(show_about, view))
+
+        show_toolbar = self._app_data.app_settings.get('show_toolbar', False)
+
+        if hasattr(view, 'action_Show_Toolbar'):
+            view.action_Show_Toolbar.setChecked(show_toolbar)
+            view.action_Show_Toolbar \
+                .triggered.connect(partial(self._set_show_toolbar_setting, view))
 
         link_preview = self._app_data.app_settings.get('link_preview', True)
-        view.action_Link_Preview.setChecked(link_preview)
-        view.action_Link_Preview \
-            .triggered.connect(partial(self._set_link_preview_setting, view))
+
+        if hasattr(view, 'action_Link_Preview'):
+            view.action_Link_Preview.setChecked(link_preview)
+            view.action_Link_Preview \
+                .triggered.connect(partial(self._set_link_preview_setting, view))
 
         if hasattr(view, 'toolBar') and not show_toolbar:
             view.toolBar.setVisible(False)
@@ -1356,9 +1670,9 @@ class AppWindows:
 
         if hasattr(view, 'action_Double_Click_on_a_Word_for_Dictionary_Lookup'):
             view.action_Double_Click_on_a_Word_for_Dictionary_Lookup \
-                .triggered.connect(partial(self._set_double_click_dict_lookup_setting, view))
+                .triggered.connect(partial(self._set_double_click_word_lookup_setting, view))
 
-            checked = self._app_data.app_settings.get('double_click_dict_lookup', True)
+            checked = self._app_data.app_settings.get('double_click_word_lookup', True)
             view.action_Double_Click_on_a_Word_for_Dictionary_Lookup.setChecked(checked)
 
         if hasattr(view, 'action_Clipboard_Monitoring_for_Dictionary_Lookup'):
@@ -1372,125 +1686,70 @@ class AppWindows:
             view.action_Check_for_Updates \
                 .triggered.connect(partial(self._handle_check_updates))
 
-        s = os.getenv('ENABLE_WIP_FEATURES')
-        if s is not None and s.lower() == 'true':
-            logger.info("no wip features")
-            # view.action_Dictionaries_Manager \
-            #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+        # s = os.getenv('ENABLE_WIP_FEATURES')
+        # if s is not None and s.lower() == 'true':
+        #     logger.info("no wip features")
+        #     # view.action_Dictionaries_Manager \
+        #     #     .triggered.connect(partial(self._new_dictionaries_manager_window))
+        #     #
+        #     # view.action_Document_Reader \
+        #     #     .triggered.connect(partial(self._new_document_reader_window))
+        #     # view.action_Library \
+        #     #     .triggered.connect(partial(self._new_library_browser_window))
+        #     #
+        #     # try:
+        #     #     view.action_Open_Selected \
+        #     #         .triggered.connect(partial(self._open_selected_document, view))
+        #     # except Exception as e:
+        #     #     logger.error(e)
+        #     #
+        # else:
 
-            # view.action_Document_Reader \
-            #     .triggered.connect(partial(self._new_document_reader_window))
-            # view.action_Library \
-            #     .triggered.connect(partial(self._new_library_browser_window))
+        if hasattr(view, 'action_Pali_Courses'):
+            view.action_Pali_Courses.setVisible(False)
 
-            # try:
-            #     view.action_Open_Selected \
-            #         .triggered.connect(partial(self._open_selected_document, view))
-            # except Exception as e:
-            #     logger.error(e)
+        if hasattr(view, 'action_Links'):
+            view.action_Links.setVisible(False)
 
-        else:
+        if hasattr(view, 'action_Open'):
             view.action_Open.setVisible(False)
+
+        if hasattr(view, 'action_Dictionaries_Manager'):
             view.action_Dictionaries_Manager.setVisible(False)
+
+        if hasattr(view, 'action_Document_Reader'):
             view.action_Document_Reader.setVisible(False)
+
+        if hasattr(view, 'action_Library'):
             view.action_Library.setVisible(False)
 
+def make_active_window(view: QMainWindow):
+    view.show() # bring window to top on OSX
+    view.raise_() # bring window from minimized state on OSX
+    view.activateWindow() # bring window to front/unminimize on Windows
 
-class UpdatesWorkerSignals(QObject):
-    have_app_update = pyqtSignal(dict)
-    have_db_update = pyqtSignal(dict)
-    local_db_obsolete = pyqtSignal(dict)
-    no_updates = pyqtSignal()
+def show_work_in_progress():
+    d = QMessageBox()
+    d.setWindowTitle("Work in Progress")
+    d.setText("Work in Progress")
+    d.exec()
 
-class CheckUpdatesWorker(QRunnable):
-    signals: UpdatesWorkerSignals
+def is_sutta_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
+         and isinstance(w, SuttaSearchWindowInterface))
+    return r
 
-    def __init__(self):
-        super().__init__()
-        self.signals = UpdatesWorkerSignals()
+def is_sutta_study_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
+         and isinstance(w, SuttaStudyWindowInterface))
+    return r
 
-    @pyqtSlot()
-    def run(self):
-        # Test if connection to is working.
-        try:
-            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
-        except Exception as e:
-            logger.error("No Connection: Update info unavailable: %s" % e)
-            return None
+def is_dictionary_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
+         and isinstance(w, DictionarySearchWindowInterface))
+    return r
 
-        try:
-            info = get_releases_info()
-
-            update_info = is_local_db_obsolete()
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.local_db_obsolete.emit(value)
-                return
-
-            update_info = has_update(info, EntryType.Application)
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.have_app_update.emit(value)
-                return
-
-            update_info = has_update(info, EntryType.Assets)
-            if update_info is not None:
-                value = {"update_info": update_info, "releases_info": info}
-                self.signals.have_db_update.emit(value)
-                return
-
-            self.signals.no_updates.emit()
-
-        except Exception as e:
-            logger.error(e)
-
-class CompletionCacheWorkerSignals(QObject):
-    finished = pyqtSignal(dict)
-
-class CompletionCacheWorker(QRunnable):
-    signals: CompletionCacheWorkerSignals
-
-    def __init__(self):
-        super().__init__()
-        self.signals = CompletionCacheWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            db_eng, db_conn, db_session = get_db_engine_connection_session()
-
-            res = []
-            r = db_session.query(Am.Sutta.title).all()
-            res.extend(r)
-
-            r = db_session.query(Um.Sutta.title).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            titles = list(set(b))
-
-            res = []
-            r = db_session.query(Am.DictWord.word).all()
-            res.extend(r)
-
-            r = db_session.query(Um.DictWord.word).all()
-            res.extend(r)
-
-            a: List[str] = list(map(lambda x: x[0] or 'none', res))
-            b = list(map(lambda x: re.sub(r' *\d+$', '', x.lower()), a))
-            b.sort()
-            words = list(set(b))
-
-            db_conn.close()
-            db_session.close()
-            db_eng.dispose()
-
-            self.signals.finished.emit(CompletionCache(
-                sutta_titles=titles,
-                dict_words=words,
-            ))
-
-        except Exception as e:
-            logger.error(e)
+def is_ebook_reader_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
+         and isinstance(w, EbookReaderWindowInterface))
+    return r

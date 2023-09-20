@@ -171,6 +171,8 @@
     </property>
     <addaction name="action_Open"/>
     <addaction name="action_Close_Window"/>
+    <addaction name="action_Keep_Running_in_the_Background"/>
+    <addaction name="action_Tray_Click_Opens_Window"/>
     <addaction name="action_Re_index_database"/>
     <addaction name="action_Re_download_database"/>
     <addaction name="separator"/>
@@ -192,7 +194,7 @@
     <addaction name="action_Sutta_Study"/>
     <addaction name="action_Sutta_Index"/>
     <addaction name="action_Dictionary_Search"/>
-    <addaction name="action_Show_Word_Scan_Popup"/>
+    <addaction name="action_Show_Word_Lookup"/>
     <addaction name="action_Bookmarks"/>
     <addaction name="action_Pali_Courses"/>
     <addaction name="action_Dictionaries_Manager"/>
@@ -464,12 +466,12 @@
     <string>Ctrl+L</string>
    </property>
   </action>
-  <action name="action_Show_Word_Scan_Popup">
+  <action name="action_Show_Word_Lookup">
    <property name="checkable">
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Show Word Scan Popup</string>
+    <string>Show Word Lookup</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+F6</string>
@@ -543,6 +545,22 @@
    </property>
    <property name="text">
     <string>Sutta Index</string>
+   </property>
+  </action>
+  <action name="action_Keep_Running_in_the_Background">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Keep Running in the Background</string>
+   </property>
+  </action>
+  <action name="action_Tray_Click_Opens_Window">
+   <property name="text">
+    <string>Tray Click Opens Window...</string>
    </property>
   </action>
  </widget>

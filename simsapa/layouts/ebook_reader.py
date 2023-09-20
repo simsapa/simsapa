@@ -1,4 +1,4 @@
-import re
+import re, json
 import urllib.parse
 from pathlib import Path
 from functools import partial
@@ -16,14 +16,17 @@ from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QObje
 from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import QAbstractItemView, QFileDialog, QHBoxLayout, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTabWidget, QTreeView, QVBoxLayout, QWidget
 
-from simsapa import EBOOK_EXTRA_CSS, EBOOK_UNZIP_DIR, logger
+from simsapa import EBOOK_EXTRA_CSS, EBOOK_UNZIP_DIR, logger, APP_QUEUES, ApiMessage, ApiAction
 # from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_helpers import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 
-from ..app.types import AppData, QExpanding, QMinimum, QueryType, SuttaSearchWindowInterface, sutta_quote_from_url
+from simsapa.app.types import QueryType
+from simsapa.app.app_data import AppData
+
+from simsapa.layouts.gui_types import EbookReaderWindowInterface, QExpanding, QMinimum, sutta_quote_from_url
 
 class ChapterItem(QStandardItem):
     title: str
@@ -40,7 +43,7 @@ class ChapterItem(QStandardItem):
         self.setEditable(False)
         self.setText(self.title)
 
-class EbookReaderWindow(SuttaSearchWindowInterface):
+class EbookReaderWindow(EbookReaderWindowInterface):
 
     lookup_in_dictionary_signal = pyqtSignal(str)
     lookup_in_new_sutta_window_signal = pyqtSignal(str)
@@ -50,6 +53,12 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
         logger.info("EbookReaderWindow()")
 
         self._app_data: AppData = app_data
+
+        self.queue_id = 'window_' + str(len(APP_QUEUES))
+        # self.queue_id is needed for the close event, but not using the queues
+        # in this window at the moment.
+        #
+        # APP_QUEUES[self.queue_id] = queue.Queue()
 
         self.ebook_unzip_dir: Optional[Path] = None
         self.ebook_opf_dir: Optional[Path] = None
@@ -66,7 +75,7 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
         self._update_vert_splitter_widths()
 
     def _setup_ui(self):
-        self.setWindowTitle("Ebook Reader")
+        self.setWindowTitle("Ebook Reader - Simsapa")
         self.resize(1068, 625)
 
         self._central_widget = QtWidgets.QWidget(self)
@@ -542,6 +551,15 @@ class EbookReaderWindow(SuttaSearchWindowInterface):
     def closeEvent(self, event: QCloseEvent):
         if self.ebook_unzip_dir is not None and self.ebook_unzip_dir.exists():
             shutil.rmtree(self.ebook_unzip_dir)
+
+        if self.queue_id in APP_QUEUES.keys():
+            del APP_QUEUES[self.queue_id]
+
+        msg = ApiMessage(queue_id = 'app_windows',
+                         action = ApiAction.remove_closed_window_from_list,
+                         data = self.queue_id)
+        s = json.dumps(msg)
+        APP_QUEUES['app_windows'].put_nowait(s)
 
         event.accept()
 

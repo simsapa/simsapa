@@ -5,12 +5,15 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
-from simsapa.layouts.dictionary_queries import DictionaryQueries
-from simsapa.layouts.reader_web import ReaderWebEnginePage
-from ..app.types import AppData, AppWindowInterface, UDictWord
+from simsapa.app.search.dictionary_queries import DictionaryQueries
+from simsapa.app.types import UDictWord
+from simsapa.app.app_data import AppData
 
-from ..app.db import appdata_models as Am
-from ..app.db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
+
+from simsapa.layouts.gui_types import AppWindowInterface
+from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 class WordsWindow(AppWindowInterface):
     def __init__(self, app_data: AppData, word_ids: List[tuple[str, int]], parent=None) -> None:
@@ -24,7 +27,7 @@ class WordsWindow(AppWindowInterface):
             self.close()
             return
 
-        self.queries = DictionaryQueries(self._app_data)
+        self.queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
         self.words = words
         self.setWindowTitle(str(words[0].word))
         self.resize(800, 800)

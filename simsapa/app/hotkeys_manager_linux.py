@@ -1,4 +1,5 @@
-from PyQt6.QtCore import QAbstractNativeEventFilter, QAbstractEventDispatcher
+from PyQt6.QtCore import QAbstractNativeEventFilter
+# from PyQt6.QtCore import QAbstractEventDispatcher
 from PyQt6.QtWidgets import QMainWindow
 
 # from pyqtkeybind.x11 import X11KeyBinder
@@ -37,7 +38,7 @@ class HotkeysManagerLinux(HotkeysManagerInterface):
         self.win_ids.append(win_id)
 
         # try:
-        #     self.keybinder.register_hotkey(win_id, "ctrl+shift+f6", self.show_word_scan_popup)
+        #     self.keybinder.register_hotkey(win_id, "ctrl+shift+f6", self.show_word_lookup)
         #     self.keybinder.register_hotkey(win_id, "ctrl+shift+s", self.lookup_clipboard_in_suttas)
         #     self.keybinder.register_hotkey(win_id, "ctrl+shift+g", self.lookup_clipboard_in_dictionary)
         # except Exception as e:

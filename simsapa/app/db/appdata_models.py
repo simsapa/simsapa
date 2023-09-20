@@ -88,6 +88,7 @@ class Sutta(Base):
 
     # --- Content props ---
     title:             Mapped[Optional[str]] # Brahmajāla: The Root of All Things
+    title_ascii:       Mapped[Optional[str]] # Brahmajala
     title_pali:        Mapped[Optional[str]] # Brahmajāla
     title_trans:       Mapped[Optional[str]] # The Root of All Things
     description:       Mapped[Optional[str]]
@@ -177,6 +178,8 @@ class DictWord(Base):
 
     uid:             Mapped[str] = mapped_column(unique=True)
     word:            Mapped[str]
+    word_ascii:      Mapped[str]
+    language:        Mapped[Optional[str]] # en / ru / hu
     source_uid:      Mapped[Optional[str]] # pts, dpd, mw
     word_nom_sg:     Mapped[Optional[str]]
     inflections:     Mapped[Optional[str]]

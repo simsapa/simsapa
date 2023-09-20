@@ -7,15 +7,14 @@ from typing import List, Optional, Tuple
 from PyQt6.QtCore import QUrl
 
 from sqlalchemy.orm.session import Session
-from bs4 import BeautifulSoup
-from bs4.element import Tag, ResultSet
 from ebooklib import epub
-from simsapa.app.db.search import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
+from simsapa.app.lookup import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
 
 from simsapa.layouts.html_content import html_page
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, normalize_sutta_ref
 from simsapa.app.helpers import strip_html
-from simsapa.app.types import AppData, QueryType, SuttaQuote, USutta
+from simsapa.app.types import QueryType, SuttaQuote, USutta
+from simsapa.app.app_data import AppData
 from simsapa.app.db import appdata_models as Am
 # from simsapa.app.db import userdata_models as Um
 
@@ -246,13 +245,13 @@ def render_sutta_content(app_data: AppData, sutta: USutta, sutta_quote: Optional
 
     css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
 
-    js_extra = f"const SUTTA_UID = '{sutta.uid}';";
+    js_extra = f"const SUTTA_UID = '{sutta.uid}';"
 
     is_on = app_data.app_settings.get('show_bookmarks', True)
     if is_on:
-        js_extra += "const SHOW_BOOKMARKS = true;";
+        js_extra += "const SHOW_BOOKMARKS = true;"
     else:
-        js_extra += "const SHOW_BOOKMARKS = false;";
+        js_extra += "const SHOW_BOOKMARKS = false;"
 
     if sutta_quote:
         text = sutta_quote['quote'].replace('"', '\\"')
@@ -354,6 +353,9 @@ def add_href_sutta_links_in_text(db_session: Session,
     return linked_content
 
 def add_sutta_links(db_session: Session, html_content: str) -> str:
+    from bs4 import BeautifulSoup
+    from bs4.element import Tag, ResultSet
+
     # Interferes with sutta ref linking if &nbsp; is used between the nikaya and section numbers.
     html_content = html_content \
         .replace("&nbsp;", " ") \
