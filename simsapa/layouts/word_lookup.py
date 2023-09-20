@@ -321,10 +321,12 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if text is not None:
             self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
 
-    def lookup_in_dictionary(self, query: str, show_results_tab = False, __include_exact_query__ = True):
+    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
         self._set_query(query)
         self._handle_query()
 
+        # Avoids unused variable warning.
+        logger.info(f"include_exact_query = {include_exact_query}")
         # if include_exact_query:
         #     self._handle_exact_query()
 

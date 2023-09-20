@@ -225,7 +225,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         self.sutta_tab = SuttaTabWidget(self._app_data, "Sutta", 0, self._new_webengine())
         self.sutta_tab.setProperty('style_class', 'sutta_tab')
-        self.sutta_tab.layout().setContentsMargins(0, 0, 0, 0)
+        layout = self.sutta_tab.layout()
+        if layout is not None:
+            layout.setContentsMargins(0, 0, 0, 0)
 
         self.sutta_tabs.addTab(self.sutta_tab, "Sutta")
 

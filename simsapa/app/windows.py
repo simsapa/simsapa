@@ -638,7 +638,7 @@ class AppWindows:
 
             view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
             view.open_words_new_signal.connect(partial(self.open_words_new))
-            view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
+            view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=False, include_exact_query=False))
 
             view.connect_preview_window_signals(self._preview_window)
 
@@ -727,7 +727,7 @@ class AppWindows:
 
     def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindowInterface):
         query = view.s._get_selection()
-        self._show_word_lookup(query = query, show_results_tab = True, include_exact_query = False)
+        self._show_word_lookup(query = query, show_results_tab = False, include_exact_query = False)
 
     def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
         if not self._app_data.app_settings['double_click_word_lookup']:
