@@ -142,7 +142,7 @@ DESKTOP_FILE_PATH: Optional[Path] = None
 
 if IS_LINUX:
     # ~/.local/share/applications/simsapa.desktop
-    DESKTOP_FILE_PATH = SIMSAPA_DIR.parent.joinpath("applications").joinpath("simsapa.desktop")
+    DESKTOP_FILE_PATH = USER_HOME_DIR.joinpath(".local/share/applications/simsapa.desktop")
 
 b =  pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("releases_fallback.json")))
 if b is None:
