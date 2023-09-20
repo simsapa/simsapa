@@ -15,8 +15,17 @@ from simsapa import APP_DB_PATH, USER_DB_PATH, logger, DbSchemaName
 def get_db_version(db_path: Path) -> Optional[str]:
     con = sqlite3.connect(db_path)
     cur = con.cursor()
-    res = cur.execute("SELECT value FROM app_settings WHERE key = 'db_version';")
+
+    res = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings';")
     val = res.fetchone()
+    # ('app_settings',)
+    # or None
+    if val is None:
+        return None
+
+    res = cur.execute("SELECT value FROM app_settings WHERE key='db_version';")
+    val = res.fetchone()
+
     return val[0]
 
 def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Engine, Connection, Session]:
