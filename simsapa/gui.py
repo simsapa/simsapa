@@ -13,7 +13,7 @@ from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_session import get_db_version
 from simsapa.app.helpers import find_available_port
-from simsapa.app.dir_helpers import create_app_dirs, check_delete_files, ensure_empty_graphs_cache
+from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa.app.types import QueryType
 from simsapa.app.app_data import AppData
 from simsapa.app.windows import AppWindows
@@ -135,6 +135,16 @@ def start(port: Optional[int] = None,
 
         except Exception as e:
             logger.error(f"Can't read file or port not an integer: {e}")
+
+    # Linux: Check if the .desktop file should be created or updated. When a
+    # user updates the .AppImage, the file name contains a different version
+    # number.
+
+    create_or_update_linux_desktop_icon_file()
+
+    # Before opening a new window, clear the folder where graph HTML files are
+    # written. The graph HTML files are identified by the filename containing
+    # the windows's queue_id.
 
     ensure_empty_graphs_cache()
 
