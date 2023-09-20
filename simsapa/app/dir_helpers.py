@@ -76,8 +76,9 @@ Name=Simsapa
 Icon=simsapa
 Terminal=false
 Type=Application
+Path=%s
 Exec=env QTWEBENGINE_DISABLE_SANDBOX=1 %s
-    """ % appimage_path
+    """ % (appimage_path.parent, appimage_path)
 
     desktop_entry = s.strip()
 
