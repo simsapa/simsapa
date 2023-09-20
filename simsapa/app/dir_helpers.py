@@ -57,14 +57,14 @@ def create_or_update_linux_desktop_icon_file():
         if str(appimage_path) in s:
             return
 
-    # user_icon_path = USER_HOME_DIR.joinpath(".local/share/icons/simsapa.png")
-    #
-    # if not user_icon_path.exists():
-    #     if not user_icon_path.parent.exists():
-    #         user_icon_path.parent.mkdir(parents=True)
-    #
-    #     asset_icon_path = ICONS_DIR.joinpath("simsapa.png")
-    #     shutil.copy(str(asset_icon_path), user_icon_path)
+    user_icon_path = USER_HOME_DIR.joinpath(".local/share/icons/simsapa.png")
+
+    if not user_icon_path.exists():
+        if not user_icon_path.parent.exists():
+            user_icon_path.parent.mkdir(parents=True)
+
+        asset_icon_path = ICONS_DIR.joinpath("appicons/simsapa.png")
+        shutil.copy(str(asset_icon_path), user_icon_path)
 
     if not DESKTOP_FILE_PATH.parent.exists():
         DESKTOP_FILE_PATH.parent.mkdir(parents=True)
