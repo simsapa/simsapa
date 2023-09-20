@@ -333,8 +333,10 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
         # double-click is used.
         self.suttas_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
-        self.suttas_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.suttas_table.horizontalHeader().setStretchLastSection(True)
+        horiz_header = self.suttas_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.suttas_table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
@@ -373,6 +375,8 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
 
     def _add_nodes_from_names(self, model: QStandardItemModel, bookmark_names: List[str]):
         root_node = model.invisibleRootItem()
+        if root_node is None:
+            return
 
         bookmark_names.sort()
 
@@ -530,7 +534,10 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
         self.suttas_table.setModel(self.suttas_model)
 
     def _handle_sutta_open(self, val: QModelIndex):
-        data = val.model().data(val, Qt.ItemDataRole.UserRole)
+        model = val.model()
+        if model is None:
+            return
+        data = model.data(val, Qt.ItemDataRole.UserRole)
         uid = data[val.row()][SuttaModelColToIdx['uid']]
         url = QUrl(f"ssp://{QueryType.suttas.value}/{uid}")
 

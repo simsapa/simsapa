@@ -76,7 +76,7 @@ class HasSearchBar(SearchBarInterface):
 
             if enable_info_button:
                 self.search_extras.addItem(QSpacerItem(5, 0, QSizeMinimum, QSizeMinimum))
-                setup_info_button(self.search_extras, self)
+                setup_info_button(self.search_extras)
 
             # self._setup_pali_buttons() # TODO: reimplement as hover window
 

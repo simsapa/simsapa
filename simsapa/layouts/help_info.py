@@ -1,12 +1,15 @@
-from PyQt6.QtCore import QUrl
+import subprocess
+
+from PyQt6.QtCore import QUrl, Qt
 from functools import partial
 from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
-from PyQt6.QtWidgets import QMessageBox, QPushButton
-from simsapa import SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
+from PyQt6.QtWidgets import QFrame, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from simsapa import IS_SWAY, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
 
 from simsapa.layouts.gui_helpers import get_app_version, get_sys_version
+from simsapa.layouts.gui_types import QExpanding
 
-def setup_info_button(layout, parent=None):
+def setup_info_button(layout):
     icon = QIcon()
     icon.addPixmap(QPixmap(":/info"))
     btn = QPushButton()
@@ -16,94 +19,101 @@ def setup_info_button(layout, parent=None):
 
     layout.addWidget(btn)
 
-    btn.clicked.connect(partial(show_search_info, parent))
+    btn.clicked.connect(partial(show_search_info))
 
-def show_search_info(parent=None):
-    box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Information)
-    msg = """
-<h3>Search Modes in Brief</h3>
-
+SEARCH_INFO_MSG = """
+<h2 id="search-modes-in-brief">Search Modes in Brief</h2>
+<p>See also: <a href="https://simsapa.github.io/features/search-queries/">Search Queries (simsapa.github.io)</a><p>
 <p>Sutta references are matched first. Typing 'mn8', 'sn 56.11', 'iti92' will list those suttas.</p>
-
-<p><b>Fulltext Match:</b> it searches the content for keywords using the query expressions, non-accented letters matching accented ones. (I.e. it makes a query in the tantivy fulltext index and assigns scores to the results.)</p>
-
-<p>Fulltext search is faster and more flexible than the Exact Match (SQL) search, but yields many partial matches.</p>
-
+<p><strong>Fulltext Match:</strong> it searches the content for keywords using the query expressions, non-accented letters matching accented ones. (I.e. it makes a query in the tantivy fulltext index and assigns scores to the results.)</p>
 <p>Fulltext search matches words in full, not in part, e.g. 'bodhi' will not match 'bodhisatta', but words are stemmed and will match declensions, e.g. 'bodhiṁ / bodhiyā'.</p>
-
-<p><b>Exact Match:</b> it searches the content for exact matches. (I.e. it makes SQL queries with <b>%query text%</b>.)
-
-<p>Exact Match (via SQL) matches in part, i.e. if the query is exactly contained somewhere in the content. E.g. 'vitakka' will match 'kāma<b>vitakka</b>ṁ', but there is no stemming, and will not match 'vitakkeyya'.</p>
-
-<p><b>Title / Headword Match:</b> it searches only the titles of suttas or the headwords of dictionary words. (SQL queries)
-
-<h3>Fulltext Match Queries</h3>
-
-<p>
-Powered by the <a href="https://github.com/quickwit-oss/tantivy">tantivy</a> fulltext search engine.
-Read more in the <a href="https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html">QueryParser</a> docs.
-</p>
-
-<p>The words in a query term are related as OR by default. <b>kamma vipāka</b> searches for entries which SHOULD include <b>kamma</b> OR <b>vipāka</b>, but not MUST include.</p>
-
+<p><strong>Title / Headword Match:</strong> it searches only the titles of suttas or the headwords of dictionary words. (SQL queries)</p>
+<h2 id="fulltext-match-queries">Fulltext Match Queries</h2>
+<p>Powered by the <a href="https://github.com/quickwit-oss/tantivy">tantivy</a> fulltext search engine. Read more in the <a href="https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html">QueryParser</a> docs.</p>
+<p>The words in a query term are related as OR by default. <strong>kamma vipāka</strong> searches for entries which SHOULD include <strong>kamma</strong> OR <strong>vipāka</strong>, but not MUST include.</p>
 <p>Prefixing the word with the '+' sign means a term must be included, the '-' signs means it must be excluded.</p>
-
-<p><b>bhikkhu +kamma -vipaka</b> means should include 'bhikkhu', must include 'kamma', must exclude 'vipaka'.</p>
-
+<p><strong>bhikkhu +kamma -vipaka</strong> means should include 'bhikkhu', must include 'kamma', must exclude 'vipaka'.</p>
 <p>The texts are indexed with Pāli, English, etc. grammar stemmers, so declension forms will also match in the appropriate language.</p>
-
-<p><b>dukkha</b> will match <b>duddkaṁ / dukkhā / dukkhāni / dukkhena</b> etc.,<br>
-<b>bhikkhu kamma vipaka</b> will match <b>bhikkhave kammānaṁ vipāko</b>,<br>
-<b>monk receives robes</b> will match <b>monks receiving robes</b>.
-
-<p>Latin terms are expanded to include diacritics, <b>patipada</b> will match <b>paṭipadā</b>.</p>
-
-<p>A pharse query is expressed with quote marks: <b>"paṭhamena jhānena"</b></p>.
-
-<p>The query can match parts of the document:<p>
-
-<p>
-<b>title:sticks cessation</b> - match 'sticks' in the title, 'cessation' in the content<br>
-<b>word:kamma +work</b> - match 'kamma' in the headword, must include 'work' in the content<br>
-<b>uid:pj4</b> - the uid should include 'pj4'<br>
-<b>upekkhindriyaṁ -source:cst4</b> - match 'upekkhindriyaṁ' in the content, exclude all cst4 documents<br>
-<b>calmness +source:thanissaro</b> - match 'calmness' in the content, only in documents by Bh. Thanissaro<br>
-<b>+"buddhas of the past" +source:bodhi</b> - must include the phrase 'buddhas of the past', only in documents by Bh. Bodhi<br>
-</p>
-
-<h4>Regex search (.* icon)</h4>
-
-<p>This option will parse the query as a regex pattern, but limited to globbing expressions, e.g. <b>.* .+ a* a+</b></p>
-
-<p>The '.' matches any single character, '*' means 'zero or more' or the previous character, '+' means 'one or more'.</p>
-
-<p>
-<b>a*vitak.*</b> - the word start with zero or more of 'a', followed by 'vitak', followed by zero or more characters<br>
-<b>.*vitak.*</b> - match any word containing 'vitak'<br>
-<b>vitak.*</b> - match starting with 'vitak'<br>
-</p>
-
-<h4>Fuzzy search (~ icon)</h4>
-
+<ul>
+<li><strong>dukkha</strong> will match <strong>duddkaṁ / dukkhā / dukkhāni / dukkhena</strong> etc.,</li>
+<li><strong>bhikkhu kamma vipaka</strong> will match <strong>bhikkhave kammānaṁ vipāko</strong>,</li>
+<li><strong>monk receives robes</strong> will match <strong>monks receiving robes</strong>.</li>
+</ul>
+<p>Latin terms are expanded to include diacritics, <strong>patipada</strong> will match <strong>paṭipadā</strong>.</p>
+<p>A pharse query is expressed with quote marks: <strong>"paṭhamena jhānena"</strong>.</p>
+<p>The query can match parts of the document:</p>
+<ul>
+<li><strong>title:sticks cessation</strong> - match 'sticks' in the title, 'cessation' in the content</li>
+<li><strong>word:kamma +work</strong> - match 'kamma' in the headword, must include 'work' in the content</li>
+<li><strong>uid:pj4</strong> - the uid should include 'pj4'</li>
+<li><strong>upekkhindriyaṁ -source:cst4</strong> - match 'upekkhindriyaṁ' in the content, exclude all cst4 documents</li>
+<li><strong>calmness +source:thanissaro</strong> - match 'calmness' in the content, only in documents by Bh. Thanissaro</li>
+<li><strong>+"buddhas of the past" +source:bodhi</strong> - must include the phrase 'buddhas of the past', only in documents by Bh. Bodhi</li>
+</ul>
+<h4 id="regex-search-icon">Regex search (.* icon)</h4>
+<p>This option will parse the query as a regex pattern, but limited to globbing expressions, such as: <code>.* .+ a* a+</code></p>
+<p>The <code>.</code> (dot) matches any single character, <code>*</code> (asterisk) means 'zero or more' or the previous character, <code>+</code> (plus) means 'one or more'.</p>
+<ul>
+<li><strong>a*vitak.*</strong> - the word start with zero or more of 'a', followed by 'vitak', followed by zero or more characters</li>
+<li><strong>.*vitak.*</strong> - match any word containing 'vitak'</li>
+<li><strong>vitak.*</strong> - match starting with 'vitak'</li>
+</ul>
+<h4 id="fuzzy-search-icon">Fuzzy search (~ icon)</h4>
 <p>This option allows matching words which may differ from the query by N number of characters (i.e. the <a href="https://devopedia.org/levenshtein-distance">Levenshtein Distance</a>).</p>
-
 <p>Fuzzy search is not availble together with regex patterns.</p>
-
-<h3>Exact Match Queries</h3>
-
-<p>Joining terms with <b>AND</b> creates filtered SQL queries.</p>
-
-<p><b>kamma vipāka</b>: will match texts which contain the exact expression 'kamma vipāka' (including the space).</p>
-
-<p><b>kamma AND vipāka</b>: will match texts which contain both 'kamma' and 'vipāka', anywhere in the text (including 'kammavipāka').</p>
-
 """
-    box.setText(msg)
-    box.setWindowTitle("Search query info")
-    box.setStandardButtons(QMessageBox.StandardButton.Ok)
 
-    box.exec()
+class SearchInfoWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        self.setWindowTitle("Search Info")
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
+        self.resize(600, 700)
+
+        if IS_SWAY:
+            cmd = """swaymsg 'for_window [title="Search Info"] floating enable'"""
+            subprocess.Popen(cmd, shell=True)
+
+        self._central_widget = QWidget(self)
+        self.setCentralWidget(self._central_widget)
+
+        self._layout = QVBoxLayout()
+        self._layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._central_widget.setLayout(self._layout)
+
+        self.content_page = QLabel()
+        self.content_page.setWordWrap(True)
+        self.content_page.setOpenExternalLinks(True)
+        self.content_page.setSizePolicy(QExpanding, QExpanding)
+
+        self.content_page.setText(SEARCH_INFO_MSG)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setSizePolicy(QExpanding, QExpanding)
+        self._scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
+        self._scroll_area.setWidget(self.content_page)
+
+        self._layout.addWidget(self._scroll_area)
+
+        self._close_button = QPushButton("Close")
+        self._close_button.clicked.connect(partial(self._handle_close))
+
+        self._layout.addWidget(self._close_button)
+
+    def _handle_close(self):
+        self.close()
+
+def show_search_info():
+    w = SearchInfoWindow()
+    w.show()
+    w.raise_()
+    w.activateWindow()
 
 def show_about(parent=None):
     box = QMessageBox(parent)

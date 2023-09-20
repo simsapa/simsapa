@@ -457,7 +457,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             .triggered.connect(partial(self.s._handle_paste))
 
         self.action_Search_Query_Terms \
-            .triggered.connect(partial(show_search_info, self))
+            .triggered.connect(partial(show_search_info))
 
         self.action_Show_Related_Suttas \
             .triggered.connect(partial(self.s._handle_show_related_suttas))

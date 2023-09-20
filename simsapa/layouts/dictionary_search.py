@@ -844,7 +844,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             .triggered.connect(partial(self.show_import_from_stardict_dialog))
 
         self.action_Search_Query_Terms \
-            .triggered.connect(partial(show_search_info, self))
+            .triggered.connect(partial(show_search_info))
 
         self.action_Lookup_Clipboard_in_Suttas \
             .triggered.connect(partial(self._lookup_clipboard_in_suttas))

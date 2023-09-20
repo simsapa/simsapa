@@ -226,12 +226,17 @@ class AssetManagement(QMainWindow):
         self.add_languages_table = QTableView()
         self.add_languages_table.setShowGrid(False)
         self.add_languages_table.setWordWrap(False)
-        self.add_languages_table.verticalHeader().setVisible(False)
+        vert_header = self.add_languages_table.verticalHeader()
+        if vert_header is not None:
+            vert_header.setVisible(False)
 
         self.add_languages_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.add_languages_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.add_languages_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.add_languages_table.horizontalHeader().setStretchLastSection(True)
+
+        horiz_header = self.add_languages_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.add_languages_select_layout.addWidget(self.add_languages_table)
 
@@ -277,12 +282,16 @@ class AssetManagement(QMainWindow):
         self.remove_languages_table = QTableView()
         self.remove_languages_table.setShowGrid(False)
         self.remove_languages_table.setWordWrap(False)
-        self.remove_languages_table.verticalHeader().setVisible(False)
+        vert_header = self.remove_languages_table.verticalHeader()
+        if vert_header is not None:
+            vert_header.setVisible(False)
 
         self.remove_languages_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.remove_languages_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.remove_languages_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.remove_languages_table.horizontalHeader().setStretchLastSection(True)
+        horiz_header = self.remove_languages_table.horizontalHeader()
+        if horiz_header is not None:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.remove_languages_select_layout.addWidget(self.remove_languages_table)
 

@@ -115,7 +115,8 @@ class BookmarkDialog(QDialog):
         self.suggest_list.setModel(self.suggest_model)
 
         self.suggest_sel = self.suggest_list.selectionModel()
-        self.suggest_sel.selectionChanged.connect(self._handle_suggest_select)
+        if self.suggest_sel is not None:
+            self.suggest_sel.selectionChanged.connect(self._handle_suggest_select)
 
         form.addRow(self.suggest_list)
 
