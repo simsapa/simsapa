@@ -89,7 +89,6 @@
     <property name="title">
      <string>&amp;Suttas</string>
     </property>
-    <addaction name="action_Select_Sutta_Authors"/>
     <addaction name="action_Show_Related_Suttas"/>
     <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
     <addaction name="action_Show_All_Variant_Readings"/>
@@ -284,11 +283,6 @@
    </property>
    <property name="shortcutContext">
     <enum>Qt::ApplicationShortcut</enum>
-   </property>
-  </action>
-  <action name="action_Select_Sutta_Authors">
-   <property name="text">
-    <string>&amp;Select Sutta Authors...</string>
    </property>
   </action>
   <action name="action_Re_index_database">
