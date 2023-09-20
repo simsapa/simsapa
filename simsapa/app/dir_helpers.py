@@ -69,8 +69,9 @@ def create_or_update_linux_desktop_icon_file():
     if not DESKTOP_FILE_PATH.parent.exists():
         DESKTOP_FILE_PATH.parent.mkdir(parents=True)
 
-    s = """
-[Desktop Entry]
+    # Don't strip the blank line from the end. Otherwise the system doesn't
+    # start app with the .desktop file.
+    desktop_entry = """[Desktop Entry]
 Encoding=UTF-8
 Name=Simsapa
 Icon=simsapa
@@ -78,9 +79,8 @@ Terminal=false
 Type=Application
 Path=%s
 Exec=env QTWEBENGINE_DISABLE_SANDBOX=1 %s
-    """ % (appimage_path.parent, appimage_path)
 
-    desktop_entry = s.strip()
+""" % (appimage_path.parent, appimage_path)
 
     with open(DESKTOP_FILE_PATH, mode='w', encoding='utf-8') as f:
         f.write(desktop_entry)
