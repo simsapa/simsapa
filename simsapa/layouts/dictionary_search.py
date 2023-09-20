@@ -381,12 +381,12 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
-        self.render_fulltext_page()
-
-        results = self.results_page(0)
+        results = self.render_fulltext_page()
 
         if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
             self._show_word_by_uid(results[0]['uid'])
+        else:
+            self._render_dict_words_search_results(results[0:10])
 
         self._update_fulltext_page_btn(hits)
 
@@ -553,8 +553,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if len(self._current_words) == 0:
             return
 
-        self.update_memos_list_for_dict_word(self._current_words[0])
-        self.show_network_graph(self._current_words[0])
+        if len(self._current_words) == 1:
+            self.update_memos_list_for_dict_word(self._current_words[0])
+            self.show_network_graph(self._current_words[0])
 
         page_html = self._queries.dictionary_queries.words_to_html_page(words)
 

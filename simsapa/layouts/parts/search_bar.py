@@ -12,8 +12,11 @@ from simsapa import logger, SEARCH_TIMER_SPEED
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
-from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType
-from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
+from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType, UDictWord
+from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
+
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 from simsapa.layouts.parts.pali_completer import PaliCompleter
 
@@ -222,8 +225,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         completer = PaliCompleter(parent = self, word_sublists = items)
         self.search_input.setCompleter(completer)
 
-        self.search_input.completer().activated.connect(partial(self._handle_query, min_length=1))
-        self.search_input.completer().activated.connect(partial(self._handle_exact_query, min_length=1))
+        input_completer = self.search_input.completer()
+        if input_completer is not None:
+            input_completer.activated.connect(partial(self._handle_query, min_length=1))
+            # input_completer.activated.connect(partial(self._handle_exact_query, min_length=1))
 
     def _disable_search_input_completer(self):
         empty_completer = QCompleter()
@@ -322,7 +327,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.language_filter_dropdown.currentIndexChanged.connect(partial(self._save_search_bar_settings))
         self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
-        self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
+        # self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
 
     def _setup_language_include_btn(self):
         icon_plus = QIcon()
@@ -403,7 +408,7 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.source_filter_dropdown.currentIndexChanged.connect(partial(self._save_search_bar_settings))
         self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
-        self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
+        # self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
 
     def _set_query(self, s: str):
         self.search_input.setText(s)
@@ -474,15 +479,53 @@ QWidget:focus { border: 1px solid #1092C3; }
             params,
         )
 
+    def _render_dict_words_search_results(self, search_results: List[SearchResult]):
+        logger.info("_render_search_results()")
+
+        uids = dict()
+        uids['appdata'] = []
+        uids['userdata'] = []
+
+        # Must maintain the order of search_results in the db results, hence not
+        # using one Am.DictWord.uid.in_(uids['appdata']) request. Must retreive
+        # each db item in the same sequence.
+
+        res: List[UDictWord] = []
+
+        for i in search_results:
+            if i['uid'] is None:
+                continue
+
+            if i['schema_name'] == 'appdata':
+                r = self._app_data.db_session \
+                    .query(Am.DictWord) \
+                    .filter(Am.DictWord.uid == i['uid']) \
+                    .first()
+                if r is not None:
+                    res.append(r)
+
+            if i['schema_name'] == 'userdata':
+                r = self._app_data.db_session \
+                    .query(Um.DictWord) \
+                    .filter(Um.DictWord.uid == i['uid']) \
+                    .first()
+                if r is not None:
+                    res.append(r)
+
+        self.stop_loading_animation()
+        self._show_search_normal_icon()
+
+        self._render_words(res)
+
     def _connect_search_bar_signals(self):
         if hasattr(self, 'search_button'):
             self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
-            self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
+            # self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))
 
         if hasattr(self, 'search_input'):
             self.search_input.textEdited.connect(partial(self._user_typed))
             self.search_input.returnPressed.connect(partial(self._handle_query, min_length=1))
-            self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
+            # self.search_input.returnPressed.connect(partial(self._handle_exact_query, min_length=1))
 
         if hasattr(self, 'search_mode_dropdown'):
             self.search_mode_dropdown.currentIndexChanged.connect(partial(self._handle_search_mode_changed))
@@ -519,4 +562,8 @@ QWidget:focus { border: 1px solid #1092C3; }
 
     def _exact_query_finished(self, q_res: ExactQueryResult):
         print("NotImplementedError %s" % str(q_res))
+        raise NotImplementedError
+
+    def _render_words(self, words: List[UDictWord]):
+        print("NotImplementedError %s" % str(len(words)))
         raise NotImplementedError

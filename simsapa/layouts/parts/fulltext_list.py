@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, Q
 from simsapa import logger
 
 from simsapa.app.app_data import AppData
+from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
@@ -83,17 +84,17 @@ class HasFulltextList:
 
         self._ui_set_search_icon()
 
-    def render_fulltext_page(self):
+    def render_fulltext_page(self) -> List[SearchResult]:
         query_hits = self.query_hits()
         logger.info(f"render_fulltext_page(), query_hits: {query_hits}")
 
         if query_hits is not None and query_hits == 0:
             self.fulltext_label.clear()
-            return
+            return []
 
         page_num = self.fulltext_page_input.value() - 1
         if page_num < 0:
-            return
+            return []
 
         pages_count = self.fulltext_page_input.maximum()
 
@@ -125,6 +126,8 @@ class HasFulltextList:
 
             self.fulltext_list.addItem(item)
             self.fulltext_list.setItemWidget(item, w)
+
+        return results
 
     def _show_prev_page(self):
         n = self.fulltext_page_input.value()

@@ -321,12 +321,12 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if text is not None:
             self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
 
-    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
+    def lookup_in_dictionary(self, query: str, show_results_tab = False, __include_exact_query__ = True):
         self._set_query(query)
         self._handle_query()
 
-        if include_exact_query:
-            self._handle_exact_query()
+        # if include_exact_query:
+        #     self._handle_exact_query()
 
         if show_results_tab:
             self.tabs.setCurrentIndex(1)
@@ -383,6 +383,8 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
             self._show_word_by_uid(results[0]['uid'])
+        else:
+            self._render_dict_words_search_results(results[0:10])
 
         self._update_fulltext_page_btn(hits)
 
@@ -462,7 +464,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if not text.startswith('http') and not text.startswith('uid:'):
             self.search_input.setText(text)
             self._handle_query(min_length=4)
-            self._handle_exact_query(min_length=4)
+            # self._handle_exact_query(min_length=4)
 
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.link_mouseover.connect(partial(preview_window.link_mouseover))

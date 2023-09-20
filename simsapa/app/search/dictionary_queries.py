@@ -1,5 +1,5 @@
 import re
-from typing import Callable, List, Optional, TypedDict
+from typing import Callable, List, Optional, TypedDict, Dict
 from binascii import crc32
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
@@ -86,10 +86,25 @@ class DictionaryQueries(DictionaryQueriesInterface):
                            css_extra: Optional[str] = None,
                            js_extra: Optional[str] = None,
                            html_title: Optional[str] = None) -> str:
-        # avoid multiple copies of the same content with a crc32 checksum
-        page_body: dict[int, str] = {}
-        page_css: dict[int, str] = {}
-        page_js: dict[int, str] = {}
+
+        # Avoid multiple copies of the same content with a crc32 checksum.
+        #
+        # Use ordered structures (i.e. not a dict) to preserve the order of the
+        # words[] argument.
+        #
+        # Below, the different kinds are kept in a dict, but values of each kind
+        # are appended to a list.
+
+        parts: Dict[str, List[str]] = dict()
+        # The keys are the same as in ResultHtml type.
+        parts['body'] = []
+        parts['css'] = []
+        parts['js'] = []
+
+        sums: Dict[str, List[int]] = dict()
+        sums['body'] = []
+        sums['css'] = []
+        sums['js'] = []
 
         for w in words:
             word_html = self.get_word_html(w)
@@ -97,17 +112,11 @@ class DictionaryQueries(DictionaryQueriesInterface):
             if w.source_uid == "cpd":
                 word_html['body'] = add_word_links_to_bold(word_html['body'])
 
-            body_sum = crc32(bytes(word_html['body'], 'utf-8'))
-            if body_sum not in page_body.keys():
-                page_body[body_sum] = word_html['body']
-
-            css_sum = crc32(bytes(word_html['css'], 'utf-8'))
-            if css_sum not in page_css.keys():
-                page_css[css_sum] = word_html['css']
-
-            js_sum = crc32(bytes(word_html['js'], 'utf-8'))
-            if js_sum not in page_js.keys():
-                page_js[js_sum] = word_html['js']
+            for k in word_html.keys():
+                sum = crc32(bytes(word_html[k], 'utf-8'))
+                if sum not in sums[k]:
+                    parts[k].append(word_html[k])
+                    sums[k].append(sum)
 
         css = f"html {{ font-size: {self.dictionary_font_size}px; }}"
         if css_extra:
@@ -120,15 +129,15 @@ class DictionaryQueries(DictionaryQueriesInterface):
         else:
             js = ""
 
-        js_head = js + "\n\n".join(page_js.values())
+        js_head = js + "\n\n".join(parts['js'])
 
-        body = "\n\n".join(page_body.values())
+        body = "\n\n".join(parts['body'])
         if html_title:
             body = html_title + body
 
         page_html = self.render_html_page(
             body = body,
-            css_head = "\n\n".join(page_css.values()),
+            css_head = "\n\n".join(parts['css']),
             css_extra = css_extra,
             js_head = js_head)
 
