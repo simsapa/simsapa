@@ -63,7 +63,7 @@ else:
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
-SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("simsapa-api-port.txt")
+SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("api-port.txt")
 
 USER_HOME_DIR = PLATFORM_DIRS.user_desktop_path.parent
 
