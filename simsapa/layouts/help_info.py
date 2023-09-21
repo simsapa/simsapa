@@ -35,7 +35,7 @@ SEARCH_INFO_MSG = """
 <p><strong>bhikkhu +kamma -vipaka</strong> means should include 'bhikkhu', must include 'kamma', must exclude 'vipaka'.</p>
 <p>The texts are indexed with Pāli, English, etc. grammar stemmers, so declension forms will also match in the appropriate language.</p>
 <ul>
-<li><strong>dukkha</strong> will match <strong>duddkaṁ / dukkhā / dukkhāni / dukkhena</strong> etc.,</li>
+<li><strong>dukkha</strong> will match <strong>dukkhaṁ / dukkhā / dukkhāni / dukkhena</strong> etc.,</li>
 <li><strong>bhikkhu kamma vipaka</strong> will match <strong>bhikkhave kammānaṁ vipāko</strong>,</li>
 <li><strong>monk receives robes</strong> will match <strong>monks receiving robes</strong>.</li>
 </ul>
