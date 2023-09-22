@@ -196,11 +196,18 @@ def default_send_to_remarkable_settings() -> SendToRemarkableSettings:
     )
 
 class OpenAIModel(str, Enum):
-    Gpt3_5_Turbo = "GPT 3.5 Turbo"
+    Gpt3_5_Turbo_4k = "GPT 3.5 Turbo (4k)"
+    Gpt3_5_Turbo_16k = "GPT 3.5 Turbo (16k)"
     Gpt4_8k = "GPT-4 (8k)"
     Gpt4_32k = "GPT-4 (32k)"
 
 def model_max_tokens(model: OpenAIModel) -> int:
+    if model == OpenAIModel.Gpt3_5_Turbo_4k:
+        return 4096
+
+    if model == OpenAIModel.Gpt3_5_Turbo_16k:
+        return 16385
+
     if model == OpenAIModel.Gpt4_8k:
         return 8192
 
@@ -211,15 +218,17 @@ def model_max_tokens(model: OpenAIModel) -> int:
         return 4096
 
 OpenAIModelToEnum = {
-    "GPT 3.5 Turbo": OpenAIModel.Gpt3_5_Turbo,
+    "GPT 3.5 Turbo (4k)": OpenAIModel.Gpt3_5_Turbo_4k,
+    "GPT 3.5 Turbo (16k)": OpenAIModel.Gpt3_5_Turbo_16k,
     "GPT-4 (8k)": OpenAIModel.Gpt4_8k,
     "GPT-4 (32k)": OpenAIModel.Gpt4_32k,
 }
 
 OpenAIModelLatest = {
-    "GPT 3.5 Turbo": "gpt-3.5-turbo",
-    "GPT-4 (8k)": "gpt-4",
-    "GPT-4 (32k)": "gpt-4-32k",
+    "GPT 3.5 Turbo (4k)": "gpt-3.5-turbo-0613",
+    "GPT 3.5 Turbo (16k)": "gpt-3.5-turbo-16k-0613",
+    "GPT-4 (8k)": "gpt-4-0613",
+    "GPT-4 (32k)": "gpt-4-32k-0613",
 }
 
 """
@@ -281,7 +290,7 @@ class OpenAISettings(TypedDict):
 def default_openai_settings() -> OpenAISettings:
     return OpenAISettings(
         api_key = None,
-        model = OpenAIModel.Gpt3_5_Turbo,
+        model = OpenAIModel.Gpt3_5_Turbo_4k,
         temperature = 0.7,
         max_tokens = 256,
         auto_max_tokens = False,

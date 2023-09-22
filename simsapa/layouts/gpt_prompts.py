@@ -10,7 +10,10 @@ from datetime import datetime
 
 import tiktoken
 
-from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit, QTreeView, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
+                             QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QMenuBar, QMessageBox,
+                             QPushButton, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QTableView, QTextEdit,
+                             QTreeView, QVBoxLayout, QWidget)
 
 from simsapa import IS_MAC, IS_SWAY, SEARCH_TIMER_SPEED, logger
 from simsapa.app.export_helpers import sutta_content_plain
@@ -20,7 +23,9 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
 
-from simsapa.layouts.gui_types import AppWindowInterface, ChatMessage, ChatResponse, ChatRole, OpenAIModel, OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams, QExpanding, QMinimum, default_openai_settings, model_max_tokens
+from simsapa.layouts.gui_types import (AppWindowInterface, ChatMessage, ChatResponse, ChatRole, OpenAIModel,
+                                       OpenAIModelLatest, OpenAIModelToEnum, OpenAISettings, OpenPromptParams,
+                                       QExpanding, QMinimum, default_openai_settings, model_max_tokens)
 
 class ShowPromptDialog(QDialog):
     def __init__(self, text: str):
@@ -1448,7 +1453,7 @@ class TokenizerWorker(QRunnable):
             logger.error(msg)
             self.signals.error.emit(msg)
 
-def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301") -> int:
+def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613"):
     """
     Returns the number of tokens used by a list of messages.
 
@@ -1462,27 +1467,34 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301") -> int:
         logger.warn("Warning: model not found. Using cl100k_base encoding.")
         encoding = tiktoken.get_encoding("cl100k_base")
 
-    if model == "gpt-3.5-turbo":
-        # logger.warn("Warning: gpt-3.5-turbo may change over time. Returning num tokens assuming gpt-3.5-turbo-0301.")
-        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301")
+    if model in {
+        "gpt-3.5-turbo-0613",
+        "gpt-3.5-turbo-16k-0613",
+        "gpt-4-0314",
+        "gpt-4-32k-0314",
+        "gpt-4-0613",
+        "gpt-4-32k-0613",
+        }:
 
-    elif model == "gpt-4" or model == "gpt-4-32k":
-        # logger.warn("Warning: gpt-4 may change over time. Returning num tokens assuming gpt-4-0314.")
-        return num_tokens_from_messages(messages, model="gpt-4-0314")
+        tokens_per_message = 3
+        tokens_per_name = 1
 
     elif model == "gpt-3.5-turbo-0301":
         tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
         tokens_per_name = -1  # if there's a name, the role is omitted
 
-    elif model == "gpt-4-0314":
-        tokens_per_message = 3
-        tokens_per_name = 1
+    elif "gpt-3.5-turbo" in model:
+        # logger.info("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
+        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
+
+    elif "gpt-4" in model:
+        # logger.info("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
+        return num_tokens_from_messages(messages, model="gpt-4-0613")
 
     else:
         raise NotImplementedError(f"""num_tokens_from_messages() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")
 
     num_tokens = 0
-
     for message in messages:
         num_tokens += tokens_per_message
         for key, value in message.items():
