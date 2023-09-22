@@ -223,6 +223,8 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         model.setHorizontalHeaderItem(1, item)
 
         root_node = model.invisibleRootItem()
+        if root_node is None:
+            return
 
         self.ebook_toc_items = []
 
@@ -343,7 +345,7 @@ class EbookReaderWindow(EbookReaderWindowInterface):
 
         def _add_action_to_menu(x: Um.GptPrompt):
             a = QAction(str(x.name_path))
-            db_id: int = x.id # type: ignore
+            db_id: int = x.id
             a.triggered.connect(partial(s._open_gpt_prompt_with_params, db_id))
             self.gpt_prompts_actions.append(a)
             self.gpt_prompts_menu.addAction(a)
@@ -446,10 +448,11 @@ class EbookReaderWindow(EbookReaderWindowInterface):
 
             # Select the first item when opening the ebook
             idx = self.toc_tree_model.index(0, 0)
-            self.toc_tree_view.selectionModel() \
-                              .select(idx,
-                                      QItemSelectionModel.SelectionFlag.ClearAndSelect | \
-                                      QItemSelectionModel.SelectionFlag.Rows)
+            sel_model = self.toc_tree_view.selectionModel()
+            if sel_model is not None:
+                sel_model.select(idx,
+                                 QItemSelectionModel.SelectionFlag.ClearAndSelect | \
+                                 QItemSelectionModel.SelectionFlag.Rows)
 
             self._handle_toc_tree_clicked(idx)
 
@@ -574,7 +577,9 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         self.toggle_toc_panel_btn.clicked.connect(partial(self._toggle_toc_panel))
         self.toggle_sutta_panel_btn.clicked.connect(partial(self._toggle_sutta_panel))
 
-        self.toc_tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
+        sel_model = self.toc_tree_view.selectionModel()
+        if sel_model is not None:
+            sel_model.selectionChanged.connect(partial(self._handle_selection_changed))
 
         self.action_Show_Related_Suttas \
             .triggered.connect(partial(self.sutta_state._handle_show_related_suttas))

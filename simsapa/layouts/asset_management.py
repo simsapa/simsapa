@@ -935,7 +935,7 @@ class AssetsWorker(QRunnable):
                 try:
                     import_db_session.expunge(i)
                     make_transient(i)
-                    i.id = None # type: ignore
+                    i.id = None
 
                     if schema == DbSchemaName.AppData:
                         old_sutta = target_db_session.query(Am.Sutta).filter(Am.Sutta.uid == i.uid).first()

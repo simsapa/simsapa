@@ -477,7 +477,7 @@ class GroupInterface:
     parent_group: Optional[Any] # Optional[GroupInterface]
     sub_groups: List[Any] # List[GroupInterface]
 
-    def add_sub_groups(self, group_num: Optional[int]):
+    def add_sub_groups(self, __group_num__: Optional[int]):
         pass
 
 
@@ -1338,7 +1338,7 @@ def populate_suttas_from_cst4(appdata_db: Session, limit: Optional[int] = None):
                 logger.error(f"Double uid: {uid}")
                 n += 1
                 uid = f"{orig_uid}({n})"
-                i.uid = uid # type: ignore
+                i.uid = uid
 
             uids.append(i.uid)
 

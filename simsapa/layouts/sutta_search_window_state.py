@@ -754,7 +754,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if sutta is None:
             return
 
-        uid: str = sutta.uid # type: ignore
+        uid: str = sutta.uid
         self.open_in_study_window_signal.emit(self.pw.queue_id, side, uid)
 
     def _lookup_selection_in_suttas(self):
@@ -830,7 +830,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         def _add_action_to_menu(x: Um.GptPrompt):
             a = QAction(str(x.name_path))
-            db_id: int = x.id # type: ignore
+            db_id: int = x.id
             a.triggered.connect(partial(self._open_gpt_prompt_with_params, db_id))
             self.gpt_prompts_actions.append(a)
             self.gpt_prompts_menu.addAction(a)

@@ -88,7 +88,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         if sutta is None:
             return
 
-        uid: str = sutta.uid # type: ignore
+        uid: str = sutta.uid
         self._show_sutta_by_uid_in_side(side, uid)
 
     def _setup_ui(self):
