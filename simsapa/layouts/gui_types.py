@@ -553,7 +553,7 @@ class SuttaSearchWindowStateInterface(SearchBarInterface):
 
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
-    _update_sidebar_fulltext: Callable
+    _update_sidebar_fulltext: Callable[[Optional[int]], List[SearchResult]]
     _set_recent_list: Callable
     get_links_tab_text: Callable[[], str]
     set_links_tab_text: Callable[[str], None]

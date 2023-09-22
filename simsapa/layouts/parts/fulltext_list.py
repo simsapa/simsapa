@@ -88,8 +88,9 @@ class HasFulltextList:
         query_hits = self.query_hits()
         logger.info(f"render_fulltext_page(), query_hits: {query_hits}")
 
-        if query_hits is not None and query_hits == 0:
+        if query_hits is None or query_hits == 0:
             self.fulltext_label.clear()
+            self.fulltext_list.clear()
             return []
 
         page_num = self.fulltext_page_input.value() - 1

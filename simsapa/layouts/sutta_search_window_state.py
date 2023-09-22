@@ -341,9 +341,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         hits = self._queries.query_hits()
         if self.enable_sidebar:
-            self.pw._update_sidebar_fulltext(hits)
-
-        results = self._queries.results_page(0)
+            results = self.pw._update_sidebar_fulltext(hits)
+        else:
+            results = self._queries.results_page(0)
 
         if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
             self._show_sutta_by_uid(results[0]['uid'])

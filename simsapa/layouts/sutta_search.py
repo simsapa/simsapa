@@ -186,15 +186,14 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         self.generate_and_show_graph(sutta, None, self.queue_id, self.graph_path, self.messages_url)
 
-    def _update_sidebar_fulltext(self, hits: Optional[int]):
-        if hits is None:
+    def _update_sidebar_fulltext(self, hits: Optional[int]) -> List[SearchResult]:
+        if hits is None \
+           or hits == 0:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
-        elif hits > 0:
-            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
         else:
-            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
+            self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
 
-        self.render_fulltext_page()
+        results = self.render_fulltext_page()
 
         if hits is None:
             self.fulltext_page_input.setMinimum(1)
@@ -225,6 +224,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
             self.fulltext_page_input.setMaximum(pages)
             self.fulltext_first_page_btn.setEnabled(True)
             self.fulltext_last_page_btn.setEnabled(True)
+
+        return results
 
     def _show_selected(self):
         self.s._show_sutta_from_message(self.selected_info)
