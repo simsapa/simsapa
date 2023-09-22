@@ -533,8 +533,10 @@ class GptPromptsWindow(AppWindowInterface):
         # double-click is used.
         self.history_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
-        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.history_table.horizontalHeader().setStretchLastSection(True)
+        horiz_header = self.history_table.horizontalHeader()
+        if horiz_header:
+            horiz_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            horiz_header.setStretchLastSection(True)
 
         self.history_table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
@@ -879,7 +881,11 @@ class GptPromptsWindow(AppWindowInterface):
             self.user_prompt_input.setPlainText(user_prompt + "\n\n[SYSTEM]:\n" + result + "\n\n[USER]:\n")
             self.completion_text.setPlainText("")
 
-            self.user_prompt_input.verticalScrollBar().setValue(self.user_prompt_input.verticalScrollBar().maximum())
+            vert_bar = self.user_prompt_input.verticalScrollBar()
+            if vert_bar:
+                scroll_bar = self.user_prompt_input.verticalScrollBar()
+                if scroll_bar:
+                    vert_bar.setValue(scroll_bar.maximum())
 
         else:
             self.completion_text.setPlainText(result)
@@ -1127,10 +1133,11 @@ class GptPromptsWindow(AppWindowInterface):
         self.reload_prompts_tree()
 
         idx = self.prompts_tree_model.index(sel_row, 0)
-        self.prompts_tree_view.selectionModel() \
-                              .select(idx,
-                                      QItemSelectionModel.SelectionFlag.ClearAndSelect | \
-                                      QItemSelectionModel.SelectionFlag.Rows)
+        sel_model = self.prompts_tree_view.selectionModel()
+        if sel_model:
+            sel_model.select(idx,
+                             QItemSelectionModel.SelectionFlag.ClearAndSelect | \
+                             QItemSelectionModel.SelectionFlag.Rows)
 
     def _prompt_show_parsed(self):
         prompt_name = self.prompt_name_input.text().strip()
@@ -1150,7 +1157,11 @@ class GptPromptsWindow(AppWindowInterface):
             self._handle_history_load(a[0])
 
     def _handle_history_load(self, val: QModelIndex):
-        data = val.model().data(val, Qt.ItemDataRole.UserRole)
+        model = val.model()
+        if model is None:
+            return
+
+        data = model.data(val, Qt.ItemDataRole.UserRole)
         db_id = int(data[val.row()][HistoryModelColToIdx['_db_id']])
 
         res = self._app_data.db_session \
@@ -1273,7 +1284,9 @@ class GptPromptsWindow(AppWindowInterface):
 
         self.toggle_sidebar_btn.clicked.connect(partial(self._toggle_sidebar))
 
-        self.prompts_tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
+        sel_model = self.prompts_tree_view.selectionModel()
+        if sel_model:
+            sel_model.selectionChanged.connect(partial(self._handle_selection_changed))
 
         self.prompt_submit.clicked.connect(partial(self._submit_prompt))
 
