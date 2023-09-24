@@ -43,7 +43,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v3
         with:
-          version: '6.5.2'
+          version: '6.4.2'
 
       - name: Install Python pip
         run: python -m pip install --upgrade pip

@@ -140,10 +140,10 @@ icon = "simsapa/assets/icons/appicons/simsapa"
 sources = ['simsapa']
 
 requires = [
-"PyQt6              >= 6.5.2,    < 6.6.0",
-"PyQt6-Qt6           == 6.5.2",
-"PyQt6-WebEngine    >= 6.5.0,    < 6.6.0",
-"PyQt6-WebEngine-Qt6 == 6.5.2",
+"PyQt6              >= 6.4.0,    < 6.5.0",
+"PyQt6-Qt6           == 6.4.2",
+"PyQt6-WebEngine    >= 6.4.0,    < 6.5.0",
+"PyQt6-WebEngine-Qt6 == 6.4.2",
 "PyYAML             >= 6.0.0,    < 6.1.0",
 "SQLAlchemy         >= 2.0.7,   < 2.1.0",
 "SQLAlchemy-Utils   >= 0.40.0,   < 0.41.0",
