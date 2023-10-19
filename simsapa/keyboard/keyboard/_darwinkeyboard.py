@@ -236,7 +236,7 @@ class KeyController(object):
             'KEYTYPE_ILLUMINATION_DOWN': 22,
             'KEYTYPE_ILLUMINATION_TOGGLE': 23
         }
-    
+
     def press(self, key_code):
         """ Sends a 'down' event for the specified scan code """
         if key_code >= 128:
@@ -444,7 +444,7 @@ def release(scan_code):
     key_controller.release(scan_code)
 
 def map_name(name):
-    """ Returns a tuple of (scan_code, modifiers) where ``scan_code`` is a numeric scan code 
+    """ Returns a tuple of (scan_code, modifiers) where ``scan_code`` is a numeric scan code
     and ``modifiers`` is an array of string modifier names (like 'shift') """
     yield key_controller.map_char(name)
 

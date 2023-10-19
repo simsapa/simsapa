@@ -11,4 +11,3 @@ A short feature demo: <https://www.youtube.com/watch?v=Wu4T_CANnns>
 ![Sutta Links](docs/images/sutta-links-screenshot.jpg)
 
 ![Sutta Study](docs/images/sutta-study-screenshot.png)
-

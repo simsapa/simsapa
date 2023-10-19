@@ -423,4 +423,3 @@ class SendToRemarkableWindow(QMainWindow):
                   self.rmk_ssh_ip,
                   self.rmk_web_ip]:
             i.textEdited.connect(partial(self._save_all_settings))
-

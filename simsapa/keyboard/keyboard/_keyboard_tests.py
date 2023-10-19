@@ -114,7 +114,7 @@ class TestKeyboard(unittest.TestCase):
         keyboard._logically_pressed_keys.clear()
         keyboard._hotkeys.clear()
         keyboard._listener.init()
-        keyboard._word_listeners = {} 
+        keyboard._word_listeners = {}
 
     def do(self, manual_events, expected=None):
         input_events.extend(manual_events)

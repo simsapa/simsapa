@@ -411,7 +411,7 @@ Note: keys are released in the opposite order they were pressed.
 
 [\[source\]](https://github.com/boppreh/keyboard/blob/master/keyboard/__init__.py#L501)
 
-Presses and holds down a hotkey (see [`send`](#keyboard.send)). 
+Presses and holds down a hotkey (see [`send`](#keyboard.send)).
 
 
 <a name="keyboard.release"/>
@@ -420,7 +420,7 @@ Presses and holds down a hotkey (see [`send`](#keyboard.send)).
 
 [\[source\]](https://github.com/boppreh/keyboard/blob/master/keyboard/__init__.py#L505)
 
-Releases a hotkey (see [`send`](#keyboard.send)). 
+Releases a hotkey (see [`send`](#keyboard.send)).
 
 
 <a name="keyboard.is_pressed"/>
@@ -997,6 +997,3 @@ For more details see [`add_word_listener`](#keyboard.add_word_listener).
 
 Given a key name (e.g. "LEFT CONTROL"), clean up the string and convert to
 the canonical representation (e.g. "left ctrl") if one is known.
-
-
-

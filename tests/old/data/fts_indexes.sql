@@ -34,4 +34,3 @@ CREATE TRIGGER suttas_au AFTER UPDATE ON suttas BEGIN
     VALUES
     (new.id, new.content_html);
 END;
-

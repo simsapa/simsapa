@@ -287,4 +287,3 @@ class SuttaQueries(SuttaQueriesInterface):
         # FIXME expand quote text and match regex
 
         return results
-

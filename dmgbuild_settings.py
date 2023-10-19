@@ -169,4 +169,3 @@ list_column_sort_directions = {
     "version": "ascending",
     "comments": "ascending",
 }
-

@@ -211,4 +211,3 @@ class DownloadAppdataWindow(AssetManagement):
 
         if APP_DB_PATH.exists():
             APP_DB_PATH.unlink()
-
