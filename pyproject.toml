@@ -105,6 +105,8 @@ pyArango = "~2.0.0"
 html5lib = "^1.1"
 selenium = "^4.7.2"
 dmgbuild = "^1.6.0"
+ruff = "^0.1.1"
+black = "^23.10.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -223,3 +225,6 @@ requires = []
 
 [tool.briefcase.app.simsapa.android]
 requires = []
+
+[tool.pytest.ini_options]
+addopts = "--ignore=tests/old"
