@@ -15,4 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v4
+    - name: Install poetry
+      run: |
+        python -m pip install poetry
     - uses: pre-commit/action@v3.0.0
