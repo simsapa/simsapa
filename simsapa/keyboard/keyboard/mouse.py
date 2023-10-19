@@ -166,7 +166,7 @@ def hook(callback):
     each time it is moved, a key status changes or the wheel is spun. A mouse
     event is passed as argument, with type either `mouse.ButtonEvent`,
     `mouse.WheelEvent` or `mouse.MoveEvent`.
-    
+
     Returns the given callback for easier development.
     """
     _listener.add_handler(callback)

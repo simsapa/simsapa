@@ -142,7 +142,7 @@ MAPVK_VK_TO_CHAR = 2
 MAPVK_VK_TO_VSC = 0
 MAPVK_VSC_TO_VK = 1
 MAPVK_VK_TO_VSC_EX = 4
-MAPVK_VSC_TO_VK_EX = 3 
+MAPVK_VSC_TO_VK_EX = 3
 
 VkKeyScan = user32.VkKeyScanW
 VkKeyScan.argtypes = [WCHAR]
@@ -494,7 +494,7 @@ def prepare_intercept(callback):
     start_intercept).
     """
     _setup_name_tables()
-    
+
     def process_key(event_type, vk, scan_code, is_extended):
         global shift_is_pressed, altgr_is_pressed, ignore_next_right_alt
         #print(event_type, vk, scan_code, is_extended)

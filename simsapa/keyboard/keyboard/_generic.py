@@ -58,7 +58,7 @@ class GenericListener(object):
             if self.pre_process_event(event):
                 self.invoke_handlers(event)
             self.queue.task_done()
-            
+
     def add_handler(self, handler):
         """
         Adds a function to receive each event captured, starting the capturing

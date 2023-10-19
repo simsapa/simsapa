@@ -136,7 +136,7 @@ def listen(callback):
         pressed_modifiers_tuple = tuple(sorted(pressed_modifiers))
         names = to_name[(scan_code, pressed_modifiers_tuple)] or to_name[(scan_code, ())] or ['unknown']
         name = names[0]
-            
+
         if name in all_modifiers:
             if event_type == KEY_DOWN:
                 pressed_modifiers.add(name)
