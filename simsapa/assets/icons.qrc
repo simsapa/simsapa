@@ -82,5 +82,10 @@
     <file alias="warning">icons/32x32/fa_triangle-exclamation-solid.png</file>
     <file alias="regex">icons/32x32/mdi_regex.png</file>
     <file alias="tilde">icons/32x32/mdi_tilde.png</file>
+    <file alias="round-arrow-left">icons/32x32/round-arrow-left.png</file>
+    <file alias="round-arrow-right">icons/32x32/round-arrow-right.png</file>
+    <file alias="match-case">icons/32x32/match-case.png</file>
+    <file alias="xmark-solid">icons/32x32/xmark-solid.png</file>
+    <file alias="xmark-20-solid">icons/32x32/x-mark-20-solid.png</file>
   </qresource>
 </RCC>

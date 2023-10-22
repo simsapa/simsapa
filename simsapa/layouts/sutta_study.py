@@ -7,7 +7,7 @@ from typing import Callable, List, Optional
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBoxLayout, QWidget
 
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
@@ -129,7 +129,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_search_extras=True,
                                                       enable_info_button=False,
                                                       enable_sidebar=False,
-                                                      enable_find_panel=False,
+                                                      enable_find_panel=True,
+                                                      create_find_toolbar=False,
                                                       show_query_results_in_active_tab=True,
                                                       search_bar_two_rows_layout=True,
                                                       language_filter_setting_key = 'sutta_study_one_language_filter_idx',
@@ -166,7 +167,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                                       enable_search_extras=True,
                                                       enable_info_button=False,
                                                       enable_sidebar=False,
-                                                      enable_find_panel=False,
+                                                      enable_find_panel=True,
+                                                      create_find_toolbar=False,
                                                       show_query_results_in_active_tab=True,
                                                       search_bar_two_rows_layout=True,
                                                       language_filter_setting_key = 'sutta_study_two_language_filter_idx',
@@ -194,6 +196,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_state = WordLookupState(app_data = self._app_data,
                                                 wrap_layout = self.dictionary_layout,
                                                 focus_input = False,
+                                                enable_find_panel = True,
                                                 language_filter_setting_key = 'sutta_study_lookup_language_filter_idx',
                                                 search_mode_setting_key = 'sutta_study_lookup_search_mode',
                                                 source_filter_setting_key = 'sutta_study_lookup_source_filter_idx')
@@ -211,6 +214,27 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
         self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
+
+        # Create the shared find toolbar.
+
+        self.find_toolbar = QToolBar()
+        self.find_panel_layout = QHBoxLayout()
+        self.find_panel_layout.setContentsMargins(0, 0, 0, 0)
+
+        for panel in [self.sutta_one_state._find_panel,
+                      self.sutta_two_state._find_panel,
+                      self.dictionary_state._find_panel]:
+
+            self.find_panel_layout.addWidget(panel)
+            panel.closed.connect(self.find_toolbar.hide)
+
+        self.find_panel_widget = QWidget()
+        self.find_panel_widget.setLayout(self.find_panel_layout)
+
+        self.find_toolbar.addWidget(self.find_panel_widget)
+
+        self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+        self.find_toolbar.hide()
 
     def _show_url(self, url: QUrl):
         if url.host() == QueryType.suttas:
@@ -341,6 +365,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_state.link_mouseleave.connect(partial(preview_window.link_mouseleave))
         self.dictionary_state.hide_preview.connect(partial(preview_window._do_hide))
 
+    def _handle_show_find_panel(self):
+        self.find_toolbar.show()
+        self.sutta_one_state._find_panel.search_input.setFocus()
+
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
@@ -380,3 +408,6 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.action_Decrease_Text_Margins \
             .triggered.connect(partial(self._decrease_text_margins))
+
+        self.action_Find_in_Page \
+            .triggered.connect(self._handle_show_find_panel)

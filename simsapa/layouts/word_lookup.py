@@ -18,6 +18,7 @@ from simsapa.app.search.helpers import SearchResult
 from simsapa.app.types import QueryType, SearchArea, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
+from simsapa.layouts.find_panel import FindPanel, FindSearched
 from simsapa.layouts.gui_helpers import get_search_params
 
 from simsapa.layouts.gui_types import LinkHoverData, WindowPosSize, WordLookupInterface, WordLookupStateInterface
@@ -54,6 +55,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
                  app_data: AppData,
                  wrap_layout: QBoxLayout,
                  focus_input: bool = True,
+                 enable_find_panel = False,
                  language_filter_setting_key = 'word_lookup_language_filter_idx',
                  search_mode_setting_key = 'word_lookup_search_mode',
                  source_filter_setting_key = 'word_lookup_source_filter_idx') -> None:
@@ -85,6 +87,8 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         self.focus_input = focus_input
 
+        self.enable_find_panel = enable_find_panel
+
         self._search_mode_setting_key = search_mode_setting_key
         self._language_filter_setting_key = language_filter_setting_key
         self._source_filter_setting_key = source_filter_setting_key
@@ -101,6 +105,10 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
                              two_rows_layout        = True)
 
         self._setup_search_tabs()
+
+        if self.enable_find_panel:
+            self._find_panel = FindPanel()
+
         self._connect_signals()
 
         self.init_fulltext_list()
@@ -468,6 +476,13 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
             self._handle_query(min_length=4)
             # self._handle_exact_query(min_length=4)
 
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
+        if find_searched['flag'] is None:
+            self.qwe.findText(find_searched['text'])
+        else:
+            self.qwe.findText(find_searched['text'], find_searched['flag'])
+
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.link_mouseover.connect(partial(preview_window.link_mouseover))
         self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
@@ -476,6 +491,9 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _connect_signals(self):
         if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
+
+        if self.enable_find_panel:
+            self._find_panel.searched.connect(self.on_searched)
 
 class WordLookup(WordLookupInterface):
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:

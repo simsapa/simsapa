@@ -81,6 +81,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  enable_info_button: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
+                 create_find_toolbar: bool = True,
                  show_query_results_in_active_tab: bool = False,
                  search_bar_two_rows_layout=False,
                  language_filter_setting_key = 'sutta_language_filter_idx',
@@ -95,6 +96,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.enable_search_extras = enable_search_extras
         self.enable_sidebar = enable_sidebar
         self.enable_find_panel = enable_find_panel
+        self.create_find_toolbar = create_find_toolbar
 
         self.searchbar_layout = searchbar_layout
         self.sutta_tabs_layout = sutta_tabs_layout
@@ -189,11 +191,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if self.enable_find_panel:
             self._find_panel = FindPanel()
 
-            self.find_toolbar = QToolBar()
-            self.find_toolbar.addWidget(self._find_panel)
+            if self.create_find_toolbar:
+                self.find_toolbar = QToolBar()
+                self.find_toolbar.addWidget(self._find_panel)
 
-            self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
-            self.find_toolbar.hide()
+                self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+                self.find_toolbar.hide()
 
     def _setup_show_sidebar_btn(self):
         if self.searchbar_layout is None:
@@ -918,7 +921,8 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         if self.enable_find_panel:
             self._find_panel.searched.connect(self.on_searched)
-            self._find_panel.closed.connect(self.find_toolbar.hide)
 
-            self.pw.action_Find_in_Page \
-                .triggered.connect(self._handle_show_find_panel)
+            if self.create_find_toolbar:
+                self._find_panel.closed.connect(self.find_toolbar.hide)
+                self.pw.action_Find_in_Page \
+                    .triggered.connect(self._handle_show_find_panel)
