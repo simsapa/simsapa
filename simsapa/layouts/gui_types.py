@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName
 from simsapa.app.search.helpers import SearchResult
@@ -355,6 +355,10 @@ class AppSettings(TypedDict):
     sutta_study_two_search_mode: SearchMode
     sutta_study_two_source_filter_idx: int
 
+    sutta_study_three_language_filter_idx: int
+    sutta_study_three_search_mode: SearchMode
+    sutta_study_three_source_filter_idx: int
+
     sutta_study_lookup_language_filter_idx: int
     sutta_study_lookup_search_mode: SearchMode
     sutta_study_lookup_source_filter_idx: int
@@ -420,6 +424,10 @@ def default_app_settings() -> AppSettings:
         sutta_study_two_language_filter_idx = 0,
         sutta_study_two_search_mode = SearchMode.FulltextMatch,
         sutta_study_two_source_filter_idx = 0,
+
+        sutta_study_three_language_filter_idx = 0,
+        sutta_study_three_search_mode = SearchMode.FulltextMatch,
+        sutta_study_three_source_filter_idx = 0,
 
         sutta_study_lookup_language_filter_idx = 0,
         sutta_study_lookup_search_mode = SearchMode.FulltextMatch,
@@ -600,6 +608,8 @@ class SuttaSearchWindowInterface(AppWindowInterface):
 
 class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
     reload_sutta_pages: Callable
+    find_toolbar: QToolBar
+    find_panel_layout: QHBoxLayout
 
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable

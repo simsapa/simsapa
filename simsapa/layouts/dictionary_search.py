@@ -113,7 +113,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.init_search_bar(wrap_layout            = self.searchbar_layout,
                              search_area            = SearchArea.DictWords,
-                             add_nav_buttons        = True,
+                             enable_nav_buttons     = True,
                              enable_language_filter = True,
                              enable_search_extras   = True,
                              enable_info_button     = True,

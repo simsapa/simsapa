@@ -531,11 +531,9 @@ class AppWindows:
                                 data = json.dumps(obj=data))
                 self._show_sutta_by_uid_in_side(msg)
 
-            view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
-            view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
-
-            view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
-            view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+            for panel in view.sutta_panels:
+                panel['state'].open_in_study_window_signal.connect(partial(_study))
+                panel['state'].open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
             view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
 

@@ -76,8 +76,10 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],
                  focus_input: bool = True,
+                 enable_nav_buttons: bool = True,
                  enable_language_filter: bool = True,
                  enable_search_extras: bool = True,
+                 enable_regex_fuzzy: bool = True,
                  enable_info_button: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
@@ -140,9 +142,10 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
             self.init_search_bar(wrap_layout            = self.searchbar_layout,
                                  search_area            = SearchArea.Suttas,
-                                 add_nav_buttons        = True,
+                                 enable_nav_buttons     = enable_nav_buttons,
                                  enable_language_filter = enable_language_filter,
                                  enable_search_extras   = enable_search_extras,
+                                 enable_regex_fuzzy     = enable_regex_fuzzy,
                                  enable_info_button     = enable_info_button,
                                  input_fixed_size       = QSize(250, icons_height),
                                  icons_height           = icons_height,
@@ -802,13 +805,17 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.qwe_study_menu = QMenu("Open in Study Window")
         menu.addMenu(self.qwe_study_menu)
 
-        self.qwe_study_left = QAction("Left")
-        self.qwe_study_left.triggered.connect(partial(self._open_in_study_window, 'left'))
-        self.qwe_study_menu.addAction(self.qwe_study_left)
+        self.qwe_study_one = QAction("Panel 1")
+        self.qwe_study_one.triggered.connect(partial(self._open_in_study_window, 'panel_one'))
+        self.qwe_study_menu.addAction(self.qwe_study_one)
 
-        self.qwe_study_middle = QAction("Middle")
-        self.qwe_study_middle.triggered.connect(partial(self._open_in_study_window, 'middle'))
-        self.qwe_study_menu.addAction(self.qwe_study_middle)
+        self.qwe_study_two = QAction("Panel 2")
+        self.qwe_study_two.triggered.connect(partial(self._open_in_study_window, 'panel_two'))
+        self.qwe_study_menu.addAction(self.qwe_study_two)
+
+        self.qwe_study_three = QAction("Panel 3")
+        self.qwe_study_three.triggered.connect(partial(self._open_in_study_window, 'panel_three'))
+        self.qwe_study_menu.addAction(self.qwe_study_three)
 
         self.qwe_lookup_menu = QMenu("Lookup Selection")
         menu.addMenu(self.qwe_lookup_menu)

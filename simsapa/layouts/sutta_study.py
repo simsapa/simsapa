@@ -2,10 +2,10 @@ import json
 import queue
 
 from functools import partial
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, TypedDict
 
-from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtGui import QCloseEvent
+from PyQt6 import QtCore
+from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBoxLayout, QWidget
 
@@ -16,18 +16,30 @@ from simsapa.app.types import QueryType, USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
-from simsapa.layouts.gui_types import SuttaStudyWindowInterface
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaStudyWindowInterface
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_lookup import WordLookupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
+class SuttaPanelSettingKeys(TypedDict):
+    language_filter_setting_key: str
+    search_mode_setting_key: str
+    source_filter_setting_key: str
+
+class SuttaPanel(TypedDict):
+    layout_widget: QWidget
+    layout: QVBoxLayout
+    searchbar_layout: QHBoxLayout
+    tabs_layout: QVBoxLayout
+    state: SuttaSearchWindowState
+    setting_keys: SuttaPanelSettingKeys
+
 class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     splitter: QSplitter
-    sutta_one_layout: QVBoxLayout
-    sutta_two_layout: QVBoxLayout
+    sutta_panels: List[SuttaPanel]
     dict_layout: QVBoxLayout
     _show_sutta: Callable
 
@@ -78,11 +90,14 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 pass
 
     def _show_sutta_by_uid_in_side(self, uid: str, side: str):
-        if side == 'left':
-            self.sutta_one_state._show_sutta_by_uid(uid)
+        if side == 'panel_one':
+            self.sutta_panels[0]['state']._show_sutta_by_uid(uid)
 
-        if side == 'middle':
-            self.sutta_two_state._show_sutta_by_uid(uid)
+        elif side == 'panel_two':
+            self.sutta_panels[1]['state']._show_sutta_by_uid(uid)
+
+        elif side == 'panel_three':
+            self.sutta_panels[2]['state']._show_sutta_by_uid(uid)
 
     def _open_in_study_window(self, side: str, sutta: Optional[USutta]):
         if sutta is None:
@@ -96,106 +111,102 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
 
-        # Setup the splitter and the three columns.
-
-        # One
+        # Setup a four-column splitter: three columns for suttas and one for a dictionary.
 
         self.splitter = QSplitter(self.central_widget)
+        self.splitter.setHandleWidth(10)
         # Allow the splitter to be squeezed on small screens.
-        self.splitter.setMinimumWidth(800)
+        self.splitter.setMinimumWidth(200)
         self.splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
-
-        self.sutta_one_layout_widget = QWidget(self.splitter)
-
-        self.sutta_one_layout = QVBoxLayout(self.sutta_one_layout_widget)
-        self.sutta_one_layout.setContentsMargins(0, 0, 0, 0)
-
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
-        self.sutta_one_layout.addItem(spacer)
-
-        self.sutta_one_searchbar_layout = QHBoxLayout()
-        self.sutta_one_layout.addLayout(self.sutta_one_searchbar_layout)
-
-        self.sutta_one_tabs_layout = QVBoxLayout()
-        self.sutta_one_layout.addLayout(self.sutta_one_tabs_layout)
-
-        self.sutta_one_state = SuttaSearchWindowState(app_data=self._app_data,
-                                                      parent_window=self,
-                                                      searchbar_layout=self.sutta_one_searchbar_layout,
-                                                      sutta_tabs_layout=self.sutta_one_tabs_layout,
-                                                      tabs_layout=None,
-                                                      focus_input=False,
-                                                      enable_language_filter=True,
-                                                      enable_search_extras=True,
-                                                      enable_info_button=False,
-                                                      enable_sidebar=False,
-                                                      enable_find_panel=True,
-                                                      create_find_toolbar=False,
-                                                      show_query_results_in_active_tab=True,
-                                                      search_bar_two_rows_layout=True,
-                                                      language_filter_setting_key = 'sutta_study_one_language_filter_idx',
-                                                      search_mode_setting_key = 'sutta_study_one_search_mode',
-                                                      source_filter_setting_key = 'sutta_study_one_source_filter_idx')
-
-        self.sutta_one_state.page_dblclick.connect(partial(self.sutta_one_state._lookup_selection_in_dictionary))
-
-        # Two
-
-        self.sutta_two_layout_widget = QWidget(self.splitter)
-
-        self.sutta_two_layout = QVBoxLayout(self.sutta_two_layout_widget)
-        self.sutta_two_layout.setContentsMargins(0, 0, 0, 0)
-
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
-        self.sutta_two_layout.addItem(spacer)
 
         self.main_layout.addWidget(self.splitter)
 
-        self.sutta_two_searchbar_layout = QHBoxLayout()
-        self.sutta_two_layout.addLayout(self.sutta_two_searchbar_layout)
+        self.sutta_panels: List[SuttaPanel] = []
 
-        self.sutta_two_tabs_layout = QVBoxLayout()
-        self.sutta_two_layout.addLayout(self.sutta_two_tabs_layout)
+        settings_keys = [
+            SuttaPanelSettingKeys(
+                language_filter_setting_key = 'sutta_study_one_language_filter_idx',
+                search_mode_setting_key = 'sutta_study_one_search_mode',
+                source_filter_setting_key = 'sutta_study_one_source_filter_idx',
+            ),
+            SuttaPanelSettingKeys(
+                language_filter_setting_key = 'sutta_study_two_language_filter_idx',
+                search_mode_setting_key = 'sutta_study_two_search_mode',
+                source_filter_setting_key = 'sutta_study_two_source_filter_idx',
+            ),
+            SuttaPanelSettingKeys(
+                language_filter_setting_key = 'sutta_study_three_language_filter_idx',
+                search_mode_setting_key = 'sutta_study_three_search_mode',
+                source_filter_setting_key = 'sutta_study_three_source_filter_idx',
+            ),
+        ]
 
-        self.sutta_two_state = SuttaSearchWindowState(app_data=self._app_data,
-                                                      parent_window=self,
-                                                      searchbar_layout=self.sutta_two_searchbar_layout,
-                                                      sutta_tabs_layout=self.sutta_two_tabs_layout,
-                                                      tabs_layout=None,
-                                                      focus_input=False,
-                                                      enable_language_filter=True,
-                                                      enable_search_extras=True,
-                                                      enable_info_button=False,
-                                                      enable_sidebar=False,
-                                                      enable_find_panel=True,
-                                                      create_find_toolbar=False,
-                                                      show_query_results_in_active_tab=True,
-                                                      search_bar_two_rows_layout=True,
-                                                      language_filter_setting_key = 'sutta_study_two_language_filter_idx',
-                                                      search_mode_setting_key = 'sutta_study_two_search_mode',
-                                                      source_filter_setting_key = 'sutta_study_two_source_filter_idx')
+        for panel_idx in [0, 1, 2]:
 
-        self.sutta_two_state.page_dblclick.connect(partial(self.sutta_two_state._lookup_selection_in_dictionary))
+            layout_widget = QWidget(self.splitter)
+
+            layout = QVBoxLayout(layout_widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+
+            spacer = QSpacerItem(100, 0, QExpanding, QMinimum)
+            layout.addItem(spacer)
+
+            searchbar_layout = QHBoxLayout()
+            layout.addLayout(searchbar_layout)
+
+            tabs_layout = QVBoxLayout()
+            layout.addLayout(tabs_layout)
+
+            state = SuttaSearchWindowState(app_data=self._app_data,
+                                           parent_window=self,
+                                           searchbar_layout=searchbar_layout,
+                                           sutta_tabs_layout=tabs_layout,
+                                           tabs_layout=None,
+                                           focus_input=False,
+                                           enable_nav_buttons=False,
+                                           enable_language_filter=True,
+                                           enable_search_extras=True,
+                                           enable_regex_fuzzy=False,
+                                           enable_info_button=False,
+                                           enable_sidebar=False,
+                                           enable_find_panel=True,
+                                           create_find_toolbar=False,
+                                           show_query_results_in_active_tab=True,
+                                           search_bar_two_rows_layout=True,
+                                           language_filter_setting_key = settings_keys[panel_idx]['language_filter_setting_key'],
+                                           search_mode_setting_key = settings_keys[panel_idx]['search_mode_setting_key'],
+                                           source_filter_setting_key = settings_keys[panel_idx]['source_filter_setting_key'])
+
+            state.page_dblclick.connect(partial(state._lookup_selection_in_dictionary))
+
+            self.sutta_panels.append(
+                SuttaPanel(
+                    layout_widget = layout_widget,
+                    layout = layout,
+                    searchbar_layout = searchbar_layout,
+                    tabs_layout = tabs_layout,
+                    state = state,
+                    setting_keys = settings_keys[panel_idx],
+                )
+            )
 
         # Focus the first input field
 
-        self.sutta_one_state.search_input.setFocus()
-
-        # Setup the two sutta layouts.
+        self.sutta_panels[0]['state'].search_input.setFocus()
 
         # Setup the dictionary search.
 
         self.dictionary_layout_widget = QWidget(self.splitter)
-
         self.dictionary_layout = QVBoxLayout(self.dictionary_layout_widget)
         self.dictionary_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(100, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        spacer = QSpacerItem(100, 0, QExpanding, QMinimum)
         self.dictionary_layout.addItem(spacer)
 
         self.dictionary_state = WordLookupState(app_data = self._app_data,
                                                 wrap_layout = self.dictionary_layout,
                                                 focus_input = False,
+                                                enable_regex_fuzzy = False,
                                                 enable_find_panel = True,
                                                 language_filter_setting_key = 'sutta_study_lookup_language_filter_idx',
                                                 search_mode_setting_key = 'sutta_study_lookup_search_mode',
@@ -205,28 +216,31 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))
 
         def _dict(text: str):
-            self.dictionary_state.lookup_in_dictionary(text, show_results_tab = True, include_exact_query = False)
+            self.dictionary_state.lookup_in_dictionary(text, show_results_tab = False, include_exact_query = False)
 
         # Sutta states emit this signal via parent window's handle
         self.lookup_in_dictionary_signal.connect(partial(_dict))
 
         # Tab order for input fields
 
-        self.setTabOrder(self.sutta_one_state.search_input, self.sutta_two_state.search_input)
-        self.setTabOrder(self.sutta_two_state.search_input, self.dictionary_state.search_input)
+        for idx in [0, len(self.sutta_panels)-2]:
+            self.setTabOrder(self.sutta_panels[idx]['state'].search_input, self.sutta_panels[idx+1]['state'].search_input)
+
+        last_idx = len(self.sutta_panels)-1
+        self.setTabOrder(self.sutta_panels[last_idx]['state'].search_input, self.dictionary_state.search_input)
 
         # Create the shared find toolbar.
 
-        self.find_toolbar = QToolBar()
+        self.find_toolbar = QToolBar(self)
         self.find_panel_layout = QHBoxLayout()
         self.find_panel_layout.setContentsMargins(0, 0, 0, 0)
 
-        for panel in [self.sutta_one_state._find_panel,
-                      self.sutta_two_state._find_panel,
-                      self.dictionary_state._find_panel]:
+        for panel in self.sutta_panels:
+            self.find_panel_layout.addWidget(panel['state']._find_panel)
+            panel['state']._find_panel.closed.connect(self.find_toolbar.hide)
 
-            self.find_panel_layout.addWidget(panel)
-            panel.closed.connect(self.find_toolbar.hide)
+        self.find_panel_layout.addWidget(self.dictionary_state._find_panel)
+        self.dictionary_state._find_panel.closed.connect(self.find_toolbar.hide)
 
         self.find_panel_widget = QWidget()
         self.find_panel_widget.setLayout(self.find_panel_layout)
@@ -235,6 +249,88 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
         self.find_toolbar.hide()
+
+        # Set splitter sizes to max, thrid panel is hidden by default.
+
+        self.splitter.setSizes([2000, 2000, 0, 2000])
+
+        # Create the panel toggle toolbar.
+
+        self.panel_toggle_toolbar = QToolBar(self)
+        self.addToolBar(QtCore.Qt.ToolBarArea.LeftToolBarArea, self.panel_toggle_toolbar)
+        self.panel_toggle_toolbar.show()
+
+        self.action_toggle_panel_one = QAction("1")
+        self.action_toggle_panel_one.setCheckable(True)
+        self.action_toggle_panel_one.setChecked(True)
+        self.action_toggle_panel_one.setShortcut(QKeySequence("Ctrl+1"))
+        self.panel_toggle_toolbar.addAction(self.action_toggle_panel_one)
+
+        def _toggle_one():
+            is_on = self.action_toggle_panel_one.isChecked()
+            sizes = self.splitter.sizes()
+            if is_on:
+                sizes[0] = 500
+            else:
+                sizes[0] = 0
+
+            self.splitter.setSizes(sizes)
+
+        self.action_toggle_panel_one.triggered.connect(partial(_toggle_one))
+
+        self.action_toggle_panel_two = QAction("2")
+        self.action_toggle_panel_two.setCheckable(True)
+        self.action_toggle_panel_two.setChecked(True)
+        self.action_toggle_panel_two.setShortcut(QKeySequence("Ctrl+2"))
+        self.panel_toggle_toolbar.addAction(self.action_toggle_panel_two)
+
+        def _toggle_two():
+            is_on = self.action_toggle_panel_two.isChecked()
+            sizes = self.splitter.sizes()
+            if is_on:
+                sizes[1] = 500
+            else:
+                sizes[1] = 0
+
+            self.splitter.setSizes(sizes)
+
+        self.action_toggle_panel_two.triggered.connect(partial(_toggle_two))
+
+        self.action_toggle_panel_three = QAction("3")
+        self.action_toggle_panel_three.setCheckable(True)
+        self.action_toggle_panel_three.setChecked(False)
+        self.action_toggle_panel_three.setShortcut(QKeySequence("Ctrl+3"))
+        self.panel_toggle_toolbar.addAction(self.action_toggle_panel_three)
+
+        def _toggle_three():
+            is_on = self.action_toggle_panel_three.isChecked()
+            sizes = self.splitter.sizes()
+            if is_on:
+                sizes[2] = 500
+            else:
+                sizes[2] = 0
+
+            self.splitter.setSizes(sizes)
+
+        self.action_toggle_panel_three.triggered.connect(partial(_toggle_three))
+
+        self.action_toggle_panel_dict = QAction("D")
+        self.action_toggle_panel_dict.setCheckable(True)
+        self.action_toggle_panel_dict.setChecked(True)
+        self.action_toggle_panel_dict.setShortcut(QKeySequence("Ctrl+D"))
+        self.panel_toggle_toolbar.addAction(self.action_toggle_panel_dict)
+
+        def _toggle_dict():
+            is_on = self.action_toggle_panel_dict.isChecked()
+            sizes = self.splitter.sizes()
+            if is_on:
+                sizes[3] = 500
+            else:
+                sizes[3] = 0
+
+            self.splitter.setSizes(sizes)
+
+        self.action_toggle_panel_dict.triggered.connect(partial(_toggle_dict))
 
     def _show_url(self, url: QUrl):
         if url.host() == QueryType.suttas:
@@ -265,8 +361,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.activateWindow()
         s = self._app_data.clipboard_getText()
         if s is not None:
-            self.sutta_one_state._set_query(s)
-            self.sutta_one_state._handle_query()
+            self.sutta_panels[0]['state']._set_query(s)
+            self.sutta_panels[0]['state']._handle_query()
 
     def _lookup_clipboard_in_dictionary(self):
         text = self._app_data.clipboard_getText()
@@ -276,41 +372,78 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     def _lookup_selection_in_suttas(self):
         self.activateWindow()
-        text = self.sutta_one_state._get_selection()
-        if text is not None:
-            self.sutta_one_state._set_query(text)
-            self.sutta_one_state._handle_query()
-        else:
-            text = self.sutta_two_state._get_selection()
+        for panel in self.sutta_panels:
+            text = panel['state']._get_selection()
             if text is not None:
-                self.sutta_two_state._set_query(text)
-                self.sutta_two_state._handle_query()
+                panel['state']._set_query(text)
+                panel['state']._handle_query()
+                return
 
     def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
-        text = self.sutta_one_state._get_selection()
-        if text is None:
-            text = self.sutta_two_state._get_selection()
-
-        if text is not None:
-            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+        for panel in self.sutta_panels:
+            text = panel['state']._get_selection()
+            if text is not None:
+                self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+                return
 
     def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
         self.dictionary_state.lookup_in_dictionary(query, show_results_tab, include_exact_query)
 
     def _handle_copy(self):
-        text = self.sutta_one_state._get_selection()
-        if text is None:
-            text = self.sutta_two_state._get_selection()
-
-        if text is not None:
-            self._app_data.clipboard_setText(text)
+        for panel in self.sutta_panels:
+            text = panel['state']._get_selection()
+            if text is not None:
+                self._app_data.clipboard_setText(text)
+                return
 
     def _focus_search_input(self):
-        self.sutta_one_state.search_input.setFocus()
+        # Action on Ctrl + L
+        self._focus_sutta_search_input()
+
+    def _focus_sutta_search_input(self):
+        # Cycle the sutta search inputs if one was already selected
+        # Or select the first one
+        selected_idx: Optional[int] = None
+        for idx, panel in enumerate(self.sutta_panels):
+            if panel['state'].search_input.hasFocus():
+                selected_idx = idx
+                break
+
+        if selected_idx is None:
+            self.sutta_panels[0]['state'].search_input.setFocus()
+
+        else:
+            visible_indexes = []
+            focused_visible_index_list_pos = 0
+            splitter_sizes = self.splitter.sizes()
+            for idx, panel in enumerate(self.sutta_panels):
+                if splitter_sizes[idx] > 0:
+                    visible_indexes.append(idx)
+                    if self.sutta_panels[idx]['state'].search_input.hasFocus():
+                        focused_visible_index_list_pos = len(visible_indexes)-1
+
+            if len(visible_indexes) == 0:
+                return
+
+            elif len(visible_indexes) == 1:
+                idx = visible_indexes[0]
+                self.sutta_panels[idx]['state'].search_input.setFocus()
+                return
+
+            next_visible_list_pos = focused_visible_index_list_pos+1
+            if next_visible_list_pos > len(visible_indexes)-1:
+                next_visible_list_pos = 0
+
+            next_panel_idx = visible_indexes[next_visible_list_pos]
+            self.sutta_panels[next_panel_idx]['state'].search_input.setFocus()
+
+    def _focus_dict_search_input(self):
+        # Action on Ctrl + ;
+        self.dictionary_state.search_input.setFocus()
 
     def reload_sutta_pages(self):
-        self.sutta_one_state.reload_page()
-        self.sutta_two_state.reload_page()
+        for panel in self.sutta_panels:
+            panel['state'].reload_page()
 
     def _increase_text_size(self):
         font_size = self._app_data.app_settings.get('sutta_font_size', 22)
@@ -321,8 +454,9 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self._app_data._save_app_settings()
 
-        self.sutta_one_state._get_active_tab().render_sutta_content()
-        self.sutta_two_state._get_active_tab().render_sutta_content()
+        for panel in self.sutta_panels:
+            panel['state']._get_active_tab().render_sutta_content()
+
         self.dictionary_state._render_words(self.dictionary_state._current_words)
 
     def _decrease_text_size(self):
@@ -331,8 +465,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             self._app_data.app_settings['sutta_font_size'] = font_size - 2
             self._app_data._save_app_settings()
 
-            self.sutta_one_state._get_active_tab().render_sutta_content()
-            self.sutta_two_state._get_active_tab().render_sutta_content()
+            for panel in self.sutta_panels:
+                panel['state']._get_active_tab().render_sutta_content()
 
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         if font_size >= 5:
@@ -348,8 +482,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self._app_data.app_settings['sutta_max_width'] = max_width - 2
         self._app_data._save_app_settings()
 
-        self.sutta_one_state._get_active_tab().render_sutta_content()
-        self.sutta_two_state._get_active_tab().render_sutta_content()
+        for panel in self.sutta_panels:
+            panel['state']._get_active_tab().render_sutta_content()
 
     def _decrease_text_margins(self):
         # decrease margins = greater max with
@@ -357,8 +491,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self._app_data.app_settings['sutta_max_width'] = max_width + 2
         self._app_data._save_app_settings()
 
-        self.sutta_one_state._get_active_tab().render_sutta_content()
-        self.sutta_two_state._get_active_tab().render_sutta_content()
+        for panel in self.sutta_panels:
+            panel['state']._get_active_tab().render_sutta_content()
 
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.dictionary_state.link_mouseover.connect(partial(preview_window.link_mouseover))
@@ -367,7 +501,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     def _handle_show_find_panel(self):
         self.find_toolbar.show()
-        self.sutta_one_state._find_panel.search_input.setFocus()
+        self.sutta_panels[0]['state']._find_panel.search_input.setFocus()
 
     def closeEvent(self, event: QCloseEvent):
         if self.queue_id in APP_QUEUES.keys():
@@ -411,3 +545,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.action_Find_in_Page \
             .triggered.connect(self._handle_show_find_panel)
+
+        self.action_Focus_Dict_Search_Input = QShortcut(QKeySequence("Ctrl+;"), self)
+        self.action_Focus_Dict_Search_Input \
+            .activated.connect(partial(self._focus_dict_search_input))

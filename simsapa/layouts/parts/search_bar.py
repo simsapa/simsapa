@@ -33,9 +33,10 @@ class HasSearchBar(SearchBarInterface):
     def init_search_bar(self,
                         wrap_layout: QBoxLayout,
                         search_area: SearchArea,
-                        add_nav_buttons = True,
+                        enable_nav_buttons = True,
                         enable_language_filter = True,
                         enable_search_extras = True,
+                        enable_regex_fuzzy = True,
                         enable_info_button = True,
                         input_fixed_size: Optional[QSize] = None,
                         icons_height = 40,
@@ -49,10 +50,11 @@ class HasSearchBar(SearchBarInterface):
 
         self.enable_language_filter = enable_language_filter
         self.enable_search_extras = enable_search_extras
+        self.enable_regex_fuzzy = enable_regex_fuzzy
 
         self._init_search_icons()
         self._setup_layout(wrap_layout = wrap_layout,
-                           add_nav_buttons = add_nav_buttons,
+                           enable_nav_buttons = enable_nav_buttons,
                            input_fixed_size = input_fixed_size,
                            two_rows_layout = two_rows_layout)
 
@@ -69,7 +71,9 @@ class HasSearchBar(SearchBarInterface):
         if enable_search_extras:
             self._setup_source_include_btn()
             self._setup_source_filter()
-            self._setup_regex_and_fuzzy()
+
+            if enable_regex_fuzzy:
+                self._setup_regex_and_fuzzy()
 
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             # self._setup_toggle_pali_button() # TODO: reimplement as hover window
@@ -84,7 +88,7 @@ class HasSearchBar(SearchBarInterface):
 
     def _setup_layout(self,
                       wrap_layout: QBoxLayout,
-                      add_nav_buttons: bool,
+                      enable_nav_buttons: bool,
                       input_fixed_size: Optional[QSize] = None,
                       two_rows_layout = False):
 
@@ -104,7 +108,7 @@ class HasSearchBar(SearchBarInterface):
 
         # === Back / Forward Nav Buttons ===
 
-        if add_nav_buttons:
+        if enable_nav_buttons:
 
             self.back_recent_button = QPushButton()
             self.back_recent_button.setFixedSize(self._icons_height, self._icons_height)
@@ -446,8 +450,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.app_settings[self._search_mode_setting_key] = mode
         self._app_data._save_app_settings()
 
-        is_fulltext = (mode == SearchMode.FulltextMatch)
-        self.regex_fuzzy_frame.setEnabled(is_fulltext)
+        if self.enable_regex_fuzzy:
+            is_fulltext = (mode == SearchMode.FulltextMatch)
+            self.regex_fuzzy_frame.setEnabled(is_fulltext)
 
     def _start_query_workers(self, query_text_orig: str):
         if len(query_text_orig) == 0:
