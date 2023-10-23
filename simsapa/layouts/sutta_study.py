@@ -410,6 +410,11 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 self._app_data.clipboard_setText(text)
                 return
 
+        text = self.dictionary_state._get_selection()
+        if text is not None:
+            self._app_data.clipboard_setText(text)
+            return
+
     def _focus_search_input(self):
         # Action on Ctrl + L
         self._focus_sutta_search_input()
