@@ -268,9 +268,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_one():
             is_on = self.action_toggle_panel_one.isChecked()
-            sizes = self.splitter.sizes()
+            sizes = self._get_maxed_splitter_sizes()
             if is_on:
-                sizes[0] = 500
+                sizes[0] = 2000
+                self.sutta_panels[0]['state'].search_input.setFocus()
             else:
                 sizes[0] = 0
 
@@ -286,9 +287,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_two():
             is_on = self.action_toggle_panel_two.isChecked()
-            sizes = self.splitter.sizes()
+            sizes = self._get_maxed_splitter_sizes()
             if is_on:
-                sizes[1] = 500
+                sizes[1] = 2000
+                self.sutta_panels[1]['state'].search_input.setFocus()
             else:
                 sizes[1] = 0
 
@@ -304,9 +306,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_three():
             is_on = self.action_toggle_panel_three.isChecked()
-            sizes = self.splitter.sizes()
+            sizes = self._get_maxed_splitter_sizes()
             if is_on:
-                sizes[2] = 500
+                sizes[2] = 2000
+                self.sutta_panels[2]['state'].search_input.setFocus()
             else:
                 sizes[2] = 0
 
@@ -322,15 +325,26 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_dict():
             is_on = self.action_toggle_panel_dict.isChecked()
-            sizes = self.splitter.sizes()
+            sizes = self._get_maxed_splitter_sizes()
             if is_on:
-                sizes[3] = 500
+                sizes[3] = 2000
+                self.dictionary_state.search_input.setFocus()
             else:
                 sizes[3] = 0
 
             self.splitter.setSizes(sizes)
 
         self.action_toggle_panel_dict.triggered.connect(partial(_toggle_dict))
+
+    def _get_maxed_splitter_sizes(self) -> List[int]:
+        sizes = []
+        for i in self.splitter.sizes():
+            if i > 0:
+                sizes.append(2000)
+            else:
+                sizes.append(0)
+
+        return sizes
 
     def _show_url(self, url: QUrl):
         if url.host() == QueryType.suttas:
