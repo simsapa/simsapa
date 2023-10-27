@@ -528,7 +528,7 @@ class SearchBarInterface(QWidget):
     page_len: int
     get_page_num: Callable[[], int]
     _search_area: SearchArea
-    _set_query: Callable
+    _set_query: Callable[[str], None]
     _handle_query: Callable
     _handle_exact_query: Callable
     _search_query_finished: Callable[[datetime], None]

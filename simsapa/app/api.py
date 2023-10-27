@@ -27,6 +27,7 @@ server_queue: Optional[queue.Queue] = None
 
 class AppCallbacks:
     open_window: Callable[[str], None]
+    run_lookup_query: Callable[[str], None]
     def __init__(self):
         pass
 
@@ -231,6 +232,13 @@ def get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
+@app.route('/lookup_window_query/<query_text>', methods=['GET'])
+def lookup_window_query(query_text: str = ''):
+    if len(query_text) == 0:
+        return "OK", 200
+    app_callbacks.run_lookup_query(query_text)
+    return "OK", 200
+
 @app.route('/open_window', defaults={'window_type': ''})
 @app.route('/open_window/<string:window_type>', methods=['GET'])
 def open_window(window_type: str = ''):
@@ -341,7 +349,8 @@ def resp_forbidden(e):
 
 def start_server(port: int,
                  q: queue.Queue,
-                 open_window_fn: Callable):
+                 open_window_fn: Callable[[str], None],
+                 run_lookup_query_fn: Callable[[str], None]):
     logger.info(f'Starting server on port {port}')
 
     global server_queue
@@ -349,5 +358,6 @@ def start_server(port: int,
 
     global app_callbacks
     app_callbacks.open_window = open_window_fn
+    app_callbacks.run_lookup_query = run_lookup_query_fn
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)

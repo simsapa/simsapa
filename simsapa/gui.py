@@ -195,6 +195,9 @@ def start(port: Optional[int] = None,
     def emit_open_window_signal_fn(window_type: str = ''):
         app_windows.signals.open_window_signal.emit(window_type)
 
+    def run_lookup_query(query_text: str):
+        app_windows.signals.run_lookup_query_signal.emit(query_text)
+
     def _start_daemon_server():
         # This way the import happens in the thread, and doesn't delay app.exec()
         from simsapa.app.api import start_server
@@ -202,7 +205,10 @@ def start(port: Optional[int] = None,
         with open(SIMSAPA_API_PORT_PATH, mode='w', encoding='utf-8') as f:
             f.write(str(port))
 
-        start_server(port, SERVER_QUEUE, emit_open_window_signal_fn)
+        start_server(port,
+                     SERVER_QUEUE,
+                     emit_open_window_signal_fn,
+                     run_lookup_query)
 
     daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
     daemon.setDaemon(True)
