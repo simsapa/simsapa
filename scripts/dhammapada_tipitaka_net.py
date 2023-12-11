@@ -86,6 +86,7 @@ def parse_sutta(ref: str, content_html: str) -> Am.Sutta:
         title_pali = title_pali,
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
+        nikaya = helpers.uid_to_nikaya(ref),
         language = lang,
         content_html = content_html,
         content_plain = compact_rich_text(content_html),

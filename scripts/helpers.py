@@ -37,7 +37,7 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
     if remove_if_exists and db_path.exists():
         db_path.unlink()
 
-    find_or_create_db(db_path, schema.value)
+    find_or_create_db(db_path, schema)
 
     try:
         # Create an in-memory database
@@ -47,8 +47,12 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
 
         if schema == DbSchemaName.AppData:
             db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS appdata;"))
-        else:
+        elif schema == DbSchemaName.UserData:
             db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS userdata;"))
+        elif schema == DbSchemaName.Dpd:
+            db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS dpd;"))
+        else:
+            raise Exception(f"Unknown schema_name: {schema}")
 
         Session = sessionmaker(engine)
         Session.configure(bind=engine)
@@ -78,6 +82,10 @@ def uid_to_ref(uid: str) -> str:
 
     return uid
 
+def uid_to_nikaya(uid: str) -> str:
+    '''sn12.23 to sn'''
+    nikaya = re.sub(r'^([a-z]+).*', r'\1', uid)
+    return nikaya
 
 def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> Optional[UMultiRef]:
     ref_text = ref_text.lower()
@@ -133,13 +141,15 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 edition = "1st ed. Feer (1884)",
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = normalize_sutta_ref(ref_text),
                 edition = "1st ed. Feer (1884)",
             )
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -154,13 +164,16 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 edition = "2nd ed. Somaratne (1998)",
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = normalize_sutta_ref(ref_text),
                 edition = "2nd ed. Somaratne (1998)",
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -184,12 +197,15 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 ref = ", ".join(refs),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = ", ".join(refs),
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -210,12 +226,15 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 ref = ", ".join(refs),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = ", ".join(refs),
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 

@@ -8,7 +8,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_session import get_db_version
@@ -31,8 +31,15 @@ def excepthook(exc_type, exc_value, exc_tb):
     logger.error("excepthook()")
     tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     logger.error(tb)
-    w = ErrorMessageWindow(user_message=None, debug_info=tb)
-    w.show()
+
+    if isinstance(exc_value, KeyboardInterrupt):
+        status = 1
+        logger.info(f"Exiting with status {status}.")
+        sys.exit(status)
+
+    else:
+        w = ErrorMessageWindow(user_message=None, debug_info=tb)
+        w.show()
 
 
 sys.excepthook = excepthook
@@ -40,9 +47,10 @@ sys.excepthook = excepthook
 check_delete_files()
 create_app_dirs()
 
-def start(port: Optional[int] = None,
+def start(port: int = SIMSAPA_API_DEFAULT_PORT,
           url: Optional[str] = None,
           window_type_name: Optional[str] = None,
+          show_window = True,
           splash_proc: Optional[Popen] = None):
     logger.profile("gui::start()")
     set_is_gui(True)
@@ -227,23 +235,24 @@ def start(port: Optional[int] = None,
 
     # === Create first window ===
 
-    ok = False
-    if url:
-        open_url = QUrl(url)
-        if open_url.scheme() == 'ssp' and open_url.host() == QueryType.suttas:
-            ok = app_windows._show_sutta_by_url_in_search(open_url)
+    if show_window:
+        ok = False
+        if url:
+            open_url = QUrl(url)
+            if open_url.scheme() == 'ssp' and open_url.host() == QueryType.suttas:
+                ok = app_windows._show_sutta_by_url_in_search(open_url)
 
-        elif open_url.scheme() == 'ssp' and open_url.host() == QueryType.words:
-            ok = app_windows._show_words_by_url(open_url)
+            elif open_url.scheme() == 'ssp' and open_url.host() == QueryType.words:
+                ok = app_windows._show_words_by_url(open_url)
 
-    if not ok:
-        if window_type_name is not None:
-            window_type = WindowNameToType[window_type_name]
-        else:
-            window_type = None
-        app_windows.open_first_window(window_type)
+        if not ok:
+            if window_type_name is not None:
+                window_type = WindowNameToType[window_type_name]
+            else:
+                window_type = None
+            app_windows.open_first_window(window_type)
 
-    app_windows.show_startup_message()
+        app_windows.show_startup_message()
 
     if splash_proc is not None:
         if splash_proc.poll() is None:

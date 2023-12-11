@@ -7,9 +7,11 @@ from sqlalchemy.orm.session import Session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.helpers import word_uid
+from simsapa.app.db import dpd_models as Dpd
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
 
 # TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
 class Labels(TypedDict):
@@ -27,6 +29,7 @@ class SearchResult(TypedDict):
     source_uid: Optional[str]
     title: str
     ref: Optional[str]
+    nikaya: Optional[str]
     author: Optional[str]
     # highlighted snippet
     snippet: str
@@ -44,6 +47,7 @@ def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
         source_uid = str(x.source_uid),
         title = str(x.title) if x.title else '',
         ref = str(x.sutta_ref) if x.sutta_ref else '',
+        nikaya = str(x.nikaya) if x.nikaya else '',
         author = None,
         snippet = snippet,
         page_number = None,
@@ -60,6 +64,24 @@ def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
         source_uid = str(x.source_uid),
         title = str(x.word),
         ref = None,
+        nikaya = None,
+        author = None,
+        snippet = snippet,
+        page_number = None,
+        score = None,
+        rank = None,
+    )
+
+def dpd_pali_word_to_search_result(x: Dpd.PaliWord, snippet: str) -> SearchResult:
+    return SearchResult(
+        db_id = int(str(x.id)),
+        schema_name = 'dpd',
+        table_name = 'pali_words',
+        uid = word_uid(x.pali_1, 'dpd'),
+        source_uid = 'dpd',
+        title = str(x.pali_1),
+        ref = None,
+        nikaya = None,
         author = None,
         snippet = snippet,
         page_number = None,
@@ -112,7 +134,7 @@ def search_oneline(content: str) -> str:
 
     return s
 
-def is_index_empty(ix: tantivy.Index) -> bool:
+def is_index_empty(__ix__: tantivy.Index) -> bool:
     # FIXME requires dir path as argument
     # if not ix.exists():
     #     return True

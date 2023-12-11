@@ -13,11 +13,12 @@ from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.types import QueryType, SearchArea, USutta, UDictWord
@@ -286,8 +287,75 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if self._app_data.app_settings['double_click_word_lookup']:
             self.page_dblclick.emit()
 
-    def _copy_clipboard(self, text: str):
+    def _copy_clipboard_text(self, text: str):
         self._app_data.clipboard_setText(text)
+
+    def _copy_clipboard_html(self, html: str):
+        self._app_data.clipboard_setHtml(html)
+
+    def _get_word_for_schema_and_id(self, db_schema: str, db_id: int) -> UDictWord:
+        if db_schema == DbSchemaName.AppData.value:
+            w = self._app_data.db_session \
+                              .query(Am.DictWord) \
+                              .filter(Am.DictWord.id == db_id) \
+                              .first()
+
+        elif db_schema == DbSchemaName.UserData.value:
+            w = self._app_data.db_session \
+                              .query(Um.DictWord) \
+                              .filter(Um.DictWord.id == db_id) \
+                              .first()
+
+        elif db_schema == DbSchemaName.Dpd.value:
+            w = self._app_data.db_session \
+                              .query(Dpd.PaliWord) \
+                              .filter(Dpd.PaliWord.id == db_id) \
+                              .first()
+
+        else:
+            raise Exception(f"Unknown schema: {db_schema}")
+
+        assert(w is not None)
+
+        return w
+
+    def _get_meaning(self, w: UDictWord) -> str:
+        if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
+            return w.definition_plain if w.definition_plain is not None else ""
+
+        elif isinstance(w, Dpd.PaliWord):
+            return w.meaning_1
+
+    def _get_gloss(self, w: UDictWord, gloss_keys: str) -> str:
+        html = ""
+
+        if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
+            return "<p>FIXME Gloss only works for DPD words</p>"
+
+        elif isinstance(w, Dpd.PaliWord):
+            html = "<table><tr><td>"
+
+            data = w.as_dict
+            values = []
+
+            for k in gloss_keys.split(','):
+                k = k.strip()
+                if k in data.keys():
+                    values.append(str(data[k]))
+
+            html += "</td><td>".join(values)
+
+            html += "</td></tr></table>"
+
+        return html
+
+    def _copy_gloss(self, db_schema: str, db_id: int, gloss_keys: str):
+        w = self._get_word_for_schema_and_id(db_schema, db_id)
+        self._copy_clipboard_html(self._get_gloss(w, gloss_keys))
+
+    def _copy_meaning(self, db_schema: str, db_id: int):
+        w = self._get_word_for_schema_and_id(db_schema, db_id)
+        self._copy_clipboard_text(self._get_meaning(w))
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
@@ -297,7 +365,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
-        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
+        page.helper.copy_clipboard_text.connect(partial(self._copy_clipboard_text))
+        page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
+        page.helper.copy_gloss.connect(partial(self._copy_gloss))
+        page.helper.copy_meaning.connect(partial(self._copy_meaning))
 
         self.qwe.setPage(page)
 

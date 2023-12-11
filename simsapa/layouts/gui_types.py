@@ -396,7 +396,7 @@ def default_app_settings() -> AppSettings:
         tray_click_opens_window = WindowType.SuttaSearch,
 
         sutta_font_size = 22,
-        dictionary_font_size = 18,
+        dictionary_font_size = 16,
 
         path_to_curl = None,
         path_to_ebook_convert = None,

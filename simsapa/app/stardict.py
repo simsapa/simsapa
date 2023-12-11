@@ -196,7 +196,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
         for name, pat_name in pat.items():
 
             file_path = None
-            for p in list(unzipped_dir.glob(f"**/*")):
+            for p in list(unzipped_dir.glob("**/*")):
                 if re.search(pat_name, str(p)) is not None:
                     file_path = p
                     break
@@ -221,7 +221,7 @@ def parse_stardict_zip(zip_path: Path) -> StarDictPaths:
 def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
     logger.info("=== parse_ifo() ===")
     if paths['ifo_path'] is None:
-        msg = f"ifo file is None"
+        msg = "ifo file is None"
         logger.error(msg)
         raise DictError(msg)
 
@@ -240,7 +240,7 @@ def parse_ifo(paths: StarDictPaths) -> StarDictIfo:
             logger.error(msg)
             raise DictError(msg)
 
-        a = (l.split("=") for l in map(str.rstrip, f) if l != "")
+        a = (x.split("=") for x in map(str.rstrip, f) if x != "")
         opts = {k.strip(): v.strip() for k, v in a}
 
         return ifo_from_opts(opts)
@@ -260,7 +260,7 @@ def parse_idx(paths: StarDictPaths) -> List[IdxEntry]:
     logger.info("=== parse_idx() ===")
 
     if paths['idx_path'] is None:
-        msg = f"idx file is None"
+        msg = "idx file is None"
         logger.error(msg)
         raise DictError(msg)
 
@@ -304,7 +304,7 @@ def parse_bword_links_to_ssp(definition: str) -> str:
     return definition
 
 
-def _word_done(res: ParseResult):
+def _word_done(__res__: ParseResult):
     global TOTAL_SEGMENTS
     global DONE_COUNT
     DONE_COUNT += 1
@@ -314,7 +314,7 @@ def _word_done(res: ParseResult):
     # logger.info(f"Parsed {segment['bookname']} {percent:.2f}% {DONE_COUNT}/{TOTAL_SEGMENTS}: {segment['dict_word']}")
 
 
-def _add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
+def add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
     if syn_entries is None:
         return []
 
@@ -326,9 +326,9 @@ def _add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
     return synonyms
 
 
-def _parse_word(segment: DictSegment, types: str, syn_entries: Optional[SynEntries]) -> ParseResult:
+def _parse_word(segment: DictSegment, types: str, __syn_entries__: Optional[SynEntries]) -> ParseResult:
     dict_word = consistent_nasal_m(segment['dict_word'])
-    idx = segment['idx']
+    # idx = segment['idx']
     data_str = consistent_nasal_m(segment['data_str'])
 
     definition_plain = ""

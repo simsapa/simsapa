@@ -1,6 +1,6 @@
 from pathlib import Path
 import queue, json, os
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, TypedDict
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
@@ -8,7 +8,7 @@ import logging
 
 from simsapa import PACKAGE_ASSETS_DIR
 from simsapa import logger
-from simsapa.app.db_session import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
 
 from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
@@ -16,6 +16,9 @@ from sqlalchemy import and_, or_
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+
+from simsapa.app.db import dpd_models as Dpd
+from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 app = Flask(__name__)
 app.config['ENV'] = 'development'
@@ -33,6 +36,10 @@ class AppCallbacks:
 
 global app_callbacks
 app_callbacks = AppCallbacks()
+
+@app.route('/', methods=['GET'])
+def index():
+    return 'OK', 200
 
 @app.route('/queues/<string:queue_id>', methods=['POST'])
 def queues(queue_id):
@@ -117,6 +124,13 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
         .filter(Um.DictWord.uid == uid) \
         .all()
     results.extend(res)
+
+    # FIXME dpd uid
+    # res = db_session \
+    #     .query(Dpd.PaliWord) \
+    #     .filter(Dpd.PaliWord.uid == uid) \
+    #     .all()
+    # results.extend(res)
 
     db_conn.close()
     db_session.close()
@@ -221,6 +235,70 @@ def _bm_to_res(x: UBookmark) -> Dict[str, str]:
         'bookmark_schema_id': f"{x.metadata.schema}-{x.id}",
     }
 
+class DpdSearchResult(TypedDict):
+    id: int
+    pali_1: str
+    meaning_1: str
+    grammar: str
+    definition_html: str
+
+@app.route('/dpd_search', methods=['POST'])
+def dpd_search():
+    data = request.get_json()
+    if not data or 'query_text' not in data.keys():
+        return "Missing query_text", 400
+
+    app_db_eng, app_db_conn, app_db_session = get_db_engine_connection_session()
+    dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
+
+    query_text = data['query_text'].strip()
+
+    dpd_id: Optional[int] = None
+
+    try:
+        dpd_id = int(query_text)
+    except Exception:
+        dpd_id = None
+
+    dpd_results = []
+
+    if dpd_id is None:
+        r = dpd_db_session.query(Dpd.PaliWord) \
+                          .filter(Dpd.PaliWord.pali_1.like(f"%{query_text}%")) \
+                          .all()
+        dpd_results.extend(r)
+
+    else:
+        dpd_results = dpd_db_session.query(Dpd.PaliWord) \
+                                    .filter(Dpd.PaliWord.id == dpd_id) \
+                                    .all()
+
+    search_results = [i.as_dict for i in dpd_results]
+
+    app_db_conn.close()
+    app_db_session.close()
+    app_db_eng.dispose()
+
+    dpd_db_conn.close()
+    dpd_db_session.close()
+    dpd_db_eng.dispose()
+
+    return jsonify(search_results), 200
+
+@app.route('/dpd_word_completion_list', methods=['GET'])
+def dpd_word_completion_list():
+    logger.info('/dpd_word_completion_list')
+    dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
+
+    res = dpd_db_session.query(Dpd.PaliWord.pali_1).all()
+    a: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
+    results = sorted(a, key=lambda x: pali_sort_key(x))
+
+    dpd_db_conn.close()
+    dpd_db_session.close()
+    dpd_db_eng.dispose()
+
+    return jsonify(results), 200
 
 @app.route('/get_bookmarks_with_range_for_sutta', methods=['POST'])
 def get_bookmarks_with_range_for_sutta():
@@ -233,10 +311,27 @@ def get_bookmarks_with_range_for_sutta():
     return jsonify(result), 200
 
 @app.route('/lookup_window_query/<query_text>', methods=['GET'])
-def lookup_window_query(query_text: str = ''):
+def lookup_window_query_get(query_text: str = ''):
     if len(query_text) == 0:
         return "OK", 200
     app_callbacks.run_lookup_query(query_text)
+    return "OK", 200
+
+@app.route('/lookup_window_query', methods=['POST'])
+def lookup_window_query_post():
+    data = request.get_json()
+    if not data:
+        return "Missing data", 400
+
+    if 'query_text' not in data.keys():
+        return "Missing query_text", 400
+
+    query_text = str(data['query_text'])
+    if len(query_text) == 0:
+        return "OK", 200
+
+    app_callbacks.run_lookup_query(query_text)
+
     return "OK", 200
 
 @app.route('/open_window', defaults={'window_type': ''})

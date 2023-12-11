@@ -4,10 +4,11 @@ from typing import List, Optional, TypedDict, Union, Callable
 from simsapa import ShowLabels
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.search.helpers import SearchResult
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
 ULink = Union[Am.Link, Um.Link]
 
 UDeck = Union[Am.Deck, Um.Deck]
@@ -35,6 +36,7 @@ class SearchMode(int, Enum):
     ExactMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
+    DpdIdMatch = 4
 
 AllSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,

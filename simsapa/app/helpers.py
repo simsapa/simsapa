@@ -187,6 +187,12 @@ def pali_to_ascii(text: Optional[str] = None) -> str:
     trans = str.maketrans(from_chars, to_chars)
     return text.translate(trans).strip()
 
+def word_uid(word: str, dict_label: str) -> str:
+    w = word.replace("'", "").replace('"', '').replace(' ', '-')
+    uid = f"{w}/{dict_label}".lower()
+
+    return uid
+
 def expand_quote_to_pattern_str(text: str) -> str:
     s = text
     # Normalize quote marks to '

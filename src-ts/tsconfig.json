@@ -1,0 +1,17 @@
+{
+  "files": [
+    "simsapa.ts",
+    "index.d.ts"
+  ],
+  "include": ["**/*.ts"],
+  "compilerOptions": {
+    "outDir": "../simsapa/assets/js/",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "module": "es6",
+    "target": "es6"
+  }
+}

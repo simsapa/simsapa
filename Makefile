@@ -34,3 +34,9 @@ bootstrap-db:
 
 count-code:
 	tokei --type Python --exclude simsapa/assets/ --exclude simsapa/keyboard/ --exclude simsapa/app/lookup.py . | grep -vE '===|Total'
+
+simsapa.js:
+	npx webpack
+
+profile_time_chart.png:
+	@gnuplot < scripts/profile_time_chart.gp

@@ -6,14 +6,17 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
-from simsapa import DICTIONARY_JS, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 from simsapa.app.types import SearchParams, QueryType, UDictWord, DictionaryQueriesInterface
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 from simsapa.layouts.html_content import page_tmpl
+
+from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, pali_word_dpd_html
 
 class ResultHtml(TypedDict):
     body: str
@@ -74,11 +77,22 @@ class DictionaryQueries(DictionaryQueriesInterface):
                                  .query(Am.DictWord) \
                                  .filter(Am.DictWord.uid == x['uid']) \
                                  .first()
-        else:
+
+        elif x['schema_name'] == DbSchemaName.UserData.value:
             word = self.db_session \
                                  .query(Um.DictWord) \
                                  .filter(Um.DictWord.uid == x['uid']) \
                                  .first()
+
+        elif x['schema_name'] == DbSchemaName.Dpd.value:
+            word = self.db_session \
+                                 .query(Dpd.PaliWord) \
+                                 .filter(Dpd.PaliWord.id == x['db_id']) \
+                                 .first()
+
+        else:
+            raise Exception(f"Unknown schema_name: {x['schema_name']}")
+
         return word
 
     def words_to_html_page(self,
@@ -164,8 +178,6 @@ class DictionaryQueries(DictionaryQueriesInterface):
         if css_extra is not None:
             css_head += css_extra
 
-        js_head += DICTIONARY_JS
-
         html = str(page_tmpl.substitute(content=body,
                                         css_head=css_head,
                                         js_head=js_head,
@@ -175,32 +187,34 @@ class DictionaryQueries(DictionaryQueriesInterface):
         return html
 
     def esq(self, s: str) -> str:
-        # escape single quote
+        """escape single quote"""
         return s.replace("'", "\\'")
 
     def word_heading(self, w: UDictWord) -> str:
-        return f"""
-        <div class="word-heading">
-            <h1>
-                <span class="btn" title="Copy to clipboard" onclick="copy_clipboard('{self.esq(w.word)}')">
-                    <a href="#"><svg class="icon"><use xlink:href="#icon-copy-solid"></use></svg></a>
-                </span>
-                {w.word}
-            </h1>
-            <div class="uid">
-                <span class="btn" title="Copy to clipboard" onclick="copy_clipboard('{self.esq(w.uid)}')">
-                    <a href="#"><svg class="icon"><use xlink:href="#icon-copy-solid"></use></svg></a>
-                </span>
-                {w.uid}
-            </div>
-        </div>
-        <div class="clear"></div>
-        """
+        el_id_key = f"{w.metadata.schema}_{w.id}"
+        transient_id = f"transient-messages_{el_id_key}"
+
+        tmpl = DPD_PALI_WORD_TEMPLATES.dpd_word_heading_simsapa_templ
+
+        html = str(tmpl.render(
+            w = w,
+            transient_id = transient_id,
+            el_id_key = el_id_key,
+            esq = self.esq,
+        ))
+
+        return html
 
     def get_word_html(self, word: UDictWord) -> ResultHtml:
         from bs4 import BeautifulSoup
 
-        if word.definition_html is not None and word.definition_html != '':
+        if word.metadata.schema == DbSchemaName.Dpd:
+
+            res = pali_word_dpd_html(word)
+
+            definition = res['definition_html']
+
+        elif word.definition_html is not None and word.definition_html != '':
             definition = str(word.definition_html)
 
         elif word.definition_plain is not None and word.definition_plain != '':
@@ -239,14 +253,16 @@ class DictionaryQueries(DictionaryQueriesInterface):
                 js += i.decode_contents()
                 definition = definition.replace(js, '')
 
-        if '<html' in definition or '<HTML' in definition:
+        if '<body' in definition or '<BODY' in definition:
             # Definition is a complete HTML page with a <body> block
-            h = soup.find(name = 'body')
-            if h is not None:
-                body = h.decode_contents() # type: ignore
+            body_re = re.compile(r'<body[^>]*>(.*?)</body>', flags = re.DOTALL | re.IGNORECASE)
+            match = body_re.search(definition)
+
+            if match:
+                body = match.group(1)
             else:
-                logger.warn("Missing <body> from html page in %s" % word.uid)
                 body = definition
+
         else:
             # Definition is a HTML fragment block, CSS and JS already removed
             body = definition
@@ -263,7 +279,7 @@ class DictionaryQueries(DictionaryQueriesInterface):
         if len(examples) > 0:
             body += "<div class=\"word-examples\">%s</div>" % examples
 
-        body = self.word_heading(word) + body
+        body = '<div class="word-block">' + self.word_heading(word) + body + '</div>'
 
         return ResultHtml(
             body = body,
@@ -274,6 +290,7 @@ class DictionaryQueries(DictionaryQueriesInterface):
 class ExactQueryResult(TypedDict):
     appdata_ids: List[int]
     userdata_ids: List[int]
+    dpd_ids: List[int]
     add_recent: bool
 
 class ExactQueryWorkerSignals(QObject):
@@ -370,9 +387,13 @@ class ExactQueryWorker(QRunnable):
             a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
             userdata_ids = list(map(lambda x: x.id, a))
 
+            a = filter(lambda x: x.metadata.schema == DbSchemaName.Dpd.value, res)
+            dpd_ids = list(map(lambda x: x.id, a))
+
             ret = ExactQueryResult(
                 appdata_ids = appdata_ids,
                 userdata_ids = userdata_ids,
+                dpd_ids = dpd_ids,
                 add_recent = self.add_recent,
             )
 

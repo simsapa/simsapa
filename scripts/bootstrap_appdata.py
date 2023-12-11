@@ -146,7 +146,6 @@ def main():
 
     multi_refs.populate_sutta_multi_refs(appdata_db, limit)
 
-    # FIXME improve synonym parsing
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 
     # === All dict words are added above ===

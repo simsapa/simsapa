@@ -442,11 +442,16 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                                   .query(Am.Sutta) \
                                   .filter(Am.Sutta.uid == x['uid']) \
                                   .first()
-        else:
+
+        elif x['schema_name'] == DbSchemaName.UserData.value:
             sutta = self._app_data.db_session \
                                   .query(Um.Sutta) \
                                   .filter(Um.Sutta.uid == x['uid']) \
                                   .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
+
         return sutta
 
     @QtCore.pyqtSlot(dict)

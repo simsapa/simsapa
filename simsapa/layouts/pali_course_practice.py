@@ -230,12 +230,14 @@ class CoursePracticeWindow(AppWindowInterface):
                 .filter(Am.ChallengeGroup.id == group['db_id']) \
                 .first()
 
-
-        else:
+        elif group['db_schema'] == DbSchemaName.UserData.value:
             r = self._app_data.db_session \
                 .query(Um.ChallengeGroup) \
                 .filter(Um.ChallengeGroup.id == group['db_id']) \
                 .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return r
 

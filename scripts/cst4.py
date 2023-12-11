@@ -26,6 +26,8 @@ if s is None or s == "":
     logger.error("Missing env variable: BOOTSTRAP_ASSETS_DIR")
     sys.exit(1)
 
+assert(s is not None)
+
 bootstrap_assets_dir = Path(s)
 
 CST4_DIR = bootstrap_assets_dir.joinpath('cst4')
@@ -1178,6 +1180,7 @@ def _parse_path(p: Path) -> Am.Sutta:
         title_ascii = title_ascii,
         uid = uid,
         sutta_ref = uid,
+        nikaya = helpers.uid_to_nikaya(uid),
         language = lang,
         content_html = body,
         content_plain = compact_rich_text(body),
@@ -1288,6 +1291,7 @@ def group_to_sutta(g: Group) -> Am.Sutta:
         title_pali = consistent_nasal_m(g.title),
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
+        nikaya = helpers.uid_to_nikaya(ref),
         language = lang,
         content_html = content_html,
         content_plain = compact_rich_text(content_html),

@@ -93,6 +93,7 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             uid = uid,
             # SN 12.23
             sutta_ref = helpers.uid_to_ref(x['uid']),
+            nikaya = helpers.uid_to_nikaya(x['uid']),
             sutta_range_group = sutta_range['group'] if sutta_range else None,
             sutta_range_start = sutta_range['start'] if sutta_range else None,
             sutta_range_end = sutta_range['end'] if sutta_range else None,
@@ -102,7 +103,8 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             content_plain = content_plain,
             created_at = func.now(),
         )
-    else:
+
+    elif schema == DbSchemaName.UserData:
         sutta = Um.Sutta(
             source_uid = source_uid,
             source_info = x['_id'],
@@ -113,6 +115,7 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             uid = uid,
             # SN 12.23
             sutta_ref = helpers.uid_to_ref(x['uid']),
+            nikaya = helpers.uid_to_nikaya(x['uid']),
             sutta_range_group = sutta_range['group'] if sutta_range else None,
             sutta_range_start = sutta_range['start'] if sutta_range else None,
             sutta_range_end = sutta_range['end'] if sutta_range else None,
@@ -122,6 +125,9 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
             content_plain = content_plain,
             created_at = func.now(),
         )
+
+    else:
+        raise Exception("Only appdata and userdata schema are allowed.")
 
     return sutta
 
@@ -161,6 +167,32 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
             uid = uid,
             # SN 12.23
             sutta_ref = helpers.uid_to_ref(x['uid']),
+            nikaya = helpers.uid_to_nikaya(x['uid']),
+            sutta_range_group = sutta_range['group'] if sutta_range else None,
+            sutta_range_start = sutta_range['start'] if sutta_range else None,
+            sutta_range_end = sutta_range['end'] if sutta_range else None,
+            # pli
+            language = x['lang'],
+            content_plain = content_plain,
+            # Not saving the html to reduce DB size. content_plain is used for
+            # indexing and search. Re-generate HTML from JSON is needed.
+            content_html = null(),
+            content_json = consistent_nasal_m(content),
+            content_json_tmpl = tmpl_json,
+            created_at = func.now(),
+        )
+
+    elif schema == DbSchemaName.UserData:
+        sutta = Um.Sutta(
+            source_uid = source_uid,
+            source_info = x['_id'],
+            title = title,
+            title_ascii = title_ascii,
+            # mn123/pli/ms
+            uid = uid,
+            # SN 12.23
+            sutta_ref = helpers.uid_to_ref(x['uid']),
+            nikaya = helpers.uid_to_nikaya(x['uid']),
             sutta_range_group = sutta_range['group'] if sutta_range else None,
             sutta_range_start = sutta_range['start'] if sutta_range else None,
             sutta_range_end = sutta_range['end'] if sutta_range else None,
@@ -176,28 +208,7 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
         )
 
     else:
-        sutta = Um.Sutta(
-            source_uid = source_uid,
-            source_info = x['_id'],
-            title = title,
-            title_ascii = title_ascii,
-            # mn123/pli/ms
-            uid = uid,
-            # SN 12.23
-            sutta_ref = helpers.uid_to_ref(x['uid']),
-            sutta_range_group = sutta_range['group'] if sutta_range else None,
-            sutta_range_start = sutta_range['start'] if sutta_range else None,
-            sutta_range_end = sutta_range['end'] if sutta_range else None,
-            # pli
-            language = x['lang'],
-            content_plain = content_plain,
-            # Not saving the html to reduce DB size. content_plain is used for
-            # indexing and search. Re-generate HTML from JSON is needed.
-            content_html = null(),
-            content_json = consistent_nasal_m(content),
-            content_json_tmpl = tmpl_json,
-            created_at = func.now(),
-        )
+        raise Exception("Only appdata and userdata schema are allowed.")
 
     return sutta
 
@@ -477,11 +488,14 @@ def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 .filter(Am.Sutta.uid == sutta_uid) \
                 .first()
 
-        else:
+        elif schema == DbSchemaName.UserData:
             res = appdata_db \
                 .query(Um.Sutta.id) \
                 .filter(Um.Sutta.uid == sutta_uid) \
                 .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         if res is None:
             logger.error(f"add_sutta_variants() Can't find sutta uid: {sutta_uid}")
@@ -498,7 +512,7 @@ def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 content_json = consistent_nasal_m(r['text']),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.SuttaVariant(
                 sutta_id = sutta_id,
                 sutta_uid = sutta_uid,
@@ -506,6 +520,9 @@ def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 source_uid = source_uid,
                 content_json = consistent_nasal_m(r['text']),
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         results.append(item)
 
@@ -562,11 +579,14 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 .filter(Am.Sutta.uid == sutta_uid) \
                 .first()
 
-        else:
+        elif schema == DbSchemaName.UserData:
             res = appdata_db \
                 .query(Um.Sutta.id) \
                 .filter(Um.Sutta.uid == sutta_uid) \
                 .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         if res is None:
             logger.error(f"add_sutta_comments() Can't find sutta uid: {sutta_uid}")
@@ -583,7 +603,7 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 content_json = consistent_nasal_m(r['text']),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.SuttaComment(
                 sutta_id = sutta_id,
                 sutta_uid = sutta_uid,
@@ -591,6 +611,9 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 source_uid = source_uid,
                 content_json = consistent_nasal_m(r['text']),
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         results.append(item)
 

@@ -34,7 +34,7 @@ class DocumentListModel(QAbstractListModel):
             if not os.path.exists(filepath):
                 return QIcon(":close")
 
-    def rowCount(self, index):
+    def rowCount(self, __index__):
         return len(self.docs)
 
 
@@ -101,11 +101,15 @@ class LibraryBrowserWindow(QMainWindow, Ui_LibraryBrowserWindow):
                                     .query(Am.Document) \
                                     .filter(Am.Document.id == doc_id) \
                                     .first()
-        else:
+
+        elif schema == DbSchemaName.UserData.value:
             db_item = self._app_data.db_session \
                                     .query(Um.Document) \
                                     .filter(Um.Document.id == doc_id) \
                                     .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         self._app_data.db_session.delete(db_item)
         self._app_data.db_session.commit()

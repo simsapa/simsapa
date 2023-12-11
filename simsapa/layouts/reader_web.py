@@ -15,7 +15,10 @@ class Helper(QObject):
     mouseover_graph_node = pyqtSignal(dict)
     mouseleave = pyqtSignal(str)
     dblclick = pyqtSignal()
-    copy_clipboard = pyqtSignal(str)
+    copy_clipboard_text = pyqtSignal(str)
+    copy_clipboard_html = pyqtSignal(str)
+    copy_gloss = pyqtSignal(str, int, str)
+    copy_meaning = pyqtSignal(str, int)
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
@@ -75,8 +78,20 @@ class Helper(QObject):
         self.bookmark_edit.emit(schema_and_id)
 
     @pyqtSlot(str)
-    def emit_copy_clipboard(self, text: str):
-        self.copy_clipboard.emit(text)
+    def emit_copy_clipboard_text(self, text: str):
+        self.copy_clipboard_text.emit(text)
+
+    @pyqtSlot(str)
+    def emit_copy_clipboard_html(self, html: str):
+        self.copy_clipboard_html.emit(html)
+
+    @pyqtSlot(str, int, str)
+    def emit_copy_gloss(self, db_schema: str, db_id: int, gloss_keys: str):
+        self.copy_gloss.emit(db_schema, db_id, gloss_keys)
+
+    @pyqtSlot(str, int)
+    def emit_copy_meaning(self, db_schema: str, db_id: int):
+        self.copy_meaning.emit(db_schema, db_id)
 
 
 class ReaderWebEnginePage(QWebEnginePage):

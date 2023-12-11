@@ -519,6 +519,9 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
                                   .filter(Um.Sutta.uid == str(i.sutta_uid)) \
                                   .first()
 
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
+
             if r is not None:
                 suttas.append(r)
 

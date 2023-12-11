@@ -153,8 +153,17 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
-    def _copy_clipboard(self, text: str):
+    def _copy_clipboard_text(self, text: str):
         self._app_data.clipboard_setText(text)
+
+    def _copy_clipboard_html(self, html: str):
+        self._app_data.clipboard_setHtml(html)
+
+    def _copy_gloss(self, db_schema: str, db_id: int, gloss_keys: str):
+        logger.error("FIXME implement _copy_gloss()")
+
+    def _copy_meaning(self, db_schema: str, db_id: int):
+        logger.error("FIXME implement _copy_meaning()")
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
@@ -165,7 +174,10 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
-        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
+        page.helper.copy_clipboard_text.connect(partial(self._copy_clipboard_text))
+        page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
+        page.helper.copy_gloss.connect(partial(self._copy_gloss))
+        page.helper.copy_meaning.connect(partial(self._copy_meaning))
 
         self.qwe.setPage(page)
 
@@ -403,7 +415,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _handle_query(self, min_length: int = 4):
         query_text_orig = self.search_input.text().strip()
 
-        if len(query_text_orig) < min_length:
+        if not query_text_orig.isdigit() and len(query_text_orig) < min_length:
             return
 
         idx = self.source_filter_dropdown.currentIndex()
@@ -443,7 +455,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _handle_exact_query(self, min_length: int = 4):
         query_text = self.search_input.text().strip()
 
-        if len(query_text) < min_length:
+        if not query_text.isdigit() and len(query_text) < min_length:
             return
 
         self._queries.start_exact_query_worker(

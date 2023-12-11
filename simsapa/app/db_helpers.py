@@ -11,11 +11,10 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
 
-from .db import appdata_models as Am
-from .db import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 from simsapa import DbSchemaName, logger, ALEMBIC_INI, ALEMBIC_DIR
-
 
 def upgrade_db(db_path: Path, _: str):
     # NOTE: argument not used: schema_name: str
@@ -57,7 +56,7 @@ def upgrade_db(db_path: Path, _: str):
     else:
         logger.error("Can't create in-memory database")
 
-def find_or_create_db(db_path: Path, schema_name: str):
+def find_or_create_db(db_path: Path, schema: DbSchemaName):
     from sqlalchemy_utils import database_exists, create_database
 
     db_url = f"sqlite+pysqlite:///{db_path}"
@@ -76,11 +75,13 @@ def find_or_create_db(db_path: Path, schema_name: str):
         engine = create_engine("sqlite+pysqlite://", echo=False)
         db_conn = engine.connect()
 
-        db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS '{schema_name}';"))
-        if schema_name == DbSchemaName.UserData.value:
+        db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS '{schema.value}';"))
+        if schema == DbSchemaName.UserData:
             Um.metadata.create_all(bind=engine)
-        else:
+        elif schema == DbSchemaName.AppData:
             Am.metadata.create_all(bind=engine)
+        else:
+            raise Exception("Only appdata and userdata can be re-created.")
 
         # generate the Alembic version table, "stamping" it with the most recent rev:
         command.stamp(alembic_cfg, "head")

@@ -75,10 +75,11 @@ class Sutta(Base):
 
     id:  Mapped[int] = mapped_column(primary_key=True)
     uid: Mapped[str] = mapped_column(unique=True) # dn1/pli/ms
+    sutta_ref:   Mapped[str] # DN 1
+    nikaya:      Mapped[str] # DN
+    language:    Mapped[str] # pli / en
     group_path:  Mapped[Optional[str]] # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
     group_index: Mapped[Optional[int]] # 1
-    sutta_ref:   Mapped[Optional[str]] # DN 1
-    language:    Mapped[Optional[str]] # pli / en
     order_index: Mapped[Optional[int]]
 
     # sn30.7-16
@@ -154,6 +155,7 @@ class Dictionary(Base):
     id:    Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(unique=True)
     title: Mapped[str]
+    dict_type: Mapped[str] # stardict / sql
 
     creator:        Mapped[Optional[str]]
     description:    Mapped[Optional[str]]

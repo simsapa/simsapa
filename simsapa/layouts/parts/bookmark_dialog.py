@@ -318,11 +318,15 @@ class HasBookmarkDialog:
                     .filter(Am.Sutta.id == sutta_id) \
                     .first()
 
-        else:
+
+        elif sutta_schema == DbSchemaName.UserData.value:
             r = self._app_data \
                     .db_session.query(Um.Sutta) \
                     .filter(Um.Sutta.id == sutta_id) \
                     .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         if r is None or r.content_plain is None or r.content_plain == '':
             return 0

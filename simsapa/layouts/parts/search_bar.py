@@ -8,7 +8,7 @@ from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
-from simsapa import logger, SEARCH_TIMER_SPEED
+from simsapa import DbSchemaName, logger, SEARCH_TIMER_SPEED
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
@@ -17,6 +17,7 @@ from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, ge
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.layouts.parts.pali_completer import PaliCompleter
 
@@ -501,7 +502,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             if i['uid'] is None:
                 continue
 
-            if i['schema_name'] == 'appdata':
+            if i['schema_name'] == DbSchemaName.AppData.value:
                 r = self._app_data.db_session \
                     .query(Am.DictWord) \
                     .filter(Am.DictWord.uid == i['uid']) \
@@ -509,13 +510,24 @@ QWidget:focus { border: 1px solid #1092C3; }
                 if r is not None:
                     res.append(r)
 
-            if i['schema_name'] == 'userdata':
+            elif i['schema_name'] == DbSchemaName.UserData.value:
                 r = self._app_data.db_session \
                     .query(Um.DictWord) \
                     .filter(Um.DictWord.uid == i['uid']) \
                     .first()
                 if r is not None:
                     res.append(r)
+
+            elif i['schema_name'] == DbSchemaName.Dpd.value:
+                r = self._app_data.db_session \
+                    .query(Dpd.PaliWord) \
+                    .filter(Dpd.PaliWord.id == i['db_id']) \
+                    .first()
+                if r is not None:
+                    res.append(r)
+
+            else:
+                raise Exception(f"Unknown schema_name: {i['schema_name']}")
 
         self.stop_loading_animation()
         self._show_search_normal_icon()

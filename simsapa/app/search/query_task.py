@@ -12,8 +12,9 @@ from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_nasal_m
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, sutta_to_search_result
+from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class SearchQueryTask:
@@ -81,7 +82,10 @@ class SearchQueryTask:
 
     def results_page(self, page_num: int) -> List[SearchResult]:
         if page_num not in self._highlighted_result_pages:
-            if self.search_mode == SearchMode.FulltextMatch:
+            if self.search_mode == SearchMode.DpdIdMatch:
+                self._highlighted_result_pages[page_num] = self.dpd_id_word()
+
+            elif self.search_mode == SearchMode.FulltextMatch:
                 self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
 
             else:
@@ -335,6 +339,29 @@ class SearchQueryTask:
         db_eng.dispose()
 
         return list(map(self._db_word_to_result, res))
+
+    def dpd_id_word(self) -> List[SearchResult]:
+        dpd_id = int(self.query_text)
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        dpd_word = db_session.query(Dpd.PaliWord) \
+                             .filter(Dpd.PaliWord.id == dpd_id) \
+                             .first()
+
+        res_page = []
+
+        if dpd_word is not None:
+            snippet = dpd_word.meaning_1 if dpd_word.meaning_1 else ""
+
+            res = dpd_pali_word_to_search_result(dpd_word, snippet)
+            res_page.append(res)
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        return res_page
 
     def _suttas_title_match(self, db_session: Session):
         # SearchMode.TitleMatch only applies to suttas.

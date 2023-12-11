@@ -113,11 +113,15 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
                                     .query(Am.Memo) \
                                     .filter(Am.Memo.id == memo_id) \
                                     .first()
-        else:
+
+        elif schema == DbSchemaName.UserData.value:
             db_item = self._app_data.db_session \
                                     .query(Um.Memo) \
                                     .filter(Um.Memo.id == memo_id) \
                                     .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         self._app_data.db_session.delete(db_item)
         self._app_data.db_session.commit()
@@ -137,15 +141,17 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.back_input.setPlainText(fields['Back'])
 
     def clear_memo(self):
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
         self.front_input.clear()
         self.back_input.clear()
 
-    def _memos_search_query(self, query: str):
+    def _memos_search_query(self, __query__: str):
         return []
 
     def add_memo(self):
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -188,7 +194,9 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
+        m = self.memos_list.selectionModel()
+        if m is not None:
+            m.select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.model.layoutChanged.emit()
 
@@ -306,7 +314,8 @@ class MemosBrowserWindow(AppWindowInterface, Ui_MemosBrowserWindow):
         self.front_input.textChanged.connect(partial(self.update_selected_memo_fields))
         self.back_input.textChanged.connect(partial(self.update_selected_memo_fields))
 
-        self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
+        if self.sel_model is not None:
+            self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
 
 def is_anki_live() -> bool:
     try:

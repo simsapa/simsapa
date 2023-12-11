@@ -35,6 +35,8 @@ SIMSAPA_RELEASES_BASE_URL = "https://simsapa.eu.pythonanywhere.com"
 PACKAGE_ASSETS_RSC_DIR = Path('assets')
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
 
+PACKAGE_DPD_TEMPLATES_DIR = Path(str(SIMSAPA_PACKAGE_DIR.joinpath("assets/templates/dpd/")))
+
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
 
@@ -63,6 +65,8 @@ else:
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
+SIMSAPA_API_DEFAULT_PORT = 4848
+
 SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("api-port.txt")
 
 USER_HOME_DIR = PLATFORM_DIRS.user_desktop_path.parent
@@ -77,8 +81,6 @@ TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
 TIMER_SPEED = 30
 
-SEARCH_TIMER_SPEED = 500
-
 LOW_MEM_THRESHOLD = 3*1024*1024*1024
 
 mem = psutil.virtual_memory()
@@ -86,6 +88,11 @@ if mem.available < LOW_MEM_THRESHOLD:
     START_LOW_MEM = True
 else:
     START_LOW_MEM = False
+
+if START_LOW_MEM:
+    SEARCH_TIMER_SPEED = 800
+else:
+    SEARCH_TIMER_SPEED = 400
 
 INDEX_WRITER_MEMORY_MB = 512
 
@@ -105,6 +112,8 @@ GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
+
+DPD_DB_PATH = ASSETS_DIR.joinpath('dpd.sqlite3')
 
 COURSES_DIR = ASSETS_DIR.joinpath('courses')
 
@@ -187,12 +196,6 @@ if b is None:
 else:
     SUTTAS_JS = b.decode("utf-8")
 
-b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/dictionary.js')))
-if b is None:
-    DICTIONARY_JS = ""
-else:
-    DICTIONARY_JS = b.decode("utf-8")
-
 b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/ebook_extra.css')))
 if b is None:
     EBOOK_EXTRA_CSS = ""
@@ -208,6 +211,11 @@ else:
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
     UserData = 'userdata'
+    Dpd = 'dpd'
+
+class DictTypeName(str, Enum):
+    Sql = 'sql'
+    Stardict = 'stardict'
 
 class ApiAction(str, Enum):
     lookup_clipboard_in_dictionary = 'lookup_clipboard_in_dictionary'

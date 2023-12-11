@@ -13,7 +13,7 @@ from simsapa.app.search.helpers import SearchResult
 from simsapa.app.search.query_task import SearchQueryTask
 from simsapa.app.search.sutta_queries import SuttaQueries
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
-from simsapa.app.types import SearchArea, SearchParams
+from simsapa.app.types import SearchArea, SearchMode, SearchParams
 
 from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 from simsapa.layouts.query_worker import SearchQueryWorker
@@ -102,6 +102,10 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         else:
             lang_keys = list(self._search_indexes.dict_words_lang_index.keys())
             lang_indexes = self._search_indexes.dict_words_lang_index
+
+            # If the query_text is an integer, it is a DPD ID.
+            if query_text_orig.isdigit():
+                params['mode'] = SearchMode.DpdIdMatch
 
         if params['lang'] is not None:
             if params['lang_include']:

@@ -31,9 +31,9 @@ LIGHT_BORDER_COLOR = TITLE_BG_COLOR
 
 PREVIEW_CSS_EXTRA = f"""
 html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
-html {{ font-size: 18px; }}
+html {{ font-size: 16px; }}
 body {{ padding: 0.5rem; max-width: 100%; }}
-h1 {{ font-size: 22px; margin-top: 0pt; }}
+h1 {{ font-size: 20px; margin-top: 0pt; }}
 """
 
 if IS_MAC:
@@ -387,9 +387,9 @@ class PreviewWindow(QDialog):
 
         css_extra = f"""
         html, body {{ background-color: {PREVIEW_BG_COLOR}; }}
-        html {{ font-size: 18px; }}
+        html {{ font-size: 16px; }}
         body {{ padding: 0; margin: 2rem 1rem 1rem 1rem; max-width: 100%; }}
-        h1 {{ font-size: 22px; margin-top: 0pt; }}
+        h1 {{ font-size: 20px; margin-top: 0pt; }}
         """
 
         js_extra = f"const SUTTA_UID = '{sutta.uid}';"

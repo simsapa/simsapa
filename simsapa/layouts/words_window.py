@@ -11,6 +11,7 @@ from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.layouts.gui_types import AppWindowInterface
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -42,6 +43,7 @@ class WordsWindow(AppWindowInterface):
 
         appdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.AppData.value, ids)))
         userdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.UserData.value, ids)))
+        dpd_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.Dpd.value, ids)))
 
         res = self._app_data.db_session \
             .query(Am.DictWord) \
@@ -50,8 +52,14 @@ class WordsWindow(AppWindowInterface):
         results.extend(res)
 
         res = self._app_data.db_session \
-            .query(Um.Sutta) \
-            .filter(Um.Sutta.id.in_(userdata_ids)) \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.id.in_(userdata_ids)) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.id.in_(dpd_ids)) \
             .all()
         results.extend(res)
 

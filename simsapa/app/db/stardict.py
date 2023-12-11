@@ -7,16 +7,16 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 from sqlalchemy.dialects.sqlite import insert
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
-from simsapa.app.helpers import latinize, pali_to_ascii
+from simsapa.app.helpers import latinize, pali_to_ascii, word_uid
 
 from simsapa.app.stardict import DictEntry, StarDictPaths, parse_bword_links_to_ssp, stardict_to_dict_entries, parse_ifo
 from simsapa.app.dict_link_helpers import add_epd_pali_words_links, add_example_links, add_grammar_links, add_sandhi_links
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.app.types import UDictWord
-from simsapa import DbSchemaName, logger
+from simsapa import DbSchemaName, DictTypeName, logger
 
-from . import appdata_models as Am
-from . import userdata_models as Um
+from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 class DbDictEntry(TypedDict):
     word: str
@@ -31,8 +31,7 @@ class DbDictEntry(TypedDict):
 
 def db_entries(x: DictEntry, dictionary_id: int, dictionary_label: str, lang: str) -> DbDictEntry:
     # TODO should we check for conflicting uids? generate with meaning count?
-    w = x['word'].replace("'", "").replace('"', '').replace(' ', '-')
-    uid = f"{w}/{dictionary_label}".lower()
+    uid = word_uid(x['word'], dictionary_label)
 
     # add a Latinized lowercase synonym
     syn = x['synonyms']
@@ -74,8 +73,10 @@ def insert_db_words(db_session,
         try:
             if schema_name == DbSchemaName.UserData.value:
                 stmt = insert(Um.DictWord).values(words_batch)
-            else:
+            elif schema_name == DbSchemaName.AppData.value:
                 stmt = insert(Am.DictWord).values(words_batch)
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
             # update the record if uid already exists
             stmt = stmt.on_conflict_do_update(
@@ -138,11 +139,14 @@ def import_stardict_update_existing(db_session,
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid.in_(uids)) \
                 .all()
-        else:
+
+        elif schema_name == DbSchemaName.UserData.value:
             w: List[UDictWord] = db_session \
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         search_indexes.index_dict_words(search_indexes.dict_words_lang_index[lang], schema_name, w)
 
@@ -210,14 +214,18 @@ def import_stardict_as_new(db_session: Session,
         dictionary = Um.Dictionary(
             title = title,
             label = label,
+            dict_type = DictTypeName.Stardict.value,
             created_at = func.now(),
         )
-    else:
+    elif schema_name == DbSchemaName.AppData.value:
         dictionary = Am.Dictionary(
             title = title,
             label = label,
+            dict_type = DictTypeName.Stardict.value,
             created_at = func.now(),
         )
+    else:
+        raise Exception("Only appdata and userdata schema are allowed.")
 
     try:
         db_session.add(dictionary)
@@ -235,10 +243,12 @@ def import_stardict_as_new(db_session: Session,
                 .query(Am.DictWord) \
                 .filter(Am.DictWord.uid.in_(uids)) \
                 .all()
-        else:
+        elif schema_name == DbSchemaName.UserData.value:
             w: List[UDictWord] = db_session \
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.uid.in_(uids)) \
                 .all()
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         search_indexes.index_dict_words(search_indexes.dict_words_lang_index[lang], schema_name, w)

@@ -10,7 +10,7 @@ from sqlalchemy.engine.base import Connection
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
-from simsapa import APP_DB_PATH, USER_DB_PATH, logger, DbSchemaName
+from simsapa import APP_DB_PATH, DPD_DB_PATH, USER_DB_PATH, logger, DbSchemaName
 
 def get_db_version(db_path: Path) -> Optional[str]:
     con = sqlite3.connect(db_path)
@@ -31,6 +31,7 @@ def get_db_version(db_path: Path) -> Optional[str]:
 def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Engine, Connection, Session]:
     app_db_path = APP_DB_PATH
     user_db_path = USER_DB_PATH
+    dpd_db_path = DPD_DB_PATH
 
     if not os.path.isfile(app_db_path):
         logger.error(f"Database file doesn't exist: {app_db_path}")
@@ -39,6 +40,9 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
     if include_userdata and not os.path.isfile(user_db_path):
         logger.error(f"Database file doesn't exist: {user_db_path}")
         sys.exit(1)
+
+    if not os.path.isfile(dpd_db_path):
+        logger.error(f"Database file doesn't exist: {dpd_db_path}")
 
     try:
         # Create an in-memory database
@@ -50,6 +54,8 @@ def get_db_engine_connection_session(include_userdata: bool = True) -> Tuple[Eng
         db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
         if include_userdata:
             db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
+
+        db_conn.execute(text(f"ATTACH DATABASE '{dpd_db_path}' AS dpd;"))
 
         Session = sessionmaker(db_eng)
         Session.configure(bind=db_eng)
@@ -83,3 +89,6 @@ def get_db_session_with_schema(db_path: Path, schema: DbSchemaName) -> Tuple[Eng
         sys.exit(1)
 
     return (db_eng, db_conn, db_session)
+
+def get_dpd_db_session() -> Tuple[Engine, Connection, Session]:
+    return get_db_session_with_schema(DPD_DB_PATH, DbSchemaName.Dpd)

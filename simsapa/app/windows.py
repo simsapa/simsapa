@@ -734,9 +734,6 @@ class AppWindows:
         self._show_word_lookup(query = query, show_results_tab = False, include_exact_query = False)
 
     def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
-        if not self._app_data.app_settings['double_click_word_lookup']:
-            return
-
         if self.word_lookup is None:
             self._init_word_lookup()
 

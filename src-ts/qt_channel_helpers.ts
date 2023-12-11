@@ -1,0 +1,61 @@
+import * as h from "./helpers";
+
+function copy_meaning(db_schema: string, db_id: number, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_meaning(db_schema, db_id);
+    h.show_transient_message("Copied!", msg_div_id);
+}
+
+function copy_gloss(db_schema: string, db_id: number, gloss_keys: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_gloss(db_schema, db_id, gloss_keys);
+    h.show_transient_message("Copied!", msg_div_id);
+}
+
+function copy_clipboard_text(text: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_clipboard_text(text);
+    h.show_transient_message("Copied!", msg_div_id);
+}
+
+function copy_clipboard_html(html: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_clipboard_html(html);
+    h.show_transient_message("Copied!", msg_div_id);
+}
+
+function add_hover_events(el: Element, channel: any) {
+    let href = el.getAttribute('href');
+    if (href !== null && href.startsWith('ssp://')) {
+        el.addEventListener("mouseover", function(i_el) {
+            var t = <Element>i_el.target;
+            if (!t) {
+                return;
+            }
+            var coords = t.getBoundingClientRect();
+
+            var data = {
+                href: href,
+                x: coords.x + window.screenX,
+                y: coords.y + window.screenY,
+                width: coords.width,
+                height: coords.height,
+            };
+
+            channel.objects.helper.link_mouseover(JSON.stringify(data));
+        });
+
+        el.addEventListener("mouseleave", function(i_el) {
+            var t = <Element>i_el.target;
+            if (!t) {
+                return;
+            }
+            // var coords = t.getBoundingClientRect();
+            channel.objects.helper.link_mouseleave(href);
+        });
+    }
+}
+
+export {
+    copy_meaning,
+    copy_gloss,
+    copy_clipboard_text,
+    copy_clipboard_html,
+    add_hover_events,
+}

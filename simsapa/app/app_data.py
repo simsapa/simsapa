@@ -16,13 +16,14 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func, text
 from sqlalchemy import and_
 
-from PyQt6.QtCore import QSize, QThreadPool, QTimer
+from PyQt6.QtCore import QMimeData, QSize, QThreadPool, QTimer
 from PyQt6.QtGui import QClipboard
 
-from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
+from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, DPD_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.completion_lists import WordSublists
 from simsapa.app.db_session import get_db_session_with_schema
+from simsapa.app.dpd_render import DPD_CF_SET, DPD_PALI_WORD_TEMPLATES, DPD_PROJECT_PATHS, DPD_SANDHI_CONTRACTIONS
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
@@ -46,6 +47,11 @@ class AppData:
 
     _sutta_titles_completion_cache: WordSublists = dict()
     _dict_words_completion_cache: WordSublists = dict()
+
+    dpd_project_paths = DPD_PROJECT_PATHS
+    dpd_pali_word_templates = DPD_PALI_WORD_TEMPLATES
+    dpd_sandhi_contractions = DPD_SANDHI_CONTRACTIONS
+    dpd_cf_set = DPD_CF_SET
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -74,7 +80,7 @@ class AppData:
         # Make sure the user_db exists before getting the db_session handle.
         self._check_db(self._user_db_path, DbSchemaName.UserData)
 
-        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path)
+        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path, DPD_DB_PATH)
         self._read_app_settings()
 
         self.graph_gen_pool = QThreadPool()
@@ -153,7 +159,7 @@ class AppData:
 
         if not db_path.exists():
             from simsapa.app.db_helpers import find_or_create_db
-            find_or_create_db(db_path, schema.value)
+            find_or_create_db(db_path, schema)
 
     def get_search_indexes(self) -> Optional[TantivySearchIndexes]:
         return self.search_indexes
@@ -178,7 +184,7 @@ class AppData:
             if p.exists():
                 shutil.rmtree(p)
 
-    def _get_db_engine_connection_session(self, app_db_path, user_db_path) -> Tuple[Engine, Connection, Session]:
+    def _get_db_engine_connection_session(self, app_db_path, user_db_path, dpd_db_path) -> Tuple[Engine, Connection, Session]:
         if not os.path.isfile(app_db_path):
             logger.error(f"Database file doesn't exist: {app_db_path}")
             exit(1)
@@ -193,6 +199,10 @@ class AppData:
         # FIXME avoid loading alembic just for getting a db session
         # upgrade_db(user_db_path, DbSchemaName.UserData.value)
 
+        if not os.path.isfile(dpd_db_path):
+            logger.error(f"Database file doesn't exist: {dpd_db_path}")
+            exit(1)
+
         try:
             # Create an in-memory database
             db_eng = create_engine("sqlite+pysqlite://", echo=False)
@@ -200,8 +210,9 @@ class AppData:
             db_conn = db_eng.connect()
 
             # Attach appdata and userdata
-            db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
-            db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
+            db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS {DbSchemaName.AppData.value};"))
+            db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS {DbSchemaName.UserData.value};"))
+            db_conn.execute(text(f"ATTACH DATABASE '{dpd_db_path}' AS {DbSchemaName.Dpd.value};"))
 
             Session = sessionmaker(db_eng)
             Session.configure(bind=db_eng)
@@ -320,7 +331,14 @@ class AppData:
             self.db_session.add(deck)
             self.db_session.commit()
 
-    def clipboard_setText(self, text):
+    def clipboard_setHtml(self, html: str):
+        if self.clipboard is not None:
+            self.clipboard.clear()
+            mime = QMimeData()
+            mime.setHtml(html)
+            self.clipboard.setMimeData(mime)
+
+    def clipboard_setText(self, text: str):
         if self.clipboard is not None:
             self.clipboard.clear()
             self.clipboard.setText(text)

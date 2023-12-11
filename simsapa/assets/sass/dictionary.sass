@@ -1,44 +1,135 @@
 @charset "utf-8"
 
 @import "base"
+@import "button_shadow"
+@import "ssp_button"
 @import "sanskrit/cologne"
+@import "dpd/dpd"
 
 html
-  font-size: 18px
+  font-size: 16px
   line-height: 1.4
   font-family: "Source Sans 3 SSP"
   font-weight: 400
 
+body
+  padding: 0
+  margin: 0
+
 h1, h2, h3, h4, h5, h6
-  font-family: "Source Sans 3 SSP"
+  font-family: "Abhaya Libre SSP"
   font-weight: 800
 
-.word-heading
-  h1
-    float: left
-    font-size: 1.2em
-    color: #282828
-    padding-top: 20pt
-    margin-top: 0
-    .btn a
-      color: #282828
-      margin-right: 5pt
+.word-block
+  padding-left: 0.5rem
+  padding-right: 0.5rem
+  background-color: $solarized-light-bg
 
-  .uid
-    float: right
-    font-size: 0.9em
-    font-style: italic
-    color: #aaa
-    padding-top: 20pt
-    margin-top: 0
-    .btn a
+  &:nth-child(2n)
+    background-color: $solarized-light-alt-bg
+
+.flex-container
+  display: flex
+  flex-flow: row nowrap
+  justify-content: space-between
+
+.flex-item
+  flex: 1 1 auto
+
+.word-heading
+
+  .word-title
+    padding-top: 10pt
+
+    h1
+      display: inline-block
+      font-size: 1.5rem
+      color: #282828
+      padding-top: 0
+      padding-bottom: 0
+      margin-top: 0
+      border-bottom: 1px solid #000
+
+  .word-uid
+    text-align: right
+    padding-top: 10pt
+
+    span.uid
+      font-size: 0.9em
+      font-style: italic
       color: #aaa
-      margin-right: 5pt
+      margin-top: 0
+      margin-right: 0.5rem
+
+.transient-messages-wrap
+  position: relative
+  width: 100%
+
+.transient-messages
+  position: absolute
+  top: 0
+  width: 100%
+  padding: 1em 0
+  text-align: center
+
+  .message
+    text-align: center
+
+    .msg-content
+      display: inline-block
+      padding: 0.25em 0.7em
+      margin: 0 auto 0.25em auto
+      background-color: lighten($solarized-light-bg, 10%)
+      border-radius: 7px
+
+      @include button-shadow
+
+.word-button-bar-wrap
+  position: relative
+
+.word-button-bar
+  position: absolute
+  top: -0.5rem
+  right: 0
+
+div.button-box
+  text-align: left
+  padding-bottom: 1rem
+
+.hidden
+  display: none
+
+.transition-visible
+  visibility: visible
+  opacity: 1
+  transition: opacity 0.2s linear
+
+.transition-hidden
+  visibility: hidden
+  opacity: 0
+  transition: visibility 0s 0.2s, opacity 0.2s linear
 
 .word-definition
+
   b.epd a
     color: #845fc0
 
-.clear
-  clear: both
+  // Remove the border from DPD divs.
+  div.content
+    border: none
+    padding-left: 2rem
+
+    p
+      margin: 0
+
+  div.more-info-button-wrap
+    position: relative
+
+  // Position the info button box on the right, in the empty corner of the table.
+  div.more-info-button-box
+    position: absolute
+    top: -2.2rem
+    left: -0.5rem
+    text-align: left
+    padding-left: 0.5rem
 

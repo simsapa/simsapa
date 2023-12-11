@@ -102,6 +102,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
             title_pali = "",
             uid = uid,
             sutta_ref = "",
+            nikaya = "",
             language = lang,
             content_html = content_html,
             content_plain = compact_rich_text(content_html),
@@ -136,7 +137,8 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
         for i in res:
             sanskrit_db.expunge(i)
             make_transient(i)
-            i.id = None
+            # Cannot assign member "id" for type "Sutta"
+            # i.id = None
 
             appdata_db.add(i)
         appdata_db.commit()

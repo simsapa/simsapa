@@ -4,7 +4,7 @@ import re, json
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func
 
-from simsapa import DbSchemaName
+from simsapa import logger, DbSchemaName
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -109,17 +109,24 @@ def get_and_save_completions(db_session: Session,
                 created_at = func.now(),
             )
 
-        else:
+        elif save_to_schema == DbSchemaName.UserData:
             x = Um.AppSetting(
                 key = setting_key,
                 value = json.dumps(sublists),
                 created_at = func.now(),
             )
 
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
+
         db_session.add(x)
         db_session.commit()
 
     else:
-        sublists: WordSublists = json.loads(r.value)
+        if r.value is not None:
+            sublists: WordSublists = json.loads(r.value)
+        else:
+            logger.error("Completion list is empty")
+            sublists = dict()
 
     return sublists
