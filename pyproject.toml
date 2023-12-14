@@ -74,15 +74,10 @@ ebooklib = "^0.18"
 openai = "^0.27.4"
 tiktoken = "^0.3.3"
 
-# 67.4.0 failed to install
 setuptools = "69.0.2"
-# 2022.7.1 failed to install
 pytz = "2023.3"
-# 2023.0 failed to install
 pyinstaller-hooks-contrib = "2023.10"
-# 2.3.7 failed to install
 werkzeug = "2.3.8"
-# 6.3.3 failed to install
 tornado = "6.4"
 
 tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa" }
@@ -101,7 +96,6 @@ tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 # scalene = "^1.5.14"
 
-# 7.2.1 failed to install
 pytest = "7.4.3"
 pyArango = "~2.0.0"
 html5lib = "^1.1"
