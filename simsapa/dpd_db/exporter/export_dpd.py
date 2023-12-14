@@ -18,6 +18,8 @@ from sqlalchemy.orm.session import Session
 from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ
 from simsapa.dpd_db.exporter.helpers import TODAY
 
+from simsapa.dpd_db.tools.superscripter import superscripter_uni
+
 from simsapa.app.db.dpd_models import PaliRoot, PaliWord
 from simsapa.app.db.dpd_models import DerivedData
 from simsapa.app.db.dpd_models import FamilyRoot
@@ -685,6 +687,7 @@ def render_family_compound_templ(
             family_compound_templ.render(
                 i=i,
                 fc=fc,
+                superscripter_uni=superscripter_uni,
                 today=TODAY))
     else:
         return ""
@@ -707,6 +710,7 @@ def render_family_set_templ(
                 family_set_templ.render(
                     i=i,
                     fs=fs,
+                    superscripter_uni=superscripter_uni,
                     today=TODAY))
         else:
             return ""
