@@ -32,6 +32,9 @@ tests:
 bootstrap-db:
 	./scripts/bootstrap_db.sh
 
+bootstrap-dpd-db:
+	./scripts/bootstrap_dpd_db.sh
+
 count-code:
 	tokei --type Python --exclude simsapa/assets/ --exclude simsapa/keyboard/ --exclude simsapa/app/lookup.py . | grep -vE '===|Total'
 

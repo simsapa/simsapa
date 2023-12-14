@@ -3,7 +3,6 @@
 import os
 import sys
 from pathlib import Path
-import tomlkit
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -29,6 +28,7 @@ import dhammapada_tipitaka_net
 import nyanadipa
 import multi_refs
 import create_links
+import dpd
 
 load_dotenv()
 
@@ -82,22 +82,7 @@ def populate_dict_words_from_stardict(appdata_db: Session,
 
 
 def insert_db_version(appdata_db: Session):
-    p = Path('pyproject.toml')
-    if not p.exists():
-        logger.error("pyproject.toml not found")
-        sys.exit(1)
-
-    with open(p) as f:
-        s = f.read()
-
-    try:
-        t = tomlkit.parse(s)
-        v = t['simsapa']['db_version'] # type: ignore
-        ver = f"{v}"
-    except Exception as e:
-        logger.error(e)
-        sys.exit(1)
-
+    ver = helpers.get_db_version_pyproject()
     item = Am.AppSetting(
         key = "db_version",
         value = ver,
@@ -145,6 +130,10 @@ def main():
     suttacentral.add_sc_multi_refs(appdata_db, sc_db)
 
     multi_refs.populate_sutta_multi_refs(appdata_db, limit)
+
+    # === Dictionaries ===
+
+    dpd.prepare_dpd_for_dist(appdata_db, BOOTSTRAP_ASSETS_DIR)
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 

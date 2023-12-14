@@ -3,6 +3,7 @@ import re
 from typing import Optional
 from pathlib import Path
 import roman
+import tomlkit
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
@@ -239,3 +240,22 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
         return item
 
     return None
+
+def get_db_version_pyproject() -> str:
+    p = Path('pyproject.toml')
+    if not p.exists():
+        logger.error("pyproject.toml not found")
+        sys.exit(1)
+
+    with open(p) as f:
+        s = f.read()
+
+    try:
+        t = tomlkit.parse(s)
+        v = t['simsapa']['db_version'] # type: ignore
+        ver = f"{v}"
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
+    return ver

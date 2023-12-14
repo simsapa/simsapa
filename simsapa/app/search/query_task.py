@@ -33,7 +33,9 @@ class SearchQueryTask:
         self.query_started_time = query_started_time
         self.query_finished_time: Optional[datetime] = None
 
-        self.search_mode = params['mode']
+        # FIXME self.search_mode = params['mode']
+        self.search_mode = SearchMode.DpdTbwLookup
+
         self._page_len = params['page_len'] if params['page_len'] is not None else 20
 
         s = params['lang']
@@ -87,6 +89,9 @@ class SearchQueryTask:
 
             elif self.search_mode == SearchMode.FulltextMatch:
                 self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
+
+            elif self.search_mode == SearchMode.DpdTbwLookup:
+                self._highlighted_result_pages[page_num] = self.dpd_tbw_lookup()
 
             else:
                 # page_start = page_num * self._page_len
@@ -163,6 +168,9 @@ class SearchQueryTask:
 
     def _word_except_in_source(self, x: UDictWord):
         return not self._word_only_in_source(x)
+
+    def _tbw_search(self):
+        self._highlighted_result_pages[0] = self.results_page(0)
 
     def _fulltext_search(self):
         try:
@@ -363,6 +371,74 @@ class SearchQueryTask:
 
         return res_page
 
+    def _inflection_to_pali_words(self, db_session: Session, query: str) -> List[Dpd.PaliWord]:
+        words = []
+
+        i2h = db_session.query(Dpd.DpdI2h) \
+                        .filter(Dpd.DpdI2h.word == query) \
+                        .first()
+
+        if i2h is not None:
+            # i2h result exists
+            # dpd_ebts has short definitions. For Simsapa, retreive the PaliWords.
+            #
+            # Lookup headwords in pali_words.
+
+            r = db_session.query(Dpd.PaliWord) \
+                            .filter(Dpd.PaliWord.pali_1.in_(i2h.headword_list)) \
+                            .all()
+            if r is not None:
+                words.extend(r)
+
+        return words
+
+    def dpd_tbw_lookup(self) -> List[SearchResult]:
+        logger.info("dpd_tbw_lookup()")
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        # ![flowchart](https://github.com/digitalpalidictionary/dpd-db/blob/main/tbw/docs/dpd%20lookup%20systen.png)
+
+        pali_words: List[Dpd.PaliWord] = []
+
+        # Lookup word in dpd_i2h (inflections to headwords).
+
+        # word: Inflected form. `phalena`
+        # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
+
+        pali_words.extend(self._inflection_to_pali_words(db_session, self.query_text))
+
+        print(len(pali_words))
+
+        if len(pali_words) == 0:
+            # i2h result doesn't exist
+            # Lookup query text in dpd_deconstructor.
+
+            # word: Inflected compound. `kammapattā`
+            # data: List of breakdown. `kamma + pattā<br>kamma + apattā<br>kammi + apattā`
+
+            r = db_session.query(Dpd.DpdDeconstructor) \
+                          .filter(Dpd.DpdDeconstructor.word == self.query_text) \
+                          .first()
+            if r is not None:
+                for w in r.headword_list:
+                    pali_words.extend(self._inflection_to_pali_words(db_session, w))
+
+        res_page = []
+
+        print(len(pali_words))
+
+        for w in pali_words:
+            snippet = w.meaning_1 if w.meaning_1 else ""
+            res = dpd_pali_word_to_search_result(w, snippet)
+            res_page.append(res)
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        return res_page
+
     def _suttas_title_match(self, db_session: Session):
         # SearchMode.TitleMatch only applies to suttas.
         try:
@@ -497,6 +573,9 @@ class SearchQueryTask:
 
         elif self.search_mode == SearchMode.HeadwordMatch:
             self._dict_words_headword_match(db_session)
+
+        elif self.search_mode == SearchMode.DpdTbwLookup:
+            self._tbw_search()
 
         self.query_finished_time = datetime.now()
 

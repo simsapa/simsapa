@@ -3,9 +3,7 @@ denoting sandhi or contraction, eg. ajj'uposatho, tañ'ca"""
 
 from typing import Dict, List, Set, TypedDict
 
-from sqlalchemy.orm.session import Session
-
-from simsapa.app.db.dpd_models import PaliWord
+from simsapa.app.db import dpd_models as Dpd
 from simsapa.dpd_db.tools.pali_alphabet import pali_alphabet
 
 def main():
@@ -19,10 +17,9 @@ class SandhiContrItem(TypedDict):
 SandhiContractions = Dict[str, SandhiContrItem]
 
 
-def make_sandhi_contraction_dict(db_session: Session) -> SandhiContractions:
+def make_sandhi_contraction_dict(pali_words: List[Dpd.PaliWord]) -> SandhiContractions:
     """Return a list of all sandhi words in db that are split with '."""
 
-    db = db_session.query(PaliWord).all()
     sandhi_contraction: SandhiContractions = dict()
     word_dict: Dict[int, Set[str]] = dict()
 
@@ -48,7 +45,7 @@ def make_sandhi_contraction_dict(db_session: Session) -> SandhiContractions:
         list = string.split(" ")
         return list
 
-    for i in db:
+    for i in pali_words:
         word_dict[i.id] = set()
 
         if i.example_1 is not None and "'" in i.example_1:

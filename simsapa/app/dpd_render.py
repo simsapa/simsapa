@@ -7,7 +7,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import object_session
 
 from simsapa.app.db_session import get_db_engine_connection_session
-from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, PaliRoot, PaliWord, DerivedData, FamilyRoot, FamilyWord
 
@@ -26,8 +26,8 @@ from simsapa import logger
 DPD_PROJECT_PATHS = ProjectPaths()
 DPD_PALI_WORD_TEMPLATES = PaliWordTemplates(DPD_PROJECT_PATHS)
 
-def _init_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
-    logger.info("_init_dpd_caches()")
+def _get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
+    logger.info("_get_dpd_caches()")
 
     db_eng, db_conn, db_session = get_db_engine_connection_session(include_userdata=False)
 
@@ -36,48 +36,29 @@ def _init_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
 
     # === cf_set ===
 
-    r = db_session.query(Am.AppSetting) \
-                  .filter(Am.AppSetting.key == "cf_set") \
+    r = db_session.query(Dpd.DbInfo) \
+                  .filter(Dpd.DbInfo.key == "cf_set") \
                   .first()
-    if r is not None:
-        dpd_cf_set = set(json.loads(str(r.value)))
 
-    else:
-        from simsapa.dpd_db.exporter.helpers import cf_set_gen
-        dpd_cf_set = cf_set_gen()
+    assert(r is not None)
 
-        db_session.add(Am.AppSetting(key="cf_set",
-                                     value=json.dumps(list(dpd_cf_set))))
-        db_session.commit()
+    dpd_cf_set = set(json.loads(str(r.value)))
 
     # === sandhi_contractions ===
 
-    r = db_session.query(Am.AppSetting) \
-                  .filter(Am.AppSetting.key == "sandhi_contractions") \
+    r = db_session.query(Dpd.DbInfo) \
+                  .filter(Dpd.DbInfo.key == "sandhi_contractions") \
                   .first()
-    if r is not None:
-        data = json.loads(str(r.value))
-        dpd_sandhi_contractions: SandhiContractions = dict()
-        for k, v in data.items():
-            dpd_sandhi_contractions[k] = {
-                'contractions': set(v['contractions']),
-                'ids': v['ids'],
-            }
 
-    else:
-        from simsapa.dpd_db.tools.sandhi_contraction import make_sandhi_contraction_dict
-        dpd_sandhi_contractions = make_sandhi_contraction_dict(db_session)
+    assert(r is not None)
 
-        data = dict()
-        for k, v in dpd_sandhi_contractions.items():
-            data[k] = {
-                'contractions': list(v['contractions']),
-                'ids': v['ids'],
-            }
-
-        db_session.add(Am.AppSetting(key="sandhi_contractions",
-                                     value=json.dumps(data)))
-        db_session.commit()
+    data = json.loads(str(r.value))
+    dpd_sandhi_contractions: SandhiContractions = dict()
+    for k, v in data.items():
+        dpd_sandhi_contractions[k] = {
+            'contractions': set(v['contractions']),
+            'ids': v['ids'],
+        }
 
     db_conn.close()
     db_session.close()
@@ -85,7 +66,7 @@ def _init_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
 
     return (dpd_cf_set, dpd_sandhi_contractions)
 
-DPD_CF_SET, DPD_SANDHI_CONTRACTIONS = _init_dpd_caches()
+DPD_CF_SET, DPD_SANDHI_CONTRACTIONS = _get_dpd_caches()
 
 def make_meaning_plaintext(i: PaliWord) -> str:
     """Compile plaintext of meaning_1 and literal meaning, or return meaning_2."""

@@ -14,7 +14,6 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.orm import declared_attr
 from sqlalchemy.orm import object_session
 from sqlalchemy import Column, Integer
-from simsapa.app.helpers import pali_to_ascii, word_uid
 
 from simsapa.dpd_db.tools.link_generator import generate_link
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
@@ -213,8 +212,9 @@ class PaliWord(Base):
     def pali_link(self) -> str:
         return self.pali_1.replace(" ", "%20")
 
+    # NOTE: In Simsapa this computed property is only used when saving this to the db column.
     @property
-    def pali_clean(self) -> str:
+    def calc_pali_clean(self) -> str:
         return re.sub(r" \d.*$", "", self.pali_1)
 
     @property
@@ -293,7 +293,13 @@ class PaliWord(Base):
         return f"""PaliWord: {self.id} {self.pali_1} {self.pos} {
             self.meaning_1}"""
 
-    # === Properties used in Simsapa ===
+    # === Used in Simsapa ===
+
+    dictionary_id: Mapped[int] = mapped_column(nullable=False)
+
+    uid: Mapped[str] = mapped_column(unique=True)
+    word_ascii: Mapped[str]
+    pali_clean: Mapped[str]
 
     @property
     def as_dict(self) -> Dict[str, Any]:
@@ -317,16 +323,8 @@ class PaliWord(Base):
         return d
 
     @property
-    def uid(self) -> str:
-        return word_uid(self.pali_1, 'dpd')
-
-    @property
     def word(self) -> str:
         return self.pali_1
-
-    @property
-    def word_ascii(self) -> str:
-        return pali_to_ascii(self.pali_1)
 
     @property
     def language(self) -> str:
@@ -371,6 +369,57 @@ class PaliWord(Base):
     @property
     def synonyms(self) -> list:
         return []
+
+# Table used in Simsapa
+class DbInfo(Base):
+    __tablename__ = "db_info"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(unique=True)
+    value: Mapped[str] = mapped_column(default='')
+
+# Table used in Simsapa
+class DpdDeconstructor(Base):
+    __tablename__ = "dpd_deconstructor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    word: Mapped[str] = mapped_column(unique=True)
+    data: Mapped[str] = mapped_column(default='')
+
+    # word: Inflected compound. `kammapattā`
+    # data: List of breakdown. `kamma + pattā<br>kamma + apattā<br>kammi + apattā`
+
+    @property
+    def headword_list(self) -> List[str]:
+        words = set()
+        for line in self.data.split("<br>"):
+            for word in line.split("+"):
+                words.add(word.strip())
+
+        return list(words)
+
+# Table used in Simsapa
+class DpdEbts(Base):
+    __tablename__ = "dpd_ebts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    word: Mapped[str] = mapped_column(unique=True)
+    data: Mapped[str] = mapped_column(default='')
+
+# Table used in Simsapa
+class DpdI2h(Base):
+    __tablename__ = "dpd_i2h"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    word: Mapped[str] = mapped_column(unique=True)
+    data: Mapped[str] = mapped_column(default='')
+
+    # word: Inflected form. `phalena`
+    # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
+
+    @property
+    def headword_list(self) -> List[str]:
+        return self.data.split("\t")
 
 class DerivedData(Base):
     __tablename__ = "derived_data"
@@ -426,6 +475,9 @@ class Sandhi(Base):
     sinhala: Mapped[str] = mapped_column(default='')
     devanagari: Mapped[str] = mapped_column(default='')
     thai: Mapped[str] = mapped_column(default='')
+
+    # Used in Simsapa
+    contractions_csv: Mapped[str] = mapped_column(default='')
 
     @property
     def split_list(self) -> list:

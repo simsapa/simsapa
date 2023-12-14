@@ -37,6 +37,7 @@ class SearchMode(int, Enum):
     HeadwordMatch = 2
     TitleMatch = 3
     DpdIdMatch = 4
+    DpdTbwLookup = 5
 
 AllSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,

@@ -1,9 +1,11 @@
 """A few helpful lists and functions for the exporter."""
 
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
 from datetime import date
 
 from sqlalchemy.orm import Session
+from sqlalchemy.engine import Engine
+from sqlalchemy.engine.base import Connection
 
 from simsapa.app.db.dpd_models import PaliWord
 
@@ -19,14 +21,20 @@ EXCLUDE_FROM_FREQ: set = {
 
 # _cached_cf_set: Optional[Set[str]] = None
 
-def cf_set_gen() -> Set[str]:
+def cf_set_gen(db_session: Optional[Session] = None) -> Set[str]:
     """generate a list of all compounds families"""
-    global _cached_cf_set
+    # global _cached_cf_set
 
     # if _cached_cf_set is not None:
     #     return _cached_cf_set
 
-    db_eng, db_conn, db_session = get_dpd_db_session()
+    db_eng: Optional[Engine] = None
+    db_conn: Optional[Connection] = None
+    local_db_session = False
+    if db_session is None:
+        local_db_session = True
+        db_eng, db_conn, db_session = get_dpd_db_session()
+
     cf_db = db_session.query(
         PaliWord
     ).filter(PaliWord.family_compound != ""
@@ -40,9 +48,14 @@ def cf_set_gen() -> Set[str]:
         for cf in cfs:
             cf_set.add(cf)
 
-    db_conn.close()
-    db_session.close()
-    db_eng.dispose()
+    if db_conn:
+        db_conn.close()
+
+    if local_db_session:
+        db_session.close()
+
+    if db_eng:
+        db_eng.dispose()
 
     # _cached_cf_set = cf_set
     return cf_set

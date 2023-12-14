@@ -29,7 +29,7 @@ from simsapa.layouts.reader_web import ReaderWebEnginePage
 from simsapa.layouts.parts.search_bar import HasSearchBar
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 
-CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
+CSS_EXTRA_BODY = ""
 
 class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
