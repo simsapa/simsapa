@@ -7,7 +7,6 @@ from sqlalchemy.orm.session import Session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import word_uid
 from simsapa.app.db import dpd_models as Dpd
 
 USutta = Union[Am.Sutta, Um.Sutta]
@@ -77,7 +76,7 @@ def dpd_pali_word_to_search_result(x: Dpd.PaliWord, snippet: str) -> SearchResul
         db_id = int(str(x.id)),
         schema_name = 'dpd',
         table_name = 'pali_words',
-        uid = word_uid(x.pali_1, 'dpd'),
+        uid = str(x.uid),
         source_uid = 'dpd',
         title = str(x.pali_1),
         ref = None,

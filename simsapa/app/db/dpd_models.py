@@ -390,7 +390,7 @@ class DpdDeconstructor(Base):
     # data: List of breakdown. `kamma + pattā<br>kamma + apattā<br>kammi + apattā`
 
     @property
-    def headword_list(self) -> List[str]:
+    def compound_words_list(self) -> List[str]:
         words = set()
         for line in self.data.split("<br>"):
             for word in line.split("+"):

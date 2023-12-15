@@ -17,6 +17,8 @@ from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
 from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
+from icecream import ic
+
 class SearchQueryTask:
     _all_results: List[SearchResult] = []
     _highlighted_result_pages: Dict[int, List[SearchResult]] = dict()
@@ -92,6 +94,7 @@ class SearchQueryTask:
 
             elif self.search_mode == SearchMode.DpdTbwLookup:
                 self._highlighted_result_pages[page_num] = self.dpd_tbw_lookup()
+                self._all_results = self._highlighted_result_pages[page_num]
 
             else:
                 # page_start = page_num * self._page_len
@@ -384,11 +387,15 @@ class SearchQueryTask:
             #
             # Lookup headwords in pali_words.
 
+            ic(i2h.headword_list)
+
             r = db_session.query(Dpd.PaliWord) \
-                            .filter(Dpd.PaliWord.pali_1.in_(i2h.headword_list)) \
-                            .all()
+                          .filter(Dpd.PaliWord.pali_1.in_(i2h.headword_list)) \
+                          .all()
             if r is not None:
                 words.extend(r)
+
+        ic(len(words))
 
         return words
 
@@ -408,7 +415,7 @@ class SearchQueryTask:
 
         pali_words.extend(self._inflection_to_pali_words(db_session, self.query_text))
 
-        print(len(pali_words))
+        ic(len(pali_words))
 
         if len(pali_words) == 0:
             # i2h result doesn't exist
@@ -421,12 +428,10 @@ class SearchQueryTask:
                           .filter(Dpd.DpdDeconstructor.word == self.query_text) \
                           .first()
             if r is not None:
-                for w in r.headword_list:
+                for w in r.compound_words_list:
                     pali_words.extend(self._inflection_to_pali_words(db_session, w))
 
         res_page = []
-
-        print(len(pali_words))
 
         for w in pali_words:
             snippet = w.meaning_1 if w.meaning_1 else ""
@@ -436,6 +441,8 @@ class SearchQueryTask:
         db_conn.close()
         db_session.close()
         db_eng.dispose()
+
+        ic(len(res_page))
 
         return res_page
 

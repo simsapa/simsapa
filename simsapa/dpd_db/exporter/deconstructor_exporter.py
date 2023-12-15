@@ -40,12 +40,19 @@ def main():
     else:
         make_mdct: bool = False
 
+    if config_test("goldendict", "copy_unzip", "yes"):
+        copy_unzip: bool = True
+    else:
+        copy_unzip: bool = False
+
     pth = ProjectPaths()
     sandhi_data_list = make_sandhi_data_list(pth)
     make_golden_dict(pth, sandhi_data_list)
-    unzip_and_copy(pth)
 
-    if make_mdct is True:
+    if copy_unzip:
+        unzip_and_copy(pth)
+
+    if make_mdct:
         make_mdict(pth, sandhi_data_list)
 
     toc()
@@ -107,10 +114,10 @@ def make_sandhi_data_list(pth: ProjectPaths):
     return sandhi_data_list
 
 
-def make_golden_dict(PTH, sandhi_data_list):
+def make_golden_dict(pth, sandhi_data_list):
 
     print(f"[green]{'generating goldendict':<22}", end="")
-    zip_path = PTH.deconstructor_zip_path
+    zip_path = pth.deconstructor_zip_path
 
     ifo = ifo_from_opts({
         "bookname": "DPD Deconstructor",
@@ -124,7 +131,7 @@ def make_golden_dict(PTH, sandhi_data_list):
     print(f"{len(sandhi_data_list):,}")
 
 
-def unzip_and_copy(PTH):
+def unzip_and_copy(pth):
 
     local_goldendict_path: (Path |str) = goldedict_path()
 
@@ -134,12 +141,12 @@ def unzip_and_copy(PTH):
         ):
         print(f"[green]unzipping and copying to [blue]{local_goldendict_path}")
         os.popen(
-            f'unzip -o {PTH.deconstructor_zip_path} -d "{local_goldendict_path}"')
+            f'unzip -o {pth.deconstructor_zip_path} -d "{local_goldendict_path}"')
     else:
         print("[red]local GoldenDict directory not found")
 
 
-def make_mdict(PTH, sandhi_data_list: List[Dict]):
+def make_mdict(pth, sandhi_data_list: List[Dict]):
     """Export to MDict format."""
 
     print(f"[green]{'exporting mdct':<22}")
@@ -172,7 +179,7 @@ the Digital Pāḷi Dictionary website</a></p>"""
 
     bip()
     print("[white]copying mdx file", end=" ")
-    with open(PTH.deconstructor_mdict_mdx_path, "wb") as outfile:
+    with open(pth.deconstructor_mdict_mdx_path, "wb") as outfile:
         writer.write(outfile)
     print(bop())
 

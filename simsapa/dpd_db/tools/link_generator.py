@@ -1,20 +1,19 @@
 """Generating links for suttas based on the desired website"""
 
 import re
-import configparser
+from simsapa.dpd_db.tools.configger import config_test_option, config_update_default_value, config_read
 
 
-def load_link(filename="config.ini"):
-    config = configparser.ConfigParser()
-    config.read(filename)
+def load_link():
+    if not config_test_option("dictionary", "link_url"):
+        config_update_default_value("dictionary", "link_url")
+    return config_read("dictionary", "link_url")
 
-    base_url = config["dictionary"]["link_url"]
 
-    return base_url
+base_url = load_link()
 
 
 def generate_link(source: str) -> str:
-    base_url = load_link()
 
     # List of functions to check each pattern
     pattern_funcs = [link_vin, link_vin_pat, link_pat, link_dn_mn, link_an, link_sn, 
@@ -274,7 +273,7 @@ def link_thi(source: str, base_url: str) -> str:
             return f"{base_url}thi/thi5.html"
         elif 50 <= thi_number <= 57:
             return f"{base_url}thi/thi6.html"
-        elif 58 <= thi_number <= 59:
+        elif 58 <= thi_number <= 60:
             return f"{base_url}thi/thi7.html"
         elif thi_number == 61:
             return f"{base_url}thi/thi8.html"
@@ -335,7 +334,7 @@ def link_th(source: str, base_url: str) -> str:
             return f"{base_url}tha/tha15.html"
         elif 248 <= th_number <= 257:
             return f"{base_url}tha/tha16.html"
-        elif 258 <= th_number <= 259:
+        elif 258 <= th_number <= 260:
             return f"{base_url}tha/tha17.html"
         elif th_number == 261:
             return f"{base_url}tha/tha18.html"

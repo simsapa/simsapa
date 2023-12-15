@@ -3,6 +3,7 @@ appdata.sqlite3
 tests/data/assets/
 node_modules/
 profile_time_chart.png
+config.ini
 
 # build folders
 build/

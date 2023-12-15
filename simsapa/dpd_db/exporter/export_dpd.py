@@ -18,8 +18,6 @@ from sqlalchemy.orm.session import Session
 from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ
 from simsapa.dpd_db.exporter.helpers import TODAY
 
-from simsapa.dpd_db.tools.superscripter import superscripter_uni
-
 from simsapa.app.db.dpd_models import PaliRoot, PaliWord
 from simsapa.app.db.dpd_models import DerivedData
 from simsapa.app.db.dpd_models import FamilyRoot
@@ -39,6 +37,7 @@ from simsapa.dpd_db.tools.pos import INDECLINABLES
 # from tools.configger import config_test
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 from simsapa.dpd_db.tools.utils import RenderResult, RenderedSizes, default_rendered_sizes, list_into_batches, sum_rendered_sizes
+from simsapa.dpd_db.tools.superscripter import superscripter_uni
 
 def bip():
     pass
@@ -187,7 +186,7 @@ def render_pali_word_dpd_html(db_parts: PaliWordDbParts,
 
     html += "<body>"
 
-    summary = render_dpd_definition_templ(pth, i, tt.dpd_definition_templ)
+    summary = render_dpd_definition_templ(pth, i, rd['make_link'], tt.dpd_definition_templ)
     html += summary
     size_dict["dpd_summary"] += len(summary)
 
@@ -402,6 +401,7 @@ def render_header_templ(
 def render_dpd_definition_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
+        make_link: bool,
         dpd_definition_templ: Template
 ) -> str:
     """render the definition of a word's most relevant information:
@@ -426,6 +426,7 @@ def render_dpd_definition_templ(
     return str(
         dpd_definition_templ.render(
             i=i,
+            make_link=make_link,
             pos=pos,
             plus_case=plus_case,
             meaning=meaning,
