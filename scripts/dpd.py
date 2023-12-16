@@ -56,6 +56,15 @@ def save_dpd_caches(dpd_db_session: Session) -> Tuple[Set[str], SandhiContractio
 
     return (dpd_cf_set, dpd_sandhi_contractions)
 
+def dpd_deconstructor_html_to_list(html: str) -> List[List[str]]:
+    """
+    Convert:
+    kamma + pattā<br>kamma + apattā<br>kammi + apattā
+    ->
+    [["kamma", "pattā"], ["kamma", "apattā"], ["kammi", "apattā"]]
+    """
+    return [[word.strip() for word in line.split("+")] for line in html.split("<br>")]
+
 def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     logger.info("migrate_dpd()")
 
@@ -133,7 +142,7 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
                     dpd_deconstructor(
                         id integer primary key autoincrement,
                         word VARCHAR UNIQUE NOT NULL,
-                        data VARCHAR NOT NULL DEFAULT ''
+                        headwords_json VARCHAR NOT NULL DEFAULT ''
                     );
                 """
                 cursor.execute(query)
@@ -143,7 +152,7 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
                     dpd_ebts(
                         id integer primary key autoincrement,
                         word VARCHAR UNIQUE NOT NULL,
-                        data VARCHAR NOT NULL DEFAULT ''
+                        definition VARCHAR NOT NULL DEFAULT ''
                     );
                 """
                 cursor.execute(query)
@@ -153,7 +162,7 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
                     dpd_i2h(
                         id integer primary key autoincrement,
                         word VARCHAR UNIQUE NOT NULL,
-                        data VARCHAR NOT NULL DEFAULT ''
+                        headwords_tsv VARCHAR NOT NULL DEFAULT ''
                     );
                 """
                 cursor.execute(query)
@@ -184,19 +193,20 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
         dpd_deconstructor: Dict[str, str] = json.loads(f.read())
 
     for k, v in dpd_deconstructor.items():
-        dpd_db_session.add(Dpd.DpdDeconstructor(word=k, data=v))
+        data = json.dumps(dpd_deconstructor_html_to_list(v))
+        dpd_db_session.add(Dpd.DpdDeconstructor(word=k, headwords_json=data))
 
     with open(dpd_bootstrap_current_dir.joinpath("dpd_ebts.json"), 'r', encoding='utf-8') as f:
         dpd_ebts: Dict[str, str] = json.loads(f.read())
 
     for k, v in dpd_ebts.items():
-        dpd_db_session.add(Dpd.DpdEbts(word=k, data=v))
+        dpd_db_session.add(Dpd.DpdEbts(word=k, definition=v))
 
     with open(dpd_bootstrap_current_dir.joinpath("dpd_i2h.json"), 'r', encoding='utf-8') as f:
         dpd_i2h: Dict[str, List[str]] = json.loads(f.read())
 
     for k, v in dpd_i2h.items():
-        dpd_db_session.add(Dpd.DpdI2h(word=k, data="\t".join(v)))
+        dpd_db_session.add(Dpd.DpdI2h(word=k, headwords_tsv="\t".join(v)))
 
     dpd_db_session.commit()
     dpd_db_session.close()

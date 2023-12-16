@@ -119,7 +119,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
 
             logger.info(f"SearchQueryWorker for {lang}")
 
-            task = SearchQueryTask(lang_indexes[lang],
+            task = SearchQueryTask(lang,
+                                   lang_indexes[lang],
                                    query_text_orig,
                                    query_started_time,
                                    params)

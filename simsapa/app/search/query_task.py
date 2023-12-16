@@ -16,8 +16,7 @@ from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
 from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
-
-from icecream import ic
+from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 class SearchQueryTask:
     _all_results: List[SearchResult] = []
@@ -25,6 +24,7 @@ class SearchQueryTask:
     _db_query_hits_count = 0
 
     def __init__(self,
+                 lang: str,
                  ix: tantivy.Index,
                  query_text_orig: str,
                  query_started_time: datetime,
@@ -40,8 +40,7 @@ class SearchQueryTask:
 
         self._page_len = params['page_len'] if params['page_len'] is not None else 20
 
-        s = params['lang']
-        self.lang = None if s is None else s.lower()
+        self.lang = lang
         self.lang_include = params['lang_include']
         s = params['source']
         self.source = None if s is None else s.lower()
@@ -387,35 +386,34 @@ class SearchQueryTask:
             #
             # Lookup headwords in pali_words.
 
-            ic(i2h.headword_list)
-
             r = db_session.query(Dpd.PaliWord) \
-                          .filter(Dpd.PaliWord.pali_1.in_(i2h.headword_list)) \
+                          .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
                           .all()
             if r is not None:
                 words.extend(r)
-
-        ic(len(words))
 
         return words
 
     def dpd_tbw_lookup(self) -> List[SearchResult]:
         logger.info("dpd_tbw_lookup()")
 
+        # DPD is English.
+        if self.lang != "en":
+            return []
+
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
         # ![flowchart](https://github.com/digitalpalidictionary/dpd-db/blob/main/tbw/docs/dpd%20lookup%20systen.png)
 
-        pali_words: List[Dpd.PaliWord] = []
+        pali_words: Dict[str, Dpd.PaliWord] = dict()
 
         # Lookup word in dpd_i2h (inflections to headwords).
 
         # word: Inflected form. `phalena`
         # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
 
-        pali_words.extend(self._inflection_to_pali_words(db_session, self.query_text))
-
-        ic(len(pali_words))
+        for i in self._inflection_to_pali_words(db_session, self.query_text):
+            pali_words[i.pali_1] = i
 
         if len(pali_words) == 0:
             # i2h result doesn't exist
@@ -428,12 +426,15 @@ class SearchQueryTask:
                           .filter(Dpd.DpdDeconstructor.word == self.query_text) \
                           .first()
             if r is not None:
-                for w in r.compound_words_list:
-                    pali_words.extend(self._inflection_to_pali_words(db_session, w))
+                for w in r.headwords_flat:
+                    for i in self._inflection_to_pali_words(db_session, w):
+                        pali_words[i.pali_1] = i
 
         res_page = []
 
-        for w in pali_words:
+        pali_words_values = sorted(pali_words.values(), key=lambda x: pali_sort_key(x.pali_1))
+
+        for w in pali_words_values:
             snippet = w.meaning_1 if w.meaning_1 else ""
             res = dpd_pali_word_to_search_result(w, snippet)
             res_page.append(res)
@@ -441,8 +442,6 @@ class SearchQueryTask:
         db_conn.close()
         db_session.close()
         db_eng.dispose()
-
-        ic(len(res_page))
 
         return res_page
 

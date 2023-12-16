@@ -1,7 +1,8 @@
 """Datebase model for use by SQLAlchemy."""
-import re
 
-from typing import Any, Dict, List
+import re, json
+
+from typing import Any, Dict, List, Set
 from typing import Optional
 
 from sqlalchemy import DateTime
@@ -370,56 +371,60 @@ class PaliWord(Base):
     def synonyms(self) -> list:
         return []
 
-# Table used in Simsapa
 class DbInfo(Base):
+    """Storing general key-value data such as dpd_release_version and cached
+    values, e.g. cf_set, sandhi_contractions as JSON strings."""
     __tablename__ = "db_info"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(unique=True)
     value: Mapped[str] = mapped_column(default='')
 
-# Table used in Simsapa
 class DpdDeconstructor(Base):
     __tablename__ = "dpd_deconstructor"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    word: Mapped[str] = mapped_column(unique=True)
-    data: Mapped[str] = mapped_column(default='')
 
-    # word: Inflected compound. `kammapattā`
-    # data: List of breakdown. `kamma + pattā<br>kamma + apattā<br>kammi + apattā`
+    # Inflected compound. `kammapattā`
+    word: Mapped[str] = mapped_column(unique=True)
+
+    # List of breakdown combinations as a JSON string. `[["kamma", "pattā"], ["kamma", "apattā"], ["kammi", "apattā"]]`
+    headwords_json: Mapped[str] = mapped_column(default='')
 
     @property
-    def compound_words_list(self) -> List[str]:
-        words = set()
-        for line in self.data.split("<br>"):
-            for word in line.split("+"):
-                words.add(word.strip())
+    def headwords(self) -> List[List[str]]:
+        """Parses headwords_json."""
+        return json.loads(self.headwords_json)
 
-        return list(words)
+    @property
+    def headwords_flat(self) -> Set[str]:
+        """Unique headwords as a flattened set."""
+        flat_list = [word for sublist in self.headwords for word in sublist]
+        return set(flat_list)
 
-# Table used in Simsapa
 class DpdEbts(Base):
+    """Short definitions of Pāli headwords."""
     __tablename__ = "dpd_ebts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     word: Mapped[str] = mapped_column(unique=True)
-    data: Mapped[str] = mapped_column(default='')
+    definition: Mapped[str] = mapped_column(default='')
 
-# Table used in Simsapa
 class DpdI2h(Base):
+    """Inflections to headwords lookup table."""
     __tablename__ = "dpd_i2h"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    word: Mapped[str] = mapped_column(unique=True)
-    data: Mapped[str] = mapped_column(default='')
 
-    # word: Inflected form. `phalena`
-    # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
+    # Inflected form. `phalena`
+    word: Mapped[str] = mapped_column(unique=True)
+
+    # pali_1 headwords as a tab-separated list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
+    headwords_tsv: Mapped[str] = mapped_column(default='')
 
     @property
-    def headword_list(self) -> List[str]:
-        return self.data.split("\t")
+    def headwords(self) -> List[str]:
+        return self.headwords_tsv.split("\t")
 
 class DerivedData(Base):
     __tablename__ = "derived_data"
@@ -475,9 +480,6 @@ class Sandhi(Base):
     sinhala: Mapped[str] = mapped_column(default='')
     devanagari: Mapped[str] = mapped_column(default='')
     thai: Mapped[str] = mapped_column(default='')
-
-    # Used in Simsapa
-    contractions_csv: Mapped[str] = mapped_column(default='')
 
     @property
     def split_list(self) -> list:
