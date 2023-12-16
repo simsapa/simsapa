@@ -125,12 +125,11 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
         .all()
     results.extend(res)
 
-    # FIXME dpd uid
-    # res = db_session \
-    #     .query(Dpd.PaliWord) \
-    #     .filter(Dpd.PaliWord.uid == uid) \
-    #     .all()
-    # results.extend(res)
+    res = db_session \
+        .query(Dpd.PaliWord) \
+        .filter(Dpd.PaliWord.uid == uid) \
+        .all()
+    results.extend(res)
 
     db_conn.close()
     db_session.close()

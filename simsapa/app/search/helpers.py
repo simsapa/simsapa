@@ -1,4 +1,4 @@
-from typing import List, Optional, TypedDict, Union
+from typing import List, Optional, TypedDict, Union, Dict
 import re
 
 import tantivy
@@ -199,3 +199,37 @@ def get_dict_word_source_filter_labels(db_session: Session) -> List[str]:
     labels = list(filter(None, a))
 
     return labels
+
+def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
+    words = []
+
+    i2h = db_session.query(Dpd.DpdI2h) \
+                    .filter(Dpd.DpdI2h.word == query_text) \
+                    .first()
+
+    if i2h is not None:
+        # i2h result exists
+        # dpd_ebts has short definitions. For Simsapa, retreive the PaliWords.
+        #
+        # Lookup headwords in pali_words.
+
+        r = db_session.query(Dpd.PaliWord) \
+                        .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
+                        .all()
+        if r is not None:
+            words.extend(r)
+
+    return words
+
+def dpd_deconstructor_query(db_session: Session, query_text: str) -> Dict[str, Dpd.PaliWord]:
+    pali_words: Dict[str, Dpd.PaliWord] = dict()
+
+    r = db_session.query(Dpd.DpdDeconstructor) \
+                    .filter(Dpd.DpdDeconstructor.word == query_text) \
+                    .first()
+    if r is not None:
+        for w in r.headwords_flat:
+            for i in inflection_to_pali_words(db_session, w):
+                pali_words[i.pali_1] = i
+
+    return pali_words

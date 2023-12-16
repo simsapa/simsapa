@@ -10,7 +10,7 @@ from simsapa import logger
 from simsapa.app.app_data import AppData
 from simsapa.app.search.helpers import SearchResult
 
-from simsapa.layouts.gui_types import default_search_result_sizes
+from simsapa.layouts.gui_types import QExpanding, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
 
 class HasFulltextList:
@@ -40,6 +40,7 @@ class HasFulltextList:
 
         self.fulltext_label.clear()
         self.fulltext_list.clear()
+        self.fulltext_list.setSizePolicy(QExpanding, QExpanding)
 
         self.fulltext_list.setUniformItemSizes(True)
 

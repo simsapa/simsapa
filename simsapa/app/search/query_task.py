@@ -14,7 +14,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, sutta_to_search_result
+from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_deconstructor_query, dpd_pali_word_to_search_result, inflection_to_pali_words, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
@@ -35,8 +35,7 @@ class SearchQueryTask:
         self.query_started_time = query_started_time
         self.query_finished_time: Optional[datetime] = None
 
-        # FIXME self.search_mode = params['mode']
-        self.search_mode = SearchMode.DpdTbwLookup
+        self.search_mode = params['mode']
 
         self._page_len = params['page_len'] if params['page_len'] is not None else 20
 
@@ -373,27 +372,6 @@ class SearchQueryTask:
 
         return res_page
 
-    def _inflection_to_pali_words(self, db_session: Session, query: str) -> List[Dpd.PaliWord]:
-        words = []
-
-        i2h = db_session.query(Dpd.DpdI2h) \
-                        .filter(Dpd.DpdI2h.word == query) \
-                        .first()
-
-        if i2h is not None:
-            # i2h result exists
-            # dpd_ebts has short definitions. For Simsapa, retreive the PaliWords.
-            #
-            # Lookup headwords in pali_words.
-
-            r = db_session.query(Dpd.PaliWord) \
-                          .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
-                          .all()
-            if r is not None:
-                words.extend(r)
-
-        return words
-
     def dpd_tbw_lookup(self) -> List[SearchResult]:
         logger.info("dpd_tbw_lookup()")
 
@@ -412,23 +390,16 @@ class SearchQueryTask:
         # word: Inflected form. `phalena`
         # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
 
-        for i in self._inflection_to_pali_words(db_session, self.query_text):
+        for i in inflection_to_pali_words(db_session, self.query_text):
             pali_words[i.pali_1] = i
 
         if len(pali_words) == 0:
             # i2h result doesn't exist
             # Lookup query text in dpd_deconstructor.
 
-            # word: Inflected compound. `kammapattā`
-            # data: List of breakdown. `kamma + pattā<br>kamma + apattā<br>kammi + apattā`
-
-            r = db_session.query(Dpd.DpdDeconstructor) \
-                          .filter(Dpd.DpdDeconstructor.word == self.query_text) \
-                          .first()
-            if r is not None:
-                for w in r.headwords_flat:
-                    for i in self._inflection_to_pali_words(db_session, w):
-                        pali_words[i.pali_1] = i
+            d = dpd_deconstructor_query(db_session, self.query_text)
+            for i in d.values():
+                pali_words[i.pali_1] = i
 
         res_page = []
 
@@ -582,6 +553,9 @@ class SearchQueryTask:
 
         elif self.search_mode == SearchMode.DpdTbwLookup:
             self._tbw_search()
+
+        else:
+            logger.error(f"Unknown SearchMode: {self.search_mode}")
 
         self.query_finished_time = datetime.now()
 

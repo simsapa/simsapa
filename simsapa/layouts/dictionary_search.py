@@ -38,11 +38,12 @@ from simsapa.layouts.parts.search_bar import HasSearchBar
 from simsapa.layouts.parts.memo_dialog import HasMemoDialog
 from simsapa.layouts.parts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
+from simsapa.layouts.parts.deconstructor_list import HasDeconstructorList
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 from simsapa.layouts.parts.import_stardict_dialog import HasImportStarDictDialog
 
 class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearchWindow,
-                             HasFulltextList, HasSearchBar, HasMemoDialog,
+                             HasDeconstructorList, HasFulltextList, HasSearchBar, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
@@ -125,6 +126,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._setup_show_sidebar_btn()
         self._connect_signals()
 
+        self.init_deconstructor_list()
         self.init_fulltext_list()
         self.init_memo_dialog()
         self.init_memos_sidebar()
@@ -451,6 +453,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, f"Results ({hits})")
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
+
+        self.render_deconstructor_list_for_query(self.search_input.text().strip())
 
         results = self.render_fulltext_page()
 

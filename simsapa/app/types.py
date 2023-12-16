@@ -41,6 +41,7 @@ class SearchMode(int, Enum):
 
 AllSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
+    "DPD Lookup": SearchMode.DpdTbwLookup,
     # FIXME disabled ExactMatch while its buggy.
     # "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,
@@ -54,6 +55,7 @@ SuttaSearchModeNameToType = {
 }
 
 DictionarySearchModeNameToType = {
+    "DPD Lookup": SearchMode.DpdTbwLookup,
     "Fulltext Match": SearchMode.FulltextMatch,
     # "Exact Match": SearchMode.ExactMatch,
     "Headword Match": SearchMode.HeadwordMatch,

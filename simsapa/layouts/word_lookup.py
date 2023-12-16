@@ -27,11 +27,12 @@ from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 from simsapa.layouts.parts.search_bar import HasSearchBar
+from simsapa.layouts.parts.deconstructor_list import HasDeconstructorList
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 
 CSS_EXTRA_BODY = ""
 
-class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
+class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltextList, HasSearchBar):
 
     search_input: QLineEdit
     wrap_layout: QBoxLayout
@@ -113,6 +114,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         self._connect_signals()
 
+        self.init_deconstructor_list()
         self.init_fulltext_list()
 
     def handle_messages(self):
@@ -300,6 +302,15 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
 
+        self.deconstructor_frame = QFrame(parent=self.fulltext_tab)
+        self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
+        self.deconstructor_frame.setLineWidth(0)
+        self.deconstructor_frame.setObjectName("DeconstructorFrame")
+        self.deconstructor_frame.setStyleSheet("#DeconstructorFrame { background-color: white; }")
+
+        self.fulltext_tab_layout.addWidget(self.deconstructor_frame)
+
         self.fulltext_tab_layout.addLayout(self.fulltext_tab_inner_layout)
 
     def _show_word(self, word: UDictWord):
@@ -400,6 +411,8 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
             self.tabs.setTabText(1, f"Results ({hits})")
         else:
             self.tabs.setTabText(1, "Results")
+
+        self.render_deconstructor_list_for_query(self.search_input.text().strip())
 
         self.render_fulltext_page()
 
