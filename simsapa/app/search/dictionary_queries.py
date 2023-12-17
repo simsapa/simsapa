@@ -55,6 +55,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
                 .all()
             results.extend(res)
 
+            res = self.db_session \
+                .query(Dpd.PaliWord) \
+                .filter(Dpd.PaliWord.uid == uid) \
+                .all()
+            results.extend(res)
+
         else:
 
             res = self.db_session \
@@ -66,6 +72,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
             res = self.db_session \
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
+
+            res = self.db_session \
+                .query(Dpd.PaliWord) \
+                .filter(Dpd.PaliWord.uid.like(f"{uid}/%")) \
                 .all()
             results.extend(res)
 

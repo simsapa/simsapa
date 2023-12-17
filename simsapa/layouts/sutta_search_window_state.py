@@ -16,6 +16,7 @@ from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.helpers import is_book_sutta_ref
 
 from simsapa.app.types import QueryType, SearchArea, SuttaQuote, USutta, UDictWord
@@ -583,6 +584,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         res = self._app_data.db_session \
             .query(Um.DictWord) \
             .filter(Um.DictWord.uid == uid) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.uid == uid) \
             .all()
         results.extend(res)
 
