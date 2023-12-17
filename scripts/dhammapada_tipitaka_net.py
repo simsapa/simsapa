@@ -16,7 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, dhp_verse_to_chapter, pali_to_ascii
+from simsapa.app.helpers import consistent_niggahita, compact_rich_text, dhp_verse_to_chapter, pali_to_ascii
 
 load_dotenv()
 
@@ -66,7 +66,7 @@ def parse_chapter(p: Path) -> Tuple[int, str, str]:
     return (dhp_num, content_html, title_li)
 
 def parse_sutta(ref: str, content_html: str) -> Am.Sutta:
-    title = consistent_nasal_m("Dhammapada")
+    title = consistent_niggahita("Dhammapada")
     title_ascii = pali_to_ascii(title)
     title_pali = title
 
@@ -77,7 +77,7 @@ def parse_sutta(ref: str, content_html: str) -> Am.Sutta:
 
     # logger.info(f"{ref} -- {title}")
 
-    content_html = '<div class="tipitaka_net">' + consistent_nasal_m(content_html) + '</div>'
+    content_html = '<div class="tipitaka_net">' + consistent_niggahita(content_html) + '</div>'
 
     sutta = Am.Sutta(
         source_uid = author,

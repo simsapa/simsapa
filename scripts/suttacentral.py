@@ -14,7 +14,7 @@ from pyArango.database import DBHandle
 from simsapa import DbSchemaName, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_nasal_m, html_get_sutta_page_body, compact_rich_text, pali_to_ascii, sutta_range_from_ref
+from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_niggahita, html_get_sutta_page_body, compact_rich_text, pali_to_ascii, sutta_range_from_ref
 
 import helpers
 from simsapa.app.types import USutta
@@ -67,12 +67,12 @@ def html_text_to_sutta(x, schema: DbSchemaName, title: str, _: Optional[str]) ->
     # html pages can be complete docs, <!DOCTYPE html><html>...
     page = x['text']
 
-    title = consistent_nasal_m(title)
+    title = consistent_niggahita(title)
     title_ascii = pali_to_ascii(title)
 
     body = html_get_sutta_page_body(page)
     body = bilara_html_post_process(body)
-    content_html = '<div class="suttacentral html-text">' + consistent_nasal_m(body) + '</div>'
+    content_html = '<div class="suttacentral html-text">' + consistent_niggahita(body) + '</div>'
     content_plain = compact_rich_text(content_html)
 
     uid = html_text_uid(x)
@@ -147,7 +147,7 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
         content_html = bilara_text_to_html(content, tmpl_json)
         content_plain = compact_rich_text(content_html)
 
-    title = consistent_nasal_m(title)
+    title = consistent_niggahita(title)
     title_ascii = pali_to_ascii(title)
 
     uid = bilara_text_uid(x)
@@ -177,7 +177,7 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
             # Not saving the html to reduce DB size. content_plain is used for
             # indexing and search. Re-generate HTML from JSON is needed.
             content_html = null(),
-            content_json = consistent_nasal_m(content),
+            content_json = consistent_niggahita(content),
             content_json_tmpl = tmpl_json,
             created_at = func.now(),
         )
@@ -202,7 +202,7 @@ def bilara_text_to_sutta(x, schema: DbSchemaName, title: str, tmpl_json: Optiona
             # Not saving the html to reduce DB size. content_plain is used for
             # indexing and search. Re-generate HTML from JSON is needed.
             content_html = null(),
-            content_json = consistent_nasal_m(content),
+            content_json = consistent_niggahita(content),
             content_json_tmpl = tmpl_json,
             created_at = func.now(),
         )
@@ -509,7 +509,7 @@ def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 sutta_uid = sutta_uid,
                 language = language,
                 source_uid = source_uid,
-                content_json = consistent_nasal_m(r['text']),
+                content_json = consistent_niggahita(r['text']),
             )
 
         elif schema == DbSchemaName.UserData:
@@ -518,7 +518,7 @@ def add_sutta_variants(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 sutta_uid = sutta_uid,
                 language = language,
                 source_uid = source_uid,
-                content_json = consistent_nasal_m(r['text']),
+                content_json = consistent_niggahita(r['text']),
             )
 
         else:
@@ -600,7 +600,7 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 sutta_uid = sutta_uid,
                 language = language,
                 source_uid = source_uid,
-                content_json = consistent_nasal_m(r['text']),
+                content_json = consistent_niggahita(r['text']),
             )
 
         elif schema == DbSchemaName.UserData:
@@ -609,7 +609,7 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
                 sutta_uid = sutta_uid,
                 language = language,
                 source_uid = source_uid,
-                content_json = consistent_nasal_m(r['text']),
+                content_json = consistent_niggahita(r['text']),
             )
 
         else:

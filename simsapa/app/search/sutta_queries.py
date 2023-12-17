@@ -9,7 +9,7 @@ from sqlalchemy.orm.session import Session
 from simsapa import logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import consistent_nasal_m, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
+from simsapa.app.helpers import consistent_niggahita, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
 from simsapa.app.types import QueryType, SuttaQueriesInterface, SuttaQuote, USutta, QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.gui_types import sutta_quote_from_url
@@ -51,7 +51,7 @@ class SuttaQueries(SuttaQueriesInterface):
 
         quote = quote.lower()
         quote = remove_punct(quote)
-        quote = consistent_nasal_m(quote)
+        quote = consistent_niggahita(quote)
 
         p = expand_quote_to_pattern(quote)
 

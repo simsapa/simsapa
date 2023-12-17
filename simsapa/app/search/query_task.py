@@ -9,7 +9,7 @@ from sqlalchemy.orm.session import Session
 
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session
-from simsapa.app.helpers import consistent_nasal_m
+from simsapa.app.helpers import consistent_niggahita
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
@@ -31,7 +31,7 @@ class SearchQueryTask:
                  params: SearchParams):
 
         self.ix = ix
-        self.query_text = consistent_nasal_m(query_text_orig)
+        self.query_text = consistent_niggahita(query_text_orig)
         self.query_started_time = query_started_time
         self.query_finished_time: Optional[datetime] = None
 

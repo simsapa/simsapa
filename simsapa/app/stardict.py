@@ -22,7 +22,7 @@ import re
 
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
-from simsapa.app.helpers import compact_rich_text, consistent_nasal_m
+from simsapa.app.helpers import compact_rich_text, consistent_niggahita
 from simsapa.app.types import QueryType
 
 class DictError(Exception):
@@ -321,15 +321,15 @@ def add_synonyms(syn_entries: Optional[SynEntries], idx: int) -> List[str]:
     synonyms = []
     for k, v in syn_entries.items():
         if v[0] == idx:
-            synonyms.append(consistent_nasal_m(k))
+            synonyms.append(consistent_niggahita(k))
 
     return synonyms
 
 
 def _parse_word(segment: DictSegment, types: str, __syn_entries__: Optional[SynEntries]) -> ParseResult:
-    dict_word = consistent_nasal_m(segment['dict_word'])
+    dict_word = consistent_niggahita(segment['dict_word'])
     # idx = segment['idx']
-    data_str = consistent_nasal_m(segment['data_str'])
+    data_str = consistent_niggahita(segment['data_str'])
 
     definition_plain = ""
     definition_html = ""

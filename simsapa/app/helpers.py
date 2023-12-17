@@ -155,7 +155,7 @@ def normalize_sutta_uid(uid: str) -> str:
     return uid
 
 
-def consistent_nasal_m(text: Optional[str] = None) -> str:
+def consistent_niggahita(text: Optional[str] = None) -> str:
     if text is None:
         return ''
 
@@ -250,7 +250,7 @@ def compact_plain_text(text: str) -> str:
     # Make lowercase and remove punctuation to help matching query strings.
     text = text.lower()
     text = remove_punct(text)
-    text = consistent_nasal_m(text)
+    text = consistent_niggahita(text)
     text = text.strip()
 
     return text

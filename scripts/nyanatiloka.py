@@ -7,7 +7,7 @@ from sqlalchemy.sql import func, text
 
 from simsapa import logger
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
+from simsapa.app.helpers import consistent_niggahita, compact_rich_text, pali_to_ascii
 
 import helpers
 
@@ -46,7 +46,7 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, bootstrap_a
     def _legacy_to_dict_word(x: LegacyDictWord) -> Am.DictWord:
         # all-lowercase uid
         uid = f"{x.word}/{label}".lower()
-        word = consistent_nasal_m(x.word)
+        word = consistent_niggahita(x.word)
         word_ascii = pali_to_ascii(word)
         return Am.DictWord(
             dictionary_id = dictionary.id,
@@ -56,8 +56,8 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, bootstrap_a
             uid = uid,
             source_uid = label,
             definition_plain = compact_rich_text(x.definition_plain),
-            definition_html = consistent_nasal_m(x.definition_html),
-            summary = consistent_nasal_m(x.summary),
+            definition_html = consistent_niggahita(x.definition_html),
+            summary = consistent_niggahita(x.summary),
             created_at = func.now(),
         )
 

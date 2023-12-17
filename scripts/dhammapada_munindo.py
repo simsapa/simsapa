@@ -16,7 +16,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
+from simsapa.app.helpers import consistent_niggahita, compact_rich_text, pali_to_ascii
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
 
 load_dotenv()
@@ -55,9 +55,9 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     # logger.info(f"{ref} -- {title}")
 
-    content_html = '<div class="dhammapada_munindo">' + consistent_nasal_m(html_text) + '</div>'
+    content_html = '<div class="dhammapada_munindo">' + consistent_niggahita(html_text) + '</div>'
 
-    title = consistent_nasal_m(title)
+    title = consistent_niggahita(title)
     title_ascii = pali_to_ascii(title)
 
     sutta = Am.Sutta(

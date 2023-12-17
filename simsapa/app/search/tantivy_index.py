@@ -8,7 +8,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 
 from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_nasal_m, query_text_to_uid_field_query
+from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_niggahita, query_text_to_uid_field_query
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
@@ -134,7 +134,7 @@ class TantivySearchQuery:
     hits_count: Optional[int] = None
 
     # The un-sanitized, un-extended original user input.
-    # Only consistent_nasal_m(query_text.strip()) applied.
+    # Only consistent_niggahita(query_text.strip()) applied.
     query_text_orig: Optional[str] = None
 
     search_params: SearchParams
@@ -358,7 +358,7 @@ class TantivySearchQuery:
 
         self.ix.reload()
 
-        self.query_text_orig = consistent_nasal_m(query_text.strip())
+        self.query_text_orig = consistent_niggahita(query_text.strip())
 
         query_string = sanitize_user_input(self.query_text_orig)
 
