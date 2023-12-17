@@ -8,6 +8,7 @@ from simsapa import logger, DbSchemaName
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.helpers import pali_to_ascii
 from simsapa.app.types import SearchArea
@@ -38,6 +39,12 @@ def get_sutta_titles_completion_list(db_session: Session, load_only_from_appdata
 def get_dict_words_completion_list(db_session: Session, load_only_from_appdata = False) -> WordSublists:
     res = []
     r = db_session.query(Am.DictWord.word).all()
+    res.extend(r)
+
+    r = db_session.query(Dpd.PaliWord.pali_1).all()
+    res.extend(r)
+
+    r = db_session.query(Dpd.DpdDeconstructor.word).all()
     res.extend(r)
 
     if not load_only_from_appdata:
@@ -99,8 +106,10 @@ def get_and_save_completions(db_session: Session,
     if r is None:
         if search_area == SearchArea.Suttas:
             sublists = get_sutta_titles_completion_list(db_session, load_only_from_appdata)
-        else:
+        elif search_area == SearchArea.DictWords:
             sublists = get_dict_words_completion_list(db_session, load_only_from_appdata)
+        else:
+            raise Exception(f"Unknown SearchArea: {search_area}")
 
         if save_to_schema == DbSchemaName.AppData:
             x = Am.AppSetting(

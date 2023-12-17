@@ -213,7 +213,9 @@ class PaliWord(Base):
     def pali_link(self) -> str:
         return self.pali_1.replace(" ", "%20")
 
-    # NOTE: In Simsapa this computed property is only used when saving this to the db column.
+    # NOTE: In Simsapa we save this to the db.
+    pali_clean: Mapped[str] = mapped_column(default='')
+
     @property
     def calc_pali_clean(self) -> str:
         return re.sub(r" \d.*$", "", self.pali_1)

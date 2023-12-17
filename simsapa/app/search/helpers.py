@@ -3,11 +3,14 @@ import re
 
 import tantivy
 
+from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.pali_stemmer import pali_stem
+from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
@@ -233,3 +236,77 @@ def dpd_deconstructor_query(db_session: Session, query_text: str) -> Dict[str, D
                 pali_words[i.pali_1] = i
 
     return pali_words
+
+def dpd_lookup(db_session: Session, query_text: str) -> List[SearchResult]:
+
+    # ![flowchart](https://github.com/digitalpalidictionary/dpd-db/blob/main/tbw/docs/dpd%20lookup%20systen.png)
+
+    pali_words: Dict[str, Dpd.PaliWord] = dict()
+
+    # Query text may be a DPD id number or uid.
+    query_text = query_text.replace("/dpd", "")
+    if query_text.isdigit():
+        r = db_session.query(Dpd.PaliWord) \
+                      .filter(Dpd.PaliWord.id == int(query_text)) \
+                      .first()
+        if r is not None:
+            pali_words[r.pali_1] = r
+
+    if len(pali_words) == 0:
+        # Lookup word in dpd_i2h (inflections to headwords).
+        for i in inflection_to_pali_words(db_session, query_text):
+            pali_words[i.pali_1] = i
+
+    if len(pali_words) == 0:
+        # i2h result doesn't exist
+        # Lookup query text in dpd_deconstructor.
+
+        d = dpd_deconstructor_query(db_session, query_text)
+        for i in d.values():
+            pali_words[i.pali_1] = i
+
+    if len(pali_words) == 0:
+        # It is not in i2h and not in deconstructor.
+        # Lookup query_text in pali_words.
+
+        # Word exact match.
+        r = db_session.query(Dpd.PaliWord) \
+                      .filter(or_(Dpd.PaliWord.pali_clean == query_text,
+                                  Dpd.PaliWord.word_ascii == query_text)) \
+                      .all()
+
+        if len(r) == 0:
+            # Word starts with.
+            r = db_session.query(Dpd.PaliWord) \
+                          .filter(or_(Dpd.PaliWord.pali_clean.like(f"{query_text}%"),
+                                      Dpd.PaliWord.word_ascii.like(f"{query_text}%"))) \
+                          .all()
+
+        if len(r) == 0:
+            # Stem form exact match.
+            stem = pali_stem(query_text)
+            r = db_session.query(Dpd.PaliWord) \
+                          .filter(Dpd.PaliWord.stem == stem) \
+                          .all()
+
+        if len(r) == 0:
+            # Stem form starts with.
+            stem = pali_stem(query_text)
+            r = db_session.query(Dpd.PaliWord) \
+                          .filter(Dpd.PaliWord.stem.like(f"{stem}%")) \
+                          .all()
+
+        for i in r:
+            pali_words[i.pali_1] = i
+
+    res_page = []
+
+    pali_words_values = sorted(pali_words.values(), key=lambda x: pali_sort_key(x.pali_1))
+
+    for w in pali_words_values:
+        snippet = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
+        snippet += f"<br><i>{w.grammar}</i>"
+        res = dpd_pali_word_to_search_result(w, snippet)
+        res_page.append(res)
+
+    return res_page

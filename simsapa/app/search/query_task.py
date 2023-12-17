@@ -14,9 +14,8 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_deconstructor_query, dpd_pali_word_to_search_result, inflection_to_pali_words, sutta_to_search_result
+from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, dpd_lookup, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
-from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 class SearchQueryTask:
     _all_results: List[SearchResult] = []
@@ -91,7 +90,7 @@ class SearchQueryTask:
                 self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
 
             elif self.search_mode == SearchMode.DpdTbwLookup:
-                self._highlighted_result_pages[page_num] = self.dpd_tbw_lookup()
+                self._highlighted_result_pages[page_num] = self._dpd_lookup()
                 self._all_results = self._highlighted_result_pages[page_num]
 
             else:
@@ -372,8 +371,8 @@ class SearchQueryTask:
 
         return res_page
 
-    def dpd_tbw_lookup(self) -> List[SearchResult]:
-        logger.info("dpd_tbw_lookup()")
+    def _dpd_lookup(self) -> List[SearchResult]:
+        logger.info("dpd_lookup()")
 
         # DPD is English.
         if self.lang != "en":
@@ -381,34 +380,7 @@ class SearchQueryTask:
 
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-        # ![flowchart](https://github.com/digitalpalidictionary/dpd-db/blob/main/tbw/docs/dpd%20lookup%20systen.png)
-
-        pali_words: Dict[str, Dpd.PaliWord] = dict()
-
-        # Lookup word in dpd_i2h (inflections to headwords).
-
-        # word: Inflected form. `phalena`
-        # data: pali_1 headwords in TSV list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
-
-        for i in inflection_to_pali_words(db_session, self.query_text):
-            pali_words[i.pali_1] = i
-
-        if len(pali_words) == 0:
-            # i2h result doesn't exist
-            # Lookup query text in dpd_deconstructor.
-
-            d = dpd_deconstructor_query(db_session, self.query_text)
-            for i in d.values():
-                pali_words[i.pali_1] = i
-
-        res_page = []
-
-        pali_words_values = sorted(pali_words.values(), key=lambda x: pali_sort_key(x.pali_1))
-
-        for w in pali_words_values:
-            snippet = w.meaning_1 if w.meaning_1 else ""
-            res = dpd_pali_word_to_search_result(w, snippet)
-            res_page.append(res)
+        res_page = dpd_lookup(db_session, self.query_text)
 
         db_conn.close()
         db_session.close()
@@ -551,7 +523,8 @@ class SearchQueryTask:
         elif self.search_mode == SearchMode.HeadwordMatch:
             self._dict_words_headword_match(db_session)
 
-        elif self.search_mode == SearchMode.DpdTbwLookup:
+        elif self.search_mode == SearchMode.DpdIdMatch or \
+             self.search_mode == SearchMode.DpdTbwLookup:
             self._tbw_search()
 
         else:
