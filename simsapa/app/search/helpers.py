@@ -5,6 +5,7 @@ import tantivy
 
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
+from simsapa import DbSchemaName
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -310,3 +311,59 @@ def dpd_lookup(db_session: Session, query_text: str) -> List[SearchResult]:
         res_page.append(res)
 
     return res_page
+
+def get_word_for_schema_and_id(db_session: Session, db_schema: str, db_id: int) -> UDictWord:
+    if db_schema == DbSchemaName.AppData.value:
+        w = db_session \
+            .query(Am.DictWord) \
+            .filter(Am.DictWord.id == db_id) \
+            .first()
+
+    elif db_schema == DbSchemaName.UserData.value:
+        w = db_session \
+            .query(Um.DictWord) \
+            .filter(Um.DictWord.id == db_id) \
+            .first()
+
+    elif db_schema == DbSchemaName.Dpd.value:
+        w = db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.id == db_id) \
+            .first()
+
+    else:
+        raise Exception(f"Unknown schema: {db_schema}")
+
+    assert(w is not None)
+
+    return w
+
+def get_word_gloss(w: UDictWord, gloss_keys_csv: str) -> str:
+    html = ""
+
+    if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
+        return "<p>Gloss only works for DPD words</p>"
+
+    elif isinstance(w, Dpd.PaliWord):
+        html = "<table><tr><td>"
+
+        data = w.as_dict
+        values = []
+
+        for k in gloss_keys_csv.split(','):
+            k = k.strip()
+            if k in data.keys():
+                values.append(str(data[k]))
+
+        html += "</td><td>".join(values)
+
+        html += "</td></tr></table>"
+
+    return html
+
+def get_word_meaning(w: UDictWord) -> str:
+    if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
+        return w.definition_plain if w.definition_plain is not None else ""
+
+    elif isinstance(w, Dpd.PaliWord):
+        return w.meaning_1 if w.meaning_1 != "" else w.meaning_2

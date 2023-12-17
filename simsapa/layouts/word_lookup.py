@@ -14,7 +14,7 @@ from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logg
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import consistent_niggahita
-from simsapa.app.search.helpers import SearchResult
+from simsapa.app.search.helpers import SearchResult, get_word_for_schema_and_id, get_word_gloss, get_word_meaning
 
 from simsapa.app.types import QueryType, SearchArea, UDictWord
 from simsapa.app.app_data import AppData
@@ -163,10 +163,12 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self._app_data.clipboard_setHtml(html)
 
     def _copy_gloss(self, db_schema: str, db_id: int, gloss_keys: str):
-        logger.error("FIXME implement _copy_gloss()")
+        w = get_word_for_schema_and_id(self._app_data.db_session, db_schema, db_id)
+        self._copy_clipboard_html(get_word_gloss(w, gloss_keys))
 
     def _copy_meaning(self, db_schema: str, db_id: int):
-        logger.error("FIXME implement _copy_meaning()")
+        w = get_word_for_schema_and_id(self._app_data.db_session, db_schema, db_id)
+        self._copy_clipboard_text(get_word_meaning(w))
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
