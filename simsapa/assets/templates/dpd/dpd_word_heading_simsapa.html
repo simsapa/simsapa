@@ -12,33 +12,59 @@
         <span class="uid">${w.uid}</span>
 
         <button
-            title="Copy to clipboard"
+            title="Copy ID"
             class="ssp-button ssp-icon-button"
-            onclick="document.SSP.button_toggle_visible(this, '#button_bar_${el_id_key}')"
+            onclick="document.SSP.copy_id('${w.id}', '${transient_id}')"
         >
-            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-copy-solid"></use></svg>
+            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-hash-bold"></use></svg>
         </button>
 
         <button
-            title="Add to tabs"
+            title="Copy word"
             class="ssp-button ssp-icon-button"
-            onclick="javascript:void(0);"
+            onclick="document.SSP.copy_word('${esq(w.word)}', '${transient_id}')"
         >
-            <svg class="ssp-icon-button__icon tab-outline"><use xlink:href="#icon-tab-outline"></use></svg>
+            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-letter-w"></use></svg>
         </button>
+
+        <button
+            title="Copy meaning"
+            class="ssp-button ssp-icon-button"
+            onclick="document.SSP.copy_meaning('${w.metadata.schema}', ${w.id}, '${transient_id}')"
+        >
+            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-letter-m"></use></svg>
+        </button>
+
+        <button
+            title="Copy gloss line as table row"
+            class="ssp-button ssp-icon-button"
+            onclick="document.SSP.copy_gloss('${w.metadata.schema}', ${w.id}, 'id, pali_1, pos, grammar, meaning_1, construction', '${transient_id}')"
+        >
+            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-table"></use></svg>
+        </button>
+
+        <!-- <button
+             title="Set gloss keys"
+             class="ssp-button ssp-icon-button"
+             onclick="document.SSP.button_toggle_visible(this, '#gloss_keys_${el_id_key}')"
+             >
+             <svg class="ssp-icon-button__icon"><use xlink:href="#icon-key-fill"></use></svg>
+             </button> -->
+
+        <!-- <button
+             title="Add to tabs"
+             class="ssp-button ssp-icon-button primary"
+             onclick="javascript:void(0);"
+             >
+             <svg class="ssp-icon-button__icon"><use xlink:href="#icon-tab-outline"></use></svg>
+             </button> -->
+
     </div>
 
 </div>
 
-<div id="button_bar_${el_id_key}" class="word-button-bar-wrap hidden">
-    <div class="word-button-bar">
-        <button onclick="document.SSP.copy_clipboard_text('${w.id}', '${transient_id}')" class="ssp-button" type="button" title="Copy ID" style="min-width: 2em;">ID</button>
-        <button onclick="document.SSP.copy_clipboard_text('${esq(w.word)}', '${transient_id}')" class="ssp-button" type="button" title="Copy word">Word</button>
-        <button onclick="document.SSP.copy_meaning('${w.metadata.schema}', ${w.id}, '${transient_id}')" class="ssp-button" type="button" title="Copy meaning">Meaning</button>
-        <button onclick="document.SSP.copy_gloss('${w.metadata.schema}', ${w.id}, 'id, pali_1, pos, grammar, meaning_1, construction', '${transient_id}')" class="ssp-button" type="button" title="Copy gloss line as table row">Gloss Line</button>
-
-        <button class="ssp-button ssp-icon-button" type="button" title="Show settings">
-            <svg class="ssp-icon-button__icon"><use xlink:href="#icon-gear-solid"></use></svg>
-        </button>
+<div id="gloss_keys_${el_id_key}" class="gloss-keys-wrap hidden">
+    <div class="gloss-keys">
+        <input type="text" />
     </div>
 </div>

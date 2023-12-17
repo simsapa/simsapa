@@ -1,13 +1,23 @@
 import * as h from "./helpers";
 
+function copy_id(id_text: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_clipboard_text(id_text);
+    h.show_transient_message("Copied: ID " + id_text, msg_div_id);
+}
+
+function copy_word(word_text: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_clipboard_text(word_text);
+    h.show_transient_message("Copied: " + word_text, msg_div_id);
+}
+
 function copy_meaning(db_schema: string, db_id: number, msg_div_id: string) {
     document.qt_channel.objects.helper.emit_copy_meaning(db_schema, db_id);
-    h.show_transient_message("Copied!", msg_div_id);
+    h.show_transient_message("Copied: meaning", msg_div_id);
 }
 
 function copy_gloss(db_schema: string, db_id: number, gloss_keys: string, msg_div_id: string) {
     document.qt_channel.objects.helper.emit_copy_gloss(db_schema, db_id, gloss_keys);
-    h.show_transient_message("Copied!", msg_div_id);
+    h.show_transient_message("Copied: gloss line as table row", msg_div_id);
 }
 
 function copy_clipboard_text(text: string, msg_div_id: string) {
@@ -53,6 +63,8 @@ function add_hover_events(el: Element, channel: any) {
 }
 
 export {
+    copy_id,
+    copy_word,
     copy_meaning,
     copy_gloss,
     copy_clipboard_text,

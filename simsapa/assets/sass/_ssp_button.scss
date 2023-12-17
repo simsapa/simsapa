@@ -41,6 +41,10 @@
 
   transition: box-shadow .2s ease-in-out;
 
+  &.primary {
+    background-color: $button_primary_bg;
+  }
+
   svg.ssp-icon-button__icon + span.ssp-button-text {
     margin-left: 0.5rem;
   }
@@ -62,6 +66,11 @@
     background-color: $button_active;
     color: white;
     user-select: none;
+
+    &.primary {
+      background-color: $button_primary_active;
+      color: black;
+    }
   }
 
   &--small {
@@ -83,12 +92,7 @@
   }
 
   &__icon {
-    width: 1em;
-    height: 1em;
-
-    &.tab-outline {
-      width: 1.2em;
-      height: 1.2em;
-    }
+    width: 1.2em;
+    height: 1.2em;
   }
 }

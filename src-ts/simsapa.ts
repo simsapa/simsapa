@@ -20,6 +20,8 @@ document.SSP = {
     fade_toggle: h.fade_toggle,
     button_toggle_visible: h.button_toggle_visible,
     show_transient_message: h.show_transient_message,
+    copy_id: qch.copy_id,
+    copy_word: qch.copy_word,
     copy_meaning: qch.copy_meaning,
     copy_gloss: qch.copy_gloss,
     copy_clipboard_text: qch.copy_clipboard_text,

@@ -257,6 +257,9 @@ div.btn a, span.btn a {
 .ssp-button:active, .ssp-button.active {
   box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.8), inset 1.2px 10px 20px rgba(0, 0, 0, 0.2), inset -1px -1px 1px rgba(255, 255, 255, 0.4);
 }
+.ssp-button.primary {
+  background-color: #f7d682;
+}
 .ssp-button svg.ssp-icon-button__icon + span.ssp-button-text {
   margin-left: 0.5rem;
 }
@@ -273,6 +276,10 @@ div.btn a, span.btn a {
   background-color: #00A4CC;
   color: white;
   user-select: none;
+}
+.ssp-button:hover.primary, .ssp-button:active.primary, .ssp-button.active.primary {
+  background-color: #FAE6B2;
+  color: black;
 }
 .ssp-button--small {
   font-size: 0.8rem;
@@ -291,10 +298,6 @@ div.btn a, span.btn a {
   margin-left: 0;
 }
 .ssp-icon-button__icon {
-  width: 1em;
-  height: 1em;
-}
-.ssp-icon-button__icon.tab-outline {
   width: 1.2em;
   height: 1.2em;
 }
@@ -816,11 +819,11 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.8), inset 1.2px 10px 20px rgba(0, 0, 0, 0.2), inset -1px -1px 1px rgba(255, 255, 255, 0.4);
 }
 
-.word-button-bar-wrap {
+.gloss-keys-wrap {
   position: relative;
 }
 
-.word-button-bar {
+.gloss-keys {
   position: absolute;
   top: -0.5rem;
   right: 0;
