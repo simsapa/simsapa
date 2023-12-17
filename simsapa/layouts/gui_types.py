@@ -407,7 +407,7 @@ def default_app_settings() -> AppSettings:
         smtp_sender_email = None,
 
         dictionary_language_filter_idx = 0,
-        dictionary_search_mode = SearchMode.FulltextMatch,
+        dictionary_search_mode = SearchMode.DpdTbwLookup,
         dictionary_source_filter_idx = 0,
         dictionary_show_pali_buttons = True,
 
@@ -435,7 +435,7 @@ def default_app_settings() -> AppSettings:
 
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 500, height = 700),
         word_lookup_language_filter_idx = 0,
-        word_lookup_search_mode = SearchMode.FulltextMatch,
+        word_lookup_search_mode = SearchMode.DpdTbwLookup,
         word_lookup_source_filter_idx = 0,
     )
 

@@ -44,7 +44,8 @@ AllSearchModeNameToType = {
     "DPD Lookup": SearchMode.DpdTbwLookup,
     # FIXME disabled ExactMatch while its buggy.
     # "Exact Match": SearchMode.ExactMatch,
-    "Headword Match": SearchMode.HeadwordMatch,
+    # FIXME test HeadwordMatch
+    # "Headword Match": SearchMode.HeadwordMatch,
     "Title Match": SearchMode.TitleMatch,
 }
 
@@ -57,8 +58,10 @@ SuttaSearchModeNameToType = {
 DictionarySearchModeNameToType = {
     "DPD Lookup": SearchMode.DpdTbwLookup,
     "Fulltext Match": SearchMode.FulltextMatch,
+    # FIXME test ExactMatch
     # "Exact Match": SearchMode.ExactMatch,
-    "Headword Match": SearchMode.HeadwordMatch,
+    # FIXME test HeadwordMatch
+    # "Headword Match": SearchMode.HeadwordMatch,
 }
 
 class SearchParams(TypedDict):
