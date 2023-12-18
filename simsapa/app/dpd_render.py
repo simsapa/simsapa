@@ -1,4 +1,4 @@
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Optional
 import json
 
 from mako.template import Template
@@ -6,7 +6,7 @@ from mako.template import Template
 from sqlalchemy import and_
 from sqlalchemy.orm import object_session
 
-from simsapa.app.db_session import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, PaliRoot, PaliWord, DerivedData, FamilyRoot, FamilyWord
@@ -21,15 +21,18 @@ from simsapa.dpd_db.tools.utils import RenderResult
 from simsapa.dpd_db.tools.paths import ProjectPaths
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 
-from simsapa import logger
+from simsapa import DPD_DB_PATH, DbSchemaName, logger
 
 DPD_PROJECT_PATHS = ProjectPaths()
 DPD_PALI_WORD_TEMPLATES = PaliWordTemplates(DPD_PROJECT_PATHS)
 
-def _get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
-    logger.info("_get_dpd_caches()")
+DPD_CF_SET: Optional[Set[str]] = None
+DPD_SANDHI_CONTRACTIONS: Optional[SandhiContractions] = None
 
-    db_eng, db_conn, db_session = get_db_engine_connection_session(include_userdata=False)
+def get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
+    logger.info("get_dpd_caches()")
+
+    db_eng, db_conn, db_session = get_db_session_with_schema(DPD_DB_PATH, DbSchemaName.Dpd)
 
     dpd_cf_set: Set[str] = set()
     dpd_sandhi_contractions: SandhiContractions = dict()
@@ -65,8 +68,6 @@ def _get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
     db_eng.dispose()
 
     return (dpd_cf_set, dpd_sandhi_contractions)
-
-DPD_CF_SET, DPD_SANDHI_CONTRACTIONS = _get_dpd_caches()
 
 def make_meaning_plaintext(i: PaliWord) -> str:
     """Compile plaintext of meaning_1 and literal meaning, or return meaning_2."""
@@ -180,6 +181,11 @@ def pali_word_dpd_html(pali_word: PaliWord) -> RenderResult:
         )
 
     db_parts = _add_parts(dpd_db.tuple())
+
+    global DPD_CF_SET
+    global DPD_SANDHI_CONTRACTIONS
+    if DPD_CF_SET is None or DPD_SANDHI_CONTRACTIONS is None:
+        DPD_CF_SET, DPD_SANDHI_CONTRACTIONS = get_dpd_caches()
 
     render_data = PaliWordRenderData(
         pth = DPD_PROJECT_PATHS,

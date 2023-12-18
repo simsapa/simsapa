@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 START_TIME=$(date --iso-8601=seconds)
 
 SIMSAPA_DIR="$HOME/.local/share/simsapa"
@@ -18,7 +20,8 @@ RELEASE_DIR="$(pwd)/../releases/$(date --iso-8601=date)-dev"
 
 echo "=== Clean and Create Folders ==="
 
-if [ -e "$ASSETS_DIR" ]; then rm -r "$ASSETS_DIR"; fi
+d="$ASSETS_DIR"
+if [ -e "$d" ]; then rm -r "$d"; fi
 
 mkdir -p "$ASSETS_DIR"
 mkdir -p "$RELEASE_DIR"
@@ -26,14 +29,18 @@ mkdir -p "$RELEASE_DIR"
 d="$SIMSAPA_DIR/unzipped_stardict"
 if [ -e "$d" ]; then rm -r "$d"; fi
 
-rm "$SIMSAPA_DIR"/*.tar.bz2
+if stat -t "$SIMSAPA_DIR"/*.tar.bz2 >/dev/null 2>&1; then rm "$SIMSAPA_DIR"/*.tar.bz2; fi
+if stat -t "$RELEASE_DIR"/*.tar.bz2 >/dev/null 2>&1; then rm "$RELEASE_DIR"/*.tar.bz2; fi
 
-rm "$RELEASE_DIR"/*.tar.bz2
+d="$DIST_DIR"/courses
+if [ -e "$d" ]; then rm -r "$d"; fi
 
-rm -r "$DIST_DIR"/courses "$DIST_DIR"/html_resources
-rm "$DIST_DIR"/*
+d="$DIST_DIR"/html_resources
+if [ -e "$d" ]; then rm -r "$d"; fi
 
-dotenv="SIMSAPA_DIR=/home/yume/.local/share/simsapa
+if stat -t "$DIST_DIR"/* >/dev/null 2>&1; then rm "$DIST_DIR"/*; fi
+
+dotenv="SIMSAPA_DIR=$HOME/.local/share/simsapa
 BOOTSTRAP_ASSETS_DIR=../bootstrap-assets-resources
 USE_TEST_DATA=false
 DISABLE_LOG=false
@@ -55,7 +62,7 @@ echo "=== Create appdata.tar.bz2 ==="
 
 cd "$DIST_DIR" || exit
 
-tar cjf appdata.tar.bz2 appdata.sqlite3
+tar cjf appdata.tar.bz2 dpd.sqlite3 appdata.sqlite3
 
 mv appdata.tar.bz2 "$RELEASE_DIR"
 
@@ -64,10 +71,11 @@ cd - || exit
 echo "=== Copy Appdata DB to user folder ==="
 
 cp "$DIST_DIR"/appdata.sqlite3 "$ASSETS_DIR"
+cp "$DIST_DIR"/dpd.sqlite3 "$ASSETS_DIR"
 
 echo "=== Import User Data ==="
 
-./run.py import-pali-course "$BOOTSTRAP_ASSETS_DIR/courses/dhammapada-word-by-word/dhammapada-word-by-word.toml"
+# FIXME ./run.py import-pali-course "$BOOTSTRAP_ASSETS_DIR/courses/dhammapada-word-by-word/dhammapada-word-by-word.toml"
 
 ./run.py import-bookmarks "$BOOTSTRAP_ASSETS_DIR/bookmarks/bookmarks.csv"
 
@@ -158,30 +166,30 @@ echo "=== Bootstrap Languages from SuttaCentral ==="
 # RETURN x._key)
 # RETURN docs
 
-for lang in 'af' 'ar' 'au' 'bn' 'ca' 'cs' 'de' 'es' 'ev' 'fa' 'fi' 'fr' 'gu' 'haw' 'he' 'hi' 'hr' 'id' 'it' 'jpn' 'kan' 'kho' 'kln' 'ko' 'la' 'lt' 'lzh' 'mr' 'my' 'nl' 'no' 'pgd' 'pl' 'pra' 'pt' 'ro' 'ru' 'si' 'sk' 'sl' 'sld' 'sr' 'sv' 'ta' 'th' 'uig' 'vi' 'vu' 'xct' 'xto' 'zh'
+for lang in "af" "ar" "au" "bn" "ca" "cs" "de" "es" "ev" "fa" "fi" "fr" "gu" "haw" "he" "hi" "hr" "id" "it" "jpn" "kan" "kho" "kln" "ko" "la" "lt" "lzh" "mr" "my" "nl" "no" "pgd" "pl" "pra" "pt" "ro" "ru" "si" "sk" "sl" "sld" "sr" "sv" "ta" "th" "uig" "vi" "vu" "xct" "xto" "zh"
 do
     echo "=== $lang ==="
     name="suttas_lang_$lang"
 
-    ./scripts/bootstrap_suttas_lang.py $lang | tee out.log
+    # Will exit with status 1 if there are 0 suttas for lang.
+    ./scripts/bootstrap_suttas_lang.py $lang || true
 
-    ok=$(grep "0 suttas for $lang, exiting." out.log)
-    if [ "$ok" != "" ]; then
+    n=$(sqlite3 "$DIST_DIR/$name.sqlite3" "SELECT COUNT(*) FROM suttas;")
+    if [ $n -eq 0 ]; then
         f="$DIST_DIR/$name.sqlite3"
         if [ -e "$f" ]; then rm "$f"; fi
-        continue
+    else
+        ./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
+
+        ./run.py index suttas-lang $lang
+
+        cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
+
+        cd "$ASSETS_DIR" || exit
+        tar cjf "$name.tar.bz2" "$name.sqlite3" index/suttas/"$lang"/
+        mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
+        cd - || exit
     fi
-
-    ./run.py import-suttas-to-userdata "$DIST_DIR/$name.sqlite3"
-
-    ./run.py index suttas-lang $lang
-
-    cp "$DIST_DIR/$name.sqlite3" "$ASSETS_DIR"
-
-    cd "$ASSETS_DIR" || exit
-    tar cjf "$name.tar.bz2" "$name.sqlite3" index/suttas/"$lang"/
-    mv "$ASSETS_DIR/$name.tar.bz2" "$RELEASE_DIR"
-    cd - || exit
 done
 
 echo "=== Bootstrap Hungarian from Buddha Ujja ==="
@@ -225,6 +233,7 @@ description = \"\"
 echo "$release_info"
 
 echo "$release_info" > "release_info.toml"
+cp "release_info.toml" "$RELEASE_DIR"
 cd - || exit
 
 echo "=== Clean up ==="

@@ -64,6 +64,25 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
 
     return db_session
 
+def get_appdata_with_dpd_session(appdata_db_path: Path, dpd_db_path: Path) -> Session:
+    try:
+        # Create an in-memory database
+        engine = create_engine("sqlite+pysqlite://", echo=False)
+
+        db_conn = engine.connect()
+
+        db_conn.execute(text(f"ATTACH DATABASE '{appdata_db_path}' AS {DbSchemaName.AppData.value};"))
+        db_conn.execute(text(f"ATTACH DATABASE '{dpd_db_path}' AS {DbSchemaName.Dpd.value};"))
+
+        Session = sessionmaker(engine)
+        Session.configure(bind=engine)
+        db_session = Session()
+    except Exception as e:
+        logger.error(f"Can't connect to database: {e}")
+        sys.exit(1)
+
+    return db_session
+
 def uid_to_ref(uid: str) -> str:
     '''sn12.23 to SN 12.23'''
 

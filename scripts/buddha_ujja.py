@@ -174,6 +174,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
             content_html = content_html,
 
             sutta_ref = sutta_ref,
+            nikaya = helpers.uid_to_nikaya(uid),
             sutta_range_group = sutta_range['group'] if sutta_range else None,
             sutta_range_start = sutta_range['start'] if sutta_range else None,
             sutta_range_end = sutta_range['end'] if sutta_range else None,

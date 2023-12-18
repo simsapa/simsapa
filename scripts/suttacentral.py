@@ -630,7 +630,6 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
 def populate_suttas_from_suttacentral(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandle, sc_data_dir: Path, lang: str, limit: Optional[int] = None):
         suttas = get_suttas(sc_db, schema, sc_data_dir, lang, limit)
         if len(suttas) == 0:
-            # NOTE: This exact output string is checked for status in bootstrap_db.sh
             logger.info(f"0 suttas for {lang}, exiting.")
             sys.exit(1)
 

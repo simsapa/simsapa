@@ -134,16 +134,23 @@ def main():
     # === Dictionaries ===
 
     dpd.prepare_dpd_for_dist(appdata_db, BOOTSTRAP_ASSETS_DIR)
+    dpd_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("dpd.sqlite3")
 
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 
     # === All dict words are added above ===
 
-    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
-    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    db_session = helpers.get_appdata_with_dpd_session(appdata_db_path, dpd_db_path)
+
+    get_and_save_completions(db_session, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    get_and_save_completions(db_session, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+
+    db_session.close()
 
     # Create db links from ssp:// links after all suttas have been added.
     create_links.populate_links(appdata_db)
+
+    appdata_db.close()
 
 if __name__ == "__main__":
     main()

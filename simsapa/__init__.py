@@ -216,6 +216,7 @@ class DbSchemaName(str, Enum):
 class DictTypeName(str, Enum):
     Sql = 'sql'
     Stardict = 'stardict'
+    Custom = 'custom'
 
 class ApiAction(str, Enum):
     lookup_clipboard_in_dictionary = 'lookup_clipboard_in_dictionary'

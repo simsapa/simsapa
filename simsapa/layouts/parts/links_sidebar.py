@@ -98,7 +98,7 @@ class GraphGenerator(QRunnable):
         else:
             if res.ok:
                 j = res.json()
-                # [1667675976.411231, 100, '/home/yume/.local/share/simsapa/assets/graphs/window_1.html']
+                # [1667675976.411231, 100, '/home/gambhiro/.local/share/simsapa/assets/graphs/window_1.html']
                 r = (j[0], j[1], Path(j[2]))
                 self.signals.result.emit(r)
             else:

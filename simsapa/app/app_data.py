@@ -2,7 +2,7 @@ import csv, re, json, os, shutil
 import os.path
 from pathlib import Path
 from functools import partial
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from deepmerge import always_merger
 import tomlkit
@@ -23,7 +23,7 @@ from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.completion_lists import WordSublists
 from simsapa.app.db_session import get_db_session_with_schema
-from simsapa.app.dpd_render import DPD_CF_SET, DPD_PALI_WORD_TEMPLATES, DPD_PROJECT_PATHS, DPD_SANDHI_CONTRACTIONS
+from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, DPD_PROJECT_PATHS, get_dpd_caches
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
@@ -31,6 +31,7 @@ from simsapa.app.types import SearchArea, USutta, UDictWord, UBookmark
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 
 from simsapa.layouts.gui_types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
 
@@ -50,8 +51,8 @@ class AppData:
 
     dpd_project_paths = DPD_PROJECT_PATHS
     dpd_pali_word_templates = DPD_PALI_WORD_TEMPLATES
-    dpd_sandhi_contractions = DPD_SANDHI_CONTRACTIONS
-    dpd_cf_set = DPD_CF_SET
+    dpd_cf_set: Set[str]
+    dpd_sandhi_contractions: SandhiContractions
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -92,6 +93,8 @@ class AppData:
 
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
+
+        self.dpd_cf_set, self.dpd_sandhi_contractions = get_dpd_caches()
 
         self._init_completion_cache()
 
@@ -412,6 +415,7 @@ class AppData:
                 group_path = i.group_path,
                 group_index = i.group_index,
                 sutta_ref = i.sutta_ref,
+                nikaya = i.nikaya,
                 language = i.language,
                 order_index = i.order_index,
 

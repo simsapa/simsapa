@@ -5,7 +5,7 @@ from collections import namedtuple
 from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func, text
 
-from simsapa import logger
+from simsapa import DictTypeName, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.helpers import consistent_niggahita, compact_rich_text, pali_to_ascii
 
@@ -22,6 +22,7 @@ def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, bootstrap_a
     dictionary = Am.Dictionary(
         label = label,
         title = "Nyanatiloka's Buddhist Dictionary",
+        dict_type = DictTypeName.Custom,
         created_at = func.now(),
     )
 
