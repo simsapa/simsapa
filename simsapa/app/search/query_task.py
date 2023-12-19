@@ -372,7 +372,7 @@ class SearchQueryTask:
         return res_page
 
     def _dpd_lookup(self) -> List[SearchResult]:
-        logger.info("dpd_lookup()")
+        logger.info("_dpd_lookup()")
 
         # DPD is English.
         if self.lang != "en":
@@ -381,6 +381,8 @@ class SearchQueryTask:
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
         res_page = dpd_lookup(db_session, self.query_text)
+        # FIXME implement paging in DPD lookup results.
+        res_page = res_page[0:100]
 
         db_conn.close()
         db_session.close()

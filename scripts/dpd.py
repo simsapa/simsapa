@@ -65,6 +65,31 @@ def dpd_deconstructor_html_to_list(html: str) -> List[List[str]]:
     """
     return [[word.strip() for word in line.split("+")] for line in html.split("<br>")]
 
+def replace_all_niggahitas(db_conn: sqlite3.Connection):
+    cursor = db_conn.cursor()
+
+    # Get all table names
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = cursor.fetchall()
+
+    for table in tables:
+        table = table[0]
+
+        # Get all column names of the table
+        cursor.execute(f"PRAGMA table_info({table});")
+        columns = [column[1] for column in cursor.fetchall()]
+
+        # For each column, replace 'ṃ' with 'ṁ'
+        for column in columns:
+            query = f"""
+            UPDATE {table}
+            SET `{column}` = REPLACE(`{column}`, 'ṃ', 'ṁ')
+            WHERE `{column}` LIKE '%ṃ%';
+            """
+            cursor.execute(query)
+
+    db_conn.commit()
+
 def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     logger.info("migrate_dpd()")
 
@@ -168,6 +193,8 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
                 cursor.execute(query)
 
                 connection.commit()
+
+                replace_all_niggahitas(connection)
 
     except Exception as e:
         print(str(e))

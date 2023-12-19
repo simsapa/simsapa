@@ -13,7 +13,6 @@ from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logg
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import consistent_niggahita
 from simsapa.app.search.helpers import SearchResult, get_word_for_schema_and_id, get_word_gloss, get_word_meaning
 
 from simsapa.app.types import QueryType, SearchArea, UDictWord
@@ -211,7 +210,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         return self._queries.query_hits()
 
     def _set_qwe_html(self, html: str):
-        self._current_html = consistent_niggahita(html)
+        self._current_html = html
         self.qwe.setHtml(html, baseUrl=QUrl(str(SIMSAPA_PACKAGE_DIR)))
 
     def _show_temp_content_msg(self, html_body: str):
