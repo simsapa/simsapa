@@ -9,7 +9,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -319,7 +319,8 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.tabs.setTabText(0, str(word.uid))
 
         self._current_words = [word]
-        word_html = self._queries.dictionary_queries.get_word_html(word)
+        open_details = [DetailsTab.Inflections]
+        word_html = self._queries.dictionary_queries.get_word_html(word, open_details)
 
         page_html = self._queries.dictionary_queries.render_html_page(
             body = word_html['body'],

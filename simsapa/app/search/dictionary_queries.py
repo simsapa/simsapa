@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, DetailsTab, logger
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
@@ -132,8 +132,13 @@ class DictionaryQueries(DictionaryQueriesInterface):
         sums['css'] = []
         sums['js'] = []
 
+        if len(words) == 1:
+            open_details = [DetailsTab.Inflections]
+        else:
+            open_details = []
+
         for w in words:
-            word_html = self.get_word_html(w)
+            word_html = self.get_word_html(w, open_details)
 
             if w.source_uid == "cpd":
                 word_html['body'] = add_word_links_to_bold(word_html['body'])
@@ -217,12 +222,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
 
         return html
 
-    def get_word_html(self, word: UDictWord) -> ResultHtml:
+    def get_word_html(self, word: UDictWord, open_details: List[DetailsTab] = []) -> ResultHtml:
         from bs4 import BeautifulSoup
 
         if word.metadata.schema == DbSchemaName.Dpd:
 
-            res = pali_word_dpd_html(word)
+            res = pali_word_dpd_html(word, open_details)
 
             definition = res['definition_html']
 

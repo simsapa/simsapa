@@ -245,3 +245,13 @@ class ShowLabels(str, Enum):
     SuttaRef = "Sutta Ref."
     RefAndTitle = "Ref. + Title"
     NoLabels = "No Labels"
+
+class DetailsTab(str, Enum):
+    Examples = "Examples"
+    Inflections = "Inflections"
+    RootFamily = "Root Family"
+    WordFamily = "Word Family"
+    CompoundFamily = "Compound Family"
+    SetFamily = "Set Family"
+    FrequencyMap = "Frequency Map"
+    Feedback = "Feedback"

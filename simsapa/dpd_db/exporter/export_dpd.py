@@ -14,6 +14,7 @@ from multiprocessing import Process, Manager
 
 from sqlalchemy.orm import object_session
 from sqlalchemy.orm.session import Session
+from simsapa import DetailsTab
 
 from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ
 from simsapa.dpd_db.exporter.helpers import TODAY
@@ -598,15 +599,19 @@ def render_example_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         make_link: bool,
-        example_templ: Template
+        example_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render sutta examples html"""
+
+    hidden = "hidden" if DetailsTab.Examples not in open_details else ""
 
     if i.meaning_1 and i.example_1:
         return str(
             example_templ.render(
                 i=i,
                 make_link=make_link,
+                hidden=hidden,
                 today=TODAY))
     else:
         return ""
@@ -616,15 +621,19 @@ def render_inflection_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         dd: DerivedData,
-        inflection_templ:Template
+        inflection_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """inflection or conjugation table"""
+
+    hidden = "hidden" if DetailsTab.Inflections not in open_details else ""
 
     if i.pos not in INDECLINABLES:
         return str(
             inflection_templ.render(
                 i=i,
                 table=dd.html_table,
+                hidden=hidden,
                 today=TODAY,
                 declensions=DECLENSIONS,
                 conjugations=CONJUGATIONS))
@@ -636,9 +645,12 @@ def render_family_root_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         fr: FamilyRoot,
-        family_root_templ
+        family_root_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html table of all words with the same prefix and root"""
+
+    hidden = "hidden" if DetailsTab.RootFamily not in open_details else ""
 
     if fr is not None:
         if i.family_root:
@@ -646,6 +658,7 @@ def render_family_root_templ(
                 family_root_templ.render(
                     i=i,
                     fr=fr,
+                    hidden=hidden,
                     today=TODAY))
         else:
             return ""
@@ -657,15 +670,19 @@ def render_family_word_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         fw: FamilyWord,
-        family_word_templ: Template
+        family_word_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html of all words which belong to the same family"""
+
+    hidden = "hidden" if DetailsTab.WordFamily not in open_details else ""
 
     if i.family_word:
         return str(
             family_word_templ.render(
                 i=i,
                 fw=fw,
+                hidden=hidden,
                 today=TODAY))
     else:
         return ""
@@ -676,9 +693,12 @@ def render_family_compound_templ(
         i: PaliWord,
         fc: List[FamilyCompound],
         cf_set: Set[str],
-        family_compound_templ: Template
+        family_compound_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html table of all words containing the same compound"""
+
+    hidden = "hidden" if DetailsTab.CompoundFamily not in open_details else ""
 
     if (i.meaning_1 and
         (i.family_compound or
@@ -689,6 +709,7 @@ def render_family_compound_templ(
                 i=i,
                 fc=fc,
                 superscripter_uni=superscripter_uni,
+                hidden=hidden,
                 today=TODAY))
     else:
         return ""
@@ -698,9 +719,12 @@ def render_family_set_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         fs: List[FamilySet],
-        family_set_templ: Template
+        family_set_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html table of all words belonging to the same set"""
+
+    hidden = "hidden" if DetailsTab.SetFamily not in open_details else ""
 
     if (i.meaning_1 and
             i.family_set):
@@ -712,6 +736,7 @@ def render_family_set_templ(
                     i=i,
                     fs=fs,
                     superscripter_uni=superscripter_uni,
+                    hidden=hidden,
                     today=TODAY))
         else:
             return ""
@@ -723,9 +748,12 @@ def render_frequency_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
         dd: DerivedData,
-        frequency_templ: Template
+        frequency_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html tempalte of freqency table"""
+
+    hidden = "hidden" if DetailsTab.FrequencyMap not in open_details else ""
 
     if i.pos not in EXCLUDE_FROM_FREQ:
 
@@ -733,6 +761,7 @@ def render_frequency_templ(
             frequency_templ.render(
                 i=i,
                 dd=dd,
+                hidden=hidden,
                 today=TODAY))
     else:
         return ""
@@ -741,11 +770,15 @@ def render_frequency_templ(
 def render_feedback_templ(
         __pth__: ProjectPaths,
         i: PaliWord,
-        feedback_templ: Template
+        feedback_templ: Template,
+        open_details: List[DetailsTab] = [],
 ) -> str:
     """render html of feedback template"""
+
+    hidden = "hidden" if DetailsTab.Feedback not in open_details else ""
 
     return str(
         feedback_templ.render(
             i=i,
+            hidden=hidden,
             today=TODAY))

@@ -21,7 +21,7 @@ from simsapa.dpd_db.tools.utils import RenderResult
 from simsapa.dpd_db.tools.paths import ProjectPaths
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 
-from simsapa import DPD_DB_PATH, DbSchemaName, logger
+from simsapa import DPD_DB_PATH, DbSchemaName, DetailsTab, logger
 
 DPD_PROJECT_PATHS = ProjectPaths()
 DPD_PALI_WORD_TEMPLATES = PaliWordTemplates(DPD_PROJECT_PATHS)
@@ -140,7 +140,7 @@ def pali_word_index_plaintext(pali_word: PaliWord) -> str:
 
     return plaintext
 
-def pali_word_dpd_html(pali_word: PaliWord) -> RenderResult:
+def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = []) -> RenderResult:
     db_session = object_session(pali_word)
     assert(db_session is not None)
 
@@ -195,19 +195,20 @@ def pali_word_dpd_html(pali_word: PaliWord) -> RenderResult:
         make_link = False,
     )
 
-    render_res = render_pali_word_dpd_simsapa_html(db_parts, render_data)
+    render_res = render_pali_word_dpd_simsapa_html(db_parts, render_data, open_details)
 
     return render_res
 
 def render_button_box_simsapa_templ(
         i: PaliWord,
         cf_set: Set[str],
-        button_box_templ: Template
+        button_box_templ: Template,
+        open_details: List[DetailsTab] = []
 ) -> str:
     """render buttons for each section of the dictionary"""
 
     button_html = """
-    <button class="ssp-button" onclick="document.SSP.button_toggle_visible(this, '#{target}')">
+    <button class="ssp-button {active}" onclick="document.SSP.button_toggle_visible(this, '#{target}')">
         <svg class="ssp-icon-button__icon"><use xlink:href="#{icon}"></use></svg>
         <span class="ssp-button-text">{name}</span>
     </button>
@@ -215,43 +216,49 @@ def render_button_box_simsapa_templ(
 
     # example_button
     if i.meaning_1 and i.example_1 and not i.example_2:
+        active = "active" if DetailsTab.Examples in open_details else ""
         example_button = button_html.format(
-            target=f"example_{i.pali_1_}", name="Example", icon="icon-card-text")
+            target=f"example_{i.pali_1_}", name="Example", icon="icon-card-text", active=active)
     else:
         example_button = ""
 
     # examples_button
     if i.meaning_1 and i.example_1 and i.example_2:
+        active = "active" if DetailsTab.Examples in open_details else ""
         examples_button = button_html.format(
-            target=f"examples_{i.pali_1_}", name="Examples", icon="icon-card-text")
+            target=f"examples_{i.pali_1_}", name="Examples", icon="icon-card-text", active=active)
     else:
         examples_button = ""
 
     # conjugation_button
     if i.pos in CONJUGATIONS:
+        active = "active" if DetailsTab.Inflections in open_details else ""
         conjugation_button = button_html.format(
-            target=f"conjugation_{i.pali_1_}", name="Conjugation", icon="icon-table-bold")
+            target=f"conjugation_{i.pali_1_}", name="Conjugation", icon="icon-table-bold", active=active)
     else:
         conjugation_button = ""
 
     # declension_button
     if i.pos in DECLENSIONS:
+        active = "active" if DetailsTab.Inflections in open_details else ""
         declension_button = button_html.format(
-            target=f"declension_{i.pali_1_}", name="Declensions", icon="icon-table-bold")
+            target=f"declension_{i.pali_1_}", name="Declensions", icon="icon-table-bold", active=active)
     else:
         declension_button = ""
 
     # root_family_button
     if i.family_root:
+        active = "active" if DetailsTab.RootFamily in open_details else ""
         root_family_button = button_html.format(
-            target=f"root_family_{i.pali_1_}", name="Root Family", icon="icon-list-bullets-bold")
+            target=f"root_family_{i.pali_1_}", name="Root Family", icon="icon-list-bullets-bold", active=active)
     else:
         root_family_button = ""
 
     # word_family_button
     if i.family_word:
+        active = "active" if DetailsTab.WordFamily in open_details else ""
         word_family_button = button_html.format(
-            target=f"word_family_{i.pali_1_}", name="Word Family", icon="icon-list-bullets-bold")
+            target=f"word_family_{i.pali_1_}", name="Word Family", icon="icon-list-bullets-bold", active=active)
     else:
         word_family_button = ""
 
@@ -265,13 +272,14 @@ def render_button_box_simsapa_templ(
             i.pali_clean in cf_set)
     ):
 
+        active = "active" if DetailsTab.CompoundFamily in open_details else ""
         if i.family_compound is not None and " " not in i.family_compound:
             compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="Compound Family", icon="icon-list-bullets-bold")
+                target=f"compound_family_{i.pali_1_}", name="Compound Family", icon="icon-list-bullets-bold", active=active)
 
         else:
             compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="Compound Familes", icon="icon-list-bullets-bold")
+                target=f"compound_family_{i.pali_1_}", name="Compound Familes", icon="icon-list-bullets-bold", active=active)
 
     else:
         compound_family_button = ""
@@ -281,8 +289,9 @@ def render_button_box_simsapa_templ(
             i.family_set):
 
         if len(i.family_set_list) > 0:
+            active = "active" if DetailsTab.SetFamily in open_details else ""
             set_family_button = button_html.format(
-                target=f"set_family_{i.pali_1_}", name="Set", icon="icon-list-bullets-bold")
+                target=f"set_family_{i.pali_1_}", name="Set", icon="icon-list-bullets-bold", active=active)
         else:
             set_family_button = ""
     else:
@@ -290,14 +299,16 @@ def render_button_box_simsapa_templ(
 
     # frequency_button
     if i.pos not in EXCLUDE_FROM_FREQ:
+        active = "active" if DetailsTab.FrequencyMap in open_details else ""
         frequency_button = button_html.format(
-            target=f"frequency_{i.pali_1_}", name="Frequency", icon="icon-table-bold")
+            target=f"frequency_{i.pali_1_}", name="Frequency", icon="icon-table-bold", active=active)
     else:
         frequency_button = ""
 
     # feedback_button
+    active = "active" if DetailsTab.Feedback in open_details else ""
     feedback_button = button_html.format(
-        target=f"feedback_{i.pali_1_}", name="Feedback", icon="icon-send-email")
+        target=f"feedback_{i.pali_1_}", name="Feedback", icon="icon-send-email", active=active)
 
     return str(
         button_box_templ.render(
@@ -353,7 +364,8 @@ def render_dpd_definition_simsapa_templ(i: PaliWord, dpd_definition_templ: Templ
             complete=complete))
 
 def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
-                                      render_data: PaliWordRenderData) -> RenderResult:
+                                      render_data: PaliWordRenderData,
+                                      open_details: List[DetailsTab] = []) -> RenderResult:
     rd = render_data
 
     i: PaliWord = db_parts["pali_word"]
@@ -399,12 +411,19 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
     grammar = render_grammar_templ(pth, i, rt, tt.grammar_simsapa_templ)
     html += grammar
 
+    if len(open_details) > 0:
+        more_info_active = "active"
+        details_classes = ""
+    else:
+        more_info_active = ""
+        details_classes = "hidden"
+
     more_info_button = f"""
     <div class="more-info-button-wrap">
         <div class="more-info-button-box">
             <button
                 title="Show details"
-                class="ssp-button ssp-icon-button"
+                class="ssp-button ssp-icon-button {more_info_active}"
                 onclick="document.SSP.button_toggle_visible(this, '#word_details_{i.pali_1_}')"
             >
                 <svg class="ssp-icon-button__icon"><use xlink:href="#icon-more-filled"></use></svg>
@@ -415,33 +434,33 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
 
     html += more_info_button
 
-    html += f"<div id='word_details_{i.pali_1_}' class='hidden'>"
+    html += f"<div id='word_details_{i.pali_1_}' class='{details_classes}'>"
 
-    button_box = render_button_box_simsapa_templ(i, rd['cf_set'], tt.button_box_simsapa_templ)
+    button_box = render_button_box_simsapa_templ(i, rd['cf_set'], tt.button_box_simsapa_templ, open_details)
     html += button_box
 
-    example = render_example_templ(pth, i, rd['make_link'], tt.example_templ)
+    example = render_example_templ(pth, i, rd['make_link'], tt.example_templ, open_details)
     html += example
 
-    inflection_table = render_inflection_templ(pth, i, dd, tt.inflection_templ)
+    inflection_table = render_inflection_templ(pth, i, dd, tt.inflection_templ, open_details)
     html += inflection_table
 
-    family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ)
+    family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ, open_details)
     html += family_root
 
-    family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ)
+    family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ, open_details)
     html += family_word
 
-    family_compound = render_family_compound_templ(pth, i, fc, rd['cf_set'], tt.family_compound_templ)
+    family_compound = render_family_compound_templ(pth, i, fc, rd['cf_set'], tt.family_compound_templ, open_details)
     html += family_compound
 
-    family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ)
+    family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ, open_details)
     html += family_sets
 
-    frequency = render_frequency_templ(pth, i, dd, tt.frequency_templ)
+    frequency = render_frequency_templ(pth, i, dd, tt.frequency_templ, open_details)
     html += frequency
 
-    feedback = render_feedback_templ(pth, i, tt.feedback_templ)
+    feedback = render_feedback_templ(pth, i, tt.feedback_templ, open_details)
     html += feedback
 
     html += "</div>"

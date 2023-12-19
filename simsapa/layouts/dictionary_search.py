@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa import SIMSAPA_PACKAGE_DIR, DetailsTab, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
@@ -586,7 +586,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        word_html = self._queries.dictionary_queries.get_word_html(word)
+        open_details = [DetailsTab.Inflections]
+        word_html = self._queries.dictionary_queries.get_word_html(word, open_details)
 
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
