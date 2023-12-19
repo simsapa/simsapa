@@ -1,12 +1,11 @@
+import re
 from typing import List, TypedDict
 
 class EndingRepl(TypedDict):
     endings: List[str]
     repl: str
 
-# // bhūmīnaṁ → bhūmi is OK, but kumārīnaṁ → kumāri should be kumārī.
-
-def pali_stem(word_orig: str) -> str:
+def pali_stem(word_orig: str, replace_vowel = False) -> str:
     # Based on the Snowball Pāli stemmer.
 
     # Remove declension endings for masc., neut., fem. nouns.
@@ -72,6 +71,8 @@ def pali_stem(word_orig: str) -> str:
         endings = i['endings']
         for e in endings:
             if stem.endswith(e):
-                stem = stem.replace(e, '')
+                p = re.compile(f"{e}$")
+                repl = i['repl'] if replace_vowel else ''
+                stem = p.sub(repl, stem)
 
     return stem

@@ -13,6 +13,9 @@ STEMMING_TEST_CASES = {
     "satiṁ": "sat",
     "vineyya": "vineyya",
     "uddeso": "uddes",
+    "bhūmīnaṁ": "bhūm",
+    "kumārīnaṁ": "kumār",
+    "kīdisī": "kīdis",
 }
 
 def test_pali_stemmer():
