@@ -237,7 +237,7 @@ def render_button_box_simsapa_templ(
     # declension_button
     if i.pos in DECLENSIONS:
         declension_button = button_html.format(
-            target=f"declension_{i.pali_1_}", name="Declension", icon="icon-table-bold")
+            target=f"declension_{i.pali_1_}", name="Declensions", icon="icon-table-bold")
     else:
         declension_button = ""
 
