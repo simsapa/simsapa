@@ -430,7 +430,7 @@ def default_app_settings() -> AppSettings:
         sutta_study_three_source_filter_idx = 0,
 
         sutta_study_lookup_language_filter_idx = 0,
-        sutta_study_lookup_search_mode = SearchMode.FulltextMatch,
+        sutta_study_lookup_search_mode = SearchMode.DpdTbwLookup,
         sutta_study_lookup_source_filter_idx = 0,
 
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 500, height = 700),

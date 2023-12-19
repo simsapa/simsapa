@@ -116,6 +116,9 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
             languages = lang_keys
 
         for lang in languages:
+            # This can happen when the Language dropdown has empty value.
+            if lang == "":
+                continue
 
             logger.info(f"SearchQueryWorker for {lang}")
 

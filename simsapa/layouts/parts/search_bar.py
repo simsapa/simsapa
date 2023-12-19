@@ -326,7 +326,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         cmb.addItems(items)
         cmb.setFixedHeight(self._icons_height)
-        cmb.setCurrentIndex(idx)
+
+        if idx < len(items):
+            cmb.setCurrentIndex(idx)
+        else:
+            cmb.setCurrentIndex(0)
+
         self.language_filter_dropdown = cmb
         self.search_extras.addWidget(self.language_filter_dropdown)
 
@@ -407,7 +412,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         cmb.addItems(items)
         cmb.setFixedHeight(self._icons_height)
-        cmb.setCurrentIndex(idx)
+
+        if idx < len(items):
+            cmb.setCurrentIndex(idx)
+        else:
+            cmb.setCurrentIndex(0)
+
         self.source_filter_dropdown = cmb
         self.search_extras.addWidget(self.source_filter_dropdown)
 
