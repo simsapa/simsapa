@@ -2,6 +2,7 @@ import subprocess
 
 from functools import partial
 from urllib.parse import parse_qs
+from datetime import datetime
 
 from typing import List, Optional
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
@@ -10,15 +11,15 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa import IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR, QueryType
+from simsapa import logger, IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR, QueryType
 
-from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments
-from simsapa.app.types import UDictWord, USutta
+from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments, is_complete_sutta_uid
+from simsapa.app.search.helpers import SearchResult
+from simsapa.app.types import SearchArea, SearchMode, SearchParams, UDictWord, USutta
 from simsapa.app.app_data import AppData
-from simsapa.app.search.dictionary_queries import DictionaryQueries
-from simsapa.app.search.sutta_queries import SuttaQueries
+from simsapa.layouts.gui_queries import GuiSearchQueries
 
-from simsapa.layouts.gui_types import QExpanding, LinkHoverData
+from simsapa.layouts.gui_types import QExpanding, LinkHoverData, sutta_quote_from_url
 from simsapa.layouts.html_content import html_page
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
@@ -46,6 +47,8 @@ class PreviewWindow(QDialog):
     open_new = pyqtSignal(str)
     make_windowed = pyqtSignal()
 
+    _queries: GuiSearchQueries
+
     show_words_by_url = pyqtSignal(QUrl)
 
     def __init__(self, app_data: AppData,
@@ -55,15 +58,16 @@ class PreviewWindow(QDialog):
 
         self._app_data: AppData = app_data
 
+        self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         self._app_data.get_search_indexes,
+                                         self._app_data.api_url)
+
         self.title = ''
 
         self._hover_data = hover_data
         self._frameless = frameless
         self._link_mouseleave = False
         self._mouseover = False
-
-        self.sutta_queries = SuttaQueries(self._app_data.db_session)
-        self.dict_queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
         self._hide_timer = QTimer()
         self._hide_timer.timeout.connect(partial(self.hide))
@@ -175,6 +179,33 @@ class PreviewWindow(QDialog):
 
             self._hide_timer.start(2000)
 
+    def _sutta_search_query_finished(self, __query_started_time__: Optional[datetime] = None):
+        if not self._queries.all_finished():
+            return
+        self._query_results = self._queries.results_page(0)
+
+        sutta: Optional[USutta] = None
+
+        assert(self._hover_data is not None)
+        url = QUrl(self._hover_data['href'])
+
+        if len(self._query_results) > 0:
+            r = self._query_results[0]
+            logger.info(f"Rank: {r['rank']}")
+
+            if r['uid'] is not None:
+                sutta = self._queries.sutta_queries.get_sutta_by_uid(r['uid'])
+
+        if sutta is not None:
+            quote = sutta_quote_from_url(url)
+            if quote:
+                self._render_sutta(sutta, quote['quote'])
+            else:
+                self._render_sutta(sutta)
+
+        else:
+            self._render_not_found(url)
+
     def render_hover_data(self, hover_data: Optional[LinkHoverData] = None) -> bool:
         if self._hover_data is not None and \
            hover_data is not None and \
@@ -197,24 +228,61 @@ class PreviewWindow(QDialog):
 
         if url.host() == QueryType.suttas:
 
-            sutta = self.sutta_queries.get_sutta_by_url(url)
+            sutta = self._queries.sutta_queries.get_sutta_by_url(url)
+            quote = sutta_quote_from_url(url)
 
-            if sutta is None:
-                self._render_not_found(url)
-                return True
+            if sutta is None and quote is not None:
 
-            query = parse_qs(url.query())
-            quote = None
-            if 'q' in query.keys():
-                quote = query['q'][0]
+                uid = url.path().strip("/")
+                if is_complete_sutta_uid(uid):
+                    # dn22/pli/ms
+                    _, lang, _ = uid.split("/")
+                else:
+                    lang = "pli"
 
-            self._render_sutta(sutta, quote)
+                params = SearchParams(
+                    mode = SearchMode.FulltextMatch,
+                    page_len = 10,
+                    lang = lang,
+                    lang_include = True,
+                    source = None,
+                    source_include = True,
+                    enable_regex = False,
+                    fuzzy_distance = 0,
+                )
 
-        elif url.host() == QueryType.words:
+                self._query_results: List[SearchResult] = []
+
+                self._last_query_time = datetime.now()
+
+                self._queries.start_search_query_workers(
+                    quote['quote'],
+                    SearchArea.Suttas,
+                    self._last_query_time,
+                    self._sutta_search_query_finished,
+                    params,
+                )
+
+            else:
+
+                if sutta is None:
+                    self._render_not_found(url)
+                    return True
+
+                query = parse_qs(url.query())
+                quote = None
+                if 'q' in query.keys():
+                    quote = query['q'][0]
+
+                self._render_sutta(sutta, quote)
+
+            return True
+
+        if url.host() == QueryType.words:
 
             word_uid = url.path().strip("/")
 
-            words = self.dict_queries.get_words_by_uid(word_uid)
+            words = self._queries.dictionary_queries.get_words_by_uid(word_uid)
 
             if len(words) == 0:
                 self._render_not_found(url)
@@ -222,12 +290,10 @@ class PreviewWindow(QDialog):
 
             self._render_words(words)
 
-        else:
-            # It's not a sutta or dictionary word link.
-            return False
+            return True
 
-        return True
-
+        # It's not a sutta or dictionary word link.
+        return False
 
     def _move_window_from_hover(self):
         preview_width = 500
@@ -331,10 +397,11 @@ class PreviewWindow(QDialog):
             #preview-close { font-size: 14.5px; line-height: 1; position: fixed; top: 6px; right: 6px; }
             """
 
-        html = self.dict_queries.words_to_html_page(words=words,
-                                                    css_extra=css_extra,
-                                                    js_extra=js_extra,
-                                                    html_title=html_title)
+        html = self._queries.dictionary_queries.words_to_html_page(
+            words=words,
+            css_extra=css_extra,
+            js_extra=js_extra,
+            html_title=html_title)
 
         self.set_qwe_html(html)
 

@@ -543,3 +543,19 @@ def find_available_port() -> int:
     sock.bind(('', 0))
     _, port = sock.getsockname()
     return port
+
+def is_complete_sutta_uid(uid: str) -> bool:
+    uid = uid.strip("/")
+
+    if "/" not in uid:
+        return False
+
+    if len(uid.split("/")) != 3:
+        return False
+
+    return True
+
+def is_complete_word_uid(uid: str) -> bool:
+    # Check if uid contains a /, i.e. if it specifies the dictionary
+    # (dhammacakkhu/dpd).
+    return ("/" in uid.strip("/"))

@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
 from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, DetailsTab, logger, QueryType
+from simsapa.app.helpers import is_complete_word_uid
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
@@ -33,15 +34,10 @@ class DictionaryQueries(DictionaryQueriesInterface):
         self.db_session = db_session
         self.api_url = api_url
 
-    def is_complete_uid(self, uid: str) -> bool:
-        # Check if uid contains a /, i.e. if it specifies the dictionary
-        # (dhammacakkhu/dpd).
-        return ("/" in uid.strip("/"))
-
     def get_words_by_uid(self, uid: str) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        if self.is_complete_uid(uid):
+        if is_complete_word_uid(uid):
 
             res = self.db_session \
                 .query(Am.DictWord) \

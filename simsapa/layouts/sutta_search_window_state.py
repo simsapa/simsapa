@@ -17,7 +17,7 @@ from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, QueryType, S
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
-from simsapa.app.helpers import is_book_sutta_ref
+from simsapa.app.helpers import is_book_sutta_ref, is_complete_sutta_uid
 
 from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
@@ -555,7 +555,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._show_sutta_by_quote(sutta_quote)
             return
 
-        if len(uid) > 0 and not self._queries.sutta_queries.is_complete_uid(uid):
+        if len(uid) > 0 and not is_complete_sutta_uid(uid):
             self._show_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
             return
 

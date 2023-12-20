@@ -283,7 +283,7 @@ class AppWindows:
         else:
             return
 
-        sutta = self._preview_window.sutta_queries.get_sutta_by_url(url)
+        sutta = self._preview_window._queries.sutta_queries.get_sutta_by_url(url)
 
         if sutta:
             self._new_sutta_search_window(f"uid:{sutta.uid}")
