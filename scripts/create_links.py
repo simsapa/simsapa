@@ -11,7 +11,7 @@ from sqlalchemy.orm.session import Session
 
 from simsapa.app.db import appdata_models as Am
 from simsapa import APP_DB_PATH, USER_DB_PATH, logger
-from simsapa.app.types import QueryType
+from simsapa import QueryType
 
 
 def get_links(appdata_db: Session) -> List[Am.Link]:

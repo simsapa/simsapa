@@ -12,16 +12,15 @@ from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, Q
 
 from sqlalchemy import and_
 
-from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger, QueryType, SuttaQuote, QuoteScope
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.helpers import is_book_sutta_ref
 
-from simsapa.app.types import QueryType, SearchArea, SuttaQuote, USutta, UDictWord
+from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
-from simsapa.app.search.sutta_queries import QuoteScope
 from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import OpenPromptParams, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData

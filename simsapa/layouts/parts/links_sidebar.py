@@ -9,12 +9,12 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, pyqtSlot
 
-from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger
+from simsapa import IS_LINUX, LOADING_HTML, ShowLabels, logger, QueryType
 
 # from ..app.file_doc import FileDoc
 # from ..app.db import userdata_models as Um
 
-from simsapa.app.types import GraphRequest, QueryType, USutta, UDictWord
+from simsapa.app.types import GraphRequest, USutta, UDictWord
 from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am

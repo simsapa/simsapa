@@ -16,7 +16,7 @@ from sqlalchemy.orm import declared_attr
 from sqlalchemy.orm import object_session
 from sqlalchemy import Column, Integer
 
-from simsapa.dpd_db.tools.link_generator import generate_link
+from simsapa.dpd_db.tools.link_generator import generate_simsapa_link
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 from sqlalchemy.orm import declarative_base
@@ -286,11 +286,11 @@ class PaliWord(Base):
 
     @property
     def source_link_1(self) -> str:
-        return generate_link(self.source_1) if self.source_1 else ""
+        return generate_simsapa_link(self.source_1, self.example_1) if self.source_1 else ""
 
     @property
     def source_link_2(self) -> str:
-        return generate_link(self.source_2) if self.source_2 else ""
+        return generate_simsapa_link(self.source_2, self.example_2) if self.source_2 else ""
 
     def __repr__(self) -> str:
         return f"""PaliWord: {self.id} {self.pali_1} {self.pos} {

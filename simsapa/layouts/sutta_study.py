@@ -9,10 +9,10 @@ from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBoxLayout, QWidget
 
-from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger
+from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger, QueryType
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from simsapa.app.types import QueryType, USutta
+from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 

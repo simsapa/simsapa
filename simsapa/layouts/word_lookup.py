@@ -9,13 +9,13 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.search.helpers import SearchResult, get_word_for_schema_and_id, get_word_gloss, get_word_meaning
 
-from simsapa.app.types import QueryType, SearchArea, UDictWord
+from simsapa.app.types import SearchArea, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.layouts.find_panel import FindPanel, FindSearched

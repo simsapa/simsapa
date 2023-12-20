@@ -10,13 +10,12 @@ from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBo
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
+from simsapa import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
 from simsapa.app.check_updates_worker import CheckUpdatesWorker
 
 from simsapa.app.app_data import AppData
-
-from simsapa.app.types import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,

@@ -23,7 +23,7 @@ import re
 from simsapa import logger
 from simsapa import SIMSAPA_DIR
 from simsapa.app.helpers import compact_rich_text, consistent_niggahita
-from simsapa.app.types import QueryType
+from simsapa import QueryType
 
 class DictError(Exception):
     """Error in the dictionary."""

@@ -18,12 +18,12 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolButton, QVBoxLayout
 
-from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import QueryType, UChallenge, UChallengeGroup
+from simsapa.app.types import UChallenge, UChallengeGroup
 from simsapa.app.app_data import AppData
 
 from simsapa.layouts.gui_types import AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, LinkHoverData

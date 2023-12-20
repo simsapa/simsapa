@@ -14,7 +14,7 @@ from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.db_session import get_db_version
 from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
-from simsapa.app.types import QueryType
+from simsapa import QueryType
 from simsapa.app.app_data import AppData
 from simsapa.app.windows import AppWindows
 

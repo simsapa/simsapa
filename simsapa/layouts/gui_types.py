@@ -8,9 +8,9 @@ from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
 
-from simsapa import IS_MAC, DbSchemaName
+from simsapa import IS_MAC, DbSchemaName, SuttaQuote
 from simsapa.app.search.helpers import SearchResult
-from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SuttaQuote, SearchMode
+from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SearchMode
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding

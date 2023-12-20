@@ -74,10 +74,6 @@ class SearchParams(TypedDict):
     enable_regex: bool
     fuzzy_distance: int
 
-class QueryType(str, Enum):
-    suttas = "suttas"
-    words = "words"
-
 class SuttaQueriesInterface:
     get_sutta_by_url: Callable
 
@@ -87,21 +83,6 @@ class DictionaryQueriesInterface:
     render_html_page: Callable
     get_word_html: Callable
     dict_word_from_result: Callable[[SearchResult], Optional[UDictWord]]
-
-class QuoteScope(str, Enum):
-    Sutta = 'sutta'
-    Nikaya = 'nikaya'
-    All = 'all'
-
-QuoteScopeValues = {
-    'sutta': QuoteScope.Sutta,
-    'nikaya': QuoteScope.Nikaya,
-    'all': QuoteScope.All,
-}
-
-class SuttaQuote(TypedDict):
-    quote: str
-    selection_range: Optional[str]
 
 class GraphRequest(TypedDict):
     sutta_uid: Optional[str]

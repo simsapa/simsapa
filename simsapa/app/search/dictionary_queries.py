@@ -6,11 +6,11 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, DetailsTab, logger
+from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, DetailsTab, logger, QueryType
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
-from simsapa.app.types import SearchParams, QueryType, UDictWord, DictionaryQueriesInterface
+from simsapa.app.types import SearchParams, UDictWord, DictionaryQueriesInterface
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd

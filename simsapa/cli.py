@@ -1,8 +1,8 @@
 from typing import Optional
 import typer
 
-from simsapa import SIMSAPA_API_DEFAULT_PORT, logger
-from simsapa.app.types import QueryType, SearchMode, SearchParams
+from simsapa import SIMSAPA_API_DEFAULT_PORT, logger, QueryType
+from simsapa.app.types import SearchMode, SearchParams
 
 app = typer.Typer()
 index_app = typer.Typer()

@@ -1,16 +1,20 @@
 """Generating links for suttas based on the desired website"""
 
 import re
-from simsapa.dpd_db.tools.configger import config_test_option, config_update_default_value, config_read
+from urllib.parse import urlencode
 
+from PyQt6.QtCore import QUrl
 
-def load_link():
-    if not config_test_option("dictionary", "link_url"):
-        config_update_default_value("dictionary", "link_url")
-    return config_read("dictionary", "link_url")
+from simsapa.app.helpers import strip_html
+from simsapa import QueryType, QuoteScope
 
+# def load_link():
+#     if not config_test_option("dictionary", "link_url"):
+#         config_update_default_value("dictionary", "link_url")
+#     return config_read("dictionary", "link_url")
 
-base_url = load_link()
+# NOTE: generate_simsapa_link() is going to add the base url.
+base_url = ""
 
 
 def generate_link(source: str) -> str:
@@ -27,6 +31,38 @@ def generate_link(source: str) -> str:
 
     return ""
 
+def generate_simsapa_link(source: str, example: str) -> str:
+    # an/an3.101.html
+    dpd_link = generate_link(source)
+    # an/an3.101
+    dpd_link = dpd_link.strip(".html").strip(".htm").strip("/")
+    # an3.101
+    ref = re.sub(r".*/([^/]+)$", r"\1", dpd_link)
+
+    sutta_uid = f"{ref}/pli/ms"
+
+    s = example
+    s = s.replace("<br>", " ")
+    s = s.replace("<br/>", " ")
+
+    # Convert to plain text.
+    quote = strip_html(s)
+
+    # End the quote on a word boundary.
+    if len(quote) > 100:
+        words = quote.split(" ")
+        q = ""
+        for i in words:
+            q += i + " "
+            if len(q) > 100:
+                break
+
+        quote = q.strip()
+
+    url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
+    url.setQuery(urlencode({'q': quote, 'quote_scope': QuoteScope.Nikaya.value}))
+
+    return url.toString()
 
 def link_vin(source: str, base_url: str) -> str:
     # Vinaya piṭaka
@@ -85,7 +121,7 @@ def link_vin_pat(source: str, base_url: str) -> str:
     # Logic for VIN PAT
     vin_pat_match = re.match(r'VIN PAT (PA|SA|AN|NP|PC|PD|SE|AS)(?: (\d+))?', source)
     if vin_pat_match:
-        pat_code, pat_number = vin_pat_match.groups()
+        pat_code, __pat_number__ = vin_pat_match.groups()
         vin_pat_map = {
             'PA': 'pr',
             'SA': 'sg',
@@ -105,7 +141,7 @@ def link_pat(source: str, base_url: str) -> str:
     # Logic for VIN PAT
     pattern = re.match(r'(PA|SA|NP|PC|PD|SE|AS)\s?(\d+)', source)
     if pattern:
-        pat_code, pat_number = pattern.groups()
+        pat_code, __pat_number__ = pattern.groups()
         vin_pat_map = {
             'PA': 'pr',
             'SA': 'sg',

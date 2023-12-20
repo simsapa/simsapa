@@ -192,7 +192,7 @@ def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = [])
         word_templates = DPD_PALI_WORD_TEMPLATES,
         sandhi_contractions = DPD_SANDHI_CONTRACTIONS,
         cf_set = DPD_CF_SET,
-        make_link = False,
+        make_link = True,
     )
 
     render_res = render_pali_word_dpd_simsapa_html(db_parts, render_data, open_details)

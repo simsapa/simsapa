@@ -255,3 +255,22 @@ class DetailsTab(str, Enum):
     SetFamily = "Set Family"
     FrequencyMap = "Frequency Map"
     Feedback = "Feedback"
+
+class QueryType(str, Enum):
+    suttas = "suttas"
+    words = "words"
+
+class QuoteScope(str, Enum):
+    Sutta = 'sutta'
+    Nikaya = 'nikaya'
+    All = 'all'
+
+QuoteScopeValues = {
+    'sutta': QuoteScope.Sutta,
+    'nikaya': QuoteScope.Nikaya,
+    'all': QuoteScope.All,
+}
+
+class SuttaQuote(TypedDict):
+    quote: str
+    selection_range: Optional[str]
