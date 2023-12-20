@@ -1,4 +1,4 @@
-import os, sys, re, shutil, queue, json, webbrowser
+import os, sys, re, shutil, queue, json
 from functools import partial
 from typing import Callable, List, Optional
 from datetime import datetime
@@ -1174,7 +1174,7 @@ class AppWindows:
     def show_app_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
 
-        update_info['message'] += "<h3>Open page in the browser now?</h3>"
+        update_info['message'] += "<h3>Click on the link to open the download page.</h3>"
 
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
@@ -1187,12 +1187,9 @@ class AppWindows:
 
         box.setText(msg)
         box.setWindowTitle("Application Update Available")
-        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        box.setStandardButtons(QMessageBox.StandardButton.Close)
 
-        reply = box.exec()
-        if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
-            # NOTE: This doesn't work on some OSes, or the user doesn't see the new page, hence the above link.
-            webbrowser.open_new(str(update_info['visit_url']))
+        box.exec()
 
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
