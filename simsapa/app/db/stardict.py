@@ -200,7 +200,8 @@ def import_stardict_as_new(db_session: Session,
 
     words: List[DictEntry] = stardict_to_dict_entries(paths, limit)
 
-    words = add_links_to_words(db_session, words)
+    # FIXME render word links in the DPD templates
+    # words = add_links_to_words(db_session, words)
 
     ifo = parse_ifo(paths)
     title = ifo['bookname']
