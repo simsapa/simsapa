@@ -465,6 +465,11 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
 
     html += "</div>"
 
+    # FIXME improve specifying Simsapa and DPD version in feedback link
+    # Example feedback form link in DPD:
+    # https://docs.google.com/forms/d/e/1FAIpQLSf9boBe7k5tCwq7LdWgBHHGIPVc4ROO5yjVDo1X5LDAxkmGWQ/viewform?usp=pp_url&entry.438735500=${i.pali_link}&entry.1433863141=GoldenDict+${today}
+    html = html.replace("&entry.1433863141=GoldenDict+", "&entry.1433863141=Simsapa+")
+
     synonyms: List[str] = dd.inflections_list
     synonyms = add_niggahitas(synonyms)
     for synonym in synonyms:
