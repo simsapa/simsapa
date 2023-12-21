@@ -29,6 +29,7 @@ import nyanadipa
 import multi_refs
 import create_links
 import dpd
+import dppn
 
 load_dotenv()
 
@@ -133,9 +134,14 @@ def main():
 
     # === Dictionaries ===
 
+    # DPD - Digital Pali Dictionary
     dpd.prepare_dpd_for_dist(appdata_db, BOOTSTRAP_ASSETS_DIR)
     dpd_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("dpd.sqlite3")
 
+    # DPPN - Dictionary of Pali Proper Names
+    dppn.populate_dppn_from_palikanon_com(appdata_db, limit)
+
+    # Stardict formats
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 
     # === All dict words are added above ===
