@@ -3,6 +3,7 @@
 import os, sys, glob, re
 from pathlib import Path
 from typing import List, Optional
+import bs4
 from bs4 import BeautifulSoup
 
 from sqlalchemy.orm.session import Session
@@ -40,13 +41,58 @@ def check_uid(db_session: Session, i: Am.DictWord):
         else:
             return
 
-def get_long_definition_blocks(soup: BeautifulSoup, dppn_dict: Am.Dictionary) -> Am.DictWord:
+def get_name_tag_from_long(soup: BeautifulSoup) -> Optional[bs4.Tag]:
     name_tag = soup.select_one('h2')
+    return name_tag
+
+def get_name_tag_from_list_item(item: bs4.Tag) -> Optional[bs4.Tag]:
+    # The name can be:
+    # <li><b>name</b> ... </li>
+    # <li><b><a>name</a></b> ... </li>
+    # <li><a><b>name</b></a> ... </li>
+
+    # Sometimes the content is li > p > a so don't use li > a
+    name_tag = item.select_one('li a > b')
+    if name_tag is None:
+        name_tag = item.select_one('li b > a')
+
+    if name_tag is not None:
+        # The list item is a link to a long definition block. Those pages
+        # are parsed separately.
+        return None
+
+    else:
+        name_tag = item.select_one('li b')
+
+    return name_tag
+
+def get_name_tags_from_short(soup: BeautifulSoup) -> List[bs4.Tag]:
+    tags: List[bs4.Tag] = []
+    list_items = soup.select('body > ul > li')
+    for item in list_items:
+        name_tag = get_name_tag_from_list_item(item)
+        if name_tag is not None:
+            tags.append(name_tag)
+
+    return tags
+
+def replace_links_with_bold(soup: BeautifulSoup, tag: bs4.Tag):
+    links = tag.select('a')
+    for link in links:
+        bold = soup.new_tag('b')
+        bold.append(link.get_text())
+        link.replace_with(bold)
+
+def get_long_definition_blocks(soup: BeautifulSoup, dppn_dict: Am.Dictionary) -> Am.DictWord:
+    name_tag = get_name_tag_from_long(soup)
     assert(name_tag is not None)
     name = strip_html(name_tag.decode_contents())
 
     item = soup.select_one('body')
     assert(item is not None)
+
+    replace_links_with_bold(soup, item)
+
     item_html = item.decode_contents()
 
     # Remove the footer
@@ -71,32 +117,14 @@ def get_short_definitions(soup: BeautifulSoup, dppn_dict: Am.Dictionary) -> List
     list_items = soup.select('body > ul > li')
     for item in list_items:
 
-        # The name can be:
-        # <li><b>name</b> ... </li>
-        # <li><b><a>name</a></b> ... </li>
-        # <li><a><b>name</b></a> ... </li>
-
-        # Sometimes the content is li > p > a so don't use li > a
-        name_tag = item.select_one('li a > b')
-        if name_tag is None:
-            name_tag = item.select_one('li b > a')
-
-        if name_tag is not None:
-            # The list item is a link to a long definition block. Those pages
-            # are parsed separately.
-            continue
-
-        else:
-            name_tag = item.select_one('li b')
-
-        item_html = item.decode_contents()
-
+        name_tag = get_name_tag_from_list_item(item)
         if name_tag is None:
             continue
 
-        assert(name_tag is not None)
+        replace_links_with_bold(soup, item)
 
         name = name_tag.decode_contents()
+        item_html = item.decode_contents()
 
         w = Am.DictWord(
             dictionary_id = dppn_dict.id,
@@ -120,20 +148,24 @@ def parse_name_page(p: Path, dppn_dict: Am.Dictionary) -> List[Am.DictWord]:
 
     soup = BeautifulSoup(html_text, 'html.parser')
 
-    header_items = soup.select('body > ul > li > h2')
-    if len(header_items) == 0:
-        header_items = soup.select('body > h2')
-
-    if len(header_items) > 0:
-        # If the list contains h2, the html page contains long definition blocks.
+    if is_long_definition_page(soup):
         words.append(get_long_definition_blocks(soup, dppn_dict))
 
     else:
-        # Otherwise the page is a list of short definitions and links to long definitions.
         words.extend(get_short_definitions(soup, dppn_dict))
 
     return words
 
+def is_long_definition_page(soup: BeautifulSoup) -> bool:
+    header_items = soup.select('body > ul > li > h2')
+    if len(header_items) == 0:
+        header_items = soup.select('body > h2')
+
+    # If the list contains h2, the html page contains long definition blocks.
+
+    # Otherwise the page is a list of short definitions and links to long definitions.
+
+    return (len(header_items) > 0)
 
 def populate_dppn_from_palikanon_com(appdata_db: Session, limit: Optional[int] = None):
     logger.info("populate_dppn_from_palikanon_com()")
