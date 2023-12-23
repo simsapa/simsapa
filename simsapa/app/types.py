@@ -8,7 +8,7 @@ from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.search.helpers import SearchResult
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
 ULink = Union[Am.Link, Um.Link]
 
 UDeck = Union[Am.Deck, Um.Deck]

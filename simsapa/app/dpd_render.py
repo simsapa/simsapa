@@ -1,5 +1,5 @@
-from typing import List, Set, Tuple, Optional
-import json
+from typing import Dict, List, Set, Tuple, Optional
+import json, re
 
 from mako.template import Template
 
@@ -10,8 +10,11 @@ from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, PaliRoot, PaliWord, DerivedData, FamilyRoot, FamilyWord
+from simsapa.app.helpers import strip_html
+from simsapa.app.search.helpers import root_info_clean_plaintext
 
 from simsapa.dpd_db.exporter.export_dpd import PaliWordDbParts, PaliWordDbRowItems, PaliWordRenderData, PaliWordTemplates, get_family_compounds_for_pali_word, get_family_set_for_pali_word, render_example_templ, render_family_compound_templ, render_family_root_templ, render_family_set_templ, render_family_word_templ, render_feedback_templ, render_frequency_templ, render_grammar_templ, render_inflection_templ
+from simsapa.dpd_db.exporter.export_roots import render_root_buttons_templ, render_root_definition_templ, render_root_families_templ, render_root_info_templ, render_root_matrix_templ
 from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ, TODAY
 
 from simsapa.dpd_db.tools.meaning_construction import make_meaning_html, summarize_construction
@@ -27,9 +30,10 @@ DPD_PROJECT_PATHS = ProjectPaths()
 DPD_PALI_WORD_TEMPLATES = PaliWordTemplates(DPD_PROJECT_PATHS)
 
 DPD_CF_SET: Optional[Set[str]] = None
+DPD_ROOTS_COUNT_DICT: Optional[Dict[str, int]] = None
 DPD_SANDHI_CONTRACTIONS: Optional[SandhiContractions] = None
 
-def get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
+def get_dpd_caches() -> Tuple[Set[str], Dict[str, int], SandhiContractions]:
     logger.info("get_dpd_caches()")
 
     db_eng, db_conn, db_session = get_db_session_with_schema(DPD_DB_PATH, DbSchemaName.Dpd)
@@ -46,6 +50,16 @@ def get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
     assert(r is not None)
 
     dpd_cf_set = set(json.loads(str(r.value)))
+
+    # === roots_count_dict ===
+
+    r = db_session.query(Dpd.DbInfo) \
+                  .filter(Dpd.DbInfo.key == "roots_count_dict") \
+                  .first()
+
+    assert(r is not None)
+
+    dpd_roots_count_dict = json.loads(str(r.value))
 
     # === sandhi_contractions ===
 
@@ -67,7 +81,25 @@ def get_dpd_caches() -> Tuple[Set[str], SandhiContractions]:
     db_session.close()
     db_eng.dispose()
 
-    return (dpd_cf_set, dpd_sandhi_contractions)
+    return (dpd_cf_set, dpd_roots_count_dict, dpd_sandhi_contractions)
+
+def _get_render_data() -> PaliWordRenderData:
+    global DPD_CF_SET
+    global DPD_ROOTS_COUNT_DICT
+    global DPD_SANDHI_CONTRACTIONS
+    if DPD_CF_SET is None or DPD_ROOTS_COUNT_DICT is None or DPD_SANDHI_CONTRACTIONS is None:
+        DPD_CF_SET, DPD_ROOTS_COUNT_DICT, DPD_SANDHI_CONTRACTIONS = get_dpd_caches()
+
+    render_data = PaliWordRenderData(
+        pth = DPD_PROJECT_PATHS,
+        word_templates = DPD_PALI_WORD_TEMPLATES,
+        sandhi_contractions = DPD_SANDHI_CONTRACTIONS,
+        cf_set = DPD_CF_SET,
+        roots_count_dict = DPD_ROOTS_COUNT_DICT,
+        make_link = True,
+    )
+
+    return render_data
 
 def make_meaning_plaintext(i: PaliWord) -> str:
     """Compile plaintext of meaning_1 and literal meaning, or return meaning_2."""
@@ -140,6 +172,23 @@ def pali_word_index_plaintext(pali_word: PaliWord) -> str:
 
     return plaintext
 
+def pali_root_index_plaintext(pali_root: PaliRoot) -> str:
+    rd = _get_render_data()
+
+    plaintext = ""
+
+    definition = strip_html(render_root_definition_templ(rd['pth'], pali_root, rd['roots_count_dict'], plaintext=True))
+
+    plaintext += definition.replace("\n", " ")
+
+    plaintext += "\n\n"
+
+    html = render_root_info_templ(rd['pth'], pali_root, [DetailsTab.RootInfo], plaintext=True)
+    root_info = root_info_clean_plaintext(html)
+    plaintext += root_info.replace("\n", " ")
+
+    return plaintext
+
 def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = []) -> RenderResult:
     db_session = object_session(pali_word)
     assert(db_session is not None)
@@ -182,22 +231,12 @@ def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = [])
 
     db_parts = _add_parts(dpd_db.tuple())
 
-    global DPD_CF_SET
-    global DPD_SANDHI_CONTRACTIONS
-    if DPD_CF_SET is None or DPD_SANDHI_CONTRACTIONS is None:
-        DPD_CF_SET, DPD_SANDHI_CONTRACTIONS = get_dpd_caches()
-
-    render_data = PaliWordRenderData(
-        pth = DPD_PROJECT_PATHS,
-        word_templates = DPD_PALI_WORD_TEMPLATES,
-        sandhi_contractions = DPD_SANDHI_CONTRACTIONS,
-        cf_set = DPD_CF_SET,
-        make_link = True,
-    )
-
-    render_res = render_pali_word_dpd_simsapa_html(db_parts, render_data, open_details)
+    render_res = render_pali_word_dpd_simsapa_html(db_parts, _get_render_data(), open_details)
 
     return render_res
+
+def pali_root_dpd_html(pali_root: PaliRoot, open_details: List[DetailsTab] = []) -> RenderResult:
+    return render_pali_root_dpd_simsapa_html(pali_root, _get_render_data(), open_details)
 
 def render_button_box_simsapa_templ(
         i: PaliWord,
@@ -487,6 +526,73 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
         definition_html = html,
         definition_plain = "",
         synonyms = synonyms,
+    )
+
+    return res
+
+def render_pali_root_dpd_simsapa_html(r: PaliRoot,
+                                      render_data: PaliWordRenderData,
+                                      open_details: List[DetailsTab] = []) -> RenderResult:
+    db_session = object_session(r)
+    assert(db_session is not None)
+
+    rd = render_data
+    pth = rd['pth']
+
+    # replace \n with html line break
+    if r.panini_root:
+        r.panini_root = r.panini_root.replace("\n", "<br>")
+    if r.panini_sanskrit:
+        r.panini_sanskrit = r.panini_sanskrit.replace("\n", "<br>")
+    if r.panini_english:
+        r.panini_english = r.panini_english.replace("\n", "<br>")
+
+    html = ""
+
+    definition = render_root_definition_templ(pth, r, rd['roots_count_dict'])
+    html += definition
+
+    root_buttons = render_root_buttons_templ(pth, r, db_session, open_details)
+    html += root_buttons
+
+    root_info = render_root_info_templ(pth, r, open_details)
+    html += root_info
+
+    root_matrix = render_root_matrix_templ(pth, r, rd['roots_count_dict'])
+    html += root_matrix
+
+    root_families = render_root_families_templ(pth, r, db_session)
+    html += root_families
+
+    # FIXME improve specifying Simsapa and DPD version in feedback link
+    # Example feedback form link in DPD:
+    # https://docs.google.com/forms/d/e/1FAIpQLSf9boBe7k5tCwq7LdWgBHHGIPVc4ROO5yjVDo1X5LDAxkmGWQ/viewform?usp=pp_url&entry.438735500=${i.pali_link}&entry.1433863141=GoldenDict+${today}
+    html = html.replace("&entry.1433863141=GoldenDict+", "&entry.1433863141=Simsapa+")
+
+    synonyms: set = set()
+    synonyms.add(r.root_clean)
+    synonyms.add(re.sub("√", "", r.root))
+    synonyms.add(re.sub("√", "", r.root_clean))
+
+    frs = db_session.query(
+        FamilyRoot
+    ).filter(
+        FamilyRoot.root_id == r.root,
+        FamilyRoot.root_family != "info",
+        FamilyRoot.root_family != "matrix",
+    ).all()
+
+    for fr in frs:
+        synonyms.add(fr.root_family)
+        synonyms.add(re.sub("√", "", fr.root_family))
+
+    synonyms = set(add_niggahitas(list(synonyms)))
+
+    res = RenderResult(
+        word = r.root,
+        definition_html = html,
+        definition_plain = "",
+        synonyms = list(synonyms),
     )
 
     return res

@@ -52,6 +52,7 @@ class AppData:
     dpd_project_paths = DPD_PROJECT_PATHS
     dpd_pali_word_templates = DPD_PALI_WORD_TEMPLATES
     dpd_cf_set: Set[str]
+    dpd_roots_count_dict: Dict[str, int]
     dpd_sandhi_contractions: SandhiContractions
 
     def __init__(self,
@@ -94,7 +95,7 @@ class AppData:
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
 
-        self.dpd_cf_set, self.dpd_sandhi_contractions = get_dpd_caches()
+        self.dpd_cf_set, self.dpd_roots_count_dict, self.dpd_sandhi_contractions = get_dpd_caches()
 
         self._init_completion_cache()
 

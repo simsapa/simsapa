@@ -17,12 +17,12 @@ from simsapa.layouts.gui_types import AppWindowInterface
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 class WordsWindow(AppWindowInterface):
-    def __init__(self, app_data: AppData, word_ids: List[tuple[str, int]], parent=None) -> None:
+    def __init__(self, app_data: AppData, word_uids: List[tuple[str, str, str]], parent=None) -> None:
         super().__init__(parent)
         logger.info("WordsWindow()")
 
         self._app_data = app_data
-        words = self._get_words_by_ids(word_ids)
+        words = self._get_words_by_uids(word_uids)
 
         if len(words) == 0:
             self.close()
@@ -38,28 +38,35 @@ class WordsWindow(AppWindowInterface):
         self._setup_ui()
         self._connect_signals()
 
-    def _get_words_by_ids(self, ids: List[tuple[str, int]]) -> List[UDictWord]:
+    def _get_words_by_uids(self, uids: List[tuple[str, str, str]]) -> List[UDictWord]:
         results: List[UDictWord] = []
 
-        appdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.AppData.value, ids)))
-        userdata_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.UserData.value, ids)))
-        dpd_ids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.Dpd.value, ids)))
+        appdata_uids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.AppData.value, uids)))
+        userdata_uids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.UserData.value, uids)))
+        pali_words_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "pali_words", uids)))
+        pali_roots_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "pali_roots", uids)))
 
         res = self._app_data.db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.id.in_(appdata_ids)) \
+            .filter(Am.DictWord.uid.in_(appdata_uids)) \
             .all()
         results.extend(res)
 
         res = self._app_data.db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.id.in_(userdata_ids)) \
+            .filter(Um.DictWord.uid.in_(userdata_uids)) \
             .all()
         results.extend(res)
 
         res = self._app_data.db_session \
             .query(Dpd.PaliWord) \
-            .filter(Dpd.PaliWord.id.in_(dpd_ids)) \
+            .filter(Dpd.PaliWord.uid.in_(pali_words_uids)) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid.in_(pali_roots_uids)) \
             .all()
         results.extend(res)
 

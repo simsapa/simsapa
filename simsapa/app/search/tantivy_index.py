@@ -15,10 +15,10 @@ from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
 from simsapa.app.types import SearchArea, SearchParams
 
-from simsapa.app.dpd_render import pali_word_index_plaintext
+from simsapa.app.dpd_render import pali_root_index_plaintext, pali_word_index_plaintext
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
 
 # A Score(f32) or an Order(u64)
 TantivyFruit = Union[float, int]
@@ -54,10 +54,9 @@ def tantivy_sutta_doc_to_search_result(x: tantivy.Document,
                                        score: Optional[float] = None,
                                        rank: Optional[int] = None) -> SearchResult:
     return SearchResult(
-        db_id = x['db_id'][0],
+        uid = x['uid'][0],
         schema_name = x['schema_name'][0],
         table_name = 'suttas',
-        uid = x['uid'][0],
         source_uid = x['source_uid'][0],
         title = x['title'][0] if 'title' in x.keys() else '',
         ref = x['ref'][0] if 'ref' in x.keys() else '',
@@ -74,10 +73,9 @@ def tantivy_dict_word_doc_to_search_result(x: tantivy.Document,
                                            score: Optional[float] = None,
                                            rank: Optional[int] = None) -> SearchResult:
     return SearchResult(
-        db_id = x['db_id'][0],
-        schema_name = x['schema_name'][0],
-        table_name = 'dict_words',
         uid = x['uid'][0],
+        schema_name = x['schema_name'][0],
+        table_name = x['table_name'][0],
         source_uid = x['source_uid'][0],
         title = x['word'][0] if 'word' in x.keys() else '',
         ref = None,
@@ -112,9 +110,9 @@ def suttas_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy
 def dict_words_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy.Schema:
     tk = content_tokenizer_name
     builder = tantivy.SchemaBuilder()
-    builder.add_integer_field("db_id",    stored=True)
     builder.add_text_field("index_key",   stored=True, tokenizer_name="raw")
     builder.add_text_field("schema_name", stored=True, tokenizer_name="raw")
+    builder.add_text_field("table_name",  stored=True, tokenizer_name="raw")
     builder.add_text_field("uid",         stored=True, tokenizer_name="simple_fold")
     builder.add_text_field("language",    stored=True, tokenizer_name="raw")
     builder.add_text_field("source_uid",  stored=True, tokenizer_name="raw")
@@ -642,6 +640,13 @@ class TantivySearchIndexes:
                 words: List[UDictWord] = self.db_session \
                     .query(Dpd.PaliWord) \
                     .all()
+
+                self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
+
+                words: List[UDictWord] = self.db_session \
+                    .query(Dpd.PaliRoot) \
+                    .all()
+
                 self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
 
     def open_all(self, remove_if_exists: bool = False):
@@ -805,7 +810,13 @@ class TantivySearchIndexes:
                     logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
 
                 if i.source_uid == "dpd":
-                    text = pali_word_index_plaintext(i)
+                    if isinstance(i, Dpd.PaliWord):
+                        text = pali_word_index_plaintext(i)
+                    elif isinstance(i, Dpd.PaliRoot):
+                        text = pali_root_index_plaintext(i)
+                    else:
+                        raise Exception(f"Unrecognized word type: {i}")
+
                     content = compact_plain_text(text)
 
                 elif i.definition_html is not None and len(i.definition_html.strip()) > 0:
@@ -832,6 +843,8 @@ class TantivySearchIndexes:
                 else:
                     dict_type = "stardict"
 
+                # FIXME handle dict_type "custom"
+
                 # Add word and synonyms to content field so a single query will match
                 if i.word is not None:
                     content = f"{i.word} {content}"
@@ -842,9 +855,9 @@ class TantivySearchIndexes:
                     content = f"{content} {i.synonyms}"
 
                 writer.add_document(tantivy.Document(
-                    index_key = f"{db_schema_name}:dict_words:{i.uid}",
-                    db_id = i.id,
+                    index_key = f"{db_schema_name}:{i.__tablename__}:{i.uid}",
                     schema_name = db_schema_name,
+                    table_name = i.__tablename__,
                     uid = i.uid,
                     language = language,
                     source_uid = source_uid,

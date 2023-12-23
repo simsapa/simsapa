@@ -17,7 +17,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.layouts.html_content import page_tmpl
 
-from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, pali_word_dpd_html
+from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, pali_root_dpd_html, pali_word_dpd_html
 
 class ResultHtml(TypedDict):
     body: str
@@ -57,6 +57,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
                 .all()
             results.extend(res)
 
+            res = self.db_session \
+                .query(Dpd.PaliRoot) \
+                .filter(Dpd.PaliRoot.uid == uid) \
+                .all()
+            results.extend(res)
+
         else:
 
             res = self.db_session \
@@ -77,6 +83,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
                 .all()
             results.extend(res)
 
+            res = self.db_session \
+                .query(Dpd.PaliRoot) \
+                .filter(Dpd.PaliRoot.uid.like(f"{uid}/%")) \
+                .all()
+            results.extend(res)
+
         return results
 
     def dict_word_from_result(self, x: SearchResult) -> Optional[UDictWord]:
@@ -93,10 +105,19 @@ class DictionaryQueries(DictionaryQueriesInterface):
                                  .first()
 
         elif x['schema_name'] == DbSchemaName.Dpd.value:
-            word = self.db_session \
-                                 .query(Dpd.PaliWord) \
-                                 .filter(Dpd.PaliWord.id == x['db_id']) \
-                                 .first()
+            if x['table_name'] == "pali_words":
+                word = self.db_session \
+                           .query(Dpd.PaliWord) \
+                           .filter(Dpd.PaliWord.uid == x['uid']) \
+                           .first()
+
+            elif x['table_name'] == "pali_roots":
+                word = self.db_session \
+                           .query(Dpd.PaliRoot) \
+                           .filter(Dpd.PaliRoot.uid == x['uid']) \
+                           .first()
+            else:
+                raise Exception(f"Unknown table_name: {x['table_name']}")
 
         else:
             raise Exception(f"Unknown schema_name: {x['schema_name']}")
@@ -129,7 +150,7 @@ class DictionaryQueries(DictionaryQueriesInterface):
         sums['js'] = []
 
         if len(words) == 1:
-            open_details = [DetailsTab.Inflections]
+            open_details = [DetailsTab.Inflections, DetailsTab.RootInfo]
         else:
             open_details = []
 
@@ -204,7 +225,7 @@ class DictionaryQueries(DictionaryQueriesInterface):
         return s.replace("'", "\\'")
 
     def word_heading(self, w: UDictWord) -> str:
-        el_id_key = f"{w.metadata.schema}_{w.id}"
+        el_id_key = f"{w.metadata.schema}_{w.uid}"
         transient_id = f"transient-messages_{el_id_key}"
 
         tmpl = DPD_PALI_WORD_TEMPLATES.dpd_word_heading_simsapa_templ
@@ -223,7 +244,12 @@ class DictionaryQueries(DictionaryQueriesInterface):
 
         if word.metadata.schema == DbSchemaName.Dpd:
 
-            res = pali_word_dpd_html(word, open_details)
+            if isinstance(word, Dpd.PaliWord):
+                res = pali_word_dpd_html(word, open_details)
+            elif isinstance(word, Dpd.PaliRoot):
+                res = pali_root_dpd_html(word, open_details)
+            else:
+                raise Exception(f"Unrecognized word type: {word}")
 
             definition = res['definition_html']
 
@@ -292,7 +318,13 @@ class DictionaryQueries(DictionaryQueriesInterface):
         if len(examples) > 0:
             body += "<div class=\"word-examples\">%s</div>" % examples
 
-        body = '<div class="word-block">' + self.word_heading(word) + body + '</div>'
+        classes = ["word-block"]
+        if isinstance(word, Dpd.PaliWord):
+            classes.append("pali-word")
+        elif isinstance(word, Dpd.PaliRoot):
+            classes.append("pali-root")
+
+        body = f'<div class="{" ".join(classes)}">' + self.word_heading(word) + body + '</div>'
 
         return ResultHtml(
             body = body,
@@ -301,9 +333,10 @@ class DictionaryQueries(DictionaryQueriesInterface):
         )
 
 class ExactQueryResult(TypedDict):
-    appdata_ids: List[int]
-    userdata_ids: List[int]
-    dpd_ids: List[int]
+    appdata_uids: List[str]
+    userdata_uids: List[str]
+    pali_words_uids: List[str]
+    pali_roots_uids: List[str]
     add_recent: bool
 
 class ExactQueryWorkerSignals(QObject):
@@ -395,18 +428,22 @@ class ExactQueryWorker(QRunnable):
             res = list(filter(_is_match, res))
 
             a = filter(lambda x: x.metadata.schema == DbSchemaName.AppData.value, res)
-            appdata_ids = list(map(lambda x: x.id, a))
+            appdata_uids = list(map(lambda x: x.uid, a))
 
             a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
-            userdata_ids = list(map(lambda x: x.id, a))
+            userdata_uids = list(map(lambda x: x.uid, a))
 
-            a = filter(lambda x: x.metadata.schema == DbSchemaName.Dpd.value, res)
-            dpd_ids = list(map(lambda x: x.id, a))
+            a = filter(lambda x: x.__tablename__ == "pali_words", res)
+            pali_words_uids = list(map(lambda x: x.uid, a))
+
+            a = filter(lambda x: x.__tablename__ == "pali_roots", res)
+            pali_roots_uids = list(map(lambda x: x.uid, a))
 
             ret = ExactQueryResult(
-                appdata_ids = appdata_ids,
-                userdata_ids = userdata_ids,
-                dpd_ids = dpd_ids,
+                appdata_uids = appdata_uids,
+                userdata_uids = userdata_uids,
+                pali_words_uids = pali_words_uids,
+                pali_roots_uids = pali_roots_uids,
                 add_recent = self.add_recent,
             )
 

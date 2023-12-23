@@ -255,6 +255,7 @@ class DetailsTab(str, Enum):
     SetFamily = "Set Family"
     FrequencyMap = "Frequency Map"
     Feedback = "Feedback"
+    RootInfo = "Root Info"
 
 class QueryType(str, Enum):
     suttas = "suttas"

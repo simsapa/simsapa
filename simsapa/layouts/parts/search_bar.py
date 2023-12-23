@@ -529,12 +529,21 @@ QWidget:focus { border: 1px solid #1092C3; }
                     res.append(r)
 
             elif i['schema_name'] == DbSchemaName.Dpd.value:
-                r = self._app_data.db_session \
-                    .query(Dpd.PaliWord) \
-                    .filter(Dpd.PaliWord.id == i['db_id']) \
-                    .first()
-                if r is not None:
-                    res.append(r)
+                if i['table_name'] == "pali_words":
+                    r = self._app_data.db_session \
+                        .query(Dpd.PaliWord) \
+                        .filter(Dpd.PaliWord.uid == i['uid']) \
+                        .first()
+                    if r is not None:
+                        res.append(r)
+
+                elif i['table_name'] == "pali_roots":
+                    r = self._app_data.db_session \
+                        .query(Dpd.PaliRoot) \
+                        .filter(Dpd.PaliRoot.uid == i['uid']) \
+                        .first()
+                    if r is not None:
+                        res.append(r)
 
             else:
                 raise Exception(f"Unknown schema_name: {i['schema_name']}")

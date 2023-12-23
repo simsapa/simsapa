@@ -592,6 +592,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             .all()
         results.extend(res)
 
+        res = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid == uid) \
+            .all()
+        results.extend(res)
+
         if len(results) > 0:
             self._app_data.dict_word_to_open = results[0]
             self.pw.action_Dictionary_Search.activate(QAction.ActionEvent.Trigger)

@@ -2,23 +2,39 @@
 
 import re
 
-from css_html_js_minify import css_minify, js_minify
+# from css_html_js_minify import css_minify, js_minify
 from mako.template import Template
-from minify_html import minify
-from rich import print
+# from minify_html import minify
+# from rich import print
 from typing import Dict, Tuple, List
 
 from sqlalchemy.orm import Session
+from simsapa import DetailsTab
 
-from export_dpd import render_header_templ
+from simsapa.dpd_db.exporter.export_dpd import render_header_templ
 
-from helpers import TODAY
-from db.models import PaliRoot, FamilyRoot
-from tools.niggahitas import add_niggahitas
-from tools.pali_sort_key import pali_sort_key
-from tools.paths import ProjectPaths
-from tools.tic_toc import bip, bop
-from tools.utils import RenderResult, RenderedSizes, default_rendered_sizes
+from simsapa.dpd_db.exporter.helpers import TODAY
+from simsapa.app.db.dpd_models import PaliRoot, FamilyRoot
+from simsapa.dpd_db.tools.niggahitas import add_niggahitas
+from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
+from simsapa.dpd_db.tools.paths import ProjectPaths
+# from tools.tic_toc import bip, bop
+from simsapa.dpd_db.tools.utils import RenderResult, RenderedSizes, default_rendered_sizes
+
+def css_minify(text: str) -> str:
+    return text
+
+def js_minify(text: str) -> str:
+    return text
+
+def minify(text: str) -> str:
+    return text
+
+def bip():
+    pass
+
+def bop():
+    pass
 
 
 def generate_root_html(db_session: Session,
@@ -123,10 +139,13 @@ def generate_root_html(db_session: Session,
     return root_data_list, size_dict
 
 
-def render_root_definition_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dict):
+def render_root_definition_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dict: Dict[str, int], plaintext = False):
     """render html of main root info"""
 
-    root_definition_templ = Template(filename=str(pth.root_definition_templ_path))
+    if plaintext:
+        root_definition_templ = Template(filename=str(pth.root_definition_templ_path))
+    else:
+        root_definition_templ = Template(filename=str(pth.root_definition_plaintext_templ_path))
 
     count = roots_count_dict[r.root]
 
@@ -136,8 +155,10 @@ def render_root_definition_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dic
             count=count,
             today=TODAY))
 
-
-def render_root_buttons_templ(pth: ProjectPaths, r: PaliRoot, db_session: Session):
+def render_root_buttons_templ(pth: ProjectPaths,
+                              r: PaliRoot,
+                              db_session: Session,
+                              open_details: List[DetailsTab] = []):
     """render html of root buttons"""
 
     root_buttons_templ = Template(filename=str(pth.root_button_templ_path))
@@ -149,20 +170,29 @@ def render_root_buttons_templ(pth: ProjectPaths, r: PaliRoot, db_session: Sessio
 
     frs = sorted(frs, key=lambda x: pali_sort_key(x.root_family))
 
+    root_info_active = "active" if DetailsTab.RootInfo in open_details else ""
+
     return str(
         root_buttons_templ.render(
+            root_info_active=root_info_active,
             r=r,
             frs=frs))
 
 
-def render_root_info_templ(pth: ProjectPaths, r: PaliRoot):
+def render_root_info_templ(pth: ProjectPaths, r: PaliRoot, open_details: List[DetailsTab] = [], plaintext = False):
     """render html of root grammatical info"""
 
-    root_info_templ = Template(filename=str(pth.root_info_templ_path))
+    if plaintext:
+        root_info_templ = Template(filename=str(pth.root_info_templ_path))
+    else:
+        root_info_templ = Template(filename=str(pth.root_info_plaintext_templ_path))
+
+    hidden = "hidden" if DetailsTab.RootInfo not in open_details else ""
 
     return str(
         root_info_templ.render(
             r=r,
+            hidden=hidden,
             today=TODAY))
 
 
@@ -199,4 +229,5 @@ def render_root_families_templ(pth: ProjectPaths, r: PaliRoot, db_session: Sessi
         root_families_templ.render(
             r=r,
             frs=frs,
+            hidden="hidden",
             today=TODAY))

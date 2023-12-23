@@ -10,11 +10,13 @@ from simsapa import DbSchemaName
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.helpers import strip_html
 from simsapa.app.pali_stemmer import pali_stem
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
+UDpdWord = Union[Dpd.PaliWord, Dpd.PaliRoot]
 
 # TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
 class Labels(TypedDict):
@@ -22,13 +24,11 @@ class Labels(TypedDict):
     userdata: List[str]
 
 class SearchResult(TypedDict):
-    # database id
-    db_id: int
+    uid: str
     # database schema name (appdata or userdata)
     schema_name: str
     # database table name (e.g. suttas or dict_words)
     table_name: str
-    uid: Optional[str]
     source_uid: Optional[str]
     title: str
     ref: Optional[str]
@@ -43,10 +43,9 @@ class SearchResult(TypedDict):
 
 def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
     return SearchResult(
-        db_id = int(str(x.id)),
+        uid = str(x.uid),
         schema_name = x.metadata.schema,
         table_name = 'suttas',
-        uid = str(x.uid),
         source_uid = str(x.source_uid),
         title = str(x.title) if x.title else '',
         ref = str(x.sutta_ref) if x.sutta_ref else '',
@@ -60,29 +59,11 @@ def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
 
 def dict_word_to_search_result(x: UDictWord, snippet: str) -> SearchResult:
     return SearchResult(
-        db_id = int(str(x.id)),
-        schema_name = x.metadata.schema,
-        table_name = 'dict_words',
         uid = str(x.uid),
+        schema_name = x.metadata.schema,
+        table_name = x.__tablename__,
         source_uid = str(x.source_uid),
         title = str(x.word),
-        ref = None,
-        nikaya = None,
-        author = None,
-        snippet = snippet,
-        page_number = None,
-        score = None,
-        rank = None,
-    )
-
-def dpd_pali_word_to_search_result(x: Dpd.PaliWord, snippet: str) -> SearchResult:
-    return SearchResult(
-        db_id = int(str(x.id)),
-        schema_name = 'dpd',
-        table_name = 'pali_words',
-        uid = str(x.uid),
-        source_uid = 'dpd',
-        title = str(x.pali_1),
         ref = None,
         nikaya = None,
         author = None,
@@ -238,25 +219,41 @@ def dpd_deconstructor_query(db_session: Session, query_text: str) -> List[Dpd.Pa
 
     return list(pali_words.values())
 
-def _parse_words(words_res: List[Dpd.PaliWord], do_pali_sort = False) -> List[SearchResult]:
-    uniq_pali_1 = []
-    uniq_words: List[Dpd.PaliWord] = []
+def root_info_clean_plaintext(html: str) -> str:
+    s = strip_html(html)
+    s = s.replace("･", " ")
+    s = s.replace("Pāḷi Root:", "")
+    s = re.sub(r"Bases:.*$", "", s, flags=re.DOTALL)
+    return s
+
+def _parse_words(words_res: List[UDpdWord], do_pali_sort = False) -> List[SearchResult]:
+    uniq_pali = []
+    uniq_words: List[UDpdWord] = []
     for i in words_res:
-        if i.pali_1 not in uniq_pali_1:
-            uniq_pali_1.append(i.pali_1)
+        if i.word not in uniq_pali:
+            uniq_pali.append(i.word)
             uniq_words.append(i)
 
     res_page = []
 
     if do_pali_sort:
-        pali_words = sorted(uniq_words, key=lambda x: pali_sort_key(x.pali_1))
+        pali_words = sorted(uniq_words, key=lambda x: pali_sort_key(x.word))
     else:
         pali_words = uniq_words
 
     for w in pali_words:
-        snippet = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
-        snippet += f"<br><i>{w.grammar}</i>"
-        r = dpd_pali_word_to_search_result(w, snippet)
+        if isinstance(w, Dpd.PaliWord):
+            snippet = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
+            snippet += f"<br><i>{strip_html(w.grammar)}</i>"
+
+        elif isinstance(w, Dpd.PaliRoot):
+            snippet = w.root_meaning
+            snippet += f"<br><i>{root_info_clean_plaintext(w.root_info)}</i>"
+
+        else:
+            raise Exception(f"Unrecognized word type: {w}")
+
+        r = dict_word_to_search_result(w, snippet)
         res_page.append(r)
 
     return res_page
@@ -265,15 +262,22 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     query_text = query_text.lower()
     query_text = re.sub("[’']ti$", "ti", query_text)
 
-    res: List[Dpd.PaliWord] = []
+    res: List[UDpdWord] = []
 
     # Query text may be a DPD id number or uid.
-    query_text = query_text.replace("/dpd", "")
-    if query_text.isdigit():
-        r = db_session.query(Dpd.PaliWord) \
-                      .filter(Dpd.PaliWord.id == int(query_text)) \
-                      .first()
-        res.append(r)
+    if query_text.endswith("/dpd"):
+        ref = query_text.replace("/dpd", "")
+        if ref.isdigit():
+            r = db_session.query(Dpd.PaliWord) \
+                        .filter(Dpd.PaliWord.id == int(ref)) \
+                        .first()
+            res.append(r)
+
+        else:
+            r = db_session.query(Dpd.PaliRoot) \
+                        .filter(Dpd.PaliRoot.uid == query_text) \
+                        .first()
+            res.append(r)
 
     if len(res) > 0:
         return _parse_words(res)
@@ -282,6 +286,13 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     r = db_session.query(Dpd.PaliWord) \
                     .filter(or_(Dpd.PaliWord.pali_clean == query_text,
                                 Dpd.PaliWord.word_ascii == query_text)) \
+                    .all()
+    res.extend(r)
+
+    r = db_session.query(Dpd.PaliRoot) \
+                    .filter(or_(Dpd.PaliRoot.root_clean == query_text,
+                                Dpd.PaliRoot.root_no_sign == query_text,
+                                Dpd.PaliRoot.word_ascii == query_text)) \
                     .all()
     res.extend(r)
 
@@ -304,7 +315,7 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
         res.extend(dpd_deconstructor_query(db_session, query_text))
 
     if len(res) == 0:
-        # - no exact match in pali_words
+        # - no exact match in pali_words or pali_roots
         # - not in i2h
         # - not in deconstructor.
         #
@@ -327,24 +338,34 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
 
     return _parse_words(res, do_pali_sort)
 
-def get_word_for_schema_and_id(db_session: Session, db_schema: str, db_id: int) -> UDictWord:
+def get_word_for_schema_table_and_uid(db_session: Session, db_schema: str, db_table: str, db_uid: str) -> UDictWord:
     if db_schema == DbSchemaName.AppData.value:
         w = db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.id == db_id) \
+            .filter(Am.DictWord.uid == db_uid) \
             .first()
 
     elif db_schema == DbSchemaName.UserData.value:
         w = db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.id == db_id) \
+            .filter(Um.DictWord.uid == db_uid) \
             .first()
 
     elif db_schema == DbSchemaName.Dpd.value:
-        w = db_session \
-            .query(Dpd.PaliWord) \
-            .filter(Dpd.PaliWord.id == db_id) \
-            .first()
+        if db_table == "pali_words":
+            w = db_session \
+                .query(Dpd.PaliWord) \
+                .filter(Dpd.PaliWord.uid == db_uid) \
+                .first()
+
+        elif db_table == "pali_roots":
+            w = db_session \
+                .query(Dpd.PaliRoot) \
+                .filter(Dpd.PaliRoot.uid == db_uid) \
+                .first()
+
+        else:
+            raise Exception(f"Unknown table: {db_table}")
 
     else:
         raise Exception(f"Unknown schema: {db_schema}")
@@ -359,7 +380,7 @@ def get_word_gloss(w: UDictWord, gloss_keys_csv: str) -> str:
     if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
         return "<p>Gloss only works for DPD words</p>"
 
-    elif isinstance(w, Dpd.PaliWord):
+    elif isinstance(w, Dpd.PaliWord) or isinstance(w, Dpd.PaliRoot):
         html = "<table><tr><td>"
 
         data = w.as_dict
@@ -369,6 +390,8 @@ def get_word_gloss(w: UDictWord, gloss_keys_csv: str) -> str:
             k = k.strip()
             if k in data.keys():
                 values.append(str(data[k]))
+            else:
+                values.append('')
 
         html += "</td><td>".join(values)
 
@@ -382,3 +405,9 @@ def get_word_meaning(w: UDictWord) -> str:
 
     elif isinstance(w, Dpd.PaliWord):
         return w.meaning_1 if w.meaning_1 != "" else w.meaning_2
+
+    elif isinstance(w, Dpd.PaliRoot):
+        return w.root_meaning
+
+    else:
+        raise Exception(f"Unrecognized word type: {w}")

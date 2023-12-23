@@ -14,7 +14,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_pali_word_to_search_result, dpd_lookup, sutta_to_search_result
+from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_lookup, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class SearchQueryTask:
@@ -349,6 +349,9 @@ class SearchQueryTask:
         return list(map(self._db_word_to_result, res))
 
     def dpd_id_word(self) -> List[SearchResult]:
+        if not self.query_text.isdigit():
+            return []
+
         dpd_id = int(self.query_text)
 
         db_eng, db_conn, db_session = get_db_engine_connection_session()
@@ -362,7 +365,7 @@ class SearchQueryTask:
         if dpd_word is not None:
             snippet = dpd_word.meaning_1 if dpd_word.meaning_1 else ""
 
-            res = dpd_pali_word_to_search_result(dpd_word, snippet)
+            res = dict_word_to_search_result(dpd_word, snippet)
             res_page.append(res)
 
         db_conn.close()

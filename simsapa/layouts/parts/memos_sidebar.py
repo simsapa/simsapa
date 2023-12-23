@@ -13,6 +13,7 @@ from simsapa import DbSchemaName, logger
 # from ..app.file_doc import FileDoc
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.types import USutta, UDictWord, UMemo
 from simsapa.app.app_data import AppData
@@ -176,13 +177,20 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         elif schema == DbSchemaName.Dpd.value:
 
-            res = self._app_data.db_session \
-                                .query(Um.MemoAssociation) \
-                                .filter(
-                                    Um.MemoAssociation.associated_table == 'dpd.pali_words',
-                                    Um.MemoAssociation.associated_id == word.id) \
-                                .all()
-            um_assoc.extend(res)
+            if isinstance(word, Dpd.PaliWord):
+                res = self._app_data.db_session \
+                                    .query(Um.MemoAssociation) \
+                                    .filter(
+                                        Um.MemoAssociation.associated_table == 'dpd.pali_words',
+                                        Um.MemoAssociation.associated_id == word.id) \
+                                    .all()
+                um_assoc.extend(res)
+
+            elif isinstance(word, Dpd.PaliRoot):
+                logger.warn("FIXME memos for PaliRoot")
+
+            else:
+                raise Exception(f"Unknown word type: {word}")
 
         else:
             raise Exception(f"Unknown schema: {schema}")

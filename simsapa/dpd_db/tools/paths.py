@@ -122,8 +122,10 @@ class ProjectPaths:
 
         # # root templates
         self.root_definition_templ_path = self.templates_dir.joinpath(Path("root_definition.html"))
+        self.root_definition_plaintext_templ_path = self.templates_dir.joinpath(Path("root_definition.txt"))
         self.root_button_templ_path = self.templates_dir.joinpath(Path("root_buttons.html"))
         self.root_info_templ_path = self.templates_dir.joinpath(Path("root_info.html"))
+        self.root_info_plaintext_templ_path = self.templates_dir.joinpath(Path("root_info.txt"))
         self.root_matrix_templ_path = self.templates_dir.joinpath(Path("root_matrix.html"))
         self.root_families_templ_path = self.templates_dir.joinpath(Path("root_families.html"))
 

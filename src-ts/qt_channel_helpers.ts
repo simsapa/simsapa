@@ -10,13 +10,13 @@ function copy_word(word_text: string, msg_div_id: string) {
     h.show_transient_message("Copied: " + word_text, msg_div_id);
 }
 
-function copy_meaning(db_schema: string, db_id: number, msg_div_id: string) {
-    document.qt_channel.objects.helper.emit_copy_meaning(db_schema, db_id);
+function copy_meaning(db_schema: string, db_table: string, db_uid: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_meaning(db_schema, db_table, db_uid);
     h.show_transient_message("Copied: meaning", msg_div_id);
 }
 
-function copy_gloss(db_schema: string, db_id: number, gloss_keys: string, msg_div_id: string) {
-    document.qt_channel.objects.helper.emit_copy_gloss(db_schema, db_id, gloss_keys);
+function copy_gloss(db_schema: string, db_table: string, db_uid: string, gloss_keys: string, msg_div_id: string) {
+    document.qt_channel.objects.helper.emit_copy_gloss(db_schema, db_table, db_uid, gloss_keys);
     h.show_transient_message("Copied: gloss line as table row", msg_div_id);
 }
 

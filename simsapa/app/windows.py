@@ -133,8 +133,8 @@ class AppWindows:
                     self.open_sutta_new(uid = msg['data'])
 
                 elif msg['action'] == ApiAction.open_words_new:
-                    schemas_ids = json.loads(msg['data'])
-                    self.open_words_new(schemas_ids)
+                    schemas_tables_uids = json.loads(msg['data'])
+                    self.open_words_new(schemas_tables_uids)
 
                 elif msg['action'] == ApiAction.open_in_study_window:
                     self._show_sutta_by_uid_in_side(msg)
@@ -254,9 +254,9 @@ class AppWindows:
         view = SuttaWindow(self._app_data, uid)
         self._finalize_view(view)
 
-    def open_words_new(self, schemas_ids: List[tuple[str, int]]):
+    def open_words_new(self, schemas_tables_uids: List[tuple[str, str, str]]):
         from simsapa.layouts.words_window import WordsWindow
-        view = WordsWindow(self._app_data, schemas_ids)
+        view = WordsWindow(self._app_data, schemas_tables_uids)
         self._finalize_view(view)
 
     def _new_windowed_preview(self):

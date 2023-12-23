@@ -8,7 +8,7 @@ from mako.template import Template
 # from minify_html import minify
 # from rich import print
 from sqlalchemy import and_
-from typing import List, Set, TypedDict, Tuple
+from typing import Dict, List, Set, TypedDict, Tuple
 from multiprocessing.managers import ListProxy
 from multiprocessing import Process, Manager
 
@@ -139,6 +139,7 @@ class PaliWordRenderData(TypedDict):
     word_templates: PaliWordTemplates
     sandhi_contractions: SandhiContractions
     cf_set: Set[str]
+    roots_count_dict: Dict[str, int]
     make_link: bool
 
 def render_pali_word_dpd_html(db_parts: PaliWordDbParts,
@@ -351,6 +352,8 @@ def generate_dpd_html(
             word_templates = word_templates,
             sandhi_contractions = sandhi_contractions,
             cf_set = cf_set,
+            # Not needed for PaliWord rendering.
+            roots_count_dict = dict(),
             make_link = make_link,
         )
 

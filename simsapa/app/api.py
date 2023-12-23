@@ -131,6 +131,12 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
         .all()
     results.extend(res)
 
+    res = db_session \
+        .query(Dpd.PaliRoot) \
+        .filter(Dpd.PaliRoot.uid == uid) \
+        .all()
+    results.extend(res)
+
     db_conn.close()
     db_session.close()
     db_eng.dispose()
@@ -250,20 +256,23 @@ def dpd_search():
     app_db_eng, app_db_conn, app_db_session = get_db_engine_connection_session()
     dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
 
-    query_text = data['query_text'].strip()
+    query_text: str = data['query_text'].strip()
 
     dpd_id: Optional[int] = None
 
-    try:
+    if query_text.isdigit():
         dpd_id = int(query_text)
-    except Exception:
-        dpd_id = None
 
     dpd_results = []
 
     if dpd_id is None:
         r = dpd_db_session.query(Dpd.PaliWord) \
                           .filter(Dpd.PaliWord.pali_1.like(f"%{query_text}%")) \
+                          .all()
+        dpd_results.extend(r)
+
+        r = dpd_db_session.query(Dpd.PaliRoot) \
+                          .filter(Dpd.PaliRoot.root.like(f"%{query_text}%")) \
                           .all()
         dpd_results.extend(r)
 
@@ -290,6 +299,7 @@ def dpd_word_completion_list():
     dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
 
     res = dpd_db_session.query(Dpd.PaliWord.pali_1).all()
+    res.extend(dpd_db_session.query(Dpd.PaliRoot.root_no_sign).all())
     a: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
     results = sorted(a, key=lambda x: pali_sort_key(x))
 

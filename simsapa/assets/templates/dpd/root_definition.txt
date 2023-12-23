@@ -1,0 +1,1 @@
+root. ${r.root_clean}${r.root_has_verb}${r.root_group} ${r.root_sign} (${r.root_meaning}) ${count}

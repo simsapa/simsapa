@@ -13,7 +13,8 @@ from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, Deta
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.helpers import SearchResult, get_word_for_schema_and_id, get_word_gloss, get_word_meaning
+from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.search.helpers import SearchResult, get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
 
 from simsapa.app.types import SearchArea, UDictWord
 from simsapa.app.app_data import AppData
@@ -161,12 +162,12 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
     def _copy_clipboard_html(self, html: str):
         self._app_data.clipboard_setHtml(html)
 
-    def _copy_gloss(self, db_schema: str, db_id: int, gloss_keys: str):
-        w = get_word_for_schema_and_id(self._app_data.db_session, db_schema, db_id)
+    def _copy_gloss(self, db_schema: str, db_table: str, db_uid: str, gloss_keys: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
         self._copy_clipboard_html(get_word_gloss(w, gloss_keys))
 
-    def _copy_meaning(self, db_schema: str, db_id: int):
-        w = get_word_for_schema_and_id(self._app_data.db_session, db_schema, db_id)
+    def _copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
         self._copy_clipboard_text(get_word_meaning(w))
 
     def _setup_qwe(self):
@@ -450,13 +451,25 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
         r = self._app_data.db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .filter(Am.DictWord.uid.in_(q_res['appdata_uids'])) \
             .all()
         res.extend(r)
 
         r = self._app_data.db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .filter(Um.DictWord.uid.in_(q_res['userdata_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.uid.in_(q_res['pali_words_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid.in_(q_res['pali_roots_uids'])) \
             .all()
         res.extend(r)
 

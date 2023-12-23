@@ -79,12 +79,16 @@ class PaliRoot(Base):
     pw: Mapped[List["PaliWord"]] = relationship(
         back_populates="rt")
 
+    # NOTE: In Simsapa we save these to the db.
+    root_clean: Mapped[str] = mapped_column(default='')
+    root_no_sign: Mapped[str] = mapped_column(default='')
+
     @property
-    def root_clean(self) -> str:
+    def calc_root_clean(self) -> str:
         return re.sub(r" \d.*$", "", self.root)
 
     @property
-    def root_no_sign(self) -> str:
+    def calc_root_no_sign(self) -> str:
         return re.sub(r"\d| |√", "", self.root)
 
     @property
@@ -127,6 +131,84 @@ class PaliRoot(Base):
     def __repr__(self) -> str:
         return f"""PaliRoot: {self.root} {self.root_group} {self.root_sign} ({self.root_meaning})"""
 
+    # === Used in Simsapa ===
+
+    dictionary_id: Mapped[int] = mapped_column(nullable=False)
+
+    uid: Mapped[str] = mapped_column(unique=True)
+    word_ascii: Mapped[str]
+
+    @property
+    def as_dict(self) -> Dict[str, Any]:
+        keys = ['root', 'root_in_comps', 'root_has_verb', 'root_group',
+                'root_sign', 'root_meaning', 'sanskrit_root',
+                'sanskrit_root_meaning', 'sanskrit_root_class', 'root_example',
+                'dhatupatha_num', 'dhatupatha_root', 'dhatupatha_pali',
+                'dhatupatha_english', 'dhatumanjusa_num', 'dhatumanjusa_root',
+                'dhatumanjusa_pali', 'dhatumanjusa_english', 'dhatumala_root',
+                'dhatumala_pali', 'dhatumala_english', 'panini_root',
+                'panini_sanskrit', 'panini_english', 'note', 'matrix_test',
+                'root_info', 'root_matrix', 'root_clean', 'root_no_sign',
+                'dictionary_id', 'uid', 'word_ascii']
+
+        d: Dict[str, Any] = dict()
+
+        for k in keys:
+            if k not in self.__dict__.keys():
+                raise Exception(f"Key not found in Dpd.PaliRoot: {k}")
+            d[k] = self.__dict__[k]
+
+        return d
+
+    # Properties for compatibility with DictWord, when used in a Union.
+
+    @property
+    def word(self) -> str:
+        return self.root
+
+    @property
+    def language(self) -> str:
+        return "en"
+
+    @property
+    def source_uid(self) -> str:
+        return "dpd"
+
+    @property
+    def word_nom_sg(self) -> str:
+        return ""
+
+    @property
+    def inflections(self) -> str:
+        return ""
+
+    @property
+    def transliteration(self) -> str:
+        return ""
+
+    @property
+    def meaning_order(self) -> int:
+        return 1
+
+    @property
+    def definition_plain(self) -> str:
+        return ""
+
+    @property
+    def definition_html(self) -> str:
+        return ""
+
+    @property
+    def summary(self) -> str:
+        return ""
+
+    @property
+    def examples(self) -> list:
+        return []
+
+    @property
+    def synonyms(self) -> list:
+        return []
 
 class PaliWord(Base):
     __tablename__ = "pali_words"
@@ -302,7 +384,6 @@ class PaliWord(Base):
 
     uid: Mapped[str] = mapped_column(unique=True)
     word_ascii: Mapped[str]
-    pali_clean: Mapped[str]
 
     @property
     def as_dict(self) -> Dict[str, Any]:
@@ -314,7 +395,7 @@ class PaliWord(Base):
                 'compound_construction', 'non_root_in_comps', 'source_1', 'sutta_1',
                 'example_1', 'source_2', 'sutta_2', 'example_2', 'antonym', 'synonym',
                 'variant', 'commentary', 'notes', 'cognate', 'link', 'origin', 'stem',
-                'pattern',]
+                'pattern', 'pali_clean', 'dictionary_id', 'uid', 'word_ascii']
 
         d: Dict[str, Any] = dict()
 
@@ -324,6 +405,8 @@ class PaliWord(Base):
             d[k] = self.__dict__[k]
 
         return d
+
+    # Properties for compatibility with DictWord, when used in a Union.
 
     @property
     def word(self) -> str:
