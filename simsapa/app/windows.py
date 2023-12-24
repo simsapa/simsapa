@@ -8,7 +8,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, IS_MAC, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
@@ -93,6 +93,18 @@ class AppWindows:
             self._init_main_windows()
 
         logger.profile("AppWindows::_init_tasks(): end")
+
+        msg = """
+==============================================================
+==                                                          ==
+==  Simsapa is now running. Minimize this terminal window,  ==
+==  but don't close it (which would also close Simsapa).    ==
+==                                                          ==
+==============================================================
+        """.strip()
+
+        if IS_MAC:
+            print("\n\n" + msg)
 
     def handle_messages(self):
         try:
