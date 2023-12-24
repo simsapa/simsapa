@@ -1,9 +1,10 @@
 import sys
 import re
-from typing import Optional
+from typing import Callable, List, Optional
 from pathlib import Path
 import roman
 import tomlkit
+from bs4 import BeautifulSoup, Tag
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
@@ -14,7 +15,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db_helpers import find_or_create_db
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import normalize_sutta_ref
+from simsapa.app.helpers import compact_rich_text, normalize_sutta_ref, pali_to_ascii, strip_html, word_uid
 from simsapa.app.types import UMultiRef
 
 def get_db_session(db_path: Path) -> Session:
@@ -278,3 +279,87 @@ def get_db_version_pyproject() -> str:
         sys.exit(1)
 
     return ver
+
+def check_and_fix_dict_word_uid(db_session: Session, i: Am.DictWord):
+    n = 0
+    while True:
+        r = db_session.query(Am.DictWord).filter(Am.DictWord.uid == i.uid).first()
+        if r is not None:
+            if n > 5:
+                print(f"Tried updating the uid {n-1} times for word {i.word}. Exiting.")
+                sys.exit(2)
+
+            name, label = i.uid.split("/")
+            n += 1
+            i.uid = f"{name}-{n}/{label}"
+        else:
+            return
+
+def replace_links_with_bold(soup: BeautifulSoup, tag: Tag):
+    links = tag.select('a')
+    for link in links:
+        bold = soup.new_tag('b')
+        bold.append(link.get_text())
+        link.replace_with(bold)
+
+def get_name_tag_from_long(soup: BeautifulSoup) -> Optional[Tag]:
+    name_tag = soup.select_one('h2')
+    return name_tag
+
+def get_long_definition_blocks(soup: BeautifulSoup, dict: Am.Dictionary) -> Am.DictWord:
+    name_tag = get_name_tag_from_long(soup)
+    assert(name_tag is not None)
+    name = strip_html(name_tag.decode_contents())
+
+    item = soup.select_one('body')
+    assert(item is not None)
+
+    replace_links_with_bold(soup, item)
+
+    item_html = item.decode_contents()
+
+    # Remove the footer
+    item_html = re.sub(r'<hr[^>]*>[\n ]*<p align="center">.*', '', item_html, flags=re.DOTALL)
+
+    word = Am.DictWord(
+        dictionary_id = dict.id,
+        uid = word_uid(name, dict.label.lower()),
+        word = name,
+        word_ascii = pali_to_ascii(name),
+        language = "en",
+        source_uid = dict.label,
+        definition_html = item_html,
+        definition_plain = compact_rich_text(item_html),
+    )
+
+    return word
+
+def get_short_definitions(soup: BeautifulSoup,
+                          dict: Am.Dictionary,
+                          get_name_fn: Callable[[Tag], Optional[str]]) -> List[Am.DictWord]:
+    words: List[Am.DictWord] = []
+
+    list_items = soup.select('body > ul > li')
+    for item in list_items:
+
+        name = get_name_fn(item)
+        if name is None:
+            continue
+
+        replace_links_with_bold(soup, item)
+        item_html = item.decode_contents()
+
+        w = Am.DictWord(
+            dictionary_id = dict.id,
+            uid = word_uid(name, dict.label.lower()),
+            word = name,
+            word_ascii = pali_to_ascii(name),
+            language = "en",
+            source_uid = dict.label,
+            definition_html = item_html,
+            definition_plain = compact_rich_text(item_html),
+        )
+
+        words.append(w)
+
+    return words

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os, sys, glob, re
+import os, sys, glob
 from pathlib import Path
 from typing import List, Optional
 import bs4
@@ -10,7 +10,6 @@ from sqlalchemy.orm.session import Session
 
 from simsapa import logger, DbSchemaName, DictTypeName
 from simsapa.app.db import appdata_models as Am
-from simsapa.app.helpers import compact_rich_text, pali_to_ascii, strip_html, word_uid
 
 import helpers
 
@@ -24,28 +23,9 @@ if s is None or s == "":
 
 BOOTSTRAP_ASSETS_DIR = Path(s)
 
-HTML_DIR = BOOTSTRAP_ASSETS_DIR.joinpath('dppn-palikanon-com/www.palikanon.com/english/pali_names/')
+HTML_DIR = BOOTSTRAP_ASSETS_DIR.joinpath('dppn-palikanon-com-fixed/www.palikanon.com/english/pali_names/')
 
-def check_uid(db_session: Session, i: Am.DictWord):
-    n = 0
-    while True:
-        r = db_session.query(Am.DictWord).filter(Am.DictWord.uid == i.uid).first()
-        if r is not None:
-            if n > 5:
-                print(f"Tried updating the uid {n} times for word {i.word}. Exiting.")
-                sys.exit(2)
-
-            name, label = i.uid.split("/")
-            n += 1
-            i.uid = f"{name}-{n}/{label}"
-        else:
-            return
-
-def get_name_tag_from_long(soup: BeautifulSoup) -> Optional[bs4.Tag]:
-    name_tag = soup.select_one('h2')
-    return name_tag
-
-def get_name_tag_from_list_item(item: bs4.Tag) -> Optional[bs4.Tag]:
+def get_name_from_list_item(item: bs4.Tag) -> Optional[str]:
     # The name can be:
     # <li><b>name</b> ... </li>
     # <li><b><a>name</a></b> ... </li>
@@ -64,84 +44,12 @@ def get_name_tag_from_list_item(item: bs4.Tag) -> Optional[bs4.Tag]:
     else:
         name_tag = item.select_one('li b')
 
-    return name_tag
-
-def get_name_tags_from_short(soup: BeautifulSoup) -> List[bs4.Tag]:
-    tags: List[bs4.Tag] = []
-    list_items = soup.select('body > ul > li')
-    for item in list_items:
-        name_tag = get_name_tag_from_list_item(item)
-        if name_tag is not None:
-            tags.append(name_tag)
-
-    return tags
-
-def replace_links_with_bold(soup: BeautifulSoup, tag: bs4.Tag):
-    links = tag.select('a')
-    for link in links:
-        bold = soup.new_tag('b')
-        bold.append(link.get_text())
-        link.replace_with(bold)
-
-def get_long_definition_blocks(soup: BeautifulSoup, dppn_dict: Am.Dictionary) -> Am.DictWord:
-    name_tag = get_name_tag_from_long(soup)
     assert(name_tag is not None)
-    name = strip_html(name_tag.decode_contents())
+    name = name_tag.decode_contents()
 
-    item = soup.select_one('body')
-    assert(item is not None)
+    return name
 
-    replace_links_with_bold(soup, item)
-
-    item_html = item.decode_contents()
-
-    # Remove the footer
-    item_html = re.sub(r'<hr[^>]*>[\n ]*<p align="center">.*', '', item_html, flags=re.DOTALL)
-
-    word = Am.DictWord(
-        dictionary_id = dppn_dict.id,
-        uid = word_uid(name, dppn_dict.label.lower()),
-        word = name,
-        word_ascii = pali_to_ascii(name),
-        language = "en",
-        source_uid = dppn_dict.label,
-        definition_html = item_html,
-        definition_plain = compact_rich_text(item_html),
-    )
-
-    return word
-
-def get_short_definitions(soup: BeautifulSoup, dppn_dict: Am.Dictionary) -> List[Am.DictWord]:
-    words: List[Am.DictWord] = []
-
-    list_items = soup.select('body > ul > li')
-    for item in list_items:
-
-        name_tag = get_name_tag_from_list_item(item)
-        if name_tag is None:
-            continue
-
-        replace_links_with_bold(soup, item)
-
-        name = name_tag.decode_contents()
-        item_html = item.decode_contents()
-
-        w = Am.DictWord(
-            dictionary_id = dppn_dict.id,
-            uid = word_uid(name, dppn_dict.label.lower()),
-            word = name,
-            word_ascii = pali_to_ascii(name),
-            language = "en",
-            source_uid = dppn_dict.label,
-            definition_html = item_html,
-            definition_plain = compact_rich_text(item_html),
-        )
-
-        words.append(w)
-
-    return words
-
-def parse_name_page(p: Path, dppn_dict: Am.Dictionary) -> List[Am.DictWord]:
+def parse_page(p: Path, dppn_dict: Am.Dictionary) -> List[Am.DictWord]:
     html_text = open(p, 'r', encoding='utf-8').read()
 
     words: List[Am.DictWord] = []
@@ -149,10 +57,10 @@ def parse_name_page(p: Path, dppn_dict: Am.Dictionary) -> List[Am.DictWord]:
     soup = BeautifulSoup(html_text, 'html.parser')
 
     if is_long_definition_page(soup):
-        words.append(get_long_definition_blocks(soup, dppn_dict))
+        words.append(helpers.get_long_definition_blocks(soup, dppn_dict))
 
     else:
-        words.extend(get_short_definitions(soup, dppn_dict))
+        words.extend(helpers.get_short_definitions(soup, dppn_dict, get_name_from_list_item))
 
     return words
 
@@ -204,20 +112,19 @@ def populate_dppn_from_palikanon_com(appdata_db: Session, limit: Optional[int] =
         paths = paths[0:n]
 
     for p in paths:
-        dict_entries = parse_name_page(p, dppn_dict)
+        dict_entries = parse_page(p, dppn_dict)
         words.extend(dict_entries)
 
     logger.info(f"Adding {len(words)} words.")
 
     try:
         for i in words:
-            check_uid(appdata_db, i)
+            helpers.check_and_fix_dict_word_uid(appdata_db, i)
             appdata_db.add(i)
             # Necessary to commit each word in order to check for uid
             # constraint.
             appdata_db.commit()
     except Exception as e:
-        print(f"Error: {e}")
         logger.error(e)
 
 def main():

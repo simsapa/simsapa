@@ -111,7 +111,7 @@ def main():
 
     insert_db_version(appdata_db)
 
-    nyanatiloka.populate_nyanatiloka_dict_words_from_legacy(appdata_db, BOOTSTRAP_ASSETS_DIR, limit)
+    nyanatiloka.populate_nyanatiloka_from_palikanon_com(appdata_db, limit)
 
     for lang in ['en', 'pli']:
         suttacentral.populate_suttas_from_suttacentral(appdata_db, DbSchemaName.AppData, sc_db, SC_DATA_DIR, lang, limit)
