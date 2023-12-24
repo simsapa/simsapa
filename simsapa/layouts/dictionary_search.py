@@ -115,7 +115,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.init_search_bar(wrap_layout            = self.searchbar_layout,
                              search_area            = SearchArea.DictWords,
-                             enable_nav_buttons     = True,
+                             enable_nav_buttons     = False,
                              enable_language_filter = True,
                              enable_search_extras   = True,
                              enable_info_button     = True,
@@ -890,9 +890,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.action_Next_Result \
             .triggered.connect(partial(self._select_next_result))
 
-        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+        if hasattr(self, 'back_recent_button'):
+            self.back_recent_button.clicked.connect(partial(self._select_next_recent))
 
-        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
+            self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
 
         self.action_Reload_Page \
             .triggered.connect(partial(self.reload_page))

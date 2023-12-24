@@ -66,7 +66,9 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
                                         self,
                                         self.searchbar_layout,
                                         self.sutta_tabs_layout,
-                                        self.tabs_layout)
+                                        self.tabs_layout,
+                                        enable_nav_buttons=False)
+
 
         self.page_len = self.s.page_len
 
