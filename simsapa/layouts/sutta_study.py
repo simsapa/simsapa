@@ -254,6 +254,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.splitter.setSizes([2000, 2000, 0, 2000])
 
+        self.sutta_panels[2]['state']._find_panel.setVisible(False)
+
         # Create the panel toggle toolbar.
 
         self.panel_toggle_toolbar = QToolBar(self)
@@ -272,8 +274,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             if is_on:
                 sizes[0] = 2000
                 self.sutta_panels[0]['state'].search_input.setFocus()
+                self.sutta_panels[0]['state']._find_panel.setVisible(True)
             else:
                 sizes[0] = 0
+                self.sutta_panels[0]['state']._find_panel.setVisible(False)
 
             self.splitter.setSizes(sizes)
 
@@ -291,8 +295,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             if is_on:
                 sizes[1] = 2000
                 self.sutta_panels[1]['state'].search_input.setFocus()
+                self.sutta_panels[1]['state']._find_panel.setVisible(True)
             else:
                 sizes[1] = 0
+                self.sutta_panels[1]['state']._find_panel.setVisible(False)
 
             self.splitter.setSizes(sizes)
 
@@ -310,8 +316,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             if is_on:
                 sizes[2] = 2000
                 self.sutta_panels[2]['state'].search_input.setFocus()
+                self.sutta_panels[2]['state']._find_panel.setVisible(True)
             else:
                 sizes[2] = 0
+                self.sutta_panels[2]['state']._find_panel.setVisible(False)
 
             self.splitter.setSizes(sizes)
 
@@ -329,8 +337,10 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             if is_on:
                 sizes[3] = 2000
                 self.dictionary_state.search_input.setFocus()
+                self.dictionary_state._find_panel.setVisible(True)
             else:
                 sizes[3] = 0
+                self.dictionary_state._find_panel.setVisible(False)
 
             self.splitter.setSizes(sizes)
 
