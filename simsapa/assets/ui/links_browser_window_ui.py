@@ -359,7 +359,7 @@ class Ui_LinksBrowserWindow(object):
         self.action_Copy.setShortcut(_translate("LinksBrowserWindow", "Ctrl+C"))
         self.action_Paste.setText(_translate("LinksBrowserWindow", "&Paste"))
         self.action_Paste.setShortcut(_translate("LinksBrowserWindow", "Ctrl+V"))
-        self.action_Quit.setText(_translate("LinksBrowserWindow", "&Quit"))
+        self.action_Quit.setText(_translate("LinksBrowserWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("LinksBrowserWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("LinksBrowserWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("LinksBrowserWindow", "F5"))

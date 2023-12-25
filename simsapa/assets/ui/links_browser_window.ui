@@ -455,7 +455,7 @@
      <normaloff>:/close</normaloff>:/close</iconset>
    </property>
    <property name="text">
-    <string>&amp;Quit</string>
+    <string>&amp;Quit Simsapa</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+Q</string>

@@ -331,7 +331,7 @@ class Ui_DocumentReaderWindow(object):
         self.doc_toolbar.setWindowTitle(_translate("DocumentReaderWindow", "toolBar"))
         self.action_Copy.setText(_translate("DocumentReaderWindow", "&Copy"))
         self.action_Paste.setText(_translate("DocumentReaderWindow", "&Paste"))
-        self.action_Quit.setText(_translate("DocumentReaderWindow", "&Quit"))
+        self.action_Quit.setText(_translate("DocumentReaderWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("DocumentReaderWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("DocumentReaderWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("DocumentReaderWindow", "F5"))

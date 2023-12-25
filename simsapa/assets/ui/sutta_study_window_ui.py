@@ -275,7 +275,7 @@ class Ui_SuttaStudyWindow(object):
         self.action_Copy.setShortcut(_translate("SuttaStudyWindow", "Ctrl+C"))
         self.action_Paste.setText(_translate("SuttaStudyWindow", "&Paste"))
         self.action_Paste.setShortcut(_translate("SuttaStudyWindow", "Ctrl+V"))
-        self.action_Quit.setText(_translate("SuttaStudyWindow", "&Quit"))
+        self.action_Quit.setText(_translate("SuttaStudyWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("SuttaStudyWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("SuttaStudyWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("SuttaStudyWindow", "F5"))

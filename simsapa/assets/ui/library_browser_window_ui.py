@@ -189,7 +189,7 @@ class Ui_LibraryBrowserWindow(object):
         self.toolBar_2.setWindowTitle(_translate("LibraryBrowserWindow", "toolBar_2"))
         self.action_Copy.setText(_translate("LibraryBrowserWindow", "&Copy"))
         self.action_Paste.setText(_translate("LibraryBrowserWindow", "&Paste"))
-        self.action_Quit.setText(_translate("LibraryBrowserWindow", "&Quit"))
+        self.action_Quit.setText(_translate("LibraryBrowserWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("LibraryBrowserWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("LibraryBrowserWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("LibraryBrowserWindow", "F5"))

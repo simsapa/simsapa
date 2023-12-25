@@ -489,7 +489,7 @@ class Ui_DictionarySearchWindow(object):
         self.action_Copy.setShortcut(_translate("DictionarySearchWindow", "Ctrl+C"))
         self.action_Paste.setText(_translate("DictionarySearchWindow", "&Paste"))
         self.action_Paste.setShortcut(_translate("DictionarySearchWindow", "Ctrl+V"))
-        self.action_Quit.setText(_translate("DictionarySearchWindow", "&Quit"))
+        self.action_Quit.setText(_translate("DictionarySearchWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("DictionarySearchWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("DictionarySearchWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("DictionarySearchWindow", "F5"))

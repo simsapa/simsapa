@@ -270,7 +270,7 @@ class Ui_MemosBrowserWindow(object):
         self.action_Copy.setShortcut(_translate("MemosBrowserWindow", "Ctrl+C"))
         self.action_Paste.setText(_translate("MemosBrowserWindow", "&Paste"))
         self.action_Paste.setShortcut(_translate("MemosBrowserWindow", "Ctrl+V"))
-        self.action_Quit.setText(_translate("MemosBrowserWindow", "&Quit"))
+        self.action_Quit.setText(_translate("MemosBrowserWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("MemosBrowserWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("MemosBrowserWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("MemosBrowserWindow", "F5"))
