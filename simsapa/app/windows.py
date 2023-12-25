@@ -681,6 +681,11 @@ class AppWindows:
 
         self.word_lookup = WordLookup(self._app_data)
 
+        self.word_lookup.action_Quit \
+            .triggered.connect(partial(self._quit_app))
+
+        self._connect_windows_menu_signals_to_view(self.word_lookup)
+
         def _show_sutta_url(url: QUrl):
             self._show_sutta_by_url_in_search(url)
 
@@ -1491,38 +1496,7 @@ class AppWindows:
 
         return view
 
-    def _connect_signals_to_view(self, view):
-        # if hasattr(view, 'action_Open'):
-        #     view.action_Open \
-        #         .triggered.connect(partial(self._open_file_dialog, view))
-
-        if hasattr(view, 'action_Keep_Running_in_the_Background'):
-            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
-            view.action_Keep_Running_in_the_Background.setChecked(is_on)
-
-            view.action_Keep_Running_in_the_Background \
-                .triggered.connect(partial(self._toggle_keep_running, view))
-
-        if hasattr(view, 'action_Tray_Click_Opens_Window'):
-            view.action_Tray_Click_Opens_Window \
-                .triggered.connect(partial(self._select_track_click_window_dialog, view))
-
-        if hasattr(view, 'action_Re_index_database'):
-            view.action_Re_index_database \
-                .triggered.connect(partial(self._reindex_database_dialog, view))
-
-        if hasattr(view, 'action_Re_download_database'):
-            view.action_Re_download_database \
-                .triggered.connect(partial(self._redownload_database_dialog, view))
-
-        if hasattr(view, 'action_Focus_Search_Input'):
-            view.action_Focus_Search_Input \
-                .triggered.connect(partial(self._focus_search_input, view))
-
-        if hasattr(view, 'action_Quit'):
-            view.action_Quit \
-                .triggered.connect(partial(self._quit_app))
-
+    def _connect_windows_menu_signals_to_view(self, view):
         if hasattr(view, 'action_Sutta_Search'):
             view.action_Sutta_Search \
                 .triggered.connect(partial(self._new_sutta_search_window_noret))
@@ -1562,6 +1536,54 @@ class AppWindows:
         if hasattr(view, 'action_Ebook_Reader'):
             view.action_Ebook_Reader \
                 .triggered.connect(partial(self._new_ebook_reader_window_noret))
+
+        if hasattr(view, 'action_Show_Word_Lookup'):
+            view.action_Show_Word_Lookup \
+                .triggered.connect(partial(self._toggle_word_lookup))
+            if self.word_lookup is None:
+                is_on = False
+            else:
+                is_on = self.word_lookup.isVisible()
+
+            view.action_Show_Word_Lookup.setChecked(is_on)
+
+        if hasattr(view, 'action_First_Window_on_Startup'):
+            view.action_First_Window_on_Startup \
+                .triggered.connect(partial(self._first_window_on_startup_dialog, view))
+
+    def _connect_signals_to_view(self, view):
+        # if hasattr(view, 'action_Open'):
+        #     view.action_Open \
+        #         .triggered.connect(partial(self._open_file_dialog, view))
+
+        self._connect_windows_menu_signals_to_view(view)
+
+        if hasattr(view, 'action_Keep_Running_in_the_Background'):
+            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
+            view.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+            view.action_Keep_Running_in_the_Background \
+                .triggered.connect(partial(self._toggle_keep_running, view))
+
+        if hasattr(view, 'action_Tray_Click_Opens_Window'):
+            view.action_Tray_Click_Opens_Window \
+                .triggered.connect(partial(self._select_track_click_window_dialog, view))
+
+        if hasattr(view, 'action_Re_index_database'):
+            view.action_Re_index_database \
+                .triggered.connect(partial(self._reindex_database_dialog, view))
+
+        if hasattr(view, 'action_Re_download_database'):
+            view.action_Re_download_database \
+                .triggered.connect(partial(self._redownload_database_dialog, view))
+
+        if hasattr(view, 'action_Focus_Search_Input'):
+            view.action_Focus_Search_Input \
+                .triggered.connect(partial(self._focus_search_input, view))
+
+        if hasattr(view, 'action_Quit'):
+            view.action_Quit \
+                .triggered.connect(partial(self._quit_app))
 
         if isinstance(view, DictionarySearchWindowInterface):
             if hasattr(view, 'action_Show_Sidebar'):
@@ -1616,20 +1638,6 @@ class AppWindows:
 
                 view.action_Generate_Links_Graph \
                     .triggered.connect(partial(self._toggle_generate_links_graph, view))
-
-        if hasattr(view, 'action_Show_Word_Lookup'):
-            view.action_Show_Word_Lookup \
-                .triggered.connect(partial(self._toggle_word_lookup))
-            if self.word_lookup is None:
-                is_on = False
-            else:
-                is_on = self.word_lookup.isVisible()
-
-            view.action_Show_Word_Lookup.setChecked(is_on)
-
-        if hasattr(view, 'action_First_Window_on_Startup'):
-            view.action_First_Window_on_Startup \
-                .triggered.connect(partial(self._first_window_on_startup_dialog, view))
 
         notify = self._app_data.app_settings.get('notify_about_updates', True)
 

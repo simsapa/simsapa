@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
 
 from simsapa import IS_MAC, DbSchemaName, SuttaQuote
 from simsapa.app.search.helpers import SearchResult
@@ -648,7 +648,7 @@ class WordLookupStateInterface(SearchBarInterface):
     link_mouseover: pyqtSignal
     hide_preview: pyqtSignal
 
-class WordLookupInterface(QDialog):
+class WordLookupInterface(QMainWindow):
     center: Callable
     s: WordLookupStateInterface
 

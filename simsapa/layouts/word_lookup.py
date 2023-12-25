@@ -3,11 +3,13 @@ from functools import partial
 import math, subprocess, json, queue
 from typing import List, Optional
 from PyQt6 import QtCore
+from PyQt6 import QtWidgets
+from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
+from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
@@ -544,16 +546,20 @@ class WordLookup(WordLookupInterface):
 
         self._app_data: AppData = app_data
 
-        self.wrap_layout = QVBoxLayout()
-        self.wrap_layout.setContentsMargins(8, 8, 8, 8)
-        self.setLayout(self.wrap_layout)
-
-        self.setWindowTitle("Word Lookup - Simsapa")
-        self.setMinimumSize(50, 50)
-
         if IS_SWAY:
             cmd = """swaymsg 'for_window [title="Word Lookup"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
+
+        self._central_widget = QtWidgets.QWidget(self)
+        self.setCentralWidget(self._central_widget)
+
+        self.wrap_layout = QVBoxLayout()
+        self.wrap_layout.setContentsMargins(8, 8, 8, 8)
+
+        self._central_widget.setLayout(self.wrap_layout)
+
+        self.setWindowTitle("Word Lookup - Simsapa")
+        self.setMinimumSize(50, 50)
 
         self._restore_size_pos()
 
@@ -565,6 +571,8 @@ class WordLookup(WordLookupInterface):
         self.setObjectName("WordLookup")
         self.setStyleSheet("#WordLookup { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
+        self._setup_menubar()
+
         self._margin = 8
 
         self.focus_input = focus_input
@@ -573,6 +581,87 @@ class WordLookup(WordLookupInterface):
 
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
+
+        self._connect_signals()
+
+    def _setup_menubar(self):
+        self.menubar = QMenuBar()
+        self.setMenuBar(self.menubar)
+
+        # Shared menu actions will be connected in windows.py::_init_word_lookup()
+
+        # Icons
+
+        close_icon = QtGui.QIcon()
+        close_icon.addPixmap(QtGui.QPixmap(":/close"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        book_icon = QtGui.QIcon()
+        book_icon.addPixmap(QtGui.QPixmap(":/book"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        dict_icon = QtGui.QIcon()
+        dict_icon.addPixmap(QtGui.QPixmap(":/dictionary"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        bookmark_icon = QtGui.QIcon()
+        bookmark_icon.addPixmap(QtGui.QPixmap(":/bookmark"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        pen_fancy_icon = QtGui.QIcon()
+        pen_fancy_icon.addPixmap(QtGui.QPixmap(":/pen-fancy"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        # === File ===
+
+        self.menu_file = QMenu("&File", self.menubar)
+        self.menubar.addMenu(self.menu_file)
+
+        self.action_close_window = QAction("&Close Window")
+        self.menu_file.addAction(self.action_close_window)
+
+        self.action_Quit = QAction("&Quit Simsapa")
+        self.action_Quit.setIcon(close_icon)
+        self.action_Quit.setShortcut("Ctrl+Q")
+        self.menu_file.addAction(self.action_Quit)
+
+        # === Find ===
+
+        self.menu_find = QMenu("&Find", self.menubar)
+        self.menubar.addMenu(self.menu_find)
+
+        # === Windows ===
+
+        self.menu_windows = QMenu("&Windows", self.menubar)
+        self.menubar.addMenu(self.menu_windows)
+
+        self.action_Sutta_Search = QAction("&Sutta Search")
+        self.action_Sutta_Search.setIcon(book_icon)
+        self.action_Sutta_Search.setShortcut("F5")
+        self.menu_windows.addAction(self.action_Sutta_Search)
+
+        self.action_Sutta_Study = QAction("Sutta Study")
+        self.action_Sutta_Study.setIcon(book_icon)
+        self.action_Sutta_Study.setShortcut("Ctrl+F5")
+        self.menu_windows.addAction(self.action_Sutta_Study)
+
+        self.action_Sutta_Index = QAction("Sutta Index")
+        self.action_Sutta_Index.setIcon(book_icon)
+        self.menu_windows.addAction(self.action_Sutta_Index)
+
+        self.action_Dictionary_Search = QAction("&Dictionary Search")
+        self.action_Dictionary_Search.setIcon(dict_icon)
+        self.action_Dictionary_Search.setShortcut("F6")
+        self.menu_windows.addAction(self.action_Dictionary_Search)
+
+        self.action_Bookmarks = QAction("&Bookmarks")
+        self.action_Bookmarks.setIcon(bookmark_icon)
+        self.action_Bookmarks.setShortcut("F7")
+        self.menu_windows.addAction(self.action_Bookmarks)
+
+        self.action_Ebook_Reader = QAction("&Ebook Reader")
+        self.action_Ebook_Reader.setIcon(book_icon)
+        self.menu_windows.addAction(self.action_Ebook_Reader)
+
+        self.action_Memos = QAction("&Memos")
+        self.action_Memos.setIcon(pen_fancy_icon)
+        self.action_Memos.setShortcut("F9")
+        self.menu_windows.addAction(self.action_Memos)
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_lookup_pos', None)
@@ -592,6 +681,9 @@ class WordLookup(WordLookupInterface):
     def _noop(self):
         pass
 
+    def _connect_signals(self):
+        self.action_close_window.triggered.connect(partial(self._handle_close))
+
     def hideEvent(self, event: QHideEvent) -> None:
         qr = self.frameGeometry()
         p = WindowPosSize(
@@ -608,6 +700,10 @@ class WordLookup(WordLookupInterface):
         APP_QUEUES['app_windows'].put_nowait(s)
 
         return super().hideEvent(event)
+
+    def _handle_close(self):
+        # Don't close, hide the window so it doesn't have to be re-created.
+        self.hide()
 
     def closeEvent(self, _: QCloseEvent) -> None:
         # Don't close, hide the window so it doesn't have to be re-created.
