@@ -183,6 +183,8 @@ class DictionaryQueries(DictionaryQueriesInterface):
         if html_title:
             body = html_title + body
 
+        body += "<div id='page_bottom'></div>"
+
         page_html = self.render_html_page(
             body = body,
             css_head = "\n\n".join(parts['css']),

@@ -30,6 +30,10 @@ function copy_clipboard_html(html: string, msg_div_id: string) {
     h.show_transient_message("Copied!", msg_div_id);
 }
 
+function load_more_results() {
+    document.qt_channel.objects.helper.emit_load_more_results();
+}
+
 function add_hover_events(el: Element, channel: any) {
     let href = el.getAttribute('href');
     if (href !== null && href.startsWith('ssp://')) {
@@ -69,5 +73,6 @@ export {
     copy_gloss,
     copy_clipboard_text,
     copy_clipboard_html,
+    load_more_results,
     add_hover_events,
 }

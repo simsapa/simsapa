@@ -19,6 +19,7 @@ class Helper(QObject):
     copy_clipboard_html = pyqtSignal(str)
     copy_gloss = pyqtSignal(str, str, str, str)
     copy_meaning = pyqtSignal(str, str, str)
+    load_more_results = pyqtSignal()
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
@@ -92,6 +93,10 @@ class Helper(QObject):
     @pyqtSlot(str, int)
     def emit_copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
         self.copy_meaning.emit(db_schema, db_table, db_uid)
+
+    @pyqtSlot()
+    def emit_load_more_results(self):
+        self.load_more_results.emit()
 
 
 class ReaderWebEnginePage(QWebEnginePage):

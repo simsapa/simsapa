@@ -5,6 +5,7 @@ from typing import List, Optional
 from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QSize
 from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
@@ -25,11 +26,15 @@ from simsapa.layouts.gui_helpers import get_search_params
 from simsapa.layouts.gui_types import QExpanding, QSizeMinimum, SearchBarInterface, QFixed
 from simsapa.layouts.help_info import setup_info_button
 
-
 class HasSearchBar(SearchBarInterface):
     features: List[str]
     _app_data: AppData
     _search_area: SearchArea
+    _current_results_page: List[SearchResult] = []
+    _current_results_page_num = 0
+    _results_page_render_len = 10
+
+    qwe: QWebEngineView
 
     def init_search_bar(self,
                         wrap_layout: QBoxLayout,
@@ -495,13 +500,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             params,
         )
 
-    def _render_dict_words_search_results(self, search_results: List[SearchResult]):
-        logger.info("_render_search_results()")
-
-        uids = dict()
-        uids['appdata'] = []
-        uids['userdata'] = []
-
+    def _search_results_to_dict_words(self, search_results: List[SearchResult]) -> List[UDictWord]:
         # Must maintain the order of search_results in the db results, hence not
         # using one Am.DictWord.uid.in_(uids['appdata']) request. Must retreive
         # each db item in the same sequence.
@@ -548,10 +547,49 @@ QWidget:focus { border: 1px solid #1092C3; }
             else:
                 raise Exception(f"Unknown schema_name: {i['schema_name']}")
 
+        return res
+
+    def _render_dict_words_search_results(self, search_results: List[SearchResult]):
+        logger.info("_render_dict_words_search_results()")
+
         self.stop_loading_animation()
         self._show_search_normal_icon()
 
+        res = self._search_results_to_dict_words(search_results)
+
         self._render_words(res)
+
+    def _load_more_results(self):
+        self._current_results_page_num += 1
+
+        r = self._current_results_page
+        render_len = self._results_page_render_len
+
+        start_idx = (self._current_results_page_num * render_len) + 1
+        end_idx = start_idx + render_len
+        has_more = (len(r) > end_idx)
+
+        words = self._search_results_to_dict_words(r[start_idx:end_idx])
+
+        html = ""
+
+        for w in words:
+            d = self._queries.dictionary_queries.get_word_html(w)
+            html += d['body']
+
+        js = """
+        document.SSP.html_template = `<div>%s</div>`;
+        document.SSP.page_bottom_el = document.getElementById('page_bottom');
+        document.SSP.page_bottom_el.before(document.SSP.html_to_element(document.SSP.html_template));
+        """ % html
+
+        if not has_more:
+            js += """
+            document.SSP.remove_infinite_scroll();
+            document.SSP.add_bottom_message("End of page. Use the results tab to see more results and open words.");
+            """
+
+        self.qwe.page().runJavaScript(js)
 
     def _connect_search_bar_signals(self):
         if hasattr(self, 'search_button'):

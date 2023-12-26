@@ -58,7 +58,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     rightside_tabs: QTabWidget
     _app_data: AppData
     _queries: GuiSearchQueries
-    _current_words: List[UDictWord]
+    _current_words: List[UDictWord] = []
     _search_timer = QTimer()
     _last_query_time = datetime.now()
 
@@ -315,6 +315,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
         page.helper.copy_gloss.connect(partial(self._copy_gloss))
         page.helper.copy_meaning.connect(partial(self._copy_meaning))
+        page.helper.load_more_results.connect(partial(self._load_more_results))
 
         self.qwe.setPage(page)
 
@@ -400,12 +401,17 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.render_deconstructor_list_for_query(self.search_input.text().strip())
 
-        results = self.render_fulltext_page()
+        r = self.render_fulltext_page()
+        self._current_results_page = r
+        self._current_results_page_num = 0
+        render_len = self._results_page_render_len
 
-        if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
-            self._show_word_by_uid(results[0]['uid'])
+        if len(r) > 0 and hits == 1 and r[0]['uid'] is not None:
+            self._show_word_by_uid(r[0]['uid'])
         else:
-            self._render_dict_words_search_results(results[0:10])
+            start_idx = self._current_results_page_num * render_len
+            end_idx = start_idx + render_len
+            self._render_dict_words_search_results(r[start_idx:end_idx])
 
         self._update_fulltext_page_btn(hits)
 

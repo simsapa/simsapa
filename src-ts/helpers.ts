@@ -68,9 +68,39 @@ function show_transient_message(text: string, msg_div_id: string): void {
     });
 }
 
+function html_to_element(html: string): ChildNode {
+    // The html argument should contain one root node (e.g. a <div>).
+    let parser = new DOMParser();
+    let doc = parser.parseFromString(html, "text/html");
+    return doc.body.firstChild;
+}
+
+function add_bottom_message(msg: string): void {
+    let page_bottom_el = document.getElementById('page_bottom');
+    let html = `
+<div style="margin-top: 2em;">
+    <div class="message">
+        <div class="msg-content">
+            ${msg}
+        </div>
+    </div>
+</div>`;
+    let el = html_to_element(html);
+    page_bottom_el.before(el);
+}
+
+function is_scrolled_into_view(el: Element): boolean {
+    let el_rect = el.getBoundingClientRect();
+    let is_visible = (el_rect.top >= 0) && (el_rect.bottom <= window.innerHeight);
+    return is_visible;
+}
 
 export {
     fade_toggle,
     button_toggle_visible,
     show_transient_message,
+    html_to_element,
+    add_bottom_message,
+    is_scrolled_into_view,
 }
+
