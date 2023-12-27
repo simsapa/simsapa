@@ -244,11 +244,11 @@ def _parse_words(words_res: List[UDpdWord], do_pali_sort = False) -> List[Search
     for w in pali_words:
         if isinstance(w, Dpd.PaliWord):
             snippet = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
-            snippet += f"<br><i>{strip_html(w.grammar)}</i>"
+            snippet += f" <b>·</b> <i>{strip_html(w.grammar)}</i>"
 
         elif isinstance(w, Dpd.PaliRoot):
             snippet = w.root_meaning
-            snippet += f"<br><i>{root_info_clean_plaintext(w.root_info)}</i>"
+            snippet += f" <b>·</b> <i>{root_info_clean_plaintext(w.root_info)}</i>"
 
         else:
             raise Exception(f"Unrecognized word type: {w}")
