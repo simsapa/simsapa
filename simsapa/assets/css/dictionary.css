@@ -861,8 +861,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .word-block {
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
+  padding: 0.5rem;
   background-color: #FAE6B2;
 }
 .word-block:nth-child(2n) {

@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 import tantivy
 
 from sqlalchemy import and_, or_, not_
-from sqlalchemy.orm.session import Session
 
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session
@@ -18,8 +17,8 @@ from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result,
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class SearchQueryTask:
-    _all_results: List[SearchResult] = []
     _highlighted_result_pages: Dict[int, List[SearchResult]] = dict()
+    _db_all_results: List[SearchResult] = []
     _db_query_hits_count = 0
 
     def __init__(self,
@@ -43,7 +42,6 @@ class SearchQueryTask:
         s = params['source']
         self.source = None if s is None else s.lower()
         self.source_include = params['source_include']
-        self._all_results = []
         self._highlighted_result_pages = dict()
 
         self.enable_regex = params['enable_regex']
@@ -52,21 +50,40 @@ class SearchQueryTask:
         self.search_query = TantivySearchQuery(self.ix, params)
 
     def query_hits(self) -> Optional[int]:
-        if self.search_mode == SearchMode.FulltextMatch:
+        if self.search_mode == SearchMode.Combined:
+            a = len(self._db_all_results)
+            b = self.search_query.hits_count
+            if b is not None:
+                a += b
+
+            return a
+
+        elif self.search_mode == SearchMode.FulltextMatch:
             return self.search_query.hits_count
+
+        elif self.search_mode == SearchMode.DpdIdMatch or \
+             self.search_mode == SearchMode.DpdTbwLookup:
+
+            return len(self._db_all_results)
 
         elif self.search_mode == SearchMode.ExactMatch:
             return self._db_query_hits_count
 
         else:
-            return len(self._all_results)
+            return len(self._db_all_results)
 
     def all_results(self) -> List[SearchResult]:
-        if self.search_mode == SearchMode.FulltextMatch:
+        if self.search_mode == SearchMode.Combined:
+            res = []
+            res.extend(self._db_all_results)
+            res.extend(self.search_query.get_all_results())
+            return res
+
+        elif self.search_mode == SearchMode.FulltextMatch:
             return self.search_query.get_all_results()
 
         else:
-            return self._all_results
+            return self._db_all_results
 
     def _highlight_query_in_content(self, query: str, content: str) -> str:
         ll = len(query)
@@ -82,34 +99,66 @@ class SearchQueryTask:
         return content
 
     def results_page(self, page_num: int) -> List[SearchResult]:
-        if page_num not in self._highlighted_result_pages:
-            if self.search_mode == SearchMode.DpdIdMatch:
-                self._highlighted_result_pages[page_num] = self.dpd_id_word()
+        # If this results page has been calculated before, return it.
+        if page_num in self._highlighted_result_pages:
+            return self._highlighted_result_pages[page_num]
 
-            elif self.search_mode == SearchMode.FulltextMatch:
-                self._highlighted_result_pages[page_num] = self.search_query.highlighted_results_page(page_num)
+        # Otherwise, run the queries and return the results page.
 
-            elif self.search_mode == SearchMode.DpdTbwLookup:
-                self._highlighted_result_pages[page_num] = self._dpd_lookup()
-                self._all_results = self._highlighted_result_pages[page_num]
+        if self.search_mode == SearchMode.Combined:
+            res: List[SearchResult] = []
+
+            # Display all DPD Lookup results (not many) on the first (0 index) results page.
+            if page_num == 0:
+                def _boost(i: SearchResult) -> SearchResult:
+                    if i['score'] is None:
+                        i['score'] = 10000
+                    else:
+                        i['score'] += 10000
+                    return i
+
+                # Run DPD Lookup and boost results to the top.
+                res.extend([_boost(i) for i in self._dpd_lookup()])
+                self._db_all_results = res
+
+            # The Fulltext query has been executed before this, request the
+            # results with highlighted snippets.
+            res.extend(self.search_query.highlighted_results_page(page_num))
+
+            self._highlighted_result_pages[page_num] = res
+
+        elif self.search_mode == SearchMode.FulltextMatch:
+            res = self.search_query.highlighted_results_page(page_num)
+            self._highlighted_result_pages[page_num] = res
+
+        elif self.search_mode == SearchMode.DpdIdMatch:
+            res = self.dpd_id_word()
+            self._highlighted_result_pages[page_num] = res
+            self._db_all_results = res
+
+        elif self.search_mode == SearchMode.DpdTbwLookup:
+            # Display all DPD Lookup results (not many) on the first (0 index) results page.
+            res = self._dpd_lookup()
+            self._highlighted_result_pages[0] = res
+            self._db_all_results = res
+
+        else:
+            # page_start = page_num * self._page_len
+            # page_end = page_start + self._page_len
+
+            def _add_highlight(x: SearchResult) -> SearchResult:
+                x['snippet'] = self._highlight_query_in_content(self.query_text, x['snippet'])
+                return x
+
+            if self.search_query.is_sutta_index():
+                results = self.suttas_exact_match_page(page_num)
 
             else:
-                # page_start = page_num * self._page_len
-                # page_end = page_start + self._page_len
+                results = self.dict_words_exact_match_page(page_num)
 
-                def _add_highlight(x: SearchResult) -> SearchResult:
-                    x['snippet'] = self._highlight_query_in_content(self.query_text, x['snippet'])
-                    return x
+            # page = list(map(_add_highlight, results[page_start:page_end]))
 
-                if self.search_query.is_sutta_index():
-                    results = self.suttas_exact_match_page(page_num)
-
-                else:
-                    results = self.dict_words_exact_match_page(page_num)
-
-                # page = list(map(_add_highlight, results[page_start:page_end]))
-
-                self._highlighted_result_pages[page_num] = list(map(_add_highlight, results))
+            self._highlighted_result_pages[page_num] = list(map(_add_highlight, results))
 
         return self._highlighted_result_pages[page_num]
 
@@ -169,10 +218,7 @@ class SearchQueryTask:
     def _word_except_in_source(self, x: UDictWord):
         return not self._word_only_in_source(x)
 
-    def _tbw_search(self):
-        self._highlighted_result_pages[0] = self.results_page(0)
-
-    def _fulltext_search(self):
+    def _run_fulltext_query(self):
         try:
             self.search_query.new_query(self.query_text,
                                         self.source,
@@ -180,14 +226,13 @@ class SearchQueryTask:
                                         enable_regex = self.enable_regex,
                                         fuzzy_distance = self.fuzzy_distance)
 
-            self._highlighted_result_pages[0] = self.search_query.highlighted_results_page(0)
-
         except ValueError as e:
             # E.g. invalid query syntax error from tantivy
             raise e
 
         except Exception as e:
             logger.error(f"SearchQueryTask::_fulltext_search(): {e}")
+            raise e
 
     def suttas_exact_match_page(self, page_num: int) -> List[SearchResult]:
         db_eng, db_conn, db_session = get_db_engine_connection_session()
@@ -363,7 +408,7 @@ class SearchQueryTask:
         res_page = []
 
         if dpd_word is not None:
-            snippet = dpd_word.meaning_1 if dpd_word.meaning_1 else ""
+            snippet = dpd_word.meaning_1 if dpd_word.meaning_1 != "" else dpd_word.meaning_2
 
             res = dict_word_to_search_result(dpd_word, snippet)
             res_page.append(res)
@@ -393,9 +438,11 @@ class SearchQueryTask:
 
         return res_page
 
-    def _suttas_title_match(self, db_session: Session):
+    def _suttas_title_match(self):
         # SearchMode.TitleMatch only applies to suttas.
         try:
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
+
             res_suttas: List[USutta] = []
 
             r = db_session \
@@ -436,14 +483,20 @@ class SearchQueryTask:
                 else:
                     res_suttas = list(filter(self._sutta_except_in_source, res_suttas))
 
-            self._all_results = list(map(self._db_sutta_to_result, res_suttas))
+            self._db_all_results = list(map(self._db_sutta_to_result, res_suttas))
+
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
 
         except Exception as e:
             logger.error(f"SearchQueryTask::_suttas_title_match(): {e}")
 
-    def _dict_words_headword_match(self, db_session: Session):
+    def _dict_words_headword_match(self):
         # SearchMode.HeadwordMatch only applies to dictionary words.
         try:
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
+
             res: List[UDictWord] = []
 
             r = db_session \
@@ -504,39 +557,43 @@ class SearchQueryTask:
                 else:
                     res = list(filter(self._word_except_in_source, res))
 
-            self._all_results = list(map(self._db_word_to_result, res))
+            self._db_all_results = list(map(self._db_word_to_result, res))
+
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
 
         except Exception as e:
             logger.error(f"SearchQueryTask::_dict_words_headword_match(): {e}")
 
     def run(self):
         logger.info("SearchQueryTask::run()")
-        self._all_results = []
+        self._db_all_results = []
         self._highlighted_result_pages = dict()
 
-        db_eng, db_conn, db_session = get_db_engine_connection_session()
+        if self.search_mode == SearchMode.Combined or \
+           self.search_mode == SearchMode.FulltextMatch:
 
-        if self.search_mode == SearchMode.FulltextMatch:
-            self._fulltext_search()
-
-        elif self.search_mode == SearchMode.ExactMatch:
+            self._run_fulltext_query()
             self.results_page(0)
-
-        elif self.search_mode == SearchMode.TitleMatch:
-            self._suttas_title_match(db_session)
-
-        elif self.search_mode == SearchMode.HeadwordMatch:
-            self._dict_words_headword_match(db_session)
 
         elif self.search_mode == SearchMode.DpdIdMatch or \
              self.search_mode == SearchMode.DpdTbwLookup:
-            self._tbw_search()
+
+            self.results_page(0)
+
+        elif self.search_mode == SearchMode.ExactMatch:
+
+            self.results_page(0)
+
+        elif self.search_mode == SearchMode.TitleMatch:
+            self._suttas_title_match()
+
+        elif self.search_mode == SearchMode.HeadwordMatch:
+            self._dict_words_headword_match()
 
         else:
             logger.error(f"Unknown SearchMode: {self.search_mode}")
 
         self.query_finished_time = datetime.now()
 
-        db_conn.close()
-        db_session.close()
-        db_eng.dispose()

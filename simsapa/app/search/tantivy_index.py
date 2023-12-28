@@ -1,5 +1,5 @@
 import shutil
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Set, Union, Tuple
 import math
 
 import tantivy
@@ -244,8 +244,9 @@ class TantivySearchQuery:
 
         p = self.search_params
 
-        if p['source'] is not None and (p['enable_regex'] or p['fuzzy_distance'] > 0):
+        results = []
 
+        if p['source'] is not None and (p['enable_regex'] or p['fuzzy_distance'] > 0):
             total_hits_count = 0
 
             filtered_page_start_offset = 0
@@ -253,8 +254,7 @@ class TantivySearchQuery:
             filtered_page_len = self.page_len*10
             filtered_page_num = 0
 
-            results = []
-            filtered_results = []
+            _filtered_results = []
 
             while True:
 
@@ -275,27 +275,26 @@ class TantivySearchQuery:
                 r = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
 
                 if p['source_include']:
-                    filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
+                    _filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
                 else:
-                    filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
-
+                    _filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
 
                 # Stop if the filtered results fill the requested results page.
                 # Filtered results are filled progressively up to the requested results page.
                 # E.g. results page 2 is filled when filtered results have 2*page_len items.
                 #
                 # Unless there are no more items to filter, i.e. no next page.
-                if len(filtered_results) >= page_num * self.page_len \
+                if len(_filtered_results) >= page_num * self.page_len \
                    or filtered_page_start_offset >= total_hits_count:
 
                     # The results are slice which is requested results page.
                     res_start = page_num * self.page_len
                     res_end = (page_num+1) * self.page_len
 
-                    results = filtered_results[res_start:res_end]
+                    results = _filtered_results[res_start:res_end]
 
                     if filtered_page_len >= total_hits_count:
-                        self.hits_count = len(filtered_results)
+                        self.hits_count = len(_filtered_results)
 
                     else:
                         # Set hits_count to None because we don't know the filtered count
@@ -307,6 +306,8 @@ class TantivySearchQuery:
                 else:
                     filtered_page_num += 1
                     filtered_page_start_offset += filtered_page_num * filtered_page_len
+
+            results.extend(_filtered_results)
 
         else:
             page_start_offset = page_num * self.page_len
@@ -323,6 +324,18 @@ class TantivySearchQuery:
             self.hits_count = tantivy_results.count
 
             results = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+
+        # FIXME tantivy returns the same result multiple times.
+        # Keep only unique results.
+        keys: Set[str] = set()
+        uniq_results = []
+        for i in results:
+            k = f"{i['title']} {i['schema_name']} {i['uid']}"
+            if k not in keys:
+                keys.add(k)
+                uniq_results.append(i)
+
+        results = uniq_results
 
         if self.is_sutta_index():
             return results

@@ -407,7 +407,7 @@ def default_app_settings() -> AppSettings:
         smtp_sender_email = None,
 
         dictionary_language_filter_idx = 0,
-        dictionary_search_mode = SearchMode.DpdTbwLookup,
+        dictionary_search_mode = SearchMode.Combined,
         dictionary_source_filter_idx = 0,
         dictionary_show_pali_buttons = True,
 
@@ -430,12 +430,12 @@ def default_app_settings() -> AppSettings:
         sutta_study_three_source_filter_idx = 0,
 
         sutta_study_lookup_language_filter_idx = 0,
-        sutta_study_lookup_search_mode = SearchMode.DpdTbwLookup,
+        sutta_study_lookup_search_mode = SearchMode.Combined,
         sutta_study_lookup_source_filter_idx = 0,
 
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 500, height = 700),
         word_lookup_language_filter_idx = 0,
-        word_lookup_search_mode = SearchMode.DpdTbwLookup,
+        word_lookup_search_mode = SearchMode.Combined,
         word_lookup_source_filter_idx = 0,
     )
 

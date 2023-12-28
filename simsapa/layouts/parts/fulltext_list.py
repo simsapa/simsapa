@@ -42,7 +42,7 @@ class HasFulltextList:
         self.fulltext_list.clear()
         self.fulltext_list.setSizePolicy(QExpanding, QExpanding)
 
-        self.fulltext_list.setUniformItemSizes(True)
+        self.fulltext_list.setUniformItemSizes(False)
 
         self.fulltext_page_input.setMinimum(0)
         self.fulltext_page_input.setMaximum(0)
