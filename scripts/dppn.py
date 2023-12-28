@@ -44,7 +44,9 @@ def get_name_from_list_item(item: bs4.Tag) -> Optional[str]:
     else:
         name_tag = item.select_one('li b')
 
-    assert(name_tag is not None)
+    if name_tag is None:
+        raise Exception(f"Can't find name in list item: {item.decode_contents()}")
+
     name = name_tag.decode_contents()
 
     return name
@@ -69,7 +71,7 @@ def is_long_definition_page(soup: BeautifulSoup) -> bool:
     if len(header_items) == 0:
         header_items = soup.select('body > h2')
 
-    # If the list contains h2, the html page contains long definition blocks.
+    # If the page contains h2, the html page contains long definition blocks.
 
     # Otherwise the page is a list of short definitions and links to long definitions.
 

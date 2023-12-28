@@ -302,14 +302,31 @@ def replace_links_with_bold(soup: BeautifulSoup, tag: Tag):
         bold.append(link.get_text())
         link.replace_with(bold)
 
-def get_name_tag_from_long(soup: BeautifulSoup) -> Optional[Tag]:
-    name_tag = soup.select_one('h2')
-    return name_tag
-
 def get_long_definition_blocks(soup: BeautifulSoup, dict: Am.Dictionary) -> Am.DictWord:
-    name_tag = get_name_tag_from_long(soup)
+    headers = soup.select('h2')
+    if len(headers) == 0:
+        raise Exception("No h2 headers on the page.")
+
+    name_tag = headers[0]
     assert(name_tag is not None)
     name = strip_html(name_tag.decode_contents())
+
+    # Remove number prefixes. e.g. 1. Bījaka; 2. Bījaka
+    name = re.sub(r"^[0-9\. ]+", "", name)
+
+    # If there is only one header, remove it. The word template will show the title.
+    if len(headers) == 1:
+        # If the header is in an <ul> list, remove the list.
+        lists = soup.select('ul')
+        already_removed = False
+        for ul in lists:
+            h = ul.select('h2')
+            if len(h) > 0:
+                already_removed = True
+                ul.decompose()
+
+        if not already_removed:
+            headers[0].decompose()
 
     item = soup.select_one('body')
     assert(item is not None)
@@ -327,7 +344,7 @@ def get_long_definition_blocks(soup: BeautifulSoup, dict: Am.Dictionary) -> Am.D
         word = name,
         word_ascii = pali_to_ascii(name),
         language = "en",
-        source_uid = dict.label,
+        source_uid = dict.label.lower(),
         definition_html = item_html,
         definition_plain = compact_rich_text(item_html),
     )
@@ -355,7 +372,7 @@ def get_short_definitions(soup: BeautifulSoup,
             word = name,
             word_ascii = pali_to_ascii(name),
             language = "en",
-            source_uid = dict.label,
+            source_uid = dict.label.lower(),
             definition_html = item_html,
             definition_plain = compact_rich_text(item_html),
         )
