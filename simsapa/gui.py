@@ -2,6 +2,8 @@ from subprocess import Popen
 import os, sys, threading, shutil
 import traceback
 from typing import Optional
+from datetime import datetime
+from time import sleep
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon
@@ -11,11 +13,13 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
+from simsapa.app.api import ApiSearchResult
 from simsapa.app.db_session import get_db_version
 from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
+from simsapa.app.types import SearchArea, SearchMode, SearchParams
 from simsapa.app.windows import AppWindows
 
 from simsapa.layouts.error_message import ErrorMessageWindow
@@ -200,11 +204,48 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
 
     app_windows = AppWindows(app, app_data, hotkeys_manager)
 
-    def emit_open_window_signal_fn(window_type: str = ''):
+    def _emit_open_window_signal(window_type: str = ''):
         app_windows.signals.open_window_signal.emit(window_type)
 
-    def run_lookup_query(query_text: str):
+    def _run_lookup_query(query_text: str):
         app_windows.signals.run_lookup_query_signal.emit(query_text)
+
+    def _run_combined_search(query_text: str, page_num = 0) -> ApiSearchResult:
+        params = SearchParams(
+            mode = SearchMode.Combined,
+            page_len = 20,
+            lang = None,
+            lang_include = True,
+            source = None,
+            source_include = True,
+            enable_regex = False,
+            fuzzy_distance = 0,
+        )
+
+        _last_query_time = datetime.now()
+
+        def _search_query_finished(__query_started_time__: datetime):
+            pass
+
+        if page_num == 0:
+            app_data._queries.start_search_query_workers(
+                query_text,
+                SearchArea.DictWords,
+                _last_query_time,
+                _search_query_finished,
+                params,
+            )
+
+            while not app_data._queries.all_finished():
+                # Sleep 10 milliseconds
+                sleep(0.01)
+
+        res = ApiSearchResult(
+            hits = app_data._queries.query_hits(),
+            results = app_data._queries.results_page(page_num),
+        )
+
+        return res
 
     def _start_daemon_server():
         # This way the import happens in the thread, and doesn't delay app.exec()
@@ -215,8 +256,9 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
 
         start_server(port,
                      SERVER_QUEUE,
-                     emit_open_window_signal_fn,
-                     run_lookup_query)
+                     _emit_open_window_signal,
+                     _run_lookup_query,
+                     _run_combined_search)
 
     daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
     daemon.setDaemon(True)

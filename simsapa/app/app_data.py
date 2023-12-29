@@ -32,6 +32,7 @@ from simsapa.app.types import SearchArea, USutta, UDictWord, UBookmark
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
+from simsapa.layouts.gui_queries import GuiSearchQueries
 
 from simsapa.layouts.gui_types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
 
@@ -45,6 +46,7 @@ class AppData:
     # Keys are db schema, and course group id
     pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()
     search_indexes: Optional[TantivySearchIndexes] = None
+    _queries: GuiSearchQueries
 
     _sutta_titles_completion_cache: WordSublists = dict()
     _dict_words_completion_cache: WordSublists = dict()
@@ -94,6 +96,11 @@ class AppData:
 
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
+
+        self._queries = GuiSearchQueries(self.db_session,
+                                         self.get_search_indexes,
+                                         self.api_url)
+
 
         self.dpd_cf_set, self.dpd_roots_count_dict, self.dpd_sandhi_contractions = get_dpd_caches()
 

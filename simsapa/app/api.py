@@ -9,6 +9,7 @@ import logging
 from simsapa import PACKAGE_ASSETS_DIR
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
+from simsapa.app.search.helpers import SearchResult
 
 from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
@@ -28,9 +29,15 @@ logging.getLogger("werkzeug").disabled = True
 global server_queue
 server_queue: Optional[queue.Queue] = None
 
+class ApiSearchResult(TypedDict):
+    hits: Optional[int]
+    results: List[SearchResult]
+
 class AppCallbacks:
     open_window: Callable[[str], None]
     run_lookup_query: Callable[[str], None]
+    run_combined_search: Callable[[str, int], ApiSearchResult]
+
     def __init__(self):
         pass
 
@@ -239,6 +246,21 @@ def _bm_to_res(x: UBookmark) -> Dict[str, str]:
         'comment_attr_json': str(x.comment_attr_json) if x.comment_attr_json is not None else '',
         'bookmark_schema_id': f"{x.metadata.schema}-{x.id}",
     }
+
+@app.route('/combined_search', methods=['POST'])
+def combined_search():
+    data = request.get_json()
+    if not data or 'query_text' not in data.keys():
+        return "Missing query_text", 400
+
+    if 'page_num' not in data.keys():
+        page_num = 0
+    else:
+        page_num = int(data['page_num'])
+
+    res = app_callbacks.run_combined_search(data['query_text'].strip(), page_num)
+
+    return jsonify(res), 200
 
 class DpdSearchResult(TypedDict):
     id: int
@@ -454,7 +476,8 @@ def resp_forbidden(e):
 def start_server(port: int,
                  q: queue.Queue,
                  open_window_fn: Callable[[str], None],
-                 run_lookup_query_fn: Callable[[str], None]):
+                 run_lookup_query_fn: Callable[[str], None],
+                 run_combined_search_fn: Callable[[str, int], ApiSearchResult]):
     logger.info(f'Starting server on port {port}')
 
     global server_queue
@@ -463,5 +486,6 @@ def start_server(port: int,
     global app_callbacks
     app_callbacks.open_window = open_window_fn
     app_callbacks.run_lookup_query = run_lookup_query_fn
+    app_callbacks.run_combined_search = run_combined_search_fn
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)
