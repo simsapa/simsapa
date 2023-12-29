@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-import math, json, queue
+import re, math, json, queue
 from typing import Any, List, Optional
 from pathlib import Path
 
@@ -707,7 +707,12 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
-        query = url.path().strip('/')
+
+        # url.path() = /words/rupa
+        # url.path() = /rupa
+        query = re.sub(r"^/words", "", url.path())
+        query = query.strip('/')
+
         logger.info(f"Show Word: {query}")
 
         self.lookup_in_dictionary(query,

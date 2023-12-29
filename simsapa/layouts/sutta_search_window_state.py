@@ -539,9 +539,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._show_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
             return
 
-        if sutta_quote:
-            self._set_query(sutta_quote['quote'])
-            self._start_query_workers(sutta_quote['quote'])
+        # NOTE: Don't use _set_query(sutta_quote['quote']) here, it intereferes with Sutta Study links.
 
         sutta = self._queries.sutta_queries.get_sutta_by_uid(uid, sutta_quote, quote_scope)
 

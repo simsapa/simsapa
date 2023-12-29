@@ -2,42 +2,28 @@ import json
 import queue
 
 from functools import partial
-from typing import Callable, List, Optional, TypedDict
+from typing import Callable, List, Optional
 
 from PyQt6 import QtCore
 from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBoxLayout, QWidget
 
-from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, logger, QueryType
+from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QuoteScope, SuttaQuote, logger, QueryType
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
 from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
-from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaStudyWindowInterface
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaPanel, SuttaPanelSettingKeys, SuttaStudyWindowInterface
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_lookup import WordLookupState
 
 CSS_EXTRA = "html { font-size: 14px; }"
 
-class SuttaPanelSettingKeys(TypedDict):
-    language_filter_setting_key: str
-    search_mode_setting_key: str
-    source_filter_setting_key: str
-
-class SuttaPanel(TypedDict):
-    layout_widget: QWidget
-    layout: QVBoxLayout
-    searchbar_layout: QHBoxLayout
-    tabs_layout: QVBoxLayout
-    state: SuttaSearchWindowState
-    setting_keys: SuttaPanelSettingKeys
-
 class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
-
     splitter: QSplitter
     sutta_panels: List[SuttaPanel]
     dict_layout: QVBoxLayout
@@ -89,15 +75,19 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             except queue.Empty:
                 pass
 
-    def _show_sutta_by_uid_in_side(self, uid: str, side: str):
+    def _show_sutta_by_uid_in_side(self,
+                                   uid: str,
+                                   side: str,
+                                   sutta_quote: Optional[SuttaQuote] = None,
+                                   quote_scope = QuoteScope.Sutta):
         if side == 'panel_one':
-            self.sutta_panels[0]['state']._show_sutta_by_uid(uid)
+            self.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
         elif side == 'panel_two':
-            self.sutta_panels[1]['state']._show_sutta_by_uid(uid)
+            self.sutta_panels[1]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
         elif side == 'panel_three':
-            self.sutta_panels[2]['state']._show_sutta_by_uid(uid)
+            self.sutta_panels[2]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
     def _open_in_study_window(self, side: str, sutta: Optional[USutta]):
         if sutta is None:

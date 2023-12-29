@@ -6,7 +6,7 @@ from flask.wrappers import Response
 from flask_cors import CORS
 import logging
 
-from simsapa import PACKAGE_ASSETS_DIR
+from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage
 from simsapa import logger
 from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
 from simsapa.app.search.helpers import SearchResult
@@ -363,6 +363,31 @@ def lookup_window_query_post():
 
     app_callbacks.run_lookup_query(query_text)
 
+    return "OK", 200
+
+@app.route('/suttas/<string:sutta_ref>', methods=['GET'])
+@app.route('/suttas/<string:sutta_ref>/<string:lang>', methods=['GET'])
+@app.route('/suttas/<string:sutta_ref>/<string:lang>/<string:source_uid>', methods=['GET'])
+def suttas(sutta_ref = '', lang = '', source_uid = ''):
+    logger.info(f"api.py::suttas() {sutta_ref} {lang} {source_uid}")
+    msg = ApiMessage(
+        queue_id='app_windows',
+        action = ApiAction.show_sutta_by_url,
+        data = request.url
+    )
+    SERVER_QUEUE.put_nowait(json.dumps(msg))
+    return "OK", 200
+
+@app.route('/words/<string:word>', methods=['GET'])
+@app.route('/words/<string:word>/<string:dict_label>', methods=['GET'])
+def words(word = '', dict_label = ''):
+    logger.info(f"api.py::words() {word} {dict_label}")
+    msg = ApiMessage(
+        queue_id='app_windows',
+        action = ApiAction.show_word_by_url,
+        data = request.url
+    )
+    SERVER_QUEUE.put_nowait(json.dumps(msg))
     return "OK", 200
 
 @app.route('/open_window', defaults={'window_type': ''})

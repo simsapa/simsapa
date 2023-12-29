@@ -144,9 +144,17 @@ class AppWindows:
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
 
+                elif msg['action'] == ApiAction.show_sutta_by_url:
+                    url = QUrl(msg['data'])
+                    self._show_sutta_by_url_in_search(url)
+
                 elif msg['action'] == ApiAction.open_words_new:
                     schemas_tables_uids = json.loads(msg['data'])
                     self.open_words_new(schemas_tables_uids)
+
+                elif msg['action'] == ApiAction.show_word_by_url:
+                    url = QUrl(msg['data'])
+                    self._show_words_by_url(url)
 
                 elif msg['action'] == ApiAction.open_in_study_window:
                     self._show_sutta_by_uid_in_side(msg)
@@ -304,7 +312,15 @@ class AppWindows:
                            url: QUrl,
                            show_results_tab = True,
                            include_exact_query = True) -> bool:
-        if url.host() != QueryType.words:
+        # http://localhost:4848/words/rupa
+        # http://localhost:4848/words/55151
+        # http://localhost:4848/words/55151/dpd
+        #
+        # ssp://words/rupa
+        # ssp://words/rupa/mw
+
+        if url.host() != 'localhost' and \
+           url.host() != QueryType.words:
             return False
 
         self._preview_window._do_hide()
@@ -315,7 +331,10 @@ class AppWindows:
                 view = w
                 break
 
-        query = re.sub(r"^/", "", url.path())
+        # url.path() = /words/rupa
+        # url.path() = /rupa
+        query = re.sub(r"^/words", "", url.path())
+        query = query.strip('/')
 
         if view is None:
             self._new_dictionary_search_window(query)
@@ -331,12 +350,19 @@ class AppWindows:
         self._show_sutta_by_url_in_search(url)
 
     def _show_sutta_by_url_in_search(self, url: QUrl) -> bool:
-        if url.host() != QueryType.suttas:
+        # http://localhost:4848/suttas/sn23.11?q=grows+disillusioned+with+form
+        # ssp://suttas/sn23.11?q=grows+disillusioned+with+form"
+        if url.host() != 'localhost' and \
+           url.host() != QueryType.suttas:
             return False
 
         self._preview_window._do_hide()
 
-        uid = re.sub(r"^/", "", url.path())
+        # url.path() = /suttas/sn23.11
+        # url.path() = /sn23.11
+        uid = re.sub(r"^/suttas", "", url.path())
+        uid = re.sub(r"^/", "", uid)
+
         query = parse_qs(url.query())
 
         quote_scope = QuoteScope.Sutta
@@ -345,7 +371,25 @@ class AppWindows:
             if sc in QuoteScopeValues.keys():
                 quote_scope = QuoteScopeValues[sc]
 
-        self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
+        # Default to SuttaSearch window.
+        # Only allow SuttaSearch or SuttaStudy in query parameter.
+
+        window_type = WindowType.SuttaSearch
+
+        if 'window_type' in query.keys():
+            s = query['window_type'][0]
+            logger.info(s)
+            if s in WindowNameToType.keys():
+                t = WindowNameToType[s]
+
+                if t in [WindowType.SuttaSearch, WindowType.SuttaStudy]:
+                    window_type = t
+
+        if window_type == WindowType.SuttaSearch:
+            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
+
+        elif window_type == WindowType.SuttaStudy:
+            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope)
 
         return True
 
@@ -364,6 +408,22 @@ class AppWindows:
             view = self._new_sutta_search_window()
 
         view.s._show_sutta_by_uid(uid, sutta_quote, quote_scope)
+
+    def _show_sutta_by_uid_in_study(self,
+                                    uid: str,
+                                    sutta_quote: Optional[SuttaQuote] = None,
+                                    quote_scope = QuoteScope.Sutta):
+
+        view = None
+        for w in self._windows:
+            if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
+                view = w
+                break
+
+        if view is None:
+            view = self._new_sutta_study_window()
+
+        view.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None

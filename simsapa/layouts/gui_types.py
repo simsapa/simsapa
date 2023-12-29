@@ -6,11 +6,12 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QVBoxLayout, QWidget
 
 from simsapa import IS_MAC, DbSchemaName, SuttaQuote
 from simsapa.app.search.helpers import SearchResult
 from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SearchMode
+from simsapa.layouts.find_panel import FindPanel
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
@@ -569,6 +570,9 @@ class SuttaSearchWindowStateInterface(SearchBarInterface):
     _show_sutta_by_uid: Callable
     _get_selection: Callable
     _get_active_tab: Callable
+    _find_panel: FindPanel
+
+    reload_page: Callable[[], None]
 
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
@@ -608,10 +612,24 @@ class SuttaSearchWindowInterface(AppWindowInterface):
 
     s: SuttaSearchWindowStateInterface
 
+class SuttaPanelSettingKeys(TypedDict):
+    language_filter_setting_key: str
+    search_mode_setting_key: str
+    source_filter_setting_key: str
+
+class SuttaPanel(TypedDict):
+    layout_widget: QWidget
+    layout: QVBoxLayout
+    searchbar_layout: QHBoxLayout
+    tabs_layout: QVBoxLayout
+    state: SuttaSearchWindowStateInterface
+    setting_keys: SuttaPanelSettingKeys
+
 class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
     reload_sutta_pages: Callable
     find_toolbar: QToolBar
     find_panel_layout: QHBoxLayout
+    sutta_panels: List[SuttaPanel]
 
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable
