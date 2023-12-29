@@ -168,6 +168,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                                            enable_search_extras=True,
                                            enable_regex_fuzzy=False,
                                            enable_info_button=False,
+                                           enable_sidebar_button=False,
                                            enable_sidebar=False,
                                            enable_find_panel=True,
                                            create_find_toolbar=False,
@@ -204,6 +205,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_layout.addItem(spacer)
 
         self.dictionary_state = WordLookupState(app_data = self._app_data,
+                                                parent_window = self,
                                                 wrap_layout = self.dictionary_layout,
                                                 focus_input = False,
                                                 enable_regex_fuzzy = False,

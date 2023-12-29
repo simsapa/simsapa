@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Optional
 import re
 from urllib.parse import urlencode
 
-from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout)
@@ -23,7 +23,7 @@ from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.helpers import SearchResult
 
-from simsapa.layouts.gui_types import OpenPromptParams, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
+from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
 from simsapa.layouts.gui_types import sutta_quote_from_url
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
@@ -81,6 +81,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  enable_search_extras: bool = True,
                  enable_regex_fuzzy: bool = True,
                  enable_info_button: bool = True,
+                 enable_sidebar_button: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
                  create_find_toolbar: bool = True,
@@ -147,12 +148,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                                  enable_search_extras   = enable_search_extras,
                                  enable_regex_fuzzy     = enable_regex_fuzzy,
                                  enable_info_button     = enable_info_button,
+                                 enable_sidebar_button  = enable_sidebar_button,
                                  input_fixed_size       = QSize(250, icons_height),
                                  icons_height           = icons_height,
                                  focus_input            = True,
                                  two_rows_layout        = search_bar_two_rows_layout)
 
-        self._setup_show_sidebar_btn()
         self._connect_signals()
 
         self.init_bookmark_dialog()
@@ -200,27 +201,6 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
                 self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
                 self.find_toolbar.hide()
-
-    def _setup_show_sidebar_btn(self):
-        if self.searchbar_layout is None:
-            return
-
-        if not self.enable_sidebar:
-            return
-
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
-
-        self.searchbar_layout.addItem(spacerItem)
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.show_sidebar_btn = QPushButton()
-        self.show_sidebar_btn.setIcon(icon)
-        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
-        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
-
-        self.searchbar_layout.addWidget(self.show_sidebar_btn)
 
     def _setup_sutta_tabs(self):
         if self.sutta_tabs_layout is None:
@@ -935,10 +915,6 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                 self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
 
-                def _handle_sidebar():
-                    self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
-
-                self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
             else:
                 self.back_recent_button.clicked.connect(partial(self._show_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))

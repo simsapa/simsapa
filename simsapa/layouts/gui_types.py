@@ -540,6 +540,8 @@ class SearchBarInterface(QWidget):
     _init_search_input_completer: Callable[[], None]
     _disable_search_input_completer: Callable[[], None]
 
+    action_Show_Search_Bar: QAction
+
     language_filter_dropdown: QComboBox
     language_include_btn: QPushButton
 

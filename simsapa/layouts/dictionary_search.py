@@ -4,8 +4,7 @@ import math, json, queue
 from typing import Any, List, Optional
 from pathlib import Path
 
-from PyQt6 import QtCore, QtGui
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore
 from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QAction
 from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
@@ -27,7 +26,7 @@ from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface, QExpanding, QMinimum
+from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
@@ -119,11 +118,11 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
                              enable_language_filter = True,
                              enable_search_extras   = True,
                              enable_info_button     = True,
+                             enable_sidebar_button  = True,
                              input_fixed_size       = QSize(250, 35),
                              icons_height           = 40,
                              focus_input            = True)
 
-        self._setup_show_sidebar_btn()
         self._connect_signals()
 
         self.init_deconstructor_list()
@@ -257,24 +256,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
         self.find_toolbar.hide()
-
-    def _setup_show_sidebar_btn(self):
-        if not self.enable_sidebar:
-            return
-
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
-
-        self.searchbar_layout.addItem(spacerItem)
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.show_sidebar_btn = QPushButton()
-        self.show_sidebar_btn.setIcon(icon)
-        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
-        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
-
-        self.searchbar_layout.addWidget(self.show_sidebar_btn)
 
     def _link_mouseover(self, hover_data: LinkHoverData):
         self.link_mouseover.emit(hover_data)
@@ -860,11 +841,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self._find_panel.searched.connect(self.on_searched)
         self._find_panel.closed.connect(self.find_toolbar.hide)
-
-        def _handle_sidebar():
-            self.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
-
-        self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
 
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_dict_word))

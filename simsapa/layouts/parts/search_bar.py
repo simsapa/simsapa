@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QSize
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
@@ -23,7 +23,7 @@ from simsapa.app.db import dpd_models as Dpd
 from simsapa.layouts.parts.pali_completer import PaliCompleter
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import QExpanding, QSizeMinimum, SearchBarInterface, QFixed
+from simsapa.layouts.gui_types import QExpanding, QMinimum, QSizeMinimum, SearchBarInterface, QFixed
 from simsapa.layouts.help_info import setup_info_button
 
 class HasSearchBar(SearchBarInterface):
@@ -33,6 +33,8 @@ class HasSearchBar(SearchBarInterface):
     _current_results_page: List[SearchResult] = []
     _current_results_page_num = 0
     _results_page_render_len = 10
+    enable_sidebar: bool
+    action_Show_Sidebar: QAction
 
     qwe: QWebEngineView
 
@@ -44,6 +46,7 @@ class HasSearchBar(SearchBarInterface):
                         enable_search_extras = True,
                         enable_regex_fuzzy = True,
                         enable_info_button = True,
+                        enable_sidebar_button = True,
                         input_fixed_size: Optional[QSize] = None,
                         icons_height = 40,
                         focus_input = True,
@@ -57,10 +60,12 @@ class HasSearchBar(SearchBarInterface):
         self.enable_language_filter = enable_language_filter
         self.enable_search_extras = enable_search_extras
         self.enable_regex_fuzzy = enable_regex_fuzzy
+        self.enable_sidebar_button = enable_sidebar_button
 
         self._init_search_icons()
         self._setup_layout(wrap_layout = wrap_layout,
                            enable_nav_buttons = enable_nav_buttons,
+                           enable_sidebar_button = enable_sidebar_button,
                            input_fixed_size = input_fixed_size,
                            two_rows_layout = two_rows_layout)
 
@@ -92,11 +97,49 @@ class HasSearchBar(SearchBarInterface):
 
         self._connect_search_bar_signals()
 
+    def _setup_show_sidebar_btn(self, wrap_layout: QBoxLayout):
+        if not self.enable_sidebar:
+            return
+
+        spacerItem = QSpacerItem(40, 20, QExpanding, QMinimum)
+
+        wrap_layout.addItem(spacerItem)
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.show_sidebar_btn = QPushButton()
+        self.show_sidebar_btn.setIcon(icon)
+        self.show_sidebar_btn.setMinimumSize(QSize(40, 40))
+        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
+
+        wrap_layout.addWidget(self.show_sidebar_btn)
+
     def _setup_layout(self,
                       wrap_layout: QBoxLayout,
                       enable_nav_buttons: bool,
+                      enable_sidebar_button: bool,
                       input_fixed_size: Optional[QSize] = None,
                       two_rows_layout = False):
+        box_wrap = QHBoxLayout()
+        box_wrap.setContentsMargins(0, 0, 0, 0)
+
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+        frame.setContentsMargins(0, 0, 0, 0)
+        if two_rows_layout:
+            frame_height = self._icons_height*2 + 10
+        else:
+            frame_height = self._icons_height + 10
+
+        frame.setMaximumHeight(frame_height)
+
+        self.search_bar_frame = frame
+        self.search_bar_frame.setLayout(box_wrap)
+
+        wrap_layout.addWidget(self.search_bar_frame)
 
         search_bar_box = QVBoxLayout()
         row_one = QHBoxLayout()
@@ -106,11 +149,11 @@ class HasSearchBar(SearchBarInterface):
             search_bar_box.addLayout(row_one)
             search_bar_box.addLayout(row_two)
 
-            wrap_layout.addLayout(search_bar_box)
+            box_wrap.addLayout(search_bar_box)
 
         else:
             row_one = QHBoxLayout()
-            wrap_layout.addLayout(row_one)
+            box_wrap.addLayout(row_one)
 
         # === Back / Forward Nav Buttons ===
 
@@ -200,6 +243,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             row_two.addLayout(self.search_extras)
         else:
             row_one.addLayout(self.search_extras)
+
+        if enable_sidebar_button:
+            self._setup_show_sidebar_btn(box_wrap)
 
     def _init_search_icons(self):
         search_icon = QIcon()
@@ -591,7 +637,27 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self.qwe.page().runJavaScript(js)
 
+    def _toggle_show_search_bar(self, view):
+        is_on = view.action_Show_Search_Bar.isChecked()
+        self.search_bar_frame.setVisible(is_on)
+
     def _connect_search_bar_signals(self):
+        if hasattr(self, 'pw'):
+            view = self.pw # type: ignore
+        else:
+            view = self
+
+        if hasattr(view, 'action_Show_Search_Bar'):
+            view.action_Show_Search_Bar \
+                .triggered.connect(partial(self._toggle_show_search_bar, view))
+
+        if self.enable_sidebar_button:
+            def _handle_sidebar():
+                if hasattr(view, 'action_Show_Sidebar'):
+                    view.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+
+            self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
+
         if hasattr(self, 'search_button'):
             self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
             # self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))

@@ -1593,6 +1593,14 @@ class AppWindows:
                 view.action_Show_Sidebar \
                     .triggered.connect(partial(self._toggle_show_dictionary_sidebar, view))
 
+        if isinstance(view, SuttaSearchWindowInterface):
+            if hasattr(view, 'action_Show_Sidebar'):
+                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
+                view.action_Show_Sidebar.setChecked(is_on)
+
+                view.action_Show_Sidebar \
+                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
+
         if isinstance(view, EbookReaderWindowInterface) \
            or isinstance(view, SuttaSearchWindowInterface):
 
@@ -1602,14 +1610,6 @@ class AppWindows:
 
                 view.action_Show_Related_Suttas \
                     .triggered.connect(partial(self._toggle_show_related_suttas, view))
-
-        if isinstance(view, SuttaSearchWindowInterface):
-            if hasattr(view, 'action_Show_Sidebar'):
-                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
-                view.action_Show_Sidebar.setChecked(is_on)
-
-                view.action_Show_Sidebar \
-                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
 
             if hasattr(view, 'action_Show_Translation_and_Pali_Line_by_Line'):
                 is_on = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)

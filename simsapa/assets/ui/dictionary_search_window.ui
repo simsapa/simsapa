@@ -526,13 +526,14 @@
     <property name="title">
      <string>&amp;Dictionary</string>
     </property>
-    <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
     <property name="title">
      <string>F&amp;ind</string>
     </property>
+    <addaction name="action_Show_Search_Bar"/>
+    <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
     <addaction name="action_Double_Click_on_a_Word_for_Dictionary_Lookup"/>
@@ -843,6 +844,26 @@
   <action name="action_Search_Result_Sizes">
    <property name="text">
     <string>&amp;Search Result Sizes...</string>
+   </property>
+  </action>
+  <action name="action_Show_Search_Bar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Search &amp;Bar</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+/</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the search bar with input field and controls</string>
+   </property>
+   <property name="statusTip">
+    <string/>
    </property>
   </action>
   <action name="action_Search_As_You_Type">

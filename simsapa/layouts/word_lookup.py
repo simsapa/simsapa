@@ -9,7 +9,7 @@ from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
@@ -58,6 +58,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
     def __init__(self,
                  app_data: AppData,
+                 parent_window: QMainWindow,
                  wrap_layout: QBoxLayout,
                  focus_input: bool = True,
                  enable_regex_fuzzy = True,
@@ -66,6 +67,8 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                  search_mode_setting_key = 'word_lookup_search_mode',
                  source_filter_setting_key = 'word_lookup_source_filter_idx') -> None:
         super().__init__()
+
+        self.pw = parent_window
 
         self.wrap_layout = wrap_layout
 
@@ -106,6 +109,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                              enable_search_extras   = True,
                              enable_regex_fuzzy     = enable_regex_fuzzy,
                              enable_info_button     = False,
+                             enable_sidebar_button  = False,
                              input_fixed_size       = None,
                              icons_height           = 35,
                              focus_input            = self.focus_input,
@@ -582,7 +586,7 @@ class WordLookup(WordLookupInterface):
 
         self.focus_input = focus_input
 
-        self.s = WordLookupState(app_data, self.wrap_layout, self.focus_input)
+        self.s = WordLookupState(app_data, self, self.wrap_layout, self.focus_input)
 
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
@@ -627,8 +631,14 @@ class WordLookup(WordLookupInterface):
 
         # === Find ===
 
-        self.menu_find = QMenu("&Find", self.menubar)
+        self.menu_find = QMenu("F&ind", self.menubar)
         self.menubar.addMenu(self.menu_find)
+
+        self.action_Show_Search_Bar = QAction("Show Search &Bar")
+        self.action_Show_Search_Bar.setCheckable(True)
+        self.action_Show_Search_Bar.setChecked(True)
+        self.action_Show_Search_Bar.setShortcut("Ctrl+Shift+/")
+        self.menu_find.addAction(self.action_Show_Search_Bar)
 
         # === Windows ===
 
