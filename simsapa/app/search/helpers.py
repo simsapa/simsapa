@@ -199,19 +199,26 @@ def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.P
         # Lookup headwords in pali_words.
 
         r = db_session.query(Dpd.PaliWord) \
-                        .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
-                        .all()
+                      .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
+                      .all()
         if r is not None:
             words.extend(r)
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
+def dpd_deconstructor_query(db_session: Session, query_text: str, starts_with = False) -> List[Dpd.PaliWord]:
     pali_words: Dict[str, Dpd.PaliWord] = dict()
 
-    r = db_session.query(Dpd.DpdDeconstructor) \
-                    .filter(Dpd.DpdDeconstructor.word == query_text) \
-                    .first()
+    if starts_with:
+        r = db_session.query(Dpd.DpdDeconstructor) \
+                      .filter(Dpd.DpdDeconstructor.word.like(f"{query_text}%")) \
+                      .first()
+
+    else:
+        r = db_session.query(Dpd.DpdDeconstructor) \
+                      .filter(Dpd.DpdDeconstructor.word == query_text) \
+                      .first()
+
     if r is not None:
         for w in r.headwords_flat:
             for i in inflection_to_pali_words(db_session, w):
@@ -313,6 +320,11 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
         # i2h result doesn't exist.
         # Lookup query text in dpd_deconstructor.
         res.extend(dpd_deconstructor_query(db_session, query_text))
+
+        # No exact match in deconstructor.
+        # If query text is long enough, remove the last letter and match as 'starts with'.
+        if len(res) == 0 and len(query_text) >= 4:
+            res.extend(dpd_deconstructor_query(db_session, query_text[0:-1], starts_with=True))
 
     if len(res) == 0:
         # - no exact match in pali_words or pali_roots

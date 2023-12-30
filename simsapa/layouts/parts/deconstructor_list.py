@@ -63,6 +63,14 @@ class HasDeconstructorList:
         r = self._app_data.db_session.query(Dpd.DpdDeconstructor) \
                                      .filter(Dpd.DpdDeconstructor.word == query_text) \
                                      .first()
+
+        # No exact match in deconstructor.
+        # If query text is long enough, remove the last letter and match as 'starts with'.
+        if r is None and len(query_text) >= 4:
+            r = self._app_data.db_session.query(Dpd.DpdDeconstructor) \
+                                         .filter(Dpd.DpdDeconstructor.word.like(f"{query_text[0:-1]}%")) \
+                                         .first()
+
         if r is None:
             self.deconstructor_frame.setVisible(False)
             return

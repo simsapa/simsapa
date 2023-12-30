@@ -272,6 +272,7 @@ class DpdSearchResult(TypedDict):
 @app.route('/dpd_search', methods=['POST'])
 def dpd_search():
     data = request.get_json()
+    logger.info(f"/dpd_search {data}")
     if not data or 'query_text' not in data.keys():
         return "Missing query_text", 400
 
