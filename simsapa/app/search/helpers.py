@@ -272,7 +272,7 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     res: List[UDpdWord] = []
 
     # Query text may be a DPD id number or uid.
-    if query_text.endswith("/dpd"):
+    if query_text.endswith("/dpd") or query_text.isdigit():
         ref = query_text.replace("/dpd", "")
         if ref.isdigit():
             r = db_session.query(Dpd.PaliWord) \
@@ -303,7 +303,7 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
                     .all()
     res.extend(r)
 
-    if len(r) == 0:
+    if len(res) == 0:
         # Stem form exact match.
         stem = pali_stem(query_text)
         r = db_session.query(Dpd.PaliWord) \
