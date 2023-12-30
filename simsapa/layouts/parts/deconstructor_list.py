@@ -4,9 +4,8 @@ from PyQt6 import QtWidgets
 from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from simsapa import IS_MAC
 
-from simsapa.app.db import dpd_models as Dpd
-
 from simsapa.app.app_data import AppData
+from simsapa.app.search.helpers import dpd_deconstructor_query
 from simsapa.layouts.gui_types import QExpanding, QFixed, QMinimum, SearchResultSizes, default_search_result_sizes
 
 class ResultWidget(QWidget):
@@ -60,16 +59,7 @@ class HasDeconstructorList:
     def render_deconstructor_list_for_query(self, query_text: str):
         self.deconstructor_list.clear()
 
-        r = self._app_data.db_session.query(Dpd.DpdDeconstructor) \
-                                     .filter(Dpd.DpdDeconstructor.word == query_text) \
-                                     .first()
-
-        # No exact match in deconstructor.
-        # If query text is long enough, remove the last letter and match as 'starts with'.
-        if r is None and len(query_text) >= 4:
-            r = self._app_data.db_session.query(Dpd.DpdDeconstructor) \
-                                         .filter(Dpd.DpdDeconstructor.word.like(f"{query_text[0:-1]}%")) \
-                                         .first()
+        r = dpd_deconstructor_query(self._app_data.db_session, query_text)
 
         if r is None:
             self.deconstructor_frame.setVisible(False)

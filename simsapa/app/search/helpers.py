@@ -206,18 +206,37 @@ def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.P
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str, starts_with = False) -> List[Dpd.PaliWord]:
-    pali_words: Dict[str, Dpd.PaliWord] = dict()
+def dpd_deconstructor_query(db_session: Session, query_text: str) -> Optional[Dpd.DpdDeconstructor]:
+    # Exact match.
+    r = db_session.query(Dpd.DpdDeconstructor) \
+                    .filter(Dpd.DpdDeconstructor.word == query_text) \
+                    .first()
 
-    if starts_with:
+    if r is None and len(query_text) >= 4:
+        # Match as 'starts with'.
         r = db_session.query(Dpd.DpdDeconstructor) \
                       .filter(Dpd.DpdDeconstructor.word.like(f"{query_text}%")) \
                       .first()
 
-    else:
+    if r is None and " " in query_text:
+        # If the query contained multiple words, remove spaces to find compound forms.
         r = db_session.query(Dpd.DpdDeconstructor) \
-                      .filter(Dpd.DpdDeconstructor.word == query_text) \
+                      .filter(Dpd.DpdDeconstructor.word == query_text.replace(" ", "")) \
                       .first()
+
+    if r is None and len(query_text) >= 4:
+        # No exact match in deconstructor.
+        # If query text is long enough, remove the last letter and match as 'starts with'.
+        r = db_session.query(Dpd.DpdDeconstructor) \
+                      .filter(Dpd.DpdDeconstructor.word.like(f"{query_text[0:-1]}%")) \
+                      .first()
+
+    return r
+
+def dpd_deconstructor_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
+    pali_words: Dict[str, Dpd.PaliWord] = dict()
+
+    r = dpd_deconstructor_query(db_session, query_text)
 
     if r is not None:
         for w in r.headwords_flat:
@@ -276,14 +295,14 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
         ref = query_text.replace("/dpd", "")
         if ref.isdigit():
             r = db_session.query(Dpd.PaliWord) \
-                        .filter(Dpd.PaliWord.id == int(ref)) \
-                        .first()
+                          .filter(Dpd.PaliWord.id == int(ref)) \
+                          .first()
             res.append(r)
 
         else:
             r = db_session.query(Dpd.PaliRoot) \
-                        .filter(Dpd.PaliRoot.uid == query_text) \
-                        .first()
+                          .filter(Dpd.PaliRoot.uid == query_text) \
+                          .first()
             res.append(r)
 
     if len(res) > 0:
@@ -291,24 +310,33 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
 
     # Word exact match.
     r = db_session.query(Dpd.PaliWord) \
-                    .filter(or_(Dpd.PaliWord.pali_clean == query_text,
-                                Dpd.PaliWord.word_ascii == query_text)) \
-                    .all()
+                  .filter(or_(Dpd.PaliWord.pali_clean == query_text,
+                              Dpd.PaliWord.word_ascii == query_text)) \
+                  .all()
     res.extend(r)
 
     r = db_session.query(Dpd.PaliRoot) \
-                    .filter(or_(Dpd.PaliRoot.root_clean == query_text,
-                                Dpd.PaliRoot.root_no_sign == query_text,
-                                Dpd.PaliRoot.word_ascii == query_text)) \
-                    .all()
+                  .filter(or_(Dpd.PaliRoot.root_clean == query_text,
+                              Dpd.PaliRoot.root_no_sign == query_text,
+                              Dpd.PaliRoot.word_ascii == query_text)) \
+                  .all()
     res.extend(r)
 
     if len(res) == 0:
         # Stem form exact match.
         stem = pali_stem(query_text)
         r = db_session.query(Dpd.PaliWord) \
-                        .filter(Dpd.PaliWord.stem == stem) \
-                        .all()
+                      .filter(Dpd.PaliWord.stem == stem) \
+                      .all()
+        res.extend(r)
+
+    if len(res) == 0:
+        # If the query contained multiple words, remove spaces to find compound forms.
+        nospace_query = query_text.replace(" ", "")
+        r = db_session.query(Dpd.PaliWord) \
+                      .filter(or_(Dpd.PaliWord.pali_clean == nospace_query,
+                                  Dpd.PaliWord.word_ascii == nospace_query)) \
+                      .all()
         res.extend(r)
 
     if len(res) == 0:
@@ -319,12 +347,7 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     if len(res) == 0:
         # i2h result doesn't exist.
         # Lookup query text in dpd_deconstructor.
-        res.extend(dpd_deconstructor_query(db_session, query_text))
-
-        # No exact match in deconstructor.
-        # If query text is long enough, remove the last letter and match as 'starts with'.
-        if len(res) == 0 and len(query_text) >= 4:
-            res.extend(dpd_deconstructor_query(db_session, query_text[0:-1], starts_with=True))
+        res.extend(dpd_deconstructor_to_pali_words(db_session, query_text))
 
     if len(res) == 0:
         # - no exact match in pali_words or pali_roots
