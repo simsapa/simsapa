@@ -246,7 +246,7 @@ class TantivySearchQuery:
 
         results = []
 
-        if p['source'] is not None and (p['enable_regex'] or p['fuzzy_distance'] > 0):
+        if p['enable_regex'] or p['fuzzy_distance'] > 0:
             total_hits_count = 0
 
             filtered_page_start_offset = 0
@@ -274,10 +274,14 @@ class TantivySearchQuery:
 
                 r = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
 
-                if p['source_include']:
-                    _filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
+                if p['source'] is not None:
+                    if p['source_include']:
+                        _filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
+                    else:
+                        _filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
+
                 else:
-                    _filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
+                    _filtered_results = r
 
                 # Stop if the filtered results fill the requested results page.
                 # Filtered results are filled progressively up to the requested results page.
@@ -287,12 +291,6 @@ class TantivySearchQuery:
                 if len(_filtered_results) >= page_num * self.page_len \
                    or filtered_page_start_offset >= total_hits_count:
 
-                    # The results are slice which is requested results page.
-                    res_start = page_num * self.page_len
-                    res_end = (page_num+1) * self.page_len
-
-                    results = _filtered_results[res_start:res_end]
-
                     if filtered_page_len >= total_hits_count:
                         self.hits_count = len(_filtered_results)
 
@@ -301,13 +299,19 @@ class TantivySearchQuery:
                         # unless we filter all the results pages.
                         self.hits_count = None
 
+                    # The results are slice which is requested results page.
+                    res_start = page_num * self.page_len
+                    res_end = (page_num+1) * self.page_len
+
+                    results.extend(_filtered_results[res_start:res_end])
+
                     break
 
                 else:
                     filtered_page_num += 1
                     filtered_page_start_offset += filtered_page_num * filtered_page_len
 
-            results.extend(_filtered_results)
+                    results.extend(_filtered_results)
 
         else:
             page_start_offset = page_num * self.page_len

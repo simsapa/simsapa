@@ -89,10 +89,11 @@ class HasFulltextList:
         query_hits = self.query_hits()
         logger.info(f"render_fulltext_page(), query_hits: {query_hits}")
 
-        if query_hits is None or query_hits == 0:
-            self.fulltext_label.clear()
-            self.fulltext_list.clear()
-            return []
+        # NOTE: using regex or fuzzy options, the query_hits may be None, even
+        # when results were found, because the number is not calculated in
+        # tantivy_index.py::highlighted_results_page()
+
+        self.fulltext_list.clear()
 
         page_num = self.fulltext_page_input.value() - 1
         if page_num < 0:
