@@ -202,7 +202,7 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
 
                 connection.commit()
 
-                # Create TBW tables for word lookup data
+                # Create DPD tables for word lookup data
 
                 query = """
                 CREATE TABLE
@@ -265,7 +265,7 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
 
     save_dpd_caches(dpd_db_session)
 
-    # Save TBW lookup data
+    # Save DPD lookup data
 
     with open(dpd_bootstrap_current_dir.joinpath("dpd_deconstructor.json"), 'r', encoding='utf-8') as f:
         dpd_deconstructor: Dict[str, str] = json.loads(f.read())

@@ -37,13 +37,13 @@ class SearchMode(int, Enum):
     HeadwordMatch = 2
     TitleMatch = 3
     DpdIdMatch = 4
-    DpdTbwLookup = 5
+    DpdLookup = 5
     Combined = 6
 
 AllSearchModeNameToType = {
     "Combined": SearchMode.Combined,
     "Fulltext Match": SearchMode.FulltextMatch,
-    "DPD Lookup": SearchMode.DpdTbwLookup,
+    "DPD Lookup": SearchMode.DpdLookup,
     # FIXME disabled ExactMatch while its buggy.
     # "Exact Match": SearchMode.ExactMatch,
     # FIXME test HeadwordMatch
@@ -59,7 +59,7 @@ SuttaSearchModeNameToType = {
 
 DictionarySearchModeNameToType = {
     "Combined": SearchMode.Combined,
-    "DPD Lookup": SearchMode.DpdTbwLookup,
+    "DPD Lookup": SearchMode.DpdLookup,
     "Fulltext Match": SearchMode.FulltextMatch,
     # FIXME test ExactMatch
     # "Exact Match": SearchMode.ExactMatch,

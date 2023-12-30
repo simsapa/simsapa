@@ -62,7 +62,7 @@ class SearchQueryTask:
             return self.search_query.hits_count
 
         elif self.search_mode == SearchMode.DpdIdMatch or \
-             self.search_mode == SearchMode.DpdTbwLookup:
+             self.search_mode == SearchMode.DpdLookup:
 
             return len(self._db_all_results)
 
@@ -136,7 +136,7 @@ class SearchQueryTask:
             self._highlighted_result_pages[page_num] = res
             self._db_all_results = res
 
-        elif self.search_mode == SearchMode.DpdTbwLookup:
+        elif self.search_mode == SearchMode.DpdLookup:
             # Display all DPD Lookup results (not many) on the first (0 index) results page.
             res = self._dpd_lookup()
             self._highlighted_result_pages[0] = res
@@ -578,7 +578,7 @@ class SearchQueryTask:
             self.results_page(0)
 
         elif self.search_mode == SearchMode.DpdIdMatch or \
-             self.search_mode == SearchMode.DpdTbwLookup:
+             self.search_mode == SearchMode.DpdLookup:
 
             self.results_page(0)
 
