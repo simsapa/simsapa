@@ -7,9 +7,8 @@ from flask_cors import CORS
 import logging
 
 from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage
-from simsapa import logger
+from simsapa import logger, SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
-from simsapa.app.search.helpers import SearchResult
 
 from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
 
@@ -248,7 +247,7 @@ def _bm_to_res(x: UBookmark) -> Dict[str, str]:
     }
 
 @app.route('/combined_search', methods=['POST'])
-def combined_search():
+def route_combined_search():
     data = request.get_json()
     if not data or 'query_text' not in data.keys():
         return "Missing query_text", 400

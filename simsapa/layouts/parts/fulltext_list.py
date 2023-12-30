@@ -5,10 +5,9 @@ from PyQt6 import QtGui
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QMovie
 from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTabWidget
-from simsapa import logger
 
+from simsapa import logger, SearchResult
 from simsapa.app.app_data import AppData
-from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import QExpanding, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget

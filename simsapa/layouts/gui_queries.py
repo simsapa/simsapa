@@ -6,10 +6,9 @@ from sqlalchemy.orm.session import Session
 
 from PyQt6.QtCore import QThreadPool
 
-from simsapa import logger
+from simsapa import logger, SearchResult
 
 from simsapa.app.search.dictionary_queries import DictionaryQueries, ExactQueryWorker
-from simsapa.app.search.helpers import SearchResult
 from simsapa.app.search.query_task import SearchQueryTask
 from simsapa.app.search.sutta_queries import SuttaQueries
 from simsapa.app.search.tantivy_index import TantivySearchIndexes

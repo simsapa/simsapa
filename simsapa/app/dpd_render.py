@@ -10,8 +10,7 @@ from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, PaliRoot, PaliWord, DerivedData, FamilyRoot, FamilyWord
-from simsapa.app.helpers import strip_html
-from simsapa.app.search.helpers import root_info_clean_plaintext
+from simsapa.app.helpers import strip_html, root_info_clean_plaintext
 
 from simsapa.dpd_db.exporter.export_dpd import PaliWordDbParts, PaliWordDbRowItems, PaliWordRenderData, PaliWordTemplates, get_family_compounds_for_pali_word, get_family_set_for_pali_word, render_example_templ, render_family_compound_templ, render_family_root_templ, render_family_set_templ, render_family_word_templ, render_feedback_templ, render_frequency_templ, render_grammar_templ, render_inflection_templ
 from simsapa.dpd_db.exporter.export_roots import render_root_buttons_templ, render_root_definition_templ, render_root_families_templ, render_root_info_templ, render_root_matrix_templ

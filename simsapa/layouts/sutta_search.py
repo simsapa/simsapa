@@ -7,10 +7,9 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, QVBoxLayout)
 
-from simsapa import logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa import logger, ApiAction, ApiMessage, SearchResult, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 
-from simsapa.app.search.helpers import SearchResult
 from simsapa.app.app_data import AppData
 from simsapa.app.types import USutta
 

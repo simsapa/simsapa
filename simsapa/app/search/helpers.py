@@ -1,45 +1,27 @@
-from typing import List, Optional, TypedDict, Union, Dict
+from typing import List, Optional, Set, Union, Dict
+from datetime import datetime
+from time import sleep
 import re
 
 import tantivy
 
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
-from simsapa import DbSchemaName
+from simsapa import DbSchemaName, SearchResult
+from simsapa.app.api import ApiSearchResult
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
-from simsapa.app.helpers import strip_html
+from simsapa.app.helpers import strip_html, root_info_clean_plaintext
 from simsapa.app.pali_stemmer import pali_stem
+from simsapa.app.types import SearchArea, SearchMode, SearchParams
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
+from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
 UDpdWord = Union[Dpd.PaliWord, Dpd.PaliRoot]
-
-# TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
-class Labels(TypedDict):
-    appdata: List[str]
-    userdata: List[str]
-
-class SearchResult(TypedDict):
-    uid: str
-    # database schema name (appdata or userdata)
-    schema_name: str
-    # database table name (e.g. suttas or dict_words)
-    table_name: str
-    source_uid: Optional[str]
-    title: str
-    ref: Optional[str]
-    nikaya: Optional[str]
-    author: Optional[str]
-    # highlighted snippet
-    snippet: str
-    # page number in a document
-    page_number: Optional[int]
-    score: Optional[float]
-    rank: Optional[int]
 
 def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
     return SearchResult(
@@ -245,19 +227,12 @@ def dpd_deconstructor_to_pali_words(db_session: Session, query_text: str) -> Lis
 
     return list(pali_words.values())
 
-def root_info_clean_plaintext(html: str) -> str:
-    s = strip_html(html)
-    s = s.replace("･", " ")
-    s = s.replace("Pāḷi Root:", "")
-    s = re.sub(r"Bases:.*$", "", s, flags=re.DOTALL)
-    return s
-
 def _parse_words(words_res: List[UDpdWord], do_pali_sort = False) -> List[SearchResult]:
-    uniq_pali = []
+    uniq_pali = set()
     uniq_words: List[UDpdWord] = []
     for i in words_res:
         if i.word not in uniq_pali:
-            uniq_pali.append(i.word)
+            uniq_pali.add(i.word)
             uniq_words.append(i)
 
     res_page = []
@@ -372,6 +347,63 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
             res.extend(r)
 
     return _parse_words(res, do_pali_sort)
+
+def unique_search_results(results: List[SearchResult]) -> List[SearchResult]:
+    keys: Set[str] = set()
+    uniq_results = []
+    for i in results:
+        k = f"{i['title']} {i['schema_name']} {i['uid']}"
+        if k not in keys:
+            keys.add(k)
+            uniq_results.append(i)
+
+    return uniq_results
+
+def combined_search(queries: GuiSearchQueriesInterface,
+                    query_text: str,
+                    lang: Optional[str] = None,
+                    page_num = 0,
+                    do_pali_sort = False) -> ApiSearchResult:
+    params = SearchParams(
+        mode = SearchMode.Combined,
+        page_len = 20,
+        lang = lang,
+        lang_include = True,
+        source = None,
+        source_include = True,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
+    _last_query_time = datetime.now()
+
+    def _search_query_finished(__query_started_time__: datetime):
+        pass
+
+    if page_num == 0:
+        queries.start_search_query_workers(
+            query_text,
+            SearchArea.DictWords,
+            _last_query_time,
+            _search_query_finished,
+            params,
+        )
+
+        while not queries.all_finished():
+            # Sleep 10 milliseconds
+            sleep(0.01)
+
+    results = unique_search_results(queries.results_page(page_num))
+
+    if do_pali_sort:
+        results = sorted(results, key=lambda i: pali_sort_key(i['title']))
+
+    res = ApiSearchResult(
+        hits = queries.query_hits(),
+        results = results,
+    )
+
+    return res
 
 def get_word_for_schema_table_and_uid(db_session: Session, db_schema: str, db_table: str, db_uid: str) -> UDictWord:
     if db_schema == DbSchemaName.AppData.value:

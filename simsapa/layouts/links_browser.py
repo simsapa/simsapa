@@ -16,7 +16,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from sqlalchemy import or_
 
-from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, ApiAction, ApiMessage
+from simsapa import LOADING_HTML, CLICK_GENERATE_HTML, logger, SearchResult, ApiAction, ApiMessage
 from simsapa import APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.assets.ui.links_browser_window_ui import Ui_LinksBrowserWindow
 
@@ -26,7 +26,6 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.types import USutta, UDictWord, UDocument
 from simsapa.app.app_data import AppData
 from simsapa.app.helpers import compact_rich_text
-from simsapa.app.search.helpers import SearchResult
 
 from simsapa.layouts.gui_types import AppWindowInterface, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget

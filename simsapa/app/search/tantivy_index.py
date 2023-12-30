@@ -1,5 +1,5 @@
 import shutil
-from typing import Dict, List, Optional, Set, Union, Tuple
+from typing import Dict, List, Optional, Union, Tuple
 import math
 
 import tantivy
@@ -7,12 +7,12 @@ import tantivy
 from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 
-from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, logger
+from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, SearchResult, logger
 from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_niggahita, query_text_to_uid_field_query
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
-from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
+from simsapa.app.search.helpers import get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline, unique_search_results
 from simsapa.app.types import SearchArea, SearchParams
 
 from simsapa.app.dpd_render import pali_root_index_plaintext, pali_word_index_plaintext
@@ -331,15 +331,7 @@ class TantivySearchQuery:
 
         # FIXME tantivy returns the same result multiple times.
         # Keep only unique results.
-        keys: Set[str] = set()
-        uniq_results = []
-        for i in results:
-            k = f"{i['title']} {i['schema_name']} {i['uid']}"
-            if k not in keys:
-                keys.add(k)
-                uniq_results.append(i)
-
-        results = uniq_results
+        results = unique_search_results(results)
 
         if self.is_sutta_index():
             return results

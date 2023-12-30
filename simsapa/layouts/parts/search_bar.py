@@ -9,12 +9,12 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
-from simsapa import DbSchemaName, logger, SEARCH_TIMER_SPEED
+from simsapa import DbSchemaName, SearchResult, logger, SEARCH_TIMER_SPEED
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType, UDictWord
-from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
+from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

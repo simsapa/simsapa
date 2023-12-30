@@ -1,7 +1,5 @@
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
-from simsapa import IS_MAC, DbSchemaName
-
-from simsapa.app.search.helpers import SearchResult
+from simsapa import IS_MAC, DbSchemaName, SearchResult
 
 from simsapa.layouts.gui_types import SearchResultSizes
 

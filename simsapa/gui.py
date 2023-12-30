@@ -2,8 +2,6 @@ from subprocess import Popen
 import os, sys, threading, shutil
 import traceback
 from typing import Optional
-from datetime import datetime
-from time import sleep
 
 from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon
@@ -19,7 +17,7 @@ from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
-from simsapa.app.types import SearchArea, SearchMode, SearchParams
+from simsapa.app.search.helpers import combined_search
 from simsapa.app.windows import AppWindows
 
 from simsapa.layouts.error_message import ErrorMessageWindow
@@ -211,41 +209,11 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
         app_windows.signals.run_lookup_query_signal.emit(query_text)
 
     def _run_combined_search(query_text: str, page_num = 0) -> ApiSearchResult:
-        params = SearchParams(
-            mode = SearchMode.Combined,
-            page_len = 20,
-            lang = None,
-            lang_include = True,
-            source = None,
-            source_include = True,
-            enable_regex = False,
-            fuzzy_distance = 0,
+        return combined_search(
+            queries = app_data._queries,
+            query_text = query_text,
+            page_num = page_num,
         )
-
-        _last_query_time = datetime.now()
-
-        def _search_query_finished(__query_started_time__: datetime):
-            pass
-
-        if page_num == 0:
-            app_data._queries.start_search_query_workers(
-                query_text,
-                SearchArea.DictWords,
-                _last_query_time,
-                _search_query_finished,
-                params,
-            )
-
-            while not app_data._queries.all_finished():
-                # Sleep 10 milliseconds
-                sleep(0.01)
-
-        res = ApiSearchResult(
-            hits = app_data._queries.query_hits(),
-            results = app_data._queries.results_page(page_num),
-        )
-
-        return res
 
     def _start_daemon_server():
         # This way the import happens in the thread, and doesn't delay app.exec()

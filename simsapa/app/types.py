@@ -1,11 +1,10 @@
 from enum import Enum
 from typing import List, Optional, TypedDict, Union, Callable
 
-from simsapa import ShowLabels
+from simsapa import ShowLabels, SearchResult
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
-from simsapa.app.search.helpers import SearchResult
 
 USutta = Union[Am.Sutta, Um.Sutta]
 UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]

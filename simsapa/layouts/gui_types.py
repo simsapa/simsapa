@@ -8,8 +8,7 @@ from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QVBoxLayout, QWidget
 
-from simsapa import IS_MAC, DbSchemaName, SuttaQuote
-from simsapa.app.search.helpers import SearchResult
+from simsapa import IS_MAC, DbSchemaName, SuttaQuote, SearchResult
 from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SearchMode
 from simsapa.layouts.find_panel import FindPanel
 

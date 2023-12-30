@@ -11,10 +11,9 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
-from simsapa import logger, IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR, QueryType
+from simsapa import logger, IS_MAC, IS_SWAY, SIMSAPA_PACKAGE_DIR, QueryType, SearchResult
 
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_text_to_segments, is_complete_sutta_uid
-from simsapa.app.search.helpers import SearchResult
 from simsapa.app.types import SearchArea, SearchMode, SearchParams, UDictWord, USutta
 from simsapa.app.app_data import AppData
 from simsapa.layouts.gui_queries import GuiSearchQueries

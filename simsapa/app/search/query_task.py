@@ -6,14 +6,14 @@ import tantivy
 
 from sqlalchemy import and_, or_, not_
 
-from simsapa import logger
+from simsapa import logger, SearchResult
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import consistent_niggahita
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import SearchResult, dict_word_to_search_result, dpd_lookup, sutta_to_search_result
+from simsapa.app.search.helpers import dict_word_to_search_result, dpd_lookup, sutta_to_search_result
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class SearchQueryTask:

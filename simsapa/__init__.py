@@ -1,6 +1,6 @@
 import os, sys
 from pathlib import Path
-from typing import Dict, Optional, TypedDict
+from typing import Dict, List, Optional, TypedDict
 from enum import Enum
 import queue
 from dotenv import load_dotenv
@@ -277,3 +277,26 @@ QuoteScopeValues = {
 class SuttaQuote(TypedDict):
     quote: str
     selection_range: Optional[str]
+
+# TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
+class Labels(TypedDict):
+    appdata: List[str]
+    userdata: List[str]
+
+class SearchResult(TypedDict):
+    uid: str
+    # database schema name (appdata or userdata)
+    schema_name: str
+    # database table name (e.g. suttas or dict_words)
+    table_name: str
+    source_uid: Optional[str]
+    title: str
+    ref: Optional[str]
+    nikaya: Optional[str]
+    author: Optional[str]
+    # highlighted snippet
+    snippet: str
+    # page number in a document
+    page_number: Optional[int]
+    score: Optional[float]
+    rank: Optional[int]

@@ -12,14 +12,14 @@ from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DetailsTab, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED, QueryType
+from simsapa import SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED, QueryType
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 
-from simsapa.app.search.helpers import SearchResult, get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
+from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
 from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
