@@ -44,11 +44,11 @@ global app_callbacks
 app_callbacks = AppCallbacks()
 
 @app.route('/', methods=['GET'])
-def index():
+def route_index():
     return 'OK', 200
 
 @app.route('/queues/<string:queue_id>', methods=['POST'])
-def queues(queue_id):
+def route_queues(queue_id):
     if request.content_type == 'application/json':
         try:
             msg = request.get_json(cache=False)
@@ -79,7 +79,7 @@ def queues(queue_id):
     return 'OK', 200
 
 @app.route('/assets/<path:filename>', methods=['GET'])
-def assets(filename):
+def route_assets(filename):
     if not os.path.isfile(os.path.join(PACKAGE_ASSETS_DIR, filename)): # type: ignore
         logger.error(f"api::assets(): File Not Found: {filename}")
         abort(404)
@@ -154,7 +154,7 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
     return results[0]
 
 @app.route('/generate_graph', methods=['POST'])
-def api_generate_graph():
+def route_api_generate_graph():
     from simsapa.app.graph import (all_nodes_and_edges, generate_graph, sutta_nodes_and_edges,
                                    dict_word_nodes_and_edges, sutta_graph_id)
 
@@ -269,7 +269,7 @@ class DpdSearchResult(TypedDict):
     definition_html: str
 
 @app.route('/dpd_search', methods=['POST'])
-def dpd_search():
+def route_dpd_search():
     data = request.get_json()
     logger.info(f"/dpd_search {data}")
     if not data or 'query_text' not in data.keys():
@@ -316,7 +316,7 @@ def dpd_search():
     return jsonify(search_results), 200
 
 @app.route('/dpd_word_completion_list', methods=['GET'])
-def dpd_word_completion_list():
+def route_dpd_word_completion_list():
     logger.info('/dpd_word_completion_list')
     dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
 
@@ -332,7 +332,7 @@ def dpd_word_completion_list():
     return jsonify(results), 200
 
 @app.route('/get_bookmarks_with_range_for_sutta', methods=['POST'])
-def get_bookmarks_with_range_for_sutta():
+def route_get_bookmarks_with_range_for_sutta():
     data = request.get_json()
     if not data or 'sutta_uid' not in data.keys():
         return "Missing sutta_uid", 400
@@ -342,14 +342,14 @@ def get_bookmarks_with_range_for_sutta():
     return jsonify(result), 200
 
 @app.route('/lookup_window_query/<query_text>', methods=['GET'])
-def lookup_window_query_get(query_text: str = ''):
+def route_lookup_window_query_get(query_text: str = ''):
     if len(query_text) == 0:
         return "OK", 200
     app_callbacks.run_lookup_query(query_text)
     return "OK", 200
 
 @app.route('/lookup_window_query', methods=['POST'])
-def lookup_window_query_post():
+def route_lookup_window_query_post():
     data = request.get_json()
     if not data:
         return "Missing data", 400
@@ -368,7 +368,7 @@ def lookup_window_query_post():
 @app.route('/suttas/<string:sutta_ref>', methods=['GET'])
 @app.route('/suttas/<string:sutta_ref>/<string:lang>', methods=['GET'])
 @app.route('/suttas/<string:sutta_ref>/<string:lang>/<string:source_uid>', methods=['GET'])
-def suttas(sutta_ref = '', lang = '', source_uid = ''):
+def route_suttas(sutta_ref = '', lang = '', source_uid = ''):
     logger.info(f"api.py::suttas() {sutta_ref} {lang} {source_uid}")
     msg = ApiMessage(
         queue_id='app_windows',
@@ -380,7 +380,7 @@ def suttas(sutta_ref = '', lang = '', source_uid = ''):
 
 @app.route('/words/<string:word>', methods=['GET'])
 @app.route('/words/<string:word>/<string:dict_label>', methods=['GET'])
-def words(word = '', dict_label = ''):
+def route_words(word = '', dict_label = ''):
     logger.info(f"api.py::words() {word} {dict_label}")
     msg = ApiMessage(
         queue_id='app_windows',
@@ -392,12 +392,12 @@ def words(word = '', dict_label = ''):
 
 @app.route('/open_window', defaults={'window_type': ''})
 @app.route('/open_window/<string:window_type>', methods=['GET'])
-def open_window(window_type: str = ''):
+def route_open_window(window_type: str = ''):
     app_callbacks.open_window(window_type)
     return "OK", 200
 
 @app.route('/get_bookmarks_with_quote_only_for_sutta', methods=['POST'])
-def get_bookmarks_with_quote_only_for_sutta():
+def route_get_bookmarks_with_quote_only_for_sutta():
     data = request.get_json()
     if not data or 'sutta_uid' not in data.keys():
         return "Missing sutta_uid", 400
@@ -405,7 +405,6 @@ def get_bookmarks_with_quote_only_for_sutta():
     sutta_uid = data['sutta_uid']
     result = list(map(_bm_to_res, _get_bookmarks_with_quote_only_for_sutta(sutta_uid)))
     return jsonify(result), 200
-
 
 def _get_bookmarks_with_quote_only_for_sutta(sutta_uid: str, except_quote: str = "") -> List[UBookmark]:
     db_eng, db_conn, db_session = get_db_engine_connection_session()
@@ -442,7 +441,6 @@ def _get_bookmarks_with_quote_only_for_sutta(sutta_uid: str, except_quote: str =
     db_eng.dispose()
 
     return res
-
 
 def _get_bookmarks_with_range_for_sutta(sutta_uid: str, except_quote = "") -> List[UBookmark]:
     db_eng, db_conn, db_session = get_db_engine_connection_session()
