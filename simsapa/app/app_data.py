@@ -785,7 +785,7 @@ class AppData:
         else:
             comment = str(res.content_json)
 
-        show_variants = self.app_settings.get('show_all_variant_readings', True)
+        show_variants = self.app_settings.get('show_all_variant_readings', False)
 
         res = sutta.gloss
         if res is None:
@@ -793,7 +793,7 @@ class AppData:
         else:
             gloss = str(res.content_json)
 
-        show_glosses = self.app_settings.get('show_glosses', True)
+        show_glosses = self.app_settings.get('show_glosses', False)
 
         if use_template:
             tmpl = str(sutta.content_json_tmpl)

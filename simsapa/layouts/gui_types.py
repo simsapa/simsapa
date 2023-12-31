@@ -23,6 +23,11 @@ QMinimumExpanding = QtWidgets.QSizePolicy.Policy.MinimumExpanding
 QExpanding = QtWidgets.QSizePolicy.Policy.Expanding
 QIgnored = QtWidgets.QSizePolicy.Policy.Ignored
 
+# Lowercase values.
+class ReleaseChannel(str, Enum):
+    Main = 'main'
+    Development = 'development'
+
 class WindowType(int, Enum):
     SuttaSearch = 0
     SuttaStudy = 1
@@ -309,6 +314,7 @@ class AppSettings(TypedDict):
     generate_links_graph: bool
     link_preview: bool
     notify_about_updates: bool
+    release_channel: ReleaseChannel
     openai: OpenAISettings
     search_as_you_type: bool
     search_completion: bool
@@ -316,6 +322,7 @@ class AppSettings(TypedDict):
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
     show_all_variant_readings: bool
+    show_glosses: bool
     show_bookmarks: bool
     show_dictionary_sidebar: bool
     show_related_suttas: bool
@@ -379,6 +386,7 @@ def default_app_settings() -> AppSettings:
         generate_links_graph = False,
         link_preview = True,
         notify_about_updates = True,
+        release_channel = ReleaseChannel.Main,
         openai = default_openai_settings(),
         search_as_you_type = True,
         search_completion = True,
@@ -386,6 +394,7 @@ def default_app_settings() -> AppSettings:
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
         show_all_variant_readings = False,
+        show_glosses = False,
         show_bookmarks = True,
         show_dictionary_sidebar = True,
         show_related_suttas = True,

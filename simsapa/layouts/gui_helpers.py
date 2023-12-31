@@ -11,6 +11,7 @@ from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import userdata_models as Um
 
 from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
@@ -183,11 +184,30 @@ def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> Lis
     return versions
 
 def get_release_channel() -> str:
-    s = os.getenv('RELEASES_CHANNEL')
-    if s is not None and s == 'development':
+    """Determine the release channel to use, either 'main' or 'development'. The
+    env var RELEASE_CHANNEL takes precedence over the value of
+    userdata.app_settings:key='release_channel'."""
+
+    channel = 'main'
+
+    s = os.getenv('RELEASE_CHANNEL')
+
+    if s == 'development':
         channel = s
-    else:
-        channel = 'main'
+
+    elif s is None or s == '':
+        if APP_DB_PATH.exists():
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
+            res = db_session \
+                .query(Um.AppSetting.value) \
+                .filter(Um.AppSetting.key == 'release_channel') \
+                .first()
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
+
+            if res is not None:
+                channel = res[0]
 
     return channel
 

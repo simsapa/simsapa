@@ -48,7 +48,7 @@ ENABLE_PRINT_LOG=true
 START_NEW_LOG=false
 ENABLE_WIP_FEATURES=false
 SAVE_STATS=false
-RELEASES_CHANNEL=development"
+RELEASE_CHANNEL=development"
 
 echo "$dotenv" > .env
 
