@@ -369,26 +369,38 @@ def route_lookup_window_query_post():
 @app.route('/suttas/<string:sutta_ref>/<string:lang>', methods=['GET'])
 @app.route('/suttas/<string:sutta_ref>/<string:lang>/<string:source_uid>', methods=['GET'])
 def route_suttas(sutta_ref = '', lang = '', source_uid = ''):
-    logger.info(f"api.py::suttas() {sutta_ref} {lang} {source_uid}")
-    msg = ApiMessage(
+    logger.info(f"route_suttas() {sutta_ref} {lang} {source_uid}")
+
+    api_msg = ApiMessage(
         queue_id='app_windows',
         action = ApiAction.show_sutta_by_url,
         data = request.url
     )
-    SERVER_QUEUE.put_nowait(json.dumps(msg))
-    return "OK", 200
+    SERVER_QUEUE.put_nowait(json.dumps(api_msg))
+
+    uid = "/".join([i for i in [sutta_ref, lang, source_uid] if i != ""])
+
+    text_msg = f"The Simsapa window should appear with '{uid}'. You can close this tab."
+
+    return text_msg, 200
 
 @app.route('/words/<string:word>', methods=['GET'])
 @app.route('/words/<string:word>/<string:dict_label>', methods=['GET'])
 def route_words(word = '', dict_label = ''):
-    logger.info(f"api.py::words() {word} {dict_label}")
-    msg = ApiMessage(
+    logger.info(f"route_words() {word} {dict_label}")
+
+    api_msg = ApiMessage(
         queue_id='app_windows',
         action = ApiAction.show_word_by_url,
         data = request.url
     )
-    SERVER_QUEUE.put_nowait(json.dumps(msg))
-    return "OK", 200
+    SERVER_QUEUE.put_nowait(json.dumps(api_msg))
+
+    uid = "/".join([i for i in [word, dict_label] if i != ""])
+
+    text_msg = f"The Simsapa window should appear with '{uid}'. You can close this tab."
+
+    return text_msg, 200
 
 @app.route('/open_window', defaults={'window_type': ''})
 @app.route('/open_window/<string:window_type>', methods=['GET'])

@@ -685,11 +685,15 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
     quote = None
     if 'q' in query.keys():
         quote = query['q'][0]
+    elif 'quote' in query.keys():
+        quote = query['quote'][0]
 
     if quote:
         selection_range = None
         if 'sel' in query.keys():
             selection_range = query['sel'][0]
+        elif 'selection_range' in query.keys():
+            selection_range = query['selection_range'][0]
 
         sutta_quote = SuttaQuote(
             quote = quote,
