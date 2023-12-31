@@ -13,10 +13,13 @@ DEFAULT_CONFIG = {
     "regenerate": {
         "inflections": "yes",
         "transliterations": "yes",
-        "freq_maps": "yes"
+        "freq_maps": "yes",
+        "db_rebuild": "no"
     },
     "deconstructor": {
-        "include_cloud": "no"
+        "include_cloud": "no",
+        "all_texts": "no",
+        "run_on_cloud": "no"
     },
     "gui": {
         "theme": "DarkGrey10",
@@ -34,7 +37,7 @@ DEFAULT_CONFIG = {
         "margin_y": "0"
     },
     "goldendict": {
-        "copy_unzip": "yes",
+        "copy_unzip": "no",
         "path": ""
     },
     "dictionary": {
@@ -44,11 +47,19 @@ DEFAULT_CONFIG = {
         "extended_synonyms": "no"
     },
     "exporter" : {
-        "make_ebook": "no",
+        "make_dpd": "yes",
+        "make_deconstructor": "no",
+        "make_grammar": "no",
         "make_tpr": "no",
+        "make_ebook": "no"
     },
     "openia": {
         "key": ""
+    },
+    "anki": {
+        "update": "no",
+        "db_path": "",
+        "backup_path": ""
     }
 }
 
@@ -91,8 +102,6 @@ def config_update(section: str, option: str, value) -> None:
 def config_test(section: str, option: str, value) -> bool:
     """Test config.ini to see if a section, option equals a value."""
     if config.has_section(section) and config.has_option(section, option):
-        current_value = config.get(section, option)
-        # print(f"current config setting: '{section}, {option}' is '{current_value}'")
         return config.get(section, option) == str(value)
     else:
         # print(f"[yellow]unknown config setting: [brightyellow]'{section}, {option}'")

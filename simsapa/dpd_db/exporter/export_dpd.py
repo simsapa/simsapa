@@ -7,7 +7,6 @@ import psutil
 from mako.template import Template
 # from minify_html import minify
 # from rich import print
-from sqlalchemy import and_
 from typing import Dict, List, Set, TypedDict, Tuple
 from multiprocessing.managers import ListProxy
 from multiprocessing import Process, Manager
@@ -27,6 +26,8 @@ from simsapa.app.db.dpd_models import FamilyCompound
 from simsapa.app.db.dpd_models import FamilySet
 
 from simsapa.dpd_db.tools.meaning_construction import make_meaning_html
+from simsapa.dpd_db.tools.meaning_construction import make_grammar_line
+
 from simsapa.dpd_db.tools.meaning_construction import summarize_construction
 from simsapa.dpd_db.tools.meaning_construction import degree_of_completion
 from simsapa.dpd_db.tools.niggahitas import add_niggahitas
@@ -142,7 +143,7 @@ class PaliWordRenderData(TypedDict):
     roots_count_dict: Dict[str, int]
     make_link: bool
 
-def render_pali_word_dpd_html(db_parts: PaliWordDbParts,
+def render_pali_word_dpd_html(extended_synonyms, db_parts: PaliWordDbParts,
                               render_data: PaliWordRenderData) -> Tuple[RenderResult, RenderedSizes]:
     rd = render_data
     size_dict = default_rendered_sizes()
@@ -247,6 +248,16 @@ def render_pali_word_dpd_html(db_parts: PaliWordDbParts,
     synonyms += dd.thai_list
     synonyms += i.family_set_list
     synonyms += [str(i.id)]
+
+
+    if extended_synonyms:
+
+        # Split i.pali_clean only if it contains a space
+        if ' ' in i.pali_clean:
+            words = i.pali_clean.split(' ')
+            synonyms.extend(words)
+
+
     size_dict["dpd_synonyms"] += len(str(synonyms))
 
     res = RenderResult(
@@ -277,6 +288,13 @@ def generate_dpd_html(
     #     make_link: bool = False
 
     make_link: bool = False
+
+    # if config_test("dictionary", "extended_synonyms", "yes"):
+    #     extended_synonyms: bool = True
+    # else:
+    #     extended_synonyms: bool = False
+
+    extended_synonyms: bool = True
 
     dpd_data_list: List[RenderResult] = []
 
@@ -314,9 +332,7 @@ def generate_dpd_html(
             PaliWord.id == DerivedData.id
         ).outerjoin(
             FamilyRoot,
-            and_(
-                PaliWord.root_key == FamilyRoot.root_id,
-                PaliWord.family_root == FamilyRoot.root_family)
+            PaliWord.root_family_key == FamilyRoot.root_family_key
         ).outerjoin(
             FamilyWord,
             PaliWord.family_word == FamilyWord.word_family
@@ -359,7 +375,7 @@ def generate_dpd_html(
 
         def _parse_batch(batch: List[PaliWordDbParts]):
             res: List[Tuple[RenderResult, RenderedSizes]] = \
-                [render_pali_word_dpd_html(i, render_data) for i in batch]
+                [render_pali_word_dpd_html(extended_synonyms, i, render_data) for i in batch]
 
             for i, j in res:
                 dpd_data_results_list.append(i)
@@ -574,16 +590,7 @@ def render_grammar_templ(
         else:
             i.construction = ""
 
-        grammar = i.grammar
-        if i.neg:
-            grammar += f", {i.neg}"
-        if i.verb:
-            grammar += f", {i.verb}"
-        if i.trans:
-            grammar += f", {i.trans}"
-        if i.plus_case:
-            grammar += f" ({i.plus_case})"
-
+        grammar = make_grammar_line(i)
         meaning = f"{make_meaning_html(i)}"
 
         return str(

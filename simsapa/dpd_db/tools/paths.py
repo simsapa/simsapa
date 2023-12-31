@@ -85,6 +85,7 @@ class ProjectPaths:
 
         # /exporter/javascript
         self.buttons_js_path = base_dir.joinpath(Path("exporter/javascript/buttons.js"))
+        self.sorter_js_path = base_dir.joinpath(Path("exporter/javascript/sorter.js"))
 
         # /exporter/share
         self.zip_dir = base_dir.joinpath(Path("exporter/share"))
@@ -119,6 +120,12 @@ class ProjectPaths:
         self.feedback_templ_path = self.templates_dir.joinpath(Path("dpd_feedback.html"))
         self.variant_templ_path = self.templates_dir.joinpath(Path("dpd_variant_reading.html"))
         self.spelling_templ_path = self.templates_dir.joinpath(Path("dpd_spelling_mistake.html"))
+
+        # exporter/jinja templates 
+        self.jinja_templates_dir = base_dir.joinpath(Path("exporter/templates_jinja/"))
+        self.complete_word_templ_path = base_dir.joinpath(Path("exporter/templates_jinja/dpd_complete_word.html"))
+        self.temp_html_file_path = base_dir.joinpath(Path("temp/temp_html_file.html"))
+
 
         # # root templates
         self.root_definition_templ_path = self.templates_dir.joinpath(Path("root_definition.html"))
@@ -213,6 +220,7 @@ class ProjectPaths:
         self.sandhi_dict_df_path = base_dir.joinpath(Path("sandhi/output/sandhi_dict_df.tsv"))
         self.sandhi_timer_path = base_dir.joinpath(Path("sandhi/output/timer.tsv"))
         self.rule_counts_path = base_dir.joinpath(Path("sandhi/output/rule_counts/rule_counts.tsv"))
+        self.sandhi_log_path = base_dir.joinpath(Path("sandhi/output/logfile.log"))
 
         # /sandhi/output/rule_counts
         self.rule_counts_dir = base_dir.joinpath(Path("sandhi/output/rule_counts/"))
@@ -239,6 +247,9 @@ class ProjectPaths:
         self.sandhi_rules_path = base_dir.joinpath(Path("sandhi/sandhi_related/sandhi_rules.tsv"))
         self.manual_corrections_path = base_dir.joinpath(Path("sandhi/sandhi_related/manual_corrections.tsv"))
         self.shortlist_path = base_dir.joinpath(Path("sandhi/sandhi_related/shortlist.tsv"))
+
+        # sanskrit
+        self.root_families_sanskrit_path = base_dir.joinpath(Path("sanskrit/root_families_sanskrit.tsv"))
 
         # /share
         self.all_tipitaka_words_path = base_dir.joinpath(Path("share/all_tipitaka_words"))

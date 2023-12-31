@@ -1,15 +1,15 @@
 """A few helpful lists and functions for the exporter."""
 
-from typing import Dict, List, Set, Optional
+from typing import Dict, Set, Optional
 from datetime import date
 
 from sqlalchemy.orm import Session
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.base import Connection
 
-from simsapa.app.db.dpd_models import PaliWord
-
 from simsapa.app.db_session import get_dpd_db_session
+from simsapa.app.db.dpd_models import PaliWord, FamilyCompound
+# from tools.paths import ProjectPaths
 
 TODAY = date.today()
 
@@ -35,18 +35,11 @@ def cf_set_gen(db_session: Optional[Session] = None) -> Set[str]:
         local_db_session = True
         db_eng, db_conn, db_session = get_dpd_db_session()
 
-    cf_db = db_session.query(
-        PaliWord
-    ).filter(PaliWord.family_compound != ""
-             ).all()
+    cf_db = db_session.query(FamilyCompound).all()
 
     cf_set: Set[str] = set()
     for i in cf_db:
-        if i.family_compound is None:
-            continue
-        cfs: List[str] = i.family_compound.split(" ")
-        for cf in cfs:
-            cf_set.add(cf)
+        cf_set.add(i.compound_family)
 
     if db_conn:
         db_conn.close()
@@ -59,6 +52,7 @@ def cf_set_gen(db_session: Optional[Session] = None) -> Set[str]:
 
     # _cached_cf_set = cf_set
     return cf_set
+
 
 def make_roots_count_dict(db_session: Session) -> Dict[str, int]:
     roots_db = db_session.query(PaliWord).all()

@@ -3,7 +3,6 @@ import json, re
 
 from mako.template import Template
 
-from sqlalchemy import and_
 from sqlalchemy.orm import object_session
 
 from simsapa.app.db_session import get_db_session_with_schema
@@ -199,9 +198,7 @@ def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = [])
         PaliWord.id == DerivedData.id
     ).outerjoin(
         FamilyRoot,
-        and_(
-            PaliWord.root_key == FamilyRoot.root_id,
-            PaliWord.family_root == FamilyRoot.root_family)
+        PaliWord.root_family_key == FamilyRoot.root_family_key
     ).outerjoin(
         FamilyWord,
         PaliWord.family_word == FamilyWord.word_family
@@ -532,6 +529,9 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
 def render_pali_root_dpd_simsapa_html(r: PaliRoot,
                                       render_data: PaliWordRenderData,
                                       open_details: List[DetailsTab] = []) -> RenderResult:
+    # Compare with
+    # exporter/export_roots.py::generate_root_html()
+
     db_session = object_session(r)
     assert(db_session is not None)
 
@@ -573,13 +573,8 @@ def render_pali_root_dpd_simsapa_html(r: PaliRoot,
     synonyms.add(re.sub("√", "", r.root))
     synonyms.add(re.sub("√", "", r.root_clean))
 
-    frs = db_session.query(
-        FamilyRoot
-    ).filter(
-        FamilyRoot.root_id == r.root,
-        FamilyRoot.root_family != "info",
-        FamilyRoot.root_family != "matrix",
-    ).all()
+    frs = db_session.query(FamilyRoot)\
+        .filter(FamilyRoot.root_key == r.root).all()
 
     for fr in frs:
         synonyms.add(fr.root_family)

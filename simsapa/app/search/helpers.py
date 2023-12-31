@@ -170,47 +170,45 @@ def get_dict_word_source_filter_labels(db_session: Session) -> List[str]:
 def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
     words = []
 
-    i2h = db_session.query(Dpd.DpdI2h) \
-                    .filter(Dpd.DpdI2h.word == query_text) \
+    i2h = db_session.query(Dpd.InflectionToHeadwords) \
+                    .filter(Dpd.InflectionToHeadwords.inflection == query_text) \
                     .first()
 
     if i2h is not None:
         # i2h result exists
-        # dpd_ebts has short definitions. For Simsapa, retreive the PaliWords.
-        #
         # Lookup headwords in pali_words.
 
         r = db_session.query(Dpd.PaliWord) \
-                      .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords)) \
+                      .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords_list)) \
                       .all()
         if r is not None:
             words.extend(r)
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str) -> Optional[Dpd.DpdDeconstructor]:
+def dpd_deconstructor_query(db_session: Session, query_text: str) -> Optional[Dpd.Sandhi]:
     # Exact match.
-    r = db_session.query(Dpd.DpdDeconstructor) \
-                    .filter(Dpd.DpdDeconstructor.word == query_text) \
+    r = db_session.query(Dpd.Sandhi) \
+                    .filter(Dpd.Sandhi.sandhi == query_text) \
                     .first()
 
     if r is None and len(query_text) >= 4:
         # Match as 'starts with'.
-        r = db_session.query(Dpd.DpdDeconstructor) \
-                      .filter(Dpd.DpdDeconstructor.word.like(f"{query_text}%")) \
+        r = db_session.query(Dpd.Sandhi) \
+                      .filter(Dpd.Sandhi.sandhi.like(f"{query_text}%")) \
                       .first()
 
     if r is None and " " in query_text:
         # If the query contained multiple words, remove spaces to find compound forms.
-        r = db_session.query(Dpd.DpdDeconstructor) \
-                      .filter(Dpd.DpdDeconstructor.word == query_text.replace(" ", "")) \
+        r = db_session.query(Dpd.Sandhi) \
+                      .filter(Dpd.Sandhi.sandhi == query_text.replace(" ", "")) \
                       .first()
 
     if r is None and len(query_text) >= 4:
         # No exact match in deconstructor.
         # If query text is long enough, remove the last letter and match as 'starts with'.
-        r = db_session.query(Dpd.DpdDeconstructor) \
-                      .filter(Dpd.DpdDeconstructor.word.like(f"{query_text[0:-1]}%")) \
+        r = db_session.query(Dpd.Sandhi) \
+                      .filter(Dpd.Sandhi.sandhi.like(f"{query_text[0:-1]}%")) \
                       .first()
 
     return r

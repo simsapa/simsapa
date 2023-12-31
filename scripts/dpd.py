@@ -2,7 +2,7 @@
 
 import os, sys, shutil, json
 from pathlib import Path
-from typing import Tuple, Set, Dict, List
+from typing import Tuple, Set, Dict
 from datetime import date
 
 import sqlite3
@@ -66,15 +66,6 @@ def save_dpd_caches(dpd_db_session: Session) -> Tuple[Set[str], Dict[str, int], 
 
     return (dpd_cf_set, dpd_roots_count_dict, dpd_sandhi_contractions)
 
-def dpd_deconstructor_html_to_list(html: str) -> List[List[str]]:
-    """
-    Convert:
-    kamma + pattā<br>kamma + apattā<br>kammi + apattā
-    ->
-    [["kamma", "pattā"], ["kamma", "apattā"], ["kammi", "apattā"]]
-    """
-    return [[word.strip() for word in line.split("+")] for line in html.split("<br>")]
-
 def replace_all_niggahitas(db_conn: sqlite3.Connection):
     cursor = db_conn.cursor()
 
@@ -100,7 +91,7 @@ def replace_all_niggahitas(db_conn: sqlite3.Connection):
 
     db_conn.commit()
 
-def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictionary_id: int) -> None:
+def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     logger.info("migrate_dpd()")
 
     # Use an sqlite session and update the db schema to agree with the SQLAlchemy model.
@@ -202,40 +193,6 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
 
                 connection.commit()
 
-                # Create DPD tables for word lookup data
-
-                query = """
-                CREATE TABLE
-                    dpd_deconstructor(
-                        id integer primary key autoincrement,
-                        word VARCHAR UNIQUE NOT NULL,
-                        headwords_json VARCHAR NOT NULL DEFAULT ''
-                    );
-                """
-                cursor.execute(query)
-
-                query = """
-                CREATE TABLE
-                    dpd_ebts(
-                        id integer primary key autoincrement,
-                        word VARCHAR UNIQUE NOT NULL,
-                        definition VARCHAR NOT NULL DEFAULT ''
-                    );
-                """
-                cursor.execute(query)
-
-                query = """
-                CREATE TABLE
-                    dpd_i2h(
-                        id integer primary key autoincrement,
-                        word VARCHAR UNIQUE NOT NULL,
-                        headwords_tsv VARCHAR NOT NULL DEFAULT ''
-                    );
-                """
-                cursor.execute(query)
-
-                connection.commit()
-
                 replace_all_niggahitas(connection)
 
     except Exception as e:
@@ -265,28 +222,6 @@ def migrate_dpd(dpd_bootstrap_current_dir: Path, dpd_db_path: Path, dpd_dictiona
 
     save_dpd_caches(dpd_db_session)
 
-    # Save DPD lookup data
-
-    with open(dpd_bootstrap_current_dir.joinpath("dpd_deconstructor.json"), 'r', encoding='utf-8') as f:
-        dpd_deconstructor: Dict[str, str] = json.loads(f.read())
-
-    for k, v in dpd_deconstructor.items():
-        data = json.dumps(dpd_deconstructor_html_to_list(v))
-        dpd_db_session.add(Dpd.DpdDeconstructor(word=k, headwords_json=data))
-
-    with open(dpd_bootstrap_current_dir.joinpath("dpd_ebts.json"), 'r', encoding='utf-8') as f:
-        dpd_ebts: Dict[str, str] = json.loads(f.read())
-
-    for k, v in dpd_ebts.items():
-        dpd_db_session.add(Dpd.DpdEbts(word=k, definition=v))
-
-    with open(dpd_bootstrap_current_dir.joinpath("dpd_i2h.json"), 'r', encoding='utf-8') as f:
-        dpd_i2h: Dict[str, List[str]] = json.loads(f.read())
-
-    for k, v in dpd_i2h.items():
-        dpd_db_session.add(Dpd.DpdI2h(word=k, headwords_tsv="\t".join(v)))
-
-    dpd_db_session.commit()
     dpd_db_session.close()
 
 def prepare_dpd_for_dist(appdata_db_session: Session, bootstrap_dir: Path):
@@ -319,7 +254,7 @@ def prepare_dpd_for_dist(appdata_db_session: Session, bootstrap_dir: Path):
 
     shutil.copy(src, dest)
 
-    migrate_dpd(src.parent, dest, dpd_dict.id)
+    migrate_dpd(dest, dpd_dict.id)
 
 def main():
     from dotenv import load_dotenv

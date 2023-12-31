@@ -1,20 +1,26 @@
 """Datebase model for use by SQLAlchemy."""
-
-import re, json
+import re
 
 from typing import Any, Dict, List, Set
 from typing import Optional
 
+
+from sqlalchemy import and_
+# from sqlalchemy import case
+# from sqlalchemy import null
+from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
-from sqlalchemy.sql import func
+from sqlalchemy import ForeignKeyConstraint
+from sqlalchemy import Integer
+from sqlalchemy.ext.hybrid import hybrid_property
 # from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import declared_attr
 from sqlalchemy.orm import object_session
-from sqlalchemy import Column, Integer
+from sqlalchemy.sql import func
 
 from simsapa.dpd_db.tools.link_generator import generate_simsapa_link
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
@@ -210,6 +216,33 @@ class PaliRoot(Base):
     def synonyms(self) -> list:
         return []
 
+class FamilyRoot(Base):
+    __tablename__ = "family_root"
+    root_family_key: Mapped[str] = mapped_column(primary_key=True)
+    root_key: Mapped[str] = mapped_column()
+    root_family: Mapped[str] = mapped_column()
+    html: Mapped[str] = mapped_column(default='')
+    count: Mapped[int] = mapped_column(default=0)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["root_key", "root_family"],
+            ["pali_words.root_key", "pali_words.family_root"]
+        ),
+    )
+
+    @property
+    def root_family_link(self) -> str:
+        return self.root_family.replace(" ", "%20")
+
+    @property
+    def root_family_(self) -> str:
+        return self.root_family.replace(" ", "_")
+
+    def __repr__(self) -> str:
+        return f"FamilyRoot: {self.root_key} {self.root_family} {self.count}"
+
+
 class PaliWord(Base):
     __tablename__ = "pali_words"
 
@@ -237,7 +270,6 @@ class PaliWord(Base):
     root_base: Mapped[str] = mapped_column(default='')
 
     family_root: Mapped[str] = mapped_column(default='')
-    # ForeignKey("family_root.root_family"))
     family_word: Mapped[str] = mapped_column(
         ForeignKey("family_word.word_family"), default='')
     family_compound: Mapped[str] = mapped_column(default='')
@@ -277,16 +309,44 @@ class PaliWord(Base):
     updated_at: Mapped[Optional[DateTime]] = mapped_column(
         DateTime(timezone=True), onupdate=func.now())
 
+    # pali_root
     rt: Mapped[PaliRoot] = relationship(uselist=False)
 
+    # family_root
+    fr = relationship(
+        FamilyRoot, 
+        primaryjoin=and_(
+            root_key==FamilyRoot.root_key, 
+            family_root==FamilyRoot.root_family),
+        uselist=False 
+    )
+
+    # derived data
     dd = relationship("DerivedData", uselist=False)
 
+    # sbs
     sbs = relationship("SBS", uselist=False)
 
+    # russion
     ru = relationship("Russian", uselist=False)
 
+    # inflection templates
     it: Mapped[InflectionTemplates] = relationship()
 
+
+    @hybrid_property
+    def root_family_key(self):
+        if self.root_key and self.family_root:
+            return f"{self.root_key} {self.family_root}"
+        else:
+            return ""
+
+    # @root_family_key.expression
+    # def root_family_key(cls):
+    #     return case(
+    #         (and_(cls.root_key != null(), cls.family_root != null()),\
+    #              cls.root_key + ' ' + cls.family_root), else_="")
+    
     @property
     def pali_1_(self) -> str:
         return self.pali_1.replace(" ", "_").replace(".", "_")
@@ -373,6 +433,30 @@ class PaliWord(Base):
     @property
     def source_link_2(self) -> str:
         return generate_simsapa_link(self.source_2, self.example_2) if self.source_2 else ""
+
+    @property
+    def source_link_sutta(self) -> str:
+        if self.meaning_2:
+            if self.family_set.startswith("suttas of") or self.family_set == "bhikkhupātimokkha rules":
+                unified_pattern = r"\(([A-Z]+)\s?([\d\.]+)\)|([A-Z]+)[\s]?([\d]+)"
+                match = re.finditer(unified_pattern, self.meaning_2)
+                    
+                for m in match:
+                    prefix = m.group(1) if m.group(1) else m.group(3)
+                    number = m.group(2) if m.group(2) else m.group(4)
+                    
+                    combined_number = f"{prefix}{number}" if prefix and number else None
+                    
+                    if combined_number:
+                        link = generate_simsapa_link(combined_number)
+
+                        if link:
+                            return link
+
+            return ""
+        else:
+            return ""
+
 
     def __repr__(self) -> str:
         return f"""PaliWord: {self.id} {self.pali_1} {self.pos} {
@@ -465,52 +549,6 @@ class DbInfo(Base):
     key: Mapped[str] = mapped_column(unique=True)
     value: Mapped[str] = mapped_column(default='')
 
-class DpdDeconstructor(Base):
-    __tablename__ = "dpd_deconstructor"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    # Inflected compound. `kammapattā`
-    word: Mapped[str] = mapped_column(unique=True)
-
-    # List of breakdown combinations as a JSON string. `[["kamma", "pattā"], ["kamma", "apattā"], ["kammi", "apattā"]]`
-    headwords_json: Mapped[str] = mapped_column(default='')
-
-    @property
-    def headwords(self) -> List[List[str]]:
-        """Parses headwords_json."""
-        return json.loads(self.headwords_json)
-
-    @property
-    def headwords_flat(self) -> Set[str]:
-        """Unique headwords as a flattened set."""
-        flat_list = [word for sublist in self.headwords for word in sublist]
-        return set(flat_list)
-
-class DpdEbts(Base):
-    """Short definitions of Pāli headwords."""
-    __tablename__ = "dpd_ebts"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    word: Mapped[str] = mapped_column(unique=True)
-    definition: Mapped[str] = mapped_column(default='')
-
-class DpdI2h(Base):
-    """Inflections to headwords lookup table."""
-    __tablename__ = "dpd_i2h"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    # Inflected form. `phalena`
-    word: Mapped[str] = mapped_column(unique=True)
-
-    # pali_1 headwords as a tab-separated list. `phala 1.1   phala 1.2   phala 2.1   phala 2.2   phala 1.3`
-    headwords_tsv: Mapped[str] = mapped_column(default='')
-
-    @property
-    def headwords(self) -> List[str]:
-        return self.headwords_tsv.split("\t")
-
 class DerivedData(Base):
     __tablename__ = "derived_data"
 
@@ -594,25 +632,25 @@ class Sandhi(Base):
     def __repr__(self) -> str:
         return f"Sandhi: {self.id} {self.sandhi} {self.split}"
 
-
-class FamilyRoot(Base):
-    __tablename__ = "family_root"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    root_id: Mapped[str] = mapped_column(default='')
-    root_family: Mapped[str] = mapped_column(default='')
-    html: Mapped[str] = mapped_column(default='')
-    count: Mapped[int] = mapped_column(default=0)
+    # === Simsapa ===
 
     @property
-    def root_family_link(self) -> str:
-        return self.root_family.replace(" ", "%20")
+    def headwords(self) -> List[List[str]]:
+        """Parses .split to a list of headword combinations (list of lists).
+
+        Example:
+        sandhi: kammapattā
+        split: kamma + pattā,kamma + apattā,kammi + apattā,kammā + apattā,kammaṃ + apattā
+        return: [["kamma", "pattā"], ["kamma", "apattā"], ["kammi", "apattā"]]
+        """
+
+        return [[word.strip() for word in line.split("+")] for line in self.split.split(",")]
 
     @property
-    def root_family_(self) -> str:
-        return self.root_family.replace(" ", "_")
-
-    def __repr__(self) -> str:
-        return f"FamilyRoot: {self.id} {self.root_id} {self.root_family} {self.count}"
+    def headwords_flat(self) -> Set[str]:
+        """Unique headwords as a flattened set."""
+        flat_list = [word for sublist in self.headwords for word in sublist]
+        return set(flat_list)
 
 
 class FamilyCompound(Base):
@@ -708,3 +746,17 @@ class Russian(Base):
 
     def __repr__(self) -> str:
         return f"Russian: {self.id} {self.ru_meaning}"
+
+
+class InflectionToHeadwords(Base):
+    __tablename__ = "inflection_to_headwords"
+
+    inflection: Mapped[str] = mapped_column(primary_key=True)
+    headwords: Mapped[str] = mapped_column(default="")
+
+    @property
+    def headwords_list(self) -> List[str]:
+        return self.headwords.split(",")
+
+    def __repr__(self) -> str:
+        return f"i2h: {self.inflection} {self.headwords}"
