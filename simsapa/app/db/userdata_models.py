@@ -116,6 +116,7 @@ class Sutta(Base):
     bookmarks:  Mapped[List["Bookmark"]] = relationship("Bookmark",     back_populates="sutta", passive_deletes=True)
     variant:    Mapped["SuttaVariant"]   = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
     comment:    Mapped["SuttaComment"]   = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
+    gloss:      Mapped["SuttaGloss"]     = relationship("SuttaGloss",   back_populates="sutta", passive_deletes=True, uselist=False)
 
 class SuttaVariant(Base):
     __tablename__ = "sutta_variants"
@@ -148,6 +149,22 @@ class SuttaComment(Base):
     updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
     sutta: Mapped[Sutta] = relationship("Sutta", back_populates="comment", uselist=False)
+
+class SuttaGloss(Base):
+    __tablename__ = "sutta_glosses"
+
+    id:        Mapped[int] = mapped_column(primary_key=True)
+    sutta_id:  Mapped[int] = mapped_column(ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid: Mapped[str] # dn1/pli/ms
+
+    language:     Mapped[Optional[str]] # pli / en
+    source_uid:   Mapped[Optional[str]] # ms, bodhi, than
+    content_json: Mapped[Optional[str]]
+
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta: Mapped[Sutta] = relationship("Sutta", back_populates="gloss", uselist=False)
 
 class Dictionary(Base):
     __tablename__ = "dictionaries"

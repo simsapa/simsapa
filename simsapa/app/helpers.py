@@ -378,7 +378,9 @@ def bilara_text_to_segments(
         tmpl: Optional[str],
         variant: Optional[str] = None,
         comment: Optional[str] = None,
-        show_variant_readings: bool = False) -> Dict[str, str]:
+        gloss: Optional[str] = None,
+        show_variant_readings: bool = False,
+        show_glosses: bool = False) -> Dict[str, str]:
 
     content_json = json.loads(content)
     if tmpl:
@@ -395,6 +397,11 @@ def bilara_text_to_segments(
         comment_json = json.loads(comment)
     else:
         comment_json = None
+
+    if gloss:
+        gloss_json = json.loads(gloss)
+    else:
+        gloss_json = None
 
     for i in content_json.keys():
         if variant_json:
@@ -432,8 +439,44 @@ def bilara_text_to_segments(
 
                 content_json[i] += s
 
+        if gloss_json:
+            if i in gloss_json.keys():
+                txt = gloss_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                classes = ['gloss',]
+
+                if not show_glosses:
+                    classes.append('hide')
+
+                s = """
+                <span class='gloss-wrap' onclick="toggle_gloss('#gloss_%s')">
+                  <span class='mark'>
+                    <svg class="ssp-icon-button__icon"><use xlink:href="#icon-table"></use></svg>
+                  </span>
+                </span>
+                <div class='%s'>%s</div>
+                """ % (i, ' '.join(classes), txt)
+
+                content_json[i] += s
+
+        """
+        Template JSON example:
+
+{
+  "mn10:0.1": "<article id='mn10'><header><ul><li class='division'>{}</li></ul>",
+  "mn10:0.2": "<h1 class='sutta-title'>{}</h1></header>",
+  "mn10:1.1": "<p><span class='evam'>{}</span>",
+  "mn10:1.2": "{}",
+  "mn10:1.3": "{}",
+  "mn10:1.4": "{}</p>",
+}
+        """
+
         if tmpl_json and i in tmpl_json.keys():
-            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+            content = f"<span data-tmpl-key='{i}'>{content_json[i]}</span>"
+            content_json[i] = tmpl_json[i].replace('{}', content)
 
     return content_json
 
@@ -477,6 +520,7 @@ def bilara_text_to_html(
         tmpl: str,
         variant: Optional[str] = None,
         comment: Optional[str] = None,
+        gloss: Optional[str] = None,
         show_variant_readings: bool = False) -> str:
 
     content_json = bilara_text_to_segments(
@@ -484,6 +528,7 @@ def bilara_text_to_html(
         tmpl,
         variant,
         comment,
+        gloss,
         show_variant_readings,
     )
 

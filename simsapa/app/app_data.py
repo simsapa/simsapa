@@ -787,6 +787,14 @@ class AppData:
 
         show_variants = self.app_settings.get('show_all_variant_readings', True)
 
+        res = sutta.gloss
+        if res is None:
+            gloss = None
+        else:
+            gloss = str(res.content_json)
+
+        show_glosses = self.app_settings.get('show_glosses', True)
+
         if use_template:
             tmpl = str(sutta.content_json_tmpl)
         else:
@@ -797,7 +805,9 @@ class AppData:
             tmpl,
             variant,
             comment,
+            gloss,
             show_variants,
+            show_glosses,
         )
 
         return segments_json
