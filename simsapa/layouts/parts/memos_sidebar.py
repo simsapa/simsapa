@@ -188,6 +188,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
             elif isinstance(word, Dpd.PaliRoot):
                 logger.warn("FIXME memos for PaliRoot")
+                return []
 
             else:
                 raise Exception(f"Unknown word type: {word}")
@@ -224,14 +225,17 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         self.update_memos_list()
 
-    def update_memos_list_for_dict_word(self, word: UDictWord):
-        memos = self.get_memos_for_dict_word(word)
-        if memos:
-            self.model.memos = memos
-        else:
-            self.model.memos = []
+    def update_memos_list_for_dict_word(self, __word__: UDictWord):
+        pass
+        # FIXME memos for dict word: need better Anki integration.
 
-        self.update_memos_list()
+        # memos = self.get_memos_for_dict_word(word)
+        # if memos:
+        #     self.model.memos = memos
+        # else:
+        #     self.model.memos = []
+
+        # self.update_memos_list()
 
     # def update_memos_list_for_document(self, file_doc: FileDoc, db_doc: Um.Document):
     #     memos = self.get_memos_for_document_page(file_doc, db_doc)

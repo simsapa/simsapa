@@ -98,6 +98,7 @@ class AppData:
         self.dict_word_to_open: Optional[UDictWord] = None
 
         self._queries = GuiSearchQueries(self.db_session,
+                                         None,
                                          self.get_search_indexes,
                                          self.api_url)
 

@@ -37,13 +37,11 @@ def test_combined_search():
 
     search_indexes = TantivySearchIndexes(db_session)
 
-    def get_search_indexes() -> TantivySearchIndexes:
-        return search_indexes
-
     api_url = 'http://localhost:4848'
 
     queries = GuiSearchQueries(db_session,
-                               get_search_indexes,
+                               search_indexes,
+                               None,
                                api_url)
 
     for query_text, v in QUERY_TEXT_TEST_CASES.items():

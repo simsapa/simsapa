@@ -77,6 +77,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self._current_words = []
 
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value

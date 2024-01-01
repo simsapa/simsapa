@@ -28,7 +28,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
 
     def __init__(self,
                  db_session: Session,
-                 search_indexes_getter_fn: Callable,
+                 search_indexes: Optional[TantivySearchIndexes] = None,
+                 search_indexes_getter_fn: Optional[Callable] = None,
                  api_url: Optional[str] = None,
                  page_len = 20):
         logger.profile("GuiSearchQueries::__init__(): start")
@@ -40,6 +41,9 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         self._search_indexes_getter_fn = search_indexes_getter_fn
         self._search_indexes: Optional[TantivySearchIndexes] = None
 
+        if search_indexes is not None:
+            self._search_indexes = search_indexes
+
         self.thread_pool = QThreadPool()
 
         self._page_len = page_len
@@ -50,7 +54,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         self._search_indexes = TantivySearchIndexes(self.db_session)
 
     def set_search_indexes(self):
-        self._search_indexes = self._search_indexes_getter_fn()
+        if self._search_indexes_getter_fn is not None:
+            self._search_indexes = self._search_indexes_getter_fn()
 
     def running_queries(self) -> List[SearchQueryWorker]:
         return [i for i in self.search_query_workers if i.task.query_finished_time is None]

@@ -58,6 +58,7 @@ class PreviewWindow(QDialog):
         self._app_data: AppData = app_data
 
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
 
