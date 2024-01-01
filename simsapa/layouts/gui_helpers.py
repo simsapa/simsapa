@@ -173,7 +173,8 @@ def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> Lis
     versions = []
     #  <id>tag:github.com,2008:Repository/469025679/v0.2.0-alpha.1</id>
     #  <id>tag:github.com,2008:Repository/469025679/v0.1.8-alpha.1</id>
-    matches = re.finditer(r'<id>tag:github.com,2008:Repository/469025679/([^<]+)</id>', data)
+    #  <id>tag:github.com,2008:Repository/455816765/2023-11-27</id>
+    matches = re.finditer(r'<id>tag:github.com,2008:Repository/[0-9]+/([^<]+)</id>', data)
     for m in matches:
         ver = m.group(1)
         if stable_only and _is_version_stable(ver):

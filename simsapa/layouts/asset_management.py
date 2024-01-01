@@ -741,7 +741,9 @@ class AssetsWorker(QRunnable):
 
             def _not_core_db(s: str) -> bool:
                 p = Path(s)
-                return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
+                return not p.name == 'appdata.sqlite3' \
+                    and not p.name == 'dpd.sqlite3' \
+                    and not p.name == 'userdata.sqlite3'
 
             p = self.assets_dir.joinpath("*.sqlite3")
             sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))

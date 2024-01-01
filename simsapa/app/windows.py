@@ -13,7 +13,8 @@ from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH,
 from simsapa import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.check_updates_worker import CheckUpdatesWorker
+from simsapa.app.check_simsapa_updates_worker import CheckSimsapaUpdatesWorker
+from simsapa.app.check_dpd_updates_worker import CheckDpdUpdatesWorker
 
 from simsapa.app.app_data import AppData
 
@@ -85,8 +86,10 @@ class AppWindows:
             self._init_word_lookup()
             self._init_sutta_index_window()
 
-        self._init_check_updates()
-        self._check_updates()
+        self._init_check_simsapa_updates()
+        self._init_check_dpd_updates()
+        self._check_simsapa_updates()
+        self._check_dpd_updates()
 
         self.import_user_data_from_assets()
 
@@ -1102,12 +1105,16 @@ class AppWindows:
     def show_setting_after_restart(self):
         self.show_info("This setting takes effect after restarting the application.")
 
-    def _check_updates(self):
-        if self._app_data.app_settings.get('notify_about_updates'):
-            self.thread_pool.start(self.check_updates_worker)
+    def _check_simsapa_updates(self):
+        if self._app_data.app_settings.get('notify_about_simsapa_updates'):
+            self.thread_pool.start(self.check_simsapa_updates_worker)
 
-    def _init_check_updates(self, include_no_updates = False):
-        logger.profile("AppWindows::_init_check_updates()")
+    def _check_dpd_updates(self):
+        if self._app_data.app_settings.get('notify_about_dpd_updates'):
+            self.thread_pool.start(self.check_dpd_updates_worker)
+
+    def _init_check_simsapa_updates(self, include_no_updates = False):
+        logger.profile("AppWindows::_init_check_simsapa_updates()")
 
         if self._app_data.screen_size is not None:
             w = self._app_data.screen_size.width()
@@ -1116,20 +1123,43 @@ class AppWindows:
         else:
             screen_size = ''
 
-        self.check_updates_worker = CheckUpdatesWorker(screen_size=screen_size)
-        self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
-        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
-        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
+        self.check_simsapa_updates_worker = CheckSimsapaUpdatesWorker(screen_size=screen_size)
+        self.check_simsapa_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
+        self.check_simsapa_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
+        self.check_simsapa_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
 
         if include_no_updates:
-            self.check_updates_worker.signals.no_updates.connect(partial(self.show_no_updates_message))
+            self.check_simsapa_updates_worker.signals.no_updates.connect(partial(self.show_no_simsapa_updates_message))
 
-    def _handle_check_updates(self):
-        self._init_check_updates(include_no_updates=True)
-        self.thread_pool.start(self.check_updates_worker)
+    def _init_check_dpd_updates(self, include_no_updates = False):
+        logger.profile("AppWindows::_init_check_dpd_updates()")
 
-    def show_no_updates_message(self):
-        self.show_info("Application and database are up to date.")
+        if self._app_data.screen_size is not None:
+            w = self._app_data.screen_size.width()
+            h = self._app_data.screen_size.height()
+            screen_size = f"{w} x {h}"
+        else:
+            screen_size = ''
+
+        self.check_dpd_updates_worker = CheckDpdUpdatesWorker(screen_size=screen_size)
+        self.check_dpd_updates_worker.signals.have_dpd_update.connect(partial(self.show_dpd_update_message))
+
+        if include_no_updates:
+            self.check_dpd_updates_worker.signals.no_updates.connect(partial(self.show_no_dpd_updates_message))
+
+    def _handle_check_simsapa_updates(self):
+        self._init_check_simsapa_updates(include_no_updates=True)
+        self.thread_pool.start(self.check_simsapa_updates_worker)
+
+    def _handle_check_dpd_updates(self):
+        self._init_check_dpd_updates(include_no_updates=True)
+        self.thread_pool.start(self.check_dpd_updates_worker)
+
+    def show_no_simsapa_updates_message(self):
+        self.show_info("Simsapa application and database are up to date.")
+
+    def show_no_dpd_updates_message(self):
+        self.show_info("Digital Pāḷi Dictionary is up to date.")
 
     def show_local_db_obsolete_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -1268,6 +1298,35 @@ class AppWindows:
 
         box.exec()
 
+    def show_dpd_update_message(self, value: dict):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Digital Pāḷi Dictionary Update Available")
+
+        msg = "<p>Digital Pāḷi Dictionary Update Available</p>"
+        # msg += "<div>" + value['update_info'] + "</div>"
+
+        msg += "<h3>This update is optional. After the download, it is also recommended to re-generate the fulltext index (so that fulltext search results match with the updated database), which may take a while.</h3>"
+        msg += "<h3>Download and update now?</h3>"
+
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        reply = box.exec()
+
+        if reply == QMessageBox.StandardButton.Yes:
+            from simsapa.layouts.download_dpd import DownloadDpdWindow
+
+            version: str = value['dpd_release_version_tag']
+
+            w = DownloadDpdWindow(
+                assets_dir = ASSETS_DIR,
+                dpd_release_version_tag = version,
+                quit_action_fn = self._quit_app,
+            )
+
+            w.show()
+
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
         releases_info: ReleasesInfo = value['releases_info']
@@ -1284,6 +1343,10 @@ class AppWindows:
         # App notifications will alert to new app version.
         # When the new app is installed, it will remove old db and download a compatible version.
 
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Database Update Available")
+
         update_info['message'] += "<h3>This update is optional, and the download may take a while.</h3>"
         update_info['message'] += "<h3>Download and update now?</h3>"
 
@@ -1293,10 +1356,7 @@ class AppWindows:
         # Remove half-downloaded assets if download is cancelled.
         # Remove half-downloaded assets if found on startup.
 
-        box = QMessageBox()
-        box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
-        box.setWindowTitle("Database Update Available")
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         reply = box.exec()
@@ -1409,14 +1469,23 @@ class AppWindows:
         logger.info("_quit_app() Exiting with status 0.")
         sys.exit(0)
 
-    def _set_notify_setting(self, view: AppWindowInterface):
-        checked: bool = view.action_Notify_About_Updates.isChecked()
-        self._app_data.app_settings['notify_about_updates'] = checked
+    def _set_notify_simsapa_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Notify_About_Simsapa_Updates.isChecked()
+        self._app_data.app_settings['notify_about_simsapa_updates'] = checked
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if hasattr(w,'action_Notify_About_Updates'):
-                w.action_Notify_About_Updates.setChecked(checked)
+            if hasattr(w,'action_Notify_About_Simsapa_Updates'):
+                w.action_Notify_About_Simsapa_Updates.setChecked(checked)
+
+    def _set_notify_dpd_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Notify_About_DPD_Updates.isChecked()
+        self._app_data.app_settings['notify_about_dpd_updates'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w,'action_Notify_About_DPD_Updates'):
+                w.action_Notify_About_DPD_Updates.setChecked(checked)
 
     def _set_show_toolbar_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Show_Toolbar.isChecked()
@@ -1700,12 +1769,17 @@ class AppWindows:
                 view.action_Generate_Links_Graph \
                     .triggered.connect(partial(self._toggle_generate_links_graph, view))
 
-        notify = self._app_data.app_settings.get('notify_about_updates', True)
+        notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)
 
-        if hasattr(view, 'action_Notify_About_Updates'):
-            view.action_Notify_About_Updates.setChecked(notify)
-            view.action_Notify_About_Updates \
-                .triggered.connect(partial(self._set_notify_setting, view))
+        if hasattr(view, 'action_Notify_About_Simsapa_Updates'):
+            view.action_Notify_About_Simsapa_Updates.setChecked(notify)
+            view.action_Notify_About_Simsapa_Updates \
+                .triggered.connect(partial(self._set_notify_simsapa_setting, view))
+
+        if hasattr(view, 'action_Notify_About_DPD_Updates'):
+            view.action_Notify_About_DPD_Updates.setChecked(notify)
+            view.action_Notify_About_DPD_Updates \
+                .triggered.connect(partial(self._set_notify_dpd_setting, view))
 
         if hasattr(view, 'action_Website'):
             view.action_Website \
@@ -1760,9 +1834,13 @@ class AppWindows:
             checked = self._app_data.app_settings.get('clipboard_monitoring_for_dict', True)
             view.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
 
-        if hasattr(view, 'action_Check_for_Updates'):
-            view.action_Check_for_Updates \
-                .triggered.connect(partial(self._handle_check_updates))
+        if hasattr(view, 'action_Check_for_Simsapa_Updates'):
+            view.action_Check_for_Simsapa_Updates \
+                .triggered.connect(partial(self._handle_check_simsapa_updates))
+
+        if hasattr(view, 'action_Check_for_DPD_Updates'):
+            view.action_Check_for_DPD_Updates \
+                .triggered.connect(partial(self._handle_check_dpd_updates))
 
         # s = os.getenv('ENABLE_WIP_FEATURES')
         # if s is not None and s.lower() == 'true':

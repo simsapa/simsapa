@@ -313,7 +313,8 @@ class AppSettings(TypedDict):
     first_window_on_startup: WindowType
     generate_links_graph: bool
     link_preview: bool
-    notify_about_updates: bool
+    notify_about_simsapa_updates: bool
+    notify_about_dpd_updates: bool
     release_channel: ReleaseChannel
     openai: OpenAISettings
     search_as_you_type: bool
@@ -385,7 +386,8 @@ def default_app_settings() -> AppSettings:
         first_window_on_startup = WindowType.SuttaSearch,
         generate_links_graph = False,
         link_preview = True,
-        notify_about_updates = True,
+        notify_about_simsapa_updates = True,
+        notify_about_dpd_updates = True,
         release_channel = ReleaseChannel.Main,
         openai = default_openai_settings(),
         search_as_you_type = True,
@@ -480,8 +482,10 @@ class PaliChallengeType(str, Enum):
 
 
 class AppWindowInterface(QMainWindow):
-    action_Check_for_Updates: QAction
-    action_Notify_About_Updates: QAction
+    action_Check_for_Simsapa_Updates: QAction
+    action_Check_for_DPD_Updates: QAction
+    action_Notify_About_Simsapa_Updates: QAction
+    action_Notify_About_DPD_Updates: QAction
     action_Show_Toolbar: QAction
     action_Link_Preview: QAction
     action_Show_Word_Lookup: QAction

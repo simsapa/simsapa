@@ -50,7 +50,7 @@ python-idzip = "~0.3.7"
 typer = "~0.9.0"
 click = "~8.1.7"
 tomlkit = "~0.11.6"
-feedparser = "~6.0.10"
+# feedparser = "~6.0.10"
 #pyqtkeybind = [{ version = "~0.0.9", platform = "linux" },]
 beautifulsoup4 = "~4.11.1"
 MarkupSafe = "~2.1.1"
@@ -179,7 +179,7 @@ requires = [
 "typer              >= 0.9.0,    < 0.10.0",
 "click              >= 8.1.7,    < 9.0.0",
 "tomlkit            >= 0.11.0,   < 0.12.0",
-"feedparser         >= 6.0.10,   < 6.1.0",
+# "feedparser         >= 6.0.10,   < 6.1.0",
 "beautifulsoup4     >= 4.11.1,   < 4.12.0",
 "MarkupSafe         == 2.1.1",
 # "Mako               >= 1.2.4,    < 1.3.0",
