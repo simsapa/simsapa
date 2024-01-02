@@ -13,7 +13,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.types import SearchParams, SearchMode, UDictWord, USutta
-from simsapa.app.search.helpers import dict_word_to_search_result, dpd_lookup, sutta_to_search_result
+from simsapa.app.search.helpers import dict_word_to_search_result, dpd_lookup, sutta_to_search_result, unique_search_results
 from simsapa.app.search.tantivy_index import TantivySearchQuery
 
 class SearchQueryTask:
@@ -124,6 +124,8 @@ class SearchQueryTask:
             # The Fulltext query has been executed before this, request the
             # results with highlighted snippets.
             res.extend(self.search_query.highlighted_results_page(page_num))
+
+            res = unique_search_results(res)
 
             self._highlighted_result_pages[page_num] = res
 
