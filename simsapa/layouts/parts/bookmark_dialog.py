@@ -357,7 +357,10 @@ class HasBookmarkDialog:
 
         quote = sel_data['sel_text'].replace("\n", " ").strip()
 
-        d = BookmarkDialog(self._app_data, quote=quote, selection_range=sel_data['sel_range'])
+        sutta_uid = self._active_tab.sutta.uid
+        name = "/".join([sutta_uid.replace("/", "_"), quote[0:20]])
+
+        d = BookmarkDialog(self._app_data, name=name, quote=quote, selection_range=sel_data['sel_range'])
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 
