@@ -53,7 +53,7 @@ jobs:
 
       - name: Mac Build .dmg
         if: runner.os == 'MacOS'
-        run: ./build_dmg.sh
+        run: ./scripts/build_dmg.sh
 
       # NOTE: Windows uses \ in paths and expects ; not : in data names
       - name: Windows Build .exe

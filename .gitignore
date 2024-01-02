@@ -8,6 +8,7 @@ config.ini
 # build folders
 build/
 dist/
+.doit.db
 
 # memory_profiler output
 *.dat

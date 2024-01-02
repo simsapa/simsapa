@@ -27,3 +27,5 @@ cd dist/ && create-dmg "Simsapa Dhamma Reader.app"
 
 # Creates:
 # dist/Simsapa Dhamma Reader 0.0.0.dmg
+
+mv "Simsapa Dhamma Reader 0.0.0.dmg" "Simsapa Dhamma Reader.dmg"
