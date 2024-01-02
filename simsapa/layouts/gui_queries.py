@@ -6,14 +6,13 @@ from sqlalchemy.orm.session import Session
 
 from PyQt6.QtCore import QThreadPool
 
-from simsapa import logger
+from simsapa import logger, SearchResult
 
 from simsapa.app.search.dictionary_queries import DictionaryQueries, ExactQueryWorker
-from simsapa.app.search.helpers import SearchResult
 from simsapa.app.search.query_task import SearchQueryTask
 from simsapa.app.search.sutta_queries import SuttaQueries
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
-from simsapa.app.types import SearchArea, SearchParams
+from simsapa.app.types import SearchArea, SearchMode, SearchParams
 
 from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 from simsapa.layouts.query_worker import SearchQueryWorker
@@ -29,7 +28,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
 
     def __init__(self,
                  db_session: Session,
-                 search_indexes_getter_fn: Callable,
+                 search_indexes: Optional[TantivySearchIndexes] = None,
+                 search_indexes_getter_fn: Optional[Callable] = None,
                  api_url: Optional[str] = None,
                  page_len = 20):
         logger.profile("GuiSearchQueries::__init__(): start")
@@ -41,6 +41,9 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         self._search_indexes_getter_fn = search_indexes_getter_fn
         self._search_indexes: Optional[TantivySearchIndexes] = None
 
+        if search_indexes is not None:
+            self._search_indexes = search_indexes
+
         self.thread_pool = QThreadPool()
 
         self._page_len = page_len
@@ -51,7 +54,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
         self._search_indexes = TantivySearchIndexes(self.db_session)
 
     def set_search_indexes(self):
-        self._search_indexes = self._search_indexes_getter_fn()
+        if self._search_indexes_getter_fn is not None:
+            self._search_indexes = self._search_indexes_getter_fn()
 
     def running_queries(self) -> List[SearchQueryWorker]:
         return [i for i in self.search_query_workers if i.task.query_finished_time is None]
@@ -103,6 +107,10 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
             lang_keys = list(self._search_indexes.dict_words_lang_index.keys())
             lang_indexes = self._search_indexes.dict_words_lang_index
 
+            # If the query_text is an integer, it is a DPD ID.
+            if query_text_orig.isdigit():
+                params['mode'] = SearchMode.DpdIdMatch
+
         if params['lang'] is not None:
             if params['lang_include']:
                 languages =  [params['lang']]
@@ -112,10 +120,14 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
             languages = lang_keys
 
         for lang in languages:
+            # This can happen when the Language dropdown has empty value.
+            if lang == "":
+                continue
 
             logger.info(f"SearchQueryWorker for {lang}")
 
-            task = SearchQueryTask(lang_indexes[lang],
+            task = SearchQueryTask(lang,
+                                   lang_indexes[lang],
                                    query_text_orig,
                                    query_started_time,
                                    params)

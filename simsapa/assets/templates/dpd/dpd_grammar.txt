@@ -1,0 +1,79 @@
+${i.pali_2}
+
+${grammar}
+
+% if i.family_root:
+${i.family_root}
+% endif
+
+% if i.root_key:
+${i.root_clean} ${rt.root_has_verb} ${rt.root_group}
+${i.root_sign} (${rt.root_meaning})
+
+% if rt.root_in_comps:
+${rt.root_in_comps}
+% endif
+
+% endif
+
+% if i.root_base:
+${i.root_base}
+% endif
+
+% if i.construction:
+${i.construction}
+% endif
+
+% if i.derivative:
+${i.derivative} (${i.suffix})
+% endif
+
+% if i.phonetic:
+${i.phonetic}
+% endif
+
+% if i.compound_type:
+${i.compound_type} (${i.compound_construction})
+% endif
+
+% if i.antonym:
+${i.antonym}
+% endif
+
+% if i.synonym:
+${i.synonym}
+% endif
+
+% if i.variant:
+${i.variant}
+% endif
+
+% if i.commentary and i.commentary != "-":
+${i.commentary}
+% endif
+
+% if i.notes:
+${i.notes}
+% endif
+
+% if i.cognate:
+${i.cognate}
+% endif
+
+% if i.link:
+${i.link}"
+% endif
+
+% if i.non_ia:
+${i.non_ia}
+% endif
+
+% if i.sanskrit:
+${i.sanskrit}
+% endif
+
+% if i.root_key:
+% if rt.sanskrit_root:
+${rt.sanskrit_root} ${rt.sanskrit_root_class} (${rt.sanskrit_root_meaning})
+% endif
+% endif

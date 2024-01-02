@@ -5,25 +5,24 @@ from typing import Any, Callable, List, Optional
 import re
 from urllib.parse import urlencode
 
-from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QStandardItemModel, QAction
 from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QPushButton, QTabWidget, QToolBar, QVBoxLayout)
 
 from sqlalchemy import and_
 
-from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, logger
+from simsapa import READING_BACKGROUND_COLOR, DbSchemaName, SearchResult, logger, QueryType, SuttaQuote, QuoteScope
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import is_book_sutta_ref
+from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.helpers import is_book_sutta_ref, is_complete_sutta_uid
 
-from simsapa.app.types import QueryType, SearchArea, SuttaQuote, USutta, UDictWord
+from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
-from simsapa.app.search.sutta_queries import QuoteScope
-from simsapa.app.search.helpers import SearchResult
 
-from simsapa.layouts.gui_types import OpenPromptParams, QMinimum, QExpanding, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
+from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
 from simsapa.layouts.gui_types import sutta_quote_from_url
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
@@ -76,11 +75,15 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  sutta_tabs_layout: Optional[QVBoxLayout],
                  tabs_layout: Optional[QVBoxLayout],
                  focus_input: bool = True,
+                 enable_nav_buttons: bool = True,
                  enable_language_filter: bool = True,
                  enable_search_extras: bool = True,
+                 enable_regex_fuzzy: bool = True,
                  enable_info_button: bool = True,
+                 enable_sidebar_button: bool = True,
                  enable_sidebar: bool = True,
                  enable_find_panel: bool = True,
+                 create_find_toolbar: bool = True,
                  show_query_results_in_active_tab: bool = False,
                  search_bar_two_rows_layout=False,
                  language_filter_setting_key = 'sutta_language_filter_idx',
@@ -95,6 +98,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.enable_search_extras = enable_search_extras
         self.enable_sidebar = enable_sidebar
         self.enable_find_panel = enable_find_panel
+        self.create_find_toolbar = create_find_toolbar
 
         self.searchbar_layout = searchbar_layout
         self.sutta_tabs_layout = sutta_tabs_layout
@@ -109,6 +113,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self._app_data: AppData = app_data
 
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
 
@@ -138,16 +143,17 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
             self.init_search_bar(wrap_layout            = self.searchbar_layout,
                                  search_area            = SearchArea.Suttas,
-                                 add_nav_buttons        = True,
+                                 enable_nav_buttons     = enable_nav_buttons,
                                  enable_language_filter = enable_language_filter,
                                  enable_search_extras   = enable_search_extras,
+                                 enable_regex_fuzzy     = enable_regex_fuzzy,
                                  enable_info_button     = enable_info_button,
+                                 enable_sidebar_button  = enable_sidebar_button,
                                  input_fixed_size       = QSize(250, icons_height),
                                  icons_height           = icons_height,
                                  focus_input            = True,
                                  two_rows_layout        = search_bar_two_rows_layout)
 
-        self._setup_show_sidebar_btn()
         self._connect_signals()
 
         self.init_bookmark_dialog()
@@ -189,32 +195,12 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if self.enable_find_panel:
             self._find_panel = FindPanel()
 
-            self.find_toolbar = QToolBar()
-            self.find_toolbar.addWidget(self._find_panel)
+            if self.create_find_toolbar:
+                self.find_toolbar = QToolBar()
+                self.find_toolbar.addWidget(self._find_panel)
 
-            self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
-            self.find_toolbar.hide()
-
-    def _setup_show_sidebar_btn(self):
-        if self.searchbar_layout is None:
-            return
-
-        if not self.enable_sidebar:
-            return
-
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
-
-        self.searchbar_layout.addItem(spacerItem)
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.show_sidebar_btn = QPushButton()
-        self.show_sidebar_btn.setIcon(icon)
-        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
-        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
-
-        self.searchbar_layout.addWidget(self.show_sidebar_btn)
+                self.pw.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+                self.find_toolbar.hide()
 
     def _setup_sutta_tabs(self):
         if self.sutta_tabs_layout is None:
@@ -436,11 +422,16 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                                   .query(Am.Sutta) \
                                   .filter(Am.Sutta.uid == x['uid']) \
                                   .first()
-        else:
+
+        elif x['schema_name'] == DbSchemaName.UserData.value:
             sutta = self._app_data.db_session \
                                   .query(Um.Sutta) \
                                   .filter(Um.Sutta.uid == x['uid']) \
                                   .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
+
         return sutta
 
     @QtCore.pyqtSlot(dict)
@@ -544,13 +535,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             self._show_sutta_by_quote(sutta_quote)
             return
 
-        if len(uid) > 0 and not self._queries.sutta_queries.is_complete_uid(uid):
+        if len(uid) > 0 and not is_complete_sutta_uid(uid):
             self._show_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
             return
 
-        if sutta_quote:
-            self._set_query(sutta_quote['quote'])
-            self._start_query_workers(sutta_quote['quote'])
+        # NOTE: Don't use _set_query(sutta_quote['quote']) here, it intereferes with Sutta Study links.
 
         sutta = self._queries.sutta_queries.get_sutta_by_uid(uid, sutta_quote, quote_scope)
 
@@ -572,6 +561,18 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         res = self._app_data.db_session \
             .query(Um.DictWord) \
             .filter(Um.DictWord.uid == uid) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.uid == uid) \
+            .all()
+        results.extend(res)
+
+        res = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid == uid) \
             .all()
         results.extend(res)
 
@@ -799,13 +800,17 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.qwe_study_menu = QMenu("Open in Study Window")
         menu.addMenu(self.qwe_study_menu)
 
-        self.qwe_study_left = QAction("Left")
-        self.qwe_study_left.triggered.connect(partial(self._open_in_study_window, 'left'))
-        self.qwe_study_menu.addAction(self.qwe_study_left)
+        self.qwe_study_one = QAction("Panel 1")
+        self.qwe_study_one.triggered.connect(partial(self._open_in_study_window, 'panel_one'))
+        self.qwe_study_menu.addAction(self.qwe_study_one)
 
-        self.qwe_study_middle = QAction("Middle")
-        self.qwe_study_middle.triggered.connect(partial(self._open_in_study_window, 'middle'))
-        self.qwe_study_menu.addAction(self.qwe_study_middle)
+        self.qwe_study_two = QAction("Panel 2")
+        self.qwe_study_two.triggered.connect(partial(self._open_in_study_window, 'panel_two'))
+        self.qwe_study_menu.addAction(self.qwe_study_two)
+
+        self.qwe_study_three = QAction("Panel 3")
+        self.qwe_study_three.triggered.connect(partial(self._open_in_study_window, 'panel_three'))
+        self.qwe_study_menu.addAction(self.qwe_study_three)
 
         self.qwe_lookup_menu = QMenu("Lookup Selection")
         menu.addMenu(self.qwe_lookup_menu)
@@ -908,17 +913,14 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                 self.back_recent_button.clicked.connect(partial(self.pw._select_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self.pw._select_prev_recent))
 
-                def _handle_sidebar():
-                    self.pw.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
-
-                self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
             else:
                 self.back_recent_button.clicked.connect(partial(self._show_next_recent))
                 self.forward_recent_button.clicked.connect(partial(self._show_prev_recent))
 
         if self.enable_find_panel:
             self._find_panel.searched.connect(self.on_searched)
-            self._find_panel.closed.connect(self.find_toolbar.hide)
 
-            self.pw.action_Find_in_Page \
-                .triggered.connect(self._handle_show_find_panel)
+            if self.create_find_toolbar:
+                self._find_panel.closed.connect(self.find_toolbar.hide)
+                self.pw.action_Find_in_Page \
+                    .triggered.connect(self._handle_show_find_panel)

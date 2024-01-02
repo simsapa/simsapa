@@ -4,39 +4,49 @@ from typing import List, Optional
 
 from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QSize
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QAction, QIcon, QPixmap
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
-from simsapa import logger, SEARCH_TIMER_SPEED
+from simsapa import DbSchemaName, SearchResult, logger, SEARCH_TIMER_SPEED
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.types import SearchArea, SearchMode, AllSearchModeNameToType, SuttaSearchModeNameToType, DictionarySearchModeNameToType, UDictWord
-from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
+from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages, get_sutta_source_filter_labels
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.layouts.parts.pali_completer import PaliCompleter
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import QExpanding, QSizeMinimum, SearchBarInterface, QFixed
+from simsapa.layouts.gui_types import QExpanding, QMinimum, QSizeMinimum, SearchBarInterface, QFixed
 from simsapa.layouts.help_info import setup_info_button
-
 
 class HasSearchBar(SearchBarInterface):
     features: List[str]
     _app_data: AppData
     _search_area: SearchArea
+    _current_results_page: List[SearchResult] = []
+    _current_results_page_num = 0
+    _results_page_render_len = 10
+    enable_sidebar: bool
+    action_Show_Sidebar: QAction
+
+    qwe: QWebEngineView
 
     def init_search_bar(self,
                         wrap_layout: QBoxLayout,
                         search_area: SearchArea,
-                        add_nav_buttons = True,
+                        enable_nav_buttons = True,
                         enable_language_filter = True,
                         enable_search_extras = True,
+                        enable_regex_fuzzy = True,
                         enable_info_button = True,
+                        enable_sidebar_button = True,
                         input_fixed_size: Optional[QSize] = None,
                         icons_height = 40,
                         focus_input = True,
@@ -49,10 +59,13 @@ class HasSearchBar(SearchBarInterface):
 
         self.enable_language_filter = enable_language_filter
         self.enable_search_extras = enable_search_extras
+        self.enable_regex_fuzzy = enable_regex_fuzzy
+        self.enable_sidebar_button = enable_sidebar_button
 
         self._init_search_icons()
         self._setup_layout(wrap_layout = wrap_layout,
-                           add_nav_buttons = add_nav_buttons,
+                           enable_nav_buttons = enable_nav_buttons,
+                           enable_sidebar_button = enable_sidebar_button,
                            input_fixed_size = input_fixed_size,
                            two_rows_layout = two_rows_layout)
 
@@ -69,7 +82,9 @@ class HasSearchBar(SearchBarInterface):
         if enable_search_extras:
             self._setup_source_include_btn()
             self._setup_source_filter()
-            self._setup_regex_and_fuzzy()
+
+            if enable_regex_fuzzy:
+                self._setup_regex_and_fuzzy()
 
             # self._setup_sutta_select_button() # TODO: list form is too long, not usable like this
             # self._setup_toggle_pali_button() # TODO: reimplement as hover window
@@ -82,11 +97,49 @@ class HasSearchBar(SearchBarInterface):
 
         self._connect_search_bar_signals()
 
+    def _setup_show_sidebar_btn(self, wrap_layout: QBoxLayout):
+        if not self.enable_sidebar:
+            return
+
+        spacerItem = QSpacerItem(40, 20, QExpanding, QMinimum)
+
+        wrap_layout.addItem(spacerItem)
+
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        self.show_sidebar_btn = QPushButton()
+        self.show_sidebar_btn.setIcon(icon)
+        self.show_sidebar_btn.setMinimumSize(QSize(40, 40))
+        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
+
+        wrap_layout.addWidget(self.show_sidebar_btn)
+
     def _setup_layout(self,
                       wrap_layout: QBoxLayout,
-                      add_nav_buttons: bool,
+                      enable_nav_buttons: bool,
+                      enable_sidebar_button: bool,
                       input_fixed_size: Optional[QSize] = None,
                       two_rows_layout = False):
+        box_wrap = QHBoxLayout()
+        box_wrap.setContentsMargins(0, 0, 0, 0)
+
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+        frame.setContentsMargins(0, 0, 0, 0)
+        if two_rows_layout:
+            frame_height = self._icons_height*2 + 10
+        else:
+            frame_height = self._icons_height + 10
+
+        frame.setMaximumHeight(frame_height)
+
+        self.search_bar_frame = frame
+        self.search_bar_frame.setLayout(box_wrap)
+
+        wrap_layout.addWidget(self.search_bar_frame)
 
         search_bar_box = QVBoxLayout()
         row_one = QHBoxLayout()
@@ -96,15 +149,15 @@ class HasSearchBar(SearchBarInterface):
             search_bar_box.addLayout(row_one)
             search_bar_box.addLayout(row_two)
 
-            wrap_layout.addLayout(search_bar_box)
+            box_wrap.addLayout(search_bar_box)
 
         else:
             row_one = QHBoxLayout()
-            wrap_layout.addLayout(row_one)
+            box_wrap.addLayout(row_one)
 
         # === Back / Forward Nav Buttons ===
 
-        if add_nav_buttons:
+        if enable_nav_buttons:
 
             self.back_recent_button = QPushButton()
             self.back_recent_button.setFixedSize(self._icons_height, self._icons_height)
@@ -190,6 +243,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             row_two.addLayout(self.search_extras)
         else:
             row_one.addLayout(self.search_extras)
+
+        if enable_sidebar_button:
+            self._setup_show_sidebar_btn(box_wrap)
 
     def _init_search_icons(self):
         search_icon = QIcon()
@@ -321,7 +377,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         cmb.addItems(items)
         cmb.setFixedHeight(self._icons_height)
-        cmb.setCurrentIndex(idx)
+
+        if idx < len(items):
+            cmb.setCurrentIndex(idx)
+        else:
+            cmb.setCurrentIndex(0)
+
         self.language_filter_dropdown = cmb
         self.search_extras.addWidget(self.language_filter_dropdown)
 
@@ -402,7 +463,12 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         cmb.addItems(items)
         cmb.setFixedHeight(self._icons_height)
-        cmb.setCurrentIndex(idx)
+
+        if idx < len(items):
+            cmb.setCurrentIndex(idx)
+        else:
+            cmb.setCurrentIndex(0)
+
         self.source_filter_dropdown = cmb
         self.search_extras.addWidget(self.source_filter_dropdown)
 
@@ -446,8 +512,9 @@ QWidget:focus { border: 1px solid #1092C3; }
         self._app_data.app_settings[self._search_mode_setting_key] = mode
         self._app_data._save_app_settings()
 
-        is_fulltext = (mode == SearchMode.FulltextMatch)
-        self.regex_fuzzy_frame.setEnabled(is_fulltext)
+        if self.enable_regex_fuzzy:
+            is_fulltext = (mode == SearchMode.FulltextMatch)
+            self.regex_fuzzy_frame.setEnabled(is_fulltext)
 
     def _start_query_workers(self, query_text_orig: str):
         if len(query_text_orig) == 0:
@@ -479,13 +546,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             params,
         )
 
-    def _render_dict_words_search_results(self, search_results: List[SearchResult]):
-        logger.info("_render_search_results()")
-
-        uids = dict()
-        uids['appdata'] = []
-        uids['userdata'] = []
-
+    def _search_results_to_dict_words(self, search_results: List[SearchResult]) -> List[UDictWord]:
         # Must maintain the order of search_results in the db results, hence not
         # using one Am.DictWord.uid.in_(uids['appdata']) request. Must retreive
         # each db item in the same sequence.
@@ -496,7 +557,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             if i['uid'] is None:
                 continue
 
-            if i['schema_name'] == 'appdata':
+            if i['schema_name'] == DbSchemaName.AppData.value:
                 r = self._app_data.db_session \
                     .query(Am.DictWord) \
                     .filter(Am.DictWord.uid == i['uid']) \
@@ -504,7 +565,7 @@ QWidget:focus { border: 1px solid #1092C3; }
                 if r is not None:
                     res.append(r)
 
-            if i['schema_name'] == 'userdata':
+            elif i['schema_name'] == DbSchemaName.UserData.value:
                 r = self._app_data.db_session \
                     .query(Um.DictWord) \
                     .filter(Um.DictWord.uid == i['uid']) \
@@ -512,12 +573,91 @@ QWidget:focus { border: 1px solid #1092C3; }
                 if r is not None:
                     res.append(r)
 
+            elif i['schema_name'] == DbSchemaName.Dpd.value:
+                if i['table_name'] == "pali_words":
+                    r = self._app_data.db_session \
+                        .query(Dpd.PaliWord) \
+                        .filter(Dpd.PaliWord.uid == i['uid']) \
+                        .first()
+                    if r is not None:
+                        res.append(r)
+
+                elif i['table_name'] == "pali_roots":
+                    r = self._app_data.db_session \
+                        .query(Dpd.PaliRoot) \
+                        .filter(Dpd.PaliRoot.uid == i['uid']) \
+                        .first()
+                    if r is not None:
+                        res.append(r)
+
+            else:
+                raise Exception(f"Unknown schema_name: {i['schema_name']}")
+
+        return res
+
+    def _render_dict_words_search_results(self, search_results: List[SearchResult]):
+        logger.info("_render_dict_words_search_results()")
+
         self.stop_loading_animation()
         self._show_search_normal_icon()
 
+        res = self._search_results_to_dict_words(search_results)
+
         self._render_words(res)
 
+    def _load_more_results(self):
+        self._current_results_page_num += 1
+
+        r = self._current_results_page
+        render_len = self._results_page_render_len
+
+        start_idx = (self._current_results_page_num * render_len) + 1
+        end_idx = start_idx + render_len
+        has_more = (len(r) > end_idx)
+
+        words = self._search_results_to_dict_words(r[start_idx:end_idx])
+
+        html = ""
+
+        for w in words:
+            d = self._queries.dictionary_queries.get_word_html(w)
+            html += d['body']
+
+        js = """
+        document.SSP.html_template = `<div>%s</div>`;
+        document.SSP.page_bottom_el = document.getElementById('page_bottom');
+        document.SSP.page_bottom_el.before(document.SSP.html_to_element(document.SSP.html_template));
+        """ % html
+
+        if not has_more:
+            js += """
+            document.SSP.remove_infinite_scroll();
+            document.SSP.add_bottom_message("End of page. Use the results tab to see more results and open words.");
+            """
+
+        self.qwe.page().runJavaScript(js)
+
+    def _toggle_show_search_bar(self, view):
+        is_on = view.action_Show_Search_Bar.isChecked()
+        self.search_bar_frame.setVisible(is_on)
+
     def _connect_search_bar_signals(self):
+        if hasattr(self, 'pw'):
+            view = self.pw # type: ignore
+        else:
+            view = self
+
+        if hasattr(view, 'action_Show_Search_Bar'):
+            view.action_Show_Search_Bar \
+                .triggered.connect(partial(self._toggle_show_search_bar, view))
+
+        if self.enable_sidebar_button:
+            def _handle_sidebar():
+                if hasattr(view, 'action_Show_Sidebar'):
+                    view.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
+
+            self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
+
         if hasattr(self, 'search_button'):
             self.search_button.clicked.connect(partial(self._handle_query, min_length=1))
             # self.search_button.clicked.connect(partial(self._handle_exact_query, min_length=1))

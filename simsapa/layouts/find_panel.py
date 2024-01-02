@@ -3,7 +3,7 @@ from typing import Optional, TypedDict
 from PyQt6 import QtCore, QtWidgets, QtWebEngineCore
 from PyQt6.QtWebEngineCore import QWebEnginePage
 
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
 
 # Based on https://stackoverflow.com/a/54888872/195141
@@ -23,11 +23,26 @@ class FindPanel(QtWidgets.QWidget):
 
         lay = QHBoxLayout(self)
 
-        done_button = QPushButton('&Done')
-        self.case_button = QPushButton('Match &Case')
+        done_button = QPushButton()
+        done_button.setToolTip("Close find")
+        icon = QIcon(":xmark-20-solid")
+        done_button.setIcon(icon)
+
+        self.case_button = QPushButton()
+        icon = QIcon(":match-case")
+        self.case_button.setIcon(icon)
+        self.case_button.setToolTip("Match Case")
         self.case_button.setCheckable(True)
-        next_button = QPushButton('&Next')
-        prev_button = QPushButton('&Previous')
+
+        prev_button = QPushButton()
+        prev_button.setToolTip("Find previous")
+        icon = QIcon(":round-arrow-left")
+        prev_button.setIcon(icon)
+
+        next_button = QPushButton()
+        next_button.setToolTip("Find next")
+        icon = QIcon(":round-arrow-right")
+        next_button.setIcon(icon)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setPlaceholderText("Find in Page")
@@ -39,7 +54,7 @@ class FindPanel(QtWidgets.QWidget):
         prev_button.clicked.connect(self.on_prev_find)
         self.case_button.clicked.connect(self.update_searching)
 
-        for btn in (self.search_input, self.case_button, next_button, prev_button, done_button, done_button):
+        for btn in (self.search_input, self.case_button, prev_button, next_button, done_button):
             lay.addWidget(btn)
             if isinstance(btn, QtWidgets.QPushButton):
                 btn.clicked.connect(self.setFocus)

@@ -1,11 +1,10 @@
 from datetime import datetime
 from functools import partial
-import math, json, queue
+import re, math, json, queue
 from typing import Any, List, Optional
 from pathlib import Path
 
-from PyQt6 import QtCore, QtGui
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore
 from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QCloseEvent, QPixmap, QAction
 from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
@@ -13,20 +12,21 @@ from PyQt6.QtWidgets import (QFrame, QLineEdit, QListWidget,
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from simsapa import SIMSAPA_PACKAGE_DIR, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa import SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, ApiAction, ApiMessage, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED, QueryType
 from simsapa.assets.ui.dictionary_search_window_ui import Ui_DictionarySearchWindow
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
-from simsapa.app.search.helpers import SearchResult
-from simsapa.app.types import QueryType, SearchArea, USutta, UDictWord
+from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
+from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface, QExpanding, QMinimum
+from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
@@ -37,11 +37,12 @@ from simsapa.layouts.parts.search_bar import HasSearchBar
 from simsapa.layouts.parts.memo_dialog import HasMemoDialog
 from simsapa.layouts.parts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
+from simsapa.layouts.parts.deconstructor_list import HasDeconstructorList
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 from simsapa.layouts.parts.import_stardict_dialog import HasImportStarDictDialog
 
 class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearchWindow,
-                             HasFulltextList, HasSearchBar, HasMemoDialog,
+                             HasDeconstructorList, HasFulltextList, HasSearchBar, HasMemoDialog,
                              HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog):
 
     searchbar_layout: QHBoxLayout
@@ -56,7 +57,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     rightside_tabs: QTabWidget
     _app_data: AppData
     _queries: GuiSearchQueries
-    _current_words: List[UDictWord]
+    _current_words: List[UDictWord] = []
     _search_timer = QTimer()
     _last_query_time = datetime.now()
 
@@ -86,6 +87,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._current_words: List[UDictWord] = []
 
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value
@@ -113,17 +115,18 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self.init_search_bar(wrap_layout            = self.searchbar_layout,
                              search_area            = SearchArea.DictWords,
-                             add_nav_buttons        = True,
+                             enable_nav_buttons     = False,
                              enable_language_filter = True,
                              enable_search_extras   = True,
                              enable_info_button     = True,
+                             enable_sidebar_button  = True,
                              input_fixed_size       = QSize(250, 35),
                              icons_height           = 40,
                              focus_input            = True)
 
-        self._setup_show_sidebar_btn()
         self._connect_signals()
 
+        self.init_deconstructor_list()
         self.init_fulltext_list()
         self.init_memo_dialog()
         self.init_memos_sidebar()
@@ -255,24 +258,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
         self.find_toolbar.hide()
 
-    def _setup_show_sidebar_btn(self):
-        if not self.enable_sidebar:
-            return
-
-        spacerItem = QtWidgets.QSpacerItem(40, 20, QExpanding, QMinimum)
-
-        self.searchbar_layout.addItem(spacerItem)
-
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/angles-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
-
-        self.show_sidebar_btn = QPushButton()
-        self.show_sidebar_btn.setIcon(icon)
-        self.show_sidebar_btn.setMinimumSize(QtCore.QSize(40, 40))
-        self.show_sidebar_btn.setToolTip("Toggle Sidebar")
-
-        self.searchbar_layout.addWidget(self.show_sidebar_btn)
-
     def _link_mouseover(self, hover_data: LinkHoverData):
         self.link_mouseover.emit(hover_data)
 
@@ -286,8 +271,19 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if self._app_data.app_settings['double_click_word_lookup']:
             self.page_dblclick.emit()
 
-    def _copy_clipboard(self, text: str):
+    def _copy_clipboard_text(self, text: str):
         self._app_data.clipboard_setText(text)
+
+    def _copy_clipboard_html(self, html: str):
+        self._app_data.clipboard_setHtml(html)
+
+    def _copy_gloss(self, db_schema: str, db_table: str, db_uid: str, gloss_keys: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
+        self._copy_clipboard_html(get_word_gloss(w, gloss_keys))
+
+    def _copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
+        self._copy_clipboard_text(get_word_meaning(w))
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
@@ -297,7 +293,11 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._page_dblclick))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
-        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
+        page.helper.copy_clipboard_text.connect(partial(self._copy_clipboard_text))
+        page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
+        page.helper.copy_gloss.connect(partial(self._copy_gloss))
+        page.helper.copy_meaning.connect(partial(self._copy_meaning))
+        page.helper.load_more_results.connect(partial(self._load_more_results))
 
         self.qwe.setPage(page)
 
@@ -381,12 +381,19 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         else:
             self.rightside_tabs.setTabText(self.fulltext_results_tab_idx, "Results")
 
-        results = self.render_fulltext_page()
+        self.render_deconstructor_list_for_query(self.search_input.text().strip())
 
-        if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
-            self._show_word_by_uid(results[0]['uid'])
+        r = self.render_fulltext_page()
+        self._current_results_page = r
+        self._current_results_page_num = 0
+        render_len = self._results_page_render_len
+
+        if len(r) > 0 and hits == 1 and r[0]['uid'] is not None:
+            self._show_word_by_uid(r[0]['uid'])
         else:
-            self._render_dict_words_search_results(results[0:10])
+            start_idx = self._current_results_page_num * render_len
+            end_idx = start_idx + render_len
+            self._render_dict_words_search_results(r[start_idx:end_idx])
 
         self._update_fulltext_page_btn(hits)
 
@@ -409,10 +416,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
     def _exact_query_finished(self, q_res: ExactQueryResult):
         logger.info("_exact_query_finished()")
 
-        if len(q_res['appdata_ids']) > 0 and q_res['add_recent']:
+        if len(q_res['appdata_uids']) > 0 and q_res['add_recent']:
             word = self._app_data.db_session \
                 .query(Am.DictWord) \
-                .filter(Am.DictWord.id == q_res['appdata_ids'][0]) \
+                .filter(Am.DictWord.uid == q_res['appdata_uids'][0]) \
                 .first()
             if word is not None:
                 self._add_recent(word)
@@ -421,13 +428,25 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         r = self._app_data.db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .filter(Am.DictWord.uid.in_(q_res['appdata_uids'])) \
             .all()
         res.extend(r)
 
         r = self._app_data.db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .filter(Um.DictWord.uid.in_(q_res['userdata_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.uid.in_(q_res['pali_words_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid.in_(q_res['pali_roots_uids'])) \
             .all()
         res.extend(r)
 
@@ -568,7 +587,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.update_memos_list_for_dict_word(self._current_words[0])
         self.show_network_graph(self._current_words[0])
 
-        word_html = self._queries.dictionary_queries.get_word_html(word)
+        open_details = [DetailsTab.Inflections, DetailsTab.RootInfo]
+        word_html = self._queries.dictionary_queries.get_word_html(word, open_details)
 
         font_size = self._app_data.app_settings.get('dictionary_font_size', 18)
         css_extra = f"html {{ font-size: {font_size}px; }}"
@@ -688,7 +708,12 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
         # path: /American pasqueflower
-        query = url.path().strip('/')
+
+        # url.path() = /words/rupa
+        # url.path() = /rupa
+        query = re.sub(r"^/words", "", url.path())
+        query = query.strip('/')
+
         logger.info(f"Show Word: {query}")
 
         self.lookup_in_dictionary(query,
@@ -725,11 +750,11 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if len(self._current_words) > 0:
 
             def _f(x: UDictWord):
-                return (str(x.metadata.schema), int(str(x.id)))
+                return (str(x.metadata.schema), str(x.__tablename__), str(x.uid))
 
-            schemas_ids = list(map(_f, self._current_words))
+            schemas_tables_uids = list(map(_f, self._current_words))
 
-            self.open_words_new_signal.emit(schemas_ids)
+            self.open_words_new_signal.emit(schemas_tables_uids)
         else:
             logger.warn("No current words")
 
@@ -823,11 +848,6 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self._find_panel.searched.connect(self.on_searched)
         self._find_panel.closed.connect(self.find_toolbar.hide)
 
-        def _handle_sidebar():
-            self.action_Show_Sidebar.activate(QAction.ActionEvent.Trigger)
-
-        self.show_sidebar_btn.clicked.connect(partial(_handle_sidebar))
-
         self.add_memo_button \
             .clicked.connect(partial(self.add_memo_for_dict_word))
 
@@ -858,9 +878,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.action_Next_Result \
             .triggered.connect(partial(self._select_next_result))
 
-        self.back_recent_button.clicked.connect(partial(self._select_next_recent))
+        if hasattr(self, 'back_recent_button'):
+            self.back_recent_button.clicked.connect(partial(self._select_next_recent))
 
-        self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
+            self.forward_recent_button.clicked.connect(partial(self._select_prev_recent))
 
         self.action_Reload_Page \
             .triggered.connect(partial(self.reload_page))

@@ -82,6 +82,19 @@
              </attribute>
              <layout class="QVBoxLayout" name="verticalLayout_4">
               <item>
+               <widget class="QFrame" name="deconstructor_frame">
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <property name="frameShadow">
+                 <enum>QFrame::Raised</enum>
+                </property>
+                <property name="lineWidth">
+                 <number>0</number>
+                </property>
+               </widget>
+              </item>
+              <item>
                <layout class="QVBoxLayout" name="fulltext_layout">
                 <item>
                  <layout class="QHBoxLayout" name="fulltext_pages_layout">
@@ -504,8 +517,10 @@
      <string>&amp;Help</string>
     </property>
     <addaction name="action_Search_Query_Terms"/>
-    <addaction name="action_Check_for_Updates"/>
-    <addaction name="action_Notify_About_Updates"/>
+    <addaction name="action_Check_for_Simsapa_Updates"/>
+    <addaction name="action_Check_for_DPD_Updates"/>
+    <addaction name="action_Notify_About_Simsapa_Updates"/>
+    <addaction name="action_Notify_About_DPD_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -513,13 +528,14 @@
     <property name="title">
      <string>&amp;Dictionary</string>
     </property>
-    <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Import_from_StarDict"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
     <property name="title">
      <string>F&amp;ind</string>
     </property>
+    <addaction name="action_Show_Search_Bar"/>
+    <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
     <addaction name="action_Double_Click_on_a_Word_for_Dictionary_Lookup"/>
@@ -581,7 +597,7 @@
      <normaloff>:/close</normaloff>:/close</iconset>
    </property>
    <property name="text">
-    <string>&amp;Quit</string>
+    <string>&amp;Quit Simsapa</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+Q</string>
@@ -713,7 +729,7 @@
     <string>Re-download database...</string>
    </property>
   </action>
-  <action name="action_Notify_About_Updates">
+  <action name="action_Notify_About_Simsapa_Updates">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -721,7 +737,18 @@
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Notify About Updates</string>
+    <string>Notify About Simsapa Updates</string>
+   </property>
+  </action>
+  <action name="action_Notify_About_DPD_Updates">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Notify About DPD Updates</string>
    </property>
   </action>
   <action name="action_Lookup_Clipboard_in_Suttas">
@@ -832,6 +859,26 @@
     <string>&amp;Search Result Sizes...</string>
    </property>
   </action>
+  <action name="action_Show_Search_Bar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Search &amp;Bar</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+/</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the search bar with input field and controls</string>
+   </property>
+   <property name="statusTip">
+    <string/>
+   </property>
+  </action>
   <action name="action_Search_As_You_Type">
    <property name="checkable">
     <bool>true</bool>
@@ -926,9 +973,14 @@
     <string>&amp;Ebook Reader</string>
    </property>
   </action>
-  <action name="action_Check_for_Updates">
+  <action name="action_Check_for_Simsapa_Updates">
    <property name="text">
-    <string>Check for Updates...</string>
+    <string>Check for Simsapa Updates...</string>
+   </property>
+  </action>
+  <action name="action_Check_for_DPD_Updates">
+   <property name="text">
+    <string>Check for DPD Updates...</string>
    </property>
   </action>
   <action name="action_Double_Click_on_a_Word_for_Dictionary_Lookup">

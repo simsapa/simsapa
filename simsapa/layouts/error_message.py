@@ -98,5 +98,5 @@ class ErrorMessageWindow(QMainWindow):
     def _close_and_quit(self):
         self.close()
         status = 1
-        logger.error(f"Exiting with status {status}.")
+        logger.info(f"Exiting with status {status}.")
         sys.exit(status)

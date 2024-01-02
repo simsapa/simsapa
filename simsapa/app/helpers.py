@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, Optional, TypedDict
 import re, socket
 import html, json
+from datetime import datetime
 
 from simsapa import logger
 from simsapa.app.lookup import (RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF, DHP_CHAPTERS_TO_RANGE,
@@ -155,7 +156,7 @@ def normalize_sutta_uid(uid: str) -> str:
     return uid
 
 
-def consistent_nasal_m(text: Optional[str] = None) -> str:
+def consistent_niggahita(text: Optional[str] = None) -> str:
     if text is None:
         return ''
 
@@ -186,6 +187,12 @@ def pali_to_ascii(text: Optional[str] = None) -> str:
 
     trans = str.maketrans(from_chars, to_chars)
     return text.translate(trans).strip()
+
+def word_uid(word: str, dict_label: str) -> str:
+    w = word.replace("'", "").replace('"', '').replace(' ', '-')
+    uid = f"{w}/{dict_label}".lower()
+
+    return uid
 
 def expand_quote_to_pattern_str(text: str) -> str:
     s = text
@@ -244,7 +251,7 @@ def compact_plain_text(text: str) -> str:
     # Make lowercase and remove punctuation to help matching query strings.
     text = text.lower()
     text = remove_punct(text)
-    text = consistent_nasal_m(text)
+    text = consistent_niggahita(text)
     text = text.strip()
 
     return text
@@ -304,6 +311,13 @@ def strip_html(text: str) -> str:
     text = re.sub(r'  +', ' ', text)
 
     return text
+
+def root_info_clean_plaintext(html: str) -> str:
+    s = strip_html(html)
+    s = s.replace("･", " ")
+    s = s.replace("Pāḷi Root:", "")
+    s = re.sub(r"Bases:.*$", "", s, flags=re.DOTALL)
+    return s
 
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
@@ -365,7 +379,9 @@ def bilara_text_to_segments(
         tmpl: Optional[str],
         variant: Optional[str] = None,
         comment: Optional[str] = None,
-        show_variant_readings: bool = False) -> Dict[str, str]:
+        gloss: Optional[str] = None,
+        show_variant_readings: bool = False,
+        show_glosses: bool = False) -> Dict[str, str]:
 
     content_json = json.loads(content)
     if tmpl:
@@ -382,6 +398,11 @@ def bilara_text_to_segments(
         comment_json = json.loads(comment)
     else:
         comment_json = None
+
+    if gloss:
+        gloss_json = json.loads(gloss)
+    else:
+        gloss_json = None
 
     for i in content_json.keys():
         if variant_json:
@@ -419,8 +440,44 @@ def bilara_text_to_segments(
 
                 content_json[i] += s
 
+        if gloss_json:
+            if i in gloss_json.keys():
+                txt = gloss_json[i].strip()
+                if len(txt) == 0:
+                    continue
+
+                classes = ['gloss',]
+
+                if not show_glosses:
+                    classes.append('hide')
+
+                s = """
+                <span class='gloss-wrap' onclick="toggle_gloss('#gloss_%s')">
+                  <span class='mark'>
+                    <svg class="ssp-icon-button__icon"><use xlink:href="#icon-table"></use></svg>
+                  </span>
+                </span>
+                <div class='%s'>%s</div>
+                """ % (i, ' '.join(classes), txt)
+
+                content_json[i] += s
+
+        """
+        Template JSON example:
+
+{
+  "mn10:0.1": "<article id='mn10'><header><ul><li class='division'>{}</li></ul>",
+  "mn10:0.2": "<h1 class='sutta-title'>{}</h1></header>",
+  "mn10:1.1": "<p><span class='evam'>{}</span>",
+  "mn10:1.2": "{}",
+  "mn10:1.3": "{}",
+  "mn10:1.4": "{}</p>",
+}
+        """
+
         if tmpl_json and i in tmpl_json.keys():
-            content_json[i] = tmpl_json[i].replace('{}', content_json[i])
+            content = f"<span data-tmpl-key='{i}'>{content_json[i]}</span>"
+            content_json[i] = tmpl_json[i].replace('{}', content)
 
     return content_json
 
@@ -464,6 +521,7 @@ def bilara_text_to_html(
         tmpl: str,
         variant: Optional[str] = None,
         comment: Optional[str] = None,
+        gloss: Optional[str] = None,
         show_variant_readings: bool = False) -> str:
 
     content_json = bilara_text_to_segments(
@@ -471,6 +529,7 @@ def bilara_text_to_html(
         tmpl,
         variant,
         comment,
+        gloss,
         show_variant_readings,
     )
 
@@ -537,3 +596,26 @@ def find_available_port() -> int:
     sock.bind(('', 0))
     _, port = sock.getsockname()
     return port
+
+def is_complete_sutta_uid(uid: str) -> bool:
+    uid = uid.strip("/")
+
+    if "/" not in uid:
+        return False
+
+    if len(uid.split("/")) != 3:
+        return False
+
+    return True
+
+def is_complete_word_uid(uid: str) -> bool:
+    # Check if uid contains a /, i.e. if it specifies the dictionary
+    # (dhammacakkhu/dpd).
+    return ("/" in uid.strip("/"))
+
+def is_valid_date(date_string: str) -> bool:
+   try:
+       datetime.strptime(date_string, '%Y-%m-%d')
+       return True
+   except ValueError:
+       return False

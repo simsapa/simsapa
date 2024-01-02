@@ -162,10 +162,11 @@ class CoursesBrowserWindow(AppWindowInterface):
         self._create_tree_items(self.tree_model)
 
         idx = self.tree_model.index(0, 0)
-        self.tree_view.selectionModel() \
-                      .select(idx,
-                              QItemSelectionModel.SelectionFlag.ClearAndSelect | \
-                              QItemSelectionModel.SelectionFlag.Rows)
+        m = self.tree_view.selectionModel()
+        if m is not None:
+            m.select(idx,
+                     QItemSelectionModel.SelectionFlag.ClearAndSelect | \
+                     QItemSelectionModel.SelectionFlag.Rows)
 
         self._handle_tree_clicked(idx)
 
@@ -247,7 +248,8 @@ class CoursesBrowserWindow(AppWindowInterface):
             c_completed = QStandardItem()
             c_completed.setText(str(c_tot - c_rem))
 
-            root_node.appendRow([course, c_completed, c_remaining, c_total])
+            if root_node is not None:
+                root_node.appendRow([course, c_completed, c_remaining, c_total])
 
         self.tree_view.resizeColumnToContents(0)
         self.tree_view.resizeColumnToContents(1)
@@ -286,11 +288,14 @@ class CoursesBrowserWindow(AppWindowInterface):
                     .first()
 
 
-            else:
+            elif data['db_schema'] == DbSchemaName.UserData:
                 a = self._app_data.db_session \
                     .query(Um.ChallengeCourse) \
                     .filter(Um.ChallengeCourse.id == data['db_id']) \
                     .first()
+
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
         return a
 
@@ -307,11 +312,14 @@ class CoursesBrowserWindow(AppWindowInterface):
                     .first()
 
 
-            else:
+            elif data['db_schema'] == DbSchemaName.UserData:
                 a = self._app_data.db_session \
                     .query(Um.ChallengeGroup) \
                     .filter(Um.ChallengeGroup.id == data['db_id']) \
                     .first()
+
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
         return a
 
@@ -533,7 +541,9 @@ class CoursesBrowserWindow(AppWindowInterface):
 
     def _connect_signals(self):
         self.tree_view.doubleClicked.connect(partial(self._start_selected))
-        self.tree_view.selectionModel().selectionChanged.connect(partial(self._handle_selection_changed))
+        m = self.tree_view.selectionModel()
+        if m is not None:
+            m.selectionChanged.connect(partial(self._handle_selection_changed))
 
         self.start_btn.clicked.connect(partial(self._handle_start))
         self.action_Start_Course.triggered.connect(partial(self._handle_start))

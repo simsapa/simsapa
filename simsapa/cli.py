@@ -1,15 +1,18 @@
 from typing import Optional
 import typer
 
-from simsapa import logger
-from simsapa.app.types import QueryType, SearchMode, SearchParams
+from simsapa import SIMSAPA_API_DEFAULT_PORT, logger, QueryType
+from simsapa.app.types import SearchMode, SearchParams
 
 app = typer.Typer()
 index_app = typer.Typer()
 app.add_typer(index_app, name="index")
 
 @app.command()
-def gui(url: Optional[str] = None, window_type: Optional[str] = None):
+def gui(url: Optional[str] = None,
+        window_type: Optional[str] = None,
+        show_window: bool = True,
+        port: int = SIMSAPA_API_DEFAULT_PORT):
     """Start a GUI window."""
     logger.profile("runner::gui()")
     # import subprocess
@@ -21,7 +24,7 @@ def gui(url: Optional[str] = None, window_type: Optional[str] = None):
     #     sys.exit(2)
 
     from simsapa.gui import start
-    start(url=url, window_type_name=window_type)
+    start(port=port, url=url, window_type_name=window_type, show_window=show_window)
 
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):

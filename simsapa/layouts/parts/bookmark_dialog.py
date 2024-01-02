@@ -318,11 +318,15 @@ class HasBookmarkDialog:
                     .filter(Am.Sutta.id == sutta_id) \
                     .first()
 
-        else:
+
+        elif sutta_schema == DbSchemaName.UserData.value:
             r = self._app_data \
                     .db_session.query(Um.Sutta) \
                     .filter(Um.Sutta.id == sutta_id) \
                     .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         if r is None or r.content_plain is None or r.content_plain == '':
             return 0
@@ -353,7 +357,10 @@ class HasBookmarkDialog:
 
         quote = sel_data['sel_text'].replace("\n", " ").strip()
 
-        d = BookmarkDialog(self._app_data, quote=quote, selection_range=sel_data['sel_range'])
+        sutta_uid = self._active_tab.sutta.uid
+        name = "/".join([sutta_uid.replace("/", "_"), quote[0:20]])
+
+        d = BookmarkDialog(self._app_data, name=name, quote=quote, selection_range=sel_data['sel_range'])
         d.accepted.connect(self.set_new_bookmark)
         d.exec()
 

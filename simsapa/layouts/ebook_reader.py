@@ -14,7 +14,7 @@ from ebooklib import epub
 from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QObject, QRunnable, QSize, QThreadPool, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QStandardItem, QStandardItemModel
-from PyQt6.QtWidgets import QAbstractItemView, QFileDialog, QHBoxLayout, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTabWidget, QTreeView, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QFileDialog, QHBoxLayout, QMenu, QMenuBar, QMessageBox, QPushButton, QSpacerItem, QSplitter, QTabWidget, QToolBar, QTreeView, QVBoxLayout, QWidget
 
 from simsapa import EBOOK_EXTRA_CSS, EBOOK_UNZIP_DIR, logger, APP_QUEUES, ApiMessage, ApiAction
 # from simsapa.app.db import appdata_models as Am
@@ -23,7 +23,7 @@ from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 
-from simsapa.app.types import QueryType
+from simsapa import QueryType
 from simsapa.app.app_data import AppData
 
 from simsapa.layouts.gui_types import EbookReaderWindowInterface, QExpanding, QMinimum, sutta_quote_from_url
@@ -141,6 +141,7 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         self._setup_menubar()
         self._setup_sutta_panel()
         self._setup_reading_panel()
+        self._setup_find_toolbar()
         self._setup_toc_panel()
 
         show = self._app_data.app_settings.get('show_related_suttas', True)
@@ -159,6 +160,13 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         self.action_open = QAction("&Open...")
         self.action_open.setShortcut(QKeySequence("Ctrl+O"))
         self.menu_file.addAction(self.action_open)
+
+        self.menu_edit = QMenu("&Edit")
+        self.menubar.addMenu(self.menu_edit)
+
+        self.action_Find_in_Page = QAction("Find in Page...")
+        self.action_Find_in_Page.setShortcut(QKeySequence("Ctrl+F"))
+        self.menu_edit.addAction(self.action_Find_in_Page)
 
         self.menu_suttas = QMenu("&Suttas")
         self.menubar.addMenu(self.menu_suttas)
@@ -291,7 +299,8 @@ class EbookReaderWindow(EbookReaderWindowInterface):
             enable_language_filter = False,
             enable_search_extras = False,
             enable_sidebar = False,
-            enable_find_panel = False,
+            enable_find_panel = True,
+            create_find_toolbar=False,
             show_query_results_in_active_tab = False,
             custom_create_context_menu_fn = self._create_reading_context_menu,
         )
@@ -311,8 +320,28 @@ class EbookReaderWindow(EbookReaderWindowInterface):
             enable_language_filter = False,
             enable_search_extras = False,
             enable_sidebar = False,
-            enable_find_panel = False,
+            enable_find_panel=True,
+            create_find_toolbar=False,
             show_query_results_in_active_tab = False)
+
+    def _setup_find_toolbar(self):
+        self.find_toolbar = QToolBar()
+        self.find_panel_layout = QHBoxLayout()
+        self.find_panel_layout.setContentsMargins(0, 0, 0, 0)
+
+        for panel in [self.reading_state._find_panel,
+                      self.sutta_state._find_panel]:
+
+            self.find_panel_layout.addWidget(panel)
+            panel.closed.connect(self.find_toolbar.hide)
+
+        self.find_panel_widget = QWidget()
+        self.find_panel_widget.setLayout(self.find_panel_layout)
+
+        self.find_toolbar.addWidget(self.find_panel_widget)
+
+        self.addToolBar(QtCore.Qt.ToolBarArea.BottomToolBarArea, self.find_toolbar)
+        self.find_toolbar.hide()
 
     def _create_reading_context_menu(self, menu: QMenu):
         s = self.reading_state
@@ -566,6 +595,10 @@ class EbookReaderWindow(EbookReaderWindowInterface):
 
         event.accept()
 
+    def _handle_show_find_panel(self):
+        self.find_toolbar.show()
+        self.reading_state._find_panel.search_input.setFocus()
+
     def _connect_signals(self):
         self.action_close_window \
             .triggered.connect(partial(self._handle_close))
@@ -583,6 +616,9 @@ class EbookReaderWindow(EbookReaderWindowInterface):
 
         self.action_Show_Related_Suttas \
             .triggered.connect(partial(self.sutta_state._handle_show_related_suttas))
+
+        self.action_Find_in_Page \
+            .triggered.connect(self._handle_show_find_panel)
 
 class SuttaLinksWorkerSignals(QObject):
     done_chapter_path = pyqtSignal(Path)

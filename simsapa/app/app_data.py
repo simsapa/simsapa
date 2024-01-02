@@ -2,7 +2,7 @@ import csv, re, json, os, shutil
 import os.path
 from pathlib import Path
 from functools import partial
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from deepmerge import always_merger
 import tomlkit
@@ -16,13 +16,14 @@ from sqlalchemy.orm.session import Session
 from sqlalchemy.sql import func, text
 from sqlalchemy import and_
 
-from PyQt6.QtCore import QSize, QThreadPool, QTimer
+from PyQt6.QtCore import QMimeData, QSize, QThreadPool, QTimer
 from PyQt6.QtGui import QClipboard
 
-from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, ASSETS_DIR, INDEX_DIR
+from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, USER_DB_PATH, DPD_DB_PATH, ASSETS_DIR, INDEX_DIR
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.completion_lists import WordSublists
 from simsapa.app.db_session import get_db_session_with_schema
+from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, DPD_PROJECT_PATHS, get_dpd_caches
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
@@ -30,6 +31,8 @@ from simsapa.app.types import SearchArea, USutta, UDictWord, UBookmark
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
+from simsapa.layouts.gui_queries import GuiSearchQueries
 
 from simsapa.layouts.gui_types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
 
@@ -43,9 +46,16 @@ class AppData:
     # Keys are db schema, and course group id
     pali_groups_stats: Dict[DbSchemaName, Dict[int, PaliGroupStats]] = dict()
     search_indexes: Optional[TantivySearchIndexes] = None
+    _queries: GuiSearchQueries
 
     _sutta_titles_completion_cache: WordSublists = dict()
     _dict_words_completion_cache: WordSublists = dict()
+
+    dpd_project_paths = DPD_PROJECT_PATHS
+    dpd_pali_word_templates = DPD_PALI_WORD_TEMPLATES
+    dpd_cf_set: Set[str]
+    dpd_roots_count_dict: Dict[str, int]
+    dpd_sandhi_contractions: SandhiContractions
 
     def __init__(self,
                  actions_manager: Optional[ActionsManager] = None,
@@ -74,7 +84,7 @@ class AppData:
         # Make sure the user_db exists before getting the db_session handle.
         self._check_db(self._user_db_path, DbSchemaName.UserData)
 
-        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path)
+        self.db_eng, self.db_conn, self.db_session = self._get_db_engine_connection_session(self._app_db_path, self._user_db_path, DPD_DB_PATH)
         self._read_app_settings()
 
         self.graph_gen_pool = QThreadPool()
@@ -86,6 +96,14 @@ class AppData:
 
         self.sutta_to_open: Optional[USutta] = None
         self.dict_word_to_open: Optional[UDictWord] = None
+
+        self._queries = GuiSearchQueries(self.db_session,
+                                         None,
+                                         self.get_search_indexes,
+                                         self.api_url)
+
+
+        self.dpd_cf_set, self.dpd_roots_count_dict, self.dpd_sandhi_contractions = get_dpd_caches()
 
         self._init_completion_cache()
 
@@ -153,7 +171,7 @@ class AppData:
 
         if not db_path.exists():
             from simsapa.app.db_helpers import find_or_create_db
-            find_or_create_db(db_path, schema.value)
+            find_or_create_db(db_path, schema)
 
     def get_search_indexes(self) -> Optional[TantivySearchIndexes]:
         return self.search_indexes
@@ -178,7 +196,7 @@ class AppData:
             if p.exists():
                 shutil.rmtree(p)
 
-    def _get_db_engine_connection_session(self, app_db_path, user_db_path) -> Tuple[Engine, Connection, Session]:
+    def _get_db_engine_connection_session(self, app_db_path, user_db_path, dpd_db_path) -> Tuple[Engine, Connection, Session]:
         if not os.path.isfile(app_db_path):
             logger.error(f"Database file doesn't exist: {app_db_path}")
             exit(1)
@@ -193,6 +211,10 @@ class AppData:
         # FIXME avoid loading alembic just for getting a db session
         # upgrade_db(user_db_path, DbSchemaName.UserData.value)
 
+        if not os.path.isfile(dpd_db_path):
+            logger.error(f"Database file doesn't exist: {dpd_db_path}")
+            exit(1)
+
         try:
             # Create an in-memory database
             db_eng = create_engine("sqlite+pysqlite://", echo=False)
@@ -200,8 +222,9 @@ class AppData:
             db_conn = db_eng.connect()
 
             # Attach appdata and userdata
-            db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS appdata;"))
-            db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS userdata;"))
+            db_conn.execute(text(f"ATTACH DATABASE '{app_db_path}' AS {DbSchemaName.AppData.value};"))
+            db_conn.execute(text(f"ATTACH DATABASE '{user_db_path}' AS {DbSchemaName.UserData.value};"))
+            db_conn.execute(text(f"ATTACH DATABASE '{dpd_db_path}' AS {DbSchemaName.Dpd.value};"))
 
             Session = sessionmaker(db_eng)
             Session.configure(bind=db_eng)
@@ -320,7 +343,14 @@ class AppData:
             self.db_session.add(deck)
             self.db_session.commit()
 
-    def clipboard_setText(self, text):
+    def clipboard_setHtml(self, html: str):
+        if self.clipboard is not None:
+            self.clipboard.clear()
+            mime = QMimeData()
+            mime.setHtml(html)
+            self.clipboard.setMimeData(mime)
+
+    def clipboard_setText(self, text: str):
         if self.clipboard is not None:
             self.clipboard.clear()
             self.clipboard.setText(text)
@@ -394,6 +424,7 @@ class AppData:
                 group_path = i.group_path,
                 group_index = i.group_index,
                 sutta_ref = i.sutta_ref,
+                nikaya = i.nikaya,
                 language = i.language,
                 order_index = i.order_index,
 
@@ -755,7 +786,15 @@ class AppData:
         else:
             comment = str(res.content_json)
 
-        show_variants = self.app_settings.get('show_all_variant_readings', True)
+        show_variants = self.app_settings.get('show_all_variant_readings', False)
+
+        res = sutta.gloss
+        if res is None:
+            gloss = None
+        else:
+            gloss = str(res.content_json)
+
+        show_glosses = self.app_settings.get('show_glosses', False)
 
         if use_template:
             tmpl = str(sutta.content_json_tmpl)
@@ -767,7 +806,9 @@ class AppData:
             tmpl,
             variant,
             comment,
+            gloss,
             show_variants,
+            show_glosses,
         )
 
         return segments_json

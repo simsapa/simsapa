@@ -7,15 +7,18 @@ import tantivy
 from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 
-from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_nasal_m, query_text_to_uid_field_query
+from simsapa import DICT_WORDS_INDEX_DIR, INDEX_WRITER_MEMORY_MB, LOG_PERCENT_PROGRESS, SUTTAS_INDEX_DIR, DbSchemaName, SearchResult, logger
+from simsapa.app.helpers import compact_rich_text, compact_plain_text, consistent_niggahita, query_text_to_uid_field_query
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.helpers import SearchResult, get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline
+from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.search.helpers import get_dict_word_languages, get_sutta_languages, is_index_empty, search_compact_plain_snippet, search_oneline, unique_search_results
 from simsapa.app.types import SearchArea, SearchParams
 
+from simsapa.app.dpd_render import pali_root_index_plaintext, pali_word_index_plaintext
+
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
 
 # A Score(f32) or an Order(u64)
 TantivyFruit = Union[float, int]
@@ -51,13 +54,13 @@ def tantivy_sutta_doc_to_search_result(x: tantivy.Document,
                                        score: Optional[float] = None,
                                        rank: Optional[int] = None) -> SearchResult:
     return SearchResult(
-        db_id = x['db_id'][0],
+        uid = x['uid'][0],
         schema_name = x['schema_name'][0],
         table_name = 'suttas',
-        uid = x['uid'][0],
         source_uid = x['source_uid'][0],
         title = x['title'][0] if 'title' in x.keys() else '',
         ref = x['ref'][0] if 'ref' in x.keys() else '',
+        nikaya = x['nikaya'] if 'nikaya' in x.keys() else '',
         author = None,
         snippet = snippet,
         page_number = None,
@@ -70,13 +73,13 @@ def tantivy_dict_word_doc_to_search_result(x: tantivy.Document,
                                            score: Optional[float] = None,
                                            rank: Optional[int] = None) -> SearchResult:
     return SearchResult(
-        db_id = x['db_id'][0],
-        schema_name = x['schema_name'][0],
-        table_name = 'dict_words',
         uid = x['uid'][0],
+        schema_name = x['schema_name'][0],
+        table_name = x['table_name'][0],
         source_uid = x['source_uid'][0],
         title = x['word'][0] if 'word' in x.keys() else '',
         ref = None,
+        nikaya = None,
         author = None,
         snippet = snippet,
         page_number = None,
@@ -94,6 +97,7 @@ def suttas_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy
     builder.add_text_field("language",    stored=True, tokenizer_name="raw")
     builder.add_text_field("source_uid",  stored=True, tokenizer_name="raw")
     builder.add_text_field("ref",         stored=True, tokenizer_name="simple_fold")
+    builder.add_text_field("nikaya",      stored=True, tokenizer_name="raw")
     builder.add_text_field("title",       stored=True, tokenizer_name=tk)
     builder.add_text_field("title_pali",  stored=True, tokenizer_name="pli_stem_fold")
     builder.add_text_field("title_trans", stored=True, tokenizer_name=tk)
@@ -106,12 +110,13 @@ def suttas_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy
 def dict_words_index_schema(content_tokenizer_name: str = "en_stem_fold") -> tantivy.Schema:
     tk = content_tokenizer_name
     builder = tantivy.SchemaBuilder()
-    builder.add_integer_field("db_id",    stored=True)
     builder.add_text_field("index_key",   stored=True, tokenizer_name="raw")
     builder.add_text_field("schema_name", stored=True, tokenizer_name="raw")
+    builder.add_text_field("table_name",  stored=True, tokenizer_name="raw")
     builder.add_text_field("uid",         stored=True, tokenizer_name="simple_fold")
     builder.add_text_field("language",    stored=True, tokenizer_name="raw")
     builder.add_text_field("source_uid",  stored=True, tokenizer_name="raw")
+    builder.add_text_field("dict_type",   stored=True, tokenizer_name="raw")
     builder.add_text_field("word",        stored=True, tokenizer_name="simple_fold")
     builder.add_text_field("synonyms",    stored=True, tokenizer_name="simple_fold")
     builder.add_text_field("content",     stored=True, tokenizer_name=tk)
@@ -127,7 +132,7 @@ class TantivySearchQuery:
     hits_count: Optional[int] = None
 
     # The un-sanitized, un-extended original user input.
-    # Only consistent_nasal_m(query_text.strip()) applied.
+    # Only consistent_niggahita(query_text.strip()) applied.
     query_text_orig: Optional[str] = None
 
     search_params: SearchParams
@@ -239,8 +244,9 @@ class TantivySearchQuery:
 
         p = self.search_params
 
-        if p['source'] is not None and (p['enable_regex'] or p['fuzzy_distance'] > 0):
+        results = []
 
+        if p['enable_regex'] or p['fuzzy_distance'] > 0:
             total_hits_count = 0
 
             filtered_page_start_offset = 0
@@ -248,8 +254,7 @@ class TantivySearchQuery:
             filtered_page_len = self.page_len*10
             filtered_page_num = 0
 
-            results = []
-            filtered_results = []
+            _filtered_results = []
 
             while True:
 
@@ -269,39 +274,44 @@ class TantivySearchQuery:
 
                 r = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
 
-                if p['source_include']:
-                    filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
-                else:
-                    filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
+                if p['source'] is not None:
+                    if p['source_include']:
+                        _filtered_results.extend([i for i in r if i['source_uid'] == p['source']])
+                    else:
+                        _filtered_results.extend([i for i in r if i['source_uid'] != p['source']])
 
+                else:
+                    _filtered_results = r
 
                 # Stop if the filtered results fill the requested results page.
                 # Filtered results are filled progressively up to the requested results page.
                 # E.g. results page 2 is filled when filtered results have 2*page_len items.
                 #
                 # Unless there are no more items to filter, i.e. no next page.
-                if len(filtered_results) >= page_num * self.page_len \
+                if len(_filtered_results) >= page_num * self.page_len \
                    or filtered_page_start_offset >= total_hits_count:
 
-                    # The results are slice which is requested results page.
-                    res_start = page_num * self.page_len
-                    res_end = (page_num+1) * self.page_len
-
-                    results = filtered_results[res_start:res_end]
-
                     if filtered_page_len >= total_hits_count:
-                        self.hits_count = len(filtered_results)
+                        self.hits_count = len(_filtered_results)
 
                     else:
                         # Set hits_count to None because we don't know the filtered count
                         # unless we filter all the results pages.
                         self.hits_count = None
 
+                    # The results are slice which is requested results page.
+                    res_start = page_num * self.page_len
+                    res_end = (page_num+1) * self.page_len
+
+                    results.extend(_filtered_results[res_start:res_end])
+
                     break
 
                 else:
                     filtered_page_num += 1
                     filtered_page_start_offset += filtered_page_num * filtered_page_len
+
+                    results.extend(_filtered_results)
 
         else:
             page_start_offset = page_num * self.page_len
@@ -318,6 +328,10 @@ class TantivySearchQuery:
             self.hits_count = tantivy_results.count
 
             results = list(map(self._result_with_snippet_highlight, tantivy_results.hits))
+
+        # FIXME tantivy returns the same result multiple times.
+        # Keep only unique results.
+        results = unique_search_results(results)
 
         if self.is_sutta_index():
             return results
@@ -351,7 +365,7 @@ class TantivySearchQuery:
 
         self.ix.reload()
 
-        self.query_text_orig = consistent_nasal_m(query_text.strip())
+        self.query_text_orig = consistent_niggahita(query_text.strip())
 
         query_string = sanitize_user_input(self.query_text_orig)
 
@@ -629,7 +643,20 @@ class TantivySearchIndexes:
                 .query(Um.DictWord) \
                 .filter(Um.DictWord.language == lang) \
                 .all()
-            self.index_dict_words(ix, DbSchemaName.AppData.value, words)
+            self.index_dict_words(ix, DbSchemaName.UserData.value, words)
+
+            if lang == "en":
+                words: List[UDictWord] = self.db_session \
+                    .query(Dpd.PaliWord) \
+                    .all()
+
+                self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
+
+                words: List[UDictWord] = self.db_session \
+                    .query(Dpd.PaliRoot) \
+                    .all()
+
+                self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
 
     def open_all(self, remove_if_exists: bool = False):
         for p in [SUTTAS_INDEX_DIR, DICT_WORDS_INDEX_DIR]:
@@ -723,6 +750,10 @@ class TantivySearchIndexes:
                 if i.sutta_ref is not None:
                     sutta_ref = i.sutta_ref
 
+                nikaya = ""
+                if i.nikaya is not None:
+                    nikaya = i.nikaya
+
                 title = ""
                 if i.title is not None:
                     title = i.title
@@ -756,6 +787,7 @@ class TantivySearchIndexes:
                     title_trans = title_trans,
                     content = content,
                     ref = sutta_ref,
+                    nikaya = nikaya,
                 ))
                 i.indexed_at = func.now() # type: ignore
 
@@ -775,7 +807,6 @@ class TantivySearchIndexes:
             logger.warn(f"Index is not in suttas_lang_index: {lang}")
 
     def index_dict_words(self, ix: tantivy.Index, db_schema_name: str, words: List[UDictWord]):
-        from bs4 import BeautifulSoup
         logger.info(f"index_dict_words() len: {len(words)}")
 
         try:
@@ -787,24 +818,19 @@ class TantivySearchIndexes:
                 if LOG_PERCENT_PROGRESS:
                     logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
 
-                # Prefer the html content field if not empty
-                if i.definition_html is not None and len(i.definition_html.strip()) > 0:
-                    if i.source_uid == "dpd":
-                        # Remove not content related divs from DPD: frequency, feedback
-                        #
-                        # The text in these give false positives when searching the index.
-                        soup = BeautifulSoup(str(i.definition_html), 'html.parser')
-                        h = soup.find_all(class_='content')
-                        for x in h:
-                            if x.has_attr('id'):
-                                s = x['id']
-                                if 'frequency_' in s or 'feedback_' in s:
-                                    x.decompose()
-
-                        content = compact_rich_text(str(soup))
-
+                if i.source_uid == "dpd":
+                    if isinstance(i, Dpd.PaliWord):
+                        text = pali_word_index_plaintext(i)
+                    elif isinstance(i, Dpd.PaliRoot):
+                        text = pali_root_index_plaintext(i)
                     else:
-                        content = compact_rich_text(str(i.definition_html))
+                        raise Exception(f"Unrecognized word type: {i}")
+
+                    content = compact_plain_text(text)
+
+                elif i.definition_html is not None and len(i.definition_html.strip()) > 0:
+                    # Prefer the html content field if not empty
+                    content = compact_rich_text(str(i.definition_html))
 
                 elif i.definition_plain is not None:
                     content = compact_plain_text(str(i.definition_plain))
@@ -821,6 +847,13 @@ class TantivySearchIndexes:
                 if i.source_uid is not None:
                     source_uid = i.source_uid
 
+                if source_uid == "dpd":
+                    dict_type = "sql"
+                else:
+                    dict_type = "stardict"
+
+                # FIXME handle dict_type "custom"
+
                 # Add word and synonyms to content field so a single query will match
                 if i.word is not None:
                     content = f"{i.word} {content}"
@@ -831,12 +864,13 @@ class TantivySearchIndexes:
                     content = f"{content} {i.synonyms}"
 
                 writer.add_document(tantivy.Document(
-                    index_key = f"{db_schema_name}:dict_words:{i.uid}",
-                    db_id = i.id,
+                    index_key = f"{db_schema_name}:{i.__tablename__}:{i.uid}",
                     schema_name = db_schema_name,
+                    table_name = i.__tablename__,
                     uid = i.uid,
                     language = language,
                     source_uid = source_uid,
+                    dict_type = dict_type,
                     word = i.word,
                     synonyms = synonyms,
                     content = content,

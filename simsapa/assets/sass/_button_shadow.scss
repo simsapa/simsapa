@@ -1,0 +1,16 @@
+@mixin button-shadow {
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, .4),
+              inset 1.2px 1.2px 2px rgba(255, 255, 255, .2),
+              inset -1px -1px 1px rgba(0, 0, 0, .4),
+              inset -1.2px -1.2px 2px rgba(0, 0, 0, .2),
+              inset 1.2px -10px 20px rgba(0, 0, 0, 0.1),
+              1.5px 4px 4px rgba(0, 0, 0, .15)
+  ;
+
+  &:active, &.active {
+    box-shadow: inset 1px 1px 1px rgba(0, 0, 0, .8),
+                inset 1.2px 10px 20px rgba(0, 0, 0, 0.2),
+                inset -1px -1px 1px rgba(255, 255, 255, .4)
+    ;
+  }
+}

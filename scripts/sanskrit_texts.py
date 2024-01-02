@@ -14,7 +14,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm.session import make_transient
 
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import compact_rich_text, consistent_nasal_m, gretil_header_to_footer, pali_to_ascii
+from simsapa.app.helpers import compact_rich_text, consistent_niggahita, gretil_header_to_footer, pali_to_ascii
 from simsapa.app.db import appdata_models as Am
 
 import helpers
@@ -81,7 +81,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
             logger.error("Missing <title> from html page in %s" % html_path)
             title = html_path.stem.replace('sa_', '')
 
-        title = consistent_nasal_m(title.strip())
+        title = consistent_niggahita(title.strip())
         title_ascii = pali_to_ascii(title)
 
         ref = html_path.stem.replace('sa_', '')
@@ -102,6 +102,7 @@ def get_gretil_suttas(limit: Optional[int] = None) -> List[Am.Sutta]:
             title_pali = "",
             uid = uid,
             sutta_ref = "",
+            nikaya = "",
             language = lang,
             content_html = content_html,
             content_plain = compact_rich_text(content_html),
@@ -136,7 +137,8 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
         for i in res:
             sanskrit_db.expunge(i)
             make_transient(i)
-            i.id = None
+            # Necessary to reset id, otherwise will not get a new id for appdata.
+            i.id = None # type: ignore
 
             appdata_db.add(i)
         appdata_db.commit()

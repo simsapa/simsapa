@@ -1,4 +1,4 @@
-import os, sys, re, shutil, queue, json, webbrowser
+import os, sys, re, shutil, queue, json
 from functools import partial
 from typing import Callable, List, Optional
 from datetime import datetime
@@ -8,15 +8,15 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, IS_MAC, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
+from simsapa import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
 from simsapa.app.hotkeys_manager_interface import HotkeysManagerInterface
-from simsapa.app.check_updates_worker import CheckUpdatesWorker
+from simsapa.app.check_simsapa_updates_worker import CheckSimsapaUpdatesWorker
+from simsapa.app.check_dpd_updates_worker import CheckDpdUpdatesWorker
 
 from simsapa.app.app_data import AppData
-
-from simsapa.app.types import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
@@ -34,6 +34,7 @@ from simsapa.app.db import userdata_models as Um
 
 class AppWindowsSignals(QObject):
     open_window_signal = pyqtSignal(str)
+    run_lookup_query_signal = pyqtSignal(str)
 
 class AppWindows:
     _preview_window: PreviewWindow
@@ -45,6 +46,7 @@ class AppWindows:
         self._app = app
         self._app_data = app_data
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
         self._hotkeys_manager = hotkeys_manager
@@ -84,8 +86,10 @@ class AppWindows:
             self._init_word_lookup()
             self._init_sutta_index_window()
 
-        self._init_check_updates()
-        self._check_updates()
+        self._init_check_simsapa_updates()
+        self._init_check_dpd_updates()
+        self._check_simsapa_updates()
+        self._check_dpd_updates()
 
         self.import_user_data_from_assets()
 
@@ -93,6 +97,18 @@ class AppWindows:
             self._init_main_windows()
 
         logger.profile("AppWindows::_init_tasks(): end")
+
+        msg = """
+==============================================================
+==                                                          ==
+==  Simsapa is now running. Minimize this terminal window,  ==
+==  but don't close it (which would also close Simsapa).    ==
+==                                                          ==
+==============================================================
+        """.strip()
+
+        if IS_MAC:
+            print("\n\n" + msg)
 
     def handle_messages(self):
         try:
@@ -132,9 +148,17 @@ class AppWindows:
                 elif msg['action'] == ApiAction.open_sutta_new:
                     self.open_sutta_new(uid = msg['data'])
 
+                elif msg['action'] == ApiAction.show_sutta_by_url:
+                    url = QUrl(msg['data'])
+                    self._show_sutta_by_url_in_search(url)
+
                 elif msg['action'] == ApiAction.open_words_new:
-                    schemas_ids = json.loads(msg['data'])
-                    self.open_words_new(schemas_ids)
+                    schemas_tables_uids = json.loads(msg['data'])
+                    self.open_words_new(schemas_tables_uids)
+
+                elif msg['action'] == ApiAction.show_word_by_url:
+                    url = QUrl(msg['data'])
+                    self._show_words_by_url(url)
 
                 elif msg['action'] == ApiAction.open_in_study_window:
                     self._show_sutta_by_uid_in_side(msg)
@@ -254,9 +278,9 @@ class AppWindows:
         view = SuttaWindow(self._app_data, uid)
         self._finalize_view(view)
 
-    def open_words_new(self, schemas_ids: List[tuple[str, int]]):
+    def open_words_new(self, schemas_tables_uids: List[tuple[str, str, str]]):
         from simsapa.layouts.words_window import WordsWindow
-        view = WordsWindow(self._app_data, schemas_ids)
+        view = WordsWindow(self._app_data, schemas_tables_uids)
         self._finalize_view(view)
 
     def _new_windowed_preview(self):
@@ -283,7 +307,7 @@ class AppWindows:
         else:
             return
 
-        sutta = self._preview_window.sutta_queries.get_sutta_by_url(url)
+        sutta = self._preview_window._queries.sutta_queries.get_sutta_by_url(url)
 
         if sutta:
             self._new_sutta_search_window(f"uid:{sutta.uid}")
@@ -292,7 +316,15 @@ class AppWindows:
                            url: QUrl,
                            show_results_tab = True,
                            include_exact_query = True) -> bool:
-        if url.host() != QueryType.words:
+        # http://localhost:4848/words/rupa
+        # http://localhost:4848/words/55151
+        # http://localhost:4848/words/55151/dpd
+        #
+        # ssp://words/rupa
+        # ssp://words/rupa/mw
+
+        if url.host() != 'localhost' and \
+           url.host() != QueryType.words:
             return False
 
         self._preview_window._do_hide()
@@ -303,7 +335,10 @@ class AppWindows:
                 view = w
                 break
 
-        query = re.sub(r"^/", "", url.path())
+        # url.path() = /words/rupa
+        # url.path() = /rupa
+        query = re.sub(r"^/words", "", url.path())
+        query = query.strip('/')
 
         if view is None:
             self._new_dictionary_search_window(query)
@@ -319,12 +354,19 @@ class AppWindows:
         self._show_sutta_by_url_in_search(url)
 
     def _show_sutta_by_url_in_search(self, url: QUrl) -> bool:
-        if url.host() != QueryType.suttas:
+        # http://localhost:4848/suttas/sn23.11?q=grows+disillusioned+with+form
+        # ssp://suttas/sn23.11?q=grows+disillusioned+with+form"
+        if url.host() != 'localhost' and \
+           url.host() != QueryType.suttas:
             return False
 
         self._preview_window._do_hide()
 
-        uid = re.sub(r"^/", "", url.path())
+        # url.path() = /suttas/sn23.11
+        # url.path() = /sn23.11
+        uid = re.sub(r"^/suttas", "", url.path())
+        uid = re.sub(r"^/", "", uid)
+
         query = parse_qs(url.query())
 
         quote_scope = QuoteScope.Sutta
@@ -333,7 +375,25 @@ class AppWindows:
             if sc in QuoteScopeValues.keys():
                 quote_scope = QuoteScopeValues[sc]
 
-        self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
+        # Default to SuttaSearch window.
+        # Only allow SuttaSearch or SuttaStudy in query parameter.
+
+        window_type = WindowType.SuttaSearch
+
+        if 'window_type' in query.keys():
+            s = query['window_type'][0]
+            logger.info(s)
+            if s in WindowNameToType.keys():
+                t = WindowNameToType[s]
+
+                if t in [WindowType.SuttaSearch, WindowType.SuttaStudy]:
+                    window_type = t
+
+        if window_type == WindowType.SuttaSearch:
+            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
+
+        elif window_type == WindowType.SuttaStudy:
+            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope)
 
         return True
 
@@ -352,6 +412,22 @@ class AppWindows:
             view = self._new_sutta_search_window()
 
         view.s._show_sutta_by_uid(uid, sutta_quote, quote_scope)
+
+    def _show_sutta_by_uid_in_study(self,
+                                    uid: str,
+                                    sutta_quote: Optional[SuttaQuote] = None,
+                                    quote_scope = QuoteScope.Sutta):
+
+        view = None
+        for w in self._windows:
+            if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
+                view = w
+                break
+
+        if view is None:
+            view = self._new_sutta_study_window()
+
+        view.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
@@ -531,11 +607,9 @@ class AppWindows:
                                 data = json.dumps(obj=data))
                 self._show_sutta_by_uid_in_side(msg)
 
-            view.sutta_one_state.open_in_study_window_signal.connect(partial(_study))
-            view.sutta_one_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
-
-            view.sutta_two_state.open_in_study_window_signal.connect(partial(_study))
-            view.sutta_two_state.open_sutta_new_signal.connect(partial(self.open_sutta_new))
+            for panel in view.sutta_panels:
+                panel['state'].open_in_study_window_signal.connect(partial(_study))
+                panel['state'].open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
             view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
 
@@ -671,6 +745,11 @@ class AppWindows:
 
         self.word_lookup = WordLookup(self._app_data)
 
+        self.word_lookup.action_Quit \
+            .triggered.connect(partial(self._quit_app))
+
+        self._connect_windows_menu_signals_to_view(self.word_lookup)
+
         def _show_sutta_url(url: QUrl):
             self._show_sutta_by_url_in_search(url)
 
@@ -682,6 +761,11 @@ class AppWindows:
         self.word_lookup.s.show_words_by_url.connect(partial(_show_words_url))
 
         self.word_lookup.s.connect_preview_window_signals(self._preview_window)
+
+        def _run_lookup_query(query_text: str):
+            self._show_word_lookup(query_text, show_results_tab=False)
+
+        self.signals.run_lookup_query_signal.connect(_run_lookup_query)
 
     def _toggle_word_lookup(self):
         if self.word_lookup is None:
@@ -730,9 +814,6 @@ class AppWindows:
         self._show_word_lookup(query = query, show_results_tab = False, include_exact_query = False)
 
     def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
-        if not self._app_data.app_settings['double_click_word_lookup']:
-            return
-
         if self.word_lookup is None:
             self._init_word_lookup()
 
@@ -1024,12 +1105,16 @@ class AppWindows:
     def show_setting_after_restart(self):
         self.show_info("This setting takes effect after restarting the application.")
 
-    def _check_updates(self):
-        if self._app_data.app_settings.get('notify_about_updates'):
-            self.thread_pool.start(self.check_updates_worker)
+    def _check_simsapa_updates(self):
+        if self._app_data.app_settings.get('notify_about_simsapa_updates'):
+            self.thread_pool.start(self.check_simsapa_updates_worker)
 
-    def _init_check_updates(self, include_no_updates = False):
-        logger.profile("AppWindows::_init_check_updates()")
+    def _check_dpd_updates(self):
+        if self._app_data.app_settings.get('notify_about_dpd_updates'):
+            self.thread_pool.start(self.check_dpd_updates_worker)
+
+    def _init_check_simsapa_updates(self, include_no_updates = False):
+        logger.profile("AppWindows::_init_check_simsapa_updates()")
 
         if self._app_data.screen_size is not None:
             w = self._app_data.screen_size.width()
@@ -1038,20 +1123,43 @@ class AppWindows:
         else:
             screen_size = ''
 
-        self.check_updates_worker = CheckUpdatesWorker(screen_size=screen_size)
-        self.check_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
-        self.check_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
-        self.check_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
+        self.check_simsapa_updates_worker = CheckSimsapaUpdatesWorker(screen_size=screen_size)
+        self.check_simsapa_updates_worker.signals.local_db_obsolete.connect(partial(self.show_local_db_obsolete_message))
+        self.check_simsapa_updates_worker.signals.have_app_update.connect(partial(self.show_app_update_message))
+        self.check_simsapa_updates_worker.signals.have_db_update.connect(partial(self.show_db_update_message))
 
         if include_no_updates:
-            self.check_updates_worker.signals.no_updates.connect(partial(self.show_no_updates_message))
+            self.check_simsapa_updates_worker.signals.no_updates.connect(partial(self.show_no_simsapa_updates_message))
 
-    def _handle_check_updates(self):
-        self._init_check_updates(include_no_updates=True)
-        self.thread_pool.start(self.check_updates_worker)
+    def _init_check_dpd_updates(self, include_no_updates = False):
+        logger.profile("AppWindows::_init_check_dpd_updates()")
 
-    def show_no_updates_message(self):
-        self.show_info("Application and database are up to date.")
+        if self._app_data.screen_size is not None:
+            w = self._app_data.screen_size.width()
+            h = self._app_data.screen_size.height()
+            screen_size = f"{w} x {h}"
+        else:
+            screen_size = ''
+
+        self.check_dpd_updates_worker = CheckDpdUpdatesWorker(screen_size=screen_size)
+        self.check_dpd_updates_worker.signals.have_dpd_update.connect(partial(self.show_dpd_update_message))
+
+        if include_no_updates:
+            self.check_dpd_updates_worker.signals.no_updates.connect(partial(self.show_no_dpd_updates_message))
+
+    def _handle_check_simsapa_updates(self):
+        self._init_check_simsapa_updates(include_no_updates=True)
+        self.thread_pool.start(self.check_simsapa_updates_worker)
+
+    def _handle_check_dpd_updates(self):
+        self._init_check_dpd_updates(include_no_updates=True)
+        self.thread_pool.start(self.check_dpd_updates_worker)
+
+    def show_no_simsapa_updates_message(self):
+        self.show_info("Simsapa application and database are up to date.")
+
+    def show_no_dpd_updates_message(self):
+        self.show_info("Digital Pāḷi Dictionary is up to date.")
 
     def show_local_db_obsolete_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -1173,7 +1281,7 @@ class AppWindows:
     def show_app_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
 
-        update_info['message'] += "<h3>Open page in the browser now?</h3>"
+        update_info['message'] += "<h3>Click on the link to open the download page.</h3>"
 
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
@@ -1186,12 +1294,38 @@ class AppWindows:
 
         box.setText(msg)
         box.setWindowTitle("Application Update Available")
-        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        box.setStandardButtons(QMessageBox.StandardButton.Close)
+
+        box.exec()
+
+    def show_dpd_update_message(self, value: dict):
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Digital Pāḷi Dictionary Update Available")
+
+        msg = "<p>Digital Pāḷi Dictionary Update Available</p>"
+        # msg += "<div>" + value['update_info'] + "</div>"
+
+        msg += "<h3>This update is optional. After the download, it is also recommended to re-generate the fulltext index (so that fulltext search results match with the updated database), which may take a while.</h3>"
+        msg += "<h3>Download and update now?</h3>"
+
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         reply = box.exec()
-        if reply == QMessageBox.StandardButton.Yes and update_info['visit_url'] is not None:
-            # NOTE: This doesn't work on some OSes, or the user doesn't see the new page, hence the above link.
-            webbrowser.open_new(str(update_info['visit_url']))
+
+        if reply == QMessageBox.StandardButton.Yes:
+            from simsapa.layouts.download_dpd import DownloadDpdWindow
+
+            version: str = value['dpd_release_version_tag']
+
+            w = DownloadDpdWindow(
+                assets_dir = ASSETS_DIR,
+                dpd_release_version_tag = version,
+                quit_action_fn = self._quit_app,
+            )
+
+            w.show()
 
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']
@@ -1209,6 +1343,10 @@ class AppWindows:
         # App notifications will alert to new app version.
         # When the new app is installed, it will remove old db and download a compatible version.
 
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("Database Update Available")
+
         update_info['message'] += "<h3>This update is optional, and the download may take a while.</h3>"
         update_info['message'] += "<h3>Download and update now?</h3>"
 
@@ -1218,10 +1356,7 @@ class AppWindows:
         # Remove half-downloaded assets if download is cancelled.
         # Remove half-downloaded assets if found on startup.
 
-        box = QMessageBox()
-        box.setIcon(QMessageBox.Icon.Information)
         box.setText(update_info['message'])
-        box.setWindowTitle("Database Update Available")
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         reply = box.exec()
@@ -1334,14 +1469,23 @@ class AppWindows:
         logger.info("_quit_app() Exiting with status 0.")
         sys.exit(0)
 
-    def _set_notify_setting(self, view: AppWindowInterface):
-        checked: bool = view.action_Notify_About_Updates.isChecked()
-        self._app_data.app_settings['notify_about_updates'] = checked
+    def _set_notify_simsapa_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Notify_About_Simsapa_Updates.isChecked()
+        self._app_data.app_settings['notify_about_simsapa_updates'] = checked
         self._app_data._save_app_settings()
 
         for w in self._windows:
-            if hasattr(w,'action_Notify_About_Updates'):
-                w.action_Notify_About_Updates.setChecked(checked)
+            if hasattr(w,'action_Notify_About_Simsapa_Updates'):
+                w.action_Notify_About_Simsapa_Updates.setChecked(checked)
+
+    def _set_notify_dpd_setting(self, view: AppWindowInterface):
+        checked: bool = view.action_Notify_About_DPD_Updates.isChecked()
+        self._app_data.app_settings['notify_about_dpd_updates'] = checked
+        self._app_data._save_app_settings()
+
+        for w in self._windows:
+            if hasattr(w,'action_Notify_About_DPD_Updates'):
+                w.action_Notify_About_DPD_Updates.setChecked(checked)
 
     def _set_show_toolbar_setting(self, view: AppWindowInterface):
         checked: bool = view.action_Show_Toolbar.isChecked()
@@ -1482,38 +1626,7 @@ class AppWindows:
 
         return view
 
-    def _connect_signals_to_view(self, view):
-        # if hasattr(view, 'action_Open'):
-        #     view.action_Open \
-        #         .triggered.connect(partial(self._open_file_dialog, view))
-
-        if hasattr(view, 'action_Keep_Running_in_the_Background'):
-            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
-            view.action_Keep_Running_in_the_Background.setChecked(is_on)
-
-            view.action_Keep_Running_in_the_Background \
-                .triggered.connect(partial(self._toggle_keep_running, view))
-
-        if hasattr(view, 'action_Tray_Click_Opens_Window'):
-            view.action_Tray_Click_Opens_Window \
-                .triggered.connect(partial(self._select_track_click_window_dialog, view))
-
-        if hasattr(view, 'action_Re_index_database'):
-            view.action_Re_index_database \
-                .triggered.connect(partial(self._reindex_database_dialog, view))
-
-        if hasattr(view, 'action_Re_download_database'):
-            view.action_Re_download_database \
-                .triggered.connect(partial(self._redownload_database_dialog, view))
-
-        if hasattr(view, 'action_Focus_Search_Input'):
-            view.action_Focus_Search_Input \
-                .triggered.connect(partial(self._focus_search_input, view))
-
-        if hasattr(view, 'action_Quit'):
-            view.action_Quit \
-                .triggered.connect(partial(self._quit_app))
-
+    def _connect_windows_menu_signals_to_view(self, view):
         if hasattr(view, 'action_Sutta_Search'):
             view.action_Sutta_Search \
                 .triggered.connect(partial(self._new_sutta_search_window_noret))
@@ -1554,6 +1667,54 @@ class AppWindows:
             view.action_Ebook_Reader \
                 .triggered.connect(partial(self._new_ebook_reader_window_noret))
 
+        if hasattr(view, 'action_Show_Word_Lookup'):
+            view.action_Show_Word_Lookup \
+                .triggered.connect(partial(self._toggle_word_lookup))
+            if self.word_lookup is None:
+                is_on = False
+            else:
+                is_on = self.word_lookup.isVisible()
+
+            view.action_Show_Word_Lookup.setChecked(is_on)
+
+        if hasattr(view, 'action_First_Window_on_Startup'):
+            view.action_First_Window_on_Startup \
+                .triggered.connect(partial(self._first_window_on_startup_dialog, view))
+
+    def _connect_signals_to_view(self, view):
+        # if hasattr(view, 'action_Open'):
+        #     view.action_Open \
+        #         .triggered.connect(partial(self._open_file_dialog, view))
+
+        self._connect_windows_menu_signals_to_view(view)
+
+        if hasattr(view, 'action_Keep_Running_in_the_Background'):
+            is_on = self._app_data.app_settings.get('keep_running_in_background', True)
+            view.action_Keep_Running_in_the_Background.setChecked(is_on)
+
+            view.action_Keep_Running_in_the_Background \
+                .triggered.connect(partial(self._toggle_keep_running, view))
+
+        if hasattr(view, 'action_Tray_Click_Opens_Window'):
+            view.action_Tray_Click_Opens_Window \
+                .triggered.connect(partial(self._select_track_click_window_dialog, view))
+
+        if hasattr(view, 'action_Re_index_database'):
+            view.action_Re_index_database \
+                .triggered.connect(partial(self._reindex_database_dialog, view))
+
+        if hasattr(view, 'action_Re_download_database'):
+            view.action_Re_download_database \
+                .triggered.connect(partial(self._redownload_database_dialog, view))
+
+        if hasattr(view, 'action_Focus_Search_Input'):
+            view.action_Focus_Search_Input \
+                .triggered.connect(partial(self._focus_search_input, view))
+
+        if hasattr(view, 'action_Quit'):
+            view.action_Quit \
+                .triggered.connect(partial(self._quit_app))
+
         if isinstance(view, DictionarySearchWindowInterface):
             if hasattr(view, 'action_Show_Sidebar'):
                 is_on = self._app_data.app_settings.get('show_dictionary_sidebar', True)
@@ -1561,6 +1722,14 @@ class AppWindows:
 
                 view.action_Show_Sidebar \
                     .triggered.connect(partial(self._toggle_show_dictionary_sidebar, view))
+
+        if isinstance(view, SuttaSearchWindowInterface):
+            if hasattr(view, 'action_Show_Sidebar'):
+                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
+                view.action_Show_Sidebar.setChecked(is_on)
+
+                view.action_Show_Sidebar \
+                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
 
         if isinstance(view, EbookReaderWindowInterface) \
            or isinstance(view, SuttaSearchWindowInterface):
@@ -1571,14 +1740,6 @@ class AppWindows:
 
                 view.action_Show_Related_Suttas \
                     .triggered.connect(partial(self._toggle_show_related_suttas, view))
-
-        if isinstance(view, SuttaSearchWindowInterface):
-            if hasattr(view, 'action_Show_Sidebar'):
-                is_on = self._app_data.app_settings.get('show_sutta_sidebar', True)
-                view.action_Show_Sidebar.setChecked(is_on)
-
-                view.action_Show_Sidebar \
-                    .triggered.connect(partial(self._toggle_show_sutta_sidebar, view))
 
             if hasattr(view, 'action_Show_Translation_and_Pali_Line_by_Line'):
                 is_on = self._app_data.app_settings.get('show_translation_and_pali_line_by_line', True)
@@ -1608,26 +1769,17 @@ class AppWindows:
                 view.action_Generate_Links_Graph \
                     .triggered.connect(partial(self._toggle_generate_links_graph, view))
 
-        if hasattr(view, 'action_Show_Word_Lookup'):
-            view.action_Show_Word_Lookup \
-                .triggered.connect(partial(self._toggle_word_lookup))
-            if self.word_lookup is None:
-                is_on = False
-            else:
-                is_on = self.word_lookup.isVisible()
+        notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)
 
-            view.action_Show_Word_Lookup.setChecked(is_on)
+        if hasattr(view, 'action_Notify_About_Simsapa_Updates'):
+            view.action_Notify_About_Simsapa_Updates.setChecked(notify)
+            view.action_Notify_About_Simsapa_Updates \
+                .triggered.connect(partial(self._set_notify_simsapa_setting, view))
 
-        if hasattr(view, 'action_First_Window_on_Startup'):
-            view.action_First_Window_on_Startup \
-                .triggered.connect(partial(self._first_window_on_startup_dialog, view))
-
-        notify = self._app_data.app_settings.get('notify_about_updates', True)
-
-        if hasattr(view, 'action_Notify_About_Updates'):
-            view.action_Notify_About_Updates.setChecked(notify)
-            view.action_Notify_About_Updates \
-                .triggered.connect(partial(self._set_notify_setting, view))
+        if hasattr(view, 'action_Notify_About_DPD_Updates'):
+            view.action_Notify_About_DPD_Updates.setChecked(notify)
+            view.action_Notify_About_DPD_Updates \
+                .triggered.connect(partial(self._set_notify_dpd_setting, view))
 
         if hasattr(view, 'action_Website'):
             view.action_Website \
@@ -1682,9 +1834,13 @@ class AppWindows:
             checked = self._app_data.app_settings.get('clipboard_monitoring_for_dict', True)
             view.action_Clipboard_Monitoring_for_Dictionary_Lookup.setChecked(checked)
 
-        if hasattr(view, 'action_Check_for_Updates'):
-            view.action_Check_for_Updates \
-                .triggered.connect(partial(self._handle_check_updates))
+        if hasattr(view, 'action_Check_for_Simsapa_Updates'):
+            view.action_Check_for_Simsapa_Updates \
+                .triggered.connect(partial(self._handle_check_simsapa_updates))
+
+        if hasattr(view, 'action_Check_for_DPD_Updates'):
+            view.action_Check_for_DPD_Updates \
+                .triggered.connect(partial(self._handle_check_dpd_updates))
 
         # s = os.getenv('ENABLE_WIP_FEATURES')
         # if s is not None and s.lower() == 'true':

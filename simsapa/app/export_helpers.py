@@ -10,10 +10,11 @@ from sqlalchemy.orm.session import Session
 from ebooklib import epub
 from simsapa.app.lookup import RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF
 
+from simsapa import QueryType, SuttaQuote
 from simsapa.layouts.html_content import html_page
 from simsapa.app.helpers import bilara_content_json_to_html, bilara_line_by_line_html, normalize_sutta_ref
 from simsapa.app.helpers import strip_html
-from simsapa.app.types import QueryType, SuttaQuote, USutta
+from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.db import appdata_models as Am
 # from simsapa.app.db import userdata_models as Um

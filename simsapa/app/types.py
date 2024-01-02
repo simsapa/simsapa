@@ -1,13 +1,13 @@
 from enum import Enum
 from typing import List, Optional, TypedDict, Union, Callable
 
-from simsapa import ShowLabels
+from simsapa import ShowLabels, SearchResult
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.helpers import SearchResult
+from simsapa.app.db import dpd_models as Dpd
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
 ULink = Union[Am.Link, Um.Link]
 
 UDeck = Union[Am.Deck, Um.Deck]
@@ -35,12 +35,18 @@ class SearchMode(int, Enum):
     ExactMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
+    DpdIdMatch = 4
+    DpdLookup = 5
+    Combined = 6
 
 AllSearchModeNameToType = {
+    "Combined": SearchMode.Combined,
     "Fulltext Match": SearchMode.FulltextMatch,
+    "DPD Lookup": SearchMode.DpdLookup,
     # FIXME disabled ExactMatch while its buggy.
     # "Exact Match": SearchMode.ExactMatch,
-    "Headword Match": SearchMode.HeadwordMatch,
+    # FIXME test HeadwordMatch
+    # "Headword Match": SearchMode.HeadwordMatch,
     "Title Match": SearchMode.TitleMatch,
 }
 
@@ -51,9 +57,13 @@ SuttaSearchModeNameToType = {
 }
 
 DictionarySearchModeNameToType = {
+    "Combined": SearchMode.Combined,
+    "DPD Lookup": SearchMode.DpdLookup,
     "Fulltext Match": SearchMode.FulltextMatch,
+    # FIXME test ExactMatch
     # "Exact Match": SearchMode.ExactMatch,
-    "Headword Match": SearchMode.HeadwordMatch,
+    # FIXME test HeadwordMatch
+    # "Headword Match": SearchMode.HeadwordMatch,
 }
 
 class SearchParams(TypedDict):
@@ -66,10 +76,6 @@ class SearchParams(TypedDict):
     enable_regex: bool
     fuzzy_distance: int
 
-class QueryType(str, Enum):
-    suttas = "suttas"
-    words = "words"
-
 class SuttaQueriesInterface:
     get_sutta_by_url: Callable
 
@@ -79,21 +85,6 @@ class DictionaryQueriesInterface:
     render_html_page: Callable
     get_word_html: Callable
     dict_word_from_result: Callable[[SearchResult], Optional[UDictWord]]
-
-class QuoteScope(str, Enum):
-    Sutta = 'sutta'
-    Nikaya = 'nikaya'
-    All = 'all'
-
-QuoteScopeValues = {
-    'sutta': QuoteScope.Sutta,
-    'nikaya': QuoteScope.Nikaya,
-    'all': QuoteScope.All,
-}
-
-class SuttaQuote(TypedDict):
-    quote: str
-    selection_range: Optional[str]
 
 class GraphRequest(TypedDict):
     sutta_uid: Optional[str]

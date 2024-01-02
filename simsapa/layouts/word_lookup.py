@@ -3,21 +3,25 @@ from functools import partial
 import math, subprocess, json, queue
 from typing import List, Optional
 from PyQt6 import QtCore
+from PyQt6 import QtWidgets
+from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
+from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.search.helpers import SearchResult
+from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
 
-from simsapa.app.types import QueryType, SearchArea, UDictWord
+from simsapa.app.types import SearchArea, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
+from simsapa.layouts.find_panel import FindPanel, FindSearched
 from simsapa.layouts.gui_helpers import get_search_params
 
 from simsapa.layouts.gui_types import LinkHoverData, WindowPosSize, WordLookupInterface, WordLookupStateInterface
@@ -26,11 +30,12 @@ from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import ReaderWebEnginePage
 
 from simsapa.layouts.parts.search_bar import HasSearchBar
+from simsapa.layouts.parts.deconstructor_list import HasDeconstructorList
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 
-CSS_EXTRA_BODY = "body { font-size: 0.82rem; }"
+CSS_EXTRA_BODY = ""
 
-class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
+class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltextList, HasSearchBar):
 
     search_input: QLineEdit
     wrap_layout: QBoxLayout
@@ -40,6 +45,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     _layout: QVBoxLayout
     _clipboard: Optional[QClipboard]
     _current_words: List[UDictWord]
+    _current_results_page: List[SearchResult] = []
     _search_timer = QTimer()
     _last_query_time = datetime.now()
 
@@ -52,12 +58,17 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
     def __init__(self,
                  app_data: AppData,
+                 parent_window: QMainWindow,
                  wrap_layout: QBoxLayout,
                  focus_input: bool = True,
+                 enable_regex_fuzzy = True,
+                 enable_find_panel = False,
                  language_filter_setting_key = 'word_lookup_language_filter_idx',
                  search_mode_setting_key = 'word_lookup_search_mode',
                  source_filter_setting_key = 'word_lookup_source_filter_idx') -> None:
         super().__init__()
+
+        self.pw = parent_window
 
         self.wrap_layout = wrap_layout
 
@@ -66,6 +77,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         self._current_words = []
 
         self._queries = GuiSearchQueries(self._app_data.db_session,
+                                         None,
                                          self._app_data.get_search_indexes,
                                          self._app_data.api_url)
         # FIXME do this in a way that font size updates when user changes the value
@@ -85,24 +97,33 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         self.focus_input = focus_input
 
+        self.enable_find_panel = enable_find_panel
+
         self._search_mode_setting_key = search_mode_setting_key
         self._language_filter_setting_key = language_filter_setting_key
         self._source_filter_setting_key = source_filter_setting_key
 
         self.init_search_bar(wrap_layout            = self.wrap_layout,
                              search_area            = SearchArea.DictWords,
-                             add_nav_buttons        = False,
+                             enable_nav_buttons     = False,
                              enable_language_filter = True,
                              enable_search_extras   = True,
+                             enable_regex_fuzzy     = enable_regex_fuzzy,
                              enable_info_button     = False,
+                             enable_sidebar_button  = False,
                              input_fixed_size       = None,
                              icons_height           = 35,
                              focus_input            = self.focus_input,
                              two_rows_layout        = True)
 
         self._setup_search_tabs()
+
+        if self.enable_find_panel:
+            self._find_panel = FindPanel()
+
         self._connect_signals()
 
+        self.init_deconstructor_list()
         self.init_fulltext_list()
 
     def handle_messages(self):
@@ -143,8 +164,19 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _emit_hide_preview(self):
         self.hide_preview.emit()
 
-    def _copy_clipboard(self, text: str):
+    def _copy_clipboard_text(self, text: str):
         self._app_data.clipboard_setText(text)
+
+    def _copy_clipboard_html(self, html: str):
+        self._app_data.clipboard_setHtml(html)
+
+    def _copy_gloss(self, db_schema: str, db_table: str, db_uid: str, gloss_keys: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
+        self._copy_clipboard_html(get_word_gloss(w, gloss_keys))
+
+    def _copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
+        w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
+        self._copy_clipboard_text(get_word_meaning(w))
 
     def _setup_qwe(self):
         self.qwe = QWebEngineView()
@@ -155,7 +187,11 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
         page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
-        page.helper.copy_clipboard.connect(partial(self._copy_clipboard))
+        page.helper.copy_clipboard_text.connect(partial(self._copy_clipboard_text))
+        page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
+        page.helper.copy_gloss.connect(partial(self._copy_gloss))
+        page.helper.copy_meaning.connect(partial(self._copy_meaning))
+        page.helper.load_more_results.connect(partial(self._load_more_results))
 
         self.qwe.setPage(page)
 
@@ -278,13 +314,23 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
 
+        self.deconstructor_frame = QFrame(parent=self.fulltext_tab)
+        self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
+        self.deconstructor_frame.setLineWidth(0)
+        self.deconstructor_frame.setObjectName("DeconstructorFrame")
+        self.deconstructor_frame.setStyleSheet("#DeconstructorFrame { background-color: white; }")
+
+        self.fulltext_tab_layout.addWidget(self.deconstructor_frame)
+
         self.fulltext_tab_layout.addLayout(self.fulltext_tab_inner_layout)
 
     def _show_word(self, word: UDictWord):
         self.tabs.setTabText(0, str(word.uid))
 
         self._current_words = [word]
-        word_html = self._queries.dictionary_queries.get_word_html(word)
+        open_details = [DetailsTab.Inflections]
+        word_html = self._queries.dictionary_queries.get_word_html(word, open_details)
 
         page_html = self._queries.dictionary_queries.render_html_page(
             body = word_html['body'],
@@ -379,21 +425,26 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         else:
             self.tabs.setTabText(1, "Results")
 
-        self.render_fulltext_page()
+        self.render_deconstructor_list_for_query(self.search_input.text().strip())
 
-        results = self.results_page(0)
+        r = self.render_fulltext_page()
+        self._current_results_page = r
+        self._current_results_page_num = 0
+        render_len = self._results_page_render_len
 
-        if len(results) > 0 and hits == 1 and results[0]['uid'] is not None:
-            self._show_word_by_uid(results[0]['uid'])
+        if len(r) > 0 and hits == 1 and r[0]['uid'] is not None:
+            self._show_word_by_uid(r[0]['uid'])
         else:
-            self._render_dict_words_search_results(results[0:10])
+            start_idx = self._current_results_page_num * render_len
+            end_idx = start_idx + render_len
+            self._render_dict_words_search_results(r[start_idx:end_idx])
 
         self._update_fulltext_page_btn(hits)
 
     def _handle_query(self, min_length: int = 4):
         query_text_orig = self.search_input.text().strip()
 
-        if len(query_text_orig) < min_length:
+        if not query_text_orig.isdigit() and len(query_text_orig) < min_length:
             return
 
         idx = self.source_filter_dropdown.currentIndex()
@@ -412,13 +463,25 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
 
         r = self._app_data.db_session \
             .query(Am.DictWord) \
-            .filter(Am.DictWord.id.in_(q_res['appdata_ids'])) \
+            .filter(Am.DictWord.uid.in_(q_res['appdata_uids'])) \
             .all()
         res.extend(r)
 
         r = self._app_data.db_session \
             .query(Um.DictWord) \
-            .filter(Um.DictWord.id.in_(q_res['userdata_ids'])) \
+            .filter(Um.DictWord.uid.in_(q_res['userdata_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliWord) \
+            .filter(Dpd.PaliWord.uid.in_(q_res['pali_words_uids'])) \
+            .all()
+        res.extend(r)
+
+        r = self._app_data.db_session \
+            .query(Dpd.PaliRoot) \
+            .filter(Dpd.PaliRoot.uid.in_(q_res['pali_roots_uids'])) \
             .all()
         res.extend(r)
 
@@ -433,7 +496,7 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
     def _handle_exact_query(self, min_length: int = 4):
         query_text = self.search_input.text().strip()
 
-        if len(query_text) < min_length:
+        if not query_text.isdigit() and len(query_text) < min_length:
             return
 
         self._queries.start_exact_query_worker(
@@ -468,6 +531,13 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
             self._handle_query(min_length=4)
             # self._handle_exact_query(min_length=4)
 
+    @QtCore.pyqtSlot(dict)
+    def on_searched(self, find_searched: FindSearched):
+        if find_searched['flag'] is None:
+            self.qwe.findText(find_searched['text'])
+        else:
+            self.qwe.findText(find_searched['text'], find_searched['flag'])
+
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.link_mouseover.connect(partial(preview_window.link_mouseover))
         self.link_mouseleave.connect(partial(preview_window.link_mouseleave))
@@ -477,22 +547,29 @@ class WordLookupState(WordLookupStateInterface, HasFulltextList, HasSearchBar):
         if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
+        if self.enable_find_panel:
+            self._find_panel.searched.connect(self.on_searched)
+
 class WordLookup(WordLookupInterface):
     def __init__(self, app_data: AppData, focus_input: bool = True) -> None:
         super().__init__()
 
         self._app_data: AppData = app_data
 
-        self.wrap_layout = QVBoxLayout()
-        self.wrap_layout.setContentsMargins(8, 8, 8, 8)
-        self.setLayout(self.wrap_layout)
-
-        self.setWindowTitle("Word Lookup - Simsapa")
-        self.setMinimumSize(50, 50)
-
         if IS_SWAY:
             cmd = """swaymsg 'for_window [title="Word Lookup"] floating enable'"""
             subprocess.Popen(cmd, shell=True)
+
+        self._central_widget = QtWidgets.QWidget(self)
+        self.setCentralWidget(self._central_widget)
+
+        self.wrap_layout = QVBoxLayout()
+        self.wrap_layout.setContentsMargins(8, 8, 8, 8)
+
+        self._central_widget.setLayout(self.wrap_layout)
+
+        self.setWindowTitle("Word Lookup - Simsapa")
+        self.setMinimumSize(50, 50)
 
         self._restore_size_pos()
 
@@ -504,14 +581,103 @@ class WordLookup(WordLookupInterface):
         self.setObjectName("WordLookup")
         self.setStyleSheet("#WordLookup { background-color: %s; }" % READING_BACKGROUND_COLOR)
 
+        self._setup_menubar()
+
         self._margin = 8
 
         self.focus_input = focus_input
 
-        self.s = WordLookupState(app_data, self.wrap_layout, self.focus_input)
+        self.s = WordLookupState(app_data, self, self.wrap_layout, self.focus_input)
 
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
+
+        self._connect_signals()
+
+    def _setup_menubar(self):
+        self.menubar = QMenuBar()
+        self.setMenuBar(self.menubar)
+
+        # Shared menu actions will be connected in windows.py::_init_word_lookup()
+
+        # Icons
+
+        close_icon = QtGui.QIcon()
+        close_icon.addPixmap(QtGui.QPixmap(":/close"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        book_icon = QtGui.QIcon()
+        book_icon.addPixmap(QtGui.QPixmap(":/book"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        dict_icon = QtGui.QIcon()
+        dict_icon.addPixmap(QtGui.QPixmap(":/dictionary"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        bookmark_icon = QtGui.QIcon()
+        bookmark_icon.addPixmap(QtGui.QPixmap(":/bookmark"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        pen_fancy_icon = QtGui.QIcon()
+        pen_fancy_icon.addPixmap(QtGui.QPixmap(":/pen-fancy"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
+
+        # === File ===
+
+        self.menu_file = QMenu("&File", self.menubar)
+        self.menubar.addMenu(self.menu_file)
+
+        self.action_close_window = QAction("&Close Window")
+        self.menu_file.addAction(self.action_close_window)
+
+        self.action_Quit = QAction("&Quit Simsapa")
+        self.action_Quit.setIcon(close_icon)
+        self.action_Quit.setShortcut("Ctrl+Q")
+        self.menu_file.addAction(self.action_Quit)
+
+        # === Find ===
+
+        self.menu_find = QMenu("F&ind", self.menubar)
+        self.menubar.addMenu(self.menu_find)
+
+        self.action_Show_Search_Bar = QAction("Show Search &Bar")
+        self.action_Show_Search_Bar.setCheckable(True)
+        self.action_Show_Search_Bar.setChecked(True)
+        self.action_Show_Search_Bar.setShortcut("Ctrl+Shift+/")
+        self.menu_find.addAction(self.action_Show_Search_Bar)
+
+        # === Windows ===
+
+        self.menu_windows = QMenu("&Windows", self.menubar)
+        self.menubar.addMenu(self.menu_windows)
+
+        self.action_Sutta_Search = QAction("&Sutta Search")
+        self.action_Sutta_Search.setIcon(book_icon)
+        self.action_Sutta_Search.setShortcut("F5")
+        self.menu_windows.addAction(self.action_Sutta_Search)
+
+        self.action_Sutta_Study = QAction("Sutta Study")
+        self.action_Sutta_Study.setIcon(book_icon)
+        self.action_Sutta_Study.setShortcut("Ctrl+F5")
+        self.menu_windows.addAction(self.action_Sutta_Study)
+
+        self.action_Sutta_Index = QAction("Sutta Index")
+        self.action_Sutta_Index.setIcon(book_icon)
+        self.menu_windows.addAction(self.action_Sutta_Index)
+
+        self.action_Dictionary_Search = QAction("&Dictionary Search")
+        self.action_Dictionary_Search.setIcon(dict_icon)
+        self.action_Dictionary_Search.setShortcut("F6")
+        self.menu_windows.addAction(self.action_Dictionary_Search)
+
+        self.action_Bookmarks = QAction("&Bookmarks")
+        self.action_Bookmarks.setIcon(bookmark_icon)
+        self.action_Bookmarks.setShortcut("F7")
+        self.menu_windows.addAction(self.action_Bookmarks)
+
+        self.action_Ebook_Reader = QAction("&Ebook Reader")
+        self.action_Ebook_Reader.setIcon(book_icon)
+        self.menu_windows.addAction(self.action_Ebook_Reader)
+
+        self.action_Memos = QAction("&Memos")
+        self.action_Memos.setIcon(pen_fancy_icon)
+        self.action_Memos.setShortcut("F9")
+        self.menu_windows.addAction(self.action_Memos)
 
     def _restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_lookup_pos', None)
@@ -531,6 +697,9 @@ class WordLookup(WordLookupInterface):
     def _noop(self):
         pass
 
+    def _connect_signals(self):
+        self.action_close_window.triggered.connect(partial(self._handle_close))
+
     def hideEvent(self, event: QHideEvent) -> None:
         qr = self.frameGeometry()
         p = WindowPosSize(
@@ -547,6 +716,10 @@ class WordLookup(WordLookupInterface):
         APP_QUEUES['app_windows'].put_nowait(s)
 
         return super().hideEvent(event)
+
+    def _handle_close(self):
+        # Don't close, hide the window so it doesn't have to be re-created.
+        self.hide()
 
     def closeEvent(self, _: QCloseEvent) -> None:
         # Don't close, hide the window so it doesn't have to be re-created.

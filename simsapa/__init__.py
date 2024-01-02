@@ -1,6 +1,6 @@
 import os, sys
 from pathlib import Path
-from typing import Dict, Optional, TypedDict
+from typing import Dict, List, Optional, TypedDict
 from enum import Enum
 import queue
 from dotenv import load_dotenv
@@ -25,15 +25,18 @@ for i in ['.env', '.env.txt', 'config.txt']:
 # When running the prod app, the value below is used.
 #
 # In the PyInstaller build for Windows, importlib.metadata.version('simsapa') errors out with missing module.
-SIMSAPA_APP_VERSION = "0.4.1-alpha.1"
+SIMSAPA_APP_VERSION = "0.5.0-alpha.1"
 
 SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 
 # No trailing slash
 SIMSAPA_RELEASES_BASE_URL = "https://simsapa.eu.pythonanywhere.com"
+DPD_RELEASES_BASE_URL = "https://github.com/digitalpalidictionary/digitalpalidictionary"
 
 PACKAGE_ASSETS_RSC_DIR = Path('assets')
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))
+
+PACKAGE_DPD_TEMPLATES_DIR = Path(str(SIMSAPA_PACKAGE_DIR.joinpath("assets/templates/dpd/")))
 
 ALEMBIC_INI = SIMSAPA_PACKAGE_DIR.joinpath('alembic.ini')
 ALEMBIC_DIR = SIMSAPA_PACKAGE_DIR.joinpath('alembic')
@@ -63,6 +66,8 @@ else:
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
+SIMSAPA_API_DEFAULT_PORT = 4848
+
 SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("api-port.txt")
 
 USER_HOME_DIR = PLATFORM_DIRS.user_desktop_path.parent
@@ -77,8 +82,6 @@ TEST_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath('../tests/data/assets')
 
 TIMER_SPEED = 30
 
-SEARCH_TIMER_SPEED = 500
-
 LOW_MEM_THRESHOLD = 3*1024*1024*1024
 
 mem = psutil.virtual_memory()
@@ -86,6 +89,11 @@ if mem.available < LOW_MEM_THRESHOLD:
     START_LOW_MEM = True
 else:
     START_LOW_MEM = False
+
+if START_LOW_MEM:
+    SEARCH_TIMER_SPEED = 800
+else:
+    SEARCH_TIMER_SPEED = 400
 
 INDEX_WRITER_MEMORY_MB = 512
 
@@ -105,6 +113,8 @@ GRAPHS_DIR = ASSETS_DIR.joinpath('graphs')
 
 APP_DB_PATH = ASSETS_DIR.joinpath('appdata.sqlite3')
 USER_DB_PATH = ASSETS_DIR.joinpath('userdata.sqlite3')
+
+DPD_DB_PATH = ASSETS_DIR.joinpath('dpd.sqlite3')
 
 COURSES_DIR = ASSETS_DIR.joinpath('courses')
 
@@ -187,12 +197,6 @@ if b is None:
 else:
     SUTTAS_JS = b.decode("utf-8")
 
-b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('js/dictionary.js')))
-if b is None:
-    DICTIONARY_JS = ""
-else:
-    DICTIONARY_JS = b.decode("utf-8")
-
 b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath('css/ebook_extra.css')))
 if b is None:
     EBOOK_EXTRA_CSS = ""
@@ -208,6 +212,12 @@ else:
 class DbSchemaName(str, Enum):
     AppData = 'appdata'
     UserData = 'userdata'
+    Dpd = 'dpd'
+
+class DictTypeName(str, Enum):
+    Sql = 'sql'
+    Stardict = 'stardict'
+    Custom = 'custom'
 
 class ApiAction(str, Enum):
     lookup_clipboard_in_dictionary = 'lookup_clipboard_in_dictionary'
@@ -218,8 +228,10 @@ class ApiAction(str, Enum):
     open_sutta_new = 'open_sutta_new'
     open_words_new = 'open_words_new'
     show_sutta_by_uid = 'show_sutta_by_uid'
+    show_sutta_by_url = 'show_sutta_by_url'
     show_sutta = 'show_sutta'
     show_word_by_uid = 'show_word_by_uid'
+    show_word_by_url = 'show_word_by_url'
     show_word_lookup = 'show_word_lookup'
     closed_word_lookup = 'closed_word_lookup'
     hidden_word_lookup = 'hidden_word_lookup'
@@ -236,3 +248,56 @@ class ShowLabels(str, Enum):
     SuttaRef = "Sutta Ref."
     RefAndTitle = "Ref. + Title"
     NoLabels = "No Labels"
+
+class DetailsTab(str, Enum):
+    Examples = "Examples"
+    Inflections = "Inflections"
+    RootFamily = "Root Family"
+    WordFamily = "Word Family"
+    CompoundFamily = "Compound Family"
+    SetFamily = "Set Family"
+    FrequencyMap = "Frequency Map"
+    Feedback = "Feedback"
+    RootInfo = "Root Info"
+
+class QueryType(str, Enum):
+    suttas = "suttas"
+    words = "words"
+
+class QuoteScope(str, Enum):
+    Sutta = 'sutta'
+    Nikaya = 'nikaya'
+    All = 'all'
+
+QuoteScopeValues = {
+    'sutta': QuoteScope.Sutta,
+    'nikaya': QuoteScope.Nikaya,
+    'all': QuoteScope.All,
+}
+
+class SuttaQuote(TypedDict):
+    quote: str
+    selection_range: Optional[str]
+
+# TODO same as simsapa.app.types.Labels, but declared here to avoid cirular import
+class Labels(TypedDict):
+    appdata: List[str]
+    userdata: List[str]
+
+class SearchResult(TypedDict):
+    uid: str
+    # database schema name (appdata or userdata)
+    schema_name: str
+    # database table name (e.g. suttas or dict_words)
+    table_name: str
+    source_uid: Optional[str]
+    title: str
+    ref: Optional[str]
+    nikaya: Optional[str]
+    author: Optional[str]
+    # highlighted snippet
+    snippet: str
+    # page number in a document
+    page_number: Optional[int]
+    score: Optional[float]
+    rank: Optional[int]

@@ -1,8 +1,10 @@
 import sys
 import re
-from typing import Optional
+from typing import Callable, List, Optional
 from pathlib import Path
 import roman
+import tomlkit
+from bs4 import BeautifulSoup, Tag
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
@@ -13,7 +15,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db_helpers import find_or_create_db
 from simsapa import DbSchemaName, logger
-from simsapa.app.helpers import normalize_sutta_ref
+from simsapa.app.helpers import compact_rich_text, normalize_sutta_ref, pali_to_ascii, strip_html, word_uid
 from simsapa.app.types import UMultiRef
 
 def get_db_session(db_path: Path) -> Session:
@@ -37,7 +39,7 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
     if remove_if_exists and db_path.exists():
         db_path.unlink()
 
-    find_or_create_db(db_path, schema.value)
+    find_or_create_db(db_path, schema)
 
     try:
         # Create an in-memory database
@@ -47,8 +49,31 @@ def get_simsapa_db(db_path: Path, schema: DbSchemaName, remove_if_exists: bool) 
 
         if schema == DbSchemaName.AppData:
             db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS appdata;"))
-        else:
+        elif schema == DbSchemaName.UserData:
             db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS userdata;"))
+        elif schema == DbSchemaName.Dpd:
+            db_conn.execute(text(f"ATTACH DATABASE '{db_path}' AS dpd;"))
+        else:
+            raise Exception(f"Unknown schema_name: {schema}")
+
+        Session = sessionmaker(engine)
+        Session.configure(bind=engine)
+        db_session = Session()
+    except Exception as e:
+        logger.error(f"Can't connect to database: {e}")
+        sys.exit(1)
+
+    return db_session
+
+def get_appdata_with_dpd_session(appdata_db_path: Path, dpd_db_path: Path) -> Session:
+    try:
+        # Create an in-memory database
+        engine = create_engine("sqlite+pysqlite://", echo=False)
+
+        db_conn = engine.connect()
+
+        db_conn.execute(text(f"ATTACH DATABASE '{appdata_db_path}' AS {DbSchemaName.AppData.value};"))
+        db_conn.execute(text(f"ATTACH DATABASE '{dpd_db_path}' AS {DbSchemaName.Dpd.value};"))
 
         Session = sessionmaker(engine)
         Session.configure(bind=engine)
@@ -78,6 +103,10 @@ def uid_to_ref(uid: str) -> str:
 
     return uid
 
+def uid_to_nikaya(uid: str) -> str:
+    '''sn12.23 to sn'''
+    nikaya = re.sub(r'^([a-z]+).*', r'\1', uid)
+    return nikaya
 
 def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> Optional[UMultiRef]:
     ref_text = ref_text.lower()
@@ -133,13 +162,15 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 edition = "1st ed. Feer (1884)",
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = normalize_sutta_ref(ref_text),
                 edition = "1st ed. Feer (1884)",
             )
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -154,13 +185,16 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 edition = "2nd ed. Somaratne (1998)",
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = normalize_sutta_ref(ref_text),
                 edition = "2nd ed. Somaratne (1998)",
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -184,12 +218,15 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 ref = ", ".join(refs),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = ", ".join(refs),
             )
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return item
 
@@ -210,13 +247,136 @@ def text_to_multi_ref(collection: str, ref_text: str, schema: DbSchemaName) -> O
                 ref = ", ".join(refs),
             )
 
-        else:
+        elif schema == DbSchemaName.UserData:
             item = Um.MultiRef(
                 collection = collection,
                 ref_type = "pts",
                 ref = ", ".join(refs),
             )
 
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
+
         return item
 
     return None
+
+def get_db_version_pyproject() -> str:
+    p = Path('pyproject.toml')
+    if not p.exists():
+        logger.error("pyproject.toml not found")
+        sys.exit(1)
+
+    with open(p) as f:
+        s = f.read()
+
+    try:
+        t = tomlkit.parse(s)
+        v = t['simsapa']['db_version'] # type: ignore
+        ver = f"{v}"
+    except Exception as e:
+        logger.error(e)
+        sys.exit(1)
+
+    return ver
+
+def check_and_fix_dict_word_uid(db_session: Session, i: Am.DictWord):
+    n = 0
+    while True:
+        r = db_session.query(Am.DictWord).filter(Am.DictWord.uid == i.uid).first()
+        if r is not None:
+            if n > 5:
+                print(f"Tried updating the uid {n-1} times for word {i.word}. Exiting.")
+                sys.exit(2)
+
+            name, label = i.uid.split("/")
+            n += 1
+            i.uid = f"{name}-{n}/{label}"
+        else:
+            return
+
+def replace_links_with_bold(soup: BeautifulSoup, tag: Tag):
+    links = tag.select('a')
+    for link in links:
+        bold = soup.new_tag('b')
+        bold.append(link.get_text())
+        link.replace_with(bold)
+
+def get_long_definition_blocks(soup: BeautifulSoup, dict: Am.Dictionary) -> Am.DictWord:
+    headers = soup.select('h2')
+    if len(headers) == 0:
+        raise Exception("No h2 headers on the page.")
+
+    name_tag = headers[0]
+    assert(name_tag is not None)
+    name = strip_html(name_tag.decode_contents())
+
+    # Remove number prefixes. e.g. 1. Bījaka; 2. Bījaka
+    name = re.sub(r"^[0-9\. ]+", "", name)
+
+    # If there is only one header, remove it. The word template will show the title.
+    if len(headers) == 1:
+        # If the header is in an <ul> list, remove the list.
+        lists = soup.select('ul')
+        already_removed = False
+        for ul in lists:
+            h = ul.select('h2')
+            if len(h) > 0:
+                already_removed = True
+                ul.decompose()
+
+        if not already_removed:
+            headers[0].decompose()
+
+    item = soup.select_one('body')
+    assert(item is not None)
+
+    replace_links_with_bold(soup, item)
+
+    item_html = item.decode_contents()
+
+    # Remove the footer
+    item_html = re.sub(r'<hr[^>]*>[\n ]*<p align="center">.*', '', item_html, flags=re.DOTALL)
+
+    word = Am.DictWord(
+        dictionary_id = dict.id,
+        uid = word_uid(name, dict.label.lower()),
+        word = name,
+        word_ascii = pali_to_ascii(name),
+        language = "en",
+        source_uid = dict.label.lower(),
+        definition_html = item_html,
+        definition_plain = compact_rich_text(item_html),
+    )
+
+    return word
+
+def get_short_definitions(soup: BeautifulSoup,
+                          dict: Am.Dictionary,
+                          get_name_fn: Callable[[Tag], Optional[str]]) -> List[Am.DictWord]:
+    words: List[Am.DictWord] = []
+
+    list_items = soup.select('body > ul > li')
+    for item in list_items:
+
+        name = get_name_fn(item)
+        if name is None:
+            continue
+
+        replace_links_with_bold(soup, item)
+        item_html = item.decode_contents()
+
+        w = Am.DictWord(
+            dictionary_id = dict.id,
+            uid = word_uid(name, dict.label.lower()),
+            word = name,
+            word_ascii = pali_to_ascii(name),
+            language = "en",
+            source_uid = dict.label.lower(),
+            definition_html = item_html,
+            definition_plain = compact_rich_text(item_html),
+        )
+
+        words.append(w)
+
+    return words

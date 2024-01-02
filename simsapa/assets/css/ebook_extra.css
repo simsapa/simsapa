@@ -127,6 +127,7 @@ a {
   stroke-width: 0;
   stroke: currentColor;
   fill: currentColor;
+  vertical-align: middle;
 }
 
 div.btn, span.btn {
@@ -156,12 +157,12 @@ div.btn a, span.btn a {
 }
 
 .bookmark-comment {
-  border: 1px solid #1f936d;
+  border: 1px solid hsl(160, 65%, 35%);
   border-radius: 5px;
-  background-color: #57dbaf;
+  background-color: hsl(160, 65%, 60%);
 }
 .bookmark-comment .bookmark-title {
-  background-color: #1f936d;
+  background-color: hsl(160, 65%, 35%);
   height: 30px;
   font-size: 20px;
 }

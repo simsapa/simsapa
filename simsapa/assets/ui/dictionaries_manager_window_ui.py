@@ -234,7 +234,7 @@ class Ui_DictionariesManagerWindow(object):
         self.toolBar_2.setWindowTitle(_translate("DictionariesManagerWindow", "toolBar_2"))
         self.action_Copy.setText(_translate("DictionariesManagerWindow", "&Copy"))
         self.action_Paste.setText(_translate("DictionariesManagerWindow", "&Paste"))
-        self.action_Quit.setText(_translate("DictionariesManagerWindow", "&Quit"))
+        self.action_Quit.setText(_translate("DictionariesManagerWindow", "&Quit Simsapa"))
         self.action_Quit.setShortcut(_translate("DictionariesManagerWindow", "Ctrl+Q"))
         self.action_Sutta_Search.setText(_translate("DictionariesManagerWindow", "&Sutta Search"))
         self.action_Sutta_Search.setShortcut(_translate("DictionariesManagerWindow", "F5"))

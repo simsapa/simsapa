@@ -16,9 +16,9 @@ from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
 import helpers
-from simsapa.app.helpers import consistent_nasal_m, compact_rich_text, pali_to_ascii
+from simsapa.app.helpers import consistent_niggahita, compact_rich_text
 from simsapa.app.lookup import DHP_CHAPTERS_TO_RANGE
-from simsapa.app.types import QueryType
+from simsapa import QueryType
 
 load_dotenv()
 
@@ -126,8 +126,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     title = m[0].strip()
     title = title.replace('&nbsp;', '')
     title = title.replace('&amp;', 'and')
-    title = consistent_nasal_m(title)
-    title_ascii = pali_to_ascii(title)
+    title = consistent_niggahita(title)
 
     if '/Ud/' in f"{p}":
         # 2 Appāyuka Sutta | Short-lived
@@ -138,7 +137,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
     if len(m) == 0:
         title_pali = ''
     else:
-        title_pali = consistent_nasal_m(m[0])
+        title_pali = consistent_niggahita(m[0])
 
     ref = re.sub(r'([^0-9])0*', r'\1', p.stem).lower()
 
@@ -150,7 +149,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
 
     # logger.info(f"{ref} -- {title} -- {title_pali}")
 
-    content_html = '<div class="dhammatalks_org">' + consistent_nasal_m(content_html) + '</div>'
+    content_html = '<div class="dhammatalks_org">' + consistent_niggahita(content_html) + '</div>'
 
     sutta = Am.Sutta(
         source_uid = author,
@@ -159,6 +158,7 @@ def parse_sutta(p: Path) -> Am.Sutta:
         title_pali = title_pali,
         uid = uid,
         sutta_ref = helpers.uid_to_ref(ref),
+        nikaya = helpers.uid_to_nikaya(ref),
         language = lang,
         content_html = content_html,
         content_plain = compact_rich_text(content_html),

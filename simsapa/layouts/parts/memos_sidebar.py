@@ -13,6 +13,7 @@ from simsapa import DbSchemaName, logger
 # from ..app.file_doc import FileDoc
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.types import USutta, UDictWord, UMemo
 from simsapa.app.app_data import AppData
@@ -107,7 +108,7 @@ QListView::item:selected { background-color: %s; color: %s; }
                                 .all()
             um_assoc.extend(res)
 
-        else:
+        elif schema == DbSchemaName.UserData.value:
 
             res = self._app_data.db_session \
                                 .query(Um.MemoAssociation) \
@@ -116,6 +117,9 @@ QListView::item:selected { background-color: %s; color: %s; }
                                     Um.MemoAssociation.associated_id == sutta.id) \
                                 .all()
             um_assoc.extend(res)
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         memos: List[UMemo] = []
 
@@ -161,7 +165,7 @@ QListView::item:selected { background-color: %s; color: %s; }
                                 .all()
             um_assoc.extend(res)
 
-        else:
+        elif schema == DbSchemaName.UserData.value:
 
             res = self._app_data.db_session \
                                 .query(Um.MemoAssociation) \
@@ -170,6 +174,27 @@ QListView::item:selected { background-color: %s; color: %s; }
                                     Um.MemoAssociation.associated_id == word.id) \
                                 .all()
             um_assoc.extend(res)
+
+        elif schema == DbSchemaName.Dpd.value:
+
+            if isinstance(word, Dpd.PaliWord):
+                res = self._app_data.db_session \
+                                    .query(Um.MemoAssociation) \
+                                    .filter(
+                                        Um.MemoAssociation.associated_table == 'dpd.pali_words',
+                                        Um.MemoAssociation.associated_id == word.id) \
+                                    .all()
+                um_assoc.extend(res)
+
+            elif isinstance(word, Dpd.PaliRoot):
+                logger.warn("FIXME memos for PaliRoot")
+                return []
+
+            else:
+                raise Exception(f"Unknown word type: {word}")
+
+        else:
+            raise Exception(f"Unknown schema: {schema}")
 
         memos: List[UMemo] = []
 
@@ -200,14 +225,17 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         self.update_memos_list()
 
-    def update_memos_list_for_dict_word(self, word: UDictWord):
-        memos = self.get_memos_for_dict_word(word)
-        if memos:
-            self.model.memos = memos
-        else:
-            self.model.memos = []
+    def update_memos_list_for_dict_word(self, __word__: UDictWord):
+        pass
+        # FIXME memos for dict word: need better Anki integration.
 
-        self.update_memos_list()
+        # memos = self.get_memos_for_dict_word(word)
+        # if memos:
+        #     self.model.memos = memos
+        # else:
+        #     self.model.memos = []
+
+        # self.update_memos_list()
 
     # def update_memos_list_for_document(self, file_doc: FileDoc, db_doc: Um.Document):
     #     memos = self.get_memos_for_document_page(file_doc, db_doc)
@@ -323,7 +351,8 @@ QListView::item:selected { background-color: %s; color: %s; }
                 .query(Am.MemoAssociation) \
                 .filter(Am.MemoAssociation.memo_id == memo_id) \
                 .first()
-        else:
+
+        elif schema == DbSchemaName.UserData.value:
             db_item = self._app_data.db_session \
                 .query(Um.Memo) \
                 .filter(Um.Memo.id == memo_id) \
@@ -333,6 +362,9 @@ QListView::item:selected { background-color: %s; color: %s; }
                 .query(Um.MemoAssociation) \
                 .filter(Um.MemoAssociation.memo_id == memo_id) \
                 .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         self._app_data.db_session.delete(db_item)
         self._app_data.db_session.delete(assoc_item)
@@ -349,7 +381,8 @@ QListView::item:selected { background-color: %s; color: %s; }
         self.back_input.setPlainText(fields['Back'])
 
     def clear_memo(self):
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
         self.front_input.clear()
         self.back_input.clear()
 
@@ -360,7 +393,8 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         assert(isinstance(active_sutta, USutta))
 
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -412,7 +446,9 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
+        m = self.memos_list.selectionModel()
+        if m is not None:
+            m.select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -420,7 +456,8 @@ QListView::item:selected { background-color: %s; color: %s; }
         if self._current_word is None:
             return
 
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -474,7 +511,9 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
+        m = self.memos_list.selectionModel()
+        if m is not None:
+            m.select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -482,7 +521,8 @@ QListView::item:selected { background-color: %s; color: %s; }
         if self.file_doc is None:
             return
 
-        self.sel_model.clearSelection()
+        if self.sel_model is not None:
+            self.sel_model.clearSelection()
 
         front = self.front_input.toPlainText()
         back = self.back_input.toPlainText()
@@ -537,7 +577,9 @@ QListView::item:selected { background-color: %s; color: %s; }
             logger.error(e)
 
         index = self.model.index(len(self.model.memos) - 1)
-        self.memos_list.selectionModel().select(index, QItemSelectionModel.SelectionFlag.Select)
+        m = self.memos_list.selectionModel()
+        if m is not None:
+            m.select(index, QItemSelectionModel.SelectionFlag.Select)
 
         self.update_memos_list()
 
@@ -571,7 +613,8 @@ QListView::item:selected { background-color: %s; color: %s; }
             self.update_memos_list()
 
     def connect_memos_sidebar_signals(self):
-        self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
+        if self.sel_model is not None:
+            self.sel_model.selectionChanged.connect(partial(self._handle_memo_select))
 
         self.add_memo_button.setShortcut(QKeySequence("Ctrl+Return"))
         self.add_memo_button.setToolTip("Ctrl+Return")

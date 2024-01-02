@@ -21,12 +21,15 @@ def get_groups_in_course(db_session: Session, course: UChallengeCourse) -> List[
             .order_by(Am.ChallengeGroup.sort_index.asc()) \
             .all()
 
-    else:
+    elif course.metadata.schema == DbSchemaName.UserData.value:
         res = db_session \
             .query(Um.ChallengeGroup) \
             .filter(Um.ChallengeGroup.course_id == course.id) \
             .order_by(Um.ChallengeGroup.sort_index.asc()) \
             .all()
+
+    else:
+        raise Exception("Only appdata and userdata schema are allowed.")
 
     if res is None:
         return []
@@ -71,7 +74,7 @@ def get_remaining_challenges_in_group(app_data: AppData, group: UChallengeGroup)
             .order_by(Am.Challenge.sort_index.asc()) \
             .all()
 
-    else:
+    elif group.metadata.schema == DbSchemaName.UserData.value:
         res = app_data.db_session \
             .query(Um.Challenge) \
             .filter(and_(
@@ -81,6 +84,9 @@ def get_remaining_challenges_in_group(app_data: AppData, group: UChallengeGroup)
             )) \
             .order_by(Um.Challenge.sort_index.asc()) \
             .all()
+
+    else:
+        raise Exception("Only appdata and userdata schema are allowed.")
 
     if res is None:
         return []

@@ -18,12 +18,12 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QMessageBox, QPushButton, QSpacerItem, QToolButton, QVBoxLayout
 
-from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger
+from simsapa import BUTTON_BG_COLOR, COURSES_DIR, IS_MAC, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, DbSchemaName, logger, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa.app.types import QueryType, UChallenge, UChallengeGroup
+from simsapa.app.types import UChallenge, UChallengeGroup
 from simsapa.app.app_data import AppData
 
 from simsapa.layouts.gui_types import AppWindowInterface, PaliChallengeType, PaliCourseGroup, PaliItem, QExpanding, QMinimum, LinkHoverData
@@ -230,12 +230,14 @@ class CoursePracticeWindow(AppWindowInterface):
                 .filter(Am.ChallengeGroup.id == group['db_id']) \
                 .first()
 
-
-        else:
+        elif group['db_schema'] == DbSchemaName.UserData.value:
             r = self._app_data.db_session \
                 .query(Um.ChallengeGroup) \
                 .filter(Um.ChallengeGroup.id == group['db_id']) \
                 .first()
+
+        else:
+            raise Exception("Only appdata and userdata schema are allowed.")
 
         return r
 

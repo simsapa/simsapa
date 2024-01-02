@@ -5,12 +5,11 @@ from PyQt6 import QtGui
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QMovie
 from PyQt6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTabWidget
-from simsapa import logger
 
+from simsapa import logger, SearchResult
 from simsapa.app.app_data import AppData
-from simsapa.app.search.helpers import SearchResult
 
-from simsapa.layouts.gui_types import default_search_result_sizes
+from simsapa.layouts.gui_types import QExpanding, default_search_result_sizes
 from simsapa.layouts.search_item import SearchItemWidget
 
 class HasFulltextList:
@@ -40,8 +39,9 @@ class HasFulltextList:
 
         self.fulltext_label.clear()
         self.fulltext_list.clear()
+        self.fulltext_list.setSizePolicy(QExpanding, QExpanding)
 
-        self.fulltext_list.setUniformItemSizes(True)
+        self.fulltext_list.setUniformItemSizes(False)
 
         self.fulltext_page_input.setMinimum(0)
         self.fulltext_page_input.setMaximum(0)
@@ -88,10 +88,11 @@ class HasFulltextList:
         query_hits = self.query_hits()
         logger.info(f"render_fulltext_page(), query_hits: {query_hits}")
 
-        if query_hits is None or query_hits == 0:
-            self.fulltext_label.clear()
-            self.fulltext_list.clear()
-            return []
+        # NOTE: using regex or fuzzy options, the query_hits may be None, even
+        # when results were found, because the number is not calculated in
+        # tantivy_index.py::highlighted_results_page()
+
+        self.fulltext_list.clear()
 
         page_num = self.fulltext_page_input.value() - 1
         if page_num < 0:

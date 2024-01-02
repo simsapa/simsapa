@@ -1,4 +1,4 @@
-"""Text Sutta Reference Recognition
+"""Test Sutta Reference Recognition
 """
 
 from simsapa.app.helpers import is_book_sutta_ref, is_pts_sutta_ref, query_text_to_uid_field_query

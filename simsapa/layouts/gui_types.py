@@ -6,11 +6,11 @@ from urllib.parse import parse_qs
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QFrame, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMainWindow, QPushButton, QSpinBox, QTabWidget, QToolBar, QVBoxLayout, QWidget
 
-from simsapa import IS_MAC, DbSchemaName
-from simsapa.app.search.helpers import SearchResult
-from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SuttaQuote, SearchMode
+from simsapa import IS_MAC, DbSchemaName, SuttaQuote, SearchResult
+from simsapa.app.types import DictionaryQueriesInterface, SearchArea, SuttaQueriesInterface, UDictWord, SearchMode
+from simsapa.layouts.find_panel import FindPanel
 
 QSizeMinimum = QtWidgets.QSizePolicy.Policy.Minimum
 QSizeExpanding = QtWidgets.QSizePolicy.Policy.Expanding
@@ -22,6 +22,11 @@ QPreferred = QtWidgets.QSizePolicy.Policy.Preferred
 QMinimumExpanding = QtWidgets.QSizePolicy.Policy.MinimumExpanding
 QExpanding = QtWidgets.QSizePolicy.Policy.Expanding
 QIgnored = QtWidgets.QSizePolicy.Policy.Ignored
+
+# Lowercase values.
+class ReleaseChannel(str, Enum):
+    Main = 'main'
+    Development = 'development'
 
 class WindowType(int, Enum):
     SuttaSearch = 0
@@ -308,7 +313,9 @@ class AppSettings(TypedDict):
     first_window_on_startup: WindowType
     generate_links_graph: bool
     link_preview: bool
-    notify_about_updates: bool
+    notify_about_simsapa_updates: bool
+    notify_about_dpd_updates: bool
+    release_channel: ReleaseChannel
     openai: OpenAISettings
     search_as_you_type: bool
     search_completion: bool
@@ -316,6 +323,7 @@ class AppSettings(TypedDict):
     send_to_kindle: SendToKindleSettings
     send_to_remarkable: SendToRemarkableSettings
     show_all_variant_readings: bool
+    show_glosses: bool
     show_bookmarks: bool
     show_dictionary_sidebar: bool
     show_related_suttas: bool
@@ -355,6 +363,10 @@ class AppSettings(TypedDict):
     sutta_study_two_search_mode: SearchMode
     sutta_study_two_source_filter_idx: int
 
+    sutta_study_three_language_filter_idx: int
+    sutta_study_three_search_mode: SearchMode
+    sutta_study_three_source_filter_idx: int
+
     sutta_study_lookup_language_filter_idx: int
     sutta_study_lookup_search_mode: SearchMode
     sutta_study_lookup_source_filter_idx: int
@@ -374,7 +386,9 @@ def default_app_settings() -> AppSettings:
         first_window_on_startup = WindowType.SuttaSearch,
         generate_links_graph = False,
         link_preview = True,
-        notify_about_updates = True,
+        notify_about_simsapa_updates = True,
+        notify_about_dpd_updates = True,
+        release_channel = ReleaseChannel.Main,
         openai = default_openai_settings(),
         search_as_you_type = True,
         search_completion = True,
@@ -382,6 +396,7 @@ def default_app_settings() -> AppSettings:
         send_to_kindle = default_send_to_kindle_settings(),
         send_to_remarkable = default_send_to_remarkable_settings(),
         show_all_variant_readings = False,
+        show_glosses = False,
         show_bookmarks = True,
         show_dictionary_sidebar = True,
         show_related_suttas = True,
@@ -392,7 +407,7 @@ def default_app_settings() -> AppSettings:
         tray_click_opens_window = WindowType.SuttaSearch,
 
         sutta_font_size = 22,
-        dictionary_font_size = 18,
+        dictionary_font_size = 16,
 
         path_to_curl = None,
         path_to_ebook_convert = None,
@@ -403,7 +418,7 @@ def default_app_settings() -> AppSettings:
         smtp_sender_email = None,
 
         dictionary_language_filter_idx = 0,
-        dictionary_search_mode = SearchMode.FulltextMatch,
+        dictionary_search_mode = SearchMode.Combined,
         dictionary_source_filter_idx = 0,
         dictionary_show_pali_buttons = True,
 
@@ -421,13 +436,17 @@ def default_app_settings() -> AppSettings:
         sutta_study_two_search_mode = SearchMode.FulltextMatch,
         sutta_study_two_source_filter_idx = 0,
 
+        sutta_study_three_language_filter_idx = 0,
+        sutta_study_three_search_mode = SearchMode.FulltextMatch,
+        sutta_study_three_source_filter_idx = 0,
+
         sutta_study_lookup_language_filter_idx = 0,
-        sutta_study_lookup_search_mode = SearchMode.FulltextMatch,
+        sutta_study_lookup_search_mode = SearchMode.Combined,
         sutta_study_lookup_source_filter_idx = 0,
 
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 500, height = 700),
         word_lookup_language_filter_idx = 0,
-        word_lookup_search_mode = SearchMode.FulltextMatch,
+        word_lookup_search_mode = SearchMode.Combined,
         word_lookup_source_filter_idx = 0,
     )
 
@@ -463,8 +482,10 @@ class PaliChallengeType(str, Enum):
 
 
 class AppWindowInterface(QMainWindow):
-    action_Check_for_Updates: QAction
-    action_Notify_About_Updates: QAction
+    action_Check_for_Simsapa_Updates: QAction
+    action_Check_for_DPD_Updates: QAction
+    action_Notify_About_Simsapa_Updates: QAction
+    action_Notify_About_DPD_Updates: QAction
     action_Show_Toolbar: QAction
     action_Link_Preview: QAction
     action_Show_Word_Lookup: QAction
@@ -520,7 +541,7 @@ class SearchBarInterface(QWidget):
     page_len: int
     get_page_num: Callable[[], int]
     _search_area: SearchArea
-    _set_query: Callable
+    _set_query: Callable[[str], None]
     _handle_query: Callable
     _handle_exact_query: Callable
     _search_query_finished: Callable[[datetime], None]
@@ -531,6 +552,8 @@ class SearchBarInterface(QWidget):
     _source_filter_setting_key: str
     _init_search_input_completer: Callable[[], None]
     _disable_search_input_completer: Callable[[], None]
+
+    action_Show_Search_Bar: QAction
 
     language_filter_dropdown: QComboBox
     language_include_btn: QPushButton
@@ -559,6 +582,9 @@ class SuttaSearchWindowStateInterface(SearchBarInterface):
     _show_sutta_by_uid: Callable
     _get_selection: Callable
     _get_active_tab: Callable
+    _find_panel: FindPanel
+
+    reload_page: Callable[[], None]
 
 class SuttaSearchWindowInterface(AppWindowInterface):
     addToolBar: Callable
@@ -598,8 +624,24 @@ class SuttaSearchWindowInterface(AppWindowInterface):
 
     s: SuttaSearchWindowStateInterface
 
+class SuttaPanelSettingKeys(TypedDict):
+    language_filter_setting_key: str
+    search_mode_setting_key: str
+    source_filter_setting_key: str
+
+class SuttaPanel(TypedDict):
+    layout_widget: QWidget
+    layout: QVBoxLayout
+    searchbar_layout: QHBoxLayout
+    tabs_layout: QVBoxLayout
+    state: SuttaSearchWindowStateInterface
+    setting_keys: SuttaPanelSettingKeys
+
 class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
     reload_sutta_pages: Callable
+    find_toolbar: QToolBar
+    find_panel_layout: QHBoxLayout
+    sutta_panels: List[SuttaPanel]
 
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable
@@ -638,7 +680,7 @@ class WordLookupStateInterface(SearchBarInterface):
     link_mouseover: pyqtSignal
     hide_preview: pyqtSignal
 
-class WordLookupInterface(QDialog):
+class WordLookupInterface(QMainWindow):
     center: Callable
     s: WordLookupStateInterface
 
@@ -656,11 +698,15 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
     quote = None
     if 'q' in query.keys():
         quote = query['q'][0]
+    elif 'quote' in query.keys():
+        quote = query['quote'][0]
 
     if quote:
         selection_range = None
         if 'sel' in query.keys():
             selection_range = query['sel'][0]
+        elif 'selection_range' in query.keys():
+            selection_range = query['selection_range'][0]
 
         sutta_quote = SuttaQuote(
             quote = quote,

@@ -211,8 +211,10 @@
     <property name="title">
      <string>&amp;Help</string>
     </property>
-    <addaction name="action_Check_for_Updates"/>
-    <addaction name="action_Notify_About_Updates"/>
+    <addaction name="action_Check_for_Simsapa_Updates"/>
+    <addaction name="action_Check_for_DPD_Updates"/>
+    <addaction name="action_Notify_About_Simsapa_Updates"/>
+    <addaction name="action_Notify_About_DPD_Updates"/>
     <addaction name="action_Website"/>
     <addaction name="action_About"/>
    </widget>
@@ -286,7 +288,7 @@
      <normaloff>:/close</normaloff>:/close</iconset>
    </property>
    <property name="text">
-    <string>&amp;Quit</string>
+    <string>&amp;Quit Simsapa</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+Q</string>
@@ -434,7 +436,7 @@
     <string>Re-download database...</string>
    </property>
   </action>
-  <action name="action_Notify_About_Updates">
+  <action name="action_Notify_About_Simsapa_Updates">
    <property name="checkable">
     <bool>true</bool>
    </property>
@@ -442,7 +444,18 @@
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Notify About Updates</string>
+    <string>Notify About Simsapa Updates</string>
+   </property>
+  </action>
+  <action name="action_Notify_About_DPD_Updates">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Notify About DPD Updates</string>
    </property>
   </action>
   <action name="action_Show_Toolbar">
@@ -533,9 +546,14 @@
     <string>&amp;Ebook Reader</string>
    </property>
   </action>
-  <action name="action_Check_for_Updates">
+  <action name="action_Check_for_Simsapa_Updates">
    <property name="text">
-    <string>Check for Updates...</string>
+    <string>Check for Simsapa Updates...</string>
+   </property>
+  </action>
+  <action name="action_Check_for_DPD_Updates">
+   <property name="text">
+    <string>Check for DPD Updates...</string>
    </property>
   </action>
   <action name="action_Sutta_Index">

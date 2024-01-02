@@ -75,10 +75,11 @@ class Sutta(Base):
 
     id:  Mapped[int] = mapped_column(primary_key=True)
     uid: Mapped[str] = mapped_column(unique=True) # dn1/pli/ms
+    sutta_ref:   Mapped[str] # DN 1
+    nikaya:      Mapped[str] # DN
+    language:    Mapped[str] # pli / en
     group_path:  Mapped[Optional[str]] # /sutta-pitaka/digha-nikaya/silakkhandha-vagga
     group_index: Mapped[Optional[int]] # 1
-    sutta_ref:   Mapped[Optional[str]] # DN 1
-    language:    Mapped[Optional[str]] # pli / en
     order_index: Mapped[Optional[int]]
 
     # sn30.7-16
@@ -115,6 +116,7 @@ class Sutta(Base):
     bookmarks:  Mapped[List["Bookmark"]] = relationship("Bookmark",     back_populates="sutta", passive_deletes=True)
     variant:    Mapped["SuttaVariant"]   = relationship("SuttaVariant", back_populates="sutta", passive_deletes=True, uselist=False)
     comment:    Mapped["SuttaComment"]   = relationship("SuttaComment", back_populates="sutta", passive_deletes=True, uselist=False)
+    gloss:      Mapped["SuttaGloss"]     = relationship("SuttaGloss",   back_populates="sutta", passive_deletes=True, uselist=False)
 
 class SuttaVariant(Base):
     __tablename__ = "sutta_variants"
@@ -148,12 +150,29 @@ class SuttaComment(Base):
 
     sutta: Mapped[Sutta] = relationship("Sutta", back_populates="comment", uselist=False)
 
+class SuttaGloss(Base):
+    __tablename__ = "sutta_glosses"
+
+    id:        Mapped[int] = mapped_column(primary_key=True)
+    sutta_id:  Mapped[int] = mapped_column(ForeignKey("suttas.id", ondelete="CASCADE"), nullable=False)
+    sutta_uid: Mapped[str] # dn1/pli/ms
+
+    language:     Mapped[Optional[str]] # pli / en
+    source_uid:   Mapped[Optional[str]] # ms, bodhi, than
+    content_json: Mapped[Optional[str]]
+
+    created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    sutta: Mapped[Sutta] = relationship("Sutta", back_populates="gloss", uselist=False)
+
 class Dictionary(Base):
     __tablename__ = "dictionaries"
 
     id:    Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(unique=True)
     title: Mapped[str]
+    dict_type: Mapped[str] # stardict / sql
 
     creator:        Mapped[Optional[str]]
     description:    Mapped[Optional[str]]

@@ -15,14 +15,14 @@ import shutil
 
 from sqlalchemy import and_, or_, not_
 
-from simsapa import IS_SWAY, DbSchemaName, logger
+from simsapa import IS_SWAY, DbSchemaName, logger, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
 from simsapa.app.app_data import AppData
 from simsapa.app.export_helpers import save_suttas_as_epub, save_suttas_as_mobi
-from simsapa.app.types import QueryType, UBookmark, USutta
+from simsapa.app.types import UBookmark, USutta
 
 from simsapa.layouts.gui_types import BookmarksBrowserWindowInterface
 
@@ -518,6 +518,9 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
                                   .query(Um.Sutta) \
                                   .filter(Um.Sutta.uid == str(i.sutta_uid)) \
                                   .first()
+
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
             if r is not None:
                 suttas.append(r)

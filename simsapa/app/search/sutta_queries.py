@@ -6,11 +6,11 @@ from PyQt6.QtCore import QUrl
 
 from sqlalchemy.orm.session import Session
 
-from simsapa import logger
+from simsapa import logger, QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.helpers import consistent_nasal_m, dhp_verse_to_chapter, expand_quote_to_pattern, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
-from simsapa.app.types import QueryType, SuttaQueriesInterface, SuttaQuote, USutta, QuoteScope, QuoteScopeValues
+from simsapa.app.helpers import consistent_niggahita, dhp_verse_to_chapter, expand_quote_to_pattern, is_complete_sutta_uid, normalize_sutta_ref, normalize_sutta_uid, remove_punct, snp_verse_to_uid, thag_verse_to_uid, thig_verse_to_uid
+from simsapa.app.types import SuttaQueriesInterface, USutta
 
 from simsapa.layouts.gui_types import sutta_quote_from_url
 
@@ -28,6 +28,8 @@ class SuttaQueries(SuttaQueriesInterface):
 
         query = parse_qs(url.query())
 
+        quote = sutta_quote_from_url(url)
+
         quote_scope = QuoteScope.Sutta
         if 'quote_scope' in query.keys():
             sc = query['quote_scope'][0]
@@ -36,13 +38,20 @@ class SuttaQueries(SuttaQueriesInterface):
 
         uid = url.path().strip("/")
 
-        sutta = self.get_sutta_by_uid(uid, sutta_quote_from_url(url), quote_scope)
-
+        sutta = self.get_sutta_by_uid(uid, quote, quote_scope)
         if sutta:
             return sutta
 
-        return self.get_sutta_by_ref(uid)
+        sutta = self.get_sutta_by_ref(uid)
+        if sutta:
+            return sutta
 
+        if sutta is None and quote is not None:
+            suttas = self.get_suttas_by_quote(quote['quote'])
+            if len(suttas) > 0:
+                return suttas[0]
+
+        return None
 
     def find_quote_in_suttas(self, suttas: List[USutta], quote: Optional[str] = None) -> Optional[USutta]:
         logger.info(f"find_quote_in_suttas(): {len(suttas)} suttas, {quote}")
@@ -51,7 +60,7 @@ class SuttaQueries(SuttaQueriesInterface):
 
         quote = quote.lower()
         quote = remove_punct(quote)
-        quote = consistent_nasal_m(quote)
+        quote = consistent_niggahita(quote)
 
         p = expand_quote_to_pattern(quote)
 
@@ -90,7 +99,7 @@ class SuttaQueries(SuttaQueriesInterface):
 
         res_sutta = None
 
-        if len(uid) > 0 and not self.is_complete_uid(uid):
+        if len(uid) > 0 and not is_complete_sutta_uid(uid):
             res_sutta = self.get_sutta_by_partial_uid(uid, sutta_quote, quote_scope)
 
         if res_sutta is not None:
@@ -162,18 +171,6 @@ class SuttaQueries(SuttaQueriesInterface):
             return None
 
         return multi_refs[0].suttas[0]
-
-
-    def is_complete_uid(self, uid: str) -> bool:
-        uid = uid.strip("/")
-
-        if "/" not in uid:
-            return False
-
-        if len(uid.split("/")) != 3:
-            return False
-
-        return True
 
 
     def get_sutta_by_partial_uid(self,
@@ -284,7 +281,4 @@ class SuttaQueries(SuttaQueriesInterface):
             .all()
         results.extend(res)
 
-        # FIXME expand quote text and match regex
-
         return results
-

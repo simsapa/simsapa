@@ -7,7 +7,7 @@ from PyQt6.QtCore import QUrl
 from simsapa import logger
 from simsapa.app.helpers import strip_html
 from simsapa.app.lookup import RE_ALL_BOOK_SUTTA_REF
-from simsapa.app.types import QueryType, QuoteScope
+from simsapa import QueryType, QuoteScope
 
 def add_sandhi_links(html_page: str) -> str:
     """

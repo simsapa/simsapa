@@ -10,7 +10,7 @@ class UpdatesWorkerSignals(QObject):
     local_db_obsolete = pyqtSignal(dict)
     no_updates = pyqtSignal()
 
-class CheckUpdatesWorker(QRunnable):
+class CheckSimsapaUpdatesWorker(QRunnable):
     signals: UpdatesWorkerSignals
 
     def __init__(self, save_stats = True, screen_size = ''):
@@ -21,7 +21,7 @@ class CheckUpdatesWorker(QRunnable):
 
     @pyqtSlot()
     def run(self):
-        logger.profile("CheckUpdatesWorker::run()")
+        logger.profile("CheckSimsapaUpdatesWorker::run()")
         # Test if connection to is working.
         try:
             import requests

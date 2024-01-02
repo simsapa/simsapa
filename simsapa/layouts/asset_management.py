@@ -741,7 +741,9 @@ class AssetsWorker(QRunnable):
 
             def _not_core_db(s: str) -> bool:
                 p = Path(s)
-                return not p.name == 'appdata.sqlite3' and not p.name == 'userdata.sqlite3'
+                return not p.name == 'appdata.sqlite3' \
+                    and not p.name == 'dpd.sqlite3' \
+                    and not p.name == 'userdata.sqlite3'
 
             p = self.assets_dir.joinpath("*.sqlite3")
             sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
@@ -904,8 +906,10 @@ class AssetsWorker(QRunnable):
             if target_db_path is None:
                 if schema == DbSchemaName.AppData:
                     target_db_path = APP_DB_PATH
-                else:
+                elif schema == DbSchemaName.UserData:
                     target_db_path = USER_DB_PATH
+                else:
+                    raise Exception("Only appdata and userdata schema are allowed.")
 
             target_db_eng, target_db_conn, target_db_session = get_db_session_with_schema(target_db_path, schema)
 
@@ -914,8 +918,10 @@ class AssetsWorker(QRunnable):
 
             if schema == DbSchemaName.AppData:
                 import_db_conn.execute(text(f"ATTACH DATABASE '{import_db_path}' AS appdata;"))
-            else:
+            elif schema == DbSchemaName.UserData:
                 import_db_conn.execute(text(f"ATTACH DATABASE '{import_db_path}' AS userdata;"))
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
             Session = sessionmaker(import_db_eng)
             Session.configure(bind=import_db_eng)
@@ -924,8 +930,10 @@ class AssetsWorker(QRunnable):
 
             if schema == DbSchemaName.AppData:
                 res = import_db_session.query(Am.Sutta).all()
-            else:
+            elif schema == DbSchemaName.UserData:
                 res = import_db_session.query(Um.Sutta).all()
+            else:
+                raise Exception("Only appdata and userdata schema are allowed.")
 
             logger.info(f"Importing to {schema.value}, {len(res)} suttas from {import_db_path}")
 
@@ -935,12 +943,15 @@ class AssetsWorker(QRunnable):
                 try:
                     import_db_session.expunge(i)
                     make_transient(i)
-                    i.id = None
+                    # Necessary to reset id, otherwise will not get a new id for appdata.
+                    i.id = None # type: ignore
 
                     if schema == DbSchemaName.AppData:
                         old_sutta = target_db_session.query(Am.Sutta).filter(Am.Sutta.uid == i.uid).first()
-                    else:
+                    elif schema == DbSchemaName.UserData:
                         old_sutta = target_db_session.query(Um.Sutta).filter(Um.Sutta.uid == i.uid).first()
+                    else:
+                        raise Exception("Only appdata and userdata schema are allowed.")
 
                     if old_sutta is not None:
                         target_db_session.delete(old_sutta)

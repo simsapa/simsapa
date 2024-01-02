@@ -1,0 +1,7 @@
+<div class="root_button_box">
+    <a class="root_button ${root_info_active}" href="javascript:void(0);" onclick="document.SSP.button_toggle_visible(this, '#root_info_${r.root_}')">root info</a>
+    <a class="root_button" href="javascript:void(0);" onclick="document.SSP.button_toggle_visible(this, '#root_matrix_${r.root_}')">root matrix</a>
+    % for fr in frs:
+        <a class="root_button" href="javascript:void(0);" onclick="document.SSP.button_toggle_visible(this, '#root_family_${r.root_}_${fr.root_family_}')">${fr.root_family}</a>
+    % endfor
+</div>

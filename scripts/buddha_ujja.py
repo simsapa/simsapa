@@ -17,7 +17,7 @@ from simsapa import DbSchemaName, logger
 from simsapa.app.db import userdata_models as Um
 
 import helpers
-from simsapa.app.helpers import compact_rich_text, consistent_nasal_m, pali_to_ascii, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
+from simsapa.app.helpers import compact_rich_text, consistent_niggahita, pali_to_ascii, sutta_range_from_ref, thig_verse_to_uid, dhp_chapter_ref_for_verse_num
 from simsapa.app.dir_helpers import create_app_dirs
 
 load_dotenv()
@@ -126,7 +126,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         s = uid.split('/')[0]
         sutta_ref = helpers.uid_to_ref(s)
 
-        content_text = consistent_nasal_m(str(x.markdown_content))
+        content_text = consistent_niggahita(str(x.markdown_content))
         # line break is two trailing spaces, not trailing \
         content_text = re.sub(r'\\\n', '  \n', content_text)
 
@@ -157,7 +157,7 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
         if not sutta_range:
             logger.error(f"Can't determine sutta range: {uid}")
 
-        title = consistent_nasal_m(title)
+        title = consistent_niggahita(title)
         title_ascii = pali_to_ascii(title)
 
         return Um.Sutta(
@@ -168,12 +168,13 @@ def get_suttas(db_session: Session, limit: Optional[int] = None) -> List[Um.Sutt
 
             title = title,
             title_ascii = title_ascii,
-            title_pali = consistent_nasal_m(x.sutta_title_pali),
+            title_pali = consistent_niggahita(x.sutta_title_pali),
             title_trans = x.sutta_title_trans,
             content_plain = content_plain,
             content_html = content_html,
 
             sutta_ref = sutta_ref,
+            nikaya = helpers.uid_to_nikaya(uid),
             sutta_range_group = sutta_range['group'] if sutta_range else None,
             sutta_range_start = sutta_range['start'] if sutta_range else None,
             sutta_range_end = sutta_range['end'] if sutta_range else None,

@@ -3,7 +3,6 @@
 import os
 import sys
 from pathlib import Path
-import tomlkit
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -29,6 +28,8 @@ import dhammapada_tipitaka_net
 import nyanadipa
 import multi_refs
 import create_links
+import dpd
+import dppn
 
 load_dotenv()
 
@@ -82,22 +83,7 @@ def populate_dict_words_from_stardict(appdata_db: Session,
 
 
 def insert_db_version(appdata_db: Session):
-    p = Path('pyproject.toml')
-    if not p.exists():
-        logger.error("pyproject.toml not found")
-        sys.exit(1)
-
-    with open(p) as f:
-        s = f.read()
-
-    try:
-        t = tomlkit.parse(s)
-        v = t['simsapa']['db_version'] # type: ignore
-        ver = f"{v}"
-    except Exception as e:
-        logger.error(e)
-        sys.exit(1)
-
+    ver = helpers.get_db_version_pyproject()
     item = Am.AppSetting(
         key = "db_version",
         value = ver,
@@ -125,7 +111,7 @@ def main():
 
     insert_db_version(appdata_db)
 
-    nyanatiloka.populate_nyanatiloka_dict_words_from_legacy(appdata_db, BOOTSTRAP_ASSETS_DIR, limit)
+    nyanatiloka.populate_nyanatiloka_from_palikanon_com(appdata_db, limit)
 
     for lang in ['en', 'pli']:
         suttacentral.populate_suttas_from_suttacentral(appdata_db, DbSchemaName.AppData, sc_db, SC_DATA_DIR, lang, limit)
@@ -146,16 +132,31 @@ def main():
 
     multi_refs.populate_sutta_multi_refs(appdata_db, limit)
 
-    # FIXME improve synonym parsing
+    # === Dictionaries ===
+
+    # DPD - Digital Pali Dictionary
+    dpd.prepare_dpd_for_dist(appdata_db, BOOTSTRAP_ASSETS_DIR)
+    dpd_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("dpd.sqlite3")
+
+    # DPPN - Dictionary of Pali Proper Names
+    dppn.populate_dppn_from_palikanon_com(appdata_db, limit)
+
+    # Stardict formats
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)
 
     # === All dict words are added above ===
 
-    get_and_save_completions(appdata_db, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
-    get_and_save_completions(appdata_db, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    db_session = helpers.get_appdata_with_dpd_session(appdata_db_path, dpd_db_path)
+
+    get_and_save_completions(db_session, SearchArea.Suttas, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+    get_and_save_completions(db_session, SearchArea.DictWords, save_to_schema = DbSchemaName.AppData, load_only_from_appdata=True)
+
+    db_session.close()
 
     # Create db links from ssp:// links after all suttas have been added.
     create_links.populate_links(appdata_db)
+
+    appdata_db.close()
 
 if __name__ == "__main__":
     main()
