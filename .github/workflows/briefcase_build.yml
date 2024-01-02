@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Get Ubuntu version
         id: get-ubuntu-version
-        run: echo ::set-output name=version::$(lsb_release -rs)
+        run: echo "UBUNTU_VERSION="$(lsb_release -rs) >> "$GITHUB_OUTPUT"
 
       - name: Checkout code
         uses: actions/checkout@v3
@@ -44,24 +44,24 @@ jobs:
           sudo apt-get install libncurses5 libgdbm5 libffi6 libegl1 libpulse0 libpcsclite1
 
       - name: Install Qt on Ubuntu 20.04
-        if: steps.get-ubuntu-version.outputs.version == '20.04'
+        if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '20.04' }}
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.4.2'
 
       - name: Install Qt on Ubuntu 22.04
-        if: steps.get-ubuntu-version.outputs.version == '22.04'
+        if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '22.04' }}
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.2'
 
       - name: Modify Qt version in pyproject.toml for Ubuntu 20.04
-        if: steps.get-ubuntu-version.outputs.version == '20.04'
+        if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '20.04' }}
         run: |
           sed -i '/--- ubuntu-22.04 ---/,/--- ubuntu-22.04 end ---/d' pyproject.toml
 
       - name: Modify Qt version in pyproject.toml for Ubuntu 22.04
-        if: steps.get-ubuntu-version.outputs.version == '22.04'
+        if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '22.04' }}
         run: |
           sed -i '/--- ubuntu-20.04 ---/,/--- ubuntu-20.04 end ---/d' pyproject.toml
 
@@ -72,12 +72,6 @@ jobs:
         run: |
           python -m pip install briefcase==0.3.11
           python -m pip install MarkupSafe==2.1.1
-
-      - name: Install Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
 
       - name: Install maturin
         run: |
@@ -98,21 +92,21 @@ jobs:
       # "./tantivy-py/target/wheels/tantivy-0.20.2rc1-cp311-cp311-manylinux_2_31_x86_64.whl"
 
       - name: correct wheel file name in pyproject.toml
-        if: steps.get-ubuntu-version.outputs.version == '20.04'
+        if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '20.04' }}
         run: |
           sed -i 's/\(tantivy-.*-manylinux\)_2_34_x86_64.whl/\1_2_31_x86_64.whl/' pyproject.toml
 
       - name: Linux Create and Build Without Docker
         if: runner.os == 'Linux'
         run: |
-          briefcase create --no-docker
-          briefcase build --no-docker
+          briefcase create linux appimage --no-docker
+          briefcase build linux appimage --no-docker
 
       - name: Windows / Mac Create and Build Bundle
         if: runner.os != 'Linux'
         run: |
-          briefcase create
-          briefcase build
+          briefcase create linux appimage
+          briefcase build linux appimage
 
       - name: Package Mac
         if: runner.os == 'macOS'
@@ -124,7 +118,7 @@ jobs:
 
       - name: Package Linux
         if: runner.os == 'Linux'
-        run: briefcase package --no-docker
+        run: briefcase package linux appimage --no-docker
 
       - name: Upload Artifact for Linux
         uses: actions/upload-artifact@v3

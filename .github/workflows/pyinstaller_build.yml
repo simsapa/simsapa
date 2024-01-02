@@ -32,10 +32,12 @@ jobs:
 
       - name: Install Node
         uses: actions/setup-node@v4
+        if: runner.os == 'MacOS'
         with:
           node-version: 20
 
       - name: Install Node libs
+        if: runner.os == 'MacOS'
         run: npm install --global create-dmg
 
       - name: Install Python pip

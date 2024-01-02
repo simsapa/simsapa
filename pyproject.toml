@@ -125,7 +125,7 @@ to = {format = "setuppy", path = "setup.py"}
 
 [tool.briefcase]
 project_name = "Simsapa Dhamma Reader"
-bundle = "io.github"
+bundle = "app.pali"
 # briefcase requires PEP440 version strings
 version = "0.5.0a1"
 url = "https://github.com/simsapa/simsapa"
