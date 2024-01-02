@@ -1,4 +1,8 @@
-import platform
+import platform, shutil, sqlite3
+from pathlib import Path
+
+from simsapa import APP_DB_PATH, ASSETS_DIR
+
 from doit.tools import title_with_actions
 
 DOIT_CONFIG = {
@@ -121,3 +125,42 @@ def task_build_macos_dmg():
         'targets': ['dist/Simsapa Dhamma Reader.dmg'],
         'clean': True,
     }
+
+def task_remove_local_db():
+    """Delete the local database and index files."""
+    def _task():
+        shutil.rmtree(ASSETS_DIR)
+    return {'actions': [_task]}
+
+def task_set_development_channel_local_db():
+    """Set release_channel to 'development' in local db."""
+    def _task():
+        update_release_channel(APP_DB_PATH, 'development')
+    return {'actions': [_task]}
+
+def task_set_main_channel_local_db():
+    """Set release_channel to 'main' in local db."""
+    def _task():
+        update_release_channel(APP_DB_PATH, 'main')
+    return {'actions': [_task]}
+
+def update_release_channel(db_path: Path, release_channel: str):
+    if not db_path.exists():
+        print(f"File does not exist: {db_path}")
+        return False
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM app_settings WHERE key = 'release_channel'")
+    r = cursor.fetchone()
+
+    if r is None:
+        cursor.execute("INSERT INTO app_settings (key, value) VALUES ('release_channel', ?);",
+                       (release_channel,))
+    else:
+        cursor.execute("UPDATE app_settings SET value = ? WHERE key = 'release_channel';",
+                       (release_channel,))
+
+    conn.commit()
+    conn.close()
