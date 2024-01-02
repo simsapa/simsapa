@@ -157,6 +157,35 @@ class AssetManagement(QMainWindow):
                 compat["suttas_lang"] = [lang for lang in compat["suttas_lang"] if lang not in already_have_langs]
 
         self.compat_release = compat
+
+        msg: Optional[str] = None
+
+        if self.releases_info is None:
+            msg = f"""
+            <p>Error: The network request to get the list of databases failed.</p>
+            <p>Release channel: {get_release_channel()}</p>
+            """
+
+        if self.compat_release is None:
+            msg = f"""
+            <p>Error: There is no compatible database to download.</p>
+            <p>Release channel: {get_release_channel()}</p>
+            """
+
+        if msg:
+            self._msg.setText(msg)
+
+            self._quit_button = QPushButton("Quit")
+            self._quit_button.setFixedSize(100, 30)
+            self._quit_button.clicked.connect(partial(self._handle_quit))
+
+            button_layout = QHBoxLayout()
+            button_layout.addWidget(self._quit_button)
+
+            self._layout.addLayout(button_layout)
+
+            return
+
         self._setup_selection()
 
         if self.auto_start_download:
