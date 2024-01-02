@@ -2,6 +2,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from simsapa import logger, DPD_RELEASES_BASE_URL
 from simsapa.app.db_session import get_dpd_db_version
+from simsapa.app.helpers import is_valid_date
 from simsapa.layouts.gui_helpers import get_version_tags_from_github_feed
 
 class UpdatesWorkerSignals(QObject):
@@ -33,11 +34,8 @@ class CheckDpdUpdatesWorker(QRunnable):
 
         try:
             version_tags = get_version_tags_from_github_feed(feed_url)
-            logger.info(version_tags)
 
             # FIXME show user the error messages
-
-            # Currently the DPD version is the release date, e.g 2023-11-27
 
             if len(version_tags) == 0:
                 logger.error(f"Cannot get the latest dpd_db version info from url: {feed_url}.")
@@ -45,6 +43,13 @@ class CheckDpdUpdatesWorker(QRunnable):
                 return
 
             dpd_release_version_tag = version_tags[0]
+
+            # Currently the DPD version is the release date, e.g 2023-11-27
+            # Check that version tag is in this format.
+            if not is_valid_date(dpd_release_version_tag):
+                logger.error(f"Version tag is not iso date: {dpd_release_version_tag}")
+                return None
+
             remote_version = int(dpd_release_version_tag.replace("-", ""))
 
             res = get_dpd_db_version()

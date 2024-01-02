@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Dict, Optional, TypedDict
 import re, socket
 import html, json
+from datetime import datetime
 
 from simsapa import logger
 from simsapa.app.lookup import (RE_ALL_BOOK_SUTTA_REF, RE_ALL_PTS_VOL_SUTTA_REF, DHP_CHAPTERS_TO_RANGE,
@@ -611,3 +612,10 @@ def is_complete_word_uid(uid: str) -> bool:
     # Check if uid contains a /, i.e. if it specifies the dictionary
     # (dhammacakkhu/dpd).
     return ("/" in uid.strip("/"))
+
+def is_valid_date(date_string: str) -> bool:
+   try:
+       datetime.strptime(date_string, '%Y-%m-%d')
+       return True
+   except ValueError:
+       return False
