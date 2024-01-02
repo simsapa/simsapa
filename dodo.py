@@ -24,11 +24,13 @@ def task_update_build_open():
 
     return {
         'actions': [
-            'git pull',
+            'git checkout %(branch)s',
+            'git pull origin %(branch)s',
             'poetry install',
-            'poetry run doit',
+            'poetry run doit build',
             open_cmd,
         ],
+        'params': [{'name': 'branch', 'long': 'branch', 'default': 'main', 'help': 'Specify the git branch.'}],
         'title': title_with_actions,
     }
 
