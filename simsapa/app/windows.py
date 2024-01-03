@@ -24,7 +24,7 @@ from simsapa.layouts.gui_types import (
     SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
     sutta_quote_from_url)
 
-from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo
+from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo, is_sutta_search_window, is_sutta_study_window, is_dictionary_search_window, is_ebook_reader_window
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.help_info import open_simsapa_website, show_about
 from simsapa.layouts.preview_window import PreviewWindow
@@ -1890,22 +1890,3 @@ def show_work_in_progress():
     d.setText("Work in Progress")
     d.exec()
 
-def is_sutta_search_window(w: AppWindowInterface) -> bool:
-    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
-         and isinstance(w, SuttaSearchWindowInterface))
-    return r
-
-def is_sutta_study_window(w: AppWindowInterface) -> bool:
-    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
-         and isinstance(w, SuttaStudyWindowInterface))
-    return r
-
-def is_dictionary_search_window(w: AppWindowInterface) -> bool:
-    r = (str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
-         and isinstance(w, DictionarySearchWindowInterface))
-    return r
-
-def is_ebook_reader_window(w: AppWindowInterface) -> bool:
-    r = (str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
-         and isinstance(w, EbookReaderWindowInterface))
-    return r

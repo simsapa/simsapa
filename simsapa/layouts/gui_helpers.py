@@ -16,7 +16,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
 from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
-from simsapa.layouts.gui_types import SearchBarInterface
+from simsapa.layouts.gui_types import AppWindowInterface, DictionarySearchWindowInterface, EbookReaderWindowInterface, SearchBarInterface, SuttaSearchWindowInterface, SuttaStudyWindowInterface
 
 
 class Version(TypedDict):
@@ -456,3 +456,23 @@ def get_search_params(w: SearchBarInterface) -> SearchParams:
         enable_regex = enable_regex,
         fuzzy_distance = fuzzy_distance,
     )
+
+def is_sutta_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_search.SuttaSearchWindow'>" \
+         and isinstance(w, SuttaSearchWindowInterface))
+    return r
+
+def is_sutta_study_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.sutta_study.SuttaStudyWindow'>" \
+         and isinstance(w, SuttaStudyWindowInterface))
+    return r
+
+def is_dictionary_search_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.dictionary_search.DictionarySearchWindow'>" \
+         and isinstance(w, DictionarySearchWindowInterface))
+    return r
+
+def is_ebook_reader_window(w: AppWindowInterface) -> bool:
+    r = (str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
+         and isinstance(w, EbookReaderWindowInterface))
+    return r

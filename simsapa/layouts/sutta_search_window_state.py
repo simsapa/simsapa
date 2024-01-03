@@ -21,8 +21,9 @@ from simsapa.app.helpers import is_book_sutta_ref, is_complete_sutta_uid
 
 from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
+from simsapa.layouts.gui_helpers import is_sutta_search_window, is_sutta_study_window
 
-from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData
+from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData, WindowType
 from simsapa.layouts.gui_types import sutta_quote_from_url
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
@@ -727,11 +728,29 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if active_sutta is None:
             return
 
-        url = QUrl(f"ssp://{QueryType.suttas.value}/{active_sutta.uid}")
+        api_url = self._app_data.api_url
+        if api_url is None:
+            api_url = "ssp://"
+
+        # http://localhost:4848/suttas/dhp167-178/pli/ms?quote=andhabhūto+ayaṁ+loko&window_type=Sutta+Study
+        url = QUrl(f"{api_url}/{QueryType.suttas.value}/{active_sutta.uid}")
+
+        query = dict()
 
         quote = self._get_selection()
         if quote is not None and len(quote) > 0:
-            url.setQuery(urlencode({'q': quote}))
+            query['quote'] = quote
+
+        window_type: Optional[WindowType] = None
+        if is_sutta_search_window(self.pw):
+            window_type = WindowType.SuttaSearch
+        elif is_sutta_study_window(self.pw):
+            window_type = WindowType.SuttaStudy
+
+        if window_type is not None:
+            query['window_type'] = window_type.value
+
+        url.setQuery(urlencode(query))
 
         self._app_data.clipboard_setText(url.toString())
 

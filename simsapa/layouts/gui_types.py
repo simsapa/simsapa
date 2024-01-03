@@ -28,12 +28,12 @@ class ReleaseChannel(str, Enum):
     Main = 'main'
     Development = 'development'
 
-class WindowType(int, Enum):
-    SuttaSearch = 0
-    SuttaStudy = 1
-    DictionarySearch = 2
-    EbookReader = 3
-    WordLookup = 4
+class WindowType(str, Enum):
+    SuttaSearch = "Sutta Search"
+    SuttaStudy = "Sutta Study"
+    DictionarySearch = "Dictionary Search"
+    EbookReader = "Ebook Reader"
+    WordLookup = "Word Lookup"
 
 class WindowPosSize(TypedDict):
     x: int
