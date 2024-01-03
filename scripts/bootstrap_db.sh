@@ -138,7 +138,7 @@ echo "=== Create sanskrit-appdata.tar.bz2 ==="
 
 cd "$ASSETS_DIR" || exit
 
-tar cjf sanskrit-appdata.tar.bz2 appdata.sqlite3
+tar cjf sanskrit-appdata.tar.bz2 dpd.sqlite3 appdata.sqlite3
 
 cd - || exit
 
