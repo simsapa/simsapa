@@ -66,7 +66,7 @@ def generate_simsapa_link(source: str, example: Optional[str] = None) -> str:
 
             quote = q.strip()
 
-        url.setQuery(urlencode({'q': quote, 'quote_scope': QuoteScope.Nikaya.value}))
+        url.setQuery(urlencode({'quote': quote, 'quote_scope': QuoteScope.Nikaya.value}))
 
     return url.toString()
 

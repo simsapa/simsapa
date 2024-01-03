@@ -695,10 +695,8 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
     query = parse_qs(url.query())
 
     sutta_quote = None
-    quote = None
-    if 'q' in query.keys():
-        quote = query['q'][0]
-    elif 'quote' in query.keys():
+    quote: Optional[str] = None
+    if 'quote' in query.keys():
         quote = query['quote'][0]
 
     if quote:

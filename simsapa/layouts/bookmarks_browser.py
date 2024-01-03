@@ -363,7 +363,7 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
 
         quote = data[idx.row()][SuttaModelColToIdx['Quote']]
         if quote is not None and len(quote) > 0:
-            query.addQueryItem('q', quote_plus(quote))
+            query.addQueryItem('quote', quote_plus(quote))
 
         sel_range = data[idx.row()][SuttaModelColToIdx['_selection_range']]
         if sel_range is not None and len(sel_range) > 0:
@@ -548,7 +548,7 @@ class BookmarksBrowserWindow(BookmarksBrowserWindowInterface, HasBookmarkDialog)
 
         quote = data[val.row()][SuttaModelColToIdx['Quote']]
         if quote is not None and len(quote) > 0:
-            query.addQueryItem('q', quote_plus(quote))
+            query.addQueryItem('quote', quote_plus(quote))
 
         sel_range = data[val.row()][SuttaModelColToIdx['_selection_range']]
         if sel_range is not None and len(sel_range) > 0:

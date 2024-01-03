@@ -270,11 +270,11 @@ class PreviewWindow(QDialog):
                     return True
 
                 query = parse_qs(url.query())
-                quote = None
-                if 'q' in query.keys():
-                    quote = query['q'][0]
+                quote_text: Optional[str] = None
+                if 'quote' in query.keys():
+                    quote_text = query['quote'][0]
 
-                self._render_sutta(sutta, quote)
+                self._render_sutta(sutta, quote_text)
 
             return True
 

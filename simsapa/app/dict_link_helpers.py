@@ -120,7 +120,7 @@ def add_example_links(html_page: str) -> str:
                 sutta_uid = f"{ref.group(1)}{ref.group(2)}".lower()
 
                 url = QUrl(f"ssp://{QueryType.suttas.value}/{sutta_uid}")
-                url.setQuery(urlencode({'q': quote, 'quote_scope': QuoteScope.Nikaya.value}))
+                url.setQuery(urlencode({'quote': quote, 'quote_scope': QuoteScope.Nikaya.value}))
 
                 link = f'<a href="{url.toString()}">{m[2]}</a>'
 
