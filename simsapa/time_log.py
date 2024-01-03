@@ -1,10 +1,9 @@
 from enum import Enum
-from pathlib import Path
 from string import Template
 from datetime import datetime
 from datetime import timedelta
 
-PROFILE_LOG_FILE = Path("profile_time.dat")
+from simsapa import PROFILE_LOG_FILE
 
 # https://stackoverflow.com/questions/8906926/formatting-timedelta-objects#49226644
 

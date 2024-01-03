@@ -66,6 +66,8 @@ else:
 
 SIMSAPA_LOG_PATH = SIMSAPA_DIR.joinpath('log.txt')
 
+PROFILE_LOG_FILE = SIMSAPA_DIR.joinpath('profile_time.dat')
+
 SIMSAPA_API_DEFAULT_PORT = 4848
 
 SIMSAPA_API_PORT_PATH = SIMSAPA_DIR.joinpath("api-port.txt")
