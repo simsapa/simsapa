@@ -1,4 +1,4 @@
-import csv, re, json, os, shutil
+import csv, re, json, os, sys, shutil
 import os.path
 from pathlib import Path
 from functools import partial
@@ -199,21 +199,21 @@ class AppData:
     def _get_db_engine_connection_session(self, app_db_path, user_db_path, dpd_db_path) -> Tuple[Engine, Connection, Session]:
         if not os.path.isfile(app_db_path):
             logger.error(f"Database file doesn't exist: {app_db_path}")
-            exit(1)
+            sys.exit(1)
 
         # FIXME avoid loading alembic just for getting a db session
         # upgrade_db(app_db_path, DbSchemaName.AppData.value)
 
         if not os.path.isfile(user_db_path):
             logger.error(f"Database file doesn't exist: {user_db_path}")
-            exit(1)
+            sys.exit(1)
 
         # FIXME avoid loading alembic just for getting a db session
         # upgrade_db(user_db_path, DbSchemaName.UserData.value)
 
         if not os.path.isfile(dpd_db_path):
             logger.error(f"Database file doesn't exist: {dpd_db_path}")
-            exit(1)
+            sys.exit(1)
 
         try:
             # Create an in-memory database
@@ -232,7 +232,7 @@ class AppData:
 
         except Exception as e:
             logger.error(f"Can't connect to database: {e}")
-            exit(1)
+            sys.exit(1)
 
         return (db_eng, db_conn, db_session)
 
@@ -364,7 +364,7 @@ class AppData:
     def _find_app_data_or_exit(self):
         if not APP_DB_PATH.exists():
             logger.error("Cannot find appdata.sqlite3")
-            exit(1)
+            sys.exit(1)
         else:
             return APP_DB_PATH
 
