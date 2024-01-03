@@ -768,22 +768,26 @@ class AssetsWorker(QRunnable):
             # Remove the temp folder where the assets were extraced to.
             shutil.rmtree(extract_temp_dir)
 
-            def _not_core_db(s: str) -> bool:
-                p = Path(s)
-                return not p.name == 'appdata.sqlite3' \
-                    and not p.name == 'dpd.sqlite3' \
-                    and not p.name == 'userdata.sqlite3'
+            # NOTE: Not using this mechanism at the moment. This was an idea to
+            # deliver additional .sqlite3 files with appdata.tar.gz, import them
+            # and remove the .sqlite3 which are not core to the application.
 
-            p = self.assets_dir.joinpath("*.sqlite3")
-            sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
+            # def _not_core_db(s: str) -> bool:
+            #     p = Path(s)
+            #     return not p.name == 'appdata.sqlite3' \
+            #         and not p.name == 'dpd.sqlite3' \
+            #         and not p.name == 'userdata.sqlite3'
+
+            # p = self.assets_dir.joinpath("*.sqlite3")
+            # sqlite_files = list(filter(_not_core_db, glob.glob(f"{p}")))
 
             # # NOTE: Not currently using this mechanism for anything
             # # If there are any other .sqlite3 files than appdata and userdata, import it to appdata
             # for i in sqlite_files:
             #     self.import_suttas_to_appdata(Path(i))
 
-            for i in sqlite_files:
-                Path(i).unlink()
+            # for i in sqlite_files:
+            #     Path(i).unlink()
 
         except Exception as e:
             msg = "%s" % e
@@ -847,6 +851,12 @@ class AssetsWorker(QRunnable):
         p = Path(f"{extract_temp_dir}/appdata.sqlite3")
         if p.exists():
             shutil.move(p, self.assets_dir.joinpath('appdata.sqlite3'))
+
+    def import_move_dpd(self, extract_temp_dir: Path):
+        # Move dpd to assets.
+        p = Path(f"{extract_temp_dir}/dpd.sqlite3")
+        if p.exists():
+            shutil.move(p, self.assets_dir.joinpath('dpd.sqlite3'))
 
     def import_move_courses_data(self, extract_temp_dir: Path):
         # If Pali Course assets were included, move them to assets.
@@ -920,6 +930,7 @@ class AssetsWorker(QRunnable):
 
     def import_assets_from_extract_temp(self, extract_temp_dir: Path):
         self.import_move_appdata(extract_temp_dir)
+        self.import_move_dpd(extract_temp_dir)
         self.import_move_courses_data(extract_temp_dir)
         self.import_move_html_resources_data(extract_temp_dir)
         self.import_move_index(extract_temp_dir)
