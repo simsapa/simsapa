@@ -246,18 +246,22 @@ def render_sutta_content(app_data: AppData, sutta: USutta, sutta_quote: Optional
 
     css_extra = f"html {{ font-size: {font_size}px; }} body {{ max-width: {max_width}ex; }}"
 
-    js_extra = f"const SUTTA_UID = '{sutta.uid}';"
+    js_extra = f" const SUTTA_UID = '{sutta.uid}';"
 
     is_on = app_data.app_settings.get('show_bookmarks', True)
     if is_on:
-        js_extra += "const SHOW_BOOKMARKS = true;"
+        js_extra += " const SHOW_BOOKMARKS = true;"
     else:
-        js_extra += "const SHOW_BOOKMARKS = false;"
+        js_extra += " const SHOW_BOOKMARKS = false;"
 
     if sutta_quote:
         text = sutta_quote['quote'].replace('"', '\\"')
-        selection_range = sutta_quote['selection_range'] if sutta_quote['selection_range'] is not None else 0
-        js_extra += """document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s", "%s"); });""" % (text, selection_range)
+        # selection_range = sutta_quote['selection_range'] if sutta_quote['selection_range'] is not None else 0
+        # NOTE: highlight_and_scroll_to() doesn't take selection_range argument at the moment.
+        js_extra += """
+        document.addEventListener("DOMContentLoaded", function(event) { highlight_and_scroll_to("%s"); });
+        const SHOW_QUOTE = "%s";
+        """ % (text, text)
 
     html = html_page(content, app_data.api_url, css_extra, js_extra)
 

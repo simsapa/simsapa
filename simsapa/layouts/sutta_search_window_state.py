@@ -67,6 +67,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
     page_dblclick = pyqtSignal()
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
+    show_find_panel = pyqtSignal(str)
     open_gpt_prompt = pyqtSignal(dict)
 
     def __init__(self,
@@ -246,6 +247,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
 
         page.helper.bookmark_edit.connect(partial(self.handle_edit_bookmark))
+        page.helper.show_find_panel.connect(partial(self._emit_show_find_panel))
 
         if self.custom_create_context_menu_fn:
             qwe = SimsapaWebEngine(page, self.custom_create_context_menu_fn)
@@ -917,9 +919,14 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if active_sutta is not None:
             self._add_related_tabs(active_sutta)
 
-    def _handle_show_find_panel(self):
+    def _handle_show_find_panel(self, text = ''):
+        logger.info(f"_handle_show_find_panel(): {text}")
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
+        self._find_panel.search_input.setText(text)
+
+    def _emit_show_find_panel(self, text = ''):
+        self.show_find_panel.emit(text)
 
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.link_mouseover.connect(partial(preview_window.link_mouseover))

@@ -1,3 +1,5 @@
+document.qt_channel = null;
+
 function toggle_variant (event) {
     let el = event.target;
     el.parentNode.querySelectorAll(".variant").forEach((i) => {
@@ -60,8 +62,8 @@ function process_bookmarks_with_quote_only(bookmarks) {
     let body = document.querySelector('body');
     let text = body.innerHTML;
 
-    bookmarks.forEach((bm) => {
-        let quote = expand_quote_to_pattern(bm.quote);
+    bookmarks.forEach((_bm) => {
+        // let quote = expand_quote_to_pattern(bm.quote);
         let regex = new RegExp(s, 'gi');
 
         text = text.replace(regex, '<mark class="highlight">$&</mark>');
@@ -83,7 +85,7 @@ function toggle_show_comment (bookmark_schema_id) {
 
 function add_bookmark_comment (el) {
     let comment_text = el.getAttribute('data-comment-text');
-    let comment_attr_json = el.getAttribute('data-comment-attr-json');
+    // let comment_attr_json = el.getAttribute('data-comment-attr-json');
 
     let bookmark_schema_id = el.getAttribute('data-bookmark-schema-id');
 
@@ -201,6 +203,20 @@ function get_bookmarks_and_highlight() {
 }
 
 function highlight_and_scroll_to (highlight_text) {
+    /*
+      This doesn't work on text which spans across HTML tags, such as:
+
+     <p class="bodytext">
+       <span class="bld">andhabhūto</span>ti imaṁ dhammadesanaṁ satthā aggāḷave cetiye viharanto ekaṁ pesakāradhītaraṁ ārabbha kathesi.
+     </p>
+
+     A selection of 'andhabhūtoti imaṁ dhammadesanaṁ' will not be matched, and
+     the highlight <mark><mark/> can't be added.
+
+     The browser's Find function can find these text, so when the HTML didn't
+     match, send a signal to trigger Find.
+    */
+
     let s = expand_quote_to_pattern(highlight_text);
     const regex = new RegExp(s, 'gi');
 
@@ -209,6 +225,10 @@ function highlight_and_scroll_to (highlight_text) {
 
     const m = main_html.match(regex);
     if (m == null) {
+        // When the HTML didn't match, send a signal to trigger the Find Panel.
+        if (document.qt_channel !== null) {
+            document.qt_channel.objects.helper.emit_show_find_panel(highlight_text);
+        }
         return;
     }
     matched_html = m[0];
@@ -253,9 +273,7 @@ function get_selection_data () {
     return JSON.stringify(data);
 }
 
-document.qt_channel = null;
-
-document.addEventListener("DOMContentLoaded", function(event) {
+document.addEventListener("DOMContentLoaded", function(_event) {
     rangy.init();
 
     get_bookmarks_and_highlight();
@@ -266,25 +284,4 @@ document.addEventListener("DOMContentLoaded", function(event) {
     document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_comment);
     });
-
-    new QWebChannel(qt.webChannelTransport, function (channel) {
-        document.qt_channel = channel;
-        var res = document.querySelectorAll("a");
-        var arr = [];
-
-        res.forEach((el) => {
-            var href = el.getAttribute('href');
-            if (href !== null && href.startsWith('ssp://')) {
-                arr.push(el);
-            }
-        });
-
-        arr.forEach(el => add_hover_events(el, channel));
-
-        let body = document.querySelector("body");
-        body.addEventListener("dblclick", function(body) {
-            channel.objects.helper.page_dblclick();
-        });
-    });
-
 });

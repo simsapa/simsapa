@@ -5,7 +5,9 @@ interface Document {
 
 declare var qt: any;
 
-const enum QWebChannelMessageTypes {
+declare var SHOW_QUOTE: string | null | undefined;
+
+declare const enum QWebChannelMessageTypes {
   signal = 1,
   propertyUpdate = 2,
   init = 3,
@@ -22,7 +24,7 @@ type QWebChannelTransport = {
   webChannelTransport: any;
 }
 
-class QWebChannel {
+declare class QWebChannel {
   constructor (transport: WebSocket, initCallback: (channel: QWebChannel) => void);
 
   objects: any;

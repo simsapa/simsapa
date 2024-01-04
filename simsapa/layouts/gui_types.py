@@ -577,6 +577,7 @@ class SuttaSearchWindowStateInterface(SearchBarInterface):
     page_dblclick: pyqtSignal
     hide_preview: pyqtSignal
     bookmark_edit: pyqtSignal
+    show_find_panel: pyqtSignal
     open_gpt_prompt: pyqtSignal
 
     _show_sutta_by_uid: Callable

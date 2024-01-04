@@ -30,7 +30,17 @@ function if_page_not_full_load_results(): void {
 document.addEventListener("DOMContentLoaded", function(_event) {
     new QWebChannel(qt.webChannelTransport, function (channel) {
         document.qt_channel = channel;
-        let arr = document.querySelectorAll("a");
+
+        let res = document.querySelectorAll("a");
+        let arr = [];
+
+        res.forEach((el) => {
+            var href = el.getAttribute('href');
+            if (href !== null && href.startsWith('ssp://')) {
+                arr.push(el);
+            }
+        });
+
         arr.forEach(el => qch.add_hover_events(el, channel));
 
         let body = document.querySelector("body");
@@ -38,6 +48,10 @@ document.addEventListener("DOMContentLoaded", function(_event) {
             body.addEventListener("dblclick", function (_body) {
                 channel.objects.helper.page_dblclick();
             });
+        }
+
+        if (typeof SHOW_QUOTE !== "undefined" && SHOW_QUOTE !== null) {
+            channel.objects.helper.emit_show_find_panel(SHOW_QUOTE);
         }
 
         if_page_not_full_load_results();

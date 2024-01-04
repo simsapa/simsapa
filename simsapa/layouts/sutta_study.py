@@ -227,6 +227,14 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.find_panel_layout = QHBoxLayout()
         self.find_panel_layout.setContentsMargins(0, 0, 0, 0)
 
+        def _handle_show_find_panel(text = ''):
+            logger.info(f"sutta_study::_handle_show_find_panel(): {text}")
+            self.find_toolbar.show()
+            self.sutta_panels[0]['state']._find_panel.search_input.setFocus()
+            self.sutta_panels[0]['state']._find_panel.search_input.setText(text)
+
+        self.sutta_panels[0]['state'].show_find_panel.connect(partial(_handle_show_find_panel))
+
         for panel in self.sutta_panels:
             self.find_panel_layout.addWidget(panel['state']._find_panel)
             panel['state']._find_panel.closed.connect(self.find_toolbar.hide)

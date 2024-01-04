@@ -23,6 +23,7 @@ class Helper(QObject):
 
     hide_preview = pyqtSignal()
     bookmark_edit = pyqtSignal(str)
+    show_find_panel = pyqtSignal(str)
 
     do_close = pyqtSignal()
     open_new = pyqtSignal()
@@ -79,6 +80,11 @@ class Helper(QObject):
         self.bookmark_edit.emit(schema_and_id)
 
     @pyqtSlot(str)
+    def emit_show_find_panel(self, text: str):
+        logger.info(text)
+        self.show_find_panel.emit(text)
+
+    @pyqtSlot(str)
     def emit_copy_clipboard_text(self, text: str):
         self.copy_clipboard_text.emit(text)
 
@@ -97,7 +103,6 @@ class Helper(QObject):
     @pyqtSlot()
     def emit_load_more_results(self):
         self.load_more_results.emit()
-
 
 class ReaderWebEnginePage(QWebEnginePage):
     """ Custom WebEnginePage to customize how we handle link navigation """

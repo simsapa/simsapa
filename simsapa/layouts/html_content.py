@@ -35,8 +35,12 @@ def html_page(content: str,
         js += "\n\n" + js_extra
 
     if not js_extra or 'SHOW_BOOKMARKS' not in js_extra:
-        js += "const SHOW_BOOKMARKS = false;"
+        js += " const SHOW_BOOKMARKS = false;"
 
+    if not js_extra or 'SHOW_QUOTE' not in js_extra:
+        js += " const SHOW_QUOTE = null;"
+
+    # In suttas.js we expect SHOW_BOOKMARKS to be already set.
     js += SUTTAS_JS
 
     html = str(page_tmpl.substitute(content=content,

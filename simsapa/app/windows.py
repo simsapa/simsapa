@@ -387,23 +387,26 @@ class AppWindows:
                     window_type = t
 
         if window_type == WindowType.SuttaSearch:
-            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
+            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope, new_window=True)
 
         elif window_type == WindowType.SuttaStudy:
-            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope)
+            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope, new_window=True)
 
         return True
 
     def _show_sutta_by_uid_in_search(self,
                                      uid: str,
                                      sutta_quote: Optional[SuttaQuote] = None,
-                                     quote_scope = QuoteScope.Sutta):
+                                     quote_scope = QuoteScope.Sutta,
+                                     new_window = False):
 
         view = None
-        for w in self._windows:
-            if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
-                view = w
-                break
+
+        if not new_window:
+            for w in self._windows:
+                if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
+                    view = w
+                    break
 
         if view is None:
             view = self._new_sutta_search_window()
@@ -413,13 +416,16 @@ class AppWindows:
     def _show_sutta_by_uid_in_study(self,
                                     uid: str,
                                     sutta_quote: Optional[SuttaQuote] = None,
-                                    quote_scope = QuoteScope.Sutta):
+                                    quote_scope = QuoteScope.Sutta,
+                                    new_window = False):
 
         view = None
-        for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
-                view = w
-                break
+
+        if not new_window:
+            for w in self._windows:
+                if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
+                    view = w
+                    break
 
         if view is None:
             view = self._new_sutta_study_window()
