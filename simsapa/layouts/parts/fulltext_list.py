@@ -101,7 +101,7 @@ class HasFulltextList:
         if page_num < 0:
             page_num = 0
 
-        pages_count = self.fulltext_page_input.maximum()
+        # pages_count = self.fulltext_page_input.maximum()
 
         results = self.results_page(page_num)
 
@@ -109,7 +109,10 @@ class HasFulltextList:
             msg = ""
 
         else:
-            msg = f"Page {page_num+1} / {pages_count} of {query_hits} results"
+            # NOTE: Don't show pages_count, currently not accurate because of fulltext paging.
+            # msg = f"Page {page_num+1} / {pages_count} of {query_hits} results"
+
+            msg = f"Page {page_num+1}, {query_hits} results"
 
         self.fulltext_label.setText(msg)
 
