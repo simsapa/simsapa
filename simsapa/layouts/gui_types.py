@@ -86,7 +86,7 @@ def default_search_result_sizes() -> SearchResultSizes:
     return SearchResultSizes(
         header_height = 20,
         snippet_length = 500,
-        snippet_font_size = 10 if IS_MAC else 9,
+        snippet_font_size = 12 if IS_MAC else 10,
         snippet_min_height = 25,
         snippet_max_height = 60,
     )
@@ -598,7 +598,7 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     _select_next_recent: Callable
     _select_prev_recent: Callable
     _toggle_sidebar: Callable
-    results_page: Callable
+    results_page: Callable[[int], List[SearchResult]]
     query_hits: Callable[[], Optional[int]]
     result_pages_count: Callable[[], Optional[int]]
     get_page_num: Callable[[], int]
@@ -651,11 +651,11 @@ class DictionarySearchWindowInterface(AppWindowInterface, SearchBarInterface):
     rightside_tabs: QTabWidget
     palibuttons_frame: QFrame
     action_Reload_Page: QAction
-    results_page: Callable
+    results_page: Callable[[int], List[SearchResult]]
     query_hits: Callable[[], Optional[int]]
     result_pages_count: Callable[[], Optional[int]]
     get_page_num: Callable[[], int]
-    _show_word_by_url: Callable
+    _show_word_by_url: Callable[[QUrl, bool], None]
     _toggle_sidebar: Callable
 
     queue_id: str
@@ -671,7 +671,7 @@ class WordLookupStateInterface(SearchBarInterface):
     connect_preview_window_signals: Callable
 
     _clipboard: Optional[QClipboard]
-    _show_word_by_url: Callable
+    _show_word_by_url: Callable[[QUrl], None]
     _current_words: List[UDictWord]
 
     show_sutta_by_url: pyqtSignal

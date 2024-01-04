@@ -185,7 +185,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
         page.helper.mouseover.connect(partial(self._link_mouseover))
         page.helper.mouseleave.connect(partial(self._link_mouseleave))
-        page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=True, include_exact_query=False))
+        page.helper.dblclick.connect(partial(self._lookup_selection_in_dictionary, show_results_tab=False))
         page.helper.hide_preview.connect(partial(self._emit_hide_preview))
         page.helper.copy_clipboard_text.connect(partial(self._copy_clipboard_text))
         page.helper.copy_clipboard_html.connect(partial(self._copy_clipboard_html))
@@ -362,19 +362,14 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         else:
             return None
 
-    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
+    def _lookup_selection_in_dictionary(self, show_results_tab = False):
         text = self._get_selection()
         if text is not None:
-            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+            self.lookup_in_dictionary(text, show_results_tab)
 
-    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
+    def lookup_in_dictionary(self, query: str, show_results_tab = False):
         self._set_query(query)
         self._handle_query()
-
-        # Avoids unused variable warning.
-        logger.info(f"include_exact_query = {include_exact_query}")
-        # if include_exact_query:
-        #     self._handle_exact_query()
 
         if show_results_tab:
             self.tabs.setCurrentIndex(1)
@@ -442,6 +437,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self._update_fulltext_page_btn(hits)
 
     def _handle_query(self, min_length: int = 4):
+        logger.info("_handle_query()")
         query_text_orig = self.search_input.text().strip()
 
         if not query_text_orig.isdigit() and len(query_text_orig) < min_length:
@@ -494,6 +490,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self._render_words(res)
 
     def _handle_exact_query(self, min_length: int = 4):
+        logger.info("_handle_exact_query()")
         query_text = self.search_input.text().strip()
 
         if not query_text.isdigit() and len(query_text) < min_length:

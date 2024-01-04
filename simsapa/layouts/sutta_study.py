@@ -208,7 +208,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_state.show_words_by_url.connect(partial(self._show_words_by_url))
 
         def _dict(text: str):
-            self.dictionary_state.lookup_in_dictionary(text, show_results_tab = False, include_exact_query = False)
+            self.dictionary_state.lookup_in_dictionary(text, show_results_tab = False)
 
         # Sutta states emit this signal via parent window's handle
         self.lookup_in_dictionary_signal.connect(partial(_dict))
@@ -395,15 +395,15 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 panel['state']._handle_query()
                 return
 
-    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
+    def _lookup_selection_in_dictionary(self, show_results_tab = False):
         for panel in self.sutta_panels:
             text = panel['state']._get_selection()
             if text is not None:
-                self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+                self.lookup_in_dictionary(text, show_results_tab)
                 return
 
-    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True):
-        self.dictionary_state.lookup_in_dictionary(query, show_results_tab, include_exact_query)
+    def lookup_in_dictionary(self, query: str, show_results_tab = False):
+        self.dictionary_state.lookup_in_dictionary(query, show_results_tab)
 
     def _handle_copy(self):
         for panel in self.sutta_panels:

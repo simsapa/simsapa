@@ -312,10 +312,7 @@ class AppWindows:
         if sutta:
             self._new_sutta_search_window(f"uid:{sutta.uid}")
 
-    def _show_words_by_url(self,
-                           url: QUrl,
-                           show_results_tab = True,
-                           include_exact_query = True) -> bool:
+    def _show_words_by_url(self, url: QUrl, show_results_tab = False) -> bool:
         # http://localhost:4848/words/rupa
         # http://localhost:4848/words/55151
         # http://localhost:4848/words/55151/dpd
@@ -343,7 +340,7 @@ class AppWindows:
         if view is None:
             self._new_dictionary_search_window(query)
         else:
-            view._show_word_by_url(url, show_results_tab, include_exact_query)
+            view._show_word_by_url(url, show_results_tab)
 
         return True
 
@@ -635,7 +632,7 @@ class AppWindows:
         self._preview_window = PreviewWindow(self._app_data)
 
         def _words(url: QUrl):
-            self._show_words_by_url(url, show_results_tab=True, include_exact_query=False)
+            self._show_words_by_url(url, show_results_tab=False)
 
         self._preview_window.open_new.connect(partial(self._new_sutta_from_preview))
         self._preview_window.make_windowed.connect(partial(self._new_windowed_preview))
@@ -712,7 +709,7 @@ class AppWindows:
 
             view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
             view.open_words_new_signal.connect(partial(self.open_words_new))
-            view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=False, include_exact_query=False))
+            view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=False))
 
             view.connect_preview_window_signals(self._preview_window)
 
@@ -811,9 +808,9 @@ class AppWindows:
 
     def _sutta_search_quick_lookup_selection(self, view: SuttaSearchWindowInterface):
         query = view.s._get_selection()
-        self._show_word_lookup(query = query, show_results_tab = False, include_exact_query = False)
+        self._show_word_lookup(query = query, show_results_tab = False)
 
-    def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = True, include_exact_query = False):
+    def _show_word_lookup(self, query: Optional[str] = None, show_results_tab = False):
         if self.word_lookup is None:
             self._init_word_lookup()
 
@@ -823,7 +820,7 @@ class AppWindows:
             self.word_lookup.activateWindow()
 
             if query is not None:
-                self.word_lookup.s.lookup_in_dictionary(query, show_results_tab, include_exact_query)
+                self.word_lookup.s.lookup_in_dictionary(query, show_results_tab)
 
     def _toggle_show_dictionary_sidebar(self, view):
         is_on = view.action_Show_Sidebar.isChecked()

@@ -95,12 +95,13 @@ class HasFulltextList:
         self.fulltext_list.clear()
 
         page_num = self.fulltext_page_input.value() - 1
+        # NOTE: Don't return empty list []. When fulltext_page_input is 0, it
+        # could be because we can't determine the result count due to fulltext
+        # paging.
         if page_num < 0:
-            return []
+            page_num = 0
 
         pages_count = self.fulltext_page_input.maximum()
-
-        self.fulltext_list.clear()
 
         results = self.results_page(page_num)
 

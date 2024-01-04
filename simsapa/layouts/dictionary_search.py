@@ -153,18 +153,18 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if text is not None:
             self.lookup_in_new_sutta_window_signal.emit(text)
 
-    def _lookup_selection_in_dictionary(self, show_results_tab = False, include_exact_query = True):
+    def _lookup_selection_in_dictionary(self, show_results_tab = False):
         self.activateWindow()
         text = self._get_selection()
         if text is not None:
-            self.lookup_in_dictionary(text, show_results_tab, include_exact_query)
+            self.lookup_in_dictionary(text, show_results_tab)
 
-    def lookup_in_dictionary(self, query: str, show_results_tab = False, include_exact_query = True, add_recent = True):
+    def lookup_in_dictionary(self, query: str, show_results_tab = False):
         self._set_query(query)
         self._handle_query()
 
-        if include_exact_query:
-            self._handle_exact_query(add_recent)
+        # if include_exact_query:
+        #     self._handle_exact_query(add_recent)
 
         if show_results_tab:
             self.rightside_tabs.setCurrentIndex(0)
@@ -703,7 +703,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             self._app_data.sutta_to_open = results[0]
             self.action_Sutta_Search.activate(QAction.ActionEvent.Trigger)
 
-    def _show_word_by_url(self, url: QUrl, show_results_tab = True, include_exact_query = True):
+    def _show_word_by_url(self, url: QUrl, show_results_tab = False):
         # ssp://words/dhammacakkhu
         # path: /dhammacakkhu
         # bword://localhost/American%20pasqueflower
@@ -716,10 +716,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         logger.info(f"Show Word: {query}")
 
-        self.lookup_in_dictionary(query,
-                                  show_results_tab,
-                                  include_exact_query,
-                                  add_recent=True)
+        self.lookup_in_dictionary(query, show_results_tab)
 
     def _show_word_by_uid(self, uid: str):
         results = self._queries.dictionary_queries.get_words_by_uid(uid)
