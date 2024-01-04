@@ -1163,7 +1163,7 @@ def _parse_path(p: Path) -> Am.Sutta:
     title = consistent_niggahita(p.stem)
     title_ascii = pali_to_ascii(title)
 
-    body = consistent_niggahita(body)
+    body = '<div class="cst4">' + consistent_niggahita(body) + '</div>'
 
     # pitaka = get_pitaka(p)
     # nikaya = get_nikaya(p)
