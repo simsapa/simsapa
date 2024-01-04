@@ -51,7 +51,7 @@ jobs:
       - name: Mac Build .app
         if: runner.os == 'MacOS'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir --windowed --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini" --target-architecture ${{ matrix.arch }} --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa' --hidden-import=tiktoken_ext --hidden-import=tiktoken_ext.openai_public
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --noconfirm --onedir --windowed --clean --noupx -i "simsapa/assets/icons/appicons/simsapa.ico" --add-data "simsapa/assets:simsapa/assets" --add-data "simsapa/alembic:simsapa/alembic" --add-data "simsapa/alembic.ini:simsapa/alembic.ini" --target-architecture ${{ matrix.arch }} --osx-bundle-identifier 'reader.dhamma.simsapa' --hidden-import=tiktoken_ext --hidden-import=tiktoken_ext.openai_public
 
       - name: Mac Build .dmg
         if: runner.os == 'MacOS'
@@ -61,7 +61,7 @@ jobs:
       - name: Windows Build .exe
         if: runner.os == 'Windows'
         run: |
-          pyinstaller run.py --name "Simsapa Dhamma Reader" --onedir --windowed --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini" --hidden-import=tiktoken_ext --hidden-import=tiktoken_ext.openai_public
+          pyinstaller run.py --name "Simsapa Dhamma Reader" --noconfirm --onedir --windowed --clean --noupx -i "simsapa\assets\icons\appicons\simsapa.ico" --add-data "simsapa\assets;simsapa\assets" --add-data "simsapa\alembic;simsapa\alembic" --add-data "simsapa\alembic.ini;simsapa\alembic.ini" --hidden-import=tiktoken_ext --hidden-import=tiktoken_ext.openai_public
 
       - name: Upload Artifact for MacOS
         uses: actions/upload-artifact@v3

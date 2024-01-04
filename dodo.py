@@ -100,6 +100,7 @@ def task_build_macos_app():
     pyinstaller_cmd = """
 pyinstaller run.py \
     --name "Simsapa Dhamma Reader" \
+    --noconfirm \
     --onedir \
     --windowed \
     --clean \
@@ -109,7 +110,7 @@ pyinstaller run.py \
     --add-data "simsapa/alembic:simsapa/alembic" \
     --add-data "simsapa/alembic.ini:simsapa/alembic.ini" \
     --target-architecture %s \
-    --osx-bundle-identifier 'com.profound-labs.dhamma.simsapa' \
+    --osx-bundle-identifier 'reader.dhamma.simsapa' \
     --hidden-import=tiktoken_ext \
     --hidden-import=tiktoken_ext.openai_public
     """ % machine
@@ -233,3 +234,4 @@ def task_profile_time_chart_png():
         'targets': ['profile_time_chart.png'],
         'clean': True,
     }
+
