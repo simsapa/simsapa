@@ -919,11 +919,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if active_sutta is not None:
             self._add_related_tabs(active_sutta)
 
-    def _handle_show_find_panel(self, text = ''):
-        logger.info(f"_handle_show_find_panel(): {text}")
+    def _handle_show_find_panel(self):
         self.find_toolbar.show()
         self._find_panel.search_input.setFocus()
-        self._find_panel.search_input.setText(text)
 
     def _emit_show_find_panel(self, text = ''):
         self.show_find_panel.emit(text)
@@ -949,4 +947,4 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             if self.create_find_toolbar:
                 self._find_panel.closed.connect(self.find_toolbar.hide)
                 self.pw.action_Find_in_Page \
-                    .triggered.connect(self._handle_show_find_panel)
+                    .triggered.connect(partial(self._handle_show_find_panel))

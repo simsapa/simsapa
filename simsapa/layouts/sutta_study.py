@@ -227,13 +227,15 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.find_panel_layout = QHBoxLayout()
         self.find_panel_layout.setContentsMargins(0, 0, 0, 0)
 
-        def _handle_show_find_panel(text = ''):
+        def _show_find_panel_with_text(text = ''):
             logger.info(f"sutta_study::_handle_show_find_panel(): {text}")
             self.find_toolbar.show()
             self.sutta_panels[0]['state']._find_panel.search_input.setFocus()
             self.sutta_panels[0]['state']._find_panel.search_input.setText(text)
 
-        self.sutta_panels[0]['state'].show_find_panel.connect(partial(_handle_show_find_panel))
+        # show_find_panel = pyqtSignal(str)
+        # the signal will send a text argument
+        self.sutta_panels[0]['state'].show_find_panel.connect(partial(_show_find_panel_with_text))
 
         for panel in self.sutta_panels:
             self.find_panel_layout.addWidget(panel['state']._find_panel)
@@ -582,7 +584,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
             .triggered.connect(partial(self._show_search_result_sizes_dialog))
 
         self.action_Find_in_Page \
-            .triggered.connect(self._handle_show_find_panel)
+            .triggered.connect(partial(self._handle_show_find_panel))
 
         self.action_Focus_Dict_Search_Input = QShortcut(QKeySequence("Ctrl+;"), self)
         self.action_Focus_Dict_Search_Input \

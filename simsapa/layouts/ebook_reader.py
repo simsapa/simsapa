@@ -618,7 +618,7 @@ class EbookReaderWindow(EbookReaderWindowInterface):
             .triggered.connect(partial(self.sutta_state._handle_show_related_suttas))
 
         self.action_Find_in_Page \
-            .triggered.connect(self._handle_show_find_panel)
+            .triggered.connect(partial(self._handle_show_find_panel))
 
 class SuttaLinksWorkerSignals(QObject):
     done_chapter_path = pyqtSignal(Path)
