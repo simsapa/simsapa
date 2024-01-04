@@ -515,6 +515,12 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         for panel in self.sutta_panels:
             panel['state']._get_active_tab().render_sutta_content()
 
+    def _show_search_result_sizes_dialog(self):
+        from simsapa.layouts.search_result_sizes_dialog import SearchResultSizesDialog
+        d = SearchResultSizesDialog(self._app_data, self)
+        if d.exec():
+            self.dictionary_state.render_fulltext_page()
+
     def connect_preview_window_signals(self, preview_window: PreviewWindow):
         self.dictionary_state.link_mouseover.connect(partial(preview_window.link_mouseover))
         self.dictionary_state.link_mouseleave.connect(partial(preview_window.link_mouseleave))
@@ -563,6 +569,9 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.action_Decrease_Text_Margins \
             .triggered.connect(partial(self._decrease_text_margins))
+
+        self.action_Search_Result_Sizes \
+            .triggered.connect(partial(self._show_search_result_sizes_dialog))
 
         self.action_Find_in_Page \
             .triggered.connect(self._handle_show_find_panel)

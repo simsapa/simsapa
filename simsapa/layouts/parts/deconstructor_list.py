@@ -1,6 +1,7 @@
 from typing import List
 
 from PyQt6 import QtWidgets
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from simsapa import IS_MAC
 
@@ -81,6 +82,7 @@ class HasDeconstructorList:
         for w in result_wigets:
             item = QListWidgetItem(self.deconstructor_list)
             item.setSizeHint(w.sizeHint())
+            item.setBackground(QColor("#ffffff"))
 
             self.deconstructor_list.addItem(item)
             self.deconstructor_list.setItemWidget(item, w)
