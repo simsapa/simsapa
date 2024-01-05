@@ -237,7 +237,7 @@ class AssetManagement(QMainWindow):
         self.add_languages_title = QLabel(f"<h3>{self.add_languages_title_text}</h3>")
         self.add_languages_select_layout.addWidget(self.add_languages_title)
 
-        self.add_languages_msg = QLabel("<p>Type in the short codes of sutta languages to download, or * to include all.</p>")
+        self.add_languages_msg = QLabel("<p>Type in the short codes of sutta languages to download, or * to download all.</p>")
         self.add_languages_msg.setWordWrap(True)
         self.add_languages_select_layout.addWidget(self.add_languages_msg)
 
@@ -298,7 +298,7 @@ class AssetManagement(QMainWindow):
         self.remove_languages_title = QLabel("<h3>Remove Languages</h3>")
         self.remove_languages_select_layout.addWidget(self.remove_languages_title)
 
-        self.remove_languages_msg = QLabel("<p>Type in the short codes of sutta languages to remove, or * to include all.</p>")
+        self.remove_languages_msg = QLabel("<p>Type in the short codes of sutta languages to remove, or * to remove all.</p>")
         self.remove_languages_msg.setWordWrap(True)
         self.remove_languages_select_layout.addWidget(self.remove_languages_msg)
 
