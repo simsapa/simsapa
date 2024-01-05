@@ -31,7 +31,7 @@ def task_update_build_open():
             'git checkout %(branch)s',
             'git pull origin %(branch)s',
             'poetry install',
-            'poetry run doit build',
+            'doit build',
             open_cmd,
         ],
         'params': [{'name': 'branch',
@@ -61,8 +61,10 @@ def task_build():
 
     elif IS_MAC:
         task = {
-            'actions': [],
-            'file_dep': ['dist/Simsapa Dhamma Reader.dmg'],
+            'actions': [
+                'doit build_macos_app',
+                'doit build_macos_dmg',
+            ],
             'clean': True,
         }
 
@@ -117,8 +119,8 @@ pyinstaller run.py \
 
     return {
         'actions': [pyinstaller_cmd],
-        'targets': ['dist/Simsapa Dhamma Reader.app'],
-        'clean': True,
+        # 'targets': ['dist/Simsapa Dhamma Reader.app'],
+        # 'clean': True,
     }
 
 def task_build_macos_dmg():
@@ -126,9 +128,9 @@ def task_build_macos_dmg():
 
     return {
         'actions': ['./scripts/build_dmg.sh'],
-        'file_dep': ['dist/Simsapa Dhamma Reader.app'],
         'targets': ['dist/Simsapa Dhamma Reader.dmg'],
-        'clean': True,
+        # 'file_dep': ['dist/Simsapa Dhamma Reader.app'],
+        # 'clean': True,
     }
 
 def task_remove_local_db():
