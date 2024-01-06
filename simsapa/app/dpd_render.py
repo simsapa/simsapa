@@ -225,7 +225,7 @@ def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = [])
             family_set = get_family_set_for_pali_word(pw),
         )
 
-    db_parts = _add_parts(dpd_db.tuple())
+    db_parts = _add_parts(dpd_db._tuple())
 
     render_res = render_pali_word_dpd_simsapa_html(db_parts, _get_render_data(), open_details)
 

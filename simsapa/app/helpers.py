@@ -189,7 +189,14 @@ def pali_to_ascii(text: Optional[str] = None) -> str:
     return text.translate(trans).strip()
 
 def word_uid(word: str, dict_label: str) -> str:
-    w = word.replace("'", "").replace('"', '').replace(' ', '-')
+    w = re.sub(r"[\.,;:\(\)]", " ", word)
+    w = w \
+        .replace("'", "") \
+        .replace('"', '') \
+        .replace(' ', '-')
+
+    w = re.sub(r"--+", "-", w)
+
     uid = f"{w}/{dict_label}".lower()
 
     return uid

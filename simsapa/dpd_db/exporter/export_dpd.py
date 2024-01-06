@@ -355,7 +355,7 @@ def generate_dpd_html(
                 family_set = get_family_set_for_pali_word(pw),
             )
 
-        dpd_db_data = [_add_parts(i.tuple()) for i in dpd_db]
+        dpd_db_data = [_add_parts(i._tuple()) for i in dpd_db]
 
         rendered_sizes: List[RenderedSizes] = []
 

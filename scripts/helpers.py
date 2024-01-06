@@ -312,7 +312,8 @@ def get_long_definition_blocks(soup: BeautifulSoup, dict: Am.Dictionary) -> Am.D
     name = strip_html(name_tag.decode_contents())
 
     # Remove number prefixes. e.g. 1. Bījaka; 2. Bījaka
-    name = re.sub(r"^[0-9\. ]+", "", name)
+    name = re.sub(r"^[0-9\. ]+", "", name) \
+             .strip()
 
     # If there is only one header, remove it. The word template will show the title.
     if len(headers) == 1:
@@ -362,6 +363,10 @@ def get_short_definitions(soup: BeautifulSoup,
         name = get_name_fn(item)
         if name is None:
             continue
+
+        # Remove number prefixes. e.g. 1. Bījaka; 2. Bījaka
+        name = re.sub(r"^[0-9\. ]+", "", name) \
+                 .strip()
 
         replace_links_with_bold(soup, item)
         item_html = item.decode_contents()

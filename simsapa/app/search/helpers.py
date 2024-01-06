@@ -394,7 +394,7 @@ def combined_search(queries: GuiSearchQueriesInterface,
     results = unique_search_results(queries.results_page(page_num))
 
     if do_pali_sort:
-        results = sorted(results, key=lambda i: pali_sort_key(i['title']))
+        results = sorted(results, key=lambda i: pali_sort_key(f"{i['title']}.{i['schema_name']}.{i['uid']}"))
 
     res = ApiSearchResult(
         hits = queries.query_hits(),
