@@ -18,16 +18,17 @@ from sqlalchemy.sql import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import make_transient
 
-from simsapa import SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa import DPD_RELEASES_REPO_URL, SIMSAPA_RELEASES_BASE_URL, DbSchemaName, logger, ASSETS_DIR, APP_DB_PATH, USER_DB_PATH
+from simsapa.app.db_helpers import find_or_create_dpd_dictionary, migrate_dpd
 
 from simsapa.app.lookup import LANG_CODE_TO_NAME
 from simsapa.app.app_data import AppData
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
-from simsapa.app.db_session import get_db_session_with_schema
+from simsapa.app.db_session import get_db_engine_connection_session, get_db_session_with_schema
 
-from simsapa.layouts.gui_helpers import ReleaseEntry, ReleasesInfo, get_app_version, get_latest_app_compatible_assets_release, get_release_channel, get_releases_info
+from simsapa.layouts.gui_helpers import ReleaseEntry, ReleaseSection, ReleasesInfo, get_app_version, get_dpd_releases, get_latest_app_compatible_assets_release, get_release_channel, get_simsapa_releases_info
 
 # Keys with underscore prefix will not be shown in table columns.
 LangModelColToIdx = {
@@ -93,7 +94,8 @@ class AssetManagement(QMainWindow):
                       assets_dir = ASSETS_DIR,
                       select_sanskrit_bundle = False,
                       add_languages: List[str] = [],
-                      auto_start_download = False):
+                      auto_start_download = False,
+                      upgrade_dpd = False):
 
         self.assets_dir = assets_dir
         self.index_dir = assets_dir.joinpath('index')
@@ -103,13 +105,15 @@ class AssetManagement(QMainWindow):
         self.init_select_sanskrit_bundle = select_sanskrit_bundle
         self.init_add_languages = add_languages
         self.auto_start_download = auto_start_download
+        self.upgrade_dpd = upgrade_dpd
 
         self.thread_pool = QThreadPool()
-        self.releases_worker = ReleasesWorker()
+        self.releases_worker = ReleasesWorker(upgrade_dpd = self.upgrade_dpd)
         self.asset_worker = AssetsWorker(assets_dir = self.assets_dir,
                                          index_dir = self.index_dir,
                                          courses_dir = self.courses_dir,
-                                         html_resources_dir = self.html_resources_dir)
+                                         html_resources_dir = self.html_resources_dir,
+                                         upgrade_dpd = self.upgrade_dpd)
 
         self.releases_worker.signals.finished.connect(partial(self._releases_finished))
 
@@ -145,18 +149,23 @@ class AssetManagement(QMainWindow):
 
     def _releases_finished(self, info: ReleasesInfo):
         self.releases_info = info
-        compat = get_latest_app_compatible_assets_release(self.releases_info)
 
-        # Filter out the already downloaded languages from the list of available
-        # ones. Otherwise the user might try to re-download a language and cause
-        # an error. To re-download, the language should be removed first.
-        if compat is not None:
-            suttas_index_path = self.index_dir.joinpath('suttas')
-            if suttas_index_path.exists():
-                already_have_langs = [p.name for p in suttas_index_path.iterdir()]
-                compat["suttas_lang"] = [lang for lang in compat["suttas_lang"] if lang not in already_have_langs]
+        if self.upgrade_dpd:
+            self.compat_release = self.releases_info["dpd"]["releases"][0]
 
-        self.compat_release = compat
+        else:
+            compat = get_latest_app_compatible_assets_release(self.releases_info)
+
+            # Filter out the already downloaded languages from the list of available
+            # ones. Otherwise the user might try to re-download a language and cause
+            # an error. To re-download, the language should be removed first.
+            if compat is not None:
+                suttas_index_path = self.index_dir.joinpath('suttas')
+                if suttas_index_path.exists():
+                    already_have_langs = [p.name for p in suttas_index_path.iterdir()]
+                    compat["suttas_lang"] = [lang for lang in compat["suttas_lang"] if lang not in already_have_langs]
+
+            self.compat_release = compat
 
         msg: Optional[str] = None
 
@@ -349,21 +358,22 @@ class AssetManagement(QMainWindow):
 
         assert(self.compat_release is not None)
 
-        s = self.add_languages_input.text().lower().strip()
-        if s != "" and s != "*":
-            s = s.replace(',', ' ')
-            s = re.sub(r'  +', ' ', s)
-            selected_langs = s.split(' ')
+        if not self.upgrade_dpd:
+            s = self.add_languages_input.text().lower().strip()
+            if s != "" and s != "*":
+                s = s.replace(',', ' ')
+                s = re.sub(r'  +', ' ', s)
+                selected_langs = s.split(' ')
 
-            for lang in selected_langs:
-                if lang in ['en', 'pli', 'san']:
-                    continue
-                if lang not in self.compat_release["suttas_lang"]:
-                    QMessageBox.warning(self,
-                                        "Warning",
-                                        f"<p>This language is not available:</p><p>{lang}</p>",
-                                        QMessageBox.StandardButton.Ok)
-                    return
+                for lang in selected_langs:
+                    if lang in ['en', 'pli', 'san']:
+                        continue
+                    if lang not in self.compat_release["suttas_lang"]:
+                        QMessageBox.warning(self,
+                                            "Warning",
+                                            f"<p>This language is not available:</p><p>{lang}</p>",
+                                            QMessageBox.StandardButton.Ok)
+                        return
 
         self._run_download()
 
@@ -395,7 +405,11 @@ class AssetManagement(QMainWindow):
 
         try:
             import requests
-            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
+            if self.upgrade_dpd:
+                url = f"{DPD_RELEASES_REPO_URL}/releases.atom"
+            else:
+                url = SIMSAPA_RELEASES_BASE_URL
+            requests.head(url, timeout=5)
         except Exception as e:
             msg = "No connection, cannot download database: %s" % e
             QMessageBox.warning(self,
@@ -434,13 +448,13 @@ class AssetManagement(QMainWindow):
         version = self.compat_release["version_tag"]
         github_repo = self.compat_release["github_repo"]
 
-        # ensure 'v' prefix
-        if version[0] != 'v':
-            version = 'v' + version
-
         urls = []
 
         if self.include_appdata_downloads:
+            # ensure 'v' prefix
+            if version[0] != 'v':
+                version = 'v' + version
+
             appdata_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/appdata.tar.bz2"
             userdata_tar_url = f"https://github.com/{github_repo}/releases/download/{version}/userdata.tar.bz2"
             index_tar_url    = f"https://github.com/{github_repo}/releases/download/{version}/index.tar.bz2"
@@ -465,6 +479,10 @@ class AssetManagement(QMainWindow):
             # ready to import the sutta languages into.
             if not USER_DB_PATH.exists():
                 urls.append(userdata_tar_url)
+
+        if self.upgrade_dpd:
+            dpd_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/dpd.tar.bz2"
+            urls.append(dpd_tar_url)
 
         # Languages
         s = self.add_languages_input.text().lower().strip()
@@ -610,7 +628,7 @@ class AssetManagement(QMainWindow):
         self._progress_cancel_button.setText("Quit")
         self._progress_cancel_button.clicked.connect(partial(self._handle_quit))
 
-        self._msg.setText("<p>Download completed.</p><p>Quit and start the application again.</p>")
+        self._msg.setText("<p>Completed.</p><p>Quit and start the application again.</p>")
 
     def _download_cancelled(self):
         self.stop_animation()
@@ -669,9 +687,10 @@ class ReleasesWorkerSignals(QObject):
     error_msg = pyqtSignal(str)
 
 class ReleasesWorker(QRunnable):
-    def __init__(self):
+    def __init__(self, upgrade_dpd = False):
         super(ReleasesWorker, self).__init__()
 
+        self.upgrade_dpd = upgrade_dpd
         self.signals = ReleasesWorkerSignals()
 
     @pyqtSlot()
@@ -680,7 +699,11 @@ class ReleasesWorker(QRunnable):
 
         try:
             import requests
-            requests.head(SIMSAPA_RELEASES_BASE_URL, timeout=5)
+            if self.upgrade_dpd:
+                url = f"{DPD_RELEASES_REPO_URL}/releases.atom"
+            else:
+                url = SIMSAPA_RELEASES_BASE_URL
+            requests.head(url, timeout=5)
         except Exception as e:
             msg = "<p>Cannot download releases info.</p><p>%s</p>" % e
             logger.error(msg)
@@ -688,7 +711,15 @@ class ReleasesWorker(QRunnable):
             return
 
         try:
-            info = get_releases_info(save_stats=False)
+            if self.upgrade_dpd:
+                releases = get_dpd_releases()
+                info = ReleasesInfo(
+                    application = ReleaseSection(releases=[]),
+                    assets = ReleaseSection(releases=[]),
+                    dpd = ReleaseSection(releases=releases),
+                )
+            else:
+                info = get_simsapa_releases_info(save_stats=False)
             self.signals.finished.emit(info)
 
         except Exception as e:
@@ -713,7 +744,12 @@ class AssetsWorker(QRunnable):
     download_started: threading.Event
     download_stop: threading.Event
 
-    def __init__(self, assets_dir: Path, index_dir: Path, courses_dir: Path, html_resources_dir: Path):
+    def __init__(self,
+                 assets_dir: Path,
+                 index_dir: Path,
+                 courses_dir: Path,
+                 html_resources_dir: Path,
+                 upgrade_dpd = False):
         super(AssetsWorker, self).__init__()
 
         self.signals = AssetsWorkerSignals()
@@ -722,8 +758,10 @@ class AssetsWorker(QRunnable):
         self.index_dir = index_dir
         self.courses_dir = courses_dir
         self.html_resources_dir = html_resources_dir
+        self.upgrade_dpd = upgrade_dpd
 
         self.user_db_path = assets_dir.joinpath("userdata.sqlite3")
+        self.dpd_db_path = assets_dir.joinpath("dpd.sqlite3")
 
         self.download_started = threading.Event()
         self.download_stop = threading.Event()
@@ -763,7 +801,12 @@ class AssetsWorker(QRunnable):
                     shutil.rmtree(extract_temp_dir)
                     return
 
-            self.import_assets_from_extract_temp(extract_temp_dir)
+            if self.upgrade_dpd:
+                self.migrate_dpd(extract_temp_dir)
+                self.reindex_en_dict()
+
+            else:
+                self.import_assets_from_extract_temp(extract_temp_dir)
 
             # Remove the temp folder where the assets were extraced to.
             shutil.rmtree(extract_temp_dir)
@@ -936,6 +979,38 @@ class AssetsWorker(QRunnable):
         self.import_move_index(extract_temp_dir)
         self.import_move_userdata(extract_temp_dir)
         self.import_suttas_lang_to_userdata(extract_temp_dir)
+
+    def migrate_dpd(self, extract_temp_dir: Path):
+        self.signals.msg_update.emit("Migrating DPD database ...")
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        dpd_dict = find_or_create_dpd_dictionary(db_session)
+        dpd_dict_id = dpd_dict.id
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        dpd_path = extract_temp_dir.joinpath("dpd.db")
+
+        migrate_dpd(dpd_path, dpd_dict_id)
+
+        shutil.move(dpd_path, self.assets_dir.joinpath('dpd.sqlite3'))
+
+    def reindex_en_dict(self):
+        self.signals.msg_update.emit("Re-generating dictionary fulltext index ...")
+
+        from simsapa.app.search.tantivy_index import TantivySearchIndexes
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        search_indexes = TantivySearchIndexes(db_session)
+        search_indexes.index_all_dict_words_lang('en')
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
 
     def import_suttas(self, import_db_path: Path, schema: DbSchemaName, target_db_path: Optional[Path] = None):
         if not import_db_path.exists():

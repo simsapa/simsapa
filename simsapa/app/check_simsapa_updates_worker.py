@@ -2,7 +2,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from simsapa import logger, SIMSAPA_RELEASES_BASE_URL
 
-from simsapa.layouts.gui_helpers import EntryType, get_releases_info, has_update, is_local_db_obsolete
+from simsapa.layouts.gui_helpers import EntryType, get_simsapa_releases_info, has_update, is_local_db_obsolete
 
 class UpdatesWorkerSignals(QObject):
     have_app_update = pyqtSignal(dict)
@@ -31,7 +31,7 @@ class CheckSimsapaUpdatesWorker(QRunnable):
             return None
 
         try:
-            info = get_releases_info(save_stats=self._save_stats, screen_size=self._screen_size)
+            info = get_simsapa_releases_info(save_stats=self._save_stats, screen_size=self._screen_size)
 
             update_info = is_local_db_obsolete()
             if update_info is not None:

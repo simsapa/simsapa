@@ -1302,15 +1302,25 @@ class AppWindows:
         box.exec()
 
     def show_dpd_update_message(self, value: dict):
+        update_info: UpdateInfo = value['update_info']
+
         box = QMessageBox()
         box.setIcon(QMessageBox.Icon.Information)
-        box.setWindowTitle("Digital Pāḷi Dictionary Update Available")
+        box.setWindowTitle("Digital Pāḷi Dictionary Update")
 
-        msg = "<p>Digital Pāḷi Dictionary Update Available</p>"
-        # msg += "<div>" + value['update_info'] + "</div>"
+        msg = "<h1>Digital Pāḷi Dictionary Update</h1>"
+        msg += "<p>This update is optional.</p>"
 
-        msg += "<h3>This update is optional. After the download, it is also recommended to re-generate the fulltext index (so that fulltext search results match with the updated database), which may take a while.</h3>"
-        msg += "<h3>Download and update now?</h3>"
+        if update_info['message'] != "":
+            msg += "<p><b>Release Notes:</b></p>"
+            msg += update_info['message']
+
+        msg += "<h3>Quit and update now?</h3>"
+
+        msg += """
+        <p>To update the DPD, choose <b>Yes</b>. The application will exit.</p>
+        <p>When you start the application again, the download will begin.</p>
+        """
 
         box.setText(msg)
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -1318,17 +1328,15 @@ class AppWindows:
         reply = box.exec()
 
         if reply == QMessageBox.StandardButton.Yes:
-            from simsapa.layouts.download_dpd import DownloadDpdWindow
+            # NOTE: Can't safely clear and remove indexes here. rmtree()
+            # triggers an error on Windows when the index files are still
+            # locked.
 
-            version: str = value['dpd_release_version_tag']
+            p = ASSETS_DIR.joinpath("upgrade_dpd.txt")
+            with open(p, 'w') as f:
+                f.write("")
 
-            w = DownloadDpdWindow(
-                assets_dir = ASSETS_DIR,
-                dpd_release_version_tag = version,
-                quit_action_fn = self._quit_app,
-            )
-
-            w.show()
+            self._quit_app()
 
     def show_db_update_message(self, value: dict):
         update_info: UpdateInfo = value['update_info']

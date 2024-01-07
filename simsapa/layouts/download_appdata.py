@@ -7,7 +7,7 @@ from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QFrame, QRadioButton, QWidget, QVBoxLayout, QPushButton, QLabel)
 
-from simsapa import ASSETS_DIR, APP_DB_PATH
+from simsapa import ASSETS_DIR
 
 from simsapa.layouts.gui_types import QSizeExpanding, QSizeMinimum
 from simsapa.layouts.gui_helpers import ReleasesInfo
@@ -19,7 +19,8 @@ class DownloadAppdataWindow(AssetManagement):
                  releases_info: Optional[ReleasesInfo] = None,
                  select_sanskrit_bundle = False,
                  add_languages: List[str] = [],
-                 auto_start_download = False) -> None:
+                 auto_start_download = False,
+                 upgrade_dpd = False) -> None:
 
         super().__init__()
         self.setWindowTitle("Download Application Assets")
@@ -28,6 +29,8 @@ class DownloadAppdataWindow(AssetManagement):
 
         self.assets_dir = assets_dir
         self.index_dir = assets_dir.joinpath("index")
+        self.app_db_path = assets_dir.joinpath('appdata.sqlite3')
+        self.dpd_db_path = assets_dir.joinpath('dpd.sqlite3')
 
         self.releases_info = releases_info
 
@@ -54,19 +57,34 @@ class DownloadAppdataWindow(AssetManagement):
         else:
             self.init_add_languages = add_languages
 
-        self._init_workers(self.assets_dir,
-                           self.init_select_sanskrit_bundle,
-                           self.init_add_languages,
-                           self.auto_start_download)
-        self._setup_ui()
+        p = ASSETS_DIR.joinpath("upgrade_dpd.txt")
+        if p.exists():
+            upgrade_dpd = True
+            p.unlink()
 
         self.add_languages_title_text = "Include Languages"
         self.include_appdata_downloads = True
 
+        if upgrade_dpd:
+            self.upgrade_dpd = True
+            self.auto_start_download = True
+            self.include_appdata_downloads = False
+
+        self._init_workers(self.assets_dir,
+                           self.init_select_sanskrit_bundle,
+                           self.init_add_languages,
+                           self.auto_start_download,
+                           self.upgrade_dpd)
+        self._setup_ui()
+
         def _pre_hook():
             # Remove existing indexes with this. Can't safely clear and remove them
             # in windows._redownload_database_dialog().
-            self._remove_old_index()
+
+            if self.upgrade_dpd:
+                self._remove_old_dpd_and_index()
+            else:
+                self._remove_old_index()
 
             self.bundles_frame.hide()
 
@@ -202,13 +220,21 @@ class DownloadAppdataWindow(AssetManagement):
         # with open(STARTUP_MESSAGE_PATH, 'w') as f:
         #     f.write(json.dumps(msg))
 
+    def _remove_old_dpd_and_index(self):
+        if self.dpd_db_path.exists():
+            self.dpd_db_path.unlink()
+
+        p = self.index_dir.joinpath("dict_words").joinpath("en")
+        if p.exists():
+            shutil.rmtree(p)
+
     def _cancelled_cleanup_files(self):
         # Don't remove assets dir, it may contain userdata.sqlite3 with user's
         # memos, bookmarks, settings, etc.
 
-        if self.index_dir.exists():
-            shutil.rmtree(self.index_dir)
+        if not self.upgrade_dpd:
+            if self.index_dir.exists():
+                shutil.rmtree(self.index_dir)
 
-        if APP_DB_PATH.exists():
-            APP_DB_PATH.unlink()
-
+            if self.app_db_path.exists():
+                self.app_db_path.unlink()

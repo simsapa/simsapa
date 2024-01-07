@@ -1,7 +1,8 @@
 from enum import Enum
-from typing import List, Optional, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 import os, sys, re, platform
 import json, semver
+import xmltodict
 
 import psutil
 import markdown
@@ -9,12 +10,13 @@ import tomlkit
 
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
 
-from simsapa.app.db_session import get_db_engine_connection_session
+from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_version
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa import (APP_DB_PATH, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
+from simsapa import (APP_DB_PATH, DPD_DB_PATH, DPD_RELEASES_REPO_URL, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
+from simsapa.app.helpers import is_valid_date
 from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
 from simsapa.layouts.gui_types import AppWindowInterface, DictionarySearchWindowInterface, EbookReaderWindowInterface, SearchBarInterface, SuttaSearchWindowInterface, SuttaStudyWindowInterface
 
@@ -151,38 +153,105 @@ class ReleaseSection(TypedDict):
 class ReleasesInfo(TypedDict):
     application: ReleaseSection
     assets: ReleaseSection
-    dpd: DpdEntry
+    dpd: ReleaseSection
 
-def _is_version_stable(ver: str):
+class VersionFeedInfo(TypedDict):
+    ids_tags: List[Tuple[str, str]]
+    feed_content: str
+
+def is_version_stable(ver: str):
     return not ('.dev' in ver or '.rc' in ver)
 
-def get_version_tags_from_github_feed(url: str, stable_only: bool = True) -> List[str]:
-    import requests
-    logger.info(f"get_version_tags_from_github_feed(): {url}, {stable_only}")
+def is_dpd_version_compatible(remote_ver: str) -> bool:
+    # Currently the DPD version is the release date, e.g 2023-11-27
+    # Check that version tag is in this format.
+    return is_valid_date(remote_ver)
 
+def get_dpd_releases(compatible_only = True, greater_only = True) -> List[ReleaseEntry]:
+    import requests
+    logger.info(f"get_dpd_releases() compatible_only = {compatible_only}, greater_only = {greater_only}")
+
+    local_ver: Optional[str] = None
+
+    if DPD_DB_PATH.exists():
+        try:
+            local_ver = get_dpd_db_version()
+        except Exception as e:
+            logger.error(e)
+
+        if local_ver is None:
+            logger.error("Cannot determine local dpd_db version.")
+            local_ver = "1970-01-01"
+
+    else:
+        local_ver = "1970-01-01"
+
+    local_version = int(local_ver.replace("-", ""))
+
+    url = f"{DPD_RELEASES_REPO_URL}/releases.atom"
     try:
         r = requests.get(url)
         if r.ok:
-            data = r.text
+            feed_data = r.text
+            feed_xml = xmltodict.parse(feed_data)
         else:
             raise Exception(f"Response: {r.status_code}")
     except Exception as e:
-        logger.error(e)
         raise e
 
-    versions = []
-    #  <id>tag:github.com,2008:Repository/469025679/v0.2.0-alpha.1</id>
-    #  <id>tag:github.com,2008:Repository/469025679/v0.1.8-alpha.1</id>
-    #  <id>tag:github.com,2008:Repository/455816765/2023-11-27</id>
-    matches = re.finditer(r'<id>tag:github.com,2008:Repository/[0-9]+/([^<]+)</id>', data)
-    for m in matches:
-        ver = m.group(1)
-        if stable_only and _is_version_stable(ver):
-            versions.append(ver)
-        else:
-            versions.append(ver)
+    releases: List[ReleaseEntry] = []
 
-    return versions
+    # feed.entry is not a list when there is only one release in the repo.
+    if isinstance(feed_xml['feed']['entry'], list):
+        entry_items = feed_xml['feed']['entry']
+    else:
+        entry_items = [feed_xml['feed']['entry']]
+
+    for item in entry_items:
+
+        #  tag:github.com,2008:Repository/469025679/v0.2.0-alpha.1
+        #  tag:github.com,2008:Repository/469025679/v0.1.8-alpha.1
+        #  tag:github.com,2008:Repository/455816765/2023-11-27
+        m = re.match(r'tag:github.com,2008:Repository/[0-9]+/([^<]+)', item['id'])
+        if m is None:
+            continue
+
+        remote_ver = m.group(1)
+
+        if compatible_only and not is_dpd_version_compatible(remote_ver):
+            continue
+
+        description =  item['content']['#text']
+
+        """
+        <p><a href="http://creativecommons.org/licenses/by-nc/4.0/" rel="nofollow"><img alt="Creative Commons License" src="https://camo.githubusercontent.com/a273c84704b3424ee6a393f65c6ad765e44059e65aae2f82da91ddc1168156
+        7b/68747470733a2f2f692e6372656174697665636f6d6d6f6e732e6f72672f6c2f62792d6e632f342e302f38387833312e706e67" data-canonical-src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" style="max-width: 100%;"></a><br>
+        </p>
+        """
+        # Remove the <img>, will not render in a QMessageBox, only in a QWebEnginePage.
+        description = re.sub(r"""<p><a href="http://creativecommons.org/licenses/by-nc/4.0/" rel="nofollow"><img alt="Creative Commons License" [^>]+></a><br>\s*</p>""", "", description)
+
+        entry = ReleaseEntry(
+            version_tag = remote_ver,
+            # Expects only the user/repo part
+            github_repo = DPD_RELEASES_REPO_URL.replace("https://github.com/", ""),
+            suttas_lang = [],
+            date = item['updated'],
+            title = item['title'],
+            description = description,
+        )
+
+        releases.append(entry)
+
+    def _is_greater(item: ReleaseEntry) -> bool:
+        # NOTE: this has been checked to be an ISO date, e.g 2023-11-27
+        remote_version = int(item['version_tag'].replace("-", ""))
+        return (remote_version > local_version)
+
+    if greater_only:
+        releases = [i for i in releases if _is_greater(i)]
+
+    return releases
 
 def get_release_channel() -> str:
     """Determine the release channel to use, either 'main' or 'development'. The
@@ -212,8 +281,8 @@ def get_release_channel() -> str:
 
     return channel
 
-def get_releases_info(save_stats = True, screen_size = '') -> ReleasesInfo:
-    logger.info("get_releases_info()")
+def get_simsapa_releases_info(save_stats = True, screen_size = '') -> ReleasesInfo:
+    logger.info("get_simsapa_releases_info()")
 
     channel = get_release_channel()
 

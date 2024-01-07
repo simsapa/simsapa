@@ -8,7 +8,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, DPD_DB_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.api import ApiSearchResult
@@ -109,6 +109,18 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
         from simsapa.layouts.download_appdata import DownloadAppdataWindow
 
         w = DownloadAppdataWindow()
+        w.show()
+        status = app.exec()
+        logger.info(f"gui::start() Exiting with status {status}.")
+        sys.exit(status)
+
+    # When a new DPD needs to be downloaded, open DownloadAppdataWindow.
+
+    if ASSETS_DIR.joinpath("upgrade_dpd.txt").exists() \
+       or not DPD_DB_PATH.exists():
+
+        from simsapa.layouts.download_appdata import DownloadAppdataWindow
+        w = DownloadAppdataWindow(upgrade_dpd=True)
         w.show()
         status = app.exec()
         logger.info(f"gui::start() Exiting with status {status}.")
