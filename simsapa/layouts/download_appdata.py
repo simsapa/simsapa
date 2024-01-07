@@ -31,8 +31,12 @@ class DownloadAppdataWindow(AssetManagement):
         self.index_dir = assets_dir.joinpath("index")
         self.app_db_path = assets_dir.joinpath('appdata.sqlite3')
         self.dpd_db_path = assets_dir.joinpath('dpd.sqlite3')
+        self.upgrade_dpd = upgrade_dpd
 
         self.releases_info = releases_info
+
+        self.add_languages_title_text = "Include Languages"
+        self.include_appdata_downloads = True
 
         p = ASSETS_DIR.joinpath("auto_start_download.txt")
         if p.exists():
@@ -59,14 +63,10 @@ class DownloadAppdataWindow(AssetManagement):
 
         p = ASSETS_DIR.joinpath("upgrade_dpd.txt")
         if p.exists():
-            upgrade_dpd = True
+            self.upgrade_dpd = True
             p.unlink()
 
-        self.add_languages_title_text = "Include Languages"
-        self.include_appdata_downloads = True
-
-        if upgrade_dpd:
-            self.upgrade_dpd = True
+        if self.upgrade_dpd:
             self.auto_start_download = True
             self.include_appdata_downloads = False
 
