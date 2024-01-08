@@ -295,6 +295,12 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
                   .all()
     res.extend(r)
 
+    # Add matches from DPD inflections_to_headwords, regardless of earlier results.
+    # This will include cases such as:
+    # - assa: gen. of ima
+    # - assa: imp 2nd sg of assati
+    res.extend(inflection_to_pali_words(db_session, query_text))
+
     if len(res) == 0:
         # Stem form exact match.
         stem = pali_stem(query_text)
@@ -311,11 +317,6 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
                                   Dpd.PaliWord.word_ascii == nospace_query)) \
                       .all()
         res.extend(r)
-
-    if len(res) == 0:
-        # There were no exact results.
-        # Lookup word in dpd_i2h (inflections to headwords).
-        res.extend(inflection_to_pali_words(db_session, query_text))
 
     if len(res) == 0:
         # i2h result doesn't exist.

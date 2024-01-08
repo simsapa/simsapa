@@ -8,7 +8,7 @@ from simsapa.app.search.helpers import dpd_lookup
 QUERY_TEXT_TEST_CASES = {
     "20400/dpd": {"words": ["kammika 1"]},
     "20400": {"words": ["kammika 1"]},
-    "assa": {"words": ["assa 1.1", "assa 1.2", "assa 2.1", "assa 3.1", "assa 4.1", "assa 4.2", "assa 5.1", "assā 1.1", "assā 1.2", "assā 2.1",]},
+    "assa": {"words": ["assa 1.1", "assa 1.2", "assa 2.1", "assa 3.1", "assa 4.1", "assa 4.2", "assa 5.1", "assati 2.1", "assā 1.1", "assā 1.2", "assā 2.1", "ima 1.1"]},
     "Idha": {"words": ["idha 1", "idha 2", "idha 3"]},
     "kammapatta": {"words": ["apatta 1.1", "apatta 2.1", "abhāva 1", "abhāva 2", "abhāva 3", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2", "patti 1.1", "patti 1.2", "patti 2.1", "pattī 1.1", "bhāva 1", "bhāva 2", "bhāva 3", "bhāva 4"]},
     "kammapattā": {"words": ["apatta 1.1", "apatta 2.1", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "kammī", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2"]},
@@ -27,7 +27,7 @@ QUERY_TEXT_TEST_CASES = {
     "upacara samadhi": {"words": ["upacārasamādhi"]},
     "upacāra samādhi": {"words": ["upacārasamādhi"]},
     "upacārasamādhi": {"words": ["upacārasamādhi"]},
-    "upacara": {"words": ["upacāra 1", "upacāra 2", "upacāra 3", "upacāra 4", "upacāra 5", "upacāra 6"]},
+    "upacara": {"words": ["upacarati 1", "upacarati 2", "upacari", "upacāra 1", "upacāra 2", "upacāra 3", "upacāra 4", "upacāra 5", "upacāra 6"]},
     "upacāra": {"words": ["upacāra 1", "upacāra 2", "upacāra 3", "upacāra 4", "upacāra 5", "upacāra 6"]},
     "vacchagotta": {"words": ["vacchagotta 1", "vacchagotta 2"]},
 }
