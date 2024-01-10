@@ -385,3 +385,6 @@ def get_short_definitions(soup: BeautifulSoup,
         words.append(w)
 
     return words
+
+class NoSuttasException(Exception):
+    pass

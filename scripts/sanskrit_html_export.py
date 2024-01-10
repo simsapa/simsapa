@@ -7,7 +7,7 @@ from typing import List, Tuple
 from dotenv import load_dotenv
 import sqlite3
 import multiprocessing
-import psutil
+# import psutil
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -93,7 +93,12 @@ def export_word(word_key: str) -> Tuple[str, str]:
     wait.until(lambda driver: driver.find_element(By.ID, 'CologneBasic'))
 
     span = driver.find_element(By.CSS_SELECTOR, '#CologneBasic h1 span.sdata')
-    title = span.get_attribute('innerHTML')
+    s = span.get_attribute('innerHTML')
+    if s is None:
+        print("Error: No innerHTML in span")
+        sys.exit(1)
+
+    title = s
 
     # Remove the h1 title, dictionary definition doesn't need it
     driver.execute_script("""
@@ -105,7 +110,12 @@ def export_word(word_key: str) -> Tuple[str, str]:
 
     cologne_basic = driver.find_element(By.ID, 'CologneBasic')
 
-    html: str = cologne_basic.get_attribute('innerHTML')
+    s = cologne_basic.get_attribute('innerHTML')
+    if s is None:
+        print("Error: No innerHTML in cologne_basic")
+        sys.exit(1)
+
+    html: str = s
 
     # fix escaped ampersand
     # servepdf.php?dict=MW&amp;page=76

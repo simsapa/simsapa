@@ -17,8 +17,8 @@ from simsapa import DbSchemaName, logger
 from simsapa.app.helpers import compact_rich_text, consistent_niggahita, gretil_header_to_footer, pali_to_ascii
 from simsapa.app.db import appdata_models as Am
 
-import helpers
-import suttacentral
+from scripts import helpers
+from scripts import suttacentral
 
 load_dotenv()
 
@@ -148,6 +148,8 @@ def populate_from_sanskrit_to_appdata(sanskrit_db: Session, appdata_db: Session)
 
 
 def main():
+    logger.info("=== Bootstrap Sanskrit Texts DB and Import to Appdata ===")
+
     sanskrit_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("sanskrit-texts.sqlite3")
     sanskrit_db = helpers.get_simsapa_db(sanskrit_db_path, DbSchemaName.AppData, remove_if_exists = True)
 

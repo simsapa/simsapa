@@ -5,17 +5,17 @@ from pathlib import Path
 from typing import List, Optional
 import bs4
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
 from sqlalchemy.orm.session import Session
 
 from simsapa import logger, DbSchemaName, DictTypeName
 from simsapa.app.db import appdata_models as Am
 
-import helpers
-
-from dotenv import load_dotenv
-
 from simsapa.app.helpers import strip_html
+
+from scripts import helpers
+
 load_dotenv()
 
 s = os.getenv('BOOTSTRAP_ASSETS_DIR')

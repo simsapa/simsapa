@@ -11,7 +11,7 @@ from sqlalchemy.orm.session import Session
 from simsapa import logger, DbSchemaName, DictTypeName
 from simsapa.app.db import appdata_models as Am
 
-import helpers
+from scripts import helpers
 
 from dotenv import load_dotenv
 load_dotenv()

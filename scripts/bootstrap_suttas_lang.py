@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 from simsapa import DbSchemaName, logger
 from simsapa.app.dir_helpers import create_app_dirs
 
-import helpers
-import suttacentral
+from scripts import helpers
+from scripts import suttacentral
 
 load_dotenv()
 

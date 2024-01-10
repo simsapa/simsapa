@@ -9,7 +9,7 @@ from simsapa import DictTypeName, logger
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.helpers import consistent_niggahita, compact_rich_text, pali_to_ascii
 
-import helpers
+from scripts import helpers
 
 def populate_nyanatiloka_dict_words_from_legacy(appdata_db: Session, bootstrap_assets_dir: Path, limit: Optional[int] = None):
     logger.info("Adding Nyanatiloka DictWords from legacy dict_words")

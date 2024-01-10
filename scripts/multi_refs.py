@@ -114,7 +114,7 @@ def populate_sutta_multi_refs(appdata_db: Session, limit: Optional[int] = None):
 
         for ref in all_refs:
             if not ref.sutta_uid:
-                logger.warn(f"ref.sutta_uid is None, multi_refs.id {ref.id}")
+                # FIXME logger.warn(f"ref.sutta_uid is None, multi_refs.id {ref.id}")
                 continue
 
             sutta_range = sutta_range_from_ref(ref.sutta_uid)
@@ -141,7 +141,7 @@ def populate_sutta_multi_refs(appdata_db: Session, limit: Optional[int] = None):
                     .all()
 
             if len(suttas) == 0:
-                logger.warn(f"No sutta for ref.sutta_uid {ref.sutta_uid}")
+                # FIXME logger.warn(f"No sutta for ref.sutta_uid {ref.sutta_uid}")
                 continue
 
             ref.suttas = suttas

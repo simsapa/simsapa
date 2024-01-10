@@ -8,7 +8,7 @@ from sqlalchemy.orm.session import Session
 from simsapa import logger, DbSchemaName
 from simsapa.app.db_helpers import find_or_create_dpd_dictionary, migrate_dpd
 
-import helpers
+from scripts import helpers
 
 def prepare_dpd_for_dist(appdata_db_session: Session, bootstrap_dir: Path):
     logger.info("prepare_dpd_for_dist()")

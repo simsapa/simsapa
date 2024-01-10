@@ -16,7 +16,8 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.helpers import bilara_html_post_process, bilara_text_to_html, consistent_niggahita, html_get_sutta_page_body, compact_rich_text, pali_to_ascii, sutta_range_from_ref
 
-import helpers
+from scripts import helpers
+from scripts.helpers import NoSuttasException
 from simsapa.app.types import USutta
 
 def get_suttacentral_db() -> DBHandle:
@@ -630,8 +631,9 @@ def add_sutta_comments(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandl
 def populate_suttas_from_suttacentral(appdata_db: Session, schema: DbSchemaName, sc_db: DBHandle, sc_data_dir: Path, lang: str, limit: Optional[int] = None):
         suttas = get_suttas(sc_db, schema, sc_data_dir, lang, limit)
         if len(suttas) == 0:
-            logger.info(f"0 suttas for {lang}, exiting.")
-            sys.exit(1)
+            msg = f"0 suttas for {lang}."
+            logger.warn(msg)
+            raise NoSuttasException(msg)
 
         logger.info(f"Adding {lang}, count {len(suttas)} ...")
 

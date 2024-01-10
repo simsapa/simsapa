@@ -14,8 +14,9 @@ from sqlalchemy.orm.session import Session
 from simsapa.app.db import appdata_models as Am
 from simsapa import logger
 
-import helpers
 from simsapa.app.helpers import consistent_niggahita, compact_rich_text, pali_to_ascii
+
+from scripts import helpers
 
 load_dotenv()
 

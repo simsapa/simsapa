@@ -65,7 +65,6 @@ def task_build():
                 'doit build_macos_app',
                 'doit build_macos_dmg',
             ],
-            'clean': True,
         }
 
     else:
@@ -172,9 +171,11 @@ def update_release_channel(db_path: Path, release_channel: str):
     conn.commit()
     conn.close()
 
-def task_bootstrap_db():
+def task_bootstrap():
+    """Rebuild the application database from local assets and create asset release archives."""
+    from scripts import bootstrap
     return {
-        'actions': [""" ./scripts/bootstrap_db.sh """],
+        'actions': [bootstrap.main],
     }
 
 def task_simsapa_min_js():

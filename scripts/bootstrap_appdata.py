@@ -18,18 +18,18 @@ from simsapa.app.completion_lists import get_and_save_completions
 from simsapa.app.stardict import parse_stardict_zip
 from simsapa.app.db.stardict import import_stardict_as_new
 
-import helpers
-import suttacentral
-import nyanatiloka
-import cst4
-import dhammatalks_org
-import dhammapada_munindo
-import dhammapada_tipitaka_net
-import nyanadipa
-import multi_refs
-import create_links
-import dpd
-import dppn
+from scripts import helpers
+from scripts import suttacentral
+from scripts import nyanatiloka
+from scripts import cst4
+from scripts import dhammatalks_org
+from scripts import dhammapada_munindo
+from scripts import dhammapada_tipitaka_net
+from scripts import nyanadipa
+from scripts import multi_refs
+from scripts import create_links
+from scripts import dpd
+from scripts import dppn
 
 load_dotenv()
 
@@ -98,6 +98,7 @@ def insert_db_version(appdata_db: Session):
 
 
 def main():
+    logger.info("=== Bootstrap Appdata DB ===")
     create_app_dirs()
 
     appdata_db_path = BOOTSTRAP_ASSETS_DIR.joinpath("dist").joinpath("appdata.sqlite3")
