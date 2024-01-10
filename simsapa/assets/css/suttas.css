@@ -355,73 +355,74 @@ div.btn a, span.btn a {
   font-weight: bold;
 }
 .cst4 .indent {
-  font-size: 12pt;
+  font-size: 1rem;
   text-indent: 2em;
   margin-left: 3em;
 }
 .cst4 .bodytext {
-  font-size: 12pt;
+  font-size: 1rem;
   text-indent: 2em;
 }
 .cst4 .hangnum {
-  font-size: 12pt;
+  font-size: 1rem;
   margin-bottom: -18pt;
   text-indent: 2em;
 }
 .cst4 .centered {
-  font-size: 12pt;
+  font-size: 1rem;
   text-align: center;
 }
 .cst4 .unindented {
-  font-size: 12pt;
-}
-.cst4 .book {
-  font-size: 21pt;
-  text-align: center;
-  font-weight: bold;
-}
-.cst4 .chapter {
-  font-size: 18pt;
-  text-align: center;
-  font-weight: bold;
+  font-size: 1rem;
 }
 .cst4 .nikaya {
-  font-size: 24pt;
   text-align: center;
-  font-weight: bold;
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.3rem;
+}
+.cst4 .book, .cst4 .title, .cst4 .subhead, .cst4 .subsubhead, .cst4 .chapter {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+  text-align: center;
+}
+.cst4 .book {
+  font-size: 1.6rem;
 }
 .cst4 .title {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
+  font-size: 1.4rem;
 }
-.cst4 .subhead {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
+.cst4 .subhead, .cst4 .subsubhead, .cst4 .chapter {
+  font-size: 1.2rem;
+  text-align: left;
+  text-decoration: underline;
+  margin-top: 4rem;
 }
-.cst4 .subsubhead {
-  font-size: 12pt;
-  text-align: center;
-  font-weight: bold;
+.cst4 .chapter + .subhead {
+  margin-top: 1rem;
 }
 .cst4 .gatha1 {
-  font-size: 12pt;
+  font-size: 1rem;
   margin-bottom: 0em;
   margin-left: 4em;
 }
 .cst4 .gatha2 {
-  font-size: 12pt;
+  font-size: 1rem;
   margin-bottom: 0em;
   margin-left: 4em;
 }
 .cst4 .gatha3 {
-  font-size: 12pt;
+  font-size: 1rem;
   margin-bottom: 0em;
   margin-left: 4em;
 }
 .cst4 .gathalast {
-  font-size: 12pt;
+  font-size: 1rem;
   margin-bottom: 0.5cm;
   margin-left: 4em;
 }
