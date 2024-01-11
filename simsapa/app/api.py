@@ -8,9 +8,10 @@ import logging
 
 from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage
 from simsapa import logger, SearchResult
+from simsapa.app.completion_lists import get_and_save_completions
 from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
 
-from simsapa.app.types import GraphRequest, UBookmark, USutta, UDictWord
+from simsapa.app.types import GraphRequest, SearchArea, UBookmark, USutta, UDictWord
 
 from sqlalchemy import and_, or_
 
@@ -35,7 +36,8 @@ class ApiSearchResult(TypedDict):
 class AppCallbacks:
     open_window: Callable[[str], None]
     run_lookup_query: Callable[[str], None]
-    run_combined_search: Callable[[str, int], ApiSearchResult]
+    run_suttas_fulltext_search: Callable[[str, int], ApiSearchResult]
+    run_dict_combined_search: Callable[[str, int], ApiSearchResult]
 
     def __init__(self):
         pass
@@ -246,8 +248,8 @@ def _bm_to_res(x: UBookmark) -> Dict[str, str]:
         'bookmark_schema_id': f"{x.metadata.schema}-{x.id}",
     }
 
-@app.route('/combined_search', methods=['POST'])
-def route_combined_search():
+@app.route('/suttas_fulltext_search', methods=['POST'])
+def route_suttas_fulltext_search():
     data = request.get_json()
     if not data or 'query_text' not in data.keys():
         return "Missing query_text", 400
@@ -257,7 +259,22 @@ def route_combined_search():
     else:
         page_num = int(data['page_num'])
 
-    res = app_callbacks.run_combined_search(data['query_text'].strip(), page_num)
+    res = app_callbacks.run_suttas_fulltext_search(data['query_text'].strip(), page_num)
+
+    return jsonify(res), 200
+
+@app.route('/dict_combined_search', methods=['POST'])
+def route_dict_combined_search():
+    data = request.get_json()
+    if not data or 'query_text' not in data.keys():
+        return "Missing query_text", 400
+
+    if 'page_num' not in data.keys():
+        page_num = 0
+    else:
+        page_num = int(data['page_num'])
+
+    res = app_callbacks.run_dict_combined_search(data['query_text'].strip(), page_num)
 
     return jsonify(res), 200
 
@@ -268,6 +285,7 @@ class DpdSearchResult(TypedDict):
     grammar: str
     definition_html: str
 
+# FIXME API to retreive word as i.as_dict
 @app.route('/dpd_search', methods=['POST'])
 def route_dpd_search():
     data = request.get_json()
@@ -315,19 +333,44 @@ def route_dpd_search():
 
     return jsonify(search_results), 200
 
-@app.route('/dpd_word_completion_list', methods=['GET'])
-def route_dpd_word_completion_list():
-    logger.info('/dpd_word_completion_list')
-    dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
+@app.route('/dict_words_flat_completion_list', methods=['GET'])
+def route_dict_words_flat_completion_list():
+    logger.info('/dict_words_flat_completion_list')
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-    res = dpd_db_session.query(Dpd.PaliWord.pali_1).all()
-    res.extend(dpd_db_session.query(Dpd.PaliRoot.root_no_sign).all())
-    a: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
-    results = sorted(a, key=lambda x: pali_sort_key(x))
+    # NOTE: This gives a very long list, a 31 MB json response.
+    #
+    # r = get_and_save_completions(db_session, SearchArea.DictWords)
+    # # Flatten the lists into a single list of strings
+    # results = [item for sublist in r.values() for item in sublist]
+    #
+    # Instead, load the words and roots from the DPD, which yields a 1.6 MB list.
 
-    dpd_db_conn.close()
-    dpd_db_session.close()
-    dpd_db_eng.dispose()
+    res = db_session.query(Dpd.PaliWord.pali_1).all()
+    res.extend(db_session.query(Dpd.PaliRoot.root_no_sign).all())
+    results: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
+
+    results = sorted(results, key=lambda x: pali_sort_key(x))
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
+
+    return jsonify(results), 200
+
+@app.route('/sutta_titles_flat_completion_list', methods=['GET'])
+def route_sutta_titles_flat_completion_list():
+    logger.info('/sutta_titles_flat_completion_list')
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+    r = get_and_save_completions(db_session, SearchArea.Suttas)
+    results = [item for sublist in r.values() for item in sublist]
+
+    results = sorted(results, key=lambda x: pali_sort_key(x))
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
 
     return jsonify(results), 200
 
@@ -341,6 +384,7 @@ def route_get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
+# FIXME replaced this with /words/ route with ?window_type=Lookup+Window
 @app.route('/lookup_window_query/<query_text>', methods=['GET'])
 def route_lookup_window_query_get(query_text: str = ''):
     if len(query_text) == 0:
@@ -512,7 +556,8 @@ def start_server(port: int,
                  q: queue.Queue,
                  open_window_fn: Callable[[str], None],
                  run_lookup_query_fn: Callable[[str], None],
-                 run_combined_search_fn: Callable[[str, int], ApiSearchResult]):
+                 run_suttas_fulltext_search_fn: Callable[[str, int], ApiSearchResult],
+                 run_dict_combined_search_fn: Callable[[str, int], ApiSearchResult]):
     logger.info(f'Starting server on port {port}')
 
     global server_queue
@@ -521,6 +566,7 @@ def start_server(port: int,
     global app_callbacks
     app_callbacks.open_window = open_window_fn
     app_callbacks.run_lookup_query = run_lookup_query_fn
-    app_callbacks.run_combined_search = run_combined_search_fn
+    app_callbacks.run_suttas_fulltext_search = run_suttas_fulltext_search_fn
+    app_callbacks.run_dict_combined_search = run_dict_combined_search_fn
 
     app.run(host='127.0.0.1', port=port, debug=False, load_dotenv=False)

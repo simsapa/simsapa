@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
 from simsapa import logger
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa.layouts.gui_types import CompletionCacheResult
 from simsapa.app.completion_lists import get_sutta_titles_completion_list, get_dict_words_completion_list
@@ -19,8 +20,14 @@ class CompletionCacheWorker(QRunnable):
     def run(self):
         logger.profile("CompletionCacheWorker::run()")
         try:
-            titles = get_sutta_titles_completion_list()
-            words = get_dict_words_completion_list()
+            db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+            titles = get_sutta_titles_completion_list(db_session)
+            words = get_dict_words_completion_list(db_session)
+
+            db_conn.close()
+            db_session.close()
+            db_eng.dispose()
 
             self.signals.finished.emit(CompletionCacheResult(
                 sutta_titles=titles,

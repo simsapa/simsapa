@@ -17,7 +17,7 @@ from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
-from simsapa.app.search.helpers import combined_search
+from simsapa.app.search.helpers import combined_search, suttas_fulltext_search
 from simsapa.app.windows import AppWindows
 
 from simsapa.layouts.error_message import ErrorMessageWindow
@@ -220,7 +220,14 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
     def _run_lookup_query(query_text: str):
         app_windows.signals.run_lookup_query_signal.emit(query_text)
 
-    def _run_combined_search(query_text: str, page_num = 0) -> ApiSearchResult:
+    def _run_suttas_fulltext_search(query_text: str, page_num = 0) -> ApiSearchResult:
+        return suttas_fulltext_search(
+            queries = app_data._queries,
+            query_text = query_text,
+            page_num = page_num,
+        )
+
+    def _run_dict_combined_search(query_text: str, page_num = 0) -> ApiSearchResult:
         return combined_search(
             queries = app_data._queries,
             query_text = query_text,
@@ -238,7 +245,8 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
                      SERVER_QUEUE,
                      _emit_open_window_signal,
                      _run_lookup_query,
-                     _run_combined_search)
+                     _run_suttas_fulltext_search,
+                     _run_dict_combined_search)
 
     daemon = threading.Thread(name='daemon_server', target=_start_daemon_server)
     daemon.setDaemon(True)

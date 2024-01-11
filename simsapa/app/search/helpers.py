@@ -358,6 +358,52 @@ def unique_search_results(results: List[SearchResult]) -> List[SearchResult]:
 
     return uniq_results
 
+def suttas_fulltext_search(queries: GuiSearchQueriesInterface,
+                           query_text: str,
+                           lang: Optional[str] = None,
+                           page_num = 0,
+                           do_pali_sort = False) -> ApiSearchResult:
+    params = SearchParams(
+        mode = SearchMode.FulltextMatch,
+        page_len = 20,
+        lang = lang,
+        lang_include = True,
+        source = None,
+        source_include = True,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
+    _last_query_time = datetime.now()
+
+    def _search_query_finished(__query_started_time__: datetime):
+        pass
+
+    if page_num == 0:
+        queries.start_search_query_workers(
+            query_text,
+            SearchArea.Suttas,
+            _last_query_time,
+            _search_query_finished,
+            params,
+        )
+
+        while not queries.all_finished():
+            # Sleep 10 milliseconds
+            sleep(0.01)
+
+    results = unique_search_results(queries.results_page(page_num))
+
+    if do_pali_sort:
+        results = sorted(results, key=lambda i: pali_sort_key(f"{i['title']}.{i['schema_name']}.{i['uid']}"))
+
+    res = ApiSearchResult(
+        hits = queries.query_hits(),
+        results = results,
+    )
+
+    return res
+
 def combined_search(queries: GuiSearchQueriesInterface,
                     query_text: str,
                     lang: Optional[str] = None,

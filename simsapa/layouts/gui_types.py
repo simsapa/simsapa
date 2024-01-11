@@ -49,9 +49,11 @@ WindowNameToType = {
     "Word Lookup": WindowType.WordLookup,
 }
 
+WordSublists = Dict[str, List[str]]
+
 class CompletionCacheResult(TypedDict):
-    sutta_titles: List[str]
-    dict_words: List[str]
+    sutta_titles: WordSublists
+    dict_words: WordSublists
 
 class SearchResultSizes(TypedDict):
     header_height: int

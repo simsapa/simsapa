@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Union
+from typing import List, Optional, Union
 import re, json
 
 from sqlalchemy.orm.session import Session
@@ -12,10 +12,9 @@ from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.helpers import pali_to_ascii
 from simsapa.app.types import SearchArea
+from simsapa.layouts.gui_types import WordSublists
 
 UAppSetting = Union[Am.AppSetting, Um.AppSetting]
-
-WordSublists = Dict[str, List[str]]
 
 def get_sutta_titles_completion_list(db_session: Session, load_only_from_appdata = False) -> WordSublists:
     res = []
