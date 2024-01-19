@@ -80,15 +80,6 @@ def task_build_linux():
         'clean': True,
     }
 
-def task_build_windows():
-    """Build Simsapa as .exe on Windows."""
-
-    return {
-        'actions': [""" echo "Hey Windows!" """],
-        'targets': ['dist/Simsapa Dhamma Reader/Simsapa Dhamma Reader.exe'],
-        'clean': True,
-    }
-
 def task_build_windows_exe():
     """Build Simsapa as .exe on Windows."""
 
@@ -96,22 +87,24 @@ def task_build_windows_exe():
 
     # NOTE: Windows uses \ in paths and expects ; not : in data names
     pyinstaller_cmd = """
-pyinstaller run.py \
-    --name "Simsapa Dhamma Reader" \
-    --noconfirm \
-    --onedir \
-    --windowed \
-    --clean \
-    --noupx \
-    -i "simsapa\\assets\\icons\\appicons\\simsapa.ico" \
-    --add-data "simsapa\\assets;simsapa\\assets" \
-    --add-data "simsapa\\alembic;simsapa\\alembic" \
-    --add-data "simsapa\\alembic.ini;simsapa\\alembic.ini" \
-    --target-architecture %s \
-    --osx-bundle-identifier 'reader.dhamma.simsapa' \
-    --hidden-import=tiktoken_ext \
+pyinstaller run.py
+    --name "Simsapa Dhamma Reader"
+    --noconfirm
+    --onedir
+    --windowed
+    --clean
+    --noupx
+    -i "simsapa\\assets\\icons\\appicons\\simsapa.ico"
+    --add-data "simsapa\\assets;simsapa\\assets"
+    --add-data "simsapa\\alembic;simsapa\\alembic"
+    --add-data "simsapa\\alembic.ini;simsapa\\alembic.ini"
+    --target-architecture %s
+    --osx-bundle-identifier 'reader.dhamma.simsapa'
+    --hidden-import=tiktoken_ext
     --hidden-import=tiktoken_ext.openai_public
     """ % machine
+
+    pyinstaller_cmd = pyinstaller_cmd.replace("\n", " ")
 
     return {
         'actions': [pyinstaller_cmd],
