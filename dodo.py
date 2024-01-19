@@ -201,9 +201,14 @@ def update_release_channel(db_path: Path, release_channel: str):
 
 def task_bootstrap():
     """Rebuild the application database from local assets and create asset release archives."""
-    from scripts import bootstrap
+
+    # Wrap in a function so that bootstrap.py's init doesn't create a .env
+    def _task():
+        from scripts import bootstrap
+        bootstrap.main()
+
     return {
-        'actions': [bootstrap.main],
+        'actions': [_task],
     }
 
 def task_simsapa_min_js():
