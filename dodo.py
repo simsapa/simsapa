@@ -54,9 +54,7 @@ def task_build():
 
     elif IS_WINDOWS:
         task = {
-            'actions': [],
-            'file_dep': ['dist/Simsapa Dhamma Reader/Simsapa Dhamma Reader.exe'],
-            'clean': True,
+            'actions': ['doit build_windows_exe'],
         }
 
     elif IS_MAC:
@@ -89,6 +87,36 @@ def task_build_windows():
         'actions': [""" echo "Hey Windows!" """],
         'targets': ['dist/Simsapa Dhamma Reader/Simsapa Dhamma Reader.exe'],
         'clean': True,
+    }
+
+def task_build_windows_exe():
+    """Build Simsapa as .exe on Windows."""
+
+    machine = platform.machine()
+
+    # NOTE: Windows uses \ in paths and expects ; not : in data names
+    pyinstaller_cmd = """
+pyinstaller run.py \
+    --name "Simsapa Dhamma Reader" \
+    --noconfirm \
+    --onedir \
+    --windowed \
+    --clean \
+    --noupx \
+    -i "simsapa\\assets\\icons\\appicons\\simsapa.ico" \
+    --add-data "simsapa\\assets;simsapa\\assets" \
+    --add-data "simsapa\\alembic;simsapa\\alembic" \
+    --add-data "simsapa\\alembic.ini;simsapa\\alembic.ini" \
+    --target-architecture %s \
+    --osx-bundle-identifier 'reader.dhamma.simsapa' \
+    --hidden-import=tiktoken_ext \
+    --hidden-import=tiktoken_ext.openai_public
+    """ % machine
+
+    return {
+        'actions': [pyinstaller_cmd],
+        # 'targets': ['dist/Simsapa Dhamma Reader/Simsapa Dhamma Reader.exe'],
+        # 'clean': True,
     }
 
 def task_build_macos_app():
