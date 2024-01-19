@@ -645,6 +645,7 @@ class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
     find_toolbar: QToolBar
     find_panel_layout: QHBoxLayout
     sutta_panels: List[SuttaPanel]
+    _show_sutta_by_uid_in_side: Callable
 
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable

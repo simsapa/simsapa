@@ -328,7 +328,8 @@ class AppWindows:
 
         view = None
         for w in self._windows:
-            if isinstance(w, DictionarySearchWindowInterface) and w.isVisible():
+            if is_dictionary_search_window(w):
+                assert(isinstance(w, DictionarySearchWindowInterface))
                 view = w
                 break
 
@@ -341,6 +342,8 @@ class AppWindows:
             self._new_dictionary_search_window(query)
         else:
             view._show_word_by_url(url, show_results_tab)
+
+            make_active_window(view)
 
         return True
 
@@ -387,10 +390,10 @@ class AppWindows:
                     window_type = t
 
         if window_type == WindowType.SuttaSearch:
-            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope, new_window=True)
+            self._show_sutta_by_uid_in_search(uid, sutta_quote_from_url(url), quote_scope)
 
         elif window_type == WindowType.SuttaStudy:
-            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope, new_window=True)
+            self._show_sutta_by_uid_in_study(uid, sutta_quote_from_url(url), quote_scope)
 
         return True
 
@@ -400,11 +403,16 @@ class AppWindows:
                                      quote_scope = QuoteScope.Sutta,
                                      new_window = False):
 
+        # Unless a new window is specifically requested,
+        # - if there is a hidden window, make is visible and show the sutta there
+        # - if there is a window but not hidden, open a new window to not replace the user's window content.
+
         view = None
 
         if not new_window:
             for w in self._windows:
-                if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
+                if is_sutta_search_window(w) and not w.isVisible():
+                    assert(isinstance(w, SuttaSearchWindowInterface))
                     view = w
                     break
 
@@ -413,22 +421,20 @@ class AppWindows:
 
         view.s._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
+        make_active_window(view)
+
     def _show_sutta_by_uid_in_study(self,
                                     uid: str,
                                     sutta_quote: Optional[SuttaQuote] = None,
                                     quote_scope = QuoteScope.Sutta,
-                                    new_window = True):
-
-        # NOTE: Open a new Sutta Study window by default. Using an existing
-        # Sutta Study window can be confusing for new users. It also prone to
-        # queue errors when windows are opened and closed, and the queue's
-        # window_id is not found.
+                                    new_window = False):
 
         view = None
 
         if not new_window:
             for w in self._windows:
-                if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
+                if is_sutta_study_window(w) and not w.isVisible():
+                    assert(isinstance(w, SuttaStudyWindowInterface))
                     view = w
                     break
 
@@ -437,10 +443,12 @@ class AppWindows:
 
         view.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
 
+        make_active_window(view)
+
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
         view = None
         for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and w.isVisible():
+            if isinstance(w, SuttaStudyWindowInterface) and not w.isVisible():
                 view = w
                 break
 
@@ -449,21 +457,18 @@ class AppWindows:
         if view is None:
             view = self._new_sutta_study_window()
 
-        data = json.dumps(msg)
+        info = json.loads(msg['data'])
+        view._show_sutta_by_uid_in_side(uid = info['uid'],
+                                        side = info['side'])
 
-        if msg['queue_id'] == 'all':
-            queue_id = view.queue_id
-        else:
-            queue_id = msg['queue_id']
-
-        APP_QUEUES[queue_id].put_nowait(data)
-        view.handle_messages()
+        make_active_window(view)
 
     def _lookup_clipboard_in_suttas(self, msg: ApiMessage):
         # Is there a sutta window to handle the message?
         view = None
         for w in self._windows:
-            if isinstance(w, SuttaSearchWindowInterface) and w.isVisible():
+            if is_sutta_search_window(w):
+                assert(isinstance(w, SuttaSearchWindowInterface))
                 view = w
                 break
 
@@ -478,11 +483,14 @@ class AppWindows:
             APP_QUEUES[view.queue_id].put_nowait(data)
             view.handle_messages()
 
+        make_active_window(view)
+
     def _lookup_clipboard_in_dictionary(self, msg: ApiMessage):
         # Is there a dictionary window to handle the message?
         view = None
         for w in self._windows:
-            if isinstance(w, DictionarySearchWindowInterface) and w.isVisible():
+            if is_dictionary_search_window(w):
+                assert(isinstance(w, DictionarySearchWindowInterface))
                 view = w
                 break
 
@@ -496,6 +504,8 @@ class AppWindows:
             data = json.dumps(msg)
             APP_QUEUES[view.queue_id].put_nowait(data)
             view.handle_messages()
+
+        make_active_window(view)
 
     def _set_size_and_maximize(self, view: QMainWindow):
         view.resize(1200, 800)
