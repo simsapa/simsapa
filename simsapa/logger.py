@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from colorama import just_fix_windows_console
-from blessings import Terminal
+from blessed import Terminal
 
 from simsapa import IS_MAC, SIMSAPA_LOG_PATH, INIT_START_TIME
 from simsapa.time_log import TimeLog
