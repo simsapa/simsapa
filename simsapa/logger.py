@@ -1,13 +1,38 @@
 import os
 import sys
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from colorama import just_fix_windows_console
-from blessed import Terminal
-
-from simsapa import IS_MAC, SIMSAPA_LOG_PATH, INIT_START_TIME
+from simsapa import IS_LINUX, IS_MAC, SIMSAPA_LOG_PATH, INIT_START_TIME
 from simsapa.time_log import TimeLog
+
+class TerminalStub():
+    # A stub class.
+    # Using blessed on Windows errors out.
+
+    bold_underline = ""
+    normal = ""
+
+    def __init__(self):
+        pass
+
+    def bold(self, text: str) -> str:
+        return text
+
+    def bold_yellow(self, text: str) -> str:
+        return text
+
+    def bold_red(self, text: str) -> str:
+        return text
+
+    def bold_blue(self, text: str) -> str:
+        return text
+
+if IS_LINUX:
+    from blessed import Terminal
+    term: Union[Terminal, TerminalStub] = Terminal()
+else:
+    term = TerminalStub()
 
 s = os.getenv('ENABLE_TIME_LOG')
 if s is not None and s.lower() == 'true':
@@ -20,10 +45,6 @@ time_log: Optional[TimeLog] = None
 if ENABLE_TIME_LOG:
     time_log = TimeLog()
     time_log.start(t0=INIT_START_TIME, start_new=True)
-
-# use Colorama to make Termcolor work on Windows too
-just_fix_windows_console()
-term = Terminal()
 
 s = os.getenv('DISABLE_LOG')
 if s is not None and s.lower() == 'true':
