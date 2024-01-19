@@ -174,6 +174,12 @@ if b is None:
 else:
     PAGE_HTML = b.decode("utf-8")
 
+b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/icons.html")))
+if b is None:
+    ICONS_HTML = "<b>Missing icons.html</b>"
+else:
+    ICONS_HTML = b.decode("utf-8")
+
 b = pkgutil.get_data(__name__, str(PACKAGE_ASSETS_RSC_DIR.joinpath("templates/loading.html")))
 if b is None:
     LOADING_HTML = "<b>Loading...</b>"

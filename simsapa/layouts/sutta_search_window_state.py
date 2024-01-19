@@ -3,7 +3,7 @@ from functools import partial
 from typing import Any, Callable, List, Optional
 
 import re
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal, QSize
@@ -739,9 +739,22 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
 
         query = dict()
 
-        quote = self._get_selection()
-        if quote is not None and len(quote) > 0:
-            query['quote'] = quote
+        quote_text = self._get_selection()
+        if quote_text is not None and len(quote_text) > 0:
+            # NOTE: Necessary to escape the text as fully-safe HTML, so that
+            # accented characters are escaped. Otherwise the link is only
+            # partially recognized in browswers, and not the entire link is
+            # linkified as a url.
+            #
+            # Doesn't work:
+            #
+            # http://localhost:4848/suttas/thag5.6/pli/ms?quote=Micchādiṭṭhi+pahīnā+me&window_type=Sutta+Search
+            #
+            # Works:
+            #
+            # http://localhost:4848/suttas/thag5.6/pli/ms?quote=Micch%25C4%2581di%25E1%25B9%25AD%25E1%25B9%25ADhi%2520pah%25C4%25ABn%25C4%2581%2520me&window_type=Sutta+Search
+
+            query['quote'] = quote(quote_text)
 
         window_type: Optional[WindowType] = None
         if is_sutta_search_window(self.pw):

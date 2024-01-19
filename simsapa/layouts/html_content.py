@@ -1,7 +1,7 @@
 from typing import Optional
 from string import Template
 
-from simsapa import PAGE_HTML, SUTTAS_CSS, SUTTAS_JS
+from simsapa import PAGE_HTML, ICONS_HTML, SUTTAS_CSS, SUTTAS_JS
 
 # open_sutta_links_js_tmpl: Optional[Template] = None
 page_tmpl = Template(PAGE_HTML)
@@ -47,6 +47,7 @@ def html_page(content: str,
                                     css_head=css,
                                     js_head=js,
                                     js_body='',
+                                    icons_html=ICONS_HTML,
                                     api_url=api_url))
 
     return html

@@ -96,7 +96,7 @@ class Helper(QObject):
     def emit_copy_gloss(self, db_schema: str, db_table: str, db_uid: str, gloss_keys: str):
         self.copy_gloss.emit(db_schema, db_table, db_uid, gloss_keys)
 
-    @pyqtSlot(str, int)
+    @pyqtSlot(str, str, str)
     def emit_copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
         self.copy_meaning.emit(db_schema, db_table, db_uid)
 

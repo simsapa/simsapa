@@ -1,15 +1,15 @@
 from pathlib import Path
-import queue, json, os
+import queue, json, os, re
 from typing import Callable, Dict, List, Optional, TypedDict
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
 import logging
 
-from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage
+from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage, DbSchemaName
 from simsapa import logger, SearchResult
 from simsapa.app.completion_lists import get_and_save_completions
-from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_session
+from simsapa.app.db_session import get_db_engine_connection_session
 
 from simsapa.app.types import GraphRequest, SearchArea, UBookmark, USutta, UDictWord
 
@@ -278,61 +278,6 @@ def route_dict_combined_search():
 
     return jsonify(res), 200
 
-class DpdSearchResult(TypedDict):
-    id: int
-    pali_1: str
-    meaning_1: str
-    grammar: str
-    definition_html: str
-
-# FIXME API to retreive word as i.as_dict
-@app.route('/dpd_search', methods=['POST'])
-def route_dpd_search():
-    data = request.get_json()
-    logger.info(f"/dpd_search {data}")
-    if not data or 'query_text' not in data.keys():
-        return "Missing query_text", 400
-
-    app_db_eng, app_db_conn, app_db_session = get_db_engine_connection_session()
-    dpd_db_eng, dpd_db_conn, dpd_db_session = get_dpd_db_session()
-
-    query_text: str = data['query_text'].strip()
-
-    dpd_id: Optional[int] = None
-
-    if query_text.isdigit():
-        dpd_id = int(query_text)
-
-    dpd_results = []
-
-    if dpd_id is None:
-        r = dpd_db_session.query(Dpd.PaliWord) \
-                          .filter(Dpd.PaliWord.pali_1.like(f"%{query_text}%")) \
-                          .all()
-        dpd_results.extend(r)
-
-        r = dpd_db_session.query(Dpd.PaliRoot) \
-                          .filter(Dpd.PaliRoot.root.like(f"%{query_text}%")) \
-                          .all()
-        dpd_results.extend(r)
-
-    else:
-        dpd_results = dpd_db_session.query(Dpd.PaliWord) \
-                                    .filter(Dpd.PaliWord.id == dpd_id) \
-                                    .all()
-
-    search_results = [i.as_dict for i in dpd_results]
-
-    app_db_conn.close()
-    app_db_session.close()
-    app_db_eng.dispose()
-
-    dpd_db_conn.close()
-    dpd_db_session.close()
-    dpd_db_eng.dispose()
-
-    return jsonify(search_results), 200
-
 @app.route('/dict_words_flat_completion_list', methods=['GET'])
 def route_dict_words_flat_completion_list():
     logger.info('/dict_words_flat_completion_list')
@@ -445,6 +390,64 @@ def route_words(word = '', dict_label = ''):
     text_msg = f"The Simsapa window should appear with '{uid}'. You can close this tab."
 
     return text_msg, 200
+
+@app.route('/words/<string:word>.json', methods=['GET'])
+@app.route('/words/<string:word>/<string:dict_label>.json', methods=['GET'])
+def route_words_json(word = '', dict_label = ''):
+    logger.info(f"route_words_json() {word} {dict_label}")
+
+    query_text = re.sub(r"^/words", "", request.path)
+    query_text = query_text \
+        .strip("/") \
+        .replace(".json", "")
+
+    logger.info(query_text)
+
+    res = app_callbacks.run_dict_combined_search(query_text, 0)
+
+    if len(res['results']) == 0:
+        return jsonify([]), 200
+
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+    res_dicts: List[dict] = []
+
+    for i in res['results']:
+        r: Optional[UDictWord] = None
+
+        if i['schema_name'] == DbSchemaName.AppData.value:
+            r = db_session.query(Am.DictWord) \
+                          .filter(Am.DictWord.uid == i['uid']).first()
+
+        elif i['schema_name'] == DbSchemaName.UserData.value:
+            r = db_session.query(Um.DictWord) \
+                          .filter(Um.DictWord.uid == i['uid']).first()
+
+        elif i['schema_name'] == DbSchemaName.Dpd.value:
+            if i['table_name'] == "pali_words":
+                r = db_session.query(Dpd.PaliWord) \
+                            .filter(Dpd.PaliWord.uid == i['uid']).first()
+
+            elif i['table_name'] == "pali_roots":
+                r = db_session.query(Dpd.PaliRoot) \
+                            .filter(Dpd.PaliRoot.uid == i['uid']).first()
+
+            else:
+                continue
+
+        else:
+            continue
+
+        if r is None:
+            continue
+
+        res_dicts.append(r.as_dict)
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
+
+    return jsonify(res_dicts), 200
 
 @app.route('/open_window', defaults={'window_type': ''})
 @app.route('/open_window/<string:window_type>', methods=['GET'])

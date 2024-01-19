@@ -417,7 +417,12 @@ class AppWindows:
                                     uid: str,
                                     sutta_quote: Optional[SuttaQuote] = None,
                                     quote_scope = QuoteScope.Sutta,
-                                    new_window = False):
+                                    new_window = True):
+
+        # NOTE: Open a new Sutta Study window by default. Using an existing
+        # Sutta Study window can be confusing for new users. It also prone to
+        # queue errors when windows are opened and closed, and the queue's
+        # window_id is not found.
 
         view = None
 

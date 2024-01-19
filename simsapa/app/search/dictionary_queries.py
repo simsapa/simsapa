@@ -6,7 +6,7 @@ from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
 
-from simsapa import SIMSAPA_PACKAGE_DIR, DbSchemaName, SearchResult, DetailsTab, logger, QueryType
+from simsapa import SIMSAPA_PACKAGE_DIR, ICONS_HTML, DbSchemaName, SearchResult, DetailsTab, logger, QueryType
 from simsapa.app.helpers import is_complete_word_uid
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
@@ -217,6 +217,7 @@ class DictionaryQueries(DictionaryQueriesInterface):
                                         css_head=css_head,
                                         js_head=js_head,
                                         js_body=js_body,
+                                        icons_html=ICONS_HTML,
                                         api_url=self.api_url))
 
         return html

@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime
 from typing import Callable, List, Optional, TypedDict, Dict
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 from PyQt6 import QtWidgets
 from PyQt6.QtCore import QUrl, pyqtSignal
@@ -700,7 +700,7 @@ def sutta_quote_from_url(url: QUrl) -> Optional[SuttaQuote]:
     sutta_quote = None
     quote: Optional[str] = None
     if 'quote' in query.keys():
-        quote = query['quote'][0]
+        quote = unquote(query['quote'][0])
 
     if quote:
         selection_range = None
