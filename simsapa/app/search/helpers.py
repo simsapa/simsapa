@@ -187,17 +187,18 @@ def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.P
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str) -> Optional[Dpd.Sandhi]:
+def dpd_deconstructor_query(db_session: Session, query_text: str, exact_only = False) -> Optional[Dpd.Sandhi]:
     # Exact match.
     r = db_session.query(Dpd.Sandhi) \
                     .filter(Dpd.Sandhi.sandhi == query_text) \
                     .first()
 
-    if r is None and len(query_text) >= 4:
-        # Match as 'starts with'.
-        r = db_session.query(Dpd.Sandhi) \
-                      .filter(Dpd.Sandhi.sandhi.like(f"{query_text}%")) \
-                      .first()
+    if not exact_only:
+        if r is None and len(query_text) >= 4:
+            # Match as 'starts with'.
+            r = db_session.query(Dpd.Sandhi) \
+                        .filter(Dpd.Sandhi.sandhi.like(f"{query_text}%")) \
+                        .first()
 
     if r is None and " " in query_text:
         # If the query contained multiple words, remove spaces to find compound forms.
@@ -205,12 +206,13 @@ def dpd_deconstructor_query(db_session: Session, query_text: str) -> Optional[Dp
                       .filter(Dpd.Sandhi.sandhi == query_text.replace(" ", "")) \
                       .first()
 
-    if r is None and len(query_text) >= 4:
-        # No exact match in deconstructor.
-        # If query text is long enough, remove the last letter and match as 'starts with'.
-        r = db_session.query(Dpd.Sandhi) \
-                      .filter(Dpd.Sandhi.sandhi.like(f"{query_text[0:-1]}%")) \
-                      .first()
+    if not exact_only:
+        if r is None and len(query_text) >= 4:
+            # No exact match in deconstructor.
+            # If query text is long enough, remove the last letter and match as 'starts with'.
+            r = db_session.query(Dpd.Sandhi) \
+                        .filter(Dpd.Sandhi.sandhi.like(f"{query_text[0:-1]}%")) \
+                        .first()
 
     return r
 
@@ -449,7 +451,8 @@ def combined_search(queries: GuiSearchQueriesInterface,
 
     db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-    r = dpd_deconstructor_query(db_session, query_text)
+    # NOTE: Use exact_only because 'starts with' matches show confusing additional words.
+    r = dpd_deconstructor_query(db_session, query_text, exact_only = True)
     if r is not None:
         for variation in r.headwords:
             content = " + ".join(variation)
