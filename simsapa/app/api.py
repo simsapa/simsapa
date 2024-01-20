@@ -32,6 +32,7 @@ server_queue: Optional[queue.Queue] = None
 class ApiSearchResult(TypedDict):
     hits: Optional[int]
     results: List[SearchResult]
+    deconstructor: List[str]
 
 class AppCallbacks:
     open_window: Callable[[str], None]
@@ -329,7 +330,6 @@ def route_get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
-# FIXME replaced this with /words/ route with ?window_type=Lookup+Window
 @app.route('/lookup_window_query/<query_text>', methods=['GET'])
 def route_lookup_window_query_get(query_text: str = ''):
     if len(query_text) == 0:

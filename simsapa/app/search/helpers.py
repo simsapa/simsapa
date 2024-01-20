@@ -13,6 +13,7 @@ from simsapa.app.api import ApiSearchResult
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
+from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import strip_html, root_info_clean_plaintext
 from simsapa.app.pali_stemmer import pali_stem
 from simsapa.app.types import SearchArea, SearchMode, SearchParams
@@ -400,6 +401,7 @@ def suttas_fulltext_search(queries: GuiSearchQueriesInterface,
     res = ApiSearchResult(
         hits = queries.query_hits(),
         results = results,
+        deconstructor = [],
     )
 
     return res
@@ -443,9 +445,24 @@ def combined_search(queries: GuiSearchQueriesInterface,
     if do_pali_sort:
         results = sorted(results, key=lambda i: pali_sort_key(f"{i['title']}.{i['schema_name']}.{i['uid']}"))
 
+    deconstructor: List[str] = []
+
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+    r = dpd_deconstructor_query(db_session, query_text)
+    if r is not None:
+        for variation in r.headwords:
+            content = " + ".join(variation)
+            deconstructor.append(content)
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
+
     res = ApiSearchResult(
         hits = queries.query_hits(),
         results = results,
+        deconstructor = deconstructor,
     )
 
     return res
@@ -512,14 +529,21 @@ def get_word_gloss(w: UDictWord, gloss_keys_csv: str) -> str:
     return html
 
 def get_word_meaning(w: UDictWord) -> str:
+    s = ""
+
     if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
-        return w.definition_plain if w.definition_plain is not None else ""
+        s = w.definition_plain if w.definition_plain is not None else ""
 
     elif isinstance(w, Dpd.PaliWord):
-        return w.meaning_1 if w.meaning_1 != "" else w.meaning_2
+        s = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
 
     elif isinstance(w, Dpd.PaliRoot):
-        return w.root_meaning
+        s = w.root_meaning
 
     else:
         raise Exception(f"Unrecognized word type: {w}")
+
+    if s != "":
+        s = strip_html(s)
+
+    return s
