@@ -18,6 +18,7 @@ from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, cr
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
 from simsapa.app.search.helpers import combined_search, suttas_fulltext_search
+from simsapa.app.types import SearchParams
 from simsapa.app.windows import AppWindows
 
 from simsapa.layouts.error_message import ErrorMessageWindow
@@ -220,17 +221,19 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
     def _run_lookup_query(query_text: str):
         app_windows.signals.run_lookup_query_signal.emit(query_text)
 
-    def _run_suttas_fulltext_search(query_text: str, page_num = 0) -> ApiSearchResult:
+    def _run_suttas_fulltext_search(query_text: str, params: SearchParams, page_num = 0) -> ApiSearchResult:
         return suttas_fulltext_search(
             queries = app_data._queries,
             query_text = query_text,
+            params = params,
             page_num = page_num,
         )
 
-    def _run_dict_combined_search(query_text: str, page_num = 0) -> ApiSearchResult:
+    def _run_dict_combined_search(query_text: str, params: SearchParams, page_num = 0) -> ApiSearchResult:
         return combined_search(
             queries = app_data._queries,
             query_text = query_text,
+            params = params,
             page_num = page_num,
         )
 

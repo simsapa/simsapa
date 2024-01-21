@@ -11,7 +11,7 @@ from simsapa import logger, SearchResult
 from simsapa.app.completion_lists import get_and_save_completions
 from simsapa.app.db_session import get_db_engine_connection_session
 
-from simsapa.app.types import GraphRequest, SearchArea, UBookmark, USutta, UDictWord
+from simsapa.app.types import GraphRequest, SearchArea, SearchMode, SearchParams, UBookmark, USutta, UDictWord
 
 from sqlalchemy import and_, or_
 
@@ -37,8 +37,8 @@ class ApiSearchResult(TypedDict):
 class AppCallbacks:
     open_window: Callable[[str], None]
     run_lookup_query: Callable[[str], None]
-    run_suttas_fulltext_search: Callable[[str, int], ApiSearchResult]
-    run_dict_combined_search: Callable[[str, int], ApiSearchResult]
+    run_suttas_fulltext_search: Callable[[str, SearchParams, int], ApiSearchResult]
+    run_dict_combined_search: Callable[[str, SearchParams, int], ApiSearchResult]
 
     def __init__(self):
         pass
@@ -260,7 +260,28 @@ def route_suttas_fulltext_search():
     else:
         page_num = int(data['page_num'])
 
-    res = app_callbacks.run_suttas_fulltext_search(data['query_text'].strip(), page_num)
+    if 'suttas_lang' not in data.keys():
+        lang = 'Languages'
+    else:
+        lang = data['suttas_lang']
+
+    if 'suttas_lang_include' not in data.keys():
+        lang_include = True
+    else:
+        lang_include = data['suttas_lang_include']
+
+    params = SearchParams(
+        mode = SearchMode.FulltextMatch,
+        page_len = 20,
+        lang = lang,
+        lang_include = lang_include,
+        source = None,
+        source_include = True,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
+    res = app_callbacks.run_suttas_fulltext_search(data['query_text'].strip(), params, page_num)
 
     return jsonify(res), 200
 
@@ -275,7 +296,38 @@ def route_dict_combined_search():
     else:
         page_num = int(data['page_num'])
 
-    res = app_callbacks.run_dict_combined_search(data['query_text'].strip(), page_num)
+    if 'dict_lang' not in data.keys():
+        lang = 'Languages'
+    else:
+        lang = data['dict_lang']
+
+    if 'dict_lang_include' not in data.keys():
+        lang_include = True
+    else:
+        lang_include = data['dict_lang_include']
+
+    if 'dict_dict' not in data.keys():
+        dict = 'Dictionaries'
+    else:
+        dict = data['dict_dict']
+
+    if 'dict_dict_include' not in data.keys():
+        dict_include = True
+    else:
+        dict_include = data['dict_dict_include']
+
+    params = SearchParams(
+        mode = SearchMode.Combined,
+        page_len = 20,
+        lang = lang,
+        lang_include = lang_include,
+        source = dict,
+        source_include = dict_include,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
+    res = app_callbacks.run_dict_combined_search(data['query_text'].strip(), params, page_num)
 
     return jsonify(res), 200
 
@@ -403,7 +455,18 @@ def route_words_json(word = '', dict_label = ''):
 
     logger.info(query_text)
 
-    res = app_callbacks.run_dict_combined_search(query_text, 0)
+    params = SearchParams(
+        mode = SearchMode.Combined,
+        page_len = 20,
+        lang = None,
+        lang_include = True,
+        source = None,
+        source_include = True,
+        enable_regex = False,
+        fuzzy_distance = 0,
+    )
+
+    res = app_callbacks.run_dict_combined_search(query_text, params, 0)
 
     if len(res['results']) == 0:
         return jsonify([]), 200
@@ -559,8 +622,8 @@ def start_server(port: int,
                  q: queue.Queue,
                  open_window_fn: Callable[[str], None],
                  run_lookup_query_fn: Callable[[str], None],
-                 run_suttas_fulltext_search_fn: Callable[[str, int], ApiSearchResult],
-                 run_dict_combined_search_fn: Callable[[str, int], ApiSearchResult]):
+                 run_suttas_fulltext_search_fn: Callable[[str, SearchParams, int], ApiSearchResult],
+                 run_dict_combined_search_fn: Callable[[str, SearchParams, int], ApiSearchResult]):
     logger.info(f'Starting server on port {port}')
 
     global server_queue

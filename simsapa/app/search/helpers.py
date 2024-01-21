@@ -16,7 +16,7 @@ from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.helpers import strip_html, root_info_clean_plaintext
 from simsapa.app.pali_stemmer import pali_stem
-from simsapa.app.types import SearchArea, SearchMode, SearchParams
+from simsapa.app.types import SearchArea, SearchParams
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 
@@ -363,19 +363,9 @@ def unique_search_results(results: List[SearchResult]) -> List[SearchResult]:
 
 def suttas_fulltext_search(queries: GuiSearchQueriesInterface,
                            query_text: str,
-                           lang: Optional[str] = None,
+                           params: SearchParams,
                            page_num = 0,
                            do_pali_sort = False) -> ApiSearchResult:
-    params = SearchParams(
-        mode = SearchMode.FulltextMatch,
-        page_len = 20,
-        lang = lang,
-        lang_include = True,
-        source = None,
-        source_include = True,
-        enable_regex = False,
-        fuzzy_distance = 0,
-    )
 
     _last_query_time = datetime.now()
 
@@ -410,20 +400,9 @@ def suttas_fulltext_search(queries: GuiSearchQueriesInterface,
 
 def combined_search(queries: GuiSearchQueriesInterface,
                     query_text: str,
-                    lang: Optional[str] = None,
+                    params: SearchParams,
                     page_num = 0,
                     do_pali_sort = False) -> ApiSearchResult:
-    params = SearchParams(
-        mode = SearchMode.Combined,
-        page_len = 20,
-        lang = lang,
-        lang_include = True,
-        source = None,
-        source_include = True,
-        enable_regex = False,
-        fuzzy_distance = 0,
-    )
-
     _last_query_time = datetime.now()
 
     def _search_query_finished(__query_started_time__: datetime):
