@@ -198,7 +198,7 @@ class PaliRoot(Base):
 
     @property
     def definition_plain(self) -> str:
-        return ""
+        return self.root_meaning
 
     @property
     def definition_html(self) -> str:
@@ -522,7 +522,7 @@ class PaliWord(Base):
 
     @property
     def definition_plain(self) -> str:
-        return ""
+        return self.meaning_1 if self.meaning_1 != "" else self.meaning_2
 
     @property
     def definition_html(self) -> str:

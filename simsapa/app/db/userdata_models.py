@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from sqlalchemy import (MetaData, Table, Column, Integer,
                         ForeignKey, DateTime, LargeBinary)
 
@@ -225,6 +225,23 @@ class DictWord(Base):
     dictionary: Mapped[Dictionary]    = relationship("Dictionary", back_populates="dict_words")
     examples: Mapped[List["Example"]] = relationship("Example",    back_populates="dict_word", passive_deletes=True)
     tags: Mapped[List["Tag"]]         = relationship("Tag",        secondary=assoc_dict_word_tags, back_populates="dict_words")
+
+    @property
+    def as_dict(self) -> Dict[str, Any]:
+        keys = ['id', 'dictionary_id', 'uid', 'word', 'word_ascii', 'language',
+                'source_uid', 'word_nom_sg', 'inflections', 'phonetic',
+                'transliteration', 'meaning_order', 'definition_plain',
+                'definition_html', 'summary', 'synonyms', 'antonyms',
+                'homonyms', 'also_written_as', 'see_also']
+
+        d: Dict[str, Any] = dict()
+
+        for k in keys:
+            if k not in self.__dict__.keys():
+                raise Exception(f"Key not found in DictWord: {k}")
+            d[k] = self.__dict__[k]
+
+        return d
 
 class Example(Base):
     __tablename__ = "examples"

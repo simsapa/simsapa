@@ -19,7 +19,7 @@ from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 
-from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss, get_word_meaning
+from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss_html, get_word_meaning
 from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
@@ -279,7 +279,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     def _copy_gloss(self, db_schema: str, db_table: str, db_uid: str, gloss_keys: str):
         w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)
-        self._copy_clipboard_html(get_word_gloss(w, gloss_keys))
+        self._copy_clipboard_html(get_word_gloss_html(w, gloss_keys))
 
     def _copy_meaning(self, db_schema: str, db_table: str, db_uid: str):
         w = get_word_for_schema_table_and_uid(self._app_data.db_session, db_schema, db_table, db_uid)

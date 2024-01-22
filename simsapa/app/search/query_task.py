@@ -62,7 +62,8 @@ class SearchQueryTask:
             return self.search_query.hits_count
 
         elif self.search_mode == SearchMode.DpdIdMatch or \
-             self.search_mode == SearchMode.DpdLookup:
+             self.search_mode == SearchMode.DpdLookup or \
+             self.search_mode == SearchMode.UidMatch:
 
             return len(self._db_all_results)
 
@@ -132,6 +133,11 @@ class SearchQueryTask:
         elif self.search_mode == SearchMode.FulltextMatch:
             res = self.search_query.highlighted_results_page(page_num)
             self._highlighted_result_pages[page_num] = res
+
+        elif self.search_mode == SearchMode.UidMatch:
+            res = self.uid_word()
+            self._highlighted_result_pages[page_num] = res
+            self._db_all_results = res
 
         elif self.search_mode == SearchMode.DpdIdMatch:
             res = self.dpd_id_word()
@@ -395,6 +401,50 @@ class SearchQueryTask:
 
         return list(map(self._db_word_to_result, res))
 
+    def uid_word(self) -> List[SearchResult]:
+        uid = self.query_text.lower() \
+                             .replace("uid:", "")
+
+        logger.info(f"uid_word() {uid}")
+
+        db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+        if uid.endswith("/dpd"):
+            word = db_session.query(Dpd.PaliWord) \
+                            .filter(Dpd.PaliWord.uid == uid) \
+                            .first()
+
+            if word is None:
+                word = db_session.query(Dpd.PaliRoot) \
+                                .filter(Dpd.PaliRoot.uid == uid) \
+                                .first()
+
+        else:
+            word = db_session.query(Am.DictWord) \
+                            .filter(Am.DictWord.uid == uid) \
+                            .first()
+
+            if word is None:
+                word = db_session.query(Um.DictWord) \
+                                .filter(Um.DictWord.uid == uid) \
+                                .first()
+
+        res_page = []
+
+        if word is not None:
+            snippet = str(word.definition_plain)
+            if len(snippet) > 100:
+                snippet = snippet[0:100] + " ..."
+
+            res = dict_word_to_search_result(word, snippet)
+            res_page.append(res)
+
+        db_conn.close()
+        db_session.close()
+        db_eng.dispose()
+
+        return res_page
+
     def dpd_id_word(self) -> List[SearchResult]:
         if not self.query_text.isdigit():
             return []
@@ -580,7 +630,8 @@ class SearchQueryTask:
             self.results_page(0)
 
         elif self.search_mode == SearchMode.DpdIdMatch or \
-             self.search_mode == SearchMode.DpdLookup:
+             self.search_mode == SearchMode.DpdLookup or \
+             self.search_mode == SearchMode.UidMatch:
 
             self.results_page(0)
 

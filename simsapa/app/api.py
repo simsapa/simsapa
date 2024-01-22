@@ -1,5 +1,5 @@
 from pathlib import Path
-import queue, json, os, re
+import queue, json, os
 from typing import Callable, Dict, List, Optional, TypedDict
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
@@ -448,25 +448,23 @@ def route_words(word = '', dict_label = ''):
 def route_words_json(word = '', dict_label = ''):
     logger.info(f"route_words_json() {word} {dict_label}")
 
-    query_text = re.sub(r"^/words", "", request.path)
-    query_text = query_text \
-        .strip("/") \
-        .replace(".json", "")
-
-    logger.info(query_text)
+    if dict_label == '':
+        source = None
+    else:
+        source = dict_label
 
     params = SearchParams(
         mode = SearchMode.Combined,
         page_len = 20,
         lang = None,
         lang_include = True,
-        source = None,
+        source = source,
         source_include = True,
         enable_regex = False,
         fuzzy_distance = 0,
     )
 
-    res = app_callbacks.run_dict_combined_search(query_text, params, 0)
+    res = app_callbacks.run_dict_combined_search(word, params, 0)
 
     if len(res['results']) == 0:
         return jsonify([]), 200

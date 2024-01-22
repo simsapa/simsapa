@@ -1,6 +1,7 @@
 from datetime import datetime
 from math import ceil
 from typing import List, Optional, Callable
+import re
 
 from sqlalchemy.orm.session import Session
 
@@ -107,9 +108,14 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
             lang_keys = list(self._search_indexes.dict_words_lang_index.keys())
             lang_indexes = self._search_indexes.dict_words_lang_index
 
-            # If the query_text is an integer, it is a DPD ID.
             if query_text_orig.isdigit():
+                # If the query_text is an integer, it is a DPD ID.
                 params['mode'] = SearchMode.DpdIdMatch
+
+            elif re.search(r"/[a-z0-9-]+$", query_text_orig.lower()):
+                # If the query_text ends with sth like /pts, /sbs-ru, then the
+                # user is looking for specific word with a uid.
+                params['mode'] = SearchMode.UidMatch
 
         if params['lang'] is not None:
             if params['lang_include']:

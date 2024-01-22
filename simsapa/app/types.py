@@ -38,6 +38,7 @@ class SearchMode(int, Enum):
     DpdIdMatch = 4
     DpdLookup = 5
     Combined = 6
+    UidMatch = 7
 
 AllSearchModeNameToType = {
     "Combined": SearchMode.Combined,
@@ -48,6 +49,7 @@ AllSearchModeNameToType = {
     # FIXME test HeadwordMatch
     # "Headword Match": SearchMode.HeadwordMatch,
     "Title Match": SearchMode.TitleMatch,
+    "UID Match": SearchMode.UidMatch,
 }
 
 SuttaSearchModeNameToType = {
@@ -64,6 +66,7 @@ DictionarySearchModeNameToType = {
     # "Exact Match": SearchMode.ExactMatch,
     # FIXME test HeadwordMatch
     # "Headword Match": SearchMode.HeadwordMatch,
+    # "UID Match": SearchMode.UidMatch,
 }
 
 class SearchParams(TypedDict):

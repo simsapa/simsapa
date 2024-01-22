@@ -38,11 +38,12 @@
         <button
             title="Copy gloss line as table row"
             class="ssp-button ssp-icon-button"
-            onclick="document.SSP.copy_gloss('${w.metadata.schema}', '${w.__tablename__}', '${w.uid}', 'id, pali_1, pos, grammar, meaning_1, construction', '${transient_id}')"
+            onclick="document.SSP.copy_gloss('${w.metadata.schema}', '${w.__tablename__}', '${w.uid}', 'copy_gloss() ignores gloss-keys-csv for now', '${transient_id}')"
         >
             <svg class="ssp-icon-button__icon"><use xlink:href="#icon-table"></use></svg>
         </button>
 
+        <!-- NOTE: copy_gloss() ignores gloss-keys-csv for now -->
         <!-- <button
              title="Set gloss keys"
              class="ssp-button ssp-icon-button"

@@ -485,28 +485,40 @@ def get_word_for_schema_table_and_uid(db_session: Session, db_schema: str, db_ta
 
     return w
 
-def get_word_gloss(w: UDictWord, gloss_keys_csv: str) -> str:
-    html = ""
+def get_word_gloss_html(w: UDictWord, __gloss_keys_csv__: str) -> str:
+    html = "<table><tr><td>"
 
-    if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
-        return "<p>Gloss only works for DPD words</p>"
+    data = w.as_dict
+    values = []
 
-    elif isinstance(w, Dpd.PaliWord) or isinstance(w, Dpd.PaliRoot):
-        html = "<table><tr><td>"
+    # NOTE: ignore gloss_keys_csv argument for now
+    #
+    # if (uid.endsWith('/dpd')) {
+    #   const item_keys = ['uid', 'pali_1', 'pos', 'grammar', 'meaning_1', 'construction'];
+    #   item_values = item_keys.map(key => item[key]);
 
-        data = w.as_dict
-        values = []
+    # } else {
+    #   const item_keys = ['uid', 'word', '', '', 'definition_plain', ''];
 
-        for k in gloss_keys_csv.split(','):
-            k = k.strip()
-            if k in data.keys():
-                values.append(str(data[k]))
+    if w.uid.endswith('/dpd'):
+        item_keys = ['uid', 'pali_1', 'pos', 'grammar', 'meaning_1', 'construction']
+    else:
+        item_keys = ['uid', 'word', '', '', 'definition_plain', '']
+
+    for k in item_keys:
+        k = k.strip()
+        if k != '' and k in data.keys():
+            s = str(data[k])
+            if len(s) <= 100:
+                values.append(s)
             else:
-                values.append('')
+                values.append(s[0:100] + " ...")
+        else:
+            values.append('')
 
-        html += "</td><td>".join(values)
+    html += "</td><td>".join(values)
 
-        html += "</td></tr></table>"
+    html += "</td></tr></table>"
 
     return html
 
