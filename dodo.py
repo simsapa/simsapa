@@ -150,7 +150,7 @@ def task_build_macos_dmg():
         'actions': ['./scripts/build_dmg.sh'],
         'targets': ['dist/Simsapa Dhamma Reader.dmg'],
         # 'file_dep': ['dist/Simsapa Dhamma Reader.app'],
-        # 'clean': True,
+        'clean': True,
     }
 
 def task_remove_local_db():

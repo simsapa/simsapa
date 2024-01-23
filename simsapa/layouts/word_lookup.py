@@ -570,10 +570,9 @@ class WordLookup(WordLookupInterface):
 
         self._restore_size_pos()
 
-        flags = Qt.WindowType.Dialog | \
-            Qt.WindowType.WindowStaysOnTopHint
-
-        self.setWindowFlags(Qt.WindowType(flags))
+        # NOTE: Don't set Qt.WindowType.Dialog flag, it disables the tiling
+        # behaviour in window managers such as Cinnamon.
+        self.setWindowFlags(Qt.WindowType(Qt.WindowType.WindowStaysOnTopHint))
 
         self.setObjectName("WordLookup")
         self.setStyleSheet("#WordLookup { background-color: %s; }" % READING_BACKGROUND_COLOR)
