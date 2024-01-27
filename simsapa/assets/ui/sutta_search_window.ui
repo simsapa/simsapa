@@ -545,6 +545,7 @@
      <string>F&amp;ind</string>
     </property>
     <addaction name="action_Show_Search_Bar"/>
+    <addaction name="action_Show_Search_Options"/>
     <addaction name="action_Show_Sidebar"/>
     <addaction name="action_Search_As_You_Type"/>
     <addaction name="action_Search_Completion"/>
@@ -943,6 +944,20 @@
    </property>
    <property name="statusTip">
     <string/>
+   </property>
+  </action>
+  <action name="action_Show_Search_Options">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Search Options</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or the search control options</string>
    </property>
   </action>
   <action name="action_Search_As_You_Type">

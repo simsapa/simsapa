@@ -3,17 +3,17 @@ import subprocess
 from PyQt6.QtCore import QUrl, Qt
 from functools import partial
 from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
-from PyQt6.QtWidgets import QFrame, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QBoxLayout, QFrame, QLabel, QMainWindow, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from simsapa import IS_SWAY, SIMSAPA_DIR, SIMSAPA_PACKAGE_DIR
 
 from simsapa.layouts.gui_helpers import get_app_version, get_sys_version
 from simsapa.layouts.gui_types import QExpanding
 
-def setup_info_button(layout):
+def setup_info_button(layout: QBoxLayout, icon_height = 40):
     icon = QIcon()
     icon.addPixmap(QPixmap(":/info"))
     btn = QPushButton()
-    btn.setFixedSize(40, 40)
+    btn.setFixedSize(icon_height, icon_height)
     btn.setToolTip("Search query terms")
     btn.setIcon(icon)
 

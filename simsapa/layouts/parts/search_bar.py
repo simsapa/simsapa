@@ -36,6 +36,9 @@ class HasSearchBar(SearchBarInterface):
     enable_sidebar: bool
     action_Show_Sidebar: QAction
 
+    row_one: QHBoxLayout
+    row_two: QHBoxLayout
+
     qwe: QWebEngineView
 
     def init_search_bar(self,
@@ -90,8 +93,8 @@ class HasSearchBar(SearchBarInterface):
             # self._setup_toggle_pali_button() # TODO: reimplement as hover window
 
             if enable_info_button:
-                self.search_extras.addItem(QSpacerItem(5, 0, QSizeMinimum, QSizeMinimum))
-                setup_info_button(self.search_extras)
+                self.row_two.addItem(QSpacerItem(5, 0, QSizeMinimum, QSizeMinimum))
+                setup_info_button(self.row_two, self._icons_height)
 
             # self._setup_pali_buttons() # TODO: reimplement as hover window
 
@@ -101,7 +104,7 @@ class HasSearchBar(SearchBarInterface):
         if not self.enable_sidebar:
             return
 
-        spacerItem = QSpacerItem(40, 20, QExpanding, QMinimum)
+        spacerItem = QSpacerItem(0, 20, QExpanding, QMinimum)
 
         wrap_layout.addItem(spacerItem)
 
@@ -110,7 +113,7 @@ class HasSearchBar(SearchBarInterface):
 
         self.show_sidebar_btn = QPushButton()
         self.show_sidebar_btn.setIcon(icon)
-        self.show_sidebar_btn.setMinimumSize(QSize(40, 40))
+        self.show_sidebar_btn.setMinimumSize(QSize(self._icons_height, self._icons_height))
         self.show_sidebar_btn.setToolTip("Toggle Sidebar")
 
         wrap_layout.addWidget(self.show_sidebar_btn)
@@ -121,39 +124,87 @@ class HasSearchBar(SearchBarInterface):
                       enable_sidebar_button: bool,
                       input_fixed_size: Optional[QSize] = None,
                       two_rows_layout = False):
-        box_wrap = QHBoxLayout()
-        box_wrap.setContentsMargins(0, 0, 0, 0)
+        """
+        wrap_layout
+
+            search_bar_frame
+                search_bar_box
+                    row_one_frame
+                        row_one
+                            back_recent_button
+                            forward_recent_button
+                            search_input
+                            search_button
+
+                    row_two_frame
+                        row_two
+                            search_mode_dropdown
+                            language_include_btn
+                            language_filter_dropdown
+                            source_include_btn
+                            source_filter_dropdown
+                            regex_fuzzy_frame
+                                regex_checkbox
+                                fuzzy_spin
+
+            spacerItem
+            show_sidebar_btn
+        """
+
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+
+        if two_rows_layout:
+            search_bar_box = QVBoxLayout()
+        else:
+            search_bar_box = QHBoxLayout()
+
+        if two_rows_layout:
+            frame_height = self._icons_height*2 + 30
+        else:
+            frame_height = self._icons_height + 30
 
         frame = QFrame()
         frame.setFrameShape(QFrame.Shape.NoFrame)
         frame.setFrameShadow(QFrame.Shadow.Raised)
         frame.setLineWidth(0)
         frame.setContentsMargins(0, 0, 0, 0)
-        if two_rows_layout:
-            frame_height = self._icons_height*2 + 10
-        else:
-            frame_height = self._icons_height + 10
+        frame.setMinimumWidth(10)
 
         frame.setMaximumHeight(frame_height)
 
         self.search_bar_frame = frame
-        self.search_bar_frame.setLayout(box_wrap)
+        self.search_bar_frame.setLayout(search_bar_box)
 
         wrap_layout.addWidget(self.search_bar_frame)
 
-        search_bar_box = QVBoxLayout()
-        row_one = QHBoxLayout()
-        row_two = QHBoxLayout()
+        self.row_one = QHBoxLayout()
+        self.row_two = QHBoxLayout()
 
-        if two_rows_layout:
-            search_bar_box.addLayout(row_one)
-            search_bar_box.addLayout(row_two)
+        self.row_one.setContentsMargins(0, 0, 0, 0)
+        self.row_two.setContentsMargins(0, 0, 0, 0)
 
-            box_wrap.addLayout(search_bar_box)
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+        frame.setContentsMargins(0, 0, 0, 0)
+        frame.setMinimumWidth(10)
 
-        else:
-            row_one = QHBoxLayout()
-            box_wrap.addLayout(row_one)
+        self.row_one_frame = frame
+        self.row_one_frame.setLayout(self.row_one)
+
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.NoFrame)
+        frame.setFrameShadow(QFrame.Shadow.Raised)
+        frame.setLineWidth(0)
+        frame.setContentsMargins(0, 0, 0, 0)
+        frame.setMinimumWidth(10)
+
+        self.row_two_frame = frame
+        self.row_two_frame.setLayout(self.row_two)
+
+        search_bar_box.addWidget(self.row_one_frame)
+        search_bar_box.addWidget(self.row_two_frame)
 
         # === Back / Forward Nav Buttons ===
 
@@ -168,7 +219,7 @@ class HasSearchBar(SearchBarInterface):
             self.back_recent_button.setIcon(icon)
             self.back_recent_button.setObjectName("back_recent_button")
 
-            row_one.addWidget(self.back_recent_button)
+            self.row_one.addWidget(self.back_recent_button)
 
             self.forward_recent_button = QPushButton()
             self.forward_recent_button.setFixedSize(self._icons_height, self._icons_height)
@@ -177,11 +228,12 @@ class HasSearchBar(SearchBarInterface):
             icon1.addPixmap(QPixmap(":/arrow-right"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.Off)
             self.forward_recent_button.setIcon(icon1)
 
-            row_one.addWidget(self.forward_recent_button)
+            self.row_one.addWidget(self.forward_recent_button)
 
         # === Search Input ====
 
         self.search_input = QLineEdit()
+        self.search_input.setContentsMargins(0, 0, 0, 0)
 
         if self._search_area == SearchArea.Suttas:
             placeholder_text = "Search in suttas"
@@ -209,10 +261,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.search_button.setFixedSize(self._icons_height, self._icons_height)
         self.search_button.setIcon(self._normal_search_icon)
 
-        row_one.addWidget(self.search_input)
-        row_one.addWidget(self.search_button)
+        self.row_one.addWidget(self.search_input)
+        self.row_one.addWidget(self.search_button)
 
-        # === Search Mode ====
+        # === Row Two: Search Options ====
 
         self.search_mode_dropdown = QComboBox()
 
@@ -230,22 +282,10 @@ QWidget:focus { border: 1px solid #1092C3; }
         idx = values.index(mode)
         self.search_mode_dropdown.setCurrentIndex(idx)
 
-        if two_rows_layout:
-            row_two.addWidget(self.search_mode_dropdown)
-        else:
-            row_one.addWidget(self.search_mode_dropdown)
-
-        # === Search Extras ====
-
-        self.search_extras = QHBoxLayout()
-
-        if two_rows_layout:
-            row_two.addLayout(self.search_extras)
-        else:
-            row_one.addLayout(self.search_extras)
+        self.row_two.addWidget(self.search_mode_dropdown)
 
         if enable_sidebar_button:
-            self._setup_show_sidebar_btn(box_wrap)
+            self._setup_show_sidebar_btn(search_bar_box)
 
     def _init_search_icons(self):
         search_icon = QIcon()
@@ -320,12 +360,14 @@ QWidget:focus { border: 1px solid #1092C3; }
         frame.setFrameShape(QFrame.Shape.NoFrame)
         frame.setFrameShadow(QFrame.Shadow.Raised)
         frame.setLineWidth(0)
+        frame.setMinimumWidth(10)
+        frame.setContentsMargins(0, 0, 0, 0)
 
         box = QHBoxLayout()
 
         self.regex_fuzzy_frame = frame
         self.regex_fuzzy_frame.setLayout(box)
-        self.search_extras.addWidget(self.regex_fuzzy_frame)
+        self.row_two.addWidget(self.regex_fuzzy_frame)
 
         # === Regex checkbox ===
 
@@ -384,7 +426,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             cmb.setCurrentIndex(0)
 
         self.language_filter_dropdown = cmb
-        self.search_extras.addWidget(self.language_filter_dropdown)
+        self.row_two.addWidget(self.language_filter_dropdown)
 
         self.language_filter_dropdown.currentIndexChanged.connect(partial(self._save_search_bar_settings))
         self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
@@ -402,7 +444,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         btn.setChecked(True)
 
         self.language_include_btn = btn
-        self.search_extras.addWidget(self.language_include_btn)
+        self.row_two.addWidget(self.language_include_btn)
 
         def _clicked():
             is_on = self.language_include_btn.isChecked()
@@ -432,7 +474,7 @@ QWidget:focus { border: 1px solid #1092C3; }
         btn.setChecked(True)
 
         self.source_include_btn = btn
-        self.search_extras.addWidget(self.source_include_btn)
+        self.row_two.addWidget(self.source_include_btn)
 
         def _clicked():
             is_on = self.source_include_btn.isChecked()
@@ -470,7 +512,7 @@ QWidget:focus { border: 1px solid #1092C3; }
             cmb.setCurrentIndex(0)
 
         self.source_filter_dropdown = cmb
-        self.search_extras.addWidget(self.source_filter_dropdown)
+        self.row_two.addWidget(self.source_filter_dropdown)
 
         self.source_filter_dropdown.currentIndexChanged.connect(partial(self._save_search_bar_settings))
         self.source_filter_dropdown.currentIndexChanged.connect(partial(self._handle_query, min_length=4))
@@ -641,6 +683,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         is_on = view.action_Show_Search_Bar.isChecked()
         self.search_bar_frame.setVisible(is_on)
 
+    def _toggle_show_search_options(self, view):
+        is_on = view.action_Show_Search_Options.isChecked()
+        self.row_two_frame.setVisible(is_on)
+
+        self._app_data.app_settings['show_search_options'] = is_on
+        self._app_data._save_app_settings()
+
     def _connect_search_bar_signals(self):
         if hasattr(self, 'pw'):
             view = self.pw # type: ignore
@@ -650,6 +699,14 @@ QWidget:focus { border: 1px solid #1092C3; }
         if hasattr(view, 'action_Show_Search_Bar'):
             view.action_Show_Search_Bar \
                 .triggered.connect(partial(self._toggle_show_search_bar, view))
+
+        if hasattr(view, 'action_Show_Search_Options'):
+            is_on = self._app_data.app_settings.get('show_search_options', True)
+            view.action_Show_Search_Options.setChecked(is_on)
+            self.row_two_frame.setVisible(is_on)
+
+            view.action_Show_Search_Options \
+                .triggered.connect(partial(self._toggle_show_search_options, view))
 
         if self.enable_sidebar_button:
             def _handle_sidebar():
