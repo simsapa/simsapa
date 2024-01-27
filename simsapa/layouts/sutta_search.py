@@ -13,7 +13,7 @@ from simsapa.assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 from simsapa.app.app_data import AppData
 from simsapa.app.types import USutta
 
-from simsapa.layouts.gui_types import SuttaSearchWindowInterface
+from simsapa.layouts.gui_types import SuttaSearchWindowInterface, WindowType
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.help_info import show_search_info
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
@@ -95,6 +95,8 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.action_Show_Related_Suttas.setChecked(show)
 
     def closeEvent(self, event: QCloseEvent):
+        self._app_data.save_last_closed_window(WindowType.SuttaSearch)
+
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
 

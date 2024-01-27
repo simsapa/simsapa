@@ -24,7 +24,7 @@ from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.layouts.find_panel import FindPanel, FindSearched
 from simsapa.layouts.gui_helpers import get_search_params
 
-from simsapa.layouts.gui_types import LinkHoverData, WindowPosSize, WordLookupInterface, WordLookupStateInterface
+from simsapa.layouts.gui_types import LinkHoverData, WindowPosSize, WindowType, WordLookupInterface, WordLookupStateInterface
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.reader_web import ReaderWebEnginePage
@@ -718,6 +718,8 @@ class WordLookup(WordLookupInterface):
         self.hide()
 
     def closeEvent(self, _: QCloseEvent) -> None:
+        self._app_data.save_last_closed_window(WindowType.WordLookup)
+
         # Don't close, hide the window so it doesn't have to be re-created.
         self.hide()
 

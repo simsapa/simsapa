@@ -26,7 +26,7 @@ from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
 
 from simsapa.layouts.gui_helpers import get_search_params
-from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface
+from simsapa.layouts.gui_types import LinkHoverData, DictionarySearchWindowInterface, WindowType
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.find_panel import FindSearched, FindPanel
@@ -180,6 +180,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
             return None
 
     def closeEvent(self, event: QCloseEvent):
+        self._app_data.save_last_closed_window(WindowType.DictionarySearch)
+
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
 

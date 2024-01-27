@@ -16,7 +16,7 @@ from simsapa.app.types import USutta
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
-from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaPanel, SuttaPanelSettingKeys, SuttaStudyWindowInterface
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaPanel, SuttaPanelSettingKeys, SuttaStudyWindowInterface, WindowType
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_lookup import WordLookupState
@@ -541,6 +541,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.sutta_panels[0]['state']._find_panel.search_input.setFocus()
 
     def closeEvent(self, event: QCloseEvent):
+        self._app_data.save_last_closed_window(WindowType.SuttaStudy)
+
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
 

@@ -26,7 +26,7 @@ from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
 
-from simsapa.layouts.gui_types import EbookReaderWindowInterface, QExpanding, QMinimum, sutta_quote_from_url
+from simsapa.layouts.gui_types import EbookReaderWindowInterface, QExpanding, QMinimum, WindowType, sutta_quote_from_url
 
 class ChapterItem(QStandardItem):
     title: str
@@ -581,6 +581,8 @@ class EbookReaderWindow(EbookReaderWindowInterface):
         self.close()
 
     def closeEvent(self, event: QCloseEvent):
+        self._app_data.save_last_closed_window(WindowType.EbookReader)
+
         if self.ebook_unzip_dir is not None and self.ebook_unzip_dir.exists():
             shutil.rmtree(self.ebook_unzip_dir)
 

@@ -190,7 +190,7 @@ class AppWindows:
                 show_window = False
 
         if show_window:
-            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.LastClosed)
             self._open_window_type(window_type)
 
     def _handle_open_window_signal(self, window_type_name: str = ''):
@@ -199,7 +199,7 @@ class AppWindows:
         if len(window_type_name) == 0 \
            or window_type_name not in WindowNameToType.keys():
 
-            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+            window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.LastClosed)
             self._open_window_type(window_type)
             return
 
@@ -528,13 +528,25 @@ class AppWindows:
         elif window_type == WindowType.WordLookup:
             return self._toggle_word_lookup()
 
+        elif window_type == WindowType.LastClosed:
+            return self.open_last_closed_window()
+
         else:
             return self._new_sutta_search_window()
 
-    def open_first_window(self, window_type: Optional[WindowType] = None):
+    def open_first_window(self, window_type: Optional[WindowType] = None) -> Optional[QMainWindow]:
         if window_type is None:
             window_type = self._app_data.app_settings.get('first_window_on_startup', WindowType.SuttaSearch)
-        self._open_window_type(window_type)
+        return self._open_window_type(window_type)
+
+    def open_last_closed_window(self) -> Optional[QMainWindow]:
+        window_type = self._app_data.get_last_closed_window()
+
+        if window_type is None:
+            return self._new_sutta_search_window()
+
+        else:
+            return self._open_window_type(window_type)
 
     def _lookup_msg(self, query: str):
         msg = ApiMessage(queue_id = 'all',
@@ -1602,10 +1614,10 @@ class AppWindows:
             self._app_data.app_settings['first_window_on_startup'] = WindowNameToType[item]
             self._app_data._save_app_settings()
 
-    def _select_track_click_window_dialog(self, view: AppWindowInterface):
+    def _select_tray_click_window_dialog(self, view: AppWindowInterface):
         options = WindowNameToType.keys()
 
-        window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.SuttaSearch)
+        window_type = self._app_data.app_settings.get('tray_click_opens_window', WindowType.LastClosed)
         option_idx = 0
         for idx, i in enumerate(WindowNameToType.values()):
             if i == window_type:
@@ -1723,7 +1735,7 @@ class AppWindows:
 
         if hasattr(view, 'action_Tray_Click_Opens_Window'):
             view.action_Tray_Click_Opens_Window \
-                .triggered.connect(partial(self._select_track_click_window_dialog, view))
+                .triggered.connect(partial(self._select_tray_click_window_dialog, view))
 
         if hasattr(view, 'action_Re_index_database'):
             view.action_Re_index_database \

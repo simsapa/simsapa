@@ -34,7 +34,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 from simsapa.layouts.gui_queries import GuiSearchQueries
 
-from simsapa.layouts.gui_types import AppSettings, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
+from simsapa.layouts.gui_types import AppSettings, WindowNameToType, WindowType, default_app_settings, PaliGroupStats, PaliChallengeType, PaliItem, TomlCourseGroup
 
 class AppData:
 
@@ -276,6 +276,47 @@ class AppData:
                 self.db_session.commit()
         except Exception as e:
             logger.error(e)
+
+    def save_last_closed_window(self, window_type: WindowType):
+        r = self.db_session \
+                .query(Um.AppSetting) \
+                .filter(Um.AppSetting.key == 'last_closed_window') \
+                .first()
+
+        try:
+            if r is not None:
+                r.value = window_type.value
+                self.db_session.commit()
+
+            else:
+                item = Um.AppSetting(
+                    key = 'last_closed_window',
+                    value = window_type.value,
+                    created_at = func.now(),
+                )
+                self.db_session.add(item)
+                self.db_session.commit()
+
+        except Exception as e:
+            logger.error(e)
+
+    def get_last_closed_window(self) -> Optional[WindowType]:
+        r = self.db_session \
+                .query(Um.AppSetting) \
+                .filter(Um.AppSetting.key == 'last_closed_window') \
+                .first()
+
+        try:
+            if r is None or r.value is None:
+                return None
+
+            else:
+                return WindowNameToType[r.value]
+
+        except Exception as e:
+            logger.error(e)
+
+        return None
 
     def _find_cli_paths(self):
         s = self.app_settings

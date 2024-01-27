@@ -34,6 +34,7 @@ class WindowType(str, Enum):
     DictionarySearch = "Dictionary Search"
     EbookReader = "Ebook Reader"
     WordLookup = "Word Lookup"
+    LastClosed = "Last Closed Window"
 
 class WindowPosSize(TypedDict):
     x: int
@@ -47,6 +48,7 @@ WindowNameToType = {
     "Dictionary Search": WindowType.DictionarySearch,
     "Ebook Reader": WindowType.EbookReader,
     "Word Lookup": WindowType.WordLookup,
+    "Last Closed Window": WindowType.LastClosed,
 }
 
 WordSublists = Dict[str, List[str]]
@@ -406,7 +408,7 @@ def default_app_settings() -> AppSettings:
         show_toolbar = False,
         show_translation_and_pali_line_by_line = False,
         keep_running_in_background = True,
-        tray_click_opens_window = WindowType.SuttaSearch,
+        tray_click_opens_window = WindowType.LastClosed,
 
         sutta_font_size = 22,
         dictionary_font_size = 16,
