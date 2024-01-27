@@ -23,7 +23,7 @@ from simsapa.app.types import SearchArea, USutta, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.layouts.gui_helpers import is_sutta_search_window, is_sutta_study_window
 
-from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData, WindowType
+from simsapa.layouts.gui_types import OpenPromptParams, SuttaSearchWindowStateInterface, SuttaSearchWindowInterface, LinkHoverData, SuttaStudyWindowInterface, WindowType
 from simsapa.layouts.gui_types import sutta_quote_from_url
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.preview_window import PreviewWindow
@@ -790,7 +790,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             return
 
         uid: str = sutta.uid
-        self.open_in_study_window_signal.emit(self.pw.queue_id, side, uid)
+        if is_sutta_study_window(self.pw):
+            assert(isinstance(self.pw, SuttaStudyWindowInterface))
+            self.pw._show_sutta_by_uid_in_side(uid, side)
+        else:
+            self.open_in_study_window_signal.emit(self.pw.queue_id, side, uid)
 
     def _lookup_selection_in_suttas(self):
         self.pw.activateWindow()
