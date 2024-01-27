@@ -57,6 +57,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         self.queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
+        self.lookup_on_side = self._app_data.app_settings.get('sutta_study_lookup_on_side', True)
+
         self._setup_ui()
         self._connect_signals()
 
@@ -101,15 +103,23 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         show = self._app_data.app_settings.get('show_related_suttas', True)
         self.action_Show_Related_Suttas.setChecked(show)
 
+        # Setup a vertical two-row splitter, to optionally place the dictionary at the bottom.
+
+        self.vert_splitter = QSplitter(self.central_widget)
+        self.vert_splitter.setHandleWidth(10)
+        self.vert_splitter.setMinimumHeight(200)
+        self.vert_splitter.setOrientation(QtCore.Qt.Orientation.Vertical)
+
+        self.main_layout.addWidget(self.vert_splitter)
+
         # Setup a four-column splitter: three columns for suttas and one for a dictionary.
 
-        self.splitter = QSplitter(self.central_widget)
-        self.splitter.setHandleWidth(10)
-        # Allow the splitter to be squeezed on small screens.
-        self.splitter.setMinimumWidth(200)
-        self.splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
+        self.horiz_splitter = QSplitter(self.vert_splitter)
+        self.horiz_splitter.setHandleWidth(10)
 
-        self.main_layout.addWidget(self.splitter)
+        # Allow the splitter to be squeezed on small screens.
+        self.horiz_splitter.setMinimumWidth(200)
+        self.horiz_splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
 
         self.sutta_panels: List[SuttaPanel] = []
 
@@ -133,7 +143,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         for panel_idx in [0, 1, 2]:
 
-            layout_widget = QWidget(self.splitter)
+            layout_widget = QWidget(self.horiz_splitter)
 
             layout = QVBoxLayout(layout_widget)
             layout.setContentsMargins(0, 0, 0, 0)
@@ -187,7 +197,11 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         # Setup the dictionary search.
 
-        self.dictionary_layout_widget = QWidget(self.splitter)
+        if self.lookup_on_side:
+            self.dictionary_layout_widget = QWidget(self.horiz_splitter)
+        else:
+            self.dictionary_layout_widget = QWidget(self.vert_splitter)
+
         self.dictionary_layout = QVBoxLayout(self.dictionary_layout_widget)
         self.dictionary_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -254,7 +268,12 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         # Set splitter sizes to max, thrid panel is hidden by default.
 
-        self.splitter.setSizes([2000, 2000, 0, 2000])
+        if self.lookup_on_side:
+            self.vert_splitter.setSizes([2000, 0])
+            self.horiz_splitter.setSizes([2000, 2000, 0, 2000])
+        else:
+            self.vert_splitter.setSizes([2000, 2000])
+            self.horiz_splitter.setSizes([2000, 2000, 0])
 
         self.sutta_panels[2]['state']._find_panel.setVisible(False)
 
@@ -272,7 +291,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_one():
             is_on = self.action_toggle_panel_one.isChecked()
-            sizes = self._get_maxed_splitter_sizes()
+            sizes = self._get_maxed_horiz_splitter_sizes()
             if is_on:
                 sizes[0] = 2000
                 self.sutta_panels[0]['state'].search_input.setFocus()
@@ -281,7 +300,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 sizes[0] = 0
                 self.sutta_panels[0]['state']._find_panel.setVisible(False)
 
-            self.splitter.setSizes(sizes)
+            self.horiz_splitter.setSizes(sizes)
 
         self.action_toggle_panel_one.triggered.connect(partial(_toggle_one))
 
@@ -293,7 +312,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_two():
             is_on = self.action_toggle_panel_two.isChecked()
-            sizes = self._get_maxed_splitter_sizes()
+            sizes = self._get_maxed_horiz_splitter_sizes()
             if is_on:
                 sizes[1] = 2000
                 self.sutta_panels[1]['state'].search_input.setFocus()
@@ -302,7 +321,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 sizes[1] = 0
                 self.sutta_panels[1]['state']._find_panel.setVisible(False)
 
-            self.splitter.setSizes(sizes)
+            self.horiz_splitter.setSizes(sizes)
 
         self.action_toggle_panel_two.triggered.connect(partial(_toggle_two))
 
@@ -314,7 +333,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_three():
             is_on = self.action_toggle_panel_three.isChecked()
-            sizes = self._get_maxed_splitter_sizes()
+            sizes = self._get_maxed_horiz_splitter_sizes()
             if is_on:
                 sizes[2] = 2000
                 self.sutta_panels[2]['state'].search_input.setFocus()
@@ -323,7 +342,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
                 sizes[2] = 0
                 self.sutta_panels[2]['state']._find_panel.setVisible(False)
 
-            self.splitter.setSizes(sizes)
+            self.horiz_splitter.setSizes(sizes)
 
         self.action_toggle_panel_three.triggered.connect(partial(_toggle_three))
 
@@ -335,22 +354,36 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
         def _toggle_dict():
             is_on = self.action_toggle_panel_dict.isChecked()
-            sizes = self._get_maxed_splitter_sizes()
-            if is_on:
-                sizes[3] = 2000
-                self.dictionary_state.search_input.setFocus()
-                self.dictionary_state._find_panel.setVisible(True)
-            else:
-                sizes[3] = 0
-                self.dictionary_state._find_panel.setVisible(False)
 
-            self.splitter.setSizes(sizes)
+            if self.lookup_on_side:
+                sizes = self._get_maxed_horiz_splitter_sizes()
+                if is_on:
+                    sizes[3] = 2000
+                    self.dictionary_state.search_input.setFocus()
+                    self.dictionary_state._find_panel.setVisible(True)
+                else:
+                    sizes[3] = 0
+                    self.dictionary_state._find_panel.setVisible(False)
+
+                self.horiz_splitter.setSizes(sizes)
+
+            else:
+                sizes = [2000, 0]
+                if is_on:
+                    sizes[1] = 2000
+                    self.dictionary_state.search_input.setFocus()
+                    self.dictionary_state._find_panel.setVisible(True)
+                else:
+                    sizes[1] = 0
+                    self.dictionary_state._find_panel.setVisible(False)
+
+                self.vert_splitter.setSizes(sizes)
 
         self.action_toggle_panel_dict.triggered.connect(partial(_toggle_dict))
 
-    def _get_maxed_splitter_sizes(self) -> List[int]:
+    def _get_maxed_horiz_splitter_sizes(self) -> List[int]:
         sizes = []
-        for i in self.splitter.sizes():
+        for i in self.horiz_splitter.sizes():
             if i > 0:
                 sizes.append(2000)
             else:
@@ -446,7 +479,7 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         else:
             visible_indexes = []
             focused_visible_index_list_pos = 0
-            splitter_sizes = self.splitter.sizes()
+            splitter_sizes = self.horiz_splitter.sizes()
             for idx, panel in enumerate(self.sutta_panels):
                 if splitter_sizes[idx] > 0:
                     visible_indexes.append(idx)

@@ -95,6 +95,7 @@
     <addaction name="action_Show_Translation_and_Pali_Line_by_Line"/>
     <addaction name="action_Show_All_Variant_Readings"/>
     <addaction name="action_Show_Bookmarks"/>
+    <addaction name="action_Study_Dictionary_Placement"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
     <property name="title">
@@ -577,6 +578,11 @@
    </property>
    <property name="text">
     <string>Show &amp;Bookmarks</string>
+   </property>
+  </action>
+  <action name="action_Study_Dictionary_Placement">
+   <property name="text">
+    <string>Study Dictionary Placement...</string>
    </property>
   </action>
   <action name="action_Link_Preview">

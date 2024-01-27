@@ -1634,6 +1634,31 @@ class AppWindows:
             self._app_data.app_settings['tray_click_opens_window'] = WindowNameToType[item]
             self._app_data._save_app_settings()
 
+    def _select_study_dictionary_placement_dialog(self, view: AppWindowInterface):
+        options = ["Side", "Bottom"]
+
+        lookup_on_side = self._app_data.app_settings.get('sutta_study_lookup_on_side', True)
+
+        if lookup_on_side:
+            option_idx = 0
+        else:
+            option_idx = 1
+
+        msg = """
+        <p>Select the Dictionary panel's placement in the Study Window.</p>
+        <p>The selection takes effect in a newly opened Study Window.</p>
+        """
+
+        item, ok = QInputDialog.getItem(view,
+                                        "Study Dictionary Placement",
+                                        msg,
+                                        options,
+                                        option_idx,
+                                        False)
+        if ok and item:
+            self._app_data.app_settings['sutta_study_lookup_on_side'] = (item == "Side")
+            self._app_data._save_app_settings()
+
     def _toggle_keep_running(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Keep_Running_in_the_Background.isChecked()
         self._app_data.app_settings['keep_running_in_background'] = is_on
@@ -1806,6 +1831,21 @@ class AppWindows:
 
                 view.action_Generate_Links_Graph \
                     .triggered.connect(partial(self._toggle_generate_links_graph, view))
+
+        if is_sutta_study_window(view):
+            assert(isinstance(view, SuttaStudyWindowInterface))
+
+            if hasattr(view, 'action_Study_Dictionary_Placement'):
+                view.action_Study_Dictionary_Placement \
+                    .triggered.connect(partial(self._select_study_dictionary_placement_dialog, view))
+
+                # FIXME Hey
+
+                is_on = self._app_data.app_settings.get('sutta_study_lookup_on_side', True)
+                view.action_Study_Dictionary_Placement.setChecked(is_on)
+
+                view.action_Show_Bookmarks \
+                    .triggered.connect(partial(self._toggle_show_bookmarks, view))
 
         notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)
 
