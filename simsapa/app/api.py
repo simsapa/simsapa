@@ -382,11 +382,16 @@ def route_get_bookmarks_with_range_for_sutta():
     result = list(map(_bm_to_res, _get_bookmarks_with_range_for_sutta(sutta_uid)))
     return jsonify(result), 200
 
-@app.route('/lookup_window_query/<query_text>', methods=['GET'])
-def route_lookup_window_query_get(query_text: str = ''):
-    if len(query_text) == 0:
+@app.route('/lookup_window_query/<string:word>', methods=['GET'])
+@app.route('/lookup_window_query/<string:word>/<string:dict_label>', methods=['GET'])
+def route_lookup_window_query_get(word: str = '', dict_label = ''):
+    logger.info(f"route_lookup_window_query_get() {word} {dict_label}")
+    if len(word) == 0:
         return "OK", 200
-    app_callbacks.run_lookup_query(query_text)
+
+    uid = "/".join([i for i in [word, dict_label] if i != ""])
+
+    app_callbacks.run_lookup_query(uid)
     return "OK", 200
 
 @app.route('/lookup_window_query', methods=['POST'])
