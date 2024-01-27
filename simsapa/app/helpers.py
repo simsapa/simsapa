@@ -620,9 +620,15 @@ def is_complete_word_uid(uid: str) -> bool:
     # (dhammacakkhu/dpd).
     return ("/" in uid.strip("/"))
 
+def is_valid_semver(ver_string: str) -> bool:
+    """Simple check that ver_string has minimum three parts: major.minor.patch.
+    More parts are accepted, e.g. 0.5.0-alpha.1"""
+
+    return len(ver_string.split(".")) >= 3
+
 def is_valid_date(date_string: str) -> bool:
-   try:
-       datetime.strptime(date_string, '%Y-%m-%d')
-       return True
-   except ValueError:
-       return False
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False

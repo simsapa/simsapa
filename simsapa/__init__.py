@@ -32,6 +32,7 @@ SIMSAPA_PACKAGE_DIR = importlib.resources.files('simsapa')
 # No trailing slash
 SIMSAPA_RELEASES_BASE_URL = "https://simsapa.eu.pythonanywhere.com"
 DPD_RELEASES_REPO_URL = "https://github.com/digitalpalidictionary/digitalpalidictionary"
+DPD_RELEASES_API_URL = "https://api.github.com/repos/digitalpalidictionary/digitalpalidictionary/releases"
 
 PACKAGE_ASSETS_RSC_DIR = Path('assets')
 PACKAGE_ASSETS_DIR = SIMSAPA_PACKAGE_DIR.joinpath(str(PACKAGE_ASSETS_RSC_DIR))

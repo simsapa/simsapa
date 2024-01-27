@@ -2,7 +2,6 @@ from enum import Enum
 from typing import List, Optional, Tuple, TypedDict
 import os, sys, re, platform
 import json, semver
-import xmltodict
 
 import psutil
 import markdown
@@ -14,9 +13,9 @@ from simsapa.app.db_session import get_db_engine_connection_session, get_dpd_db_
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
 
-from simsapa import (APP_DB_PATH, DPD_DB_PATH, DPD_RELEASES_REPO_URL, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
+from simsapa import (APP_DB_PATH, DPD_DB_PATH, DPD_RELEASES_REPO_URL, DPD_RELEASES_API_URL, RELEASES_FALLBACK_JSON, SIMSAPA_APP_VERSION, SIMSAPA_PACKAGE_DIR,
                      SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
-from simsapa.app.helpers import is_valid_date
+from simsapa.app.helpers import is_valid_semver
 from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
 from simsapa.layouts.gui_types import AppWindowInterface, DictionarySearchWindowInterface, EbookReaderWindowInterface, SearchBarInterface, SuttaSearchWindowInterface, SuttaStudyWindowInterface
 
@@ -42,7 +41,7 @@ def to_version(ver: str) -> Version:
     # v0.1.7-alpha.5
     m = re.match(r'^v*([0-9]+)\.([0-9]+)\.([0-9]+)', ver)
     if m is None:
-        raise Exception('invalid version string')
+        raise Exception(f'invalid version string: {ver}')
 
     major = int(m.group(1))
     minor = int(m.group(2))
@@ -162,38 +161,54 @@ class VersionFeedInfo(TypedDict):
 def is_version_stable(ver: str):
     return not ('.dev' in ver or '.rc' in ver)
 
-def is_dpd_version_compatible(remote_ver: str) -> bool:
-    # Currently the DPD version is the release date, e.g 2023-11-27
-    # Check that version tag is in this format.
-    return is_valid_date(remote_ver)
+def is_dpd_version_compatible(local_version: str, remote_version: str) -> bool:
+    # The DPD version is formatted as: v0.0.20240126
+
+    if not is_valid_semver(local_version):
+        logger.warn(f"local_version is not valid semver: {local_version}")
+        return False
+
+    if not is_valid_semver(remote_version):
+        logger.warn(f"remote_version is not valid semver: {remote_version}")
+        return False
+
+    local_v = to_version(local_version)
+    remote_v = to_version(remote_version)
+
+    # Major and minor version must agree.
+    return (local_v["major"] == remote_v["major"] and \
+            local_v["minor"] == remote_v["minor"])
 
 def get_dpd_releases(compatible_only = True, greater_only = True) -> List[ReleaseEntry]:
     import requests
     logger.info(f"get_dpd_releases() compatible_only = {compatible_only}, greater_only = {greater_only}")
 
-    local_ver: Optional[str] = None
+    local_version: Optional[str] = None
 
     if DPD_DB_PATH.exists():
         try:
-            local_ver = get_dpd_db_version()
+            local_version = get_dpd_db_version()
         except Exception as e:
             logger.error(e)
 
-        if local_ver is None:
+        if local_version is None:
             logger.error("Cannot determine local dpd_db version.")
-            local_ver = "1970-01-01"
+            local_version = "v0.0.19700101"
 
     else:
-        local_ver = "1970-01-01"
+        local_version = "v0.0.19700101"
 
-    local_version = int(local_ver.replace("-", ""))
+    if not is_valid_semver(local_version):
+        logger.warn(f"local_version is not valid semver: {local_version}")
+        return []
 
-    url = f"{DPD_RELEASES_REPO_URL}/releases.atom"
+    local_v = to_version(local_version)
+
+    url = DPD_RELEASES_API_URL
     try:
         r = requests.get(url)
         if r.ok:
-            feed_data = r.text
-            feed_xml = xmltodict.parse(feed_data)
+            releases_data = r.json()
         else:
             raise Exception(f"Response: {r.status_code}")
     except Exception as e:
@@ -201,55 +216,40 @@ def get_dpd_releases(compatible_only = True, greater_only = True) -> List[Releas
 
     releases: List[ReleaseEntry] = []
 
-    # feed.entry is not a list when there is only one release in the repo.
-    if isinstance(feed_xml['feed']['entry'], list):
-        entry_items = feed_xml['feed']['entry']
-    else:
-        entry_items = [feed_xml['feed']['entry']]
+    for item in releases_data:
 
-    for item in entry_items:
+        remote_version = item['tag_name']
 
-        #  tag:github.com,2008:Repository/469025679/v0.2.0-alpha.1
-        #  tag:github.com,2008:Repository/469025679/v0.1.8-alpha.1
-        #  tag:github.com,2008:Repository/455816765/2023-11-27
-        m = re.match(r'tag:github.com,2008:Repository/[0-9]+/([^<]+)', item['id'])
-        if m is None:
+        if compatible_only and not is_dpd_version_compatible(local_version, remote_version):
             continue
 
-        remote_ver = m.group(1)
+        description = item['body']
 
-        if compatible_only and not is_dpd_version_compatible(remote_ver):
-            continue
-
-        description =  item['content']['#text']
-
+        # Replace <img> tags with its alt text, remote images will not render in a QMessageBox, only in a QWebEnginePage.
         """
-        <p><a href="http://creativecommons.org/licenses/by-nc/4.0/" rel="nofollow"><img alt="Creative Commons License" src="https://camo.githubusercontent.com/a273c84704b3424ee6a393f65c6ad765e44059e65aae2f82da91ddc1168156
-        7b/68747470733a2f2f692e6372656174697665636f6d6d6f6e732e6f72672f6c2f62792d6e632f342e302f38387833312e706e67" data-canonical-src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" style="max-width: 100%;"></a><br>
-        </p>
+        <img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc/4.0/88x31.png" />
         """
-        # Remove the <img>, will not render in a QMessageBox, only in a QWebEnginePage.
-        description = re.sub(r"""<p><a href="http://creativecommons.org/licenses/by-nc/4.0/" rel="nofollow"><img alt="Creative Commons License" [^>]+></a><br>\s*</p>""", "", description)
+
+        description = re.sub(r"""<img alt="([^"]+)" [^>]+/>""", r'\1', description)
 
         entry = ReleaseEntry(
-            version_tag = remote_ver,
+            version_tag = remote_version,
             # Expects only the user/repo part
             github_repo = DPD_RELEASES_REPO_URL.replace("https://github.com/", ""),
             suttas_lang = [],
-            date = item['updated'],
-            title = item['title'],
+            date = item['published_at'],
+            title = item['name'],
             description = description,
         )
 
         releases.append(entry)
 
-    def _is_greater(item: ReleaseEntry) -> bool:
-        # NOTE: this has been checked to be an ISO date, e.g 2023-11-27
-        remote_version = int(item['version_tag'].replace("-", ""))
-        return (remote_version > local_version)
+    def _patch_is_greater(item: ReleaseEntry) -> bool:
+        remote_v = to_version(item['version_tag'])
+        return (remote_v['patch'] > local_v['patch'])
 
     if greater_only:
-        releases = [i for i in releases if _is_greater(i)]
+        releases = [i for i in releases if _patch_is_greater(i)]
 
     return releases
 

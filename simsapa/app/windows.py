@@ -1847,14 +1847,14 @@ class AppWindows:
                 view.action_Show_Bookmarks \
                     .triggered.connect(partial(self._toggle_show_bookmarks, view))
 
-        notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)
-
         if hasattr(view, 'action_Notify_About_Simsapa_Updates'):
+            notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)
             view.action_Notify_About_Simsapa_Updates.setChecked(notify)
             view.action_Notify_About_Simsapa_Updates \
                 .triggered.connect(partial(self._set_notify_simsapa_setting, view))
 
         if hasattr(view, 'action_Notify_About_DPD_Updates'):
+            notify = self._app_data.app_settings.get('notify_about_dpd_updates', True)
             view.action_Notify_About_DPD_Updates.setChecked(notify)
             view.action_Notify_About_DPD_Updates \
                 .triggered.connect(partial(self._set_notify_dpd_setting, view))

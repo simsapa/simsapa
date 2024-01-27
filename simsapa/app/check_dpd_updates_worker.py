@@ -1,6 +1,8 @@
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
 
-from simsapa import logger, DPD_RELEASES_REPO_URL
+import markdown
+
+from simsapa import DPD_RELEASES_API_URL, logger
 from simsapa.layouts.gui_helpers import UpdateInfo, get_dpd_releases
 
 class UpdatesWorkerSignals(QObject):
@@ -23,8 +25,7 @@ class CheckDpdUpdatesWorker(QRunnable):
         # Test if connection to is working.
         try:
             import requests
-            feed_url = f"{DPD_RELEASES_REPO_URL}/releases.atom"
-            requests.head(feed_url, timeout=5)
+            requests.head(DPD_RELEASES_API_URL, timeout=5)
         except Exception as e:
             logger.error("No Connection: Update info unavailable: %s" % e)
             return None
@@ -43,7 +44,10 @@ class CheckDpdUpdatesWorker(QRunnable):
 
         entry = releases[0]
 
-        message = f"<div><p><b>{entry['title']}</b></p>{entry['description']}</div>"
+        # DPD release description from the API JSON is in markdown.
+        description_html = markdown.markdown(entry['description'].replace("\r\n", "<br/>\n"))
+
+        message = f"<div><p><b>{entry['title']}</b></p>{description_html}</div>"
 
         update_info = UpdateInfo(
             version = entry['version_tag'],

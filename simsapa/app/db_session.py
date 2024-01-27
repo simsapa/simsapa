@@ -31,6 +31,7 @@ def get_db_version(db_path: Path) -> Optional[str]:
     return val[0]
 
 def get_dpd_db_version() -> Optional[str]:
+    """Returns the version string, e.g. 'v0.0.20240126', or None if db_info table does not exist."""
     con = sqlite3.connect(DPD_DB_PATH)
     cur = con.cursor()
 

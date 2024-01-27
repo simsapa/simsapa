@@ -232,6 +232,9 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     try:
         with contextlib.closing(sqlite3.connect(dpd_db_path)) as connection:
             with contextlib.closing(connection.cursor()) as cursor:
+
+                # FIXME DPD download now contains the db_info table with dpd_release_version value.
+
                 logger.info("Add db_info table.")
                 query = """
                 CREATE TABLE
@@ -250,10 +253,8 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
                 INSERT INTO db_info (key, value) VALUES (?, ?);
                 """
 
-                # Dpd uses current date as version number. Add the version as
-                # today's date. When comparing new DPD releases, a more recent
-                # date will mean we can download an update for the user.
-                ver = date.today().strftime("%Y-%m-%d")
+                # The DPD version is formatted as: v0.0.20240126
+                ver = "v0.0." + date.today().strftime("%Y%m%d")
 
                 cursor.execute(query, ("dpd_release_version", ver))
                 connection.commit()
