@@ -79,6 +79,32 @@ class SearchParams(TypedDict):
     enable_regex: bool
     fuzzy_distance: int
 
+class SuttaPanelParams(TypedDict):
+    sutta_uid: str
+    query_text: str
+    find_text: str
+
+class LookupPanelParams(TypedDict):
+    query_text: str
+    find_text: str
+    show_results_tab: bool
+
+class SuttaStudyParams(TypedDict):
+    sutta_panels: List[SuttaPanelParams]
+    lookup_panel: LookupPanelParams
+
+def default_sutta_panel_params() -> SuttaPanelParams:
+    return SuttaPanelParams(sutta_uid='', query_text='', find_text='')
+
+def default_lookup_panel_params() -> LookupPanelParams:
+    return LookupPanelParams(query_text='', find_text='', show_results_tab=False)
+
+def default_sutta_study_params() -> SuttaStudyParams:
+    return SuttaStudyParams(
+        sutta_panels = [],
+        lookup_panel = default_lookup_panel_params(),
+    )
+
 class SuttaQueriesInterface:
     get_sutta_by_url: Callable
 

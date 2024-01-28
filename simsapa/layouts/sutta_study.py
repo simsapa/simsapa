@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBox
 from simsapa import APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QuoteScope, SuttaQuote, logger, QueryType
 from simsapa.assets.ui.sutta_study_window_ui import Ui_SuttaStudyWindow
 
-from simsapa.app.types import USutta
+from simsapa.app.types import LookupPanelParams, SuttaPanelParams, SuttaStudyParams, USutta, default_lookup_panel_params, default_sutta_panel_params
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
@@ -447,6 +447,24 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
 
     def lookup_in_dictionary(self, query: str, show_results_tab = False):
         self.dictionary_state.lookup_in_dictionary(query, show_results_tab)
+
+    def apply_params(self, params: SuttaStudyParams):
+        if len(params['sutta_panels']) != 0:
+            for idx, d in enumerate(params['sutta_panels'][0:3]):
+                sutta_p: SuttaPanelParams = {**default_sutta_panel_params(), **d}
+
+                self.sutta_panels[idx]['state']._set_query(sutta_p['query_text'])
+                self.sutta_panels[idx]['state']._handle_query()
+
+                if sutta_p['find_text'] == "":
+                    sutta_quote = None
+                else:
+                    sutta_quote = SuttaQuote(quote=sutta_p['find_text'], selection_range=None)
+
+                self.sutta_panels[idx]['state']._show_sutta_by_uid(sutta_p['sutta_uid'], sutta_quote)
+
+        lookup_p: LookupPanelParams = {**default_lookup_panel_params(), **params['lookup_panel']}
+        self.dictionary_state.lookup_in_dictionary(lookup_p['query_text'], lookup_p['show_results_tab'])
 
     def _handle_copy(self):
         for panel in self.sutta_panels:

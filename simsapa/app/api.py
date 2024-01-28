@@ -11,7 +11,7 @@ from simsapa import logger, SearchResult
 from simsapa.app.completion_lists import get_and_save_completions
 from simsapa.app.db_session import get_db_engine_connection_session
 
-from simsapa.app.types import GraphRequest, SearchArea, SearchMode, SearchParams, UBookmark, USutta, UDictWord
+from simsapa.app.types import GraphRequest, SearchArea, SearchMode, SearchParams, SuttaStudyParams, UBookmark, USutta, UDictWord
 
 from sqlalchemy import and_, or_
 
@@ -38,6 +38,7 @@ class AppCallbacks:
     open_window: Callable[[str], None]
     run_lookup_query: Callable[[str], None]
     run_study_lookup_query: Callable[[str], None]
+    run_sutta_study: Callable[[SuttaStudyParams], None]
     run_suttas_fulltext_search: Callable[[str, SearchParams, int], ApiSearchResult]
     run_dict_combined_search: Callable[[str, SearchParams, int], ApiSearchResult]
 
@@ -441,6 +442,21 @@ def route_sutta_study_lookup_post():
 
     return "OK", 200
 
+@app.route('/sutta_study', methods=['POST'])
+def route_sutta_study_post():
+    data: SuttaStudyParams = request.get_json()
+    if not data:
+        return "Missing data", 400
+
+    # Very minimal format validation.
+    for k in ['sutta_panels', 'lookup_panel']:
+        if k not in data.keys():
+            return f"Missing key: {k}", 400
+
+    app_callbacks.run_sutta_study(data)
+
+    return "OK", 200
+
 @app.route('/suttas/<string:sutta_ref>', methods=['GET'])
 @app.route('/suttas/<string:sutta_ref>/<string:lang>', methods=['GET'])
 @app.route('/suttas/<string:sutta_ref>/<string:lang>/<string:source_uid>', methods=['GET'])
@@ -656,6 +672,7 @@ def start_server(port: int,
                  open_window_fn: Callable[[str], None],
                  run_lookup_query_fn: Callable[[str], None],
                  run_study_lookup_query_fn: Callable[[str], None],
+                 run_sutta_study_fn: Callable[[SuttaStudyParams], None],
                  run_suttas_fulltext_search_fn: Callable[[str, SearchParams, int], ApiSearchResult],
                  run_dict_combined_search_fn: Callable[[str, SearchParams, int], ApiSearchResult]):
     logger.info(f'Starting server on port {port}')
@@ -667,6 +684,7 @@ def start_server(port: int,
     app_callbacks.open_window = open_window_fn
     app_callbacks.run_lookup_query = run_lookup_query_fn
     app_callbacks.run_study_lookup_query = run_study_lookup_query_fn
+    app_callbacks.run_sutta_study = run_sutta_study_fn
     app_callbacks.run_suttas_fulltext_search = run_suttas_fulltext_search_fn
     app_callbacks.run_dict_combined_search = run_dict_combined_search_fn
 

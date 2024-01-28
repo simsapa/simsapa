@@ -17,6 +17,7 @@ from simsapa.app.check_simsapa_updates_worker import CheckSimsapaUpdatesWorker
 from simsapa.app.check_dpd_updates_worker import CheckDpdUpdatesWorker
 
 from simsapa.app.app_data import AppData
+from simsapa.app.types import SuttaStudyParams
 
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
@@ -36,6 +37,7 @@ class AppWindowsSignals(QObject):
     open_window_signal = pyqtSignal(str)
     run_lookup_query_signal = pyqtSignal(str)
     run_study_lookup_query_signal = pyqtSignal(str)
+    run_sutta_study_signal = pyqtSignal(dict)
 
 class AppWindows:
     _preview_window: PreviewWindow
@@ -647,7 +649,11 @@ class AppWindows:
             def _run_study_lookup_query(query_text: str):
                 view.lookup_in_dictionary(query_text, show_results_tab=False)
 
+            def _run_sutta_study(params: SuttaStudyParams):
+                view.apply_params(params)
+
             self.signals.run_study_lookup_query_signal.connect(_run_study_lookup_query)
+            self.signals.run_sutta_study_signal.connect(_run_sutta_study)
 
             view.connect_preview_window_signals(self._preview_window)
 
