@@ -58,9 +58,11 @@ class CompletionCacheResult(TypedDict):
     dict_words: WordSublists
 
 class SearchResultSizes(TypedDict):
+    font_family: str
+    font_size: int
+    vertical_margin: int
     header_height: int
     snippet_length: int
-    snippet_font_size: int
     snippet_min_height: int
     snippet_max_height: int
 
@@ -88,9 +90,11 @@ class TomlCourseGroup(TypedDict):
 
 def default_search_result_sizes() -> SearchResultSizes:
     return SearchResultSizes(
+        font_family = 'Helvetica' if IS_MAC else 'DejaVu Sans',
+        font_size = 12 if IS_MAC else 10,
+        vertical_margin = 8,
         header_height = 20,
         snippet_length = 500,
-        snippet_font_size = 12 if IS_MAC else 10,
         snippet_min_height = 25,
         snippet_max_height = 60,
     )

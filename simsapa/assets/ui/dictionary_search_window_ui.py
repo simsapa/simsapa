@@ -51,6 +51,10 @@ class Ui_DictionarySearchWindow(object):
         self.fulltext_tab.setObjectName("fulltext_tab")
         self.verticalLayout_4 = QtWidgets.QVBoxLayout(self.fulltext_tab)
         self.verticalLayout_4.setObjectName("verticalLayout_4")
+        self.show_deconstructor = QtWidgets.QCheckBox(parent=self.fulltext_tab)
+        self.show_deconstructor.setEnabled(True)
+        self.show_deconstructor.setObjectName("show_deconstructor")
+        self.verticalLayout_4.addWidget(self.show_deconstructor)
         self.deconstructor_frame = QtWidgets.QFrame(parent=self.fulltext_tab)
         self.deconstructor_frame.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
@@ -472,6 +476,7 @@ class Ui_DictionarySearchWindow(object):
     def retranslateUi(self, DictionarySearchWindow):
         _translate = QtCore.QCoreApplication.translate
         DictionarySearchWindow.setWindowTitle(_translate("DictionarySearchWindow", "Dictionary Search - Simsapa"))
+        self.show_deconstructor.setText(_translate("DictionarySearchWindow", "Deconstructor Results (0)"))
         self.fulltext_prev_btn.setToolTip(_translate("DictionarySearchWindow", "Previous page of results"))
         self.fulltext_next_btn.setToolTip(_translate("DictionarySearchWindow", "Next page of results"))
         self.fulltext_label.setText(_translate("DictionarySearchWindow", "Showing a-b out of x"))

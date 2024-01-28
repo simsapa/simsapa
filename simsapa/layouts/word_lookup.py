@@ -5,13 +5,13 @@ from typing import List, Optional
 from PyQt6 import QtCore
 from PyQt6 import QtWidgets
 from PyQt6 import QtGui
-from PyQt6.QtCore import QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QScreen
+from PyQt6.QtCore import QSize, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_SWAY, READING_TEXT_COLOR, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
+from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -256,7 +256,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
     def _setup_words_tab(self):
         self.tab_word = QWidget()
         self.tab_word.setObjectName("Words")
-        self.tab_word.setStyleSheet("QWidget#Words { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.tab_word.setStyleSheet("QWidget#Words { color: #000000; background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self.tabs.addTab(self.tab_word, "Words")
 
@@ -268,7 +268,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
     def _setup_fulltext_tab(self):
         self.fulltext_tab = QWidget()
         self.fulltext_tab.setObjectName("Results")
-        self.fulltext_tab.setStyleSheet("QWidget#Results { color: %s; background-color: %s; }" % (READING_TEXT_COLOR, READING_BACKGROUND_COLOR))
+        self.fulltext_tab.setStyleSheet("QWidget#Results { color: #000000; background-color: %s; }" % READING_BACKGROUND_COLOR)
 
         self.tabs.addTab(self.fulltext_tab, "Results")
 
@@ -282,28 +282,47 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.fulltext_page_input.setMaximum(999)
         self.fulltext_pages_layout.addWidget(self.fulltext_page_input)
 
-        self.fulltext_prev_btn = QPushButton("Prev", self.fulltext_tab)
+        icon_size = QSize(14, 14)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/angle-left"))
+        self.fulltext_prev_btn = QPushButton("", self.fulltext_tab)
+        self.fulltext_prev_btn.setIcon(icon)
+        self.fulltext_prev_btn.setIconSize(icon_size)
         self.fulltext_pages_layout.addWidget(self.fulltext_prev_btn)
 
-        self.fulltext_next_btn = QPushButton("Next", self.fulltext_tab)
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/angle-right"))
+        self.fulltext_next_btn = QPushButton("", self.fulltext_tab)
+        self.fulltext_next_btn.setIcon(icon)
+        self.fulltext_next_btn.setIconSize(icon_size)
         self.fulltext_pages_layout.addWidget(self.fulltext_next_btn)
-
-        spacerItem2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.fulltext_pages_layout.addItem(spacerItem2)
-
-        self.fulltext_first_page_btn = QPushButton("First", self.fulltext_tab)
-        self.fulltext_pages_layout.addWidget(self.fulltext_first_page_btn)
-
-        self.fulltext_last_page_btn = QPushButton("Last", self.fulltext_tab)
-        self.fulltext_pages_layout.addWidget(self.fulltext_last_page_btn)
-
-        self.fulltext_tab_inner_layout.addLayout(self.fulltext_pages_layout)
 
         self.fulltext_label = QLabel(self.fulltext_tab)
         self.fulltext_label.setObjectName("fulltext_label")
-        self.fulltext_label.setStyleSheet("#fulltext_label { color: %s; background-color: %s; }" % (READING_TEXT_COLOR, READING_BACKGROUND_COLOR))
+        self.fulltext_label.setStyleSheet("#fulltext_label { color: #000000; background-color: %s; }" % READING_BACKGROUND_COLOR)
 
-        self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
+        # Add next the buttons to save vertical space
+        self.fulltext_pages_layout.addWidget(self.fulltext_label)
+
+        spacerItem2 = QSpacerItem(0, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.fulltext_pages_layout.addItem(spacerItem2)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/angles-left"))
+        self.fulltext_first_page_btn = QPushButton("", self.fulltext_tab)
+        self.fulltext_first_page_btn.setIcon(icon)
+        self.fulltext_first_page_btn.setIconSize(icon_size)
+        self.fulltext_pages_layout.addWidget(self.fulltext_first_page_btn)
+
+        icon = QIcon()
+        icon.addPixmap(QPixmap(":/angles-right"))
+        self.fulltext_last_page_btn = QPushButton("", self.fulltext_tab)
+        self.fulltext_last_page_btn.setIcon(icon)
+        self.fulltext_last_page_btn.setIconSize(icon_size)
+        self.fulltext_pages_layout.addWidget(self.fulltext_last_page_btn)
+
+        self.fulltext_tab_inner_layout.addLayout(self.fulltext_pages_layout)
 
         self.fulltext_loading_bar = QLabel(self.fulltext_tab)
         self.fulltext_loading_bar.setMinimumSize(QtCore.QSize(0, 5))
@@ -317,12 +336,19 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
 
+        self.show_deconstructor = QCheckBox("Deconstructor Results (0)", parent=self.fulltext_tab)
+        self.show_deconstructor.setStyleSheet("font-weight: bold; color: #000000;")
+        self.show_deconstructor.setChecked(True)
+
+        self.fulltext_tab_layout.addWidget(self.show_deconstructor)
+
         self.deconstructor_frame = QFrame(parent=self.fulltext_tab)
         self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
         self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
+        self.deconstructor_frame.setContentsMargins(0, 0, 0, 0)
         self.deconstructor_frame.setLineWidth(0)
+        self.deconstructor_frame.setMinimumHeight(10)
         self.deconstructor_frame.setObjectName("DeconstructorFrame")
-        self.deconstructor_frame.setStyleSheet("#DeconstructorFrame { color: #000000; background-color: #ffffff; }")
 
         self.fulltext_tab_layout.addWidget(self.deconstructor_frame)
 

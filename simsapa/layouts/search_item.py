@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QWidget, QVBoxLayout, QLabel, QSizePolicy
-from simsapa import IS_MAC, DbSchemaName, SearchResult
+from simsapa import DbSchemaName, SearchResult
 
-from simsapa.layouts.gui_types import SearchResultSizes
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SearchResultSizes
 
 class SearchItemWidget(QWidget):
     def __init__(self, sizes: SearchResultSizes, parent=None):
@@ -9,25 +9,33 @@ class SearchItemWidget(QWidget):
 
         self.sizes = sizes
 
+        font_style = f"font-family: {sizes['font_family']}; font-size: {sizes['font_size']}pt;"
+
         self.layout: QVBoxLayout = QVBoxLayout()
+        self.layout.setContentsMargins(0, sizes['vertical_margin'], 0, sizes['vertical_margin'])
+
         self.setLayout(self.layout)
 
         self.top_info: QHBoxLayout = QHBoxLayout()
+        self.top_info.setContentsMargins(0, 0, 0, 0)
 
         self.title = QLabel()
+        self.title.setStyleSheet(font_style)
+        self.title.setContentsMargins(0, 0, 0, 0)
         self.title.setMaximumHeight(self.sizes["header_height"])
 
         self.author = QLabel()
+        self.author.setStyleSheet(font_style)
+        self.author.setContentsMargins(0, 0, 0, 0)
         self.author.setMaximumHeight(self.sizes["header_height"])
 
         self.details = QLabel()
+        self.details.setStyleSheet(font_style)
+        self.details.setContentsMargins(0, 0, 0, 0)
         self.details.setMaximumHeight(self.sizes["header_height"])
 
-        self.top_spacer = QSpacerItem(self.sizes["header_height"], 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
         self.top_info.addWidget(self.title)
-
-        self.top_info.addItem(self.top_spacer)
+        self.top_info.addItem(QSpacerItem(0, 0, QExpanding, QMinimum))
 
         self.top_info.addWidget(self.author)
         self.top_info.addWidget(self.details)
@@ -36,11 +44,7 @@ class SearchItemWidget(QWidget):
 
         self.snippet = QLabel()
         self.snippet.setWordWrap(True)
-
-        if IS_MAC:
-            self.snippet.setStyleSheet(f"font-family: Helvetica; font-size: {sizes['snippet_font_size']}pt;")
-        else:
-            self.snippet.setStyleSheet(f"font-family: DejaVu Sans; font-size: {sizes['snippet_font_size']}pt;")
+        self.snippet.setStyleSheet(font_style)
 
         self.snippet.setMinimumHeight(self.sizes["snippet_min_height"])
         self.snippet.setMaximumHeight(self.sizes["snippet_max_height"])

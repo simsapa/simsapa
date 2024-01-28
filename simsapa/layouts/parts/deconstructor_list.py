@@ -2,37 +2,31 @@ from typing import List
 
 from PyQt6 import QtWidgets
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
-from simsapa import IS_MAC
+from PyQt6.QtWidgets import QCheckBox, QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from simsapa.app.app_data import AppData
 from simsapa.app.search.helpers import dpd_deconstructor_query
-from simsapa.layouts.gui_types import QExpanding, QFixed, QMinimum, SearchResultSizes, default_search_result_sizes
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SearchResultSizes, default_search_result_sizes
 
 class ResultWidget(QWidget):
     def __init__(self, sizes: SearchResultSizes, label_content: str, parent=None):
         super(ResultWidget, self).__init__(parent)
 
         self.layout: QVBoxLayout = QVBoxLayout()
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setContentsMargins(8, int(sizes['vertical_margin']/2), 8, int(sizes['vertical_margin']/2))
         self.setLayout(self.layout)
 
         self.label = QLabel(label_content)
-        self.label.setWordWrap(False)
-        self.label.setSizePolicy(QExpanding, QFixed)
-        self.label.setFixedHeight(sizes['header_height'])
+        self.label.setStyleSheet(f"font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
         self.label.setContentsMargins(0, 0, 0, 0)
-
-        if IS_MAC:
-            self.label.setStyleSheet(f"font-family: Helvetica; font-size: {sizes['snippet_font_size']};")
-        else:
-            self.label.setStyleSheet(f"font-family: DejaVu Sans; font-size: {sizes['snippet_font_size']};")
+        self.label.setWordWrap(False)
 
         self.layout.addWidget(self.label)
 
 class HasDeconstructorList:
     _app_data: AppData
     features: List[str]
+    show_deconstructor: QCheckBox
     deconstructor_frame: QFrame
     deconstructor_layout: QVBoxLayout
     deconstructor_list: QListWidget
@@ -42,18 +36,21 @@ class HasDeconstructorList:
 
         self._setup_deconstructor_ui()
 
+    def _toggle_deconstructor(self):
+        is_on = self.show_deconstructor.isChecked()
+        self.deconstructor_frame.setVisible(is_on)
+
     def _setup_deconstructor_ui(self):
+        self.show_deconstructor.setChecked(True)
+        self.show_deconstructor.stateChanged.connect(self._toggle_deconstructor)
+
         self.deconstructor_layout = QVBoxLayout()
+        self.deconstructor_layout.setContentsMargins(0, 0, 0, 0)
         self.deconstructor_frame.setLayout(self.deconstructor_layout)
         self.deconstructor_frame.setSizePolicy(QExpanding, QMinimum)
         self.deconstructor_frame.setVisible(False)
 
-        label = QLabel("<b>Deconstructor Results:</b>")
-        label.setStyleSheet("color: #000000; background-color: #ffffff;")
-        self.deconstructor_layout.addWidget(label)
-
         self.deconstructor_list = QListWidget()
-        self.deconstructor_list.setStyleSheet("color: #000000; background-color: #ffffff;")
         self.deconstructor_list.setUniformItemSizes(True)
         self.deconstructor_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_list.setSizePolicy(QExpanding, QMinimum)
@@ -67,20 +64,23 @@ class HasDeconstructorList:
 
         if r is None:
             self.deconstructor_frame.setVisible(False)
+            self.show_deconstructor.setText("Deconstructor Results (0)")
             return
 
-        self.deconstructor_frame.setVisible(True)
+        is_on = self.show_deconstructor.isChecked()
+        if is_on:
+            self.deconstructor_frame.setVisible(True)
+            self.show_deconstructor.setText(f"Deconstructor Results ({len(r.headwords)})")
+        else:
+            return
 
         sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
 
         result_wigets = []
 
         for variation in r.headwords:
-            content = "<b>" + " + ".join(variation) + "</b>"
+            content = " + ".join(variation)
             result_wigets.append(ResultWidget(sizes, content))
-
-            for word in variation:
-                result_wigets.append(ResultWidget(sizes, word))
 
         for w in result_wigets:
             item = QListWidgetItem(self.deconstructor_list)

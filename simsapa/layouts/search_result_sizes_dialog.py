@@ -1,5 +1,5 @@
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout
 
 from simsapa.app.app_data import AppData
 from simsapa.layouts.gui_types import SearchResultSizes, default_search_result_sizes
@@ -25,68 +25,93 @@ class SearchResultSizesDialog(QDialog):
     def _setup_ui(self):
         self._layout = QVBoxLayout()
 
-        self.hbox1 = QHBoxLayout()
+        # === Font family ===
 
-        self.header_height_label = QLabel("Header height:")
-        self.hbox1.addWidget(self.header_height_label)
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Font family:"))
+
+        self.font_family_input = QLineEdit()
+        self.font_family_input.setText(self.sizes['font_family'])
+        box.addWidget(self.font_family_input)
+
+        self._layout.addLayout(box)
+
+        # === Font size ===
+
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Font size:"))
+
+        self.font_size_input = QSpinBox(self)
+        self.font_size_input.setMinimum(1)
+        self.font_size_input.setValue(self.sizes['font_size'])
+        box.addWidget(self.font_size_input)
+
+        self._layout.addLayout(box)
+
+        # === Vertical margin ===
+
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Vertical margin:"))
+
+        self.vertical_margin_input = QSpinBox(self)
+        self.vertical_margin_input.setMinimum(0)
+        self.vertical_margin_input.setValue(self.sizes['vertical_margin'])
+        box.addWidget(self.vertical_margin_input)
+
+        self._layout.addLayout(box)
+
+        # === Header height ===
+
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Header height:"))
 
         self.header_height_input = QSpinBox(self)
         self.header_height_input.setMinimum(1)
         self.header_height_input.setValue(self.sizes['header_height'])
-        self.hbox1.addWidget(self.header_height_input)
+        box.addWidget(self.header_height_input)
 
-        self._layout.addLayout(self.hbox1)
+        self._layout.addLayout(box)
 
-        self.hbox2 = QHBoxLayout()
+        # === Snippet length ===
 
-        self.snippet_length_label = QLabel("Snippet length:")
-        self.hbox2.addWidget(self.snippet_length_label)
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Snippet length:"))
 
         self.snippet_length_input = QSpinBox(self)
         self.snippet_length_input.setMinimum(1)
         self.snippet_length_input.setMaximum(1000)
         self.snippet_length_input.setValue(self.sizes['snippet_length'])
-        self.hbox2.addWidget(self.snippet_length_input)
+        box.addWidget(self.snippet_length_input)
 
-        self._layout.addLayout(self.hbox2)
+        self._layout.addLayout(box)
 
-        self.hbox3 = QHBoxLayout()
+        # === Snippet min height ===
 
-        self.snippet_font_size_label = QLabel("Snippet font size:")
-        self.hbox3.addWidget(self.snippet_font_size_label)
-
-        self.snippet_font_size_input = QSpinBox(self)
-        self.snippet_font_size_input.setMinimum(1)
-        self.snippet_font_size_input.setValue(self.sizes['snippet_font_size'])
-        self.hbox3.addWidget(self.snippet_font_size_input)
-
-        self._layout.addLayout(self.hbox3)
-
-        self.hbox4 = QHBoxLayout()
-
-        self.snippet_min_height_label = QLabel("Snippet min height:")
-        self.hbox4.addWidget(self.snippet_min_height_label)
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Snippet min height:"))
 
         self.snippet_min_height_input = QSpinBox(self)
         self.snippet_min_height_input.setMinimum(1)
         self.snippet_min_height_input.setMaximum(200)
         self.snippet_min_height_input.setValue(self.sizes['snippet_min_height'])
-        self.hbox4.addWidget(self.snippet_min_height_input)
+        box.addWidget(self.snippet_min_height_input)
 
-        self._layout.addLayout(self.hbox4)
+        self._layout.addLayout(box)
 
-        self.hbox5 = QHBoxLayout()
+        # === Snippet max height ===
 
-        self.snippet_max_height_label = QLabel("Snippet max height:")
-        self.hbox5.addWidget(self.snippet_max_height_label)
+        box = QHBoxLayout()
+        box.addWidget(QLabel("Snippet max height:"))
 
         self.snippet_max_height_input = QSpinBox(self)
         self.snippet_max_height_input.setMinimum(1)
         self.snippet_max_height_input.setMaximum(200)
         self.snippet_max_height_input.setValue(self.sizes['snippet_max_height'])
-        self.hbox5.addWidget(self.snippet_max_height_input)
+        box.addWidget(self.snippet_max_height_input)
 
-        self._layout.addLayout(self.hbox5)
+        self._layout.addLayout(box)
+
+        # === Buttons ===
 
         self.buttons_layout = QHBoxLayout()
 
@@ -102,9 +127,11 @@ class SearchResultSizesDialog(QDialog):
 
     def save_pressed(self):
         cur_sizes = SearchResultSizes(
+            font_family = self.font_family_input.text(),
+            font_size = self.font_size_input.value(),
+            vertical_margin = self.vertical_margin_input.value(),
             header_height = self.header_height_input.value(),
             snippet_length = self.snippet_length_input.value(),
-            snippet_font_size = self.snippet_font_size_input.value(),
             snippet_min_height = self.snippet_min_height_input.value(),
             snippet_max_height = self.snippet_max_height_input.value(),
         )

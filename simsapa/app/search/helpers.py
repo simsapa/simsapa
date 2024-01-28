@@ -187,7 +187,9 @@ def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.P
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str, exact_only = False) -> Optional[Dpd.Sandhi]:
+def dpd_deconstructor_query(db_session: Session, query_text: str, exact_only = True) -> Optional[Dpd.Sandhi]:
+    # NOTE: Use exact_only=True as default because 'starts with' matches show confusing additional words.
+
     # Exact match.
     r = db_session.query(Dpd.Sandhi) \
                     .filter(Dpd.Sandhi.sandhi == query_text) \
@@ -430,8 +432,7 @@ def combined_search(queries: GuiSearchQueriesInterface,
 
     db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-    # NOTE: Use exact_only because 'starts with' matches show confusing additional words.
-    r = dpd_deconstructor_query(db_session, query_text, exact_only = True)
+    r = dpd_deconstructor_query(db_session, query_text)
     if r is not None:
         for variation in r.headwords:
             content = " + ".join(variation)
