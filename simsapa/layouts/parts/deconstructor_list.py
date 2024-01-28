@@ -17,7 +17,7 @@ class ResultWidget(QWidget):
         self.setLayout(self.layout)
 
         self.label = QLabel(label_content)
-        self.label.setStyleSheet(f"font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
+        self.label.setStyleSheet(f"color: #000000; background-color: #ffffff; font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
         self.label.setContentsMargins(0, 0, 0, 0)
         self.label.setWordWrap(False)
 
@@ -51,6 +51,7 @@ class HasDeconstructorList:
         self.deconstructor_frame.setVisible(False)
 
         self.deconstructor_list = QListWidget()
+        self.deconstructor_list.setStyleSheet("color: #000000; background-color: #ffffff;")
         self.deconstructor_list.setUniformItemSizes(True)
         self.deconstructor_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_list.setSizePolicy(QExpanding, QMinimum)
@@ -67,14 +68,17 @@ class HasDeconstructorList:
             self.show_deconstructor.setText("Deconstructor Results (0)")
             return
 
+        self.show_deconstructor.setText(f"Deconstructor Results ({len(r.headwords)})")
+
+        sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
+
         is_on = self.show_deconstructor.isChecked()
         if is_on:
             self.deconstructor_frame.setVisible(True)
-            self.show_deconstructor.setText(f"Deconstructor Results ({len(r.headwords)})")
+            height = len(r.headwords) * (sizes['font_size']+5) * 2
+            self.deconstructor_list.setMaximumHeight(height)
         else:
             return
-
-        sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
 
         result_wigets = []
 
