@@ -11,7 +11,7 @@ from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
-from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
+from simsapa import IS_SWAY, READING_TEXT_COLOR, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
@@ -268,7 +268,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
     def _setup_fulltext_tab(self):
         self.fulltext_tab = QWidget()
         self.fulltext_tab.setObjectName("Results")
-        self.fulltext_tab.setStyleSheet("QWidget#Results { background-color: %s; }" % READING_BACKGROUND_COLOR)
+        self.fulltext_tab.setStyleSheet("QWidget#Results { color: %s; background-color: %s; }" % (READING_TEXT_COLOR, READING_BACKGROUND_COLOR))
 
         self.tabs.addTab(self.fulltext_tab, "Results")
 
@@ -300,6 +300,9 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.fulltext_tab_inner_layout.addLayout(self.fulltext_pages_layout)
 
         self.fulltext_label = QLabel(self.fulltext_tab)
+        self.fulltext_label.setObjectName("fulltext_label")
+        self.fulltext_label.setStyleSheet("#fulltext_label { color: %s; background-color: %s; }" % (READING_TEXT_COLOR, READING_BACKGROUND_COLOR))
+
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_label)
 
         self.fulltext_loading_bar = QLabel(self.fulltext_tab)

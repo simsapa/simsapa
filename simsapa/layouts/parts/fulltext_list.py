@@ -38,9 +38,6 @@ class HasFulltextList:
         self.connect_fulltext_list_signals()
 
         self.fulltext_label.clear()
-        self.fulltext_label.setObjectName("fulltext_label")
-        self.fulltext_label.setStyleSheet("#fulltext_label { color: #000000; background-color: #ffffff; }")
-
         self.fulltext_list.clear()
         self.fulltext_list.setSizePolicy(QExpanding, QExpanding)
 

@@ -48,9 +48,12 @@ class HasDeconstructorList:
         self.deconstructor_frame.setSizePolicy(QExpanding, QMinimum)
         self.deconstructor_frame.setVisible(False)
 
-        self.deconstructor_layout.addWidget(QLabel("<b>Deconstructor Results:</b>"))
+        label = QLabel("<b>Deconstructor Results:</b>")
+        label.setStyleSheet("color: #000000; background-color: #ffffff;")
+        self.deconstructor_layout.addWidget(label)
 
         self.deconstructor_list = QListWidget()
+        self.deconstructor_list.setStyleSheet("color: #000000; background-color: #ffffff;")
         self.deconstructor_list.setUniformItemSizes(True)
         self.deconstructor_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_list.setSizePolicy(QExpanding, QMinimum)
@@ -82,6 +85,7 @@ class HasDeconstructorList:
         for w in result_wigets:
             item = QListWidgetItem(self.deconstructor_list)
             item.setSizeHint(w.sizeHint())
+            item.setForeground(QColor("#000000"))
             item.setBackground(QColor("#ffffff"))
 
             self.deconstructor_list.addItem(item)
