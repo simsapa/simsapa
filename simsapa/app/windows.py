@@ -1652,7 +1652,7 @@ class AppWindows:
 
         msg = """
         <p>Select the Dictionary panel's placement in the Study Window.</p>
-        <p>The selection takes effect in a newly opened Study Window.</p>
+        <p>This setting takes effect after restarting the application.</p>
         """
 
         item, ok = QInputDialog.getItem(view,
