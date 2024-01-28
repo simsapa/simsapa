@@ -82,7 +82,7 @@ class ChoiceButton(QPushButton):
 
     def enterEvent(self, e: QEnterEvent):
         if self.isEnabled():
-            self.setStyleSheet(f"background-color: {BUTTON_BG_COLOR}; color: white;")
+            self.setStyleSheet(f"background-color: {BUTTON_BG_COLOR}; color: #ffffff;")
 
         if self.audio_path and self.isEnabled() and not self._play_timer.isActive():
             self._play_timer = QTimer()

@@ -58,7 +58,7 @@ class SearchItemWidget(QWidget):
 
     def setFromResult(self, r: SearchResult):
         style = """<style>
-        span.wrap { color: black; }
+        span.wrap { color: #000000; }
         span.match { background-color: yellow; }
         </style>"""
 

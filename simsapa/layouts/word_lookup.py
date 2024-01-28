@@ -319,7 +319,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
         self.deconstructor_frame.setLineWidth(0)
         self.deconstructor_frame.setObjectName("DeconstructorFrame")
-        self.deconstructor_frame.setStyleSheet("#DeconstructorFrame { color: black; background-color: white; }")
+        self.deconstructor_frame.setStyleSheet("#DeconstructorFrame { color: #000000; background-color: #ffffff; }")
 
         self.fulltext_tab_layout.addWidget(self.deconstructor_frame)
 
