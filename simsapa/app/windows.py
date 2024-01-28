@@ -35,6 +35,7 @@ from simsapa.app.db import userdata_models as Um
 class AppWindowsSignals(QObject):
     open_window_signal = pyqtSignal(str)
     run_lookup_query_signal = pyqtSignal(str)
+    run_study_lookup_query_signal = pyqtSignal(str)
 
 class AppWindows:
     _preview_window: PreviewWindow
@@ -642,6 +643,11 @@ class AppWindows:
                 panel['state'].open_sutta_new_signal.connect(partial(self.open_sutta_new))
 
             view.dictionary_state.show_sutta_by_url.connect(partial(self._show_sutta_url_noret))
+
+            def _run_study_lookup_query(query_text: str):
+                view.lookup_in_dictionary(query_text, show_results_tab=False)
+
+            self.signals.run_study_lookup_query_signal.connect(_run_study_lookup_query)
 
             view.connect_preview_window_signals(self._preview_window)
 

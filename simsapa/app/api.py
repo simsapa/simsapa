@@ -37,6 +37,7 @@ class ApiSearchResult(TypedDict):
 class AppCallbacks:
     open_window: Callable[[str], None]
     run_lookup_query: Callable[[str], None]
+    run_study_lookup_query: Callable[[str], None]
     run_suttas_fulltext_search: Callable[[str, SearchParams, int], ApiSearchResult]
     run_dict_combined_search: Callable[[str, SearchParams, int], ApiSearchResult]
 
@@ -389,9 +390,9 @@ def route_lookup_window_query_get(word: str = '', dict_label = ''):
     if len(word) == 0:
         return "OK", 200
 
-    uid = "/".join([i for i in [word, dict_label] if i != ""])
+    query_text = "/".join([i for i in [word, dict_label] if i != ""])
 
-    app_callbacks.run_lookup_query(uid)
+    app_callbacks.run_lookup_query(query_text)
     return "OK", 200
 
 @app.route('/lookup_window_query', methods=['POST'])
@@ -408,6 +409,35 @@ def route_lookup_window_query_post():
         return "OK", 200
 
     app_callbacks.run_lookup_query(query_text)
+
+    return "OK", 200
+
+@app.route('/sutta_study_lookup/<string:word>', methods=['GET'])
+@app.route('/sutta_study_lookup/<string:word>/<string:dict_label>', methods=['GET'])
+def route_sutta_study_lookup_get(word: str = '', dict_label = ''):
+    logger.info(f"route_sutta_study_lookup() {word} {dict_label}")
+    if len(word) == 0:
+        return "OK", 200
+
+    query_text = "/".join([i for i in [word, dict_label] if i != ""])
+
+    app_callbacks.run_study_lookup_query(query_text)
+    return "OK", 200
+
+@app.route('/sutta_study_lookup', methods=['POST'])
+def route_sutta_study_lookup_post():
+    data = request.get_json()
+    if not data:
+        return "Missing data", 400
+
+    if 'query_text' not in data.keys():
+        return "Missing query_text", 400
+
+    query_text = str(data['query_text'])
+    if len(query_text) == 0:
+        return "OK", 200
+
+    app_callbacks.run_study_lookup_query(query_text)
 
     return "OK", 200
 
@@ -625,6 +655,7 @@ def start_server(port: int,
                  q: queue.Queue,
                  open_window_fn: Callable[[str], None],
                  run_lookup_query_fn: Callable[[str], None],
+                 run_study_lookup_query_fn: Callable[[str], None],
                  run_suttas_fulltext_search_fn: Callable[[str, SearchParams, int], ApiSearchResult],
                  run_dict_combined_search_fn: Callable[[str, SearchParams, int], ApiSearchResult]):
     logger.info(f'Starting server on port {port}')
@@ -635,6 +666,7 @@ def start_server(port: int,
     global app_callbacks
     app_callbacks.open_window = open_window_fn
     app_callbacks.run_lookup_query = run_lookup_query_fn
+    app_callbacks.run_study_lookup_query = run_study_lookup_query_fn
     app_callbacks.run_suttas_fulltext_search = run_suttas_fulltext_search_fn
     app_callbacks.run_dict_combined_search = run_dict_combined_search_fn
 
