@@ -271,8 +271,6 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
     def _setup_search_tabs(self):
         self.tabs_widget = QWidget(self.vert_splitter)
-        self.tabs_widget.setContentsMargins(0, 0, 0, 0)
-
         self.tabs_layout = QVBoxLayout(self.tabs_widget)
 
         self.tabs = QTabWidget()
