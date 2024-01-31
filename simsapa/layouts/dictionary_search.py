@@ -40,10 +40,11 @@ from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
 from simsapa.layouts.parts.deconstructor_list import HasDeconstructorList
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
 from simsapa.layouts.parts.import_stardict_dialog import HasImportStarDictDialog
+from simsapa.layouts.parts.restore_size_pos import HasRestoreSizePos
 
 class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearchWindow,
                              HasDeconstructorList, HasFulltextList, HasSearchBar, HasMemoDialog,
-                             HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog):
+                             HasLinksSidebar, HasMemosSidebar, HasImportStarDictDialog, HasRestoreSizePos):
 
     searchbar_layout: QHBoxLayout
     search_extras: QHBoxLayout
@@ -181,6 +182,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
     def closeEvent(self, event: QCloseEvent):
         self._app_data.save_last_closed_window(WindowType.DictionarySearch)
+        self.save_size_pos()
 
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]

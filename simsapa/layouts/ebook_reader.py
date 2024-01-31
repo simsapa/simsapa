@@ -22,6 +22,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db_session import get_db_engine_connection_session
 from simsapa.app.export_helpers import add_sutta_links
 from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
+from simsapa.layouts.parts.restore_size_pos import HasRestoreSizePos
 
 from simsapa import QueryType
 from simsapa.app.app_data import AppData
@@ -43,7 +44,7 @@ class ChapterItem(QStandardItem):
         self.setEditable(False)
         self.setText(self.title)
 
-class EbookReaderWindow(EbookReaderWindowInterface):
+class EbookReaderWindow(EbookReaderWindowInterface, HasRestoreSizePos):
 
     lookup_in_dictionary_signal = pyqtSignal(str)
     lookup_in_new_sutta_window_signal = pyqtSignal(str)
@@ -582,6 +583,7 @@ class EbookReaderWindow(EbookReaderWindowInterface):
 
     def closeEvent(self, event: QCloseEvent):
         self._app_data.save_last_closed_window(WindowType.EbookReader)
+        self.save_size_pos()
 
         if self.ebook_unzip_dir is not None and self.ebook_unzip_dir.exists():
             shutil.rmtree(self.ebook_unzip_dir)

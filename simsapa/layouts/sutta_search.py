@@ -21,9 +21,10 @@ from simsapa.layouts.sutta_search_window_state import SuttaSearchWindowState
 from simsapa.layouts.parts.memos_sidebar import HasMemosSidebar
 from simsapa.layouts.parts.links_sidebar import HasLinksSidebar
 from simsapa.layouts.parts.fulltext_list import HasFulltextList
+from simsapa.layouts.parts.restore_size_pos import HasRestoreSizePos
 
 class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLinksSidebar,
-                        HasMemosSidebar, HasFulltextList):
+                        HasMemosSidebar, HasFulltextList, HasRestoreSizePos):
 
     searchbar_layout: QHBoxLayout
     sutta_tabs_layout: QVBoxLayout
@@ -96,6 +97,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
     def closeEvent(self, event: QCloseEvent):
         self._app_data.save_last_closed_window(WindowType.SuttaSearch)
+        self.save_size_pos()
 
         if self.queue_id in APP_QUEUES.keys():
             del APP_QUEUES[self.queue_id]
