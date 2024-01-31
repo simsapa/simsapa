@@ -17,7 +17,7 @@ from simsapa import (APP_DB_PATH, DPD_DB_PATH, DPD_RELEASES_REPO_URL, DPD_RELEAS
                      SIMSAPA_RELEASES_BASE_URL, IS_MAC, logger)
 from simsapa.app.helpers import is_valid_semver
 from simsapa.app.types import SearchMode, AllSearchModeNameToType, SearchParams
-from simsapa.layouts.gui_types import AppWindowInterface, DictionarySearchWindowInterface, EbookReaderWindowInterface, SearchBarInterface, SuttaSearchWindowInterface, SuttaStudyWindowInterface
+from simsapa.layouts.gui_types import AppWindowInterface, DictionarySearchWindowInterface, EbookReaderWindowInterface, SearchBarInterface, SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowType
 
 
 class Version(TypedDict):
@@ -545,3 +545,15 @@ def is_ebook_reader_window(w: AppWindowInterface) -> bool:
     r = (str(type(w)) == "<class 'simsapa.layouts.ebook_reader.EbookReaderWindow'>" \
          and isinstance(w, EbookReaderWindowInterface))
     return r
+
+def get_window_type(w: AppWindowInterface) -> Optional[WindowType]:
+    if is_sutta_search_window(w):
+        return WindowType.SuttaSearch
+    elif is_sutta_study_window(w):
+        return WindowType.SuttaStudy
+    elif is_dictionary_search_window(w):
+        return WindowType.DictionarySearch
+    elif is_ebook_reader_window(w):
+        return WindowType.EbookReader
+    else:
+        return None

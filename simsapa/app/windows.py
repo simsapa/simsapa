@@ -25,7 +25,7 @@ from simsapa.layouts.gui_types import (
     SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
     sutta_quote_from_url)
 
-from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo, is_sutta_search_window, is_sutta_study_window, is_dictionary_search_window, is_ebook_reader_window
+from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo, get_window_type, is_sutta_search_window, is_sutta_study_window, is_dictionary_search_window, is_ebook_reader_window
 from simsapa.layouts.gui_queries import GuiSearchQueries
 from simsapa.layouts.help_info import open_simsapa_website, show_about
 from simsapa.layouts.preview_window import PreviewWindow
@@ -189,6 +189,10 @@ class AppWindows:
         show_window = True
         for w in self._windows:
             if w.isVisible():
+                window_type = get_window_type(w)
+                if window_type is not None:
+                    self._app_data.save_last_closed_window(window_type)
+
                 w.hide()
                 show_window = False
 
