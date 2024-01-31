@@ -19,7 +19,7 @@ class ResultWidget(QWidget):
         self.setLayout(self.layout)
 
         self.label = QLabel(label_content)
-        self.label.setStyleSheet(f"font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
+        self.label.setStyleSheet(f"color: #000000; background-color: #ffffff; font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
         self.label.setContentsMargins(0, 0, 0, 0)
         self.label.setWordWrap(False)
 
@@ -58,6 +58,7 @@ class HasDeconstructorList:
         self.deconstructor_frame.setVisible(False)
 
         self.deconstructor_list = QListWidget()
+        self.deconstructor_list.setStyleSheet("color: #000000; background-color: #ffffff;")
         self.deconstructor_list.setUniformItemSizes(True)
         self.deconstructor_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_list.setSizePolicy(QExpanding, QMinimum)
