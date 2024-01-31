@@ -627,6 +627,9 @@ class WordLookup(WordLookupInterface):
 
         self.s = WordLookupState(app_data, self, self._central_widget, self.wrap_layout, self.focus_input)
 
+        self.s.tabs_widget.setContentsMargins(8, 8, 8, 8)
+        self.s.show_deconstructor.setStyleSheet("color: #000000;")
+
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))
 
