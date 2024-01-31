@@ -6,7 +6,7 @@ from PyQt6 import QtCore
 from PyQt6 import QtWidgets
 from PyQt6 import QtGui
 from PyQt6.QtCore import QSize, QTimer, QUrl, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QScreen
+from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QScreen, QShowEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QCheckBox, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
@@ -612,7 +612,7 @@ class WordLookup(WordLookupInterface):
         self.setWindowTitle("Word Lookup - Simsapa")
         self.setMinimumSize(50, 50)
 
-        self._restore_size_pos()
+        self.restore_size_pos()
 
         # NOTE: Don't set Qt.WindowType.Dialog flag, it disables the tiling
         # behaviour in window managers such as Cinnamon.
@@ -719,7 +719,18 @@ class WordLookup(WordLookupInterface):
         self.action_Memos.setShortcut("F9")
         self.menu_windows.addAction(self.action_Memos)
 
-    def _restore_size_pos(self):
+    def save_size_pos(self):
+        qr = self.frameGeometry()
+        p = WindowPosSize(
+            x = qr.x(),
+            y = qr.y(),
+            width = qr.width(),
+            height = qr.height(),
+        )
+        self._app_data.app_settings['word_lookup_pos'] = p
+        self._app_data._save_app_settings()
+
+    def restore_size_pos(self):
         p: Optional[WindowPosSize] = self._app_data.app_settings.get('word_lookup_pos', None)
         if p is not None:
             self.resize(p['width'], p['height'])
@@ -741,21 +752,17 @@ class WordLookup(WordLookupInterface):
         self.action_close_window.triggered.connect(partial(self._handle_close))
 
     def hideEvent(self, event: QHideEvent) -> None:
-        qr = self.frameGeometry()
-        p = WindowPosSize(
-            x = qr.x(),
-            y = qr.y(),
-            width = qr.width(),
-            height = qr.height(),
-        )
-        self._app_data.app_settings['word_lookup_pos'] = p
-        self._app_data._save_app_settings()
+        self.save_size_pos()
 
         msg = ApiMessage(queue_id = 'app_windows', action = ApiAction.hidden_word_lookup, data = '')
         s = json.dumps(msg)
         APP_QUEUES['app_windows'].put_nowait(s)
 
         return super().hideEvent(event)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self.restore_size_pos()
 
     def _handle_close(self):
         # Don't close, hide the window so it doesn't have to be re-created.

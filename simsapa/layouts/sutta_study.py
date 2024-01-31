@@ -5,7 +5,7 @@ from functools import partial
 from typing import Callable, List, Optional
 
 from PyQt6 import QtCore
-from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QCloseEvent, QHideEvent, QKeySequence, QShortcut, QShowEvent
 from PyQt6.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QSpacerItem, QSplitter, QToolBar, QVBoxLayout, QWidget
 
@@ -16,7 +16,7 @@ from simsapa.app.types import LookupPanelParams, SuttaPanelParams, SuttaStudyPar
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import DictionaryQueries
 
-from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaPanel, SuttaPanelSettingKeys, SuttaStudyWindowInterface, WindowType
+from simsapa.layouts.gui_types import QExpanding, QMinimum, SuttaPanel, SuttaPanelSettingKeys, SuttaStudyWindowInterface, WindowPosSize, WindowType
 from simsapa.layouts.preview_window import PreviewWindow
 from simsapa.layouts.sutta_search import SuttaSearchWindowState
 from simsapa.layouts.word_lookup import WordLookupState
@@ -58,6 +58,8 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.queries = DictionaryQueries(self._app_data.db_session, self._app_data.api_url)
 
         self.lookup_on_side = self._app_data.app_settings.get('sutta_study_lookup_on_side', True)
+
+        self._window_size_pos: Optional[WindowPosSize] = None
 
         self._setup_ui()
         self._connect_signals()
@@ -590,6 +592,31 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
     def _handle_show_find_panel(self):
         self.find_toolbar.show()
         self.sutta_panels[0]['state']._find_panel.search_input.setFocus()
+
+    def save_size_pos(self):
+        qr = self.frameGeometry()
+        self._window_size_pos = WindowPosSize(
+            x = qr.x(),
+            y = qr.y(),
+            width = qr.width(),
+            height = qr.height(),
+        )
+
+    def restore_size_pos(self):
+        p = self._window_size_pos
+        if p is None:
+            return
+
+        self.resize(p['width'], p['height'])
+        self.move(p['x'], p['y'])
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self.restore_size_pos()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self.save_size_pos()
+        return super().hideEvent(event)
 
     def closeEvent(self, event: QCloseEvent):
         self._app_data.save_last_closed_window(WindowType.SuttaStudy)
