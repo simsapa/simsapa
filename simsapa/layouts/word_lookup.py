@@ -9,7 +9,7 @@ from PyQt6.QtCore import QSize, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QScreen
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QCheckBox, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
@@ -59,6 +59,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
     def __init__(self,
                  app_data: AppData,
                  parent_window: QMainWindow,
+                 central_widget: QWidget,
                  wrap_layout: QBoxLayout,
                  focus_input: bool = True,
                  enable_regex_fuzzy = True,
@@ -69,6 +70,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         super().__init__()
 
         self.pw = parent_window
+        self.cw = central_widget
 
         self.wrap_layout = wrap_layout
 
@@ -116,6 +118,8 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                              focus_input            = self.focus_input,
                              two_rows_layout        = True)
 
+        self._setup_vertical_splitter()
+        self._setup_deconstructor_layout()
         self._setup_search_tabs()
 
         if self.enable_find_panel:
@@ -239,15 +243,42 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         page_html = self._queries.dictionary_queries.words_to_html_page(words, self._get_css_extra())
         self._set_qwe_html(page_html)
 
+    def _setup_vertical_splitter(self):
+        self.vert_splitter = QSplitter(self.cw)
+        self.wrap_layout.addWidget(self.vert_splitter)
+
+        self.vert_splitter.setHandleWidth(10)
+        self.vert_splitter.setMinimumHeight(200)
+        self.vert_splitter.setOrientation(QtCore.Qt.Orientation.Vertical)
+
+    def _setup_deconstructor_layout(self):
+        self.deconstructor_wrap_widget = QWidget(self.vert_splitter)
+        self.deconstructor_wrap_layout = QVBoxLayout(self.deconstructor_wrap_widget)
+
+        self.show_deconstructor = QCheckBox("Deconstructor Results (0)")
+        self.show_deconstructor.setChecked(True)
+        self.deconstructor_wrap_layout.addWidget(self.show_deconstructor)
+
+        self.deconstructor_frame = QFrame(self.deconstructor_wrap_widget)
+        self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
+        self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
+        self.deconstructor_frame.setContentsMargins(0, 0, 0, 0)
+        self.deconstructor_frame.setLineWidth(0)
+        self.deconstructor_frame.setMinimumHeight(100)
+        self.deconstructor_frame.setObjectName("DeconstructorFrame")
+
+        self.deconstructor_wrap_layout.addWidget(self.deconstructor_frame)
+
     def _setup_search_tabs(self):
-        self.tabs_layout = QVBoxLayout()
+        self.tabs_widget = QWidget(self.vert_splitter)
+        self.tabs_widget.setContentsMargins(0, 0, 0, 0)
+
+        self.tabs_layout = QVBoxLayout(self.tabs_widget)
 
         self.tabs = QTabWidget()
 
         self.tabs_layout.addWidget(self.tabs)
         self.tabs_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.wrap_layout.addLayout(self.tabs_layout)
 
         self._setup_words_tab()
         self._setup_fulltext_tab()
@@ -335,22 +366,6 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.fulltext_list = QListWidget(self.fulltext_tab)
         self.fulltext_list.setFrameShape(QFrame.Shape.NoFrame)
         self.fulltext_tab_inner_layout.addWidget(self.fulltext_list)
-
-        self.show_deconstructor = QCheckBox("Deconstructor Results (0)", parent=self.fulltext_tab)
-        self.show_deconstructor.setStyleSheet("font-weight: bold; color: #000000;")
-        self.show_deconstructor.setChecked(True)
-
-        self.fulltext_tab_layout.addWidget(self.show_deconstructor)
-
-        self.deconstructor_frame = QFrame(parent=self.fulltext_tab)
-        self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
-        self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
-        self.deconstructor_frame.setContentsMargins(0, 0, 0, 0)
-        self.deconstructor_frame.setLineWidth(0)
-        self.deconstructor_frame.setMinimumHeight(10)
-        self.deconstructor_frame.setObjectName("DeconstructorFrame")
-
-        self.fulltext_tab_layout.addWidget(self.deconstructor_frame)
 
         self.fulltext_tab_layout.addLayout(self.fulltext_tab_inner_layout)
 
@@ -612,7 +627,7 @@ class WordLookup(WordLookupInterface):
 
         self.focus_input = focus_input
 
-        self.s = WordLookupState(app_data, self, self.wrap_layout, self.focus_input)
+        self.s = WordLookupState(app_data, self, self._central_widget, self.wrap_layout, self.focus_input)
 
         self.action_Focus_Search_Input = QShortcut(QKeySequence("Ctrl+L"), self)
         self.action_Focus_Search_Input.activated.connect(partial(self.s._focus_search_input))

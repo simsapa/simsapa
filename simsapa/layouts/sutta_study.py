@@ -205,11 +205,11 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, Ui_SuttaStudyWindow):
         self.dictionary_layout = QVBoxLayout(self.dictionary_layout_widget)
         self.dictionary_layout.setContentsMargins(0, 0, 0, 0)
 
-        spacer = QSpacerItem(100, 0, QExpanding, QMinimum)
-        self.dictionary_layout.addItem(spacer)
+        self.dictionary_layout.addItem(QSpacerItem(100, 0, QExpanding, QMinimum))
 
         self.dictionary_state = WordLookupState(app_data = self._app_data,
                                                 parent_window = self,
+                                                central_widget = self.central_widget,
                                                 wrap_layout = self.dictionary_layout,
                                                 focus_input = False,
                                                 enable_regex_fuzzy = False,

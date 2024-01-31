@@ -1,7 +1,9 @@
-from typing import List
+from typing import Callable, List
+from functools import partial
 
+from PyQt6.QtCore import Qt
 from PyQt6 import QtWidgets
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import QCheckBox, QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from simsapa.app.app_data import AppData
@@ -9,7 +11,7 @@ from simsapa.app.search.helpers import dpd_deconstructor_query
 from simsapa.layouts.gui_types import QExpanding, QMinimum, SearchResultSizes, default_search_result_sizes
 
 class ResultWidget(QWidget):
-    def __init__(self, sizes: SearchResultSizes, label_content: str, parent=None):
+    def __init__(self, sizes: SearchResultSizes, label_content: str, copy_clipboard_fn: Callable[[str], None], parent=None):
         super(ResultWidget, self).__init__(parent)
 
         self.layout: QVBoxLayout = QVBoxLayout()
@@ -17,9 +19,14 @@ class ResultWidget(QWidget):
         self.setLayout(self.layout)
 
         self.label = QLabel(label_content)
-        self.label.setStyleSheet(f"color: #000000; background-color: #ffffff; font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
+        self.label.setStyleSheet(f"font-family: {sizes['font_family']}; font-size: {sizes['font_size']};")
         self.label.setContentsMargins(0, 0, 0, 0)
         self.label.setWordWrap(False)
+
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        copy = QAction("Copy", self)
+        copy.triggered.connect(partial(copy_clipboard_fn, self.label.text()))
+        self.addAction(copy)
 
         self.layout.addWidget(self.label)
 
@@ -51,7 +58,6 @@ class HasDeconstructorList:
         self.deconstructor_frame.setVisible(False)
 
         self.deconstructor_list = QListWidget()
-        self.deconstructor_list.setStyleSheet("color: #000000; background-color: #ffffff;")
         self.deconstructor_list.setUniformItemSizes(True)
         self.deconstructor_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.deconstructor_list.setSizePolicy(QExpanding, QMinimum)
@@ -75,8 +81,6 @@ class HasDeconstructorList:
         is_on = self.show_deconstructor.isChecked()
         if is_on:
             self.deconstructor_frame.setVisible(True)
-            height = len(r.headwords) * (sizes['font_size']+5) * 2
-            self.deconstructor_list.setMaximumHeight(height)
         else:
             return
 
@@ -84,7 +88,7 @@ class HasDeconstructorList:
 
         for variation in r.headwords:
             content = " + ".join(variation)
-            result_wigets.append(ResultWidget(sizes, content))
+            result_wigets.append(ResultWidget(sizes, content, self._app_data.clipboard_setText))
 
         for w in result_wigets:
             item = QListWidgetItem(self.deconstructor_list)
