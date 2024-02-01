@@ -60,6 +60,7 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
+        self.setWindowTitle("Sutta Search - Simsapa")
         self._setup_ui()
 
         self.s = SuttaSearchWindowState(app_data,

@@ -191,7 +191,6 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             return None
 
     def _setup_ui(self):
-        self.pw.setWindowTitle("Sutta Search - Simsapa")
         self._setup_sutta_tabs()
 
         if self.enable_find_panel:
