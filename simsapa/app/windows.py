@@ -8,7 +8,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
-from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, IS_MAC, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
+from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, ENABLE_LOW_MEM_MODE_PATH, IS_MAC, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
 from simsapa import SERVER_QUEUE, APP_DB_PATH, APP_QUEUES, STARTUP_MESSAGE_PATH, TIMER_SPEED
 from simsapa import QueryType, SuttaQuote, QuoteScope, QuoteScopeValues
 
@@ -1686,6 +1686,22 @@ class AppWindows:
 
         self.show_setting_after_restart()
 
+    def _toggle_start_low_memory(self, view: SuttaSearchWindowInterface):
+        is_on = view.action_Start_in_Low_Memory_Mode.isChecked()
+        self._app_data.app_settings['start_in_low_memory_mode'] = is_on
+        self._app_data._save_app_settings()
+
+        if is_on:
+            ENABLE_LOW_MEM_MODE_PATH.touch()
+        else:
+            ENABLE_LOW_MEM_MODE_PATH.unlink()
+
+        for w in self._windows:
+            if hasattr(w, 'action_Start_in_Low_Memory_Mode'):
+                w.action_Start_in_Low_Memory_Mode.setChecked(is_on)
+
+        self.show_setting_after_restart()
+
     def _focus_search_input(self, view: AppWindowInterface):
         if hasattr(view, 'search_input'):
             view.search_input.setFocus()
@@ -1773,6 +1789,13 @@ class AppWindows:
 
             view.action_Keep_Running_in_the_Background \
                 .triggered.connect(partial(self._toggle_keep_running, view))
+
+        if hasattr(view, 'action_Start_in_Low_Memory_Mode'):
+            is_on = self._app_data.app_settings.get('start_in_low_memory_mode', False)
+            view.action_Start_in_Low_Memory_Mode.setChecked(is_on)
+
+            view.action_Start_in_Low_Memory_Mode \
+                .triggered.connect(partial(self._toggle_start_low_memory, view))
 
         if hasattr(view, 'action_Tray_Click_Opens_Window'):
             view.action_Tray_Click_Opens_Window \
