@@ -448,11 +448,7 @@ def route_sutta_study_post():
     if not data:
         return "Missing data", 400
 
-    # Very minimal format validation.
-    for k in ['sutta_panels', 'lookup_panel']:
-        if k not in data.keys():
-            return f"Missing key: {k}", 400
-
+    # No JSON keys format validation, default keys and values will be applied.
     app_callbacks.run_sutta_study(data)
 
     return "OK", 200

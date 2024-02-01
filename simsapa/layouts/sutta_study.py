@@ -450,6 +450,9 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, HasRestoreSizePos, Ui_SuttaStu
         self.dictionary_state.lookup_in_dictionary(query, show_results_tab)
 
     def apply_params(self, params: SuttaStudyParams):
+        if 'sutta_panels' not in params.keys():
+            params['sutta_panels'] = []
+
         if len(params['sutta_panels']) != 0:
             for idx, d in enumerate(params['sutta_panels'][0:3]):
                 sutta_p: SuttaPanelParams = {**default_sutta_panel_params(), **d}
@@ -464,7 +467,11 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, HasRestoreSizePos, Ui_SuttaStu
 
                 self.sutta_panels[idx]['state']._show_sutta_by_uid(sutta_p['sutta_uid'], sutta_quote)
 
-        lookup_p: LookupPanelParams = {**default_lookup_panel_params(), **params['lookup_panel']}
+        if 'lookup_panel' not in params.keys():
+            lookup_p = default_lookup_panel_params()
+        else:
+            lookup_p: LookupPanelParams = {**default_lookup_panel_params(), **params['lookup_panel']}
+
         self.dictionary_state.lookup_in_dictionary(lookup_p['query_text'], lookup_p['show_results_tab'])
 
     def _handle_copy(self):
