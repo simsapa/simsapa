@@ -27,10 +27,10 @@ jobs:
         run: echo "UBUNTU_VERSION="$(lsb_release -rs) >> "$GITHUB_OUTPUT"
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
@@ -121,21 +121,21 @@ jobs:
         run: briefcase package linux appimage --no-docker
 
       - name: Upload Artifact for Linux
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
           name: simsapa-${{ github.ref_name }}-${{ matrix.os }}.AppImage
           path: '**/*.AppImage'
 
       - name: Upload Artifact for MacOS
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: runner.os == 'MacOS'
         with:
           name: simsapa-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
           path: '**/*.dmg'
 
       - name: Upload Artifact for Windows
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
           name: simsapa-${{ github.ref_name }}-${{ matrix.os }}.msi
