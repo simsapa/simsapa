@@ -97,6 +97,7 @@
     <addaction name="action_Show_All_Variant_Readings"/>
     <addaction name="action_Show_Bookmarks"/>
     <addaction name="action_Study_Dictionary_Placement"/>
+    <addaction name="action_Deconstructor_Placement"/>
    </widget>
    <widget class="QMenu" name="menu_Find">
     <property name="title">
@@ -599,6 +600,11 @@
   <action name="action_Study_Dictionary_Placement">
    <property name="text">
     <string>Study Dictionary Placement...</string>
+   </property>
+  </action>
+  <action name="action_Deconstructor_Placement">
+   <property name="text">
+    <string>Deconstructor Placement...</string>
    </property>
   </action>
   <action name="action_Link_Preview">

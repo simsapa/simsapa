@@ -9,7 +9,7 @@ from PyQt6.QtCore import QSize, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QClipboard, QCloseEvent, QHideEvent, QIcon, QKeySequence, QPixmap, QShortcut, QScreen, QShowEvent
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QCheckBox, QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpacerItem, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from simsapa import IS_SWAY, READING_BACKGROUND_COLOR, SIMSAPA_PACKAGE_DIR, SearchResult, DetailsTab, logger, APP_QUEUES, ApiAction, ApiMessage, TIMER_SPEED, QueryType
 
@@ -101,6 +101,8 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
         self.enable_find_panel = enable_find_panel
 
+        self.deconstructor_above_words = self._app_data.app_settings.get('sutta_study_deconstructor_above_words', True)
+
         self._search_mode_setting_key = search_mode_setting_key
         self._language_filter_setting_key = language_filter_setting_key
         self._source_filter_setting_key = source_filter_setting_key
@@ -118,8 +120,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                              focus_input            = self.focus_input,
                              two_rows_layout        = True)
 
-        self._setup_vertical_splitter()
-        self._setup_deconstructor_layout()
+        self.setup_deconstructor_layout(self.cw, self.wrap_layout)
         self._setup_search_tabs()
 
         if self.enable_find_panel:
@@ -127,7 +128,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
 
         self._connect_signals()
 
-        self.init_deconstructor_list()
+        self.init_deconstructor_list(deconstructor_tab_idx=2)
         self.init_fulltext_list()
 
     def handle_messages(self):
@@ -243,35 +244,16 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         page_html = self._queries.dictionary_queries.words_to_html_page(words, self._get_css_extra())
         self._set_qwe_html(page_html)
 
-    def _setup_vertical_splitter(self):
-        self.vert_splitter = QSplitter(self.cw)
-        self.wrap_layout.addWidget(self.vert_splitter)
-
-        self.vert_splitter.setHandleWidth(10)
-        self.vert_splitter.setMinimumHeight(200)
-        self.vert_splitter.setOrientation(QtCore.Qt.Orientation.Vertical)
-
-    def _setup_deconstructor_layout(self):
-        self.deconstructor_wrap_widget = QWidget(self.vert_splitter)
-        self.deconstructor_wrap_layout = QVBoxLayout(self.deconstructor_wrap_widget)
-
-        self.show_deconstructor = QCheckBox("Deconstructor Results (0)")
-        self.show_deconstructor.setChecked(True)
-        self.deconstructor_wrap_layout.addWidget(self.show_deconstructor)
-
-        self.deconstructor_frame = QFrame(self.deconstructor_wrap_widget)
-        self.deconstructor_frame.setFrameShape(QFrame.Shape.NoFrame)
-        self.deconstructor_frame.setFrameShadow(QFrame.Shadow.Raised)
-        self.deconstructor_frame.setContentsMargins(0, 0, 0, 0)
-        self.deconstructor_frame.setLineWidth(0)
-        self.deconstructor_frame.setMinimumHeight(100)
-        self.deconstructor_frame.setObjectName("DeconstructorFrame")
-
-        self.deconstructor_wrap_layout.addWidget(self.deconstructor_frame)
-
     def _setup_search_tabs(self):
-        self.tabs_widget = QWidget(self.vert_splitter)
-        self.tabs_layout = QVBoxLayout(self.tabs_widget)
+        if self.deconstructor_above_words:
+            self.tabs_widget = QWidget(self.vert_splitter)
+            self.tabs_layout = QVBoxLayout(self.tabs_widget)
+
+        else:
+            # The widget should exist but we don't use it.
+            self.tabs_widget = QWidget()
+            self.tabs_layout = QVBoxLayout()
+            self.wrap_layout.addLayout(self.tabs_layout)
 
         self.tabs = QTabWidget()
 

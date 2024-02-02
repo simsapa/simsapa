@@ -381,6 +381,7 @@ class AppSettings(TypedDict):
     sutta_study_lookup_search_mode: SearchMode
     sutta_study_lookup_source_filter_idx: int
     sutta_study_lookup_on_side: bool
+    sutta_study_deconstructor_above_words: bool
 
     word_lookup_pos: WindowPosSize
     word_lookup_language_filter_idx: int
@@ -457,6 +458,7 @@ def default_app_settings() -> AppSettings:
         sutta_study_lookup_search_mode = SearchMode.Combined,
         sutta_study_lookup_source_filter_idx = 0,
         sutta_study_lookup_on_side = True,
+        sutta_study_deconstructor_above_words = True,
 
         word_lookup_pos = WindowPosSize(x = 100, y = 100, width = 500, height = 700),
         word_lookup_language_filter_idx = 0,
@@ -661,6 +663,7 @@ class SuttaStudyWindowInterface(SuttaSearchWindowInterface):
     sutta_panels: List[SuttaPanel]
     _show_sutta_by_uid_in_side: Callable
     action_Study_Dictionary_Placement: QAction
+    action_Deconstructor_Placement: QAction
 
 class EbookReaderWindowInterface(SuttaSearchWindowInterface):
     addToolBar: Callable

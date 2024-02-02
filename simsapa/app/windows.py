@@ -1675,6 +1675,32 @@ class AppWindows:
             self._app_data.app_settings['sutta_study_lookup_on_side'] = (item == "Side")
             self._app_data._save_app_settings()
 
+    def _select_deconstructor_placement_dialog(self, view: AppWindowInterface):
+        options = ["Above Words", "After Results Tab"]
+
+        deconstructor_above_words = self._app_data.app_settings.get('sutta_study_deconstructor_above_words', True)
+
+        if deconstructor_above_words:
+            option_idx = 0
+        else:
+            option_idx = 1
+
+        msg = """
+        <p>Select the Deconstructor's placement in the Dictionary panel<br>
+        of the Study Window.</p>
+        <p>This setting takes effect after restarting the application.</p>
+        """
+
+        item, ok = QInputDialog.getItem(view,
+                                        "Deconstructor Placement",
+                                        msg,
+                                        options,
+                                        option_idx,
+                                        False)
+        if ok and item:
+            self._app_data.app_settings['sutta_study_deconstructor_above_words'] = (item == "Above Words")
+            self._app_data._save_app_settings()
+
     def _toggle_keep_running(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Keep_Running_in_the_Background.isChecked()
         self._app_data.app_settings['keep_running_in_background'] = is_on
@@ -1874,17 +1900,23 @@ class AppWindows:
         if is_sutta_study_window(view):
             assert(isinstance(view, SuttaStudyWindowInterface))
 
+            if hasattr(view, 'action_Show_Bookmarks'):
+                view.action_Show_Bookmarks \
+                    .triggered.connect(partial(self._toggle_show_bookmarks, view))
+
             if hasattr(view, 'action_Study_Dictionary_Placement'):
                 view.action_Study_Dictionary_Placement \
                     .triggered.connect(partial(self._select_study_dictionary_placement_dialog, view))
 
-                # FIXME Hey
-
                 is_on = self._app_data.app_settings.get('sutta_study_lookup_on_side', True)
                 view.action_Study_Dictionary_Placement.setChecked(is_on)
 
-                view.action_Show_Bookmarks \
-                    .triggered.connect(partial(self._toggle_show_bookmarks, view))
+            if hasattr(view, 'action_Deconstructor_Placement'):
+                view.action_Deconstructor_Placement \
+                    .triggered.connect(partial(self._select_deconstructor_placement_dialog, view))
+
+                is_on = self._app_data.app_settings.get('sutta_study_deconstructor_above_words', True)
+                view.action_Deconstructor_Placement.setChecked(is_on)
 
         if hasattr(view, 'action_Notify_About_Simsapa_Updates'):
             notify = self._app_data.app_settings.get('notify_about_simsapa_updates', True)

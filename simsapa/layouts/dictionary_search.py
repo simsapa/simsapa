@@ -108,6 +108,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.timer.timeout.connect(self.handle_messages)
         self.timer.start(TIMER_SPEED)
 
+        # self.deconstructor_above_words = self._app_data.app_settings.get('sutta_study_deconstructor_above_words', True)
+        # FIXME: There are more tabs than in WordLookup
+        self.deconstructor_above_words = True
+
         self._search_mode_setting_key = 'dictionary_search_mode'
         self._language_filter_setting_key = 'dictionary_language_filter_idx'
         self._source_filter_setting_key = 'dictionary_source_filter_idx'
@@ -127,8 +131,13 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         self._connect_signals()
 
-        self.init_deconstructor_list()
+        # self.setup_deconstructor_layout(self.central_widget, self.verticalLayout_4)
+        # FIXME: not using a vert_slitter here, as opposed to WordLookup
+        self.deconstructor_layout = QVBoxLayout()
+        self.deconstructor_layout.setContentsMargins(0, 0, 0, 0)
+
         self.init_fulltext_list()
+        self.init_deconstructor_list(deconstructor_tab_idx=1)
         self.init_memo_dialog()
         self.init_memos_sidebar()
         self.init_links_sidebar()
