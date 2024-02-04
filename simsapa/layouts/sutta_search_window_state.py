@@ -256,20 +256,37 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         return qwe
 
     def _add_new_tab(self, title: str, sutta: Optional[USutta]):
-        # don't substract one because the _related_tabs start after sutta_tab,
-        # and tab indexing start from 0
-        tab_index = len(self._related_tabs)
-        tab = SuttaTabWidget(self._app_data,
-                             title,
-                             tab_index,
-                             self._new_webengine(),
-                             sutta)
+        tab: Optional[SuttaTabWidget] = None
 
-        tab.render_sutta_content()
+        # Find the first hidden tab which can be reused.
+        for i in self._related_tabs:
+            if not i.is_visible:
+                tab = i
+                break
 
-        self._related_tabs.append(tab)
+        if tab is None:
+            # Add one because the _related_tabs start after sutta_tab, and tab
+            # indexing starts from 0
+            tab_index = len(self._related_tabs) + 1
+            tab = SuttaTabWidget(self._app_data,
+                                 title,
+                                 tab_index,
+                                 self._new_webengine(),
+                                 sutta)
 
-        self.sutta_tabs.addTab(tab, title)
+            self._related_tabs.append(tab)
+            tab.render_sutta_content()
+            self.sutta_tabs.addTab(tab, title)
+
+        else:
+            tab.title = title
+            self.sutta_tabs.setTabText(tab.tab_index, title)
+
+            tab.sutta = sutta
+            tab.render_sutta_content()
+
+            tab.is_visible = True
+            self.sutta_tabs.setTabVisible(tab.tab_index, True)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -649,22 +666,13 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         else:
             self._show_sutta(self._recent[current_idx - 1])
 
-    def _remove_related_tabs(self):
-        n = 0
-        max_tries = 5
-        # Tabs are not removed immediately. Have to repeatedly try to remove the
-        # tabs until they are all gone.
-        while len(self._related_tabs) > 0 and n < max_tries:
-            for idx, tab in enumerate(self._related_tabs):
-                del self._related_tabs[idx]
-                tab.close()
-                tab.deleteLater()
-
-            n += 1
-
     def _add_related_tabs(self, sutta: USutta):
         self.sutta_tabs.setCurrentIndex(0)
-        self._remove_related_tabs()
+
+        # Hide all existing related tabs, we will reuse them.
+        for i in self._related_tabs:
+            i.is_visible = False
+            self.sutta_tabs.setTabVisible(i.tab_index, False)
 
         # read state from the window action, not from app_data.app_settings, b/c
         # that will be set from windows.py

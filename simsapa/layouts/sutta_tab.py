@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
@@ -25,7 +25,6 @@ class SuttaTabWidget(QWidget):
 
         super().__init__()
 
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setProperty('style_class', 'sutta_tab')
 
         self._app_data = app_data
@@ -36,6 +35,7 @@ class SuttaTabWidget(QWidget):
         self.api_url = self._app_data.api_url
         self.current_html = ""
         self.devtools_open = False
+        self.is_visible = True
 
         self._layout = QVBoxLayout()
         self._layout.setContentsMargins(0, 0, 0, 0)
