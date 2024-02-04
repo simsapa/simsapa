@@ -22,7 +22,7 @@ from simsapa.app.types import SuttaStudyParams
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
     EbookReaderWindowInterface, OpenPromptParams, PaliCourseGroup,
-    SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowType, WordLookupInterface,
+    SuttaSearchWindowInterface, SuttaStudyWindowInterface, WindowNameToType, WindowPosSize, WindowType, WordLookupInterface,
     sutta_quote_from_url)
 
 from simsapa.layouts.gui_helpers import ReleasesInfo, UpdateInfo, get_window_type, is_sutta_search_window, is_sutta_study_window, is_dictionary_search_window, is_ebook_reader_window
@@ -514,8 +514,28 @@ class AppWindows:
 
         make_active_window(view)
 
-    def _set_size_and_maximize(self, view: QMainWindow):
-        view.resize(1200, 800)
+    def _set_size_and_maximize(self, view: AppWindowInterface):
+        p: Optional[WindowPosSize] = None
+
+        if is_sutta_search_window(view):
+            p = self._app_data.app_settings.get('sutta_search_pos', None)
+
+        elif is_dictionary_search_window(view):
+            p = self._app_data.app_settings.get('dictionary_search_pos', None)
+
+        elif is_sutta_study_window(view):
+            p = self._app_data.app_settings.get('sutta_study_pos', None)
+
+        elif is_ebook_reader_window(view):
+            p = self._app_data.app_settings.get('ebook_reader_pos', None)
+
+        if p is not None:
+            view.resize(p['width'], p['height'])
+            view.move(p['x'], p['y'])
+
+        else:
+            view.resize(1200, 800)
+
         # window doesn't open maximized
         # view.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 

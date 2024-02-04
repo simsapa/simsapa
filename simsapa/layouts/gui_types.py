@@ -364,6 +364,11 @@ class AppSettings(TypedDict):
     sutta_source_filter_idx: int
     suttas_show_pali_buttons: bool
 
+    sutta_search_pos: WindowPosSize
+    dictionary_search_pos: WindowPosSize
+    ebook_reader_pos: WindowPosSize
+    sutta_study_pos: WindowPosSize
+
     sutta_study_one_language_filter_idx: int
     sutta_study_one_search_mode: SearchMode
     sutta_study_one_source_filter_idx: int
@@ -439,6 +444,11 @@ def default_app_settings() -> AppSettings:
         sutta_search_mode = SearchMode.FulltextMatch,
         sutta_source_filter_idx = 0,
         suttas_show_pali_buttons = True,
+
+        sutta_search_pos = WindowPosSize(x = 100, y = 100, width = 1200, height = 800),
+        dictionary_search_pos = WindowPosSize(x = 100, y = 100, width = 1200, height = 800),
+        ebook_reader_pos = WindowPosSize(x = 100, y = 100, width = 1200, height = 800),
+        sutta_study_pos = WindowPosSize(x = 100, y = 100, width = 1200, height = 800),
 
         sutta_study_one_language_filter_idx = 0,
         sutta_study_one_search_mode = SearchMode.FulltextMatch,
