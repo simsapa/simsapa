@@ -36,17 +36,18 @@ class HasRestoreSizePos(AppWindowInterface):
 
         self._app_data._save_app_settings()
 
-    def restore_size_pos(self):
+    def restore_size_pos(self, resize = True):
         p = self._window_size_pos
         if p is None:
             return
 
-        self.resize(p['width'], p['height'])
+        if resize:
+            self.resize(p['width'], p['height'])
         self.move(p['x'], p['y'])
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        self.restore_size_pos()
+        self.restore_size_pos(resize=False)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self.save_size_pos()
