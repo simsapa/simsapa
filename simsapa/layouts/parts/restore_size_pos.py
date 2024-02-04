@@ -47,6 +47,11 @@ class HasRestoreSizePos(AppWindowInterface):
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
+        # Don't resize on show() after hide, because the window geometry can be
+        # a bit off between save and restore, causing the window size to grow
+        # vertically.
+        #
+        # The window is already the correct size at hide().
         self.restore_size_pos(resize=False)
 
     def hideEvent(self, event: QHideEvent) -> None:
