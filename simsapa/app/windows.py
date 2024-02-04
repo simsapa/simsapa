@@ -1714,8 +1714,8 @@ class AppWindows:
 
     def _toggle_start_low_memory(self, view: SuttaSearchWindowInterface):
         is_on = view.action_Start_in_Low_Memory_Mode.isChecked()
-        self._app_data.app_settings['start_in_low_memory_mode'] = is_on
-        self._app_data._save_app_settings()
+        global START_LOW_MEM
+        START_LOW_MEM = is_on
 
         if is_on:
             ENABLE_LOW_MEM_MODE_PATH.touch()
@@ -1817,8 +1817,7 @@ class AppWindows:
                 .triggered.connect(partial(self._toggle_keep_running, view))
 
         if hasattr(view, 'action_Start_in_Low_Memory_Mode'):
-            is_on = self._app_data.app_settings.get('start_in_low_memory_mode', False)
-            view.action_Start_in_Low_Memory_Mode.setChecked(is_on)
+            view.action_Start_in_Low_Memory_Mode.setChecked(START_LOW_MEM)
 
             view.action_Start_in_Low_Memory_Mode \
                 .triggered.connect(partial(self._toggle_start_low_memory, view))

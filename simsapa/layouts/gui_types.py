@@ -339,7 +339,6 @@ class AppSettings(TypedDict):
     show_toolbar: bool
     show_translation_and_pali_line_by_line: bool
     keep_running_in_background: bool
-    start_in_low_memory_mode: bool
     tray_click_opens_window: WindowType
     show_search_options: bool
 
@@ -416,7 +415,6 @@ def default_app_settings() -> AppSettings:
         show_toolbar = False,
         show_translation_and_pali_line_by_line = False,
         keep_running_in_background = True,
-        start_in_low_memory_mode = False,
         tray_click_opens_window = WindowType.LastClosed,
         show_search_options = True,
 
