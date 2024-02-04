@@ -20,7 +20,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss_html, get_word_meaning
-from simsapa.app.types import SearchArea, USutta, UDictWord
+from simsapa.app.types import LookupPanelParams, SearchArea, USutta, UDictWord, default_lookup_panel_params
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
@@ -178,6 +178,10 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
         if show_results_tab:
             self.rightside_tabs.setCurrentIndex(0)
+
+    def apply_params(self, params: LookupPanelParams):
+        lookup_p: LookupPanelParams = {**default_lookup_panel_params(), **params}
+        self.lookup_in_dictionary(lookup_p['query_text'], lookup_p['show_results_tab'])
 
     def _get_selection(self) -> Optional[str]:
         text = self.qwe.selectedText()

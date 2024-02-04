@@ -17,7 +17,7 @@ from simsapa.app.check_simsapa_updates_worker import CheckSimsapaUpdatesWorker
 from simsapa.app.check_dpd_updates_worker import CheckDpdUpdatesWorker
 
 from simsapa.app.app_data import AppData
-from simsapa.app.types import SuttaStudyParams
+from simsapa.app.types import LookupPanelParams, SuttaPanelParams, SuttaStudyParams
 
 from simsapa.layouts.gui_types import (
     AppMessage, AppWindowInterface, BookmarksBrowserWindowInterface, DictionarySearchWindowInterface,
@@ -37,7 +37,9 @@ class AppWindowsSignals(QObject):
     open_window_signal = pyqtSignal(str)
     run_lookup_query_signal = pyqtSignal(str)
     run_study_lookup_query_signal = pyqtSignal(str)
+    run_sutta_search_signal = pyqtSignal(dict)
     run_sutta_study_signal = pyqtSignal(dict)
+    run_dictionary_search_signal = pyqtSignal(dict)
 
 class AppWindows:
     _preview_window: PreviewWindow
@@ -620,6 +622,11 @@ class AppWindows:
             view.s.page_dblclick.connect(partial(self._sutta_search_quick_lookup_selection, view = view))
             view.s.open_gpt_prompt.connect(partial(self._new_gpt_prompts_window_noret))
 
+            def _run_sutta_search(params: SuttaPanelParams):
+                view.apply_params(params)
+
+            self.signals.run_sutta_search_signal.connect(_run_sutta_search)
+
             view.connect_preview_window_signals(self._preview_window)
 
             if self._hotkeys_manager is not None:
@@ -779,6 +786,11 @@ class AppWindows:
             view.lookup_in_new_sutta_window_signal.connect(partial(self._lookup_in_suttas_msg))
             view.open_words_new_signal.connect(partial(self.open_words_new))
             view.page_dblclick.connect(partial(view._lookup_selection_in_dictionary, show_results_tab=False))
+
+            def _run_dictionary_search(params: LookupPanelParams):
+                view.apply_params(params)
+
+            self.signals.run_dictionary_search_signal.connect(_run_dictionary_search)
 
             view.connect_preview_window_signals(self._preview_window)
 

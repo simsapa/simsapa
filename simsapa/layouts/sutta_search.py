@@ -7,11 +7,11 @@ from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import (QHBoxLayout, QListWidget, QMessageBox, QTabWidget, QVBoxLayout)
 
-from simsapa import logger, ApiAction, ApiMessage, SearchResult, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
+from simsapa import SuttaQuote, logger, ApiAction, ApiMessage, SearchResult, APP_QUEUES, GRAPHS_DIR, TIMER_SPEED
 from simsapa.assets.ui.sutta_search_window_ui import Ui_SuttaSearchWindow
 
 from simsapa.app.app_data import AppData
-from simsapa.app.types import USutta
+from simsapa.app.types import SuttaPanelParams, USutta, default_sutta_panel_params
 
 from simsapa.layouts.gui_types import SuttaSearchWindowInterface, WindowType
 from simsapa.layouts.preview_window import PreviewWindow
@@ -70,6 +70,12 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
                                         self.tabs_layout,
                                         enable_nav_buttons=False)
 
+        def _show_find_panel_with_text(text = ''):
+            self.s.find_toolbar.show()
+            self.s._find_panel.search_input.setFocus()
+            self.s._find_panel.search_input.setText(text)
+
+        self.s.show_find_panel.connect(partial(_show_find_panel_with_text))
 
         self.page_len = self.s.page_len
 
@@ -160,6 +166,19 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         text = self._app_data.clipboard_getText()
         if text is not None:
             self.lookup_in_dictionary_signal.emit(text)
+
+    def apply_params(self, params: SuttaPanelParams):
+        sutta_p: SuttaPanelParams = {**default_sutta_panel_params(), **params}
+
+        self.s._set_query(sutta_p['query_text'])
+        self.s._handle_query()
+
+        if sutta_p['find_text'] == "":
+            sutta_quote = None
+        else:
+            sutta_quote = SuttaQuote(quote=sutta_p['find_text'], selection_range=None)
+
+        self.s._show_sutta_by_uid(sutta_p['sutta_uid'], sutta_quote)
 
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self.s._queries.results_page(page_num)
