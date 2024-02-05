@@ -188,7 +188,7 @@ def pali_to_ascii(text: Optional[str] = None) -> str:
     trans = str.maketrans(from_chars, to_chars)
     return text.translate(trans).strip()
 
-def word_uid(word: str, dict_label: str) -> str:
+def word_uid_sanitize(word: str) -> str:
     w = re.sub(r"[\.,;:\(\)]", " ", word)
     w = w \
         .replace("'", "") \
@@ -197,6 +197,10 @@ def word_uid(word: str, dict_label: str) -> str:
 
     w = re.sub(r"--+", "-", w)
 
+    return w
+
+def word_uid(word: str, dict_label: str) -> str:
+    w = word_uid_sanitize(word)
     uid = f"{w}/{dict_label}".lower()
 
     return uid
@@ -227,18 +231,18 @@ def remove_punct(text: Optional[str] = None) -> str:
         return ''
 
     # Replace punctuation marks with space. Removing them can join lines or words.
-    text = re.sub(r'[\.,;\?\!“”‘’…—-]', '', text)
+    text = re.sub(r'[\.,;\?\!“”‘’…—-]', " ", text)
 
     # Newline and tab to space
     text = text.replace("\n", " ")
     text = text.replace("\t", " ")
 
-    # Remove quote marks.
+    # Separate 'ti from the word, avoid joining it when ' is removed
+    text = text.replace("'ti", " ti")
+
+    # Remove remaining quote marks.
     #
-    # 'ti is sometimes not punctuated with an apostrophe. Remove the ' both from
-    # plain text content and from query strings.
-    #
-    # Sometimes people add quote marks in compounds: manopubbaṅ'gamā dhammā
+    # Quote marks can occur in compounds: manopubbaṅ'gamā dhammā
 
     text = text.replace("'", '')
     text = text.replace('"', '')

@@ -280,20 +280,22 @@ def get_db_version_pyproject() -> str:
 
     return ver
 
-def check_and_fix_dict_word_uid(db_session: Session, i: Am.DictWord):
+def check_and_fix_dict_word_uid(all_uids: List[str], i: Am.DictWord):
     n = 0
-    while True:
-        r = db_session.query(Am.DictWord).filter(Am.DictWord.uid == i.uid).first()
-        if r is not None:
-            if n > 5:
-                print(f"Tried updating the uid {n-1} times for word {i.word}. Exiting.")
-                sys.exit(2)
+    while i.uid in all_uids:
+        if n > 5:
+            print(f"Tried updating the uid {n-1} times for word {i.word}. Exiting.")
+            sys.exit(2)
 
-            name, label = i.uid.split("/")
-            n += 1
-            i.uid = f"{name}-{n}/{label}"
-        else:
-            return
+        name, label = i.uid.split("/")
+        n += 1
+        i.uid = f"{name}-{n}/{label}"
+
+        print(f"Updated: {i.word}, uid = {i.uid}")
+        print(str(i.definition_plain)[0:200])
+
+    # Found an uid which is not in all_uids, so append it.
+    all_uids.append(i.uid)
 
 def replace_links_with_bold(soup: BeautifulSoup, tag: Tag):
     links = tag.select('a')

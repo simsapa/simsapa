@@ -30,6 +30,7 @@ from scripts import multi_refs
 from scripts import create_links
 from scripts import dpd
 from scripts import dppn
+from scripts import commentary_definitions
 
 load_dotenv()
 
@@ -141,6 +142,9 @@ def main():
 
     # DPPN - Dictionary of Pali Proper Names
     dppn.populate_dppn_from_palikanon_com(appdata_db, limit)
+
+    # COMM - Commentary definitions
+    commentary_definitions.populate_from_sqlite_to_appdata(appdata_db, limit)
 
     # Stardict formats
     populate_dict_words_from_stardict(appdata_db, stardict_base_path, ignore_synonyms=True, limit=limit)

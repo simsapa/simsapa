@@ -119,13 +119,14 @@ def populate_dppn_from_palikanon_com(appdata_db: Session, limit: Optional[int] =
 
     logger.info(f"Adding {len(words)} words.")
 
+    all_uids = [i._tuple()[0] for i in appdata_db.query(Am.DictWord.uid).all()]
+
     try:
         for i in words:
-            helpers.check_and_fix_dict_word_uid(appdata_db, i)
+            helpers.check_and_fix_dict_word_uid(all_uids, i)
             appdata_db.add(i)
-            # Necessary to commit each word in order to check for uid
-            # constraint.
-            appdata_db.commit()
+
+        appdata_db.commit()
     except Exception as e:
         logger.error(e)
 
