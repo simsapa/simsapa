@@ -89,6 +89,8 @@ LOW_MEM_THRESHOLD = 3*1024*1024*1024
 
 ENABLE_LOW_MEM_MODE_PATH = SIMSAPA_DIR.joinpath("enable_low_mem_mode.txt")
 
+NO_TRAY_ICON_PATH = SIMSAPA_DIR.joinpath("no_tray_icon.txt")
+
 mem = psutil.virtual_memory()
 if ENABLE_LOW_MEM_MODE_PATH.exists() or mem.available < LOW_MEM_THRESHOLD:
     START_LOW_MEM = True

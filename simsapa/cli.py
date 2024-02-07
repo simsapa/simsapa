@@ -12,12 +12,13 @@ app.add_typer(index_app, name="index")
 def gui(url: Optional[str] = None,
         window_type: Optional[str] = None,
         show_window: bool = True,
+        tray_icon: bool = True,
         port: int = SIMSAPA_API_DEFAULT_PORT):
     """Start a GUI window."""
     logger.profile("runner::gui()")
 
     from simsapa.gui import start
-    start(port=port, url=url, window_type_name=window_type, show_window=show_window)
+    start(port=port, url=url, window_type_name=window_type, show_window=show_window, enable_tray_icon=tray_icon)
 
 @app.command()
 def query(query_type: QueryType, query: str, print_titles: bool = True, print_count: bool = False):

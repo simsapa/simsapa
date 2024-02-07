@@ -7,7 +7,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, DPD_DB_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, DPD_DB_PATH, NO_TRAY_ICON_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.api import ApiSearchResult
@@ -52,7 +52,8 @@ create_app_dirs()
 def start(port: int = SIMSAPA_API_DEFAULT_PORT,
           url: Optional[str] = None,
           window_type_name: Optional[str] = None,
-          show_window = True):
+          show_window = True,
+          enable_tray_icon = True):
     logger.profile("gui::start()")
     set_is_gui(True)
 
@@ -207,7 +208,10 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
             logger.info(f"Screen size: {app_data.screen_size}")
             logger.info(f"Device pixel ratio: {screen.devicePixelRatio()}")
 
-    app_windows = AppWindows(app, app_data, hotkeys_manager)
+    if NO_TRAY_ICON_PATH.exists():
+        enable_tray_icon = False
+
+    app_windows = AppWindows(app, app_data, hotkeys_manager, enable_tray_icon)
 
     def _emit_open_window_signal(window_type: str = ''):
         app_windows.signals.open_window_signal.emit(window_type)

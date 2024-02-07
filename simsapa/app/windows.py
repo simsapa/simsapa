@@ -44,9 +44,14 @@ class AppWindowsSignals(QObject):
 class AppWindows:
     _preview_window: PreviewWindow
     signals: AppWindowsSignals
-    tray: QSystemTrayIcon
+    tray: Optional[QSystemTrayIcon] = None
 
-    def __init__(self, app: QApplication, app_data: AppData, hotkeys_manager: Optional[HotkeysManagerInterface]):
+    def __init__(self,
+                 app: QApplication,
+                 app_data: AppData,
+                 hotkeys_manager: Optional[HotkeysManagerInterface],
+                 enable_tray_icon = True):
+
         self.signals = AppWindowsSignals()
         self._app = app
         self._app_data = app_data
@@ -61,7 +66,8 @@ class AppWindows:
 
         self.word_lookup: Optional[WordLookupInterface] = None
 
-        self.tray = self._setup_system_tray()
+        if enable_tray_icon:
+            self.tray = self._setup_system_tray()
 
         # Init PreviewWindow here, so that the first window can connect signals to it.
         self._init_preview_window()
