@@ -139,10 +139,7 @@ class HasDeconstructorList:
         if self.deconstructor_above_words:
             self.show_deconstructor.setText(f"Deconstructor Results ({len(r.headwords)})")
             is_on = self.show_deconstructor.isChecked()
-            if is_on:
-                self.deconstructor_frame.setVisible(True)
-            else:
-                return
+            self.deconstructor_frame.setVisible(is_on)
 
         elif self.deconstructor_tab_idx is not None:
             self.tabs.setTabText(self.deconstructor_tab_idx, f"Deconstructor ({len(r.headwords)})")
