@@ -1,7 +1,6 @@
 import sys, json
 from pathlib import Path
 from typing import Tuple, Set, Dict
-from datetime import date
 
 import sqlite3
 import contextlib
@@ -232,32 +231,6 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     try:
         with contextlib.closing(sqlite3.connect(dpd_db_path)) as connection:
             with contextlib.closing(connection.cursor()) as cursor:
-
-                # FIXME DPD download now contains the db_info table with dpd_release_version value.
-
-                logger.info("Add db_info table.")
-                query = """
-                CREATE TABLE
-                    db_info(
-                        id integer primary key autoincrement,
-                        key VARCHAR UNIQUE NOT NULL,
-                        value VARCHAR NOT NULL
-                    );
-                """
-
-                cursor.execute(query)
-                connection.commit()
-
-                # logger.info("Add dpd_release_version.")
-                query = """
-                INSERT INTO db_info (key, value) VALUES (?, ?);
-                """
-
-                # The DPD version is formatted as: v0.0.20240126
-                ver = "v0.0." + date.today().strftime("%Y%m%d")
-
-                cursor.execute(query, ("dpd_release_version", ver))
-                connection.commit()
 
                 # PaliWord.dictionary_id:
                 # PaliRoot.dictionary_id:
