@@ -1,4 +1,3 @@
-from subprocess import Popen
 import os, sys, threading, shutil
 import traceback
 from typing import Optional
@@ -53,8 +52,7 @@ create_app_dirs()
 def start(port: int = SIMSAPA_API_DEFAULT_PORT,
           url: Optional[str] = None,
           window_type_name: Optional[str] = None,
-          show_window = True,
-          splash_proc: Optional[Popen] = None):
+          show_window = True):
     logger.profile("gui::start()")
     set_is_gui(True)
 
@@ -103,10 +101,6 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
     # DownloadAppdataWindow instead of the main app.
 
     if not APP_DB_PATH.exists():
-        if splash_proc is not None:
-            if splash_proc.poll() is None:
-                splash_proc.kill()
-
         from simsapa.layouts.download_appdata import DownloadAppdataWindow
 
         w = DownloadAppdataWindow()
@@ -302,10 +296,6 @@ def start(port: int = SIMSAPA_API_DEFAULT_PORT,
             app_windows.open_first_window(window_type)
 
         app_windows.show_startup_message()
-
-    if splash_proc is not None:
-        if splash_proc.poll() is None:
-            splash_proc.kill()
 
     logger.profile("app.exec()")
     status = app.exec()

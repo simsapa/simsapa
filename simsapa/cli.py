@@ -15,13 +15,6 @@ def gui(url: Optional[str] = None,
         port: int = SIMSAPA_API_DEFAULT_PORT):
     """Start a GUI window."""
     logger.profile("runner::gui()")
-    # import subprocess
-    # from simsapa import SIMSAPA_PACKAGE_DIR
-    # try:
-    #     proc = subprocess.Popen(['python3', SIMSAPA_PACKAGE_DIR.joinpath('splash.py')])
-    # except Exception as e:
-    #     print(str(e))
-    #     sys.exit(2)
 
     from simsapa.gui import start
     start(port=port, url=url, window_type_name=window_type, show_window=show_window)
