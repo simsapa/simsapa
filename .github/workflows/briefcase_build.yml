@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Python
-        uses: actions/setup-python@master
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
@@ -45,15 +45,17 @@ jobs:
 
       - name: Install Qt on Ubuntu 20.04
         if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '20.04' }}
-        uses: jurplel/install-qt-action@master
+        uses: jurplel/install-qt-action@v3
         with:
           version: '6.4.2'
+          setup-python: false
 
       - name: Install Qt on Ubuntu 22.04
         if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '22.04' }}
-        uses: jurplel/install-qt-action@master
+        uses: jurplel/install-qt-action@v3
         with:
           version: '6.5.2'
+          setup-python: false
 
       - name: Modify Qt version in pyproject.toml for Ubuntu 20.04
         if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '20.04' }}
