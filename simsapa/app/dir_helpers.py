@@ -62,7 +62,7 @@ def create_or_update_linux_desktop_icon_file():
                 desktop_content = f.read()
 
             # Path line
-            desktop_content = re.sub(r'^Path=.*$', str(appimage_path.parent), desktop_content)
+            desktop_content = re.sub(r'\nPath=.*\n', f"\nPath={appimage_path.parent}\n", desktop_content)
 
             # Exec line
             # The user might have edited the .desktop file with env variables cli flags.
