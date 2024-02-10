@@ -1,4 +1,4 @@
-import os, shutil
+import os, shutil, re
 from pathlib import Path
 from simsapa import (APP_DB_PATH, ASSETS_DIR, COURSES_DIR, DESKTOP_FILE_PATH, EBOOK_UNZIP_DIR, GRAPHS_DIR,
                      HTML_RESOURCES_APPDATA_DIR, HTML_RESOURCES_USERDATA_DIR, INDEX_DIR, IS_LINUX,
@@ -54,8 +54,27 @@ def create_or_update_linux_desktop_icon_file():
         with open(DESKTOP_FILE_PATH, mode='r', encoding='utf-8') as f:
             s = f.read()
 
-        if str(appimage_path) in s:
-            return
+        if str(appimage_path) not in s:
+            # Desktop file exists but the AppImage path is different.
+            # Update the Path and Exec lines.
+
+            with open(DESKTOP_FILE_PATH, 'r', encoding="utf-8") as f:
+                desktop_content = f.read()
+
+            # Path line
+            desktop_content = re.sub(r'^Path=.*$', str(appimage_path.parent), desktop_content)
+
+            # Exec line
+            # The user might have edited the .desktop file with env variables cli flags.
+            # Old path starts with / and contains the word 'AppImage'
+            desktop_content = re.sub(r'(/.*?/.*?\.AppImage)', str(appimage_path), desktop_content)
+
+            with open(DESKTOP_FILE_PATH, 'w', encoding="utf-8") as f:
+                f.write(desktop_content)
+
+        return
+
+    # Create a new .desktop file
 
     user_icon_path = USER_HOME_DIR.joinpath(".local/share/icons/simsapa.png")
 
