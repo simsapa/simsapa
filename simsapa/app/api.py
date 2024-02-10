@@ -1,15 +1,17 @@
 from pathlib import Path
 import queue, json, os
-from typing import Callable, Dict, List, Optional, TypedDict
+from typing import Callable, Dict, List, Optional
 from flask import Flask, jsonify, send_from_directory, abort, request
 from flask.wrappers import Response
 from flask_cors import CORS
 import logging
 
 from simsapa import PACKAGE_ASSETS_DIR, SERVER_QUEUE, ApiAction, ApiMessage, DbSchemaName
-from simsapa import logger, SearchResult
+from simsapa import logger, ApiSearchResult
 from simsapa.app.completion_lists import get_and_save_completions
 from simsapa.app.db_session import get_db_engine_connection_session
+
+from simsapa.app.search.helpers import get_dict_word_languages, get_dict_word_source_filter_labels, get_sutta_languages
 
 from simsapa.app.types import GraphRequest, LookupPanelParams, SearchArea, SearchMode, SearchParams, SuttaPanelParams, SuttaStudyParams, UBookmark, USutta, UDictWord
 
@@ -28,11 +30,6 @@ logging.getLogger("werkzeug").disabled = True
 
 global server_queue
 server_queue: Optional[queue.Queue] = None
-
-class ApiSearchResult(TypedDict):
-    hits: Optional[int]
-    results: List[SearchResult]
-    deconstructor: List[str]
 
 class AppCallbacks:
     open_window: Callable[[str], None]
@@ -369,6 +366,24 @@ def route_sutta_titles_flat_completion_list():
     results = [item for sublist in r.values() for item in sublist]
 
     results = sorted(results, key=lambda x: pali_sort_key(x))
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
+
+    return jsonify(results), 200
+
+@app.route('/sutta_and_dict_search_options', methods=['GET'])
+def route_sutta_and_dict_search_options():
+    logger.info('/sutta_and_dict_search_options')
+
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
+
+    results = {
+        "sutta_languages": get_sutta_languages(db_session),
+        "dict_languages": get_dict_word_languages(db_session),
+        "dict_sources": get_dict_word_source_filter_labels(db_session),
+    }
 
     db_conn.close()
     db_session.close()

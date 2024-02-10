@@ -7,8 +7,7 @@ import tantivy
 
 from sqlalchemy import or_
 from sqlalchemy.orm.session import Session
-from simsapa import DbSchemaName, SearchResult
-from simsapa.app.api import ApiSearchResult
+from simsapa import DbSchemaName, SearchResult, ApiSearchResult
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um

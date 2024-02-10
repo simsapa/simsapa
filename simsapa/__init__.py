@@ -314,3 +314,8 @@ class SearchResult(TypedDict):
     page_number: Optional[int]
     score: Optional[float]
     rank: Optional[int]
+
+class ApiSearchResult(TypedDict):
+    hits: Optional[int]
+    results: List[SearchResult]
+    deconstructor: List[str]

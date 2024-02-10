@@ -7,10 +7,9 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, DPD_DB_PATH, NO_TRAY_ICON_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH
+from simsapa import ASSETS_DIR, DESKTOP_FILE_PATH, DPD_DB_PATH, NO_TRAY_ICON_PATH, SIMSAPA_API_DEFAULT_PORT, SIMSAPA_API_PORT_PATH, START_LOW_MEM, USER_DB_PATH, set_is_gui, logger, IS_MAC, SERVER_QUEUE, APP_DB_PATH, ApiSearchResult
 
 from simsapa.app.actions_manager import ActionsManager
-from simsapa.app.api import ApiSearchResult
 from simsapa.app.db_session import get_db_version
 from simsapa.app.helpers import find_available_port
 from simsapa.app.dir_helpers import create_or_update_linux_desktop_icon_file, create_app_dirs, check_delete_files, ensure_empty_graphs_cache
