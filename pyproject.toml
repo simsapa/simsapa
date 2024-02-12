@@ -19,11 +19,11 @@ db_version = "0.5.0-alpha.1"
 
 [tool.poetry.dependencies]
 python = "~3.11"
-PyQt6 = "~6.5.2"
+PyQt6 = "~6.6.1"
 # Check poetry.lock Qt version matches with briefcase workflow yml
-PyQt6-Qt6 = "~6.5.2"
-PyQt6-WebEngine = "~6.5.0"
-PyQt6-WebEngine-Qt6 = "~6.5.2"
+PyQt6-Qt6 = "~6.6.1"
+PyQt6-WebEngine = "~6.6.0"
+PyQt6-WebEngine-Qt6 = "~6.6.1"
 PyYAML = "~6.0.0"
 SQLAlchemy = "~2.0.22"
 SQLAlchemy-Utils = "~0.41.1"
@@ -75,9 +75,9 @@ ebooklib = "^0.18"
 openai = "^0.27.4"
 tiktoken = "^0.3.3"
 
-setuptools = "69.0.2"
-pytz = "2023.3"
-pyinstaller-hooks-contrib = "2023.10"
+setuptools = "69.1.0"
+pytz = "2024.1"
+pyinstaller-hooks-contrib = "2024.1"
 werkzeug = "2.3.8"
 tornado = "6.4"
 
@@ -90,7 +90,7 @@ tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa
 simsapa = 'simsapa.runner:main'
 
 [tool.poetry.group.dev.dependencies]
-pyinstaller = "6.3.0"
+pyinstaller = "6.4.0"
 tuna = { git = "https://github.com/nschloe/tuna.git" }
 
 # scalene = "^1.5.14"
@@ -101,8 +101,8 @@ html5lib = "^1.1"
 selenium = "^4.7.2"
 # NOTE: Using create-dmg atm. (https://github.com/sindresorhus/create-dmg)
 # dmgbuild = "^1.6.1"
-ruff-lsp = "^0.0.41"
-ruff = "^0.1.1"
+ruff-lsp = "^0.0.52"
+ruff = "^0.2.1"
 icecream = "^2.1.3"
 python-dateutil = "^2.8.2"
 doit = "^0.36.0"
@@ -151,10 +151,10 @@ requires = [
 # --- ubuntu-20.04 end ---
 
 # --- ubuntu-22.04 ---
-"PyQt6              >= 6.5.2,    < 6.6.0",
-"PyQt6-Qt6           == 6.5.2",
-"PyQt6-WebEngine    >= 6.5.0,    < 6.6.0",
-"PyQt6-WebEngine-Qt6 == 6.5.2",
+"PyQt6              >= 6.6.1,    < 6.7.0",
+"PyQt6-Qt6           == 6.6.1",
+"PyQt6-WebEngine    >= 6.6.0,    < 6.7.0",
+"PyQt6-WebEngine-Qt6 == 6.6.1",
 # --- ubuntu-22.04 end ---
 
 "PyYAML             >= 6.0.0,    < 6.1.0",
@@ -200,9 +200,9 @@ requires = [
 "ebooklib           >= 0.18.0,   < 0.19.0",
 "openai             >= 0.27.0,   < 0.28.0",
 "tiktoken           >= 0.3.3,    < 0.4.0",
-"setuptools         == 69.0.2",
-"pytz               == 2023.3",
-"pyinstaller-hooks-contrib == 2023.10",
+"setuptools         == 69.1.0",
+"pytz               == 2024.1",
+"pyinstaller-hooks-contrib == 2024.1",
 "werkzeug           == 2.3.8",
 "tornado            == 6.4",
 "./tantivy-py/target/wheels/tantivy-0.20.2rc4-cp311-cp311-manylinux_2_34_x86_64.whl",

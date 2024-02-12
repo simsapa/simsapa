@@ -223,7 +223,7 @@ def task_icons():
         'actions': [""" ./scripts/icons_assets.sh """],
     }
 
-def ui_to_py():
+def task_ui_to_py():
     cmd = """
 pyuic6 -o simsapa/assets/ui/sutta_search_window_ui.py simsapa/assets/ui/sutta_search_window.ui && \
 pyuic6 -o simsapa/assets/ui/sutta_study_window_ui.py simsapa/assets/ui/sutta_study_window.ui && \
