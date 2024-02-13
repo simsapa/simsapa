@@ -5,7 +5,7 @@ from datetime import datetime
 from urllib.parse import parse_qs
 
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
 from PyQt6.QtWidgets import (QApplication, QInputDialog, QMainWindow, QMessageBox, QWidget, QSystemTrayIcon, QMenu)
 
 from simsapa import ASSETS_DIR, EBOOK_UNZIP_DIR, ENABLE_LOW_MEM_MODE_PATH, IS_MAC, SIMSAPA_API_PORT_PATH, START_LOW_MEM, logger, ApiAction, ApiMessage
@@ -902,9 +902,7 @@ class AppWindows:
             self._init_word_lookup()
 
         else:
-            self.word_lookup.show()
-            self.word_lookup.raise_()
-            self.word_lookup.activateWindow()
+            make_active_window(self.word_lookup)
 
             if query is not None:
                 self.word_lookup.s.lookup_in_dictionary(query, show_results_tab)
@@ -2066,6 +2064,12 @@ class AppWindows:
             view.action_Library.setVisible(False)
 
 def make_active_window(view: QMainWindow):
+    if IS_MAC:
+        cur_flags = view.windowFlags()
+        view.setWindowFlags(cur_flags | Qt.WindowType.WindowStaysOnTopHint)
+        view.show()
+        view.setWindowFlags(cur_flags)
+
     view.show() # bring window to top on OSX
     view.raise_() # bring window from minimized state on OSX
     view.activateWindow() # bring window to front/unminimize on Windows
