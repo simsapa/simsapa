@@ -267,7 +267,7 @@ div.btn a, span.btn a {
   padding: 0.25em 0.75em;
   margin: 0 0 0 0.5rem;
   min-width: 10ch;
-  min-height: 30px;
+  min-height: 1.9em;
 }
 .ssp-button:first-child {
   margin-left: 0;
