@@ -126,18 +126,24 @@ class SuttaStudyWindow(SuttaStudyWindowInterface, HasRestoreSizePos, Ui_SuttaStu
 
         settings_keys = [
             SuttaPanelSettingKeys(
+                language_include_setting_key = 'sutta_study_one_language_include_is_on',
                 language_filter_setting_key = 'sutta_study_one_language_filter_idx',
                 search_mode_setting_key = 'sutta_study_one_search_mode',
+                source_include_setting_key = 'sutta_study_one_source_include_is_on',
                 source_filter_setting_key = 'sutta_study_one_source_filter_idx',
             ),
             SuttaPanelSettingKeys(
+                language_include_setting_key = 'sutta_study_two_language_include_is_on',
                 language_filter_setting_key = 'sutta_study_two_language_filter_idx',
                 search_mode_setting_key = 'sutta_study_two_search_mode',
+                source_include_setting_key = 'sutta_study_two_source_include_is_on',
                 source_filter_setting_key = 'sutta_study_two_source_filter_idx',
             ),
             SuttaPanelSettingKeys(
+                language_include_setting_key = 'sutta_study_three_language_include_is_on',
                 language_filter_setting_key = 'sutta_study_three_language_filter_idx',
                 search_mode_setting_key = 'sutta_study_three_search_mode',
+                source_include_setting_key = 'sutta_study_three_source_include_is_on',
                 source_filter_setting_key = 'sutta_study_three_source_filter_idx',
             ),
         ]

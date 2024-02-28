@@ -64,8 +64,10 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                  focus_input: bool = True,
                  enable_regex_fuzzy = True,
                  enable_find_panel = False,
+                 language_include_setting_key = 'sutta_language_include_is_on',
                  language_filter_setting_key = 'word_lookup_language_filter_idx',
                  search_mode_setting_key = 'word_lookup_search_mode',
+                 source_include_setting_key = 'sutta_source_include_is_on',
                  source_filter_setting_key = 'word_lookup_source_filter_idx') -> None:
         super().__init__()
 
@@ -104,7 +106,9 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.deconstructor_above_words = self._app_data.app_settings.get('sutta_study_deconstructor_above_words', True)
 
         self._search_mode_setting_key = search_mode_setting_key
+        self._language_include_setting_key = language_include_setting_key
         self._language_filter_setting_key = language_filter_setting_key
+        self._source_include_setting_key = source_include_setting_key
         self._source_filter_setting_key = source_filter_setting_key
 
         self.init_search_bar(wrap_layout            = self.wrap_layout,
@@ -213,10 +217,12 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.qwe.show()
         self.content_layout.addWidget(self.qwe, 100)
 
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        settings = self.qwe.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
     def results_page(self, page_num: int) -> List[SearchResult]:
         return self._queries.results_page(page_num)

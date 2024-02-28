@@ -88,8 +88,10 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
                  create_find_toolbar: bool = True,
                  show_query_results_in_active_tab: bool = False,
                  search_bar_two_rows_layout=False,
+                 language_include_setting_key = 'sutta_language_include_is_on',
                  language_filter_setting_key = 'sutta_language_filter_idx',
                  search_mode_setting_key = 'sutta_search_mode',
+                 source_include_setting_key = 'sutta_source_include_is_on',
                  source_filter_setting_key = 'sutta_source_filter_idx',
                  custom_create_context_menu_fn: Optional[Callable] = None) -> None:
         super().__init__()
@@ -132,7 +134,9 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.focus_input = focus_input
 
         self._search_mode_setting_key = search_mode_setting_key
+        self._language_include_setting_key = language_include_setting_key
         self._language_filter_setting_key = language_filter_setting_key
+        self._source_include_setting_key = source_include_setting_key
         self._source_filter_setting_key = source_filter_setting_key
 
         self._setup_ui()

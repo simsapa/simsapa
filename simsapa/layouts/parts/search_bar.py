@@ -433,15 +433,20 @@ QWidget:focus { border: 1px solid #1092C3; }
         # self.language_filter_dropdown.currentIndexChanged.connect(partial(self._handle_exact_query, min_length=4))
 
     def _setup_language_include_btn(self):
-        icon_plus = QIcon()
-        icon_plus.addPixmap(QPixmap(":/plus-solid"))
+        btn_is_on = self._app_data.app_settings.get(self._language_include_setting_key, True)
+
+        btn_icon = QIcon()
+        if btn_is_on:
+            btn_icon.addPixmap(QPixmap(":/plus-solid"))
+        else:
+            btn_icon.addPixmap(QPixmap(":/minus-solid"))
 
         btn = QPushButton()
         btn.setFixedSize(self._icons_height, self._icons_height)
-        btn.setIcon(icon_plus)
+        btn.setIcon(btn_icon)
         btn.setToolTip("+ means 'must include', - means 'must exclude'")
         btn.setCheckable(True)
-        btn.setChecked(True)
+        btn.setChecked(btn_is_on)
 
         self.language_include_btn = btn
         self.row_two.addWidget(self.language_include_btn)
@@ -449,11 +454,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         def _clicked():
             is_on = self.language_include_btn.isChecked()
 
+            self._app_data.app_settings[self._language_include_setting_key] = is_on
+            self._app_data._save_app_settings()
+
+            icon = QIcon()
             if is_on:
-                icon = QIcon()
                 icon.addPixmap(QPixmap(":/plus-solid"))
             else:
-                icon = QIcon()
                 icon.addPixmap(QPixmap(":/minus-solid"))
 
             self.language_include_btn.setIcon(icon)
@@ -463,15 +470,20 @@ QWidget:focus { border: 1px solid #1092C3; }
         self.language_include_btn.clicked.connect(partial(_clicked))
 
     def _setup_source_include_btn(self):
-        icon_plus = QIcon()
-        icon_plus.addPixmap(QPixmap(":/plus-solid"))
+        btn_is_on = self._app_data.app_settings.get(self._source_include_setting_key, True)
+
+        btn_icon = QIcon()
+        if btn_is_on:
+            btn_icon.addPixmap(QPixmap(":/plus-solid"))
+        else:
+            btn_icon.addPixmap(QPixmap(":/minus-solid"))
 
         btn = QPushButton()
         btn.setFixedSize(self._icons_height, self._icons_height)
-        btn.setIcon(icon_plus)
+        btn.setIcon(btn_icon)
         btn.setToolTip("+ means 'must include', - means 'must exclude'")
         btn.setCheckable(True)
-        btn.setChecked(True)
+        btn.setChecked(btn_is_on)
 
         self.source_include_btn = btn
         self.row_two.addWidget(self.source_include_btn)
@@ -479,11 +491,13 @@ QWidget:focus { border: 1px solid #1092C3; }
         def _clicked():
             is_on = self.source_include_btn.isChecked()
 
+            self._app_data.app_settings[self._source_include_setting_key] = is_on
+            self._app_data._save_app_settings()
+
+            icon = QIcon()
             if is_on:
-                icon = QIcon()
                 icon.addPixmap(QPixmap(":/plus-solid"))
             else:
-                icon = QIcon()
                 icon.addPixmap(QPixmap(":/minus-solid"))
 
             self.source_include_btn.setIcon(icon)
@@ -557,6 +571,8 @@ QWidget:focus { border: 1px solid #1092C3; }
         if self.enable_regex_fuzzy:
             is_fulltext = (mode == SearchMode.FulltextMatch)
             self.regex_fuzzy_frame.setEnabled(is_fulltext)
+
+        self._handle_query(min_length=4)
 
     def _start_query_workers(self, query_text_orig: str):
         if len(query_text_orig) == 0:
@@ -677,7 +693,9 @@ QWidget:focus { border: 1px solid #1092C3; }
             document.SSP.add_bottom_message("End of page. Use the results tab to see more results and open words.");
             """
 
-        self.qwe.page().runJavaScript(js)
+        page = self.qwe.page()
+        if page is not None:
+            page.runJavaScript(js)
 
     def _toggle_show_search_bar(self, view):
         is_on = view.action_Show_Search_Bar.isChecked()

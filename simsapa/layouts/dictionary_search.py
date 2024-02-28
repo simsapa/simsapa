@@ -113,7 +113,9 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.deconstructor_above_words = True
 
         self._search_mode_setting_key = 'dictionary_search_mode'
+        self._language_include_setting_key = 'dictionary_language_include_is_on'
         self._language_filter_setting_key = 'dictionary_language_filter_idx'
+        self._source_include_setting_key = 'dictionary_source_include_is_on'
         self._source_filter_setting_key = 'dictionary_source_filter_idx'
 
         self._setup_ui()
@@ -324,10 +326,12 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.content_layout.addWidget(self.qwe, 100)
 
         # Enable dev tools
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        self.qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        settings = self.qwe.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
     def _toggle_pali_buttons(self):
         show = self.toggle_pali_btn.isChecked()
@@ -755,9 +759,15 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if self.devToolsAction.isChecked():
             self.dev_view = QWebEngineView()
             self.content_layout.addWidget(self.dev_view, 100)
-            self.qwe.page().setDevToolsPage(self.dev_view.page())
+            page = self.qwe.page()
+            if page is not None:
+                page.setDevToolsPage(self.dev_view.page())
         else:
-            self.qwe.page().devToolsPage().deleteLater()
+            page = self.qwe.page()
+            if page is not None:
+                dev = page.devToolsPage()
+                if dev is not None:
+                    dev.deleteLater()
             self.dev_view.deleteLater()
 
     def _handle_open_content_new(self):

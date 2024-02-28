@@ -573,7 +573,9 @@ class SearchBarInterface(QWidget):
     _exact_query_finished: Callable
     _queries: GuiSearchQueriesInterface
     _search_mode_setting_key: str
+    _language_include_setting_key: str
     _language_filter_setting_key: str
+    _source_include_setting_key: str
     _source_filter_setting_key: str
     _init_search_input_completer: Callable[[], None]
     _disable_search_input_completer: Callable[[], None]
