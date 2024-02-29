@@ -121,21 +121,21 @@ def task_build_macos_app():
     machine = platform.machine()
 
     pyinstaller_cmd = """
-pyinstaller run.py
-    --name "Simsapa Dhamma Reader"
-    --noconfirm
-    --onedir
-    --windowed
-    --clean
-    --noupx
-    -i "simsapa/assets/icons/appicons/simsapa.ico"
-    --add-data "simsapa/assets:simsapa/assets"
-    --add-data "simsapa/alembic:simsapa/alembic"
-    --add-data "simsapa/alembic.ini:simsapa/alembic.ini"
-    --target-architecture %s
-    --osx-bundle-identifier 'reader.dhamma.simsapa'
-    --hidden-import=charset_normalizer.md__mypyc
-    --hidden-import=tiktoken_ext
+pyinstaller run.py \
+    --name "Simsapa Dhamma Reader" \
+    --noconfirm \
+    --onedir \
+    --windowed \
+    --clean \
+    --noupx \
+    -i "simsapa/assets/icons/appicons/simsapa.ico" \
+    --add-data "simsapa/assets:simsapa/assets" \
+    --add-data "simsapa/alembic:simsapa/alembic" \
+    --add-data "simsapa/alembic.ini:simsapa/alembic.ini" \
+    --target-architecture %s \
+    --osx-bundle-identifier 'reader.dhamma.simsapa' \
+    --hidden-import=charset_normalizer.md__mypyc \
+    --hidden-import=tiktoken_ext \
     --hidden-import=tiktoken_ext.openai_public
     """ % machine
 
