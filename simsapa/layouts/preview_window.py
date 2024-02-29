@@ -531,11 +531,13 @@ class PreviewWindow(QDialog):
 
         qwe.setSizePolicy(QExpanding, QExpanding)
 
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        settings = qwe.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
         return qwe
 
