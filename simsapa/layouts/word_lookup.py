@@ -548,7 +548,8 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
                 self._show_word(word)
 
     def _handle_clipboard_changed(self):
-        if self._clipboard is None:
+        if self._clipboard is None \
+           or not self._app_data.app_settings['clipboard_monitoring_for_dict']:
             return
 
         text = self._clipboard.text()
@@ -571,7 +572,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.hide_preview.connect(partial(preview_window._do_hide))
 
     def _connect_signals(self):
-        if self._clipboard is not None and self._app_data.app_settings['clipboard_monitoring_for_dict']:
+        if self._clipboard is not None:
             self._clipboard.dataChanged.connect(partial(self._handle_clipboard_changed))
 
         if self.enable_find_panel:
