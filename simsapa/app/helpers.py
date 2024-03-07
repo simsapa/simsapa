@@ -142,7 +142,9 @@ def normalize_sutta_ref(ref: str) -> str:
     ref = re.sub(r'khp *(\d)', r'kp \1', ref)
     ref = re.sub(r'th *(\d)', r'thag \1', ref)
 
-    ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
+    # M.III.24 -> M I 24
+    ref = re.sub(r'[\. ]([ivx]+)[\. ]', r' \1 ', ref)
+
     ref = re.sub(r'^d ', 'dn ', ref)
     ref = re.sub(r'^m ', 'mn ', ref)
     ref = re.sub(r'^s ', 'sn ', ref)
