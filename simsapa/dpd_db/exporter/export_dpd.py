@@ -1,4 +1,4 @@
-"""Compile HTML data for PaliWord."""
+"""Compile HTML data for DpdHeadwords."""
 
 from sqlalchemy.sql import func
 # from tools import time_log
@@ -7,39 +7,48 @@ import psutil
 from mako.template import Template
 # from minify_html import minify
 # from rich import print
-from typing import Dict, List, Set, TypedDict, Tuple
+from typing import List, Set, Tuple
 from multiprocessing.managers import ListProxy
 from multiprocessing import Process, Manager
 
-from sqlalchemy.orm import object_session
 from sqlalchemy.orm.session import Session
-from simsapa import DetailsTab
+from simsapa import DetailsTab, TODAY
 
-from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ
-from simsapa.dpd_db.exporter.helpers import TODAY
-
-from simsapa.app.db.dpd_models import PaliRoot, PaliWord
-from simsapa.app.db.dpd_models import DerivedData
-from simsapa.app.db.dpd_models import FamilyRoot
-from simsapa.app.db.dpd_models import FamilyWord
+from simsapa.app.db.dpd_models import DpdHeadwords, DpdHeadwordsDbParts, DpdHeadwordsDbRowItems, DpdHeadwordsRenderData, DpdHeadwordsTemplates, FamilyIdiom
+from simsapa.app.db.dpd_models import DpdRoots
 from simsapa.app.db.dpd_models import FamilyCompound
+from simsapa.app.db.dpd_models import FamilyRoot
 from simsapa.app.db.dpd_models import FamilySet
+from simsapa.app.db.dpd_models import FamilyWord
+from simsapa.app.db.dpd_models import Russian
+from simsapa.app.db.dpd_models import SBS
 
+# from tools.configger import config_test
+from simsapa.dpd_db.tools.exporter_functions import get_family_compounds, get_family_idioms
+from simsapa.dpd_db.tools.exporter_functions import get_family_set
 from simsapa.dpd_db.tools.meaning_construction import make_meaning_html
 from simsapa.dpd_db.tools.meaning_construction import make_grammar_line
-
 from simsapa.dpd_db.tools.meaning_construction import summarize_construction
 from simsapa.dpd_db.tools.meaning_construction import degree_of_completion
 from simsapa.dpd_db.tools.niggahitas import add_niggahitas
 from simsapa.dpd_db.tools.paths import ProjectPaths
 from simsapa.dpd_db.tools.pos import CONJUGATIONS
 from simsapa.dpd_db.tools.pos import DECLENSIONS
-from simsapa.dpd_db.tools.pos import INDECLINABLES
-# from tools.tic_toc import bip, bop
-# from tools.configger import config_test
+# from simsapa.dpd_db.tools.pos import INDECLINABLES
+# from simsapa.dpd_db.tools.pos import EXCLUDE_FROM_FREQ
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
-from simsapa.dpd_db.tools.utils import RenderResult, RenderedSizes, default_rendered_sizes, list_into_batches, sum_rendered_sizes
 from simsapa.dpd_db.tools.superscripter import superscripter_uni
+# from tools.tic_toc import bip, bop
+from simsapa.dpd_db.tools.utils import RenderResult, RenderedSizes, default_rendered_sizes, list_into_batches, sum_rendered_sizes
+
+def minify(s: str) -> str:
+    return s
+
+def css_minify(s: str) -> str:
+    return s
+
+def js_minify(s: str) -> str:
+    return s
 
 def bip():
     pass
@@ -47,113 +56,21 @@ def bip():
 def bop():
     pass
 
-class PaliWordTemplates:
-    def __init__(self, pth: ProjectPaths):
-        self.header_templ = Template(filename=str(pth.header_templ_path))
-        self.dpd_word_heading_simsapa_templ = Template(filename=str(pth.dpd_word_heading_simsapa_templ_path))
-        self.dpd_definition_templ = Template(filename=str(pth.dpd_definition_templ_path))
-        self.dpd_definition_plaintext_templ = Template(filename=str(pth.dpd_definition_plaintext_templ_path))
-        self.button_box_templ = Template(filename=str(pth.button_box_templ_path))
-        self.button_box_simsapa_templ = Template(filename=str(pth.button_box_simsapa_templ_path))
-        self.grammar_templ = Template(filename=str(pth.grammar_templ_path))
-        self.grammar_simsapa_templ = Template(filename=str(pth.grammar_simsapa_templ_path))
-        self.grammar_plaintext_templ = Template(filename=str(pth.grammar_plaintext_templ_path))
-        self.example_templ = Template(filename=str(pth.example_templ_path))
-        self.inflection_templ = Template(filename=str(pth.inflection_templ_path))
-        self.family_root_templ = Template(filename=str(pth.family_root_templ_path))
-        self.family_word_templ = Template(filename=str(pth.family_word_templ_path))
-        self.family_compound_templ = Template(filename=str(pth.family_compound_templ_path))
-        self.family_set_templ = Template(filename=str(pth.family_set_templ_path))
-        self.frequency_templ = Template(filename=str(pth.frequency_templ_path))
-        self.feedback_templ = Template(filename=str(pth.feedback_templ_path))
-
-        # with open(pth.dpd_css_path) as f:
-        #     dpd_css = f.read()
-
-        # self.dpd_css = css_minify(dpd_css)
-
-        # with open(pth.buttons_js_path) as f:
-        #     button_js = f.read()
-        # self.button_js = js_minify(button_js)
-
-def get_family_compounds_for_pali_word(i: PaliWord) -> List[FamilyCompound]:
-    db_session = object_session(i)
-    if db_session is None:
-        raise Exception("No db_session")
-
-    if i.family_compound:
-        fc = db_session.query(
-            FamilyCompound
-        ).filter(
-            FamilyCompound.compound_family.in_(i.family_compound_list),
-        ).all()
-
-        # sort by order of the  family compound list
-        word_order = i.family_compound_list
-        fc = sorted(fc, key=lambda x: word_order.index(x.compound_family))
-
-    else:
-        fc = db_session.query(
-            FamilyCompound
-        ).filter(
-            FamilyCompound.compound_family == i.pali_clean
-        ).all()
-
-    # Make sure it's not a lazy-loaded iterable.
-    fc = list(fc)
-
-    return fc
-
-def get_family_set_for_pali_word(i: PaliWord) -> List[FamilySet]:
-    db_session = object_session(i)
-    if db_session is None:
-        raise Exception("No db_session")
-
-    fs = db_session.query(
-        FamilySet
-    ).filter(
-        FamilySet.set.in_(i.family_set_list)
-    ).all()
-
-    # sort by order of the  family set list
-    word_order = i.family_set_list
-    fs = sorted(fs, key=lambda x: word_order.index(x.set))
-
-    # Make sure it's not a lazy-loaded iterable.
-    fs = list(fs)
-
-    return fs
-
-PaliWordDbRowItems = Tuple[PaliWord, DerivedData, FamilyRoot, FamilyWord]
-
-class PaliWordDbParts(TypedDict):
-   pali_word: PaliWord
-   pali_root: PaliRoot
-   derived_data: DerivedData
-   family_root: FamilyRoot
-   family_word: FamilyWord
-   family_compounds: List[FamilyCompound]
-   family_set: List[FamilySet]
-
-class PaliWordRenderData(TypedDict):
-    pth: ProjectPaths
-    word_templates: PaliWordTemplates
-    sandhi_contractions: SandhiContractions
-    cf_set: Set[str]
-    roots_count_dict: Dict[str, int]
-    make_link: bool
-
-def render_pali_word_dpd_html(extended_synonyms, db_parts: PaliWordDbParts,
-                              render_data: PaliWordRenderData) -> Tuple[RenderResult, RenderedSizes]:
+def render_pali_word_dpd_html(
+        extended_synonyms, dps_data, 
+        db_parts: DpdHeadwordsDbParts,
+        render_data: DpdHeadwordsRenderData) -> Tuple[RenderResult, RenderedSizes]:
     rd = render_data
     size_dict = default_rendered_sizes()
 
-    i: PaliWord = db_parts["pali_word"]
-    rt: PaliRoot = db_parts["pali_root"]
-    dd: DerivedData = db_parts["derived_data"]
+    i: DpdHeadwords = db_parts["pali_word"]
+    rt: DpdRoots = db_parts["pali_root"]
+    sbs: SBS = db_parts["sbs"]
+    ru: Russian = db_parts["ru"]
     fr: FamilyRoot = db_parts["family_root"]
     fw: FamilyWord = db_parts["family_word"]
     fc: List[FamilyCompound] = db_parts["family_compounds"]
+    fi: List[FamilyIdiom] = db_parts["family_idioms"]
     fs: List[FamilySet] = db_parts["family_set"]
 
     tt = rd['word_templates']
@@ -181,6 +98,23 @@ def render_pali_word_dpd_html(extended_synonyms, db_parts: PaliWordDbParts,
         i.example_1 = i.example_1.replace("\n", "<br>")
     if i.example_2:
         i.example_2 = i.example_2.replace("\n", "<br>")
+    if dps_data and sbs:
+        if sbs.sbs_sutta_1:
+            sbs.sbs_sutta_1 = sbs.sbs_sutta_1.replace("\n", "<br>")
+        if sbs.sbs_sutta_2:
+            sbs.sbs_sutta_2 = sbs.sbs_sutta_2.replace("\n", "<br>")
+        if sbs.sbs_sutta_3:
+            sbs.sbs_sutta_3 = sbs.sbs_sutta_3.replace("\n", "<br>")
+        if sbs.sbs_sutta_4:
+            sbs.sbs_sutta_4 = sbs.sbs_sutta_4.replace("\n", "<br>")
+        if sbs.sbs_example_1:
+            sbs.sbs_example_1 = sbs.sbs_example_1.replace("\n", "<br>")
+        if sbs.sbs_example_2:
+            sbs.sbs_example_2 = sbs.sbs_example_2.replace("\n", "<br>")
+        if sbs.sbs_example_3:
+            sbs.sbs_example_3 = sbs.sbs_example_3.replace("\n", "<br>")
+        if sbs.sbs_example_4:
+            sbs.sbs_example_4 = sbs.sbs_example_4.replace("\n", "<br>")
 
     html: str = ""
     header = render_header_templ(pth, "", "", tt.header_templ)
@@ -189,79 +123,103 @@ def render_pali_word_dpd_html(extended_synonyms, db_parts: PaliWordDbParts,
 
     html += "<body>"
 
-    summary = render_dpd_definition_templ(pth, i, rd['make_link'], tt.dpd_definition_templ)
+    summary = render_dpd_definition_templ(
+        pth, i, tt.dpd_definition_templ, rd['make_link'], rd['show_id'], rd['show_ebt_count'], rd['dps_data'], sbs)
     html += summary
     size_dict["dpd_summary"] += len(summary)
 
-    button_box = render_button_box_templ(pth, i, rd['cf_set'], tt.button_box_templ)
+    button_box = render_button_box_templ(
+        pth, i, sbs, rd['dps_data'], rd['cf_set'], rd['idioms_set'], tt.button_box_templ)
     html += button_box
     size_dict["dpd_button_box"] += len(button_box)
 
-    grammar = render_grammar_templ(pth, i, rt, tt.grammar_templ)
-    html += grammar
-    size_dict["dpd_grammar"] += len(grammar)
+    if i.needs_grammar_button or dps_data:
+        grammar = render_grammar_templ(pth, i, rt, sbs, ru, rd['dps_data'], tt.grammar_templ)
+        html += grammar
+        size_dict["dpd_grammar"] += len(grammar)
 
-    example = render_example_templ(pth, i, rd['make_link'], tt.example_templ)
-    html += example
-    size_dict["dpd_example"] += len(example)
+    if i.needs_example_button or i.needs_examples_button:
+        example = render_example_templ(pth, i, rd['make_link'], tt.example_templ, [])
+        html += example
+        size_dict["dpd_example"] += len(example)
 
-    inflection_table = render_inflection_templ(pth, i, dd, tt.inflection_templ)
-    html += inflection_table
-    size_dict["dpd_inflection_table"] += len(inflection_table)
+    if i.needs_conjugation_button or i.needs_declension_button:
+        inflection_table = render_inflection_templ(pth, i, tt.inflection_templ, [])
+        html += inflection_table
+        size_dict["dpd_inflection_table"] += len(inflection_table)
 
-    family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ)
-    html += family_root
-    size_dict["dpd_family_root"] += len(family_root)
+    if i.needs_root_family_button:
+        family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ, [])
+        html += family_root
+        size_dict["dpd_family_root"] += len(family_root)
 
-    family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ)
-    html += family_word
-    size_dict["dpd_family_word"] += len(family_word)
+    if i.needs_word_family_button:
+        family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ, [])
+        html += family_word
+        size_dict["dpd_family_word"] += len(family_word)
 
-    family_compound = render_family_compound_templ(
-        pth, i, fc, rd['cf_set'], tt.family_compound_templ)
-    html += family_compound
-    size_dict["dpd_family_compound"] += len(family_compound)
+    if i.needs_compound_family_button or i.needs_compound_families_button:
+        family_compound = render_family_compound_templ(
+            pth, i, fc, rd['cf_set'], tt.family_compound_templ, [])
+        html += family_compound
+        size_dict["dpd_family_compound"] += len(family_compound)
 
-    family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ)
-    html += family_sets
-    size_dict["dpd_family_sets"] += len(family_sets)
+    if i.needs_idioms_button:
+        family_idiom = render_family_idioms_templ(
+            pth, i, fi, rd['idioms_set'], tt.family_idiom_templ, [])
+        html += family_idiom
+        size_dict["dpd_family_idiom"] += len(family_idiom)
 
-    frequency = render_frequency_templ(pth, i, dd, tt.frequency_templ)
-    html += frequency
-    size_dict["dpd_frequency"] += len(frequency)
+    if i.needs_set_button or i.needs_sets_button:
+        family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ, [])
+        html += family_sets
+        size_dict["dpd_family_sets"] += len(family_sets)
 
-    feedback = render_feedback_templ(pth, i, tt.feedback_templ)
-    html += feedback
-    size_dict["dpd_feedback"] += len(feedback)
+    if i.needs_frequency_button:
+        frequency = render_frequency_templ(pth, i, tt.frequency_templ, [])
+        html += frequency
+        size_dict["dpd_frequency"] += len(frequency)
+
+    if dps_data and sbs:
+        sbs_example = render_sbs_example_templ(pth, i, sbs, rd['make_link'], tt.sbs_example_templ, [])
+        html += sbs_example
+        size_dict["sbs_example"] += len(sbs_example)
+
+    if not dps_data:
+        feedback = render_feedback_templ(pth, i, tt.feedback_templ, [])
+        html += feedback
+        size_dict["dpd_feedback"] += len(feedback)
 
     html += "</body></html>"
-    # html = minify(html)
+    html = minify(html)
 
-    synonyms: List[str] = dd.inflections_list
+    synonyms: List[str] = i.inflections_list
     synonyms = add_niggahitas(synonyms)
     for synonym in synonyms:
         if synonym in sandhi_contractions:
             contractions = sandhi_contractions[synonym]["contractions"]
-            synonyms.extend(contractions)
-    synonyms += dd.sinhala_list
-    synonyms += dd.devanagari_list
-    synonyms += dd.thai_list
+            for contraction in contractions:
+                if "'" in contraction:
+                    synonyms.append(contraction)
+    if not dps_data:
+        synonyms += i.inflections_sinhala_list
+        synonyms += i.inflections_devanagari_list
+        synonyms += i.inflections_thai_list
     synonyms += i.family_set_list
     synonyms += [str(i.id)]
-
+    
 
     if extended_synonyms:
-
-        # Split i.pali_clean only if it contains a space
-        if ' ' in i.pali_clean:
-            words = i.pali_clean.split(' ')
+        # Split i.lemma_clean only if it contains a space
+        if ' ' in i.lemma_clean:
+            words = i.lemma_clean.split(' ')
             synonyms.extend(words)
-
+    
 
     size_dict["dpd_synonyms"] += len(str(synonyms))
 
     res = RenderResult(
-        word = i.pali_1,
+        word = i.lemma_1,
         definition_html = html,
         definition_plain = "",
         synonyms = synonyms,
@@ -273,13 +231,17 @@ def generate_dpd_html(
         db_session: Session,
         pth: ProjectPaths,
         sandhi_contractions: SandhiContractions,
-        cf_set: Set[str]) -> Tuple[List[RenderResult], RenderedSizes]:
+        cf_set: Set[str],
+        idioms_set: set[str],
+        dps_data=False
+        ) -> Tuple[List[RenderResult], RenderedSizes]:
+    
     # time_log.log("generate_dpd_html()")
 
     # print("[green]generating dpd html")
     bip()
 
-    word_templates = PaliWordTemplates(pth)
+    word_templates = DpdHeadwordsTemplates(pth)
 
     # check config
     # if config_test("dictionary", "make_link", "yes"):
@@ -296,10 +258,24 @@ def generate_dpd_html(
 
     extended_synonyms: bool = True
 
+    # if config_test("dictionary", "show_id", "yes"):
+    #     show_id: bool = True
+    # else:
+    #     show_id: bool = False
+
+    show_id: bool = True
+
+    # if config_test("dictionary", "show_ebt_count", "yes"):
+    #     show_ebt_count: bool = True
+    # else:
+    #     show_ebt_count: bool = False
+
+    show_ebt_count: bool = True
+
     dpd_data_list: List[RenderResult] = []
 
     pali_words_count = db_session \
-        .query(func.count(PaliWord.id)) \
+        .query(func.count(DpdHeadwords.id)) \
         .scalar()
 
     # If the work items per loop are too high, low-memory systems will slow down
@@ -326,56 +302,65 @@ def generate_dpd_html(
     while offset <= pali_words_count:
 
         dpd_db = db_session.query(
-            PaliWord, DerivedData, FamilyRoot, FamilyWord
+            DpdHeadwords, FamilyRoot, FamilyWord, SBS, Russian
         ).outerjoin(
-            DerivedData,
-            PaliWord.id == DerivedData.id
+            SBS,
+            DpdHeadwords.id == SBS.id
+        ).outerjoin(
+            Russian,
+            DpdHeadwords.id == Russian.id
         ).outerjoin(
             FamilyRoot,
-            PaliWord.root_family_key == FamilyRoot.root_family_key
+            DpdHeadwords.root_family_key == FamilyRoot.root_family_key
         ).outerjoin(
             FamilyWord,
-            PaliWord.family_word == FamilyWord.word_family
+            DpdHeadwords.family_word == FamilyWord.word_family
         ).limit(limit).offset(offset).all()
 
-        def _add_parts(i: PaliWordDbRowItems) -> PaliWordDbParts:
-            pw: PaliWord
-            dd: DerivedData
+        def _add_parts(i: DpdHeadwordsDbRowItems) -> DpdHeadwordsDbParts:
+            pw: DpdHeadwords
             fr: FamilyRoot
             fw: FamilyWord
-            pw, dd, fr, fw = i
+            sbs: SBS
+            ru: Russian
+            pw, fr, fw, sbs, ru = i
 
-            return PaliWordDbParts(
+            return DpdHeadwordsDbParts(
                 pali_word = pw,
                 pali_root = pw.rt,
-                derived_data = dd,
+                sbs = sbs,
+                ru = ru,
                 family_root = fr,
                 family_word = fw,
-                family_compounds = get_family_compounds_for_pali_word(pw),
-                family_set = get_family_set_for_pali_word(pw),
+                family_compounds = get_family_compounds(pw),
+                family_idioms = get_family_idioms(pw),
+                family_set = get_family_set(pw),
             )
 
-        dpd_db_data = [_add_parts(i._tuple()) for i in dpd_db]
+        dpd_db_data = [_add_parts(i.tuple()) for i in dpd_db]
 
         rendered_sizes: List[RenderedSizes] = []
 
-        batches: List[List[PaliWordDbParts]] = list_into_batches(dpd_db_data, num_logical_cores)
+        batches: List[List[DpdHeadwordsDbParts]] = list_into_batches(dpd_db_data, num_logical_cores)
 
         processes: List[Process] = []
 
-        render_data = PaliWordRenderData(
+        render_data = DpdHeadwordsRenderData(
             pth = pth,
             word_templates = word_templates,
             sandhi_contractions = sandhi_contractions,
             cf_set = cf_set,
-            # Not needed for PaliWord rendering.
+            idioms_set = idioms_set,
             roots_count_dict = dict(),
             make_link = make_link,
+            show_id = show_id,
+            show_ebt_count = show_ebt_count,
+            dps_data = dps_data
         )
 
-        def _parse_batch(batch: List[PaliWordDbParts]):
+        def _parse_batch(batch: List[DpdHeadwordsDbParts]):
             res: List[Tuple[RenderResult, RenderedSizes]] = \
-                [render_pali_word_dpd_html(extended_synonyms, i, render_data) for i in batch]
+                [render_pali_word_dpd_html(extended_synonyms, dps_data, i, render_data) for i in batch]
 
             for i, j in res:
                 dpd_data_results_list.append(i)
@@ -420,9 +405,13 @@ def render_header_templ(
 
 def render_dpd_definition_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
+        dpd_definition_templ: Template,
         make_link: bool,
-        dpd_definition_templ: Template
+        show_id: bool,
+        show_ebt_count: bool,
+        dps_data: bool,
+        sbs: SBS|None,
 ) -> str:
     """render the definition of a word's most relevant information:
     1. pos
@@ -443,21 +432,38 @@ def render_dpd_definition_templ(
     summary = summarize_construction(i)
     complete = degree_of_completion(i)
 
+    # id
+    id: int = i.id
+
+    # ebt_count
+    ebt_count: int = i.ebt_count
+
     return str(
         dpd_definition_templ.render(
             i=i,
+            sbs=sbs,
             make_link=make_link,
             pos=pos,
             plus_case=plus_case,
             meaning=meaning,
             summary=summary,
-            complete=complete))
+            complete=complete,
+            id=id,
+            show_id=show_id,
+            show_ebt_count=show_ebt_count,
+            dps_data=dps_data,
+            ebt_count=ebt_count,
+            )
+        )
 
 
 def render_button_box_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
-        cf_set: Set[str],
+        i: DpdHeadwords,
+        sbs: SBS,
+        dps_data: bool,
+        __cf_set__: Set[str],
+        __idioms_set__: Set[str],
         button_box_templ: Template
 ) -> str:
     """render buttons for each section of the dictionary"""
@@ -468,109 +474,125 @@ def render_button_box_templ(
         'onclick="button_click(this)" '
         'data-target="{target}">{name}</a>')
 
+    button_link_html = (
+        '<a class="button" '
+        'href="{href}" '
+        'style="text-decoration: none;">{name}</a>')
+
     # grammar_button
-    if i.meaning_1:
+    if i.needs_grammar_button or dps_data:
         grammar_button = button_html.format(
-            target=f"grammar_{i.pali_1_}", name="grammar")
+            target=f"grammar_{i.lemma_1_}", name="grammar")
     else:
         grammar_button = ""
 
     # example_button
-    if i.meaning_1 and i.example_1 and not i.example_2:
+    if i.needs_example_button:
         example_button = button_html.format(
-            target=f"example_{i.pali_1_}", name="example")
+            target=f"example_{i.lemma_1_}", name="example")
     else:
         example_button = ""
 
     # examples_button
-    if i.meaning_1 and i.example_1 and i.example_2:
+    if i.needs_examples_button:
         examples_button = button_html.format(
-            target=f"examples_{i.pali_1_}", name="examples")
+            target=f"examples_{i.lemma_1_}", name="examples")
     else:
         examples_button = ""
 
+    # sbs_example_button
+    sbs_example_button = ""
+    if (
+        dps_data and
+        sbs and
+        (sbs.needs_sbs_example_button or sbs.needs_sbs_examples_button)
+    ):
+        sbs_example_button = button_html.format(
+            target=f"sbs_example_{i.lemma_1_}", name="<b>SBS</b>")
+
     # conjugation_button
-    if i.pos in CONJUGATIONS:
+    if i.needs_conjugation_button:
         conjugation_button = button_html.format(
-            target=f"conjugation_{i.pali_1_}", name="conjugation")
+            target=f"conjugation_{i.lemma_1_}", name="conjugation")
     else:
         conjugation_button = ""
 
     # declension_button
-    if i.pos in DECLENSIONS:
+    if i.needs_declension_button:
         declension_button = button_html.format(
-            target=f"declension_{i.pali_1_}", name="declension")
+            target=f"declension_{i.lemma_1_}", name="declension")
     else:
         declension_button = ""
 
     # root_family_button
-    if i.family_root:
+    if i.needs_root_family_button:
         root_family_button = button_html.format(
-            target=f"root_family_{i.pali_1_}", name="root family")
+            target=f"root_family_{i.lemma_1_}", name="root family")
     else:
         root_family_button = ""
 
     # word_family_button
-    if i.family_word:
+    if i.needs_word_family_button:
         word_family_button = button_html.format(
-            target=f"word_family_{i.pali_1_}", name="word family")
+            target=f"word_family_{i.lemma_1_}", name="word family")
     else:
         word_family_button = ""
 
     # compound_family_button
-    if (
-        i.meaning_1 and
-        (
-            # sometimes there's an empty compound family, so
-            any(item in cf_set for item in i.family_compound_list) or
-            # add a button to the word itself
-            i.pali_clean in cf_set)
-    ):
+    if i.needs_compound_family_button:
+        compound_family_button = button_html.format(
+            target=f"compound_family_{i.lemma_1_}", name="compound family")
 
-        if i.family_compound is not None and " " not in i.family_compound:
-            compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="compound family")
-
-        else:
-            compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="compound familes")
-
+    elif i.needs_compound_families_button:
+        compound_family_button = button_html.format(
+            target=f"compound_families_{i.lemma_1_}", name="compound familes")
     else:
         compound_family_button = ""
 
-    # set_family_button
-    if (i.meaning_1 and
-            i.family_set):
+    # idioms button
+    if i.needs_idioms_button:
+        idioms_button = button_html.format(
+            target=f"idioms_{i.lemma_1_}", name="idioms")
+    else:
+        idioms_button = ""
 
-        if len(i.family_set_list) > 0:
-            set_family_button = button_html.format(
-                target=f"set_family_{i.pali_1_}", name="set")
-        else:
-            set_family_button = ""
+    # set_family_button
+    if i.needs_set_button:
+        set_family_button = button_html.format(
+            target=f"set_family_{i.lemma_1_}", name="set")
+    elif i.needs_sets_button:
+        set_family_button = button_html.format(
+            target=f"set_families_{i.lemma_1_}", name="sets")
     else:
         set_family_button = ""
 
     # frequency_button
-    if i.pos not in EXCLUDE_FROM_FREQ:
+    if i.needs_frequency_button:
         frequency_button = button_html.format(
-            target=f"frequency_{i.pali_1_}", name="frequency")
+            target=f"frequency_{i.lemma_1_}", name="frequency")
     else:
         frequency_button = ""
 
     # feedback_button
-    feedback_button = button_html.format(
-        target=f"feedback_{i.pali_1_}", name="feedback")
+    if dps_data:
+        feedback_button = button_link_html.format(
+            href="https://digitalpalidictionary.github.io/", name="feedback")
+    else:
+        feedback_button = button_html.format(
+            target=f"feedback_{i.lemma_1_}", name="feedback")
 
     return str(
         button_box_templ.render(
             grammar_button=grammar_button,
             example_button=example_button,
             examples_button=examples_button,
+            sbs_example_button=sbs_example_button,
             conjugation_button=conjugation_button,
             declension_button=declension_button,
             root_family_button=root_family_button,
             word_family_button=word_family_button,
             compound_family_button=compound_family_button,
+            idioms_button=idioms_button,
             set_family_button=set_family_button,
             frequency_button=frequency_button,
             feedback_button=feedback_button))
@@ -578,210 +600,219 @@ def render_button_box_templ(
 
 def render_grammar_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
-        rt: PaliRoot,
+        i: DpdHeadwords,
+        rt: DpdRoots,
+        sbs: SBS,
+        ru: Russian,
+        dps_data: bool,
         grammar_templ: Template
 ) -> str:
     """html table of grammatical information"""
 
-    if i.meaning_1 is not None and i.meaning_1:
+    if (i.meaning_1 is not None and i.meaning_1) or dps_data:
         if i.construction is not None and i.construction:
             i.construction = i.construction.replace("\n", "<br>")
         else:
             i.construction = ""
 
-        grammar = make_grammar_line(i)
-        meaning = f"{make_meaning_html(i)}"
+    grammar = make_grammar_line(i)
+    meaning = f"{make_meaning_html(i)}"
 
-        return str(
-            grammar_templ.render(
-                i=i,
-                rt=rt,
-                grammar=grammar,
-                meaning=meaning,
-                today=TODAY))
-
-    else:
-        return ""
+    return str(
+        grammar_templ.render(
+            i=i,
+            rt=rt,
+            sbs=sbs,
+            ru=ru,
+            dps_data=dps_data,
+            grammar=grammar,
+            meaning=meaning,
+            today=TODAY))
 
 
 def render_example_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         make_link: bool,
         example_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render sutta examples html"""
 
     hidden = "hidden" if DetailsTab.Examples not in open_details else ""
 
-    if i.meaning_1 and i.example_1:
+    return str(
+        example_templ.render(
+            i=i,
+            make_link=make_link,
+            hidden=hidden,
+            today=TODAY))
+
+
+def render_sbs_example_templ(
+        __pth__: ProjectPaths,
+        i: DpdHeadwords,
+        sbs: SBS,
+        make_link: bool,
+        sbs_example_templ: Template,
+        open_details: List[DetailsTab],
+) -> str:
+    """render sbs examples html"""
+
+    hidden = "hidden" if DetailsTab.SbsExamples not in open_details else ""
+
+    if sbs.sbs_example_1 or sbs.sbs_example_2 or sbs.sbs_example_3 or sbs.sbs_example_4:
         return str(
-            example_templ.render(
+            sbs_example_templ.render(
                 i=i,
-                make_link=make_link,
+                sbs=sbs,
                 hidden=hidden,
-                today=TODAY))
+                make_link=make_link))
     else:
         return ""
 
 
 def render_inflection_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
-        dd: DerivedData,
+        i: DpdHeadwords,
         inflection_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """inflection or conjugation table"""
 
     hidden = "hidden" if DetailsTab.Inflections not in open_details else ""
 
-    if i.pos not in INDECLINABLES:
-        return str(
-            inflection_templ.render(
-                i=i,
-                table=dd.html_table,
-                hidden=hidden,
-                today=TODAY,
-                declensions=DECLENSIONS,
-                conjugations=CONJUGATIONS))
-    else:
-        return ""
+    return str(
+        inflection_templ.render(
+            i=i,
+            table=i.inflections_html,
+            hidden=hidden,
+            today=TODAY,
+            declensions=DECLENSIONS,
+            conjugations=CONJUGATIONS))
 
 
 def render_family_root_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         fr: FamilyRoot,
         family_root_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html table of all words with the same prefix and root"""
 
     hidden = "hidden" if DetailsTab.RootFamily not in open_details else ""
 
-    if fr is not None:
-        if i.family_root:
-            return str(
-                family_root_templ.render(
-                    i=i,
-                    fr=fr,
-                    hidden=hidden,
-                    today=TODAY))
-        else:
-            return ""
-    else:
-        return ""
+    return str(
+        family_root_templ.render(
+            i=i,
+            fr=fr,
+            hidden=hidden,
+            today=TODAY))
 
 
 def render_family_word_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         fw: FamilyWord,
         family_word_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html of all words which belong to the same family"""
 
     hidden = "hidden" if DetailsTab.WordFamily not in open_details else ""
 
-    if i.family_word:
-        return str(
-            family_word_templ.render(
-                i=i,
-                fw=fw,
-                hidden=hidden,
-                today=TODAY))
-    else:
-        return ""
+    return str(
+        family_word_templ.render(
+            i=i,
+            fw=fw,
+            hidden=hidden,
+            today=TODAY))
 
 
 def render_family_compound_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         fc: List[FamilyCompound],
-        cf_set: Set[str],
+        __cf_set__: Set[str],
         family_compound_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html table of all words containing the same compound"""
 
     hidden = "hidden" if DetailsTab.CompoundFamily not in open_details else ""
 
-    if (i.meaning_1 and
-        (i.family_compound or
-            i.pali_clean in cf_set)):
+    return str(
+        family_compound_templ.render(
+            i=i,
+            fc=fc,
+            superscripter_uni=superscripter_uni,
+            hidden=hidden,
+            today=TODAY))
 
-        return str(
-            family_compound_templ.render(
-                i=i,
-                fc=fc,
-                superscripter_uni=superscripter_uni,
-                hidden=hidden,
-                today=TODAY))
-    else:
-        return ""
 
+def render_family_idioms_templ(
+        __pth__: ProjectPaths,
+        i: DpdHeadwords,
+        fi: List[FamilyIdiom],
+        __idioms_set__: Set[str],
+        family_idioms_template: Template,
+        open_details: List[DetailsTab],
+) -> str:
+    """render html table of all words containing the same compound"""
+
+    hidden = "hidden" if DetailsTab.IdiomFamily not in open_details else ""
+
+    return str(
+        family_idioms_template.render(
+            i=i,
+            fi=fi,
+            superscripter_uni=superscripter_uni,
+            hidden=hidden,
+            today=TODAY))
 
 def render_family_set_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         fs: List[FamilySet],
         family_set_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html table of all words belonging to the same set"""
 
     hidden = "hidden" if DetailsTab.SetFamily not in open_details else ""
 
-    if (i.meaning_1 and
-            i.family_set):
-
-        if len(i.family_set_list) > 0:
-
-            return str(
-                family_set_templ.render(
-                    i=i,
-                    fs=fs,
-                    superscripter_uni=superscripter_uni,
-                    hidden=hidden,
-                    today=TODAY))
-        else:
-            return ""
-    else:
-        return ""
+    return str(
+        family_set_templ.render(
+            i=i,
+            fs=fs,
+            superscripter_uni=superscripter_uni,
+            hidden=hidden,
+            today=TODAY))
 
 
 def render_frequency_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
-        dd: DerivedData,
+        i: DpdHeadwords,
         frequency_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html tempalte of freqency table"""
 
     hidden = "hidden" if DetailsTab.FrequencyMap not in open_details else ""
 
-    if i.pos not in EXCLUDE_FROM_FREQ:
-
-        return str(
-            frequency_templ.render(
-                i=i,
-                dd=dd,
-                hidden=hidden,
-                today=TODAY))
-    else:
-        return ""
+    return str(
+        frequency_templ.render(
+            i=i,
+            hidden=hidden,
+            today=TODAY))
 
 
 def render_feedback_templ(
         __pth__: ProjectPaths,
-        i: PaliWord,
+        i: DpdHeadwords,
         feedback_templ: Template,
-        open_details: List[DetailsTab] = [],
+        open_details: List[DetailsTab],
 ) -> str:
     """render html of feedback template"""
 

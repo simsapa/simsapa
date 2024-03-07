@@ -10,8 +10,8 @@ QUERY_TEXT_TEST_CASES = {
     "20400": {"words": ["kammika 1"]},
     "assa": {"words": ["assa 1.1", "assa 1.2", "assa 2.1", "assa 3.1", "assa 4.1", "assa 4.2", "assa 5.1", "assati 2.1", "assā 1.1", "assā 1.2", "assā 2.1", "ima 1.1"]},
     "Idha": {"words": ["idha 1", "idha 2", "idha 3"]},
-    "kammapatta": {"words": ["apatta 1.1", "apatta 2.1", "abhāva 1", "abhāva 2", "abhāva 3", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2", "patti 1.1", "patti 1.2", "patti 2.1", "pattī 1.1", "bhāva 1", "bhāva 2", "bhāva 3", "bhāva 4"]},
-    "kammapattā": {"words": ["apatta 1.1", "apatta 2.1", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "kammī", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2"]},
+    "kammapatta": {"words": []},
+    "kammapattā": {"words": ["apatta 1.1", "apatta 2.1", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "kammī", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2", "patta 4.1"]},
     "kamma": {"words": ["kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8"]},
     "kammikassa": {"words": ["kammika 1", "kammika 2"]},
     "kammī": {"words": ["kammī"]},
@@ -32,11 +32,26 @@ QUERY_TEXT_TEST_CASES = {
     "vacchagotta": {"words": ["vacchagotta 1", "vacchagotta 2"]},
 }
 
+# Using exact_only=False, the last letter is removed to allow more matches.
+QUERY_TEXT_TEST_CASES_NOT_EXACT = {
+    "kammapatta": {"words": ["apatta 1.1", "apatta 2.1", "abhāva 1", "abhāva 2", "abhāva 3", "kamma 1", "kamma 2", "kamma 3", "kamma 4", "kamma 5", "kamma 6", "kamma 7", "kamma 8", "patta 1.1", "patta 2.1", "patta 2.2", "patta 2.3", "patta 2.4", "patta 2.5", "patta 3.1", "patta 3.2", "patta 4.1", "patti 1.1", "patti 1.2", "patti 2.1", "pattī 1.1", "bhāva 1", "bhāva 2", "bhāva 3", "bhāva 4"]},
+}
+
 def test_dpd_lookup():
     _, _, db_session = get_db_engine_connection_session()
 
     for query_text, v in QUERY_TEXT_TEST_CASES.items():
         results = dpd_lookup(db_session, query_text, do_pali_sort=True)
+
+        headwords = [i["title"] for i in results]
+
+        assert "\n".join(headwords) == "\n".join(v["words"])
+
+def test_dpd_lookup_not_exact():
+    _, _, db_session = get_db_engine_connection_session()
+
+    for query_text, v in QUERY_TEXT_TEST_CASES_NOT_EXACT.items():
+        results = dpd_lookup(db_session, query_text, do_pali_sort=True, exact_only=False)
 
         headwords = [i["title"] for i in results]
 

@@ -1,4 +1,4 @@
-"""Test HTML Rendering for Dictionary words: DictWord, PaliWord, PaliRoot
+"""Test HTML Rendering for Dictionary words: DictWord, DpdHeadwords, DpdRoots
 """
 
 from simsapa.app.db import appdata_models as Am
@@ -26,8 +26,8 @@ def test_html_for_dict_words():
     assert("""ahosikakamma is said to be a kamma inhibited by a more powerful one""" in html)
 
 def test_html_for_pali_words():
-    w = db_session.query(Dpd.PaliWord) \
-                  .filter(Dpd.PaliWord.uid == "20400/dpd") \
+    w = db_session.query(Dpd.DpdHeadwords) \
+                  .filter(Dpd.DpdHeadwords.uid == "20400/dpd") \
                   .first()
     assert(w is not None)
 
@@ -43,8 +43,8 @@ def test_html_for_pali_words():
     assert("""<div id="declension_kammika_1" class="content ">""" in html)
 
 def test_html_for_pali_roots():
-    w = db_session.query(Dpd.PaliRoot) \
-                  .filter(Dpd.PaliRoot.uid == "√kā/dpd") \
+    w = db_session.query(Dpd.DpdRoots) \
+                  .filter(Dpd.DpdRoots.uid == "√kā/dpd") \
                   .first()
     assert(w is not None)
 

@@ -291,8 +291,8 @@ def check_and_fix_dict_word_uid(all_uids: List[str], i: Am.DictWord):
         n += 1
         i.uid = f"{name}-{n}/{label}"
 
-        print(f"Updated: {i.word}, uid = {i.uid}")
-        print(str(i.definition_plain)[0:200])
+        # print(f"Updated: {i.word}, uid = {i.uid}")
+        # print(str(i.definition_plain)[0:200])
 
     # Found an uid which is not in all_uids, so append it.
     all_uids.append(i.uid)

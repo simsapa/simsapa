@@ -20,8 +20,8 @@ from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 from simsapa.layouts.gui_types import GuiSearchQueriesInterface
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
-UDpdWord = Union[Dpd.PaliWord, Dpd.PaliRoot]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.DpdHeadwords, Dpd.DpdRoots]
+UDpdWord = Union[Dpd.DpdHeadwords, Dpd.DpdRoots]
 
 def sutta_to_search_result(x: USutta, snippet: str) -> SearchResult:
     return SearchResult(
@@ -167,65 +167,65 @@ def get_dict_word_source_filter_labels(db_session: Session) -> List[str]:
 
     return labels
 
-def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
+def inflection_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.DpdHeadwords]:
     words = []
 
-    i2h = db_session.query(Dpd.InflectionToHeadwords) \
-                    .filter(Dpd.InflectionToHeadwords.inflection == query_text) \
+    i2h = db_session.query(Dpd.Lookup) \
+                    .filter(Dpd.Lookup.lookup_key == query_text) \
                     .first()
 
     if i2h is not None:
         # i2h result exists
         # Lookup headwords in pali_words.
 
-        r = db_session.query(Dpd.PaliWord) \
-                      .filter(Dpd.PaliWord.pali_1.in_(i2h.headwords_list)) \
+        r = db_session.query(Dpd.DpdHeadwords) \
+                      .filter(Dpd.DpdHeadwords.id.in_(i2h.headwords_unpack)) \
                       .all()
         if r is not None:
             words.extend(r)
 
     return words
 
-def dpd_deconstructor_query(db_session: Session, query_text: str, exact_only = True) -> Optional[Dpd.Sandhi]:
+def dpd_deconstructor_query(db_session: Session, query_text: str, exact_only = True) -> Optional[Dpd.Lookup]:
     # NOTE: Use exact_only=True as default because 'starts with' matches show confusing additional words.
 
     # Exact match.
-    r = db_session.query(Dpd.Sandhi) \
-                    .filter(Dpd.Sandhi.sandhi == query_text) \
+    r = db_session.query(Dpd.Lookup) \
+                    .filter(Dpd.Lookup.lookup_key == query_text) \
                     .first()
 
     if not exact_only:
         if r is None and len(query_text) >= 4:
             # Match as 'starts with'.
-            r = db_session.query(Dpd.Sandhi) \
-                        .filter(Dpd.Sandhi.sandhi.like(f"{query_text}%")) \
+            r = db_session.query(Dpd.Lookup) \
+                        .filter(Dpd.Lookup.lookup_key.like(f"{query_text}%")) \
                         .first()
 
     if r is None and " " in query_text:
         # If the query contained multiple words, remove spaces to find compound forms.
-        r = db_session.query(Dpd.Sandhi) \
-                      .filter(Dpd.Sandhi.sandhi == query_text.replace(" ", "")) \
+        r = db_session.query(Dpd.Lookup) \
+                      .filter(Dpd.Lookup.lookup_key == query_text.replace(" ", "")) \
                       .first()
 
     if not exact_only:
         if r is None and len(query_text) >= 4:
             # No exact match in deconstructor.
             # If query text is long enough, remove the last letter and match as 'starts with'.
-            r = db_session.query(Dpd.Sandhi) \
-                        .filter(Dpd.Sandhi.sandhi.like(f"{query_text[0:-1]}%")) \
+            r = db_session.query(Dpd.Lookup) \
+                        .filter(Dpd.Lookup.lookup_key.like(f"{query_text[0:-1]}%")) \
                         .first()
 
     return r
 
-def dpd_deconstructor_to_pali_words(db_session: Session, query_text: str) -> List[Dpd.PaliWord]:
-    pali_words: Dict[str, Dpd.PaliWord] = dict()
+def dpd_deconstructor_to_pali_words(db_session: Session, query_text: str, exact_only = True) -> List[Dpd.DpdHeadwords]:
+    pali_words: Dict[str, Dpd.DpdHeadwords] = dict()
 
-    r = dpd_deconstructor_query(db_session, query_text)
+    r = dpd_deconstructor_query(db_session, query_text, exact_only)
 
     if r is not None:
-        for w in r.headwords_flat:
+        for w in r.deconstructor_flat:
             for i in inflection_to_pali_words(db_session, w):
-                pali_words[i.pali_1] = i
+                pali_words[i.lemma_1] = i
 
     return list(pali_words.values())
 
@@ -245,11 +245,11 @@ def _parse_words(words_res: List[UDpdWord], do_pali_sort = False) -> List[Search
         pali_words = uniq_words
 
     for w in pali_words:
-        if isinstance(w, Dpd.PaliWord):
+        if isinstance(w, Dpd.DpdHeadwords):
             snippet = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
             snippet += f" <b>·</b> <i>{strip_html(w.grammar)}</i>"
 
-        elif isinstance(w, Dpd.PaliRoot):
+        elif isinstance(w, Dpd.DpdRoots):
             snippet = w.root_meaning
             snippet += f" <b>·</b> <i>{root_info_clean_plaintext(w.root_info)}</i>"
 
@@ -261,7 +261,9 @@ def _parse_words(words_res: List[UDpdWord], do_pali_sort = False) -> List[Search
 
     return res_page
 
-def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> List[SearchResult]:
+def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False, exact_only = True) -> List[SearchResult]:
+    # NOTE: Use exact_only=True as default because 'starts with' matches show confusing additional words.
+
     query_text = query_text.lower()
     query_text = re.sub("[’']ti$", "ti", query_text)
 
@@ -271,14 +273,14 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     if query_text.endswith("/dpd") or query_text.isdigit():
         ref = query_text.replace("/dpd", "")
         if ref.isdigit():
-            r = db_session.query(Dpd.PaliWord) \
-                          .filter(Dpd.PaliWord.id == int(ref)) \
+            r = db_session.query(Dpd.DpdHeadwords) \
+                          .filter(Dpd.DpdHeadwords.id == int(ref)) \
                           .first()
             res.append(r)
 
         else:
-            r = db_session.query(Dpd.PaliRoot) \
-                          .filter(Dpd.PaliRoot.uid == query_text) \
+            r = db_session.query(Dpd.DpdRoots) \
+                          .filter(Dpd.DpdRoots.uid == query_text) \
                           .first()
             res.append(r)
 
@@ -286,16 +288,16 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
         return _parse_words(res)
 
     # Word exact match.
-    r = db_session.query(Dpd.PaliWord) \
-                  .filter(or_(Dpd.PaliWord.pali_clean == query_text,
-                              Dpd.PaliWord.word_ascii == query_text)) \
+    r = db_session.query(Dpd.DpdHeadwords) \
+                  .filter(or_(Dpd.DpdHeadwords.lemma_clean == query_text,
+                              Dpd.DpdHeadwords.word_ascii == query_text)) \
                   .all()
     res.extend(r)
 
-    r = db_session.query(Dpd.PaliRoot) \
-                  .filter(or_(Dpd.PaliRoot.root_clean == query_text,
-                              Dpd.PaliRoot.root_no_sign == query_text,
-                              Dpd.PaliRoot.word_ascii == query_text)) \
+    r = db_session.query(Dpd.DpdRoots) \
+                  .filter(or_(Dpd.DpdRoots.root_clean == query_text,
+                              Dpd.DpdRoots.root_no_sign == query_text,
+                              Dpd.DpdRoots.word_ascii == query_text)) \
                   .all()
     res.extend(r)
 
@@ -308,24 +310,24 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
     if len(res) == 0:
         # Stem form exact match.
         stem = pali_stem(query_text)
-        r = db_session.query(Dpd.PaliWord) \
-                      .filter(Dpd.PaliWord.stem == stem) \
+        r = db_session.query(Dpd.DpdHeadwords) \
+                      .filter(Dpd.DpdHeadwords.stem == stem) \
                       .all()
         res.extend(r)
 
     if len(res) == 0:
         # If the query contained multiple words, remove spaces to find compound forms.
         nospace_query = query_text.replace(" ", "")
-        r = db_session.query(Dpd.PaliWord) \
-                      .filter(or_(Dpd.PaliWord.pali_clean == nospace_query,
-                                  Dpd.PaliWord.word_ascii == nospace_query)) \
+        r = db_session.query(Dpd.DpdHeadwords) \
+                      .filter(or_(Dpd.DpdHeadwords.lemma_clean == nospace_query,
+                                  Dpd.DpdHeadwords.word_ascii == nospace_query)) \
                       .all()
         res.extend(r)
 
     if len(res) == 0:
         # i2h result doesn't exist.
         # Lookup query text in dpd_deconstructor.
-        res.extend(dpd_deconstructor_to_pali_words(db_session, query_text))
+        res.extend(dpd_deconstructor_to_pali_words(db_session, query_text, exact_only))
 
     if len(res) == 0:
         # - no exact match in pali_words or pali_roots
@@ -335,17 +337,17 @@ def dpd_lookup(db_session: Session, query_text: str, do_pali_sort = False) -> Li
         # Lookup pali_words which start with the query_text.
 
         # Word starts with.
-        r = db_session.query(Dpd.PaliWord) \
-                        .filter(or_(Dpd.PaliWord.pali_clean.like(f"{query_text}%"),
-                                    Dpd.PaliWord.word_ascii.like(f"{query_text}%"))) \
+        r = db_session.query(Dpd.DpdHeadwords) \
+                        .filter(or_(Dpd.DpdHeadwords.lemma_clean.like(f"{query_text}%"),
+                                    Dpd.DpdHeadwords.word_ascii.like(f"{query_text}%"))) \
                         .all()
         res.extend(r)
 
         if len(r) == 0:
             # Stem form starts with.
             stem = pali_stem(query_text)
-            r = db_session.query(Dpd.PaliWord) \
-                          .filter(Dpd.PaliWord.stem.like(f"{stem}%")) \
+            r = db_session.query(Dpd.DpdHeadwords) \
+                          .filter(Dpd.DpdHeadwords.stem.like(f"{stem}%")) \
                           .all()
             res.extend(r)
 
@@ -433,7 +435,7 @@ def combined_search(queries: GuiSearchQueriesInterface,
 
     r = dpd_deconstructor_query(db_session, query_text)
     if r is not None:
-        for variation in r.headwords:
+        for variation in r.deconstructor_nested:
             content = " + ".join(variation)
             deconstructor.append(content)
 
@@ -463,16 +465,16 @@ def get_word_for_schema_table_and_uid(db_session: Session, db_schema: str, db_ta
             .first()
 
     elif db_schema == DbSchemaName.Dpd.value:
-        if db_table == "pali_words":
+        if db_table == "dpd_headwords":
             w = db_session \
-                .query(Dpd.PaliWord) \
-                .filter(Dpd.PaliWord.uid == db_uid) \
+                .query(Dpd.DpdHeadwords) \
+                .filter(Dpd.DpdHeadwords.uid == db_uid) \
                 .first()
 
-        elif db_table == "pali_roots":
+        elif db_table == "dpd_roots":
             w = db_session \
-                .query(Dpd.PaliRoot) \
-                .filter(Dpd.PaliRoot.uid == db_uid) \
+                .query(Dpd.DpdRoots) \
+                .filter(Dpd.DpdRoots.uid == db_uid) \
                 .first()
 
         else:
@@ -494,14 +496,14 @@ def get_word_gloss_html(w: UDictWord, __gloss_keys_csv__: str) -> str:
     # NOTE: ignore gloss_keys_csv argument for now
     #
     # if (uid.endsWith('/dpd')) {
-    #   const item_keys = ['uid', 'pali_1', 'pos', 'grammar', 'meaning_1', 'construction'];
+    #   const item_keys = ['uid', 'lemma_1', 'pos', 'grammar', 'meaning_1', 'construction'];
     #   item_values = item_keys.map(key => item[key]);
 
     # } else {
     #   const item_keys = ['uid', 'word', '', '', 'definition_plain', ''];
 
     if w.uid.endswith('/dpd'):
-        item_keys = ['uid', 'pali_1', 'pos', 'grammar', 'meaning_1', 'construction']
+        item_keys = ['uid', 'lemma_1', 'pos', 'grammar', 'meaning_1', 'construction']
     else:
         item_keys = ['uid', 'word', '', '', 'definition_plain', '']
 
@@ -528,10 +530,10 @@ def get_word_meaning(w: UDictWord) -> str:
     if isinstance(w, Am.DictWord) or isinstance(w, Um.DictWord):
         s = w.definition_plain if w.definition_plain is not None else ""
 
-    elif isinstance(w, Dpd.PaliWord):
+    elif isinstance(w, Dpd.DpdHeadwords):
         s = w.meaning_1 if w.meaning_1 != "" else w.meaning_2
 
-    elif isinstance(w, Dpd.PaliRoot):
+    elif isinstance(w, Dpd.DpdRoots):
         s = w.root_meaning
 
     else:

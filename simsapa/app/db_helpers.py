@@ -1,6 +1,6 @@
 import sys, json
 from pathlib import Path
-from typing import Tuple, Set, Dict
+from typing import Dict
 
 import sqlite3
 import contextlib
@@ -25,7 +25,7 @@ from simsapa.app.helpers import pali_to_ascii, word_uid
 
 from simsapa.dpd_db.tools.sandhi_contraction import make_sandhi_contraction_dict
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
-from simsapa.dpd_db.exporter.helpers import cf_set_gen, make_roots_count_dict
+from simsapa.dpd_db.exporter.helpers import make_roots_count_dict
 
 from simsapa import DbSchemaName, DictTypeName, logger, ALEMBIC_INI, ALEMBIC_DIR
 
@@ -155,22 +155,14 @@ def find_or_create_dpd_dictionary(appdata_db_session: Session) -> Am.Dictionary:
 
     return dpd_dict
 
-def save_dpd_caches(dpd_db_session: Session) -> Tuple[Set[str], Dict[str, int], SandhiContractions]:
+def save_dpd_caches(dpd_db_session: Session) -> None:
     """Save cf_set and sandhi_contractions"""
 
-    dpd_cf_set: Set[str] = set()
     dpd_roots_count_dict: Dict[str, int] = dict()
     dpd_sandhi_contractions: SandhiContractions = dict()
 
-    dpd_db_session.query(Dpd.DbInfo).filter(Dpd.DbInfo.key == "cf_set").delete()
     dpd_db_session.query(Dpd.DbInfo).filter(Dpd.DbInfo.key == "roots_count_dict").delete()
     dpd_db_session.query(Dpd.DbInfo).filter(Dpd.DbInfo.key == "sandhi_contractions").delete()
-    dpd_db_session.commit()
-
-    # === cf_set ===
-
-    dpd_cf_set = cf_set_gen(dpd_db_session)
-    dpd_db_session.add(Dpd.DbInfo(key="cf_set", value=json.dumps(list(dpd_cf_set))))
     dpd_db_session.commit()
 
     # === roots_count_dict ===
@@ -181,9 +173,7 @@ def save_dpd_caches(dpd_db_session: Session) -> Tuple[Set[str], Dict[str, int], 
 
     # === sandhi_contractions ===
 
-    pali_words = dpd_db_session.query(Dpd.PaliWord).all()
-
-    dpd_sandhi_contractions = make_sandhi_contraction_dict(pali_words)
+    dpd_sandhi_contractions = make_sandhi_contraction_dict(dpd_db_session)
 
     data = dict()
     for k, v in dpd_sandhi_contractions.items():
@@ -195,9 +185,6 @@ def save_dpd_caches(dpd_db_session: Session) -> Tuple[Set[str], Dict[str, int], 
     dpd_db_session.add(Dpd.DbInfo(key="sandhi_contractions",
                                   value=json.dumps(data)))
     dpd_db_session.commit()
-
-    return (dpd_cf_set, dpd_roots_count_dict, dpd_sandhi_contractions)
-
 
 def replace_all_niggahitas(db_conn: sqlite3.Connection):
     cursor = db_conn.cursor()
@@ -232,76 +219,74 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
         with contextlib.closing(sqlite3.connect(dpd_db_path)) as connection:
             with contextlib.closing(connection.cursor()) as cursor:
 
-                # PaliWord.dictionary_id:
-                # PaliRoot.dictionary_id:
+                # DpdHeadwords.dictionary_id:
+                # DpdRoots.dictionary_id:
                 # should return DPD dict id
 
                 query = """
-                ALTER TABLE pali_words ADD COLUMN dictionary_id integer NOT NULL DEFAULT 0;
+                ALTER TABLE dpd_headwords ADD COLUMN dictionary_id integer NOT NULL DEFAULT 0;
                 """
                 cursor.execute(query)
 
                 query = """
-                ALTER TABLE pali_roots ADD COLUMN dictionary_id integer NOT NULL DEFAULT 0;
+                ALTER TABLE dpd_roots ADD COLUMN dictionary_id integer NOT NULL DEFAULT 0;
                 """
                 cursor.execute(query)
 
                 connection.commit()
 
                 query = """
-                UPDATE pali_words SET dictionary_id = %s;
+                UPDATE dpd_headwords SET dictionary_id = %s;
                 """ % (dpd_dictionary_id)
                 cursor.execute(query)
 
                 query = """
-                UPDATE pali_roots SET dictionary_id = %s;
+                UPDATE dpd_roots SET dictionary_id = %s;
                 """ % (dpd_dictionary_id)
                 cursor.execute(query)
 
                 connection.commit()
 
-                # PaliWord: uid, word_ascii, pali_clean
+                # DpdHeadwords: uid, word_ascii, lemma_clean
 
                 query = """
-                ALTER TABLE pali_words ADD COLUMN uid VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_headwords ADD COLUMN uid VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
                 query = """
-                ALTER TABLE pali_words ADD COLUMN word_ascii VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_headwords ADD COLUMN word_ascii VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
                 query = """
-                ALTER TABLE pali_words ADD COLUMN pali_clean VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_headwords ADD COLUMN lemma_clean VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
-                # PaliRoot: uid, word_ascii, root_clean, root_no_sign
+                # DpdRoots: uid, word_ascii, root_clean, root_no_sign
 
                 query = """
-                ALTER TABLE pali_roots ADD COLUMN uid VARCHAR NOT NULL DEFAULT '';
-                """
-                cursor.execute(query)
-
-                query = """
-                ALTER TABLE pali_roots ADD COLUMN word_ascii VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_roots ADD COLUMN uid VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
                 query = """
-                ALTER TABLE pali_roots ADD COLUMN root_clean VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_roots ADD COLUMN word_ascii VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
                 query = """
-                ALTER TABLE pali_roots ADD COLUMN root_no_sign VARCHAR NOT NULL DEFAULT '';
+                ALTER TABLE dpd_roots ADD COLUMN root_clean VARCHAR NOT NULL DEFAULT '';
+                """
+                cursor.execute(query)
+
+                query = """
+                ALTER TABLE dpd_roots ADD COLUMN root_no_sign VARCHAR NOT NULL DEFAULT '';
                 """
                 cursor.execute(query)
 
                 connection.commit()
-
-                replace_all_niggahitas(connection)
 
     except Exception as e:
         print(str(e))
@@ -311,15 +296,15 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
 
     _, _, dpd_db_session = get_db_session_with_schema(dpd_db_path, DbSchemaName.Dpd)
 
-    for i in dpd_db_session.query(Dpd.PaliWord).all():
+    for i in dpd_db_session.query(Dpd.DpdHeadwords).all():
         i.uid = word_uid(str(i.id), 'dpd')
-        i.pali_clean = i.calc_pali_clean
-        # Use pali_clean for word_ascii to remove trailing numbers.
-        i.word_ascii = pali_to_ascii(i.calc_pali_clean)
+        i.lemma_clean = i.calc_lemma_clean
+        # Use lemma_clean for word_ascii to remove trailing numbers.
+        i.word_ascii = pali_to_ascii(i.calc_lemma_clean)
 
     dpd_db_session.commit()
 
-    for i in dpd_db_session.query(Dpd.PaliRoot).all():
+    for i in dpd_db_session.query(Dpd.DpdRoots).all():
         i.uid = word_uid(i.root, 'dpd')
         i.root_clean = i.calc_root_clean
         i.root_no_sign = i.calc_root_no_sign
@@ -331,3 +316,12 @@ def migrate_dpd(dpd_db_path: Path, dpd_dictionary_id: int) -> None:
     save_dpd_caches(dpd_db_session)
 
     dpd_db_session.close()
+
+    # replace_all_niggahitas() must be the last step, otherwise make_sandhi_contraction_dict() prints errors.
+    try:
+        with contextlib.closing(sqlite3.connect(dpd_db_path)) as connection:
+            replace_all_niggahitas(connection)
+            connection.commit()
+    except Exception as e:
+        print(str(e))
+        sys.exit(2)

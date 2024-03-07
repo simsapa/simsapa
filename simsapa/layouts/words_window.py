@@ -43,8 +43,8 @@ class WordsWindow(AppWindowInterface):
 
         appdata_uids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.AppData.value, uids)))
         userdata_uids = list(map(lambda x: x[1], filter(lambda x: x[0] == DbSchemaName.UserData.value, uids)))
-        pali_words_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "pali_words", uids)))
-        pali_roots_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "pali_roots", uids)))
+        pali_words_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "dpd_headwords", uids)))
+        pali_roots_uids = list(map(lambda x: x[1], filter(lambda x: x[1] == "dpd_roots", uids)))
 
         res = self._app_data.db_session \
             .query(Am.DictWord) \
@@ -59,14 +59,14 @@ class WordsWindow(AppWindowInterface):
         results.extend(res)
 
         res = self._app_data.db_session \
-            .query(Dpd.PaliWord) \
-            .filter(Dpd.PaliWord.uid.in_(pali_words_uids)) \
+            .query(Dpd.DpdHeadwords) \
+            .filter(Dpd.DpdHeadwords.uid.in_(pali_words_uids)) \
             .all()
         results.extend(res)
 
         res = self._app_data.db_session \
-            .query(Dpd.PaliRoot) \
-            .filter(Dpd.PaliRoot.uid.in_(pali_roots_uids)) \
+            .query(Dpd.DpdRoots) \
+            .filter(Dpd.DpdRoots.uid.in_(pali_roots_uids)) \
             .all()
         results.extend(res)
 
@@ -101,10 +101,12 @@ class WordsWindow(AppWindowInterface):
         qwe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Enable dev tools
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        qwe.settings().setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        settings = qwe.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
 
         return qwe
 

@@ -4,12 +4,16 @@
 config.ini file."""
 
 import configparser
+from typing import Optional
 # from rich import print
 
 config = configparser.ConfigParser()
 config.read("config.ini")
 
 DEFAULT_CONFIG = {
+    "version": {
+        "version": "",
+    },
     "regenerate": {
         "inflections": "yes",
         "transliterations": "yes",
@@ -34,7 +38,8 @@ DEFAULT_CONFIG = {
         "element_padding_x": "0",
         "element_padding_y": "0",
         "margin_x": "0",
-        "margin_y": "0"
+        "margin_y": "0",
+        "include_sbs_examples": "no"
     },
     "goldendict": {
         "copy_unzip": "no",
@@ -44,7 +49,10 @@ DEFAULT_CONFIG = {
         "make_mdict": "yes",
         "link_url": "https://www.thebuddhaswords.net/",
         "make_link": "no",
-        "extended_synonyms": "no"
+        "extended_synonyms": "no",
+        "show_id": "no",
+        "show_ebt_count": "no",
+        "show_dps_data": "no"
     },
     "exporter" : {
         "make_dpd": "yes",
@@ -60,6 +68,12 @@ DEFAULT_CONFIG = {
         "update": "no",
         "db_path": "",
         "backup_path": ""
+    },
+    "simsapa": {
+        "db_path": ""
+    },
+    "tpr": {
+        "db_path": ""
     }
 }
 
@@ -74,12 +88,12 @@ def config_initialize() -> None:
                 config.set(section, option, value)
 
 
-def config_read(section: str, option: str, default_value=None) -> (str):
+def config_read(section: str, option: str, default_value: Optional[str]=None) -> str|None:
     """Read config.ini. If error, return a specified default value"""
     try:
         return config.get(section, option)
     except (configparser.NoSectionError, configparser.NoOptionError):
-        return ""
+        return default_value
 
 
 def config_write() -> None:
@@ -88,7 +102,7 @@ def config_write() -> None:
         config.write(file)
 
 
-def config_update(section: str, option: str, value) -> None:
+def config_update(section: str, option: str, value, silent=False) -> None:
     """Update config.ini with a new section, option & value."""
     if config.has_section(section):
         config.set(section, option, str(value))
@@ -96,7 +110,9 @@ def config_update(section: str, option: str, value) -> None:
         config.add_section(section)
         config.set(section, option, str(value))
     config_write()
-    # print(f"[green]config setting updated: '{section}, {option}' is '{value}'")
+    if not silent:
+        pass
+        # print(f"[green]config setting updated: '{section}, {option}' is '{value}'")
 
 
 def config_test(section: str, option: str, value) -> bool:
@@ -132,6 +148,17 @@ def config_test_option(section, option):
         return config.has_option(section, option)
     else:
         return False
+
+
+def print_config_settings(sections_to_print=None) -> None:
+    """Print specified sections from config.ini or all if not specified."""
+    if sections_to_print is None:
+        sections_to_print = config.sections()
+    for section in sections_to_print:
+        if config.has_section(section):
+            print(f"[{section}]")
+            for key, value in config.items(section):
+                print(f"{key} = {value}")
 
 
 if __name__ == "__main__":

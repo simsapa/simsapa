@@ -1,13 +1,15 @@
 """Generating links for suttas based on the desired website"""
 
-import re
-from typing import Optional
-from urllib.parse import urlencode
-
 from PyQt6.QtCore import QUrl
 
 from simsapa.app.helpers import strip_html
 from simsapa import QueryType, QuoteScope
+
+from typing import Optional
+from urllib.parse import urlencode
+
+import re
+# from simsapa.dpd_db.tools.configger import config_test_option, config_update_default_value, config_read
 
 # def load_link():
 #     if not config_test_option("dictionary", "link_url"):

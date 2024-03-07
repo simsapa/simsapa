@@ -1,4 +1,4 @@
-${i.pali_2}
+${i.lemma_2}
 
 ${grammar}
 

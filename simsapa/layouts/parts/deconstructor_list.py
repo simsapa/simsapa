@@ -137,18 +137,18 @@ class HasDeconstructorList:
             return
 
         if self.deconstructor_above_words:
-            self.show_deconstructor.setText(f"Deconstructor Results ({len(r.headwords)})")
+            self.show_deconstructor.setText(f"Deconstructor Results ({len(r.deconstructor_nested)})")
             is_on = self.show_deconstructor.isChecked()
             self.deconstructor_frame.setVisible(is_on)
 
         elif self.deconstructor_tab_idx is not None:
-            self.tabs.setTabText(self.deconstructor_tab_idx, f"Deconstructor ({len(r.headwords)})")
+            self.tabs.setTabText(self.deconstructor_tab_idx, f"Deconstructor ({len(r.deconstructor_nested)})")
 
         sizes = self._app_data.app_settings.get('search_result_sizes', default_search_result_sizes())
 
         result_wigets = []
 
-        for variation in r.headwords:
+        for variation in r.deconstructor_nested:
             content = " + ".join(variation)
             result_wigets.append(ResultWidget(sizes, content, self._app_data.clipboard_setText))
 

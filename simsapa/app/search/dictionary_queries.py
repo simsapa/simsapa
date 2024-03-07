@@ -51,14 +51,14 @@ class DictionaryQueries(DictionaryQueriesInterface):
             results.extend(res)
 
             res = self.db_session \
-                .query(Dpd.PaliWord) \
-                .filter(Dpd.PaliWord.uid == uid) \
+                .query(Dpd.DpdHeadwords) \
+                .filter(Dpd.DpdHeadwords.uid == uid) \
                 .all()
             results.extend(res)
 
             res = self.db_session \
-                .query(Dpd.PaliRoot) \
-                .filter(Dpd.PaliRoot.uid == uid) \
+                .query(Dpd.DpdRoots) \
+                .filter(Dpd.DpdRoots.uid == uid) \
                 .all()
             results.extend(res)
 
@@ -77,14 +77,14 @@ class DictionaryQueries(DictionaryQueriesInterface):
             results.extend(res)
 
             res = self.db_session \
-                .query(Dpd.PaliWord) \
-                .filter(Dpd.PaliWord.uid.like(f"{uid}/%")) \
+                .query(Dpd.DpdHeadwords) \
+                .filter(Dpd.DpdHeadwords.uid.like(f"{uid}/%")) \
                 .all()
             results.extend(res)
 
             res = self.db_session \
-                .query(Dpd.PaliRoot) \
-                .filter(Dpd.PaliRoot.uid.like(f"{uid}/%")) \
+                .query(Dpd.DpdRoots) \
+                .filter(Dpd.DpdRoots.uid.like(f"{uid}/%")) \
                 .all()
             results.extend(res)
 
@@ -104,16 +104,16 @@ class DictionaryQueries(DictionaryQueriesInterface):
                                  .first()
 
         elif x['schema_name'] == DbSchemaName.Dpd.value:
-            if x['table_name'] == "pali_words":
+            if x['table_name'] == "dpd_headwords":
                 word = self.db_session \
-                           .query(Dpd.PaliWord) \
-                           .filter(Dpd.PaliWord.uid == x['uid']) \
+                           .query(Dpd.DpdHeadwords) \
+                           .filter(Dpd.DpdHeadwords.uid == x['uid']) \
                            .first()
 
-            elif x['table_name'] == "pali_roots":
+            elif x['table_name'] == "dpd_roots":
                 word = self.db_session \
-                           .query(Dpd.PaliRoot) \
-                           .filter(Dpd.PaliRoot.uid == x['uid']) \
+                           .query(Dpd.DpdRoots) \
+                           .filter(Dpd.DpdRoots.uid == x['uid']) \
                            .first()
             else:
                 raise Exception(f"Unknown table_name: {x['table_name']}")
@@ -246,9 +246,9 @@ class DictionaryQueries(DictionaryQueriesInterface):
 
         if word.metadata.schema == DbSchemaName.Dpd:
 
-            if isinstance(word, Dpd.PaliWord):
+            if isinstance(word, Dpd.DpdHeadwords):
                 res = pali_word_dpd_html(word, open_details)
-            elif isinstance(word, Dpd.PaliRoot):
+            elif isinstance(word, Dpd.DpdRoots):
                 res = pali_root_dpd_html(word, open_details)
             else:
                 raise Exception(f"Unrecognized word type: {word}")
@@ -321,9 +321,9 @@ class DictionaryQueries(DictionaryQueriesInterface):
             body += "<div class=\"word-examples\">%s</div>" % examples
 
         classes = ["word-block"]
-        if isinstance(word, Dpd.PaliWord):
+        if isinstance(word, Dpd.DpdHeadwords):
             classes.append("pali-word")
-        elif isinstance(word, Dpd.PaliRoot):
+        elif isinstance(word, Dpd.DpdRoots):
             classes.append("pali-root")
 
         body = f'<div class="{" ".join(classes)}">' + self.word_heading(word) + body + '</div>'
@@ -435,10 +435,10 @@ class ExactQueryWorker(QRunnable):
             a = filter(lambda x: x.metadata.schema == DbSchemaName.UserData.value, res)
             userdata_uids = list(map(lambda x: x.uid, a))
 
-            a = filter(lambda x: x.__tablename__ == "pali_words", res)
+            a = filter(lambda x: x.__tablename__ == "dpd_headwords", res)
             pali_words_uids = list(map(lambda x: x.uid, a))
 
-            a = filter(lambda x: x.__tablename__ == "pali_roots", res)
+            a = filter(lambda x: x.__tablename__ == "dpd_roots", res)
             pali_roots_uids = list(map(lambda x: x.uid, a))
 
             ret = ExactQueryResult(

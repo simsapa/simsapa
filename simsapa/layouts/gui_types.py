@@ -558,6 +558,7 @@ class GuiSearchQueriesInterface:
     start_search_query_workers: Callable
     start_exact_query_worker: Callable
     results_page: Callable[[int], List[SearchResult]]
+    all_results: Callable[[], List[SearchResult]]
     query_hits: Callable[[], Optional[int]]
     all_finished: Callable[[], bool]
 

@@ -40,13 +40,13 @@ def get_dict_words_completion_list(db_session: Session, load_only_from_appdata =
     r = db_session.query(Am.DictWord.word).all()
     res.extend(r)
 
-    r = db_session.query(Dpd.PaliWord.pali_1).all()
+    r = db_session.query(Dpd.DpdHeadwords.lemma_1).all()
     res.extend(r)
 
-    r = db_session.query(Dpd.PaliRoot.root_no_sign).all()
+    r = db_session.query(Dpd.DpdRoots.root_no_sign).all()
     res.extend(r)
 
-    r = db_session.query(Dpd.Sandhi.sandhi).all()
+    r = db_session.query(Dpd.Lookup.lookup_key).all()
     res.extend(r)
 
     if not load_only_from_appdata:

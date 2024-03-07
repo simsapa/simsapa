@@ -460,14 +460,14 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         res.extend(r)
 
         r = self._app_data.db_session \
-            .query(Dpd.PaliWord) \
-            .filter(Dpd.PaliWord.uid.in_(q_res['pali_words_uids'])) \
+            .query(Dpd.DpdHeadwords) \
+            .filter(Dpd.DpdHeadwords.uid.in_(q_res['pali_words_uids'])) \
             .all()
         res.extend(r)
 
         r = self._app_data.db_session \
-            .query(Dpd.PaliRoot) \
-            .filter(Dpd.PaliRoot.uid.in_(q_res['pali_roots_uids'])) \
+            .query(Dpd.DpdRoots) \
+            .filter(Dpd.DpdRoots.uid.in_(q_res['pali_roots_uids'])) \
             .all()
         res.extend(r)
 

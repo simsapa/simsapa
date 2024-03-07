@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os, sys, csv, re
+import os, sys, re
 from pathlib import Path
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -9,8 +9,10 @@ from sqlalchemy.orm.session import Session, make_transient
 
 from simsapa import logger, DbSchemaName, DictTypeName
 from simsapa.app.db import appdata_models as Am
+from simsapa.app.db import dpd_models as Dpd
 
 from scripts import helpers
+from simsapa.app.db_session import get_db_session_with_schema
 from simsapa.app.helpers import compact_rich_text, pali_to_ascii, word_uid
 
 load_dotenv()
@@ -22,9 +24,10 @@ if s is None or s == "":
 
 BOOTSTRAP_ASSETS_DIR = Path(s)
 
-CSV_PATH = BOOTSTRAP_ASSETS_DIR.joinpath('commentary-definitions/definitions.csv')
+# already migrated
+DPD_DB_PATH = BOOTSTRAP_ASSETS_DIR.joinpath("dist/dpd.sqlite3")
 
-SQLITE_PATH = BOOTSTRAP_ASSETS_DIR.joinpath('commentary-definitions/definitions.sqlite')
+DEFINITIONS_DB_PATH = BOOTSTRAP_ASSETS_DIR.joinpath('commentary-definitions/definitions.sqlite')
 
 def find_or_create_dict(appdata_db: Session) -> Am.Dictionary:
     comm_dict = appdata_db \
@@ -43,8 +46,8 @@ def find_or_create_dict(appdata_db: Session) -> Am.Dictionary:
 
     return comm_dict
 
-def populate_from_csv_to_appdata(appdata_db: Session, limit: Optional[int] = None):
-    logger.info("populate_commentary_definitions()")
+def populate_from_dpd_to_appdata(appdata_db: Session, limit: Optional[int] = None):
+    logger.info("populate_from_dpd_to_appdata()")
 
     comm_dict = find_or_create_dict(appdata_db)
 
@@ -55,21 +58,27 @@ def populate_from_csv_to_appdata(appdata_db: Session, limit: Optional[int] = Non
 
     words: List[Am.DictWord] = []
 
-    # CSV fields:
+    # DPD bold_definitions:
     #
-    # file_name
-    # ref_code
-    # nikaya
-    # book
-    # title
-    # subhead
-    # bold
-    # bold_end
-    # commentary
+    # CREATE TABLE bold_defintions (
+    #     id INTEGER NOT NULL,
+    #     file_name VARCHAR NOT NULL,
+    #     ref_code VARCHAR NOT NULL,
+    #     nikaya VARCHAR NOT NULL,
+    #     book VARCHAR NOT NULL,
+    #     title VARCHAR NOT NULL,
+    #     subhead VARCHAR NOT NULL,
+    #     bold VARCHAR NOT NULL,
+    #     bold_end VARCHAR NOT NULL,
+    #     commentary VARCHAR NOT NULL,
+    #     PRIMARY KEY (id)
+    # )
 
-    def _row_to_word(r: Dict[str, str]) -> Am.DictWord:
+    _, _, dpd_db_session = get_db_session_with_schema(DPD_DB_PATH, DbSchemaName.Dpd)
+
+    def _bold_to_word(b: Dpd.BoldDefintion) -> Am.DictWord:
         # Separate 'ti from the word, avoid joining it when ' is removed
-        w = r['bold'].replace("'ti", " ti")
+        w = b.bold.replace("'ti", " ti")
         # Only remove punctuation from the end, commentary words might include comma ',' or compounds might include ' quote mark.
         word_text = re.sub(r"[\.,;:\(\)'\"]+$", "", w)
 
@@ -80,13 +89,13 @@ def populate_from_csv_to_appdata(appdata_db: Session, limit: Optional[int] = Non
 
         word_uniq = word_text + " " + str(word_occur_count[word_text])
 
-        word_source = " ".join([r['nikaya'], r['book'], r['title'], r['subhead']])
+        word_source = " ".join([b.nikaya, b.book, b.title, b.subhead])
 
         # 'commentary' includes the word text already.
         definition_html = f"""
         <div>
-            <p>({r['ref_code']}) {r['commentary']}</p>
-            <p style="font-size: 0.8em; font-style: italic;">{word_source} ({r['file_name']})</p>
+            <p>({b.ref_code}) {b.commentary}</p>
+            <p style="font-size: 0.8em; font-style: italic;">{word_source} ({b.file_name})</p>
         </div>
         """
 
@@ -103,9 +112,8 @@ def populate_from_csv_to_appdata(appdata_db: Session, limit: Optional[int] = Non
 
         return word
 
-    with open(CSV_PATH, 'r') as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        words: List[Am.DictWord] = list(map(_row_to_word, reader))
+    bolds = dpd_db_session.query(Dpd.BoldDefintion).all()
+    words: List[Am.DictWord] = list(map(_bold_to_word, bolds))
 
     if limit:
         words = words[0:limit]
@@ -128,7 +136,7 @@ def populate_from_csv_to_appdata(appdata_db: Session, limit: Optional[int] = Non
         logger.error(e)
 
 def export_from_appdata_to_sqlite(appdata_db: Session):
-    comm_db = helpers.get_simsapa_db(SQLITE_PATH, DbSchemaName.AppData, remove_if_exists = True)
+    comm_db = helpers.get_simsapa_db(DEFINITIONS_DB_PATH, DbSchemaName.AppData, remove_if_exists = True)
 
     comm_dict = find_or_create_dict(comm_db)
 
@@ -150,9 +158,9 @@ def export_from_appdata_to_sqlite(appdata_db: Session):
         exit(1)
 
 def populate_from_sqlite_to_appdata(appdata_db: Session, limit: Optional[int] = None):
-    comm_db = helpers.get_simsapa_db(SQLITE_PATH, DbSchemaName.AppData, remove_if_exists = False)
+    comm_db = helpers.get_simsapa_db(DEFINITIONS_DB_PATH, DbSchemaName.AppData, remove_if_exists = False)
 
-    appdata_dict = find_or_create_dict(comm_db)
+    appdata_dict = find_or_create_dict(appdata_db)
 
     appdata_db.query(Am.DictWord).filter(Am.DictWord.dictionary_id == appdata_dict.id).delete()
     appdata_db.commit()
@@ -182,7 +190,7 @@ def main():
 
     appdata_db = helpers.get_simsapa_db(appdata_db_path, DbSchemaName.AppData, remove_if_exists = False)
 
-    populate_from_csv_to_appdata(appdata_db)
+    populate_from_dpd_to_appdata(appdata_db)
 
     export_from_appdata_to_sqlite(appdata_db)
 

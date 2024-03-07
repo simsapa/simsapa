@@ -10,7 +10,10 @@ import importlib.resources
 import pkgutil
 import psutil
 
-from datetime import datetime
+from datetime import date, datetime
+
+TODAY = date.today()
+
 INIT_START_TIME = datetime.now()
 
 EXEC_FILE_PATH = Path(sys.argv[0])
@@ -264,11 +267,13 @@ class ShowLabels(str, Enum):
 
 class DetailsTab(str, Enum):
     Examples = "Examples"
+    SbsExamples = "SBS Examples"
     Inflections = "Inflections"
     RootFamily = "Root Family"
     WordFamily = "Word Family"
     CompoundFamily = "Compound Family"
     SetFamily = "Set Family"
+    IdiomFamily = "Idiom Family"
     FrequencyMap = "Frequency Map"
     Feedback = "Feedback"
     RootInfo = "Root Info"

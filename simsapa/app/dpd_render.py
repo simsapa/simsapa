@@ -1,105 +1,26 @@
-from typing import Dict, List, Set, Tuple, Optional
-import json, re
+from typing import List, Set
+import re
 
 from mako.template import Template
 
 from sqlalchemy.orm import object_session
 
-from simsapa.app.db_session import get_db_session_with_schema
-from simsapa.app.db import dpd_models as Dpd
-
-from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, PaliRoot, PaliWord, DerivedData, FamilyRoot, FamilyWord
+from simsapa.app.db.dpd_models import FamilyCompound, FamilySet, FamilyIdiom, DpdRoots, DpdHeadwords, FamilyRoot, FamilyWord, Russian, SBS, DPD_PALI_WORD_TEMPLATES, get_render_data
 from simsapa.app.helpers import strip_html, root_info_clean_plaintext
 
-from simsapa.dpd_db.exporter.export_dpd import PaliWordDbParts, PaliWordDbRowItems, PaliWordRenderData, PaliWordTemplates, get_family_compounds_for_pali_word, get_family_set_for_pali_word, render_example_templ, render_family_compound_templ, render_family_root_templ, render_family_set_templ, render_family_word_templ, render_feedback_templ, render_frequency_templ, render_grammar_templ, render_inflection_templ
+from simsapa.dpd_db.exporter.export_dpd import DpdHeadwordsDbParts, DpdHeadwordsDbRowItems, DpdHeadwordsRenderData, render_example_templ, render_family_compound_templ, render_family_idioms_templ, render_family_root_templ, render_family_set_templ, render_family_word_templ, render_feedback_templ, render_frequency_templ, render_grammar_templ, render_inflection_templ
 from simsapa.dpd_db.exporter.export_roots import render_root_buttons_templ, render_root_definition_templ, render_root_families_templ, render_root_info_templ, render_root_matrix_templ
-from simsapa.dpd_db.exporter.helpers import EXCLUDE_FROM_FREQ, TODAY
 
-from simsapa.dpd_db.tools.meaning_construction import make_meaning_html, summarize_construction
+from simsapa.dpd_db.tools.exporter_functions import get_family_compounds, get_family_idioms, get_family_set
+
+from simsapa.dpd_db.tools.meaning_construction import degree_of_completion, make_meaning_html, summarize_construction
 from simsapa.dpd_db.tools.niggahitas import add_niggahitas
-from simsapa.dpd_db.tools.pos import CONJUGATIONS, DECLENSIONS
+# from simsapa.dpd_db.tools.pos import CONJUGATIONS, DECLENSIONS, EXCLUDE_FROM_FREQ
 from simsapa.dpd_db.tools.utils import RenderResult
-from simsapa.dpd_db.tools.paths import ProjectPaths
-from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 
-from simsapa import DPD_DB_PATH, DbSchemaName, DetailsTab, logger
+from simsapa import DetailsTab, TODAY
 
-DPD_PROJECT_PATHS = ProjectPaths()
-DPD_PALI_WORD_TEMPLATES = PaliWordTemplates(DPD_PROJECT_PATHS)
-
-DPD_CF_SET: Optional[Set[str]] = None
-DPD_ROOTS_COUNT_DICT: Optional[Dict[str, int]] = None
-DPD_SANDHI_CONTRACTIONS: Optional[SandhiContractions] = None
-
-def get_dpd_caches() -> Tuple[Set[str], Dict[str, int], SandhiContractions]:
-    logger.info("get_dpd_caches()")
-
-    db_eng, db_conn, db_session = get_db_session_with_schema(DPD_DB_PATH, DbSchemaName.Dpd)
-
-    dpd_cf_set: Set[str] = set()
-    dpd_sandhi_contractions: SandhiContractions = dict()
-
-    # === cf_set ===
-
-    r = db_session.query(Dpd.DbInfo) \
-                  .filter(Dpd.DbInfo.key == "cf_set") \
-                  .first()
-
-    assert(r is not None)
-
-    dpd_cf_set = set(json.loads(str(r.value)))
-
-    # === roots_count_dict ===
-
-    r = db_session.query(Dpd.DbInfo) \
-                  .filter(Dpd.DbInfo.key == "roots_count_dict") \
-                  .first()
-
-    assert(r is not None)
-
-    dpd_roots_count_dict = json.loads(str(r.value))
-
-    # === sandhi_contractions ===
-
-    r = db_session.query(Dpd.DbInfo) \
-                  .filter(Dpd.DbInfo.key == "sandhi_contractions") \
-                  .first()
-
-    assert(r is not None)
-
-    data = json.loads(str(r.value))
-    dpd_sandhi_contractions: SandhiContractions = dict()
-    for k, v in data.items():
-        dpd_sandhi_contractions[k] = {
-            'contractions': set(v['contractions']),
-            'ids': v['ids'],
-        }
-
-    db_conn.close()
-    db_session.close()
-    db_eng.dispose()
-
-    return (dpd_cf_set, dpd_roots_count_dict, dpd_sandhi_contractions)
-
-def _get_render_data() -> PaliWordRenderData:
-    global DPD_CF_SET
-    global DPD_ROOTS_COUNT_DICT
-    global DPD_SANDHI_CONTRACTIONS
-    if DPD_CF_SET is None or DPD_ROOTS_COUNT_DICT is None or DPD_SANDHI_CONTRACTIONS is None:
-        DPD_CF_SET, DPD_ROOTS_COUNT_DICT, DPD_SANDHI_CONTRACTIONS = get_dpd_caches()
-
-    render_data = PaliWordRenderData(
-        pth = DPD_PROJECT_PATHS,
-        word_templates = DPD_PALI_WORD_TEMPLATES,
-        sandhi_contractions = DPD_SANDHI_CONTRACTIONS,
-        cf_set = DPD_CF_SET,
-        roots_count_dict = DPD_ROOTS_COUNT_DICT,
-        make_link = True,
-    )
-
-    return render_data
-
-def make_meaning_plaintext(i: PaliWord) -> str:
+def make_meaning_plaintext(i: DpdHeadwords) -> str:
     """Compile plaintext of meaning_1 and literal meaning, or return meaning_2."""
 
     if i.meaning_1:
@@ -110,7 +31,7 @@ def make_meaning_plaintext(i: PaliWord) -> str:
     else:
         return i.meaning_2
 
-def render_dpd_definition_plaintext_templ(i: PaliWord, dpd_definition_templ: Template) -> str:
+def render_dpd_definition_plaintext_templ(i: DpdHeadwords, dpd_definition_templ: Template) -> str:
     plus_case: str = ""
     if i.plus_case is not None and i.plus_case:
         plus_case: str = i.plus_case
@@ -127,7 +48,7 @@ def render_dpd_definition_plaintext_templ(i: PaliWord, dpd_definition_templ: Tem
             summary=summary,
             complete=""))
 
-def render_grammar_plaintext_templ(i: PaliWord, grammar_templ: Template) -> str:
+def render_grammar_plaintext_templ(i: DpdHeadwords, grammar_templ: Template) -> str:
     """plaintext grammatical information"""
 
     if i.meaning_1 is not None and i.meaning_1:
@@ -152,7 +73,7 @@ def render_grammar_plaintext_templ(i: PaliWord, grammar_templ: Template) -> str:
     else:
         return ""
 
-def pali_word_index_plaintext(pali_word: PaliWord) -> str:
+def pali_word_index_plaintext(pali_word: DpdHeadwords) -> str:
     db_session = object_session(pali_word)
     assert(db_session is not None)
 
@@ -170,12 +91,12 @@ def pali_word_index_plaintext(pali_word: PaliWord) -> str:
 
     return plaintext
 
-def pali_root_index_plaintext(pali_root: PaliRoot) -> str:
-    rd = _get_render_data()
+def pali_root_index_plaintext(pali_root: DpdRoots) -> str:
+    rd = get_render_data()
 
     plaintext = ""
 
-    definition = strip_html(render_root_definition_templ(rd['pth'], pali_root, rd['roots_count_dict'], plaintext=True))
+    definition = strip_html(render_root_definition_templ(rd['pth'], pali_root, rd['roots_count_dict'], False, plaintext=True))
 
     plaintext += definition.replace("\n", " ")
 
@@ -187,189 +108,225 @@ def pali_root_index_plaintext(pali_root: PaliRoot) -> str:
 
     return plaintext
 
-def pali_word_dpd_html(pali_word: PaliWord, open_details: List[DetailsTab] = []) -> RenderResult:
+def pali_word_dpd_html(pali_word: DpdHeadwords, open_details: List[DetailsTab] = []) -> RenderResult:
     db_session = object_session(pali_word)
     assert(db_session is not None)
 
     dpd_db = db_session.query(
-        PaliWord, DerivedData, FamilyRoot, FamilyWord
+        DpdHeadwords, FamilyRoot, FamilyWord, SBS, Russian
     ).outerjoin(
-        DerivedData,
-        PaliWord.id == DerivedData.id
+        SBS,
+        DpdHeadwords.id == SBS.id
+    ).outerjoin(
+        Russian,
+        DpdHeadwords.id == Russian.id
     ).outerjoin(
         FamilyRoot,
-        PaliWord.root_family_key == FamilyRoot.root_family_key
+        DpdHeadwords.root_family_key == FamilyRoot.root_family_key
     ).outerjoin(
         FamilyWord,
-        PaliWord.family_word == FamilyWord.word_family
+        DpdHeadwords.family_word == FamilyWord.word_family
     ) \
-                       .filter(PaliWord.id == pali_word.id) \
+                       .filter(DpdHeadwords.id == pali_word.id) \
                        .first()
 
     assert(dpd_db is not None)
 
-    def _add_parts(i: PaliWordDbRowItems) -> PaliWordDbParts:
-        pw: PaliWord
-        dd: DerivedData
+    def _add_parts(i: DpdHeadwordsDbRowItems) -> DpdHeadwordsDbParts:
+        pw: DpdHeadwords
         fr: FamilyRoot
         fw: FamilyWord
-        pw, dd, fr, fw = i
+        sbs: SBS
+        ru: Russian
+        pw, fr, fw, sbs, ru = i
 
-        return PaliWordDbParts(
+        return DpdHeadwordsDbParts(
             pali_word = pw,
             pali_root = pw.rt,
-            derived_data = dd,
+            sbs = sbs,
+            ru = ru,
             family_root = fr,
             family_word = fw,
-            family_compounds = get_family_compounds_for_pali_word(pw),
-            family_set = get_family_set_for_pali_word(pw),
+            family_compounds = get_family_compounds(pw),
+            family_idioms = get_family_idioms(pw),
+            family_set = get_family_set(pw),
         )
 
     db_parts = _add_parts(dpd_db._tuple())
 
-    render_res = render_pali_word_dpd_simsapa_html(db_parts, _get_render_data(), open_details)
+    render_res = render_pali_word_dpd_simsapa_html(db_parts, get_render_data(), open_details)
 
     return render_res
 
-def pali_root_dpd_html(pali_root: PaliRoot, open_details: List[DetailsTab] = []) -> RenderResult:
-    return render_pali_root_dpd_simsapa_html(pali_root, _get_render_data(), open_details)
+def pali_root_dpd_html(pali_root: DpdRoots, open_details: List[DetailsTab] = []) -> RenderResult:
+    return render_pali_root_dpd_simsapa_html(pali_root, get_render_data(), open_details)
 
 def render_button_box_simsapa_templ(
-        i: PaliWord,
-        cf_set: Set[str],
+        i: DpdHeadwords,
+        __sbs__: SBS,
+        __dps_data__: bool,
+        __cf_set__: Set[str],
+        __idioms_set__: Set[str],
         button_box_templ: Template,
         open_details: List[DetailsTab] = []
 ) -> str:
     """render buttons for each section of the dictionary"""
 
     button_html = """
-    <button class="ssp-button {active}" onclick="document.SSP.button_toggle_visible(this, '#{target}')">
+    <button class="ssp-button {active}"
+            onclick="document.SSP.button_toggle_visible(this, '#{target}')"
+    >
         <svg class="ssp-icon-button__icon"><use xlink:href="#{icon}"></use></svg>
         <span class="ssp-button-text">{name}</span>
     </button>
     """
 
+    # button_link_html = (
+    #     '<a class="button" '
+    #     'href="{href}" '
+    #     'style="text-decoration: none;">{name}</a>')
+
+    # NOTE: in Simsapa the grammar is rendered as part of the definition.
+    # # grammar_button
+    # if i.needs_grammar_button or dps_data:
+    #     grammar_button = button_html.format(
+    #         target=f"grammar_{i.lemma_1_}", name="grammar")
+    # else:
+    #     grammar_button = ""
+
     # example_button
-    if i.meaning_1 and i.example_1 and not i.example_2:
+    if i.needs_example_button:
         active = "active" if DetailsTab.Examples in open_details else ""
         example_button = button_html.format(
-            target=f"example_{i.pali_1_}", name="Example", icon="icon-card-text", active=active)
+            target=f"example_{i.lemma_1_}", name="Example", icon="icon-card-text", active=active)
     else:
         example_button = ""
 
     # examples_button
-    if i.meaning_1 and i.example_1 and i.example_2:
+    if i.needs_examples_button:
         active = "active" if DetailsTab.Examples in open_details else ""
         examples_button = button_html.format(
-            target=f"examples_{i.pali_1_}", name="Examples", icon="icon-card-text", active=active)
+            target=f"examples_{i.lemma_1_}", name="Examples", icon="icon-card-text", active=active)
     else:
         examples_button = ""
 
+    # # sbs_example_button
+    # sbs_example_button = ""
+    # if (
+    #     dps_data and
+    #     sbs and
+    #     (sbs.needs_sbs_example_button or sbs.needs_sbs_examples_button)
+    # ):
+    #     sbs_example_button = button_html.format(
+    #         target=f"sbs_example_{i.lemma_1_}", name="<b>SBS</b>")
+
     # conjugation_button
-    if i.pos in CONJUGATIONS:
+    if i.needs_conjugation_button:
         active = "active" if DetailsTab.Inflections in open_details else ""
         conjugation_button = button_html.format(
-            target=f"conjugation_{i.pali_1_}", name="Conjugation", icon="icon-table-bold", active=active)
+            target=f"conjugation_{i.lemma_1_}", name="Conjugation", icon="icon-table-bold", active=active)
     else:
         conjugation_button = ""
 
     # declension_button
-    if i.pos in DECLENSIONS:
+    if i.needs_declension_button:
         active = "active" if DetailsTab.Inflections in open_details else ""
         declension_button = button_html.format(
-            target=f"declension_{i.pali_1_}", name="Declensions", icon="icon-table-bold", active=active)
+            target=f"declension_{i.lemma_1_}", name="Declensions", icon="icon-table-bold", active=active)
     else:
         declension_button = ""
 
     # root_family_button
-    if i.family_root:
+    if i.needs_root_family_button:
         active = "active" if DetailsTab.RootFamily in open_details else ""
         root_family_button = button_html.format(
-            target=f"root_family_{i.pali_1_}", name="Root Family", icon="icon-list-bullets-bold", active=active)
+            target=f"root_family_{i.lemma_1_}", name="Root Family", icon="icon-list-bullets-bold", active=active)
     else:
         root_family_button = ""
 
     # word_family_button
-    if i.family_word:
+    if i.needs_word_family_button:
         active = "active" if DetailsTab.WordFamily in open_details else ""
         word_family_button = button_html.format(
-            target=f"word_family_{i.pali_1_}", name="Word Family", icon="icon-list-bullets-bold", active=active)
+            target=f"word_family_{i.lemma_1_}", name="Word Family", icon="icon-list-bullets-bold", active=active)
     else:
         word_family_button = ""
 
     # compound_family_button
-    if (
-        i.meaning_1 and
-        (
-            # sometimes there's an empty compound family, so
-            any(item in cf_set for item in i.family_compound_list) or
-            # add a button to the word itself
-            i.pali_clean in cf_set)
-    ):
-
+    if i.needs_compound_family_button:
         active = "active" if DetailsTab.CompoundFamily in open_details else ""
-        if i.family_compound is not None and " " not in i.family_compound:
-            compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="Compound Family", icon="icon-list-bullets-bold", active=active)
+        compound_family_button = button_html.format(
+            target=f"compound_family_{i.lemma_1_}", name="Compound Family", icon="icon-list-bullets-bold", active=active)
 
-        else:
-            compound_family_button = button_html.format(
-                target=f"compound_family_{i.pali_1_}", name="Compound Familes", icon="icon-list-bullets-bold", active=active)
+    elif i.needs_compound_families_button:
+        active = "active" if DetailsTab.CompoundFamily in open_details else ""
+        compound_family_button = button_html.format(
+            target=f"compound_families_{i.lemma_1_}", name="Compound familes", icon="icon-list-bullets-bold", active=active)
 
     else:
         compound_family_button = ""
 
-    # set_family_button
-    if (i.meaning_1 and
-            i.family_set):
+    # idioms button
+    if i.needs_idioms_button:
+        active = "active" if DetailsTab.IdiomFamily in open_details else ""
+        idioms_button = button_html.format(
+            target=f"idioms_{i.lemma_1_}", name="Idioms", icon="icon-list-bullets-bold", active=active)
+    else:
+        idioms_button = ""
 
-        if len(i.family_set_list) > 0:
-            active = "active" if DetailsTab.SetFamily in open_details else ""
-            set_family_button = button_html.format(
-                target=f"set_family_{i.pali_1_}", name="Set", icon="icon-list-bullets-bold", active=active)
-        else:
-            set_family_button = ""
+    # set_family_button
+    if i.needs_set_button:
+        active = "active" if DetailsTab.SetFamily in open_details else ""
+        set_family_button = button_html.format(
+            target=f"set_family_{i.lemma_1_}", name="Set", icon="icon-list-bullets-bold", active=active)
+
+    elif i.needs_sets_button:
+        active = "active" if DetailsTab.SetFamily in open_details else ""
+        set_family_button = button_html.format(
+            target=f"set_families_{i.lemma_1_}", name="Sets", icon="icon-list-bullets-bold", active=active)
+
     else:
         set_family_button = ""
 
     # frequency_button
-    if i.pos not in EXCLUDE_FROM_FREQ:
+    if i.needs_frequency_button:
         active = "active" if DetailsTab.FrequencyMap in open_details else ""
         frequency_button = button_html.format(
-            target=f"frequency_{i.pali_1_}", name="Frequency", icon="icon-table-bold", active=active)
+            target=f"frequency_{i.lemma_1_}", name="Frequency", icon="icon-table-bold", active=active)
     else:
         frequency_button = ""
 
     # feedback_button
     active = "active" if DetailsTab.Feedback in open_details else ""
     feedback_button = button_html.format(
-        target=f"feedback_{i.pali_1_}", name="Feedback", icon="icon-send-email", active=active)
+        target=f"feedback_{i.lemma_1_}", name="Feedback", icon="icon-send-email", active=active)
 
     return str(
         button_box_templ.render(
-            div_id=f"button_box_{i.pali_1_}",
+            div_id=f"button_box_{i.lemma_1_}",
+            grammar_button="",
             example_button=example_button,
             examples_button=examples_button,
+            sbs_example_button="",
             conjugation_button=conjugation_button,
             declension_button=declension_button,
             root_family_button=root_family_button,
             word_family_button=word_family_button,
             compound_family_button=compound_family_button,
+            idioms_button=idioms_button,
             set_family_button=set_family_button,
             frequency_button=frequency_button,
             feedback_button=feedback_button))
 
-def degree_of_completion_simsapa(i):
-    """Return html styled symbol of a word data degree of completion."""
-    if i.meaning_1:
-        if i.source_1:
-            return """<span class="gray" title="This word has been reviewed and confirmed.">✓</span>"""
-        else:
-            return """<span class="gray" title="This word has been reviewed but not yet confirmed.">~</span>"""
-    else:
-        return """<span class="gray" title="This word has been added but the details are preliminary.">✗</span>"""
-
-def render_dpd_definition_simsapa_templ(i: PaliWord, dpd_definition_templ: Template) -> str:
+def render_dpd_definition_simsapa_templ(
+        i: DpdHeadwords,
+        dpd_definition_templ: Template,
+        make_link: bool,
+        show_id: bool,
+        show_ebt_count: bool,
+        dps_data: bool,
+        sbs: SBS|None,
+) -> str:
     """render the definition of a word's most relevant information:
     1. pos
     2. case
@@ -387,28 +344,48 @@ def render_dpd_definition_simsapa_templ(i: PaliWord, dpd_definition_templ: Templ
 
     meaning = make_meaning_html(i)
     summary = summarize_construction(i)
-    complete = degree_of_completion_simsapa(i)
+    complete = degree_of_completion(i)
+
+    # id
+    id: int = i.id
+
+    # ebt_count
+    ebt_count: int = i.ebt_count
 
     return str(
         dpd_definition_templ.render(
             i=i,
+            sbs=sbs,
+            make_link=make_link,
             pos=pos,
             plus_case=plus_case,
             meaning=meaning,
             summary=summary,
-            complete=complete))
+            complete=complete,
+            id=id,
+            show_id=show_id,
+            show_ebt_count=show_ebt_count,
+            dps_data=dps_data,
+            ebt_count=ebt_count,
+            )
+        )
 
-def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
-                                      render_data: PaliWordRenderData,
+
+def render_pali_word_dpd_simsapa_html(db_parts: DpdHeadwordsDbParts,
+                                      render_data: DpdHeadwordsRenderData,
                                       open_details: List[DetailsTab] = []) -> RenderResult:
+    extended_synonyms = True
+    dps_data = False
     rd = render_data
 
-    i: PaliWord = db_parts["pali_word"]
-    rt: PaliRoot = db_parts["pali_root"]
-    dd: DerivedData = db_parts["derived_data"]
+    i: DpdHeadwords = db_parts["pali_word"]
+    rt: DpdRoots = db_parts["pali_root"]
+    sbs: SBS = db_parts["sbs"]
+    ru: Russian = db_parts["ru"]
     fr: FamilyRoot = db_parts["family_root"]
     fw: FamilyWord = db_parts["family_word"]
     fc: List[FamilyCompound] = db_parts["family_compounds"]
+    fi: List[FamilyIdiom] = db_parts["family_idioms"]
     fs: List[FamilySet] = db_parts["family_set"]
 
     tt = rd['word_templates']
@@ -436,14 +413,34 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
         i.example_1 = i.example_1.replace("\n", "<br>")
     if i.example_2:
         i.example_2 = i.example_2.replace("\n", "<br>")
+    if dps_data and sbs:
+        if sbs.sbs_sutta_1:
+            sbs.sbs_sutta_1 = sbs.sbs_sutta_1.replace("\n", "<br>")
+        if sbs.sbs_sutta_2:
+            sbs.sbs_sutta_2 = sbs.sbs_sutta_2.replace("\n", "<br>")
+        if sbs.sbs_sutta_3:
+            sbs.sbs_sutta_3 = sbs.sbs_sutta_3.replace("\n", "<br>")
+        if sbs.sbs_sutta_4:
+            sbs.sbs_sutta_4 = sbs.sbs_sutta_4.replace("\n", "<br>")
+        if sbs.sbs_example_1:
+            sbs.sbs_example_1 = sbs.sbs_example_1.replace("\n", "<br>")
+        if sbs.sbs_example_2:
+            sbs.sbs_example_2 = sbs.sbs_example_2.replace("\n", "<br>")
+        if sbs.sbs_example_3:
+            sbs.sbs_example_3 = sbs.sbs_example_3.replace("\n", "<br>")
+        if sbs.sbs_example_4:
+            sbs.sbs_example_4 = sbs.sbs_example_4.replace("\n", "<br>")
 
-    html = ""
+    html: str = ""
+    # header = render_header_templ(pth, tt.dpd_css, tt.button_js, tt.header_templ)
+    # html += header
+    # size_dict["dpd_header"] += len(header)
 
-    summary = render_dpd_definition_simsapa_templ(i, tt.dpd_definition_templ)
+    summary = render_dpd_definition_simsapa_templ(i, tt.dpd_definition_templ, rd['make_link'], rd["show_id"], rd['show_ebt_count'], rd['dps_data'], sbs)
     html += summary
 
-    # In Simsapa, show the grammar info without needing button clicks.
-    grammar = render_grammar_templ(pth, i, rt, tt.grammar_simsapa_templ)
+    # NOTE: In Simsapa, show the grammar info without needing button clicks.
+    grammar = render_grammar_templ(pth, i, rt, sbs, ru, rd['dps_data'], tt.grammar_simsapa_templ)
     html += grammar
 
     if len(open_details) > 0:
@@ -459,7 +456,7 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
             <button
                 title="Show details"
                 class="ssp-button ssp-icon-button {more_info_active}"
-                onclick="document.SSP.button_toggle_visible(this, '#word_details_{i.pali_1_}')"
+                onclick="document.SSP.button_toggle_visible(this, '#word_details_{i.lemma_1_}')"
             >
                 <svg class="ssp-icon-button__icon"><use xlink:href="#icon-more-filled"></use></svg>
             </button>
@@ -469,34 +466,70 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
 
     html += more_info_button
 
-    html += f"<div id='word_details_{i.pali_1_}' class='{details_classes}'>"
+    html += f"<div id='word_details_{i.lemma_1_}' class='{details_classes}'>"
 
-    button_box = render_button_box_simsapa_templ(i, rd['cf_set'], tt.button_box_simsapa_templ, open_details)
+    button_box = render_button_box_simsapa_templ(
+        i, sbs, rd['dps_data'], rd['cf_set'], rd['idioms_set'], tt.button_box_simsapa_templ, open_details)
     html += button_box
+    # size_dict["dpd_button_box"] += len(button_box)
 
-    example = render_example_templ(pth, i, rd['make_link'], tt.example_templ, open_details)
-    html += example
+    # NOTE: In Simsapa the grammar is rendered as part of the definition.
+    # if i.needs_grammar_button or dps_data:
+    #     grammar = render_grammar_templ(pth, i, rt, sbs, ru, rd['dps_data'], tt.grammar_templ)
+    #     html += grammar
+    #     # size_dict["dpd_grammar"] += len(grammar)
 
-    inflection_table = render_inflection_templ(pth, i, dd, tt.inflection_templ, open_details)
-    html += inflection_table
+    if i.needs_example_button or i.needs_examples_button:
+        example = render_example_templ(pth, i, rd['make_link'], tt.example_templ, open_details)
+        html += example
+        # size_dict["dpd_example"] += len(example)
 
-    family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ, open_details)
-    html += family_root
+    if i.needs_conjugation_button or i.needs_declension_button:
+        inflection_table = render_inflection_templ(pth, i, tt.inflection_templ, open_details)
+        html += inflection_table
+        # size_dict["dpd_inflection_table"] += len(inflection_table)
 
-    family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ, open_details)
-    html += family_word
+    if i.needs_root_family_button:
+        family_root = render_family_root_templ(pth, i, fr, tt.family_root_templ, open_details)
+        html += family_root
+        # size_dict["dpd_family_root"] += len(family_root)
 
-    family_compound = render_family_compound_templ(pth, i, fc, rd['cf_set'], tt.family_compound_templ, open_details)
-    html += family_compound
+    if i.needs_word_family_button:
+        family_word = render_family_word_templ(pth, i, fw, tt.family_word_templ, open_details)
+        html += family_word
+        # size_dict["dpd_family_word"] += len(family_word)
 
-    family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ, open_details)
-    html += family_sets
+    if i.needs_compound_family_button or i.needs_compound_families_button:
+        family_compound = render_family_compound_templ(
+            pth, i, fc, rd['cf_set'], tt.family_compound_templ, open_details)
+        html += family_compound
+        # size_dict["dpd_family_compound"] += len(family_compound)
 
-    frequency = render_frequency_templ(pth, i, dd, tt.frequency_templ, open_details)
-    html += frequency
+    if i.needs_idioms_button:
+        family_idiom = render_family_idioms_templ(
+            pth, i, fi, rd['idioms_set'], tt.family_idiom_templ, open_details)
+        html += family_idiom
+        # size_dict["dpd_family_idiom"] += len(family_idiom)
 
-    feedback = render_feedback_templ(pth, i, tt.feedback_templ, open_details)
-    html += feedback
+    if i.needs_set_button or i.needs_sets_button:
+        family_sets = render_family_set_templ(pth, i, fs, tt.family_set_templ, open_details)
+        html += family_sets
+        # size_dict["dpd_family_sets"] += len(family_sets)
+
+    if i.needs_frequency_button:
+        frequency = render_frequency_templ(pth, i, tt.frequency_templ, open_details)
+        html += frequency
+        # size_dict["dpd_frequency"] += len(frequency)
+
+    # if dps_data and sbs:
+    #     sbs_example = render_sbs_example_templ(pth, i, sbs, rd['make_link'], tt.sbs_example_templ)
+    #     html += sbs_example
+    #     size_dict["sbs_example"] += len(sbs_example)
+
+    if not dps_data:
+        feedback = render_feedback_templ(pth, i, tt.feedback_templ, open_details)
+        html += feedback
+        # size_dict["dpd_feedback"] += len(feedback)
 
     html += "</div>"
 
@@ -505,20 +538,32 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
     # https://docs.google.com/forms/d/e/1FAIpQLSf9boBe7k5tCwq7LdWgBHHGIPVc4ROO5yjVDo1X5LDAxkmGWQ/viewform?usp=pp_url&entry.438735500=${i.pali_link}&entry.1433863141=GoldenDict+${today}
     html = html.replace("&entry.1433863141=GoldenDict+", "&entry.1433863141=Simsapa+")
 
-    synonyms: List[str] = dd.inflections_list
+    synonyms: List[str] = i.inflections_list
     synonyms = add_niggahitas(synonyms)
     for synonym in synonyms:
         if synonym in sandhi_contractions:
             contractions = sandhi_contractions[synonym]["contractions"]
-            synonyms.extend(contractions)
-    synonyms += dd.sinhala_list
-    synonyms += dd.devanagari_list
-    synonyms += dd.thai_list
+            for contraction in contractions:
+                if "'" in contraction:
+                    synonyms.append(contraction)
+    if not dps_data:
+        synonyms += i.inflections_sinhala_list
+        synonyms += i.inflections_devanagari_list
+        synonyms += i.inflections_thai_list
     synonyms += i.family_set_list
     synonyms += [str(i.id)]
 
+
+    if extended_synonyms:
+        # Split i.lemma_clean only if it contains a space
+        if ' ' in i.lemma_clean:
+            words = i.lemma_clean.split(' ')
+            synonyms.extend(words)
+
+    # size_dict["dpd_synonyms"] += len(str(synonyms))
+
     res = RenderResult(
-        word = i.pali_1,
+        word = i.lemma_1,
         definition_html = html,
         definition_plain = "",
         synonyms = synonyms,
@@ -526,10 +571,10 @@ def render_pali_word_dpd_simsapa_html(db_parts: PaliWordDbParts,
 
     return res
 
-def render_pali_root_dpd_simsapa_html(r: PaliRoot,
-                                      render_data: PaliWordRenderData,
+def render_pali_root_dpd_simsapa_html(r: DpdRoots,
+                                      render_data: DpdHeadwordsRenderData,
                                       open_details: List[DetailsTab] = []) -> RenderResult:
-    # Compare with
+    # NOTE: Compare with
     # exporter/export_roots.py::generate_root_html()
 
     db_session = object_session(r)

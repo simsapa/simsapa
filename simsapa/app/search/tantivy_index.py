@@ -18,7 +18,7 @@ from simsapa.app.types import SearchArea, SearchParams
 from simsapa.app.dpd_render import pali_root_index_plaintext, pali_word_index_plaintext
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.DpdHeadwords, Dpd.DpdRoots]
 
 # A Score(f32) or an Order(u64)
 TantivyFruit = Union[float, int]
@@ -647,13 +647,13 @@ class TantivySearchIndexes:
 
             if lang == "en":
                 words: List[UDictWord] = self.db_session \
-                    .query(Dpd.PaliWord) \
+                    .query(Dpd.DpdHeadwords) \
                     .all()
 
                 self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
 
                 words: List[UDictWord] = self.db_session \
-                    .query(Dpd.PaliRoot) \
+                    .query(Dpd.DpdRoots) \
                     .all()
 
                 self.index_dict_words(ix, DbSchemaName.Dpd.value, words)
@@ -796,7 +796,7 @@ class TantivySearchIndexes:
             writer.commit()
 
         except Exception as e:
-            logger.error(f"Can't index: {e}")
+            logger.error(f"Can't index sutta: {e}")
 
     def index_suttas_lang(self, db_schema_name: str, lang: str, suttas: List[USutta]):
         logger.info(f"index_suttas_lang() lang: {lang} len: {len(suttas)}")
@@ -819,9 +819,9 @@ class TantivySearchIndexes:
                     logger.info(f"Indexing {percent:.2f}% {idx}/{total}: {i.uid}")
 
                 if i.source_uid == "dpd":
-                    if isinstance(i, Dpd.PaliWord):
+                    if isinstance(i, Dpd.DpdHeadwords):
                         text = pali_word_index_plaintext(i)
-                    elif isinstance(i, Dpd.PaliRoot):
+                    elif isinstance(i, Dpd.DpdRoots):
                         text = pali_root_index_plaintext(i)
                     else:
                         raise Exception(f"Unrecognized word type: {i}")
@@ -882,7 +882,7 @@ class TantivySearchIndexes:
             writer.commit()
 
         except Exception as e:
-            logger.error(f"Can't index: {e}")
+            logger.error(f"Can't index dict word: {e}")
 
 def sanitize_user_input(query_text: str) -> str:
     # In the user input terms for source_uid are easier to type as 'source:'

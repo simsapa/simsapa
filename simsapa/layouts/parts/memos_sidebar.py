@@ -177,7 +177,7 @@ QListView::item:selected { background-color: %s; color: %s; }
 
         elif schema == DbSchemaName.Dpd.value:
 
-            if isinstance(word, Dpd.PaliWord):
+            if isinstance(word, Dpd.DpdHeadwords):
                 res = self._app_data.db_session \
                                     .query(Um.MemoAssociation) \
                                     .filter(
@@ -186,8 +186,8 @@ QListView::item:selected { background-color: %s; color: %s; }
                                     .all()
                 um_assoc.extend(res)
 
-            elif isinstance(word, Dpd.PaliRoot):
-                logger.warn("FIXME memos for PaliRoot")
+            elif isinstance(word, Dpd.DpdRoots):
+                logger.warn("FIXME memos for DpdRoots")
                 return []
 
             else:

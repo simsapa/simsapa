@@ -13,20 +13,23 @@ from export_dpd import render_header_templ
 from tools.niggahitas import add_niggahitas
 from tools.paths import ProjectPaths
 from tools.utils import RenderResult, RenderedSizes, default_rendered_sizes, sum_rendered_sizes
+# from dps.tools.paths_dps import DPSPaths
 
 def generate_variant_spelling_html(pth: ProjectPaths) -> Tuple[List[RenderResult], RenderedSizes]:
     """Generate html for variant readings and spelling corrections."""
+
+    
     print("[green]generating variants html")
 
     rendered_sizes = []
 
     header_templ = Template(filename=str(pth.header_templ_path))
-
     variant_dict = test_and_make_variant_dict(pth)
+    spelling_dict = test_and_make_spelling_dict(pth)
+
     variant_data_list, sizes = generate_variant_data_list(pth, variant_dict, header_templ)
     rendered_sizes.append(sizes)
 
-    spelling_dict = test_and_make_spelling_dict(pth)
     spelling_data_list, sizes = generate_spelling_data_list(pth, spelling_dict, header_templ)
     rendered_sizes.append(sizes)
 
@@ -65,7 +68,8 @@ def test_and_make_variant_dict(pth: ProjectPaths) -> dict:
 def generate_variant_data_list(
         pth: ProjectPaths,
         variant_dict: dict,
-        header_templ:Template) -> Tuple[List[RenderResult], RenderedSizes]:
+        header_templ:Template,
+) -> Tuple[List[RenderResult], RenderedSizes]:
 
     size_dict = default_rendered_sizes()
 
@@ -145,7 +149,8 @@ def test_and_make_spelling_dict(pth: ProjectPaths) -> dict:
 def generate_spelling_data_list(
         pth: ProjectPaths,
         spelling_dict: dict,
-        header_templ:Template) -> Tuple[List[RenderResult], RenderedSizes]:
+        header_templ:Template,
+) -> Tuple[List[RenderResult], RenderedSizes]:
 
     size_dict = default_rendered_sizes()
 

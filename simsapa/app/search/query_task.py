@@ -410,13 +410,13 @@ class SearchQueryTask:
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
         if uid.endswith("/dpd"):
-            word = db_session.query(Dpd.PaliWord) \
-                            .filter(Dpd.PaliWord.uid == uid) \
+            word = db_session.query(Dpd.DpdHeadwords) \
+                            .filter(Dpd.DpdHeadwords.uid == uid) \
                             .first()
 
             if word is None:
-                word = db_session.query(Dpd.PaliRoot) \
-                                .filter(Dpd.PaliRoot.uid == uid) \
+                word = db_session.query(Dpd.DpdRoots) \
+                                .filter(Dpd.DpdRoots.uid == uid) \
                                 .first()
 
         else:
@@ -453,8 +453,8 @@ class SearchQueryTask:
 
         db_eng, db_conn, db_session = get_db_engine_connection_session()
 
-        dpd_word = db_session.query(Dpd.PaliWord) \
-                             .filter(Dpd.PaliWord.id == dpd_id) \
+        dpd_word = db_session.query(Dpd.DpdHeadwords) \
+                             .filter(Dpd.DpdHeadwords.id == dpd_id) \
                              .first()
 
         res_page = []

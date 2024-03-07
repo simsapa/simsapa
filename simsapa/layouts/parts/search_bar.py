@@ -632,18 +632,18 @@ QWidget:focus { border: 1px solid #1092C3; }
                     res.append(r)
 
             elif i['schema_name'] == DbSchemaName.Dpd.value:
-                if i['table_name'] == "pali_words":
+                if i['table_name'] == "dpd_headwords":
                     r = self._app_data.db_session \
-                        .query(Dpd.PaliWord) \
-                        .filter(Dpd.PaliWord.uid == i['uid']) \
+                        .query(Dpd.DpdHeadwords) \
+                        .filter(Dpd.DpdHeadwords.uid == i['uid']) \
                         .first()
                     if r is not None:
                         res.append(r)
 
-                elif i['table_name'] == "pali_roots":
+                elif i['table_name'] == "dpd_roots":
                     r = self._app_data.db_session \
-                        .query(Dpd.PaliRoot) \
-                        .filter(Dpd.PaliRoot.uid == i['uid']) \
+                        .query(Dpd.DpdRoots) \
+                        .filter(Dpd.DpdRoots.uid == i['uid']) \
                         .first()
                     if r is not None:
                         res.append(r)

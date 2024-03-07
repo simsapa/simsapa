@@ -588,14 +588,14 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         results.extend(res)
 
         res = self._app_data.db_session \
-            .query(Dpd.PaliWord) \
-            .filter(Dpd.PaliWord.uid == uid) \
+            .query(Dpd.DpdHeadwords) \
+            .filter(Dpd.DpdHeadwords.uid == uid) \
             .all()
         results.extend(res)
 
         res = self._app_data.db_session \
-            .query(Dpd.PaliRoot) \
-            .filter(Dpd.PaliRoot.uid == uid) \
+            .query(Dpd.DpdRoots) \
+            .filter(Dpd.DpdRoots.uid == uid) \
             .all()
         results.extend(res)
 

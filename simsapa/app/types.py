@@ -7,7 +7,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 
 USutta = Union[Am.Sutta, Um.Sutta]
-UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.PaliWord, Dpd.PaliRoot]
+UDictWord = Union[Am.DictWord, Um.DictWord, Dpd.DpdHeadwords, Dpd.DpdRoots]
 ULink = Union[Am.Link, Um.Link]
 
 UDeck = Union[Am.Deck, Um.Deck]

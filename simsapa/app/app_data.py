@@ -23,7 +23,7 @@ from simsapa import COURSES_DIR, DbSchemaName, get_is_gui, logger, APP_DB_PATH, 
 from simsapa.app.actions_manager import ActionsManager
 from simsapa.app.completion_lists import WordSublists
 from simsapa.app.db_session import get_db_session_with_schema
-from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES, DPD_PROJECT_PATHS, get_dpd_caches
+from simsapa.app.dpd_render import DPD_PALI_WORD_TEMPLATES
 from simsapa.app.helpers import bilara_text_to_segments
 from simsapa.app.search.tantivy_index import TantivySearchIndexes
 
@@ -31,6 +31,8 @@ from simsapa.app.types import SearchArea, USutta, UDictWord, UBookmark
 
 from simsapa.app.db import appdata_models as Am
 from simsapa.app.db import userdata_models as Um
+from simsapa.app.db.dpd_models import DPD_PROJECT_PATHS, get_dpd_caches
+
 from simsapa.dpd_db.tools.sandhi_contraction import SandhiContractions
 from simsapa.layouts.gui_queries import GuiSearchQueries
 
@@ -103,7 +105,7 @@ class AppData:
                                          self.api_url)
 
 
-        self.dpd_cf_set, self.dpd_roots_count_dict, self.dpd_sandhi_contractions = get_dpd_caches()
+        self.dpd_cf_set, self.dpd_idioms_set, self.dpd_roots_count_dict, self.dpd_sandhi_contractions = get_dpd_caches()
 
         self._init_completion_cache()
 

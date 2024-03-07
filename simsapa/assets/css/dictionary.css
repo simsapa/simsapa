@@ -562,6 +562,11 @@ div.btn a, span.btn a {
   font-style: italic;
   padding: 0px 0px 7px 0px;
 }
+.pali-word p.sutta_sbs {
+  color: #ab7b38;
+  font-style: italic;
+  padding: 0px 0px 7px 0px;
+}
 .pali-word table.inflection {
   width: 100%;
   padding: 0 0 5px 0px;

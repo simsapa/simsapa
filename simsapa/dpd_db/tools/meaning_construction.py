@@ -5,9 +5,9 @@
 4. Creating an HTML styled symbol of a word data's degree of complettion."""
 
 import re
-from simsapa.app.db.dpd_models import PaliWord
+from simsapa.app.db.dpd_models import DpdHeadwords
 
-def make_meaning(i: PaliWord) -> str:
+def make_meaning(i: DpdHeadwords) -> str:
     """Compile meaning_1 and literal meaning, or return meaning_2."""
     if i.meaning_1:
         meaning: str = i.meaning_1
@@ -19,7 +19,7 @@ def make_meaning(i: PaliWord) -> str:
     else:
         return ""
 
-def make_meaning_html(i: PaliWord) -> str:
+def make_meaning_html(i: DpdHeadwords) -> str:
     """Compile html of meaning_1 and literal meaning, or return meaning_2.
     Meaning_1 in <b>bold</b>"""
 
@@ -32,13 +32,15 @@ def make_meaning_html(i: PaliWord) -> str:
         # add bold to meaning_2, keep lit. plain
         if "; lit." in i.meaning_2:
             return re.sub("(.+)(; lit.+)", "<b>\\1</b>\\2", i.meaning_2)
+        elif i.meaning_lit:
+            return f"<b>{i.meaning_2}</b>; lit. {i.meaning_lit}"
         else:
             return f"<b>{i.meaning_2}</b>"
 
 
-def make_grammar_line(i: PaliWord) -> str:
+def make_grammar_line(i: DpdHeadwords) -> str:
     """Compile grammar line"""
-
+    
     grammar = i.grammar
     if i.neg:
         grammar += f", {i.neg}"
@@ -50,8 +52,7 @@ def make_grammar_line(i: PaliWord) -> str:
         grammar += f" ({i.plus_case})"
     return grammar
 
-
-def summarize_construction(i: PaliWord) -> str:
+def summarize_construction(i: DpdHeadwords) -> str:
     """Create a summary of a word's construction,
     exlucing brackets and phonetic changes."""
     if "<b>" in i.construction:
@@ -133,8 +134,8 @@ def degree_of_completion(i):
     """Return html styled symbol of a word data degree of completion."""
     if i.meaning_1:
         if i.source_1:
-            return """<span class="gray">✓</span>"""
+            return """<span class="gray" title="This word has been reviewed and confirmed.">✓</span>"""
         else:
-            return """<span class="gray">~</span>"""
+            return """<span class="gray" title="This word has been reviewed but not yet confirmed.">~</span>"""
     else:
-        return """<span class="gray">✗</span>"""
+        return """<span class="gray" title="This word has been added but the details are preliminary.">✗</span>"""

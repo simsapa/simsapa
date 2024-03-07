@@ -13,11 +13,12 @@ from simsapa import DetailsTab
 
 from simsapa.dpd_db.exporter.export_dpd import render_header_templ
 
-from simsapa.dpd_db.exporter.helpers import TODAY
-from simsapa.app.db.dpd_models import PaliRoot, FamilyRoot
+from simsapa import TODAY
+from simsapa.app.db.dpd_models import DpdRoots, FamilyRoot
 from simsapa.dpd_db.tools.niggahitas import add_niggahitas
 from simsapa.dpd_db.tools.pali_sort_key import pali_sort_key
 from simsapa.dpd_db.tools.paths import ProjectPaths
+# from dps.tools.paths_dps import DPSPaths
 # from tools.tic_toc import bip, bop
 from simsapa.dpd_db.tools.utils import RenderResult, RenderedSizes, default_rendered_sizes
 
@@ -37,9 +38,12 @@ def bop():
     pass
 
 
-def generate_root_html(db_session: Session,
-                       pth: ProjectPaths,
-                       roots_count_dict: Dict[str, int]) -> Tuple[List[RenderResult], RenderedSizes]:
+def generate_root_html(
+                db_session: Session,
+                pth: ProjectPaths,
+                roots_count_dict: Dict[str, int],
+                dps_data=False,
+                ) -> Tuple[List[RenderResult], RenderedSizes]:
     """compile html componenents for each pali root"""
 
     print("[green]generating roots html")
@@ -57,10 +61,11 @@ def generate_root_html(db_session: Session,
     buttons_js = js_minify(buttons_js)
 
     header_templ = Template(filename=str(pth.header_templ_path))
+
     header = render_header_templ(
         pth, css=roots_css, js=buttons_js, header_templ=header_templ)
 
-    roots_db = db_session.query(PaliRoot).all()
+    roots_db = db_session.query(DpdRoots).all()
     root_db_length = len(roots_db)
 
     bip()
@@ -78,23 +83,29 @@ def generate_root_html(db_session: Session,
         html = header
         html += "<body>"
 
-        definition = render_root_definition_templ(pth, r, roots_count_dict)
+        definition = render_root_definition_templ(pth, r, roots_count_dict, dps_data)
+
         html += definition
         size_dict["root_definition"] += len(definition)
 
         root_buttons = render_root_buttons_templ(pth, r, db_session)
+
         html += root_buttons
         size_dict["root_buttons"] += len(root_buttons)
 
         root_info = render_root_info_templ(pth, r)
         html += root_info
+
+        html += root_info
         size_dict["root_info"] += len(root_info)
 
         root_matrix = render_root_matrix_templ(pth, r, roots_count_dict)
+
         html += root_matrix
         size_dict["root_matrix"] += len(root_matrix)
 
         root_families = render_root_families_templ(pth, r, db_session)
+
         html += root_families
         size_dict["root_families"] += len(root_families)
 
@@ -134,7 +145,12 @@ def generate_root_html(db_session: Session,
     return root_data_list, size_dict
 
 
-def render_root_definition_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dict: Dict[str, int], plaintext = False):
+def render_root_definition_templ(
+                        pth: ProjectPaths,
+                        r: DpdRoots,
+                        roots_count_dict: Dict[str, int],
+                        dps_data = False,
+                        plaintext = False):
     """render html of main root info"""
 
     if plaintext:
@@ -142,16 +158,17 @@ def render_root_definition_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dic
     else:
         root_definition_templ = Template(filename=str(pth.root_definition_plaintext_templ_path))
 
-    count = roots_count_dict[r.root]
+    count = roots_count_dict[r.root] if r.root in roots_count_dict.keys() else 0
 
     return str(
         root_definition_templ.render(
             r=r,
             count=count,
-            today=TODAY))
+            today=TODAY,
+            dps_data=dps_data))
 
 def render_root_buttons_templ(pth: ProjectPaths,
-                              r: PaliRoot,
+                              r: DpdRoots,
                               db_session: Session,
                               open_details: List[DetailsTab] = []):
     """render html of root buttons"""
@@ -174,7 +191,7 @@ def render_root_buttons_templ(pth: ProjectPaths,
             frs=frs))
 
 
-def render_root_info_templ(pth: ProjectPaths, r: PaliRoot, open_details: List[DetailsTab] = [], plaintext = False):
+def render_root_info_templ(pth: ProjectPaths, r: DpdRoots, open_details: List[DetailsTab] = [], plaintext = False):
     """render html of root grammatical info"""
 
     if plaintext:
@@ -191,12 +208,12 @@ def render_root_info_templ(pth: ProjectPaths, r: PaliRoot, open_details: List[De
             today=TODAY))
 
 
-def render_root_matrix_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dict):
+def render_root_matrix_templ(pth: ProjectPaths, r: DpdRoots, roots_count_dict):
     """render html of root matrix"""
 
     root_matrix_templ = Template(filename=str(pth.root_matrix_templ_path))
 
-    count = roots_count_dict[r.root]
+    count = roots_count_dict[r.root] if r.root in roots_count_dict.keys() else 0
 
     return str(
         root_matrix_templ.render(
@@ -205,7 +222,7 @@ def render_root_matrix_templ(pth: ProjectPaths, r: PaliRoot, roots_count_dict):
             today=TODAY))
 
 
-def render_root_families_templ(pth: ProjectPaths, r: PaliRoot, db_session: Session):
+def render_root_families_templ(pth: ProjectPaths, r: DpdRoots, db_session: Session):
     """render html of root families"""
 
     root_families_templ = Template(filename=str(pth.root_families_templ_path))

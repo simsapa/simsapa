@@ -136,14 +136,14 @@ def _get_word_by_uid(uid: str) -> Optional[UDictWord]:
     results.extend(res)
 
     res = db_session \
-        .query(Dpd.PaliWord) \
-        .filter(Dpd.PaliWord.uid == uid) \
+        .query(Dpd.DpdHeadwords) \
+        .filter(Dpd.DpdHeadwords.uid == uid) \
         .all()
     results.extend(res)
 
     res = db_session \
-        .query(Dpd.PaliRoot) \
-        .filter(Dpd.PaliRoot.uid == uid) \
+        .query(Dpd.DpdRoots) \
+        .filter(Dpd.DpdRoots.uid == uid) \
         .all()
     results.extend(res)
 
@@ -345,8 +345,8 @@ def route_dict_words_flat_completion_list():
     #
     # Instead, load the words and roots from the DPD, which yields a 1.6 MB list.
 
-    res = db_session.query(Dpd.PaliWord.pali_1).all()
-    res.extend(db_session.query(Dpd.PaliRoot.root_no_sign).all())
+    res = db_session.query(Dpd.DpdHeadwords.lemma_1).all()
+    res.extend(db_session.query(Dpd.DpdRoots.root_no_sign).all())
     results: List[str] = list(map(lambda x: x[0].strip() or 'none', res))
 
     results = sorted(results, key=lambda x: pali_sort_key(x))
@@ -563,13 +563,13 @@ def route_words_json(word = '', dict_label = ''):
                           .filter(Um.DictWord.uid == i['uid']).first()
 
         elif i['schema_name'] == DbSchemaName.Dpd.value:
-            if i['table_name'] == "pali_words":
-                r = db_session.query(Dpd.PaliWord) \
-                            .filter(Dpd.PaliWord.uid == i['uid']).first()
+            if i['table_name'] == "dpd_headwords":
+                r = db_session.query(Dpd.DpdHeadwords) \
+                            .filter(Dpd.DpdHeadwords.uid == i['uid']).first()
 
-            elif i['table_name'] == "pali_roots":
-                r = db_session.query(Dpd.PaliRoot) \
-                            .filter(Dpd.PaliRoot.uid == i['uid']).first()
+            elif i['table_name'] == "dpd_roots":
+                r = db_session.query(Dpd.DpdRoots) \
+                            .filter(Dpd.DpdRoots.uid == i['uid']).first()
 
             else:
                 continue
