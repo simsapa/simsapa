@@ -548,12 +548,12 @@ class AssetManagement(QMainWindow):
         self._run_remove_languages(selected_langs)
 
     def _run_remove_languages(self, remove_languages: List[str]):
-        # Remove languagae indexes on next startup. Windows doesn't allow
-        # removing the index files while it thinkgs the application is using
-        # them.
+        # NOTE: Remove database files and language indexes on next startup.
+        # Windows doesn't allow removing the index files while it thinkgs the
+        # application is using them.
 
         s = ",".join(remove_languages)
-        p = self.assets_dir.joinpath('indexes_to_remove.txt')
+        p = self.assets_dir.joinpath('sutta_languages_to_remove.txt')
         with open(p, 'w', encoding='utf-8') as f:
             f.write(s)
 

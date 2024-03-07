@@ -71,9 +71,12 @@ class AppData:
 
         self.actions_manager = actions_manager
 
-        # Remove indexes marked to be deleted in a previous session. Can't
-        # safely clear and remove them after the application has opened them.
-        self._remove_marked_indexes()
+        # NOTE: Remove database files and language indexes marked to be deleted
+        # in a previous session.
+        #
+        # Windows doesn't allow removing the index files while it thinkgs the
+        # application is using them.
+        self._remove_marked_sutta_languages()
 
         if app_db_path is None:
             self._app_db_path = self._find_app_data_or_exit()
@@ -178,8 +181,8 @@ class AppData:
     def get_search_indexes(self) -> Optional[TantivySearchIndexes]:
         return self.search_indexes
 
-    def _remove_marked_indexes(self):
-        p = ASSETS_DIR.joinpath('indexes_to_remove.txt')
+    def _remove_marked_sutta_languages(self):
+        p = ASSETS_DIR.joinpath('sutta_languages_to_remove.txt')
         if not p.exists():
             return
 
@@ -190,9 +193,16 @@ class AppData:
         if s == "":
             return
 
+        langs = s.split(',')
+
+        # Language databases:
+        # assets/suttas_lang_{en, pli, hu, it}.sqlite3
+        for lang in langs:
+            p = ASSETS_DIR.joinpath(f"suttas_lang_{lang}.sqlite3")
+            p.unlink(missing_ok=True)
+
         # Folder structure of indexes:
         # assets/index/suttas/{en, pli, hu, it}/meta.json
-        langs = s.split(',')
         for lang in langs:
             p = INDEX_DIR.joinpath('suttas').joinpath(lang)
             if p.exists():
