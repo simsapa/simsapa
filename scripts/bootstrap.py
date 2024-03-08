@@ -88,14 +88,20 @@ def import_user_data(app_data: AppData):
 def reindex():
     logger.info("=== reindex() ===")
 
-    db_eng, db_conn, db_session = get_db_engine_connection_session()
+    # NOTE: Have to index in a shell to make sure tantivy temp files are
+    # cleaned up before tar starts compressing.
+    #
+    # This avoids errors such as:
+    #
+    # tar: index/dict_words/pli/.tmp9BNL9g: File removed before we read it
+    # tar: index/dict_words/pli: file changed as we read it
 
-    search_indexes = TantivySearchIndexes(db_session, remove_if_exists=True)
-    search_indexes.index_all()
-
-    db_conn.close()
-    db_session.close()
-    db_eng.dispose()
+    cmd = """ ./run.py index reindex """
+    subprocess.run(cmd,
+                   shell=True,
+                   capture_output=True,
+                   cwd=Path(".")) \
+              .check_returncode()
 
 def index_suttas_lang(lang: str):
     logger.info(f"=== index_suttas_lang() {lang} ===")
@@ -140,7 +146,7 @@ def import_index_move_lang(app_data: AppData, lang: str, db_path: Path):
     n_suttas = app_data.import_suttas_to_userdata(str(db_path))
     logger.info(f"Imported {n_suttas} suttas.")
 
-    # NOTE: Have to index lang in a shell to make sure tantivy temp files are
+    # NOTE: Have to index in a shell to make sure tantivy temp files are
     # cleaned up before tar starts compressing.
 
     # When creating the index in this Python process, tar errors out:

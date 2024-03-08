@@ -481,7 +481,8 @@ class AssetManagement(QMainWindow):
                 urls.append(userdata_tar_url)
 
         if self.upgrade_dpd:
-            dpd_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/dpd.tar.bz2"
+            # https://github.com/digitalpalidictionary/digitalpalidictionary/releases/download/v0.1.20240224/dpd.db.tar.bz2
+            dpd_tar_url  = f"https://github.com/{github_repo}/releases/download/{version}/dpd.db.tar.bz2"
             urls.append(dpd_tar_url)
 
         # Languages

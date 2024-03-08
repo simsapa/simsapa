@@ -11,7 +11,6 @@ license = "GPLv3"
 # - simsapa.db_version (below)
 # - tool.briefcase.version (below)
 # - simsapa/__init__.py SIMSAPA_APP_VERSION
-# - simsapa/scripts/bootstrap.sh: release_info TOML version_tag
 # - simsapa/assets/releases_fallback.json
 
 [simsapa]
