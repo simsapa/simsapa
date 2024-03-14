@@ -432,28 +432,36 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
 
         from simsapa.layouts.send_to_kindle import SendToKindleWindow
 
-        def _open_send(html: str):
+        def _open_send(html: Optional[str]):
+            if html is None:
+                return
             w = SendToKindleWindow(self._app_data,
                                    tab_sutta = tab.sutta,
                                    tab_html = html,
                                    parent = self)
             w.show()
 
-        tab.qwe.page().toHtml(_open_send)
+        page = tab.qwe.page()
+        if page is not None:
+            page.toHtml(_open_send)
 
     def _show_send_to_remarkable(self):
         tab = self.s._get_active_tab()
 
         from simsapa.layouts.send_to_remarkable import SendToRemarkableWindow
 
-        def _open_send(html: str):
+        def _open_send(html: Optional[str]):
+            if html is None:
+                return
             w = SendToRemarkableWindow(self._app_data,
                                        tab_sutta = tab.sutta,
                                        tab_html = html,
                                        parent = self)
             w.show()
 
-        tab.qwe.page().toHtml(_open_send)
+        page = tab.qwe.page()
+        if page is not None:
+            page.toHtml(_open_send)
 
     def _show_export_as(self):
         from simsapa.layouts.sutta_export_dialog import SuttaExportDialog
