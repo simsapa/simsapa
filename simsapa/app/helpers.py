@@ -135,15 +135,20 @@ def sutta_range_from_ref(ref: str) -> Optional[SuttaRange]:
     return res
 
 
-def normalize_sutta_ref(ref: str) -> str:
+def normalize_sutta_ref(ref: str, for_ebooks = False) -> str:
     ref = ref.lower()
 
     ref = re.sub(r'uda *(\d)', r'ud \1', ref)
     ref = re.sub(r'khp *(\d)', r'kp \1', ref)
     ref = re.sub(r'th *(\d)', r'thag \1', ref)
 
-    # M.III.24 -> M I 24
-    ref = re.sub(r'[\. ]([ivx]+)[\. ]', r' \1 ', ref)
+    if for_ebooks:
+        # M.III.24 -> M I 24
+        ref = re.sub(r'[\. ]([ivx]+)[\. ]', r' \1 ', ref)
+    else:
+        # FIXME: the above pattern breaks PTS linking in Buddhadhamma, but the
+        # pattern below breaks Mil. uid query lookup.
+        ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
 
     ref = re.sub(r'^d ', 'dn ', ref)
     ref = re.sub(r'^m ', 'mn ', ref)

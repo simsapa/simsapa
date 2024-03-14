@@ -312,7 +312,7 @@ def find_linkable_sutta_urls_in_text(db_session: Session, content: str) -> List[
     for ref in matches:
         if ref.group(0) in already_found:
             continue
-        pts_ref = normalize_sutta_ref(ref.group(0))
+        pts_ref = normalize_sutta_ref(ref.group(0), for_ebooks=True)
 
         multi_ref = db_session \
             .query(Am.MultiRef) \
