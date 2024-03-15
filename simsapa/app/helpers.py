@@ -143,12 +143,13 @@ def normalize_sutta_ref(ref: str, for_ebooks = False) -> str:
     ref = re.sub(r'th *(\d)', r'thag \1', ref)
 
     if for_ebooks:
+        ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
+    else:
+        # FIXME: the pattern below breaks PTS linking in Buddhadhamma, but the
+        # pattern above breaks Mil. uid query lookup.
+
         # M.III.24 -> M I 24
         ref = re.sub(r'[\. ]([ivx]+)[\. ]', r' \1 ', ref)
-    else:
-        # FIXME: the above pattern breaks PTS linking in Buddhadhamma, but the
-        # pattern below breaks Mil. uid query lookup.
-        ref = re.sub(r'[\. ]*([ivx]+)[\. ]*', r' \1 ', ref)
 
     ref = re.sub(r'^d ', 'dn ', ref)
     ref = re.sub(r'^m ', 'mn ', ref)
