@@ -37,5 +37,7 @@ def main():
         from simsapa.cli import app
         app()
 
+    logger.info("Exiting.")
+
 if __name__ == "__main__":
     main()

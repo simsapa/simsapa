@@ -1,7 +1,9 @@
+import sys, shutil
+from pathlib import Path
 from typing import Optional
 import typer
 
-from simsapa import SIMSAPA_API_DEFAULT_PORT, logger, QueryType
+from simsapa import DPD_DB_PATH, SIMSAPA_API_DEFAULT_PORT, logger, QueryType
 from simsapa.app.types import SearchMode, SearchParams
 
 app = typer.Typer()
@@ -77,6 +79,44 @@ def query(query_type: QueryType, query: str, print_titles: bool = True, print_co
     else:
         print("Unrecognized query type.")
         return
+
+@app.command()
+def migrate_and_index_dpd(path_to_dpd_db: str):
+    """Migrate a newly generated DPD Sqlite database and update the fulltext index."""
+    from simsapa.app.db_session import get_db_engine_connection_session
+    from simsapa.app.db_helpers import find_or_create_dpd_dictionary, migrate_dpd
+    from simsapa.app.search.tantivy_index import TantivySearchIndexes
+
+    db_eng, db_conn, db_session = get_db_engine_connection_session()
+    dpd_dict = find_or_create_dpd_dictionary(db_session)
+
+    # Create a copy to work on
+    orig_db = Path(path_to_dpd_db)
+    if not orig_db.exists():
+        msg = f"File does not exist: {path_to_dpd_db}"
+        logger.error(msg)
+        print(msg)
+        sys.exit(2)
+
+    migrate_db = Path(f"{path_to_dpd_db}.temp")
+
+    shutil.copy(orig_db, migrate_db)
+
+    # Run the migrations on the db copy
+    migrate_dpd(migrate_db, dpd_dict.id)
+
+    # Move to local data folder
+    shutil.move(migrate_db, DPD_DB_PATH)
+
+    # Re-index dict_lang 'en' which includes the DPD
+    search_indexes = TantivySearchIndexes(db_session)
+    search_indexes.index_all_dict_words_lang('en')
+
+    db_conn.close()
+    db_session.close()
+    db_eng.dispose()
+
+    logger.info("Completed.")
 
 @index_app.command("create")
 def index_create():
