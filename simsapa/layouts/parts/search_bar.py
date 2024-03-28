@@ -6,7 +6,7 @@ from PyQt6 import QtGui
 from PyQt6.QtCore import QTimer, QSize
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                              QPushButton, QSpacerItem, QSpinBox, QVBoxLayout)
 
 from simsapa import DbSchemaName, SearchResult, logger, SEARCH_TIMER_SPEED
@@ -376,9 +376,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         chk = QCheckBox()
         chk.setIcon(icon)
-        chk.setToolTip("Enable regex globbing patterns in the query (.* .+ a* a+)")
+        chk.setToolTip("Enable globbing patterns in Fulltext Match (.* .+ a* a+)")
 
         self.regex_checkbox = chk
+
+        # NOTE: SearchMode.RegExMatch is better than the fulltext regex option.
+        self.regex_checkbox.setChecked(False)
+        self.regex_checkbox.setVisible(False)
 
         box.addWidget(self.regex_checkbox)
 
@@ -547,10 +551,43 @@ QWidget:focus { border: 1px solid #1092C3; }
     def _focus_search_input(self):
         self.search_input.setFocus()
 
+    def _show_regex_prefix_warning(self):
+        msg = """
+        <p>
+        RegEx starting with .* or .+ have extremely bad performance and can
+        freeze the application, hence are not allowed.
+        </p>
+        <p>
+        Combine them with a more simple AND term to filter the number of texts which have to be matched, such as:
+        </p>
+        <p>
+        dukkha AND .+dukkha
+        </p>
+        """
+
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("RegEx Warning")
+        box.setText(msg)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+        self._set_query("")
+
     def _user_typed(self):
         self._show_search_normal_icon()
 
+        mode = self._get_search_mode()
+        if mode == SearchMode.RegExMatch:
+            query = self.search_input.text().strip()
+            if query.startswith(".*") or query.startswith(".+"):
+                self._show_regex_prefix_warning()
+
         if not self._app_data.app_settings.get('search_as_you_type', True):
+            return
+
+        if mode == SearchMode.ContainsMatch or \
+           mode == SearchMode.RegExMatch:
             return
 
         if not self._search_timer.isActive():
@@ -560,10 +597,13 @@ QWidget:focus { border: 1px solid #1092C3; }
 
         self._search_timer.start(SEARCH_TIMER_SPEED)
 
-    def _handle_search_mode_changed(self):
+    def _get_search_mode(self) -> SearchMode:
         idx = self.search_mode_dropdown.currentIndex()
         m = self.search_mode_dropdown.itemText(idx)
-        mode = AllSearchModeNameToType[m]
+        return AllSearchModeNameToType[m]
+
+    def _handle_search_mode_changed(self):
+        mode = self._get_search_mode()
 
         self._app_data.app_settings[self._search_mode_setting_key] = mode
         self._app_data._save_app_settings()

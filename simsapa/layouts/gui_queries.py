@@ -136,7 +136,8 @@ class GuiSearchQueries(GuiSearchQueriesInterface):
                                    lang_indexes[lang],
                                    query_text_orig,
                                    query_started_time,
-                                   params)
+                                   params,
+                                   area)
 
             w = SearchQueryWorker(task, finished_fn)
 

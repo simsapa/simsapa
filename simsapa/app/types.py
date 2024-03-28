@@ -32,41 +32,43 @@ class SearchArea(int, Enum):
 
 class SearchMode(int, Enum):
     FulltextMatch = 0
-    ExactMatch = 1
+    ContainsMatch = 1
     HeadwordMatch = 2
     TitleMatch = 3
     DpdIdMatch = 4
     DpdLookup = 5
     Combined = 6
     UidMatch = 7
+    RegExMatch = 8
 
 AllSearchModeNameToType = {
     "Combined": SearchMode.Combined,
     "Fulltext Match": SearchMode.FulltextMatch,
     "DPD Lookup": SearchMode.DpdLookup,
-    # FIXME disabled ExactMatch while its buggy.
-    # "Exact Match": SearchMode.ExactMatch,
+    "Contains Match": SearchMode.ContainsMatch,
     # FIXME test HeadwordMatch
     # "Headword Match": SearchMode.HeadwordMatch,
     "Title Match": SearchMode.TitleMatch,
     "UID Match": SearchMode.UidMatch,
+    "RegEx Match": SearchMode.RegExMatch,
 }
 
 SuttaSearchModeNameToType = {
     "Fulltext Match": SearchMode.FulltextMatch,
-    # "Exact Match": SearchMode.ExactMatch,
+    "Contains Match": SearchMode.ContainsMatch,
     "Title Match": SearchMode.TitleMatch,
+    "RegEx Match": SearchMode.RegExMatch,
 }
 
 DictionarySearchModeNameToType = {
     "Combined": SearchMode.Combined,
     "DPD Lookup": SearchMode.DpdLookup,
     "Fulltext Match": SearchMode.FulltextMatch,
-    # FIXME test ExactMatch
-    # "Exact Match": SearchMode.ExactMatch,
+    "Contains Match": SearchMode.ContainsMatch,
     # FIXME test HeadwordMatch
     # "Headword Match": SearchMode.HeadwordMatch,
     # "UID Match": SearchMode.UidMatch,
+    "RegEx Match": SearchMode.RegExMatch,
 }
 
 class SearchParams(TypedDict):
