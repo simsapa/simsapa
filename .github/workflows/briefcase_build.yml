@@ -54,7 +54,7 @@ jobs:
         if: ${{ steps.get-ubuntu-version.outputs.UBUNTU_VERSION == '22.04' }}
         uses: jurplel/install-qt-action@v3
         with:
-          version: '6.5.3'
+          version: '6.6.1'
           setup-python: false
 
       - name: Modify Qt version in pyproject.toml for Ubuntu 20.04
