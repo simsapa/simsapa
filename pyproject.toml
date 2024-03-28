@@ -18,11 +18,11 @@ db_version = "0.5.0-alpha.1"
 
 [tool.poetry.dependencies]
 python = "~3.11"
-PyQt6 = "~6.6.1"
+PyQt6 = "~6.5.3"
 # Check poetry.lock Qt version matches with briefcase workflow yml
-PyQt6-Qt6 = "~6.6.1"
-PyQt6-WebEngine = "~6.6.0"
-PyQt6-WebEngine-Qt6 = "~6.6.1"
+PyQt6-Qt6 = "~6.5.3"
+PyQt6-WebEngine = "~6.5.0"
+PyQt6-WebEngine-Qt6 = "~6.5.3"
 PyYAML = "~6.0.0"
 SQLAlchemy = "~2.0.22"
 SQLAlchemy-Utils = "~0.41.1"
@@ -144,10 +144,10 @@ requires = [
 # --- ubuntu-20.04 end ---
 
 # --- ubuntu-22.04 ---
-"PyQt6              >= 6.6.1,    < 6.7.0",
-"PyQt6-Qt6           == 6.6.1",
-"PyQt6-WebEngine    >= 6.6.0,    < 6.7.0",
-"PyQt6-WebEngine-Qt6 == 6.6.1",
+"PyQt6              >= 6.5.3,    < 6.6.0",
+"PyQt6-Qt6           == 6.5.3",
+"PyQt6-WebEngine    >= 6.5.0,    < 6.6.0",
+"PyQt6-WebEngine-Qt6 == 6.5.3",
 # --- ubuntu-22.04 end ---
 
 "PyYAML             >= 6.0.0,    < 6.1.0",
