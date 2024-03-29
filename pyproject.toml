@@ -79,6 +79,20 @@ tantivy = { git = "https://github.com/simsapa/tantivy-py.git", branch = "simsapa
 # tantivy = { path = "../libs-src/tantivy-py-simsapa", develop = true }
 # tantivy = { path = "../libs-src/tantivy-py-simsapa/target/wheels/tantivy-0.20.2rc4-cp311-cp311-manylinux_2_34_x86_64.whl" }
 
+# --- test uncommenting one by one ---
+# fonttools = "4.49.0"
+# packaging = "23.2"
+# importlib-metadata = "7.0.1"
+# markdown = "3.5.2"
+# pyparsing = "3.1.1"
+# pygls = "1.3.0"
+# trio = "0.24.0"
+# typer = "0.9.0"
+# zipp = "3.17.0"
+# sqlalchemy = "2.0.27"
+# sqlalchemy-utils = "0.41.1"
+# --- end ---
+
 [tool.poetry.scripts]
 simsapa = 'simsapa.runner:main'
 
@@ -101,6 +115,11 @@ python-dateutil = "^2.8.2"
 doit = "^0.36.0"
 memory-profiler = "^0.61.0"
 matplotlib = "^3.8.2"
+
+# --- test uncommenting one by one ---
+# selenium = "4.18.1"
+# python-dateutil = "2.8.2"
+# --- end ---
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
