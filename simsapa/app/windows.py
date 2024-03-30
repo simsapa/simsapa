@@ -240,6 +240,9 @@ class AppWindows:
         a = [type(w) for w in self._windows if type(w) == view_type]
 
         if len(a) > 1:
+            if window_queue_id in APP_QUEUES.keys():
+                del APP_QUEUES[window_queue_id]
+
             del self._windows[view_idx]
         else:
             logger.info(f"Last window of type {view_type}, not removing.")

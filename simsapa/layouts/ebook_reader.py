@@ -588,9 +588,6 @@ class EbookReaderWindow(EbookReaderWindowInterface, HasRestoreSizePos):
         if self.ebook_unzip_dir is not None and self.ebook_unzip_dir.exists():
             shutil.rmtree(self.ebook_unzip_dir)
 
-        if self.queue_id in APP_QUEUES.keys():
-            del APP_QUEUES[self.queue_id]
-
         msg = ApiMessage(queue_id = 'app_windows',
                          action = ApiAction.remove_closed_window_from_list,
                          data = self.queue_id)

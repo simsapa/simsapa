@@ -655,8 +655,10 @@ class SuttaSearchWindowInterface(AppWindowInterface):
     s: SuttaSearchWindowStateInterface
 
 class SuttaPanelSettingKeys(TypedDict):
+    language_include_setting_key: str
     language_filter_setting_key: str
     search_mode_setting_key: str
+    source_include_setting_key: str
     source_filter_setting_key: str
 
 class SuttaPanel(TypedDict):

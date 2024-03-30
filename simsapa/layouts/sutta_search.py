@@ -106,9 +106,6 @@ class SuttaSearchWindow(SuttaSearchWindowInterface, Ui_SuttaSearchWindow, HasLin
         self._app_data.save_last_closed_window(WindowType.SuttaSearch)
         self.save_size_pos()
 
-        if self.queue_id in APP_QUEUES.keys():
-            del APP_QUEUES[self.queue_id]
-
         msg = ApiMessage(queue_id = 'app_windows',
                          action = ApiAction.remove_closed_window_from_list,
                          data = self.queue_id)
