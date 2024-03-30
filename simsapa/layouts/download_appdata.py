@@ -118,8 +118,16 @@ class DownloadAppdataWindow(AssetManagement):
         spc2 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
         self._layout.addItem(spc2)
 
-        self._msg = QLabel("<p>The application database<br>was not found on this system.</p><p>Checking for available sources to download...<p>")
+        self._msg = QLabel("""
+        <p>The application database<br>was not found on this system.</p>
+        <p>Checking for available sources to download...<p>
+        <p></p>
+        <p>If you need to remove the database, such as a failed or partial download,<br>read the instructions at:</p>
+        <p><a href="https://simsapa.github.io/install/uninstall/">https://simsapa.github.io/install/uninstall/</a></p>
+        """)
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._msg.setWordWrap(True)
+        self._msg.setOpenExternalLinks(True)
         self._layout.addWidget(self._msg)
 
         self.spc3 = QtWidgets.QSpacerItem(10, 0, QSizeMinimum, QSizeExpanding)
@@ -132,7 +140,15 @@ class DownloadAppdataWindow(AssetManagement):
         self.spc3 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
         self.spc4 = QtWidgets.QSpacerItem(0, 0, QSizeMinimum, QSizeMinimum)
 
-        self._msg.setText("<p>The application database<br>was not found on this system.</p><p>Please select the sources to download.<p>")
+        self._msg.setText("""
+        <p>The application database<br>was not found on this system.</p>
+        <p>Please select the sources to download.<p>
+        <p></p>
+        <p>If you need to remove the database, such as a failed or partial download,<br>read the instructions at:</p>
+        <p><a href="https://simsapa.github.io/install/uninstall/">https://simsapa.github.io/install/uninstall/</a></p>
+        """)
+        self._msg.setWordWrap(True)
+        self._msg.setOpenExternalLinks(True)
 
         self._setup_progress_bar_frame()
 
