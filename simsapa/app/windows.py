@@ -1395,7 +1395,14 @@ class AppWindows:
 
         if update_info['message'] != "":
             msg += "<p><b>Release Notes:</b></p>"
-            msg += update_info['message']
+            # Message should not be too long, otherwise small screens can't display the Yes / No buttons.
+            text = update_info['message']
+            if len(text) > 800:
+                text = text[0:800] + "...<div></div>"
+                text += f"""
+                <p>Read more about this update on the <a href="{update_info['visit_url']}">project website</a>.</p>
+                """
+            msg += text
 
         msg += "<h3>Quit and update now?</h3>"
 
