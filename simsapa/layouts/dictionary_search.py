@@ -20,7 +20,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 
 from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss_html, get_word_meaning
-from simsapa.app.types import LookupPanelParams, SearchArea, USutta, UDictWord, default_lookup_panel_params
+from simsapa.app.types import DictionarySearchModeNameToType, LookupPanelParams, SearchArea, SearchMode, USutta, UDictWord, default_lookup_panel_params
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.app.dict_link_helpers import add_word_links_to_bold
@@ -171,7 +171,15 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         if text is not None:
             self.lookup_in_dictionary(text, show_results_tab)
 
+    def set_search_mode(self, mode: SearchMode):
+        names = DictionarySearchModeNameToType
+        values = list(map(lambda x: x[1], names.items()))
+        idx = values.index(mode)
+        self.search_mode_dropdown.setCurrentIndex(idx)
+
     def lookup_in_dictionary(self, query: str, show_results_tab = False):
+        # Always lookup with Fulltext Match.
+        self.set_search_mode(SearchMode.FulltextMatch)
         self._set_query(query)
         self._handle_query()
 
@@ -237,6 +245,8 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
                 elif msg['action'] == ApiAction.lookup_in_dictionary:
                     text = msg['data']
+                    # Always lookup with Fulltext Match.
+                    self.set_search_mode(SearchMode.FulltextMatch)
                     self._set_query(text)
                     self._handle_query()
                     self._handle_exact_query()

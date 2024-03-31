@@ -18,7 +18,7 @@ from simsapa.app.db import userdata_models as Um
 from simsapa.app.db import dpd_models as Dpd
 from simsapa.app.search.helpers import get_word_for_schema_table_and_uid, get_word_gloss_html, get_word_meaning
 
-from simsapa.app.types import SearchArea, UDictWord
+from simsapa.app.types import DictionarySearchModeNameToType, SearchArea, SearchMode, UDictWord
 from simsapa.app.app_data import AppData
 from simsapa.app.search.dictionary_queries import ExactQueryResult
 from simsapa.layouts.find_panel import FindPanel, FindSearched
@@ -397,7 +397,15 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         if text is not None:
             self.lookup_in_dictionary(text, show_results_tab)
 
+    def set_search_mode(self, mode: SearchMode):
+        names = DictionarySearchModeNameToType
+        values = list(map(lambda x: x[1], names.items()))
+        idx = values.index(mode)
+        self.search_mode_dropdown.setCurrentIndex(idx)
+
     def lookup_in_dictionary(self, query: str, show_results_tab = False):
+        # Always lookup with Fulltext Match.
+        self.set_search_mode(SearchMode.FulltextMatch)
         self._set_query(query)
         self._handle_query()
 
