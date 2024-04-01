@@ -441,44 +441,51 @@ class AppWindows:
 
         make_active_window(view)
 
-    def _show_sutta_by_uid_in_study(self,
-                                    uid: str,
-                                    sutta_quote: Optional[SuttaQuote] = None,
-                                    quote_scope = QuoteScope.Sutta,
-                                    new_window = False):
-
+    def _find_or_create_sutta_study_window(self, create_new_window = False) -> SuttaStudyWindowInterface:
         view = None
 
-        if not new_window:
+        if not create_new_window:
+            open_new = self._app_data.app_settings.get('open_study_panel_in_new_window', True)
             for w in self._windows:
-                if is_sutta_study_window(w) and not w.isVisible():
+                if is_sutta_study_window(w):
                     assert(isinstance(w, SuttaStudyWindowInterface))
-                    view = w
+
+                    if w.isVisible():
+                        # If the window is visible, the user is working with it.
+                        # If 'open_new' is off, the user selected to re-use the existing window.
+                        if not open_new:
+                            view = w
+                        else:
+                            view = None
+
+                    else:
+                        # If the window is not visible, the user has closed it before.
+                        # Re-use the window but clear its contents as in a new window.
+                        view = w
+
                     break
 
         if view is None:
             view = self._new_sutta_study_window()
 
-        view.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
+        return view
 
+    def _show_sutta_by_uid_in_study(self,
+                                    uid: str,
+                                    sutta_quote: Optional[SuttaQuote] = None,
+                                    quote_scope = QuoteScope.Sutta,
+                                    create_new_window = False):
+        self._preview_window._do_hide()
+        view = self._find_or_create_sutta_study_window(create_new_window)
+        view.sutta_panels[0]['state']._show_sutta_by_uid(uid, sutta_quote, quote_scope)
         make_active_window(view)
 
     def _show_sutta_by_uid_in_side(self, msg: ApiMessage):
-        view = None
-        for w in self._windows:
-            if isinstance(w, SuttaStudyWindowInterface) and not w.isVisible():
-                view = w
-                break
-
         self._preview_window._do_hide()
-
-        if view is None:
-            view = self._new_sutta_study_window()
-
+        view = self._find_or_create_sutta_study_window()
         info = json.loads(msg['data'])
         view._show_sutta_by_uid_in_side(uid = info['uid'],
                                         side = info['side'])
-
         make_active_window(view)
 
     def _lookup_clipboard_in_suttas(self, msg: ApiMessage):

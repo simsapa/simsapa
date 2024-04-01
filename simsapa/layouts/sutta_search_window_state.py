@@ -670,7 +670,7 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         else:
             self._show_sutta(self._recent[current_idx - 1])
 
-    def _add_related_tabs(self, sutta: USutta):
+    def _clear_tabs(self):
         self.sutta_tabs.setCurrentIndex(0)
 
         # Hide all existing related tabs, we will reuse them.
@@ -678,6 +678,8 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
             i.is_visible = False
             self.sutta_tabs.setTabVisible(i.tab_index, False)
 
+    def _add_related_tabs(self, sutta: USutta):
+        self._clear_tabs()
         # read state from the window action, not from app_data.app_settings, b/c
         # that will be set from windows.py
         if hasattr(self.pw, 'action_Show_Related_Suttas') \
@@ -824,6 +826,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         if text is not None:
             self.pw.lookup_in_dictionary_signal.emit(text)
 
+    def _toggle_panel_in_new_window(self):
+        is_on = self._app_data.app_settings.get('open_study_panel_in_new_window', True)
+        self._app_data.app_settings['open_study_panel_in_new_window'] = not is_on
+        self._app_data._save_app_settings()
+
     def _create_qwe_context_menu(self, menu: QMenu):
         self.qwe_copy_selection = QAction("Copy Selection")
         # NOTE: don't bind Ctrl-C, will be ambiguous to the window menu action
@@ -860,6 +867,15 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         self.qwe_study_three = QAction("Panel 3")
         self.qwe_study_three.triggered.connect(partial(self._open_in_study_window, 'panel_three'))
         self.qwe_study_menu.addAction(self.qwe_study_three)
+
+        self.qwe_study_panel_in_new_window_chk = QAction("Open in New Window")
+        self.qwe_study_panel_in_new_window_chk.setCheckable(True)
+
+        is_on = self._app_data.app_settings.get('open_study_panel_in_new_window', True)
+        self.qwe_study_panel_in_new_window_chk.setChecked(is_on)
+
+        self.qwe_study_panel_in_new_window_chk.triggered.connect(partial(self._toggle_panel_in_new_window))
+        self.qwe_study_menu.addAction(self.qwe_study_panel_in_new_window_chk)
 
         self.qwe_lookup_menu = QMenu("Lookup Selection")
         menu.addMenu(self.qwe_lookup_menu)

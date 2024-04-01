@@ -341,6 +341,7 @@ class AppSettings(TypedDict):
     keep_running_in_background: bool
     tray_click_opens_window: WindowType
     show_search_options: bool
+    open_study_panel_in_new_window: bool
 
     sutta_font_size: int
     dictionary_font_size: int
@@ -422,6 +423,7 @@ def default_app_settings() -> AppSettings:
         keep_running_in_background = True,
         tray_click_opens_window = WindowType.LastClosed,
         show_search_options = True,
+        open_study_panel_in_new_window = True,
 
         sutta_font_size = 22,
         dictionary_font_size = 16,
