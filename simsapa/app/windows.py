@@ -1404,8 +1404,8 @@ class AppWindows:
             msg += "<p><b>Release Notes:</b></p>"
             # Message should not be too long, otherwise small screens can't display the Yes / No buttons.
             text = update_info['message']
-            if len(text) > 800:
-                text = text[0:800] + "...<div></div>"
+            if len(text) > 500:
+                text = text[0:500] + "...<div></div>"
                 text += f"""
                 <p>Read more about this update on the <a href="{update_info['visit_url']}">project website</a>.</p>
                 """
