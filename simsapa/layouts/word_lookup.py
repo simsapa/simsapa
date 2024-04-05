@@ -404,8 +404,7 @@ class WordLookupState(WordLookupStateInterface, HasDeconstructorList, HasFulltex
         self.search_mode_dropdown.setCurrentIndex(idx)
 
     def lookup_in_dictionary(self, query: str, show_results_tab = False):
-        # Always lookup with Fulltext Match.
-        self.set_search_mode(SearchMode.FulltextMatch)
+        self.set_search_mode(SearchMode.Combined)
         self._set_query(query)
         self._handle_query()
 

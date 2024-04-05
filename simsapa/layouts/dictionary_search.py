@@ -178,8 +178,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
         self.search_mode_dropdown.setCurrentIndex(idx)
 
     def lookup_in_dictionary(self, query: str, show_results_tab = False):
-        # Always lookup with Fulltext Match.
-        self.set_search_mode(SearchMode.FulltextMatch)
+        self.set_search_mode(SearchMode.Combined)
         self._set_query(query)
         self._handle_query()
 
@@ -245,8 +244,7 @@ class DictionarySearchWindow(DictionarySearchWindowInterface, Ui_DictionarySearc
 
                 elif msg['action'] == ApiAction.lookup_in_dictionary:
                     text = msg['data']
-                    # Always lookup with Fulltext Match.
-                    self.set_search_mode(SearchMode.FulltextMatch)
+                    self.set_search_mode(SearchMode.Combined)
                     self._set_query(text)
                     self._handle_query()
                     self._handle_exact_query()
