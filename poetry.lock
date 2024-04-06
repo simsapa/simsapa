@@ -2153,15 +2153,15 @@ PyQt6-sip = ">=13.6,<14"
 
 [[package]]
 name = "pyqt6-qt6"
-version = "6.6.3"
+version = "6.6.1"
 description = "The subset of a Qt installation needed by PyQt6."
 optional = false
 python-versions = "*"
 files = [
-    {file = "PyQt6_Qt6-6.6.3-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:1674d161ea49a36e9146fd652e789d413a246cc2455ac8bf9c76902b4bd3b986"},
-    {file = "PyQt6_Qt6-6.6.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:18fe1fbbc709dcff5c513e3cac7b1d7b630fb189e6d32a1601f193d73d326f42"},
-    {file = "PyQt6_Qt6-6.6.3-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:6ae465dfcbb819dae5e18e8c96abba735b5bb2f16c066497dda4b7ca17c066ce"},
-    {file = "PyQt6_Qt6-6.6.3-py3-none-win_amd64.whl", hash = "sha256:dbe509eccc579f8818b2b2e8ba93e27986facdd1d4d83ef1c7d9bd47cdf32651"},
+    {file = "PyQt6_Qt6-6.6.1-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:0409aa09b8dae90d5f00ba2d9761e671dfbc54ab169cff8f4cdfecd7f664fd0f"},
+    {file = "PyQt6_Qt6-6.6.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:8dcac0bd9df13d63deafb6a61969b832c34467da4a28d2b7abf78066bfce22e6"},
+    {file = "PyQt6_Qt6-6.6.1-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:e7df8851c93886412d890d0ecc62b39f42521861ee7a80982136d65903e1f2c5"},
+    {file = "PyQt6_Qt6-6.6.1-py3-none-win_amd64.whl", hash = "sha256:41f1ed3eadc00540c205a0e897ae0e0fffc21b896e575214f7c5b9c86d2037d1"},
 ]
 
 [[package]]
@@ -2214,15 +2214,15 @@ PyQt6-WebEngine-Qt6 = ">=6.6.0"
 
 [[package]]
 name = "pyqt6-webengine-qt6"
-version = "6.6.3"
+version = "6.6.1"
 description = "The subset of a Qt installation needed by PyQt6-WebEngine."
 optional = false
 python-versions = "*"
 files = [
-    {file = "PyQt6_WebEngine_Qt6-6.6.3-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:4ce545accc5a58d62bde7ce18253a70b3970c28a24c94642ec89537352c23974"},
-    {file = "PyQt6_WebEngine_Qt6-6.6.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:a82308115193a6f220d6310453d1edbe30f1a8ac32c01fc813865319a2199959"},
-    {file = "PyQt6_WebEngine_Qt6-6.6.3-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:87f636e23e9c1a1326bf91d273da6bdfed2f42fcc243e527e7b0dbc4f39e70dd"},
-    {file = "PyQt6_WebEngine_Qt6-6.6.3-py3-none-win_amd64.whl", hash = "sha256:3d3e81db62f166f5fbc24b28660fe81c1be4390282bfb9bb48111f32a6bd0f51"},
+    {file = "PyQt6_WebEngine_Qt6-6.6.1-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:4981e36adb15ea6c1508562128caf7d21c7e5c48039b60eabfb44adc00fd25d0"},
+    {file = "PyQt6_WebEngine_Qt6-6.6.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:185bd984a094d827d0a1abaf6a17247f87152c335dedbf2ecc4f838e6e2d7656"},
+    {file = "PyQt6_WebEngine_Qt6-6.6.1-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:605e0f2168f95f9d0903239b28e42a6ba96a48427bda4dad44b192f5e64d63a9"},
+    {file = "PyQt6_WebEngine_Qt6-6.6.1-py3-none-win_amd64.whl", hash = "sha256:43c75191822823e86164aa5f4299d3a4092af061c27d29b28e75134cfd7b2673"},
 ]
 
 [[package]]
@@ -3393,4 +3393,4 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.11"
-content-hash = "627863adb4e8d441a33c7cfc3c74425195c840f74fe4cf8d75b2bd07fae59371"
+content-hash = "8a8f692ccd6c826bfbc813dfb711330226c3b8099a418395ed042670b4569466"
