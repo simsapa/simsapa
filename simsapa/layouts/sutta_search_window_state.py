@@ -2,6 +2,7 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Callable, List, Optional
 
+# import json
 import re
 from urllib.parse import urlencode, quote
 
@@ -351,6 +352,11 @@ class SuttaSearchWindowState(SuttaSearchWindowStateInterface,
         hits = self._queries.query_hits()
         if self.enable_sidebar:
             results = self.pw._update_sidebar_fulltext(hits)
+
+            # logger.info("=== write it ===")
+            # with open("query.json", "w", encoding = "utf-8") as f:
+            #     f.write(json.dumps(self._queries.all_results()))
+
         else:
             results = self._queries.results_page(0)
 

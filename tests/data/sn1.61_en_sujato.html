@@ -1,0 +1,1094 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:4848/assets/fonts/crimson-pro/CrimsonPro-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:4848/assets/fonts/crimson-pro/CrimsonPro-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:4848/assets/fonts/crimson-pro/CrimsonPro-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Crimson Pro SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:4848/assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:4848/assets/fonts/abhaya-libre/AbhayaLibreX-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 500;
+  src: url("http://localhost:4848/assets/fonts/abhaya-libre/AbhayaLibreX-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 600;
+  src: url("http://localhost:4848/assets/fonts/abhaya-libre/AbhayaLibreX-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:4848/assets/fonts/abhaya-libre/AbhayaLibreX-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abhaya Libre SSP";
+  font-style: normal;
+  font-weight: 800;
+  src: url("http://localhost:4848/assets/fonts/abhaya-libre/AbhayaLibreX-ExtraBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("http://localhost:4848/assets/fonts/source-sans-3/SourceSans3-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 400;
+  src: url("http://localhost:4848/assets/fonts/source-sans-3/SourceSans3-It.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: normal;
+  font-weight: 700;
+  src: url("http://localhost:4848/assets/fonts/source-sans-3/SourceSans3-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Source Sans 3 SSP";
+  font-style: italic;
+  font-weight: 700;
+  src: url("http://localhost:4848/assets/fonts/source-sans-3/SourceSans3-BoldIt.ttf") format("truetype");
+}
+html, body {
+  height: 100%;
+  color: #1a1a1a;
+  background-color: #FAE6B2;
+}
+
+pre {
+  font-family: serif;
+  white-space: pre-wrap;
+}
+
+a {
+  color: black;
+}
+
+.ssp-toolbar {
+  position: fixed;
+  top: 1em;
+  right: 1em;
+  font-size: 0.7rem;
+}
+
+.svg-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+
+.hide {
+  display: none;
+}
+
+.highlight {
+  padding: 0.2rem 0pt;
+  background: #027f55;
+  color: white;
+}
+
+.scrollto-highlight {
+  padding: 0.2rem 0pt;
+  background: #027f85;
+  color: white;
+}
+
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  stroke-width: 0;
+  stroke: currentColor;
+  fill: currentColor;
+  vertical-align: middle;
+}
+
+div.btn, span.btn {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+}
+div.btn a, span.btn a {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.open-button {
+  font-size: 15px;
+}
+.open-button .icon {
+  color: #027f55;
+  opacity: 0.5;
+}
+
+.pull-left {
+  float: left;
+}
+
+.pull-right {
+  float: right;
+}
+
+.bookmark-comment {
+  border: 1px solid hsl(160, 65%, 35%);
+  border-radius: 5px;
+  background-color: hsl(160, 65%, 60%);
+}
+.bookmark-comment .bookmark-title {
+  background-color: hsl(160, 65%, 35%);
+  height: 30px;
+  font-size: 20px;
+}
+.bookmark-comment .bookmark-title .btn {
+  margin: 2.5px 5px;
+}
+.bookmark-comment .bookmark-title .btn a {
+  color: white;
+}
+.bookmark-comment .bookmark-content {
+  color: #1a1a1a;
+  font-size: 0.8rem;
+  padding: 0.5rem;
+}
+.bookmark-comment .bookmark-content p {
+  margin-block-start: 0;
+  margin-block-end: 0;
+  padding-top: 0.4rem;
+}
+.bookmark-comment .bookmark-content p:first-child {
+  padding-top: 0;
+}
+.bookmark-comment .bookmark-content a {
+  color: #700909;
+}
+
+#window-title-bar {
+  font-size: 18px;
+  line-height: 1;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  padding: 0.1em;
+  background-color: #FEF8E8;
+}
+#window-title-bar .flex-container {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  align-items: center;
+  align-content: center;
+  gap: 0.2em;
+}
+#window-title-bar .flex-container #left-btn-box,
+#window-title-bar .flex-container #right-btn-box {
+  flex: 1;
+}
+#window-title-bar .flex-container #preview-title-text {
+  display: inline-block;
+  color: black;
+  text-align: center;
+}
+#window-title-bar .flex-container .icon {
+  font-size: 0.8rem;
+  color: black;
+  padding-top: 0.1rem;
+  margin: 0.1rem 0.3rem;
+}
+
+.suttacentral span.segment span.translated {
+  display: block;
+  padding-top: 0.5rem;
+  font-size: 1rem;
+}
+.suttacentral span.segment span.pali {
+  display: block;
+  padding-top: 0.5rem;
+  font-family: "Source Sans 3 SSP";
+  font-size: 0.8rem;
+}
+
+.suttacentral header {
+  text-align: center;
+}
+.suttacentral header ul {
+  margin-block-start: 1em;
+  margin-block-end: 1em;
+  padding-inline-start: 0pt;
+}
+.suttacentral header ul li {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.3rem;
+}
+.suttacentral header ul li .segment .pali,
+.suttacentral header ul li .segment .translated {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.15rem;
+}
+.suttacentral header h1 {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+  font-size: 1.4rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+}
+.suttacentral header h1 .segment .pali,
+.suttacentral header h1 .segment .translated {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+  font-size: 1.4rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+}
+.suttacentral h2 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 1rem;
+}
+.suttacentral h3 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 1rem;
+}
+.suttacentral .evam {
+  text-transform: lowercase;
+  font-variant: small-caps;
+  font-size: 1.15rem;
+  letter-spacing: 0.8pt;
+  word-spacing: 1pt;
+}
+.suttacentral .speaker {
+  font-style: italic;
+  text-indent: 3em;
+  display: block;
+}
+.suttacentral blockquote.gatha {
+  font-style: normal;
+  margin-left: 2rem;
+}
+.suttacentral blockquote.gatha .verse-line {
+  display: block;
+}
+.suttacentral .endsutta {
+  font-style: italic;
+}
+.suttacentral a.ref {
+  display: none;
+}
+.suttacentral footer {
+  margin-top: 4rem;
+  border-top: 1px solid #aaa;
+  font-size: 0.8rem;
+  line-height: 1rem;
+}
+.suttacentral footer span.author {
+  font-style: italic;
+}
+.suttacentral footer span.publication-date {
+  font-style: italic;
+}
+.suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
+  font-size: 0.6rem;
+  position: relative;
+  top: -0.1rem;
+  padding: 3px;
+}
+.suttacentral .variant-wrap .mark:hover, .suttacentral .comment-wrap .mark:hover {
+  border-bottom: 2px solid black;
+}
+.suttacentral .variant, .suttacentral .comment {
+  font-size: 0.8rem;
+}
+
+.cst4 .note {
+  color: blue;
+}
+.cst4 .bld {
+  font-weight: bold;
+}
+.cst4 .paranum {
+  font-weight: bold;
+}
+.cst4 .indent {
+  font-size: 1rem;
+  text-indent: 2em;
+  margin-left: 3em;
+}
+.cst4 .bodytext {
+  font-size: 1rem;
+  text-indent: 2em;
+}
+.cst4 .hangnum {
+  font-size: 1rem;
+  margin-bottom: -18pt;
+  text-indent: 2em;
+}
+.cst4 .centered {
+  font-size: 1rem;
+  text-align: center;
+}
+.cst4 .unindented {
+  font-size: 1rem;
+}
+.cst4 .nikaya {
+  text-align: center;
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  list-style-type: none;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.3rem;
+}
+.cst4 .book, .cst4 .title, .cst4 .subhead, .cst4 .subsubhead, .cst4 .chapter {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+  text-align: center;
+}
+.cst4 .book {
+  font-size: 1.6rem;
+}
+.cst4 .title {
+  font-size: 1.4rem;
+}
+.cst4 .subhead, .cst4 .subsubhead, .cst4 .chapter {
+  font-size: 1.2rem;
+  text-align: left;
+  text-decoration: underline;
+  margin-top: 4rem;
+}
+.cst4 .chapter + .subhead {
+  margin-top: 1rem;
+}
+.cst4 .gatha1 {
+  font-size: 1rem;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gatha2 {
+  font-size: 1rem;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gatha3 {
+  font-size: 1rem;
+  margin-bottom: 0em;
+  margin-left: 4em;
+}
+.cst4 .gathalast {
+  font-size: 1rem;
+  margin-bottom: 0.5cm;
+  margin-left: 4em;
+}
+
+.dhammatalks_org .author {
+  font-style: italic;
+  font-size: 1em;
+}
+.dhammatalks_org .title {
+  font-weight: bold;
+  font-size: 1em;
+}
+.dhammatalks_org .fn {
+  vertical-align: 0.4em;
+  font-size: 0.8em;
+}
+.dhammatalks_org .verse {
+  margin: 0.8em 8%;
+  text-indent: 0;
+}
+.dhammatalks_org .verse p {
+  margin-top: 0;
+}
+.dhammatalks_org .verse p.v2 {
+  text-indent: -2%;
+  padding-left: 10%;
+}
+.dhammatalks_org .verse p.vspk {
+  margin-bottom: 0.1em;
+  text-indent: -2.6em;
+  font-style: italic;
+}
+.dhammatalks_org .verse p.seealso {
+  margin-top: 0.8em;
+  font-style: italic;
+  font-size: 0.9em;
+}
+.dhammatalks_org .suttaCite {
+  font-style: italic;
+  margin-left: 50%;
+  margin-top: 0.6em;
+}
+.dhammatalks_org .verse-add {
+  margin-top: 0.4em;
+  text-indent: 0;
+}
+.dhammatalks_org .note {
+  margin: 0.6em 4%;
+  font-size: 0.85em;
+}
+
+.tipitaka_net ul.toc li {
+  font-size: 0.8em;
+}
+
+html, body {
+  font-size: 22px;
+  line-height: 1.5;
+  font-family: "Crimson Pro SSP";
+  font-weight: 400;
+}
+
+#ssp_main {
+  padding-bottom: 4rem;
+  font-size: 1rem;
+}
+
+body {
+  padding: 0 1rem;
+  max-width: 75ex;
+  margin: 0 auto;
+}
+
+p {
+  margin: 0.8rem 0 0 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Abhaya Libre SSP";
+  font-weight: 800;
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+h2 {
+  font-size: 1.4rem;
+}
+
+h3 {
+  font-size: 1.2rem;
+}
+
+h4 {
+  font-size: 1rem;
+}
+
+.lang-san {
+  font-family: "DejaVu Serif", "Georgia", serif;
+}
+.lang-san h1, .lang-san h2, .lang-san h3, .lang-san h4, .lang-san h5, .lang-san h6 {
+  font-family: "DejaVu Serif", "Georgia", serif;
+}
+
+.gretil {
+  font-size: 16px;
+  margin-left: -5ex;
+  margin-right: -5ex;
+}
+
+.gretil > footer {
+  padding-top: 4em;
+  font-size: 14px;
+}
+
+
+html { font-size: 22px; } body { max-width: 77ex; }</style>
+        <script>
+         const API_URL = 'http://localhost:4848';
+        </script>
+        <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+        <script src="http://localhost:4848/assets/js/vendor/marked.min.js"></script>
+        <script src="http://localhost:4848/assets/js/vendor/rangy-1.3.1/rangy-core.js"></script>
+        <script src="http://localhost:4848/assets/js/vendor/rangy-1.3.1/rangy-serializer.js"></script>
+        <script src="http://localhost:4848/assets/js/vendor/rangy-1.3.1/rangy-classapplier.js"></script>
+        <script src="http://localhost:4848/assets/js/vendor/rangy-1.3.1/rangy-highlighter.js"></script>
+        <script>
+
+ const SUTTA_UID = 'sn1.61/en/sujato'; const SHOW_BOOKMARKS = true; const SHOW_QUOTE = null;document.qt_channel = null;
+
+function toggle_variant (event) {
+    let el = event.target;
+    el.parentNode.querySelectorAll(".variant").forEach((i) => {
+        i.classList.toggle("hide");
+    })
+}
+
+function toggle_comment (event) {
+    let el = event.target;
+    el.parentNode.querySelectorAll(".comment").forEach((i) => {
+        i.classList.toggle("hide");
+    })
+}
+
+function expand_quote_to_pattern (text) {
+    s = text
+    // Normalize quote marks to '
+    s = s.replaceAll('"', "'");
+    // Quote mark should match all types, and may not be present
+    s = s.replaceAll("'", '[\'"“”‘’]*');
+    // Normalize spaces
+    s = s.replaceAll(/ +/g, " ")
+    // Common spelling variations
+    s = s.replaceAll(/[iī]/g, '[iī]')
+    // Punctuation may not be present
+    // Space may have punctuation in the text, but not in the link quote param
+    // HTML tags, linebreaks, or quote marks may follow the word
+    s = s.replace(/[ \.,;\?\!…—-]/g, '[ \n\'"“”‘’\.,;\?\!…—-]*(<[^>]+>[ \n]*)*');
+
+    return s
+}
+
+function add_hover_events (el, channel) {
+    let href = el.getAttribute('href');
+    if (href !== null && href.startsWith('ssp://')) {
+        el.addEventListener("mouseover", function(i_el) {
+            coords = i_el.target.getBoundingClientRect();
+
+            data = {
+                href: href,
+                x: coords.x + window.screenX,
+                y: coords.y + window.screenY,
+                width: coords.width,
+                height: coords.height,
+            };
+
+            channel.objects.helper.link_mouseover(JSON.stringify(data));
+        });
+
+        el.addEventListener("mouseleave", function(i_el) {
+            coords = i_el.target.getBoundingClientRect();
+            channel.objects.helper.link_mouseleave(href);
+        });
+    }
+}
+
+function process_bookmarks_with_quote_only(bookmarks) {
+    // NOTE: This method is adding bookmarks highlights is best to avoid.
+    // It changes the DOM in ways that break applying ranges.
+    let body = document.querySelector('body');
+    let text = body.innerHTML;
+
+    bookmarks.forEach((_bm) => {
+        // let quote = expand_quote_to_pattern(bm.quote);
+        let regex = new RegExp(s, 'gi');
+
+        text = text.replace(regex, '<mark class="highlight">$&</mark>');
+    });
+
+    body.innerHTML = text;
+}
+
+function edit_comment (bookmark_schema_id) {
+    if (document.qt_channel !== null) {
+        document.qt_channel.objects.helper.send_bookmark_edit(bookmark_schema_id);
+    }
+}
+
+function toggle_show_comment (bookmark_schema_id) {
+    el = document.querySelector("div.bookmark-comment[data-bookmark-schema-id=" + bookmark_schema_id + "]")
+    el.classList.toggle("hide");
+}
+
+function add_bookmark_comment (el) {
+    let comment_text = el.getAttribute('data-comment-text');
+    // let comment_attr_json = el.getAttribute('data-comment-attr-json');
+
+    let bookmark_schema_id = el.getAttribute('data-bookmark-schema-id');
+
+    let wrap_span = document.createElement("span");
+    wrap_span.setAttribute('style', 'position: relative;');
+
+    let open_btn = document.createElement("div");
+    open_btn.classList.add('open-button');
+    open_btn.classList.add('btn');
+    open_btn.setAttribute('style', 'position: absolute; top: -10px; right: 5px;');
+
+    if (comment_text == null || comment_text == '') {
+        icon = "icon-circle-solid";
+    } else {
+        icon = "icon-circle-dot-solid";
+    }
+
+    open_btn.innerHTML = '<a href="#"><svg class="icon icon-open"><use xlink:href="#' + icon + '"></use></svg></a>';
+
+    open_btn.addEventListener("click", () => toggle_show_comment(bookmark_schema_id));
+
+    wrap_span.appendChild(open_btn);
+
+    let comment_div = document.createElement("div");
+    comment_div.classList.add('bookmark-comment');
+    comment_div.classList.add('hide');
+    comment_div.setAttribute('style', 'position: absolute; bottom: 35px; left: 0px; width: 300px; height: 200px;');
+    comment_div.setAttribute('data-bookmark-schema-id', bookmark_schema_id);
+
+    let title_div = document.createElement("div");
+    title_div.classList.add('bookmark-title');
+
+    let edit_btn = document.createElement("div");
+    edit_btn.classList.add('btn');
+    edit_btn.classList.add('pull-left');
+    edit_btn.innerHTML = '<a href="#"><svg class="icon icon-edit"><use xlink:href="#icon-square-pen"></use></svg></a>';
+    title_div.appendChild(edit_btn);
+
+    edit_btn.addEventListener("click", () => edit_comment(bookmark_schema_id));
+
+    let close_btn = document.createElement("div");
+    close_btn.classList.add('btn');
+    close_btn.classList.add('pull-right');
+    close_btn.innerHTML = '<a href="#"><svg class="icon icon-close"><use xlink:href="#icon-circle-xmark-solid"></use></svg></a>';
+    title_div.appendChild(close_btn);
+
+    close_btn.addEventListener("click", () => toggle_show_comment(bookmark_schema_id));
+
+    let content_div = document.createElement("div");
+    content_div.classList.add('bookmark-content');
+    content_div.innerHTML = marked.parse(comment_text);
+
+    let arr = content_div.querySelectorAll("a");
+    arr.forEach(el => add_hover_events(el, document.qt_channel));
+
+    comment_div.appendChild(title_div);
+    comment_div.appendChild(content_div);
+    wrap_span.appendChild(comment_div);
+
+    el.appendChild(wrap_span);
+}
+
+function process_bookmarks_with_range(bookmarks) {
+    bookmarks.forEach((bm) => {
+        // Create the highlighter object here, so a custom ClassApplier can be
+        // added for each item, to create the bookmark comment box.
+        let highlighter = rangy.createHighlighter();
+
+        highlighter.addClassApplier(rangy.createClassApplier("highlight", {
+            ignoreWhiteSpace: true,
+            elementTagName: "mark",
+            elementAttributes: {
+                'data-comment-text': bm.comment_text,
+                'data-comment-attr-json': bm.comment_attr_json,
+                'data-bookmark-schema-id': bm.bookmark_schema_id,
+            },
+            onElementCreate: add_bookmark_comment,
+        }));
+
+        rangy.deserializeSelection(bm.selection_range);
+        highlighter.highlightSelection("highlight");
+    });
+
+    window.getSelection().removeAllRanges();
+}
+
+function get_bookmarks_with_range(sutta_uid) {
+    params = {"sutta_uid": sutta_uid};
+    fetch(API_URL + "/get_bookmarks_with_range_for_sutta", {
+        method: "POST",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify(params),
+    })
+        .then(res => res.json())
+        .then(data => process_bookmarks_with_range(data));
+}
+
+function get_bookmarks_with_quote_only(sutta_uid) {
+    params = {"sutta_uid": sutta_uid};
+    fetch(API_URL + "/get_bookmarks_with_quote_only_for_sutta", {
+        method: "POST",
+        headers: {"content-type": "application/json"},
+        body: JSON.stringify(params),
+    })
+        .then(res => res.json())
+        .then(data => process_bookmarks_with_quote_only(data));
+}
+
+function get_bookmarks_and_highlight() {
+    if (SHOW_BOOKMARKS && SUTTA_UID) {
+        get_bookmarks_with_range(SUTTA_UID);
+        // NOTE: disable because the DOM change breaks applying ranges.
+        // get_bookmarks_with_quote_only(SUTTA_UID);
+    }
+}
+
+function highlight_and_scroll_to (highlight_text) {
+    /*
+      This doesn't work on text which spans across HTML tags, such as:
+
+     <p class="bodytext">
+       <span class="bld">andhabhūto</span>ti imaṁ dhammadesanaṁ satthā aggāḷave cetiye viharanto ekaṁ pesakāradhītaraṁ ārabbha kathesi.
+     </p>
+
+     A selection of 'andhabhūtoti imaṁ dhammadesanaṁ' will not be matched, and
+     the highlight <mark><mark/> can't be added.
+
+     The browser's Find function can find these text, so when the HTML didn't
+     match, send a signal to trigger Find.
+    */
+
+    let s = expand_quote_to_pattern(highlight_text);
+    const regex = new RegExp(s, 'gi');
+
+    let main = document.querySelector('#ssp_main');
+    let main_html = main.innerHTML;
+
+    const m = main_html.match(regex);
+    if (m == null) {
+        // When the HTML didn't match, send a signal to trigger the Find Panel.
+        if (document.qt_channel !== null) {
+            document.qt_channel.objects.helper.emit_show_find_panel(highlight_text);
+        }
+        return;
+    }
+    matched_html = m[0];
+
+    const marked_html = '<mark class="scrollto-highlight">' + matched_html.replaceAll(/<[^>]+>/g, '</mark>$&<mark class="scrollto-highlight">') + '</mark>';
+
+    const new_main_html = main_html.replace(matched_html, marked_html);
+
+    // NOTE This loses eventlisteners. Add document.addEventListener() after this, or use onclick HTML attributes.
+    main.innerHTML = new_main_html;
+
+    // only need the first result
+    el = document.querySelector('mark.scrollto-highlight');
+    if (el !== null) {
+        el.scrollIntoView({behavior: "auto", block: "center", inline: "nearest"});
+    }
+}
+
+function get_selection_data () {
+    // test for selection to exist
+    let sel = document.getSelection();
+    let sel_text = sel.toString();
+    if (sel_text.length == 0) {
+        return '';
+    }
+
+    let anchor_text = sel.anchorNode.textContent;
+
+    let before = anchor_text.slice(0, sel.anchorOffset);
+
+    let nth_in_anchor = before.split(sel_text).length;
+
+    let sel_range = rangy.serializeSelection(null, true);
+
+    let data = {
+        sel_range: sel_range,
+        sel_text: sel_text,
+        anchor_text: anchor_text,
+        nth_in_anchor: nth_in_anchor,
+    };
+
+    return JSON.stringify(data);
+}
+
+document.addEventListener("DOMContentLoaded", function(_event) {
+    rangy.init();
+
+    get_bookmarks_and_highlight();
+
+    document.querySelectorAll(".variant-wrap .mark").forEach((i) => {
+        i.addEventListener("click", toggle_variant);
+    });
+    document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
+        i.addEventListener("click", toggle_comment);
+    });
+});
+</script>
+    </head>
+    <body>
+        <div id="ssp_main">
+            <div class="suttacentral bilara-text"><article id='sn1.61'><header><ul><li class='division'>
+        <span class='segment'>
+          <span class='translated'>Linked Discourses 1.61 </span>
+          <span class='pali'>Saṁyutta Nikāya 1.61 </span>
+        </span>
+        </li>
+
+<li>
+        <span class='segment'>
+          <span class='translated'>7. Oppressed </span>
+          <span class='pali'>7. Addhavagga 
+                <span class='variant-wrap'>
+                  <span class='mark'>⧫</span>
+                  <span class='variant hide'>(Addhavagga → anvavaggo (bj); andhavaggo (sya-all, pts2ed))</span>
+                </span>
+                </span>
+        </span>
+        </li></ul>
+
+<h1 class='sutta-title'>
+        <span class='segment'>
+          <span class='translated'>Name </span>
+          <span class='pali'>Nāmasutta </span>
+        </span>
+        </h1></header>
+
+<blockquote class='gatha'><p><span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>“What oppresses everything? </span>
+          <span class='pali'>“Kiṁsu sabbaṁ addhabhavi, 
+                <span class='variant-wrap'>
+                  <span class='mark'>⧫</span>
+                  <span class='variant hide'>(addhabhavi → anvabhavi (bj); andhabhavi (sya-all))</span>
+                </span>
+                </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>What is nothing bigger than? </span>
+          <span class='pali'>kismā bhiyyo na vijjati; </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>What is the one thing </span>
+          <span class='pali'>Kissassu ekadhammassa, </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>that has everything under its sway?” </span>
+          <span class='pali'>sabbeva vasamanvagū”ti. 
+                <span class='variant-wrap'>
+                  <span class='mark'>⧫</span>
+                  <span class='variant hide'>(vasamanvagū”ti → vasamaddhagū (mr))</span>
+                </span>
+                </span>
+        </span>
+        </span></p>
+
+<p><span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>“Name oppresses everything. </span>
+          <span class='pali'>“Nāmaṁ sabbaṁ addhabhavi, </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>Nothing’s bigger than name. </span>
+          <span class='pali'>nāmā bhiyyo na vijjati; </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>Name is the one thing </span>
+          <span class='pali'>Nāmassa ekadhammassa, </span>
+        </span>
+        </span>
+
+<span class='verse-line'>
+        <span class='segment'>
+          <span class='translated'>that has everything under its sway.” </span>
+          <span class='pali'>sabbeva vasamanvagū”ti. </span>
+        </span>
+        </span></p></blockquote></article></div>
+        </div>
+        <script></script>
+
+        <script src="http://localhost:4848/assets/js/simsapa.min.js"></script>
+
+        <svg style="display:none;">
+    <symbol id="icon-triangle-exclamation-solid" viewBox="0 0 512 512">
+        <path d="M256 32c14.2 0 27.3 7.5 34.5 19.8l216 368c7.3 12.4 7.3 27.7 .2 40.1S486.3 480 472 480H40c-14.3 0-27.6-7.7-34.7-20.1s-7-27.8 .2-40.1l216-368C228.7 39.5 241.8 32 256 32zm0 128c-13.3 0-24 10.7-24 24V296c0 13.3 10.7 24 24 24s24-10.7 24-24V184c0-13.3-10.7-24-24-24zm32 224a32 32 0 1 0 -64 0 32 32 0 1 0 64 0z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-circle-xmark-solid" viewBox="0 0 512 512">
+        <path d="M256 512c141.4 0 256-114.6 256-256S397.4 0 256 0S0 114.6 0 256S114.6 512 256 512zM175 175c9.4-9.4 24.6-9.4 33.9 0l47 47 47-47c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9l-47 47 47 47c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0l-47-47-47 47c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l47-47-47-47c-9.4-9.4-9.4-24.6 0-33.9z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-square-xmark-solid" viewBox="0 0 512 512">
+        <path d="M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zm79 143c9.4-9.4 24.6-9.4 33.9 0l47 47 47-47c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9l-47 47 47 47c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0l-47-47-47 47c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l47-47-47-47c-9.4-9.4-9.4-24.6 0-33.9z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-copy-solid" viewBox="0 0 512 512">
+        <path d="M224 0c-35.3 0-64 28.7-64 64V288c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V64c0-35.3-28.7-64-64-64H224zM64 160c-35.3 0-64 28.7-64 64V448c0 35.3 28.7 64 64 64H288c35.3 0 64-28.7 64-64V384H288v64H64V224h64V160H64z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-square-up-right-solid" viewBox="0 0 512 512">
+        <path d="M384 32c35.3 0 64 28.7 64 64V416c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V96C0 60.7 28.7 32 64 32H384zM160 160c-6.5 0-12.3 3.9-14.8 9.9s-1.1 12.9 3.5 17.4l40 40-71 71C114 302 112 306.9 112 312s2 10 5.7 13.7l36.7 36.7c3.6 3.6 8.5 5.7 13.7 5.7s10-2 13.7-5.7l71-71 40 40c4.6 4.6 11.5 5.9 17.4 3.5s9.9-8.3 9.9-14.8V176c0-8.8-7.2-16-16-16H160z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-message" viewBox="0 0 512 512">
+        <path d="M64 0C28.7 0 0 28.7 0 64V352c0 35.3 28.7 64 64 64h96v80c0 6.1 3.4 11.6 8.8 14.3s11.9 2.1 16.8-1.5L309.3 416H448c35.3 0 64-28.7 64-64V64c0-35.3-28.7-64-64-64H64z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-square-pen" viewBox="0 0 448 512">
+        <path d="M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zM325.8 139.7l14.4 14.4c15.6 15.6 15.6 40.9 0 56.6l-21.4 21.4-71-71 21.4-21.4c15.6-15.6 40.9-15.6 56.6 0zM119.9 289L225.1 183.8l71 71L190.9 359.9c-4.1 4.1-9.2 7-14.9 8.4l-60.1 15c-5.5 1.4-11.2-.2-15.2-4.2s-5.6-9.7-4.2-15.2l15-60.1c1.4-5.6 4.3-10.8 8.4-14.9z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-circle-solid" viewBox="0 0 512 512">
+        <path d="M256 512c141.4 0 256-114.6 256-256S397.4 0 256 0S0 114.6 0 256S114.6 512 256 512z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-circle-dot-solid" viewBox="0 0 512 512">
+        <path d="M256 512c141.4 0 256-114.6 256-256S397.4 0 256 0S0 114.6 0 256S114.6 512 256 512zm0-160c-53 0-96-43-96-96s43-96 96-96s96 43 96 96s-43 96-96 96z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-circle-dot-regular" viewBox="0 0 512 512">
+        <path d="M160 256C160 202.1 202.1 160 256 160C309 160 352 202.1 352 256C352 309 309 352 256 352C202.1 352 160 309 160 256zM512 256C512 397.4 397.4 512 256 512C114.6 512 0 397.4 0 256C0 114.6 114.6 0 256 0C397.4 0 512 114.6 512 256zM256 48C141.1 48 48 141.1 48 256C48 370.9 141.1 464 256 464C370.9 464 464 370.9 464 256C464 141.1 370.9 48 256 48z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-square-plus" viewBox="0 0 448 512">
+        <path d="M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zM200 344V280H136c-13.3 0-24-10.7-24-24s10.7-24 24-24h64V168c0-13.3 10.7-24 24-24s24 10.7 24 24v64h64c13.3 0 24 10.7 24 24s-10.7 24-24 24H248v64c0 13.3-10.7 24-24 24s-24-10.7-24-24z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-more-filled" viewBox="0 0 1024 1024">
+        <path fill="currentColor" d="M176 416a112 112 0 1 1 0 224a112 112 0 0 1 0-224m336 0a112 112 0 1 1 0 224a112 112 0 0 1 0-224m336 0a112 112 0 1 1 0 224a112 112 0 0 1 0-224"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-gear-solid" viewBox="0 0 512 512">
+        <path d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-43.3 39.4c1.1 8.3 1.7 16.8 1.7 25.4s-.6 17.1-1.7 25.4l43.3 39.4c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-55.7-17.7c-13.4 10.3-28.2 18.9-44 25.4l-12.5 57.1c-2 9.1-9 16.3-18.2 17.8c-13.8 2.3-28 3.5-42.5 3.5s-28.7-1.2-42.5-3.5c-9.2-1.5-16.2-8.7-18.2-17.8l-12.5-57.1c-15.8-6.5-30.6-15.1-44-25.4L83.1 425.9c-8.8 2.8-18.6 .3-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l43.3-39.4C64.6 273.1 64 264.6 64 256s.6-17.1 1.7-25.4L22.4 191.2c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l55.7 17.7c13.4-10.3 28.2-18.9 44-25.4l12.5-57.1c2-9.1 9-16.3 18.2-17.8C227.3 1.2 241.5 0 256 0s28.7 1.2 42.5 3.5c9.2 1.5 16.2 8.7 18.2 17.8l12.5 57.1c15.8 6.5 30.6 15.1 44 25.4l55.7-17.7c8.8-2.8 18.6-.3 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-tab-outline" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M5 21q-.825 0-1.412-.587T3 19v-3h2v3h14V7H5v3H3V5q0-.825.588-1.412T5 3h14q.825 0 1.413.588T21 5v14q0 .825-.587 1.413T19 21H5Zm6.5-3.5l-1.4-1.4l2.075-2.1H3v-2h9.175L10.1 9.9l1.4-1.4L16 13l-4.5 4.5Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-table" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M224 48H32a8 8 0 0 0-8 8v136a16 16 0 0 0 16 16h176a16 16 0 0 0 16-16V56a8 8 0 0 0-8-8ZM40 112h40v32H40Zm56 0h120v32H96Zm120-48v32H40V64ZM40 160h40v32H40Zm176 32H96v-32h120v32Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-table-bold" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M224 44H32a12 12 0 0 0-12 12v136a20 20 0 0 0 20 20h176a20 20 0 0 0 20-20V56a12 12 0 0 0-12-12ZM44 116h32v24H44Zm56 0h112v24H100Zm112-48v24H44V68ZM44 164h32v24H44Zm56 24v-24h112v24Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-list-bullets" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M80 64a8 8 0 0 1 8-8h128a8 8 0 0 1 0 16H88a8 8 0 0 1-8-8Zm136 56H88a8 8 0 0 0 0 16h128a8 8 0 0 0 0-16Zm0 64H88a8 8 0 0 0 0 16h128a8 8 0 0 0 0-16ZM44 52a12 12 0 1 0 12 12a12 12 0 0 0-12-12Zm0 64a12 12 0 1 0 12 12a12 12 0 0 0-12-12Zm0 64a12 12 0 1 0 12 12a12 12 0 0 0-12-12Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-list-bullets-bold" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M76 64a12 12 0 0 1 12-12h128a12 12 0 0 1 0 24H88a12 12 0 0 1-12-12Zm140 52H88a12 12 0 0 0 0 24h128a12 12 0 0 0 0-24Zm0 64H88a12 12 0 0 0 0 24h128a12 12 0 0 0 0-24ZM44 112a16 16 0 1 0 16 16a16 16 0 0 0-16-16Zm0-64a16 16 0 1 0 16 16a16 16 0 0 0-16-16Zm0 128a16 16 0 1 0 16 16a16 16 0 0 0-16-16Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-send-email" viewBox="0 0 14 14">
+        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m5.812 11l2.178 2.168a1.1 1.1 0 0 0 1.05.3a1.119 1.119 0 0 0 .809-.74l3.576-10.72A1.118 1.118 0 0 0 11.987.57L1.267 4.147a1.119 1.119 0 0 0-.74.859a1.099 1.099 0 0 0 .3 1l2.737 2.737l-.09 3.466l2.338-1.208ZM13.106.79L3.564 8.742"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-card-text" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2M4 6v12h16V6H4m2 3h12v2H6V9m0 4h10v2H6v-2Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-hash-bold" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M224 84h-43.8l7.61-41.85a12 12 0 0 0-23.62-4.3L155.8 84h-39.6l7.61-41.85a12 12 0 1 0-23.62-4.3L91.8 84H48a12 12 0 0 0 0 24h39.44l-7.27 40H32a12 12 0 0 0 0 24h43.8l-7.61 41.85a12 12 0 0 0 9.66 14A11.43 11.43 0 0 0 80 228a12 12 0 0 0 11.8-9.86l8.4-46.14h39.6l-7.61 41.85a12 12 0 0 0 9.66 14a11.43 11.43 0 0 0 2.16.2a12 12 0 0 0 11.8-9.86L164.2 172H208a12 12 0 0 0 0-24h-39.44l7.27-40H224a12 12 0 0 0 0-24m-79.83 64h-39.61l7.27-40h39.61Z"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-letter-w" viewBox="0 0 24 24">
+        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m4 4l4 16l4-14l4 14l4-16"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-letter-m" viewBox="0 0 24 24">
+        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 20V4l6 14l6-14v16"/>
+    </symbol>
+</svg>
+
+<svg style="display:none;">
+    <symbol id="icon-key-fill" viewBox="0 0 256 256">
+        <path fill="currentColor" d="M160 16a80.07 80.07 0 0 0-76.09 104.78l-57.57 57.56A8 8 0 0 0 24 184v40a8 8 0 0 0 8 8h40a8 8 0 0 0 8-8v-16h16a8 8 0 0 0 8-8v-16h16a8 8 0 0 0 5.66-2.34l9.56-9.57A80 80 0 1 0 160 16m20 76a16 16 0 1 1 16-16a16 16 0 0 1-16 16"/>
+    </symbol>
+</svg>
+
+
+    </body>
+</html>

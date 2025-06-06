@@ -329,19 +329,20 @@ def strip_html(text: str) -> str:
 
     text = re.sub(r'  +', ' ', text)
 
-    return text
+    return text.strip()
 
 def root_info_clean_plaintext(html: str) -> str:
     s = strip_html(html)
     s = s.replace("･", " ")
     s = s.replace("Pāḷi Root:", "")
     s = re.sub(r"Bases:.*$", "", s, flags=re.DOTALL)
-    return s
+    return s.strip()
 
 def latinize(text: str) -> str:
     accents = 'ā ī ū ṃ ṁ ṅ ñ ṭ ḍ ṇ ḷ ṛ ṣ ś'.split(' ')
     latin = 'a i u m m n n t d n l r s s'.split(' ')
 
+    text = text.lower()
     for idx, i in enumerate(accents):
         text = text.replace(i, latin[idx])
 

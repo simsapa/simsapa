@@ -99,6 +99,14 @@ class DownloadAppdataWindow(AssetManagement):
             self.select_sanskrit_bundle()
 
     def _setup_ui(self):
+        """
+        _layout QVBoxLayout
+            _animation QLabel
+                _movie QMovie
+            _msg QLabel
+        _close_button
+        """
+
         self._central_widget = QWidget(self)
         self.setCentralWidget(self._central_widget)
 
