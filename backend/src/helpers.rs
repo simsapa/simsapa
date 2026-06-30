@@ -821,6 +821,56 @@ pub fn remove_inter_word_hyphens(text: &str) -> String {
     }
 }
 
+/// Split an English possessive `'s` at the end of a word into ` s`
+/// (e.g. `day's abiding` → `day s abiding`).
+///
+/// This is the *only* apostrophe transformation needed on top of the general
+/// quote handling: the source text's smart quotes were turned into spaces when
+/// `content_plain` was built (so it stores `day s abiding`), but a straight
+/// possessive apostrophe would otherwise be joined to `days` (by
+/// `remove_punct`'s `RE_MID_WORD_STRAIGHT_QUOTE`) and miss those rows. Splitting
+/// the possessive keeps it aligned with the stored text.
+///
+/// Removing the remaining (non-possessive) apostrophes is handled elsewhere:
+/// `compact_plain_text`/`remove_punct` for the ContainsMatch path, and
+/// `normalize_fulltext_query` for the FulltextMatch path. Tantivy's phrase
+/// double-quote `"` is left untouched.
+pub fn split_possessive_apostrophe(text: &str) -> String {
+    lazy_static! {
+        // Apostrophe variant (straight `'`, curly `'`/`'`, modifier `ʼ`,
+        // backtick) followed by a word-final `s`. The trailing `\b` keeps it to
+        // a word boundary so `day's` matches but `day'ster` (no possessive)
+        // does not.
+        static ref RE_POSSESSIVE_S: Regex = Regex::new(r"['‘’ʼ`]s\b").unwrap();
+    }
+    RE_POSSESSIVE_S.replace_all(text, " s").into_owned()
+}
+
+/// Normalize a user's FulltextMatch query the same way `SearchQueryTask` does
+/// before it reaches tantivy's `QueryParser`: lowercase + niggahita + iti-sandhi
+/// (`normalize_plain_text`), drop inter-word hyphens, split the English
+/// possessive `'s` into ` s`, then strip any remaining apostrophes.
+///
+/// The trailing apostrophe strip is required here because the FulltextMatch
+/// path deliberately skips `compact_plain_text`/`remove_punct` (to preserve
+/// tantivy's `+`/`-`/`"` operators), so — unlike the ContainsMatch path — there
+/// is no other step to remove apostrophes. Tantivy's parser raises a
+/// `Syntax Error` on *any* bare apostrophe (not just `day's`, also e.g.
+/// `manopubbaṅ'gamā`), and dropping them keeps mid-word Pāli compounds joined
+/// (`manopubbaṅ'gamā` → `manopubbaṅgamā`), matching the stored text.
+///
+/// Kept as one function so the live search path and the query-syntax debug view
+/// (`FulltextSearcher::debug_query`) parse the *identical* string.
+pub fn normalize_fulltext_query(text: &str) -> String {
+    let text = remove_inter_word_hyphens(&normalize_plain_text(text));
+    let text = split_possessive_apostrophe(&text);
+    let text: String = text
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '\u{2019}' | '\u{2018}' | '\u{02BC}' | '`'))
+        .collect();
+    RE_SPACES.replace_all(&text, " ").trim().to_string()
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GlossWordContext {
     pub clean_word: String,
@@ -2772,6 +2822,26 @@ mod tests {
         assert_eq!(word_uid_sanitize("word's quote\""), "words-quote");
         assert_eq!(word_uid_sanitize("word--with---dashes"), "word-with-dashes");
         assert_eq!(word_uid_sanitize("  leading space  "), "leading-space");
+    }
+
+    #[test]
+    fn test_split_possessive_apostrophe() {
+        // Possessive `'s` is split into ` s` (straight and curly).
+        assert_eq!(split_possessive_apostrophe("day's abiding"), "day s abiding");
+        assert_eq!(split_possessive_apostrophe("day\u{2019}s abiding"), "day s abiding");
+        // Non-possessive apostrophes are left untouched here (removed elsewhere).
+        assert_eq!(split_possessive_apostrophe("manopubbaṅ'gamā"), "manopubbaṅ'gamā");
+        assert_eq!(split_possessive_apostrophe("'tis"), "'tis");
+        assert_eq!(split_possessive_apostrophe("no apostrophe"), "no apostrophe");
+    }
+
+    #[test]
+    fn test_normalize_fulltext_query() {
+        // Possessive split, other apostrophes stripped (Pāli compound stays joined).
+        assert_eq!(normalize_fulltext_query("day's abiding"), "day s abiding");
+        assert_eq!(normalize_fulltext_query("manopubbaṅ'gamā"), "manopubbaṅgamā");
+        // Tantivy's phrase double-quote is preserved.
+        assert_eq!(normalize_fulltext_query("\"day's abiding\""), "\"day s abiding\"");
     }
 
     #[test]

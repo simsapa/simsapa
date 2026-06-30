@@ -8,7 +8,7 @@ use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Text, BigInt};
 
-use crate::helpers::{normalize_plain_text, normalize_query_text, pali_to_ascii, remove_inter_word_hyphens, strip_html, sutta_range_from_ref};
+use crate::helpers::{normalize_fulltext_query, normalize_plain_text, normalize_query_text, pali_to_ascii, split_possessive_apostrophe, strip_html, sutta_range_from_ref};
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::{get_app_data, get_app_globals};
 use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
@@ -140,7 +140,24 @@ impl<'a> SearchQueryTask<'a> {
                 query_text_orig.to_lowercase()
             }
             SearchMode::FulltextMatch => {
-                remove_inter_word_hyphens(&normalize_plain_text(&query_text_orig))
+                // normalize_plain_text + drop inter-word hyphens + normalize
+                // apostrophes (split possessive `'s` → ` s`, which also avoids
+                // tantivy's `Syntax Error` on a bare `'`; join the rest so Pāli
+                // compounds stay intact, `manopubbaṅ'gamā` → `manopubbaṅgamā`).
+                // Shared with the debug-query syntax check so both parse the
+                // identical string.
+                normalize_fulltext_query(&query_text_orig)
+            }
+            SearchMode::ContainsMatch => {
+                // Split the possessive `'s` *before* compact_plain_text so a
+                // straight possessive (`day's`) becomes `day s` to match stored
+                // content_plain (the source's smart quotes were turned into
+                // spaces, so it holds `day s abiding`); without this, compact's
+                // mid-word straight-quote join would collapse it to `days` and
+                // miss those rows. compact_plain_text/remove_punct then handles
+                // the remaining quote marks, joining Pāli compounds like
+                // `manopubbaṅ'gamā` → `manopubbaṅgamā`.
+                normalize_query_text(Some(split_possessive_apostrophe(&query_text_orig)))
             }
             _ => {
                 normalize_query_text(Some(query_text_orig))

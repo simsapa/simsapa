@@ -15,7 +15,7 @@ use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultP
 use simsapa_backend::theme_colors::ThemeColors;
 use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file, check_file_exists_print_err, with_fulltext_searcher};
 use simsapa_backend::dir_list::{generate_html_directory_listing, generate_plain_directory_listing};
-use simsapa_backend::helpers::{extract_words, normalize_query_text, query_text_to_uid_field_query};
+use simsapa_backend::helpers::{extract_words, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
 use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
@@ -2103,8 +2103,14 @@ impl qobject::SuttaBridge {
                 show_all_snippets: false,
             };
 
+            // Normalize the query the same way the live FulltextMatch search
+            // does, so the syntax check parses the identical string (otherwise
+            // a bare `'` in `day's` would report a tantivy Syntax Error here
+            // even though the real search normalizes it away).
+            let normalized_query = normalize_fulltext_query(&query_text);
+
             let result = with_fulltext_searcher(|searcher| {
-                searcher.debug_query(&query_text, &filters)
+                searcher.debug_query(&normalized_query, &filters)
             });
 
             let json = match result {
