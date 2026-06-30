@@ -78,6 +78,7 @@ ApplicationWindow {
 <h3>Dictionaries</h3>
 <ul>
     <li><code>DPD</code> Digital Pāḷi Dictionary <a href="https://digitalpalidictionary.github.io/">digitalpalidictionary.github.io</a> </li>
+    <li><code>DPPN</code> Dictionary of Pāli Proper Names <a href="https://ancient-buddhist-texts.net/Textual-Studies/DPPN/">ancient-buddhist-texts.net</a> (Revised by Ānandajoti Bhikkhu June 2025)</li>
 </ul>
 <h3>Reference Conversion</h3>
 <ul>
