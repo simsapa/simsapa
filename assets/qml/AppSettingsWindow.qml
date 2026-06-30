@@ -364,7 +364,10 @@ ApplicationWindow {
                     visible: root.is_desktop
                     // Collapse width when hidden so it doesn't leave a gap
                     // before the mobile-only Rendering tab.
-                    width: visible ? implicitWidth : 0
+                    //
+                    // NOTE: The implicitWidth causes a narrower tab than the other tabs.
+                    // Since we don't need the "Rendering" tab for the time being, commenting this out as well.
+                    // width: visible ? implicitWidth : 0
                 }
 
                 // NOTE: Commented out because when the rendering problems are seen, even this menu is inaccessible,
