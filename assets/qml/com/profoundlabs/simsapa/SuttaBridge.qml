@@ -153,6 +153,10 @@ Item {
         return '{"found": false, "sutta_title": ""}';
     }
 
+    function qt_version(): string {
+        return "6.9.3";
+    }
+
     function app_data_folder_path(): string {
         return "~/.local/share/simsapa-ng";
     }

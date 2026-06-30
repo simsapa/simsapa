@@ -33,10 +33,10 @@ ApplicationWindow {
     property string app_name: "Simsapa Dhamma Reader"
     // Declared in gui.cpp with app.setApplicationVersion("v0.1.0");
     property string app_version: Application.version
-    // FIXME: get Qt version
-    property string qt_version: ""
-
-    property string current_platform: ""
+    // Runtime Qt version, e.g. "6.9.3" (from qVersion() via the C++ bridge).
+    property string qt_version: SuttaBridge.qt_version()
+    // Operating system name, e.g. "linux", "android", "osx", "windows".
+    property string current_platform: Qt.platform.os
 
     property bool is_dark: theme_helper.is_dark
 

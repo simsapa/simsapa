@@ -354,6 +354,11 @@ QString get_qt_platform_name() {
     return QString();
 }
 
+QString get_qt_version() {
+    // Runtime Qt version string, e.g. "6.9.3".
+    return QString::fromLatin1(qVersion());
+}
+
 QString copy_apk_assets_to_internal_storage(QString apk_asset_path /* = QString("") */) {
     QString assets_storage = get_app_assets_path();
     QString ret_msg = QString("");

@@ -624,6 +624,7 @@ pub mod qobject {
 
         include!("utils.h");
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
+        fn get_qt_version() -> QString;
     }
 
     impl cxx_qt::Threading for SuttaBridge{}
@@ -834,6 +835,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn find_related_sutta_json(self: &SuttaBridge, sutta_uid: &QString, relation: &QString) -> QString;
+
+        #[qinvokable]
+        fn qt_version(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
         fn app_data_folder_path(self: &SuttaBridge) -> QString;
@@ -2213,6 +2217,10 @@ impl qobject::SuttaBridge {
             &relation.to_string(),
         );
         QString::from(r)
+    }
+
+    pub fn qt_version(&self) -> QString {
+        qobject::get_qt_version()
     }
 
     pub fn app_data_folder_path(&self) -> QString {
