@@ -44,6 +44,7 @@ fn main() {
         "../assets/qml/AboutDialog.qml",
         "../assets/qml/DatabaseValidationDialog.qml",
         "../assets/qml/DhammaTextSourcesDialog.qml",
+        "../assets/qml/SearchHelpWindow.qml",
         "../assets/qml/SystemPromptsDialog.qml",
         "../assets/qml/ModelsDialog.qml",
         "../assets/qml/AnkiExportDialog.qml",

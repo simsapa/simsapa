@@ -235,6 +235,13 @@ impl DpdDbHandle {
 
         let query_text = normalize_query_text(Some(query_text_orig.to_string()));
 
+        // A uid is matched against the stored form as-is; unlike the free-text
+        // query it must NOT be normalized (normalize_query_text strips the
+        // hyphens that are significant in a dict_words uid, e.g.
+        // "dhamma-1-01/dpd"). Use the raw, trimmed, lower-cased input for uid
+        // detection and resolution below.
+        let uid_candidate = query_text_orig.trim().to_lowercase();
+
         let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
         let uid_prefix_ref = uid_prefix_pat.as_deref();
         let uid_suffix_ref = uid_suffix_pat.as_deref();
@@ -248,9 +255,11 @@ impl DpdDbHandle {
 
         // Query text may be an uid or an id number.
         // DpdHeadword uid is id_number/dpd, DpdRoot uid is root/dpd.
-        if query_text.ends_with("/dpd") || query_text.chars().all(char::is_numeric) {
+        if uid_candidate.ends_with("/dpd")
+            || (!uid_candidate.is_empty() && uid_candidate.chars().all(char::is_numeric))
+        {
             let mut res_words: Vec<UDpdWord> = Vec::new();
-            let ref_str = query_text.replace("/dpd", "");
+            let ref_str = uid_candidate.replace("/dpd", "");
             // If the remaining reference string is numeric, it is a DpdHeadword
             if ref_str.chars().all(char::is_numeric) {
                 if let Ok(id_val) = ref_str.parse::<i32>() {
@@ -269,9 +278,9 @@ impl DpdDbHandle {
                     }
                 }
             } else {
-                // Else it is a DpdRoot
+                // Else it is a DpdRoot uid (e.g. "√akkh/dpd")...
                 let mut q = dpd_roots::table
-                    .filter(dpd_roots::uid.eq(&query_text))
+                    .filter(dpd_roots::uid.eq(&uid_candidate))
                     .into_boxed();
                 if let Some(p) = uid_prefix_ref {
                     q = q.filter(dpd_roots::uid.like(p.to_string()));
@@ -282,6 +291,33 @@ impl DpdDbHandle {
                 let r_opt = q.first::<DpdRoot>(db_conn).optional()?;
                 if let Some(r) = r_opt {
                     res_words.push(UDpdWord::Root(Box::new(r)));
+                }
+
+                // ...or a dict_words-style word uid: the sanitized lemma plus
+                // "/dpd" (e.g. "ko/dpd", "dhamma-1-01/dpd"). dict_words.uid is
+                // word_uid_sanitize(lemma_1)+"/dpd", so recover the headword by
+                // sanitizing candidate lemmas and comparing (ref_str is the raw
+                // uid without "/dpd", hyphens preserved). This makes
+                // DpdLookup mode resolve the same word-uid form that Combined
+                // mode resolves via UidMatch against dict_words (and lets
+                // WordSummary append "/dpd" to a short query and still match).
+                if res_words.is_empty() {
+                    // The lemma_clean is the leading, non-numeric part of the
+                    // sanitized ref: "dhamma-1-01" -> "dhamma", "ko" -> "ko".
+                    let base: String = ref_str
+                        .split('-')
+                        .take_while(|t| !t.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                        .collect::<Vec<_>>()
+                        .join("-");
+                    let candidates = dpd_headwords::table
+                        .filter(dpd_headwords::lemma_clean.eq(&base)
+                                .or(dpd_headwords::word_ascii.eq(&base)))
+                        .load::<DpdHeadword>(db_conn)?;
+                    for h in candidates {
+                        if word_uid_sanitize(&h.lemma_1).to_lowercase() == ref_str {
+                            res_words.push(UDpdWord::Headword(Box::new(h)));
+                        }
+                    }
                 }
             }
 

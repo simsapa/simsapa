@@ -34,6 +34,10 @@ Frame {
     property alias language_filter_dropdown: language_filter_dropdown
     property alias advanced_options_btn: advanced_options_btn
 
+    // Emitted when the info button is clicked; the parent window opens the
+    // Search Help window.
+    signal helpRequested()
+
     // Search area state: "Suttas", "Dictionary", or "Library"
     property string search_area: "Suttas"
     readonly property var search_area_list: ["Suttas", "Dictionary", "Library"]
@@ -107,6 +111,72 @@ Frame {
     function user_typed() {
         // TODO self._show_search_normal_icon()
         if (root.search_as_you_type_checked) root.search_timer.restart();
+    }
+
+    // Explicit "search" action from the search button (or Enter key). For a
+    // query of 3+ chars, run it immediately (min_length 1 = "search anyway",
+    // bypassing the incremental-search floor). For a short query (< 3 chars),
+    // warn the user before running it, because short queries return many
+    // results — in the Dictionary area we instead offer the /dpd uid form so a
+    // one/two-letter word like "i" or "ko" resolves to its dictionary page.
+    function request_search() {
+        const q = search_input.text;
+        if (q.length === 0) return;
+        if (q.length >= 3) {
+            root.handle_query_fn(q, 1); // qmllint disable use-proper-function
+            return;
+        }
+        if (root.search_area === "Dictionary") {
+            short_query_dpd_dialog.query = q;
+            short_query_dpd_dialog.open();
+        } else {
+            short_query_warn_dialog.query = q;
+            short_query_warn_dialog.open();
+        }
+    }
+
+    // Short-query warning for the Suttas / Library areas: confirm and run the
+    // query anyway (min_length 1 bypasses the incremental floor).
+    Dialog {
+        id: short_query_warn_dialog
+        title: "Short Query"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(root.window_width - 40, 400)
+
+        property string query: ""
+
+        onAccepted: root.handle_query_fn(short_query_warn_dialog.query, 1) // qmllint disable use-proper-function
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Short queries can return a large number of results and may be slow.\n\nSearch anyway?"
+        }
+    }
+
+    // Short-query offer for the Dictionary area: append "/dpd" so a one/two
+    // letter word is looked up as a dictionary uid (e.g. "ko" -> "ko/dpd").
+    Dialog {
+        id: short_query_dpd_dialog
+        title: "Short Query"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(root.window_width - 40, 400)
+
+        property string query: ""
+
+        onAccepted: root.handle_query_fn(short_query_dpd_dialog.query + "/dpd", 1) // qmllint disable use-proper-function
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Short queries can return a large number of results.\n\nLook up \"" + short_query_dpd_dialog.query + "\" as a dictionary word using the /dpd form (\"" + short_query_dpd_dialog.query + "/dpd\")?"
+        }
     }
 
     Flow {
@@ -185,7 +255,7 @@ Frame {
                 id: search_btn
                 icon.source: root.has_query_error ? "icons/32x32/fa_triangle-exclamation-solid.png" : (root.is_loading ? "icons/32x32/fa_stopwatch-solid.png" : "icons/32x32/bx_search_alt_2.png")
                 enabled: search_input.text.length > 0
-                onClicked: root.handle_query_fn(search_input.text, 1) // qmllint disable use-proper-function
+                onClicked: root.request_search()
                 Layout.preferredHeight: root.icon_size
                 Layout.preferredWidth: root.icon_size
             }
@@ -457,6 +527,18 @@ Frame {
                         return model[currentIndex];
                     }
                 }
+            }
+
+            // Info button: opens the Search Help window (explains the search
+            // modes and input behaviour). Placed after the language dropdown.
+            Button {
+                id: search_help_btn
+                icon.source: "icons/32x32/fa_circle-info-solid.png"
+                Layout.preferredHeight: root.icon_size
+                Layout.preferredWidth: root.icon_size
+                ToolTip.visible: hovered
+                ToolTip.text: "Search help"
+                onClicked: root.helpRequested()
             }
 
             // Fires the single per-area-switch query. Declared AFTER both

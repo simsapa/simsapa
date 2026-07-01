@@ -103,3 +103,29 @@ pariḷāho na vijjati.
         assert_eq!(json, expected_json);
     }
 }
+
+/// A dict_words-style word uid (sanitized lemma + "/dpd", e.g. "ko/dpd") should
+/// resolve to its DPD headword in DpdLookup, the same word Combined mode reaches
+/// via UidMatch against dict_words. This is what lets WordSummary append "/dpd"
+/// to a short query (e.g. "ko" -> "ko/dpd") and still find the word.
+#[test]
+#[serial]
+fn test_dpd_lookup_word_uid_form() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    // Simple single-token lemmas: "ko/dpd" -> "ko", "i/dpd" -> "i".
+    let res = app_data.dbm.dpd.dpd_lookup("ko/dpd", false, true, None, None).unwrap();
+    assert!(res.iter().any(|r| r.title == "ko"),
+            "ko/dpd should resolve to the 'ko' headword, got: {:?}",
+            res.iter().map(|r| &r.title).collect::<Vec<_>>());
+
+    let res = app_data.dbm.dpd.dpd_lookup("i/dpd", false, true, None, None).unwrap();
+    assert!(!res.is_empty(), "i/dpd should resolve to a headword");
+
+    // Numbered/sanitized lemma: "dhamma-1-01/dpd" -> lemma_1 "dhamma 1.01".
+    let res = app_data.dbm.dpd.dpd_lookup("dhamma-1-01/dpd", false, true, None, None).unwrap();
+    assert!(res.iter().any(|r| r.title == "dhamma 1.01"),
+            "dhamma-1-01/dpd should resolve to the 'dhamma 1.01' headword, got: {:?}",
+            res.iter().map(|r| &r.title).collect::<Vec<_>>());
+}

@@ -55,6 +55,28 @@ Frame {
     ListModel { id: deconstructor_model }
     ListModel { id: summaries_model }
 
+    // Short-query offer for the dictionary lookup: append "/dpd" so a one/two
+    // letter word is looked up as a dictionary uid (e.g. "ko" -> "ko/dpd").
+    Dialog {
+        id: short_query_dpd_dialog
+        title: "Short Query"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(root.width - 40, 400)
+
+        property string query: ""
+
+        onAccepted: root.run_lookup(short_query_dpd_dialog.query + "/dpd", 1)
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Short queries can return a very large number of results.\n\nLook up \"" + short_query_dpd_dialog.query + "\" as a dictionary word using the /dpd form (\"" + short_query_dpd_dialog.query + "/dpd\")?"
+        }
+    }
+
     Connections {
         target: SuttaBridge
 
@@ -102,6 +124,25 @@ Frame {
         lookup_input.text = query;
     }
 
+    // Explicit "search" action from the search button (or Enter key). A 3-char
+    // query runs immediately with no confirm (min_length 1 bypasses the
+    // incremental floor, which run_lookup applies only for search-as-you-type).
+    // A 1- or 2-char query is offered the /dpd uid form instead, so a one/two
+    // letter word like "i" or "ko" is looked up as a dictionary word
+    // ("ko" -> "ko/dpd"). An empty query does nothing.
+    function request_lookup() {
+        const q = lookup_input.text;
+        if (q.length === 0) return;
+        if (q.length >= 3) {
+            root.run_lookup(q, 1);
+            return;
+        }
+        short_query_dpd_dialog.query = q;
+        short_query_dpd_dialog.open();
+    }
+
+    // min_length 4 is the search-as-you-type floor (a plain text query runs from
+    // 4 characters); the search button calls this with min_length 1.
     function run_lookup(query: string, min_length = 4) {
         if (query.length < min_length)
             return;
@@ -154,7 +195,7 @@ Frame {
                 id: search_btn
                 icon.source: root.is_loading ? "icons/32x32/fa_stopwatch-solid.png" : "icons/32x32/bx_search_alt_2.png"
                 enabled: !root.is_loading
-                onClicked: root.run_lookup(lookup_input.text)
+                onClicked: root.request_lookup()
                 Layout.preferredHeight: lookup_input.height
                 Layout.preferredWidth: lookup_input.height
                 ToolTip.visible: hovered

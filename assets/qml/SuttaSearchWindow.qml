@@ -445,7 +445,13 @@ ApplicationWindow {
         return SuttaBridge.get_last_session_json();
     }
 
-    // Timer for incremental search debounce
+    // Timer for incremental search debounce.
+    //
+    // Search-as-you-type uses min_length 4: a plain text query runs only from 4
+    // characters (e.g. "dasa"), so a 3-char text query like "eva" is held back
+    // until the user presses the search button. A recognised reference still
+    // runs from 3 characters, because handle_query rewrites it to a "uid:…"
+    // form whose length clears the 7-char uid floor (e.g. "mn8" -> "uid:mn8").
     Timer {
         id: search_timer
         interval: 400 // milliseconds
@@ -503,10 +509,15 @@ ApplicationWindow {
         // which is wasted work when no query will run.
         if (!query_text_orig || query_text_orig.length === 0)
             return;
+
         // For non-uid queries the floor is min_length; uid queries can be
-        // shorter (e.g. "uid:mn8") so we only enforce a length>=3 prefilter
-        // here and re-check after uid resolution below.
-        if (query_text_orig.length < 3)
+        // shorter (e.g. "uid:mn8") so we only enforce a length >= min(3,
+        // min_length) prefilter here and re-check after uid resolution below.
+        // Incremental search passes min_length 4 (so a 3-char text query is
+        // held back), while the search button passes min_length 1 ("search
+        // anyway"), which lowers this floor so a button press runs a 3-char
+        // text query directly and a confirmed 1-2 char query too.
+        if (query_text_orig.length < Math.min(3, min_length))
             return;
 
         let params = root.get_search_params_from_ui();
@@ -2153,6 +2164,11 @@ ${query_text}`;
         top_bar_margin: root.top_bar_margin
     }
 
+    SearchHelpWindow {
+        id: search_help_window
+        top_bar_margin: root.top_bar_margin
+    }
+
     UpdateNotificationDialog {
         id: update_notification_dialog
         top_bar_margin: root.top_bar_margin
@@ -2363,6 +2379,7 @@ ${query_text}`;
                 search_as_you_type_checked: app_settings_window.search_as_you_type
                 is_loading: root.is_loading
                 has_query_error: root.has_query_error
+                onHelpRequested: search_help_window.show_help()
             }
 
             Button {
