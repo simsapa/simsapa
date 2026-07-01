@@ -825,11 +825,18 @@ pub fn remove_inter_word_hyphens(text: &str) -> String {
 /// (e.g. `day's abiding` → `day s abiding`).
 ///
 /// This is the *only* apostrophe transformation needed on top of the general
-/// quote handling: the source text's smart quotes were turned into spaces when
-/// `content_plain` was built (so it stores `day s abiding`), but a straight
-/// possessive apostrophe would otherwise be joined to `days` (by
-/// `remove_punct`'s `RE_MID_WORD_STRAIGHT_QUOTE`) and miss those rows. Splitting
-/// the possessive keeps it aligned with the stored text.
+/// quote handling. Without it, a straight possessive apostrophe (`day's`) is
+/// joined to `days` by `remove_punct`'s `RE_MID_WORD_STRAIGHT_QUOTE`, while a
+/// smart apostrophe (`day’s`) becomes `day s` (smart quotes are turned into
+/// spaces) — so the two apostrophe styles would normalize differently. Splitting
+/// the possessive first makes both styles collapse to `day s`.
+///
+/// Applied on **both** sides so the stored text and the query agree:
+/// - `content_plain` — via `compact_plain_text`, which calls this before
+///   `remove_punct` (so e.g. thig5.9/en/hecker-khema's straight `day's abiding`
+///   is stored as `day s abiding`, not `days abiding`).
+/// - the query — the ContainsMatch path goes through `compact_plain_text` too,
+///   and the FulltextMatch path calls it in `normalize_fulltext_query`.
 ///
 /// Removing the remaining (non-possessive) apostrophes is handled elsewhere:
 /// `compact_plain_text`/`remove_punct` for the ContainsMatch path, and
@@ -1757,6 +1764,14 @@ pub fn compact_plain_text(text: &str) -> String {
     let text = text.replace(['{', '}'], "");
     let text = clean_word(&text);
     let text = normalize_plain_text(&text);
+    // Split an English possessive `'s` into ` s` *before* remove_punct. Sources
+    // that use a smart apostrophe (`day’s`) already end up as `day s` because
+    // remove_punct turns smart quotes into spaces, but a straight apostrophe
+    // (`day's`, e.g. thig5.9/en/hecker-khema) would otherwise be collapsed to
+    // `days` by remove_punct's RE_MID_WORD_STRAIGHT_QUOTE. Splitting here keeps
+    // content_plain consistent regardless of the source's apostrophe style, and
+    // aligned with the query normalization (see split_possessive_apostrophe).
+    let text = split_possessive_apostrophe(&text);
     let text = remove_punct(Some(&text));
     text.trim().to_string()
 }
@@ -2864,6 +2879,10 @@ mod tests {
     fn test_compact_plain_text() {
         assert_eq!(compact_plain_text("  HELLO, World! ṃ {test}  "), "hello world ṁ test");
         assert_eq!(compact_plain_text("Saṃsāra."), "saṁsāra");
+        // English possessive `'s` is split so straight and smart apostrophes
+        // normalize the same way (thig5.9/en/hecker-khema uses a straight `'`).
+        assert_eq!(compact_plain_text("When done was the day's abiding,"), "when done was the day s abiding");
+        assert_eq!(compact_plain_text("When done was the day\u{2019}s abiding,"), "when done was the day s abiding");
     }
 
     #[test]
