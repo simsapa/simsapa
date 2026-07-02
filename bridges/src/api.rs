@@ -693,9 +693,10 @@ fn sutta_html_response(
     anchor: Option<&str>,
     layout: Option<&str>,
     columns: Option<&str>,
+    repeat_pali: Option<&str>,
     dbm: &DbManager,
 ) -> (Status, RawHtml<String>) {
-    let overrides = match parse_display_overrides(layout, columns) {
+    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
         Ok(o) => o,
         Err(msg) => return (Status::BadRequest, RawHtml(msg)),
     };
@@ -732,8 +733,8 @@ fn word_html_response(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
     (status, RawHtml(html))
 }
 
-#[get("/get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>")]
-fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+#[get("/get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>&<repeat_pali>")]
+fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
     // Convert path to forward slashes for cross-platform consistency
     let uid_str = pathbuf_to_forward_slash_string(&uid);
 
@@ -744,7 +745,7 @@ fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, la
     };
     info(&log_msg);
 
-    sutta_html_response(window_id, &uid_str, anchor, layout, columns, dbm)
+    sutta_html_response(window_id, &uid_str, anchor, layout, columns, repeat_pali, dbm)
 }
 
 #[get("/get_word_html_by_uid/<window_id>/<uid..>")]
@@ -1561,11 +1562,11 @@ fn get_word_html_q(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
 /// existence/normalization reuses `convert_verse_ref_to_sutta_uid` +
 /// `lookup_sutta_with_fallback` (not the word resolver), so verse refs,
 /// `/pli/ms` fallback and ranges resolve to the canonical uid before rendering.
-#[get("/sutta_html?<window_id>&<uid>&<anchor>&<layout>&<columns>")]
-fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+#[get("/sutta_html?<window_id>&<uid>&<anchor>&<layout>&<columns>&<repeat_pali>")]
+fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
     info(&format!("get_sutta_html_q(): window_id: {}, uid: {}", window_id, uid));
 
-    sutta_html_response(window_id, uid, anchor, layout, columns, dbm)
+    sutta_html_response(window_id, uid, anchor, layout, columns, repeat_pali, dbm)
 }
 
 /// GET /sutta_content_block?<uid>&<layout>&<columns>&<show_references>
@@ -1578,11 +1579,11 @@ fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Op
 /// drops non-segmented columns at options resolution (PRD FR 8). No
 /// `window_id`: the block carries no window-specific JS (`WINDOW_ID` is
 /// page-level `js_extra`).
-#[get("/sutta_content_block?<uid>&<layout>&<columns>&<show_references>")]
-fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
-    info(&format!("get_sutta_content_block(): uid: {}, layout: {:?}, columns: {:?}", uid, layout, columns));
+#[get("/sutta_content_block?<uid>&<layout>&<columns>&<show_references>&<repeat_pali>")]
+fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+    info(&format!("get_sutta_content_block(): uid: {}, layout: {:?}, columns: {:?}, repeat_pali: {:?}", uid, layout, columns, repeat_pali));
 
-    let overrides = match parse_display_overrides(layout, columns) {
+    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
         Ok(o) => o,
         Err(msg) => return (Status::BadRequest, RawHtml(msg)),
     };

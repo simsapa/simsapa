@@ -22,7 +22,11 @@ export interface SuttaFontGroup {
 }
 
 export interface SuttaDisplaySettings {
-  layout: string; // "linebyline" | "sidebyside"
+  layout: string; // "solo" | "linebyline" | "sidebyside"
+  repeat_pali: string; // "off" | "alternate" | "atend"
+  // Reading-measure width as percent of the base sutta_max_width (100 =
+  // unchanged); applied as the --width-scale CSS var.
+  width_percent: number;
   pali_font: SuttaFontGroup;
   translation_font: SuttaFontGroup;
   author_ink_colors: Record<string, string>;
@@ -43,6 +47,8 @@ export interface SuttaDisplayColumn {
 export function built_in_defaults(): SuttaDisplaySettings {
   return {
     layout: "linebyline",
+    repeat_pali: "off",
+    width_percent: 100,
     pali_font: { family_kind: "sans", size_percent: 80, line_height_percent: 150, bold: false, italic: false },
     translation_font: { family_kind: "serif", size_percent: 100, line_height_percent: 150, bold: false, italic: false },
     author_ink_colors: {},
@@ -60,11 +66,18 @@ const MAX_COLOR_COLUMNS = 12;
 
 let settings: SuttaDisplaySettings = built_in_defaults();
 let scope: Scope = "save_default";
-let layout_change_handler: ((layout: string) => void) | null = null;
+let rerender_handler: ((layout: string, repeat_pali: string) => void) | null = null;
 
 // Wired in simsapa.ts init to content_reload.ts's content-block re-render.
-export function set_layout_change_handler(handler: (layout: string) => void): void {
-  layout_change_handler = handler;
+// Fired on render-affecting changes (layout, Repeat Pāli).
+export function set_rerender_handler(handler: (layout: string, repeat_pali: string) => void): void {
+  rerender_handler = handler;
+}
+
+function request_rerender(): void {
+  if (rerender_handler) {
+    rerender_handler(settings.layout, settings.repeat_pali);
+  }
 }
 
 export function get_settings(): SuttaDisplaySettings {
@@ -90,6 +103,8 @@ function merged_settings(defaults_json: any): SuttaDisplaySettings {
   }
   return {
     layout: defaults_json.layout || base.layout,
+    repeat_pali: defaults_json.repeat_pali || base.repeat_pali,
+    width_percent: defaults_json.width_percent || base.width_percent,
     pali_font: { ...base.pali_font, ...(defaults_json.pali_font || {}) },
     translation_font: { ...base.translation_font, ...(defaults_json.translation_font || {}) },
     author_ink_colors: { ...(defaults_json.author_ink_colors || {}) },
@@ -107,6 +122,10 @@ export function apply_css_vars(
   columns: SuttaDisplayColumn[] = current_columns(),
 ): void {
   const root = document.documentElement.style;
+
+  // Reading-measure width: scales the line-by-line body measure and the
+  // side-by-side per-column cap (see suttas.sass / _suttacentral.sass).
+  root.setProperty("--width-scale", String(s.width_percent / 100));
 
   root.setProperty("--pali-font-family", FONT_STACKS[s.pali_font.family_kind]);
   root.setProperty("--pali-font-size", `${s.pali_font.size_percent / 100}em`);
@@ -153,6 +172,55 @@ export function apply_css_vars(
       root.setProperty(`--col-${n}-bg`, bg);
     }
   });
+
+  const gradient = column_bg_gradient(s, columns);
+  if (gradient) {
+    root.setProperty("--cols-bg-image", gradient);
+  } else {
+    root.removeProperty("--cols-bg-image");
+  }
+}
+
+/**
+ * Continuous column backgrounds for the side-by-side layout. Painting the
+ * per-cell background leaves the template block margins (paragraph gaps)
+ * uncolored, so Columns mode instead paints full-height stripes on the
+ * `.suttacentral.layout-columns` wrapper: one hard-stop gradient stripe per
+ * column, matching the flex geometry (equal-width columns, 1em column-gap),
+ * with transparent gaps. The per-cell backgrounds are turned off by CSS in
+ * that mode (see _suttacentral.sass). Returns null when the layout is not
+ * side-by-side or no column has a background color.
+ */
+export function column_bg_gradient(
+  s: SuttaDisplaySettings,
+  columns: SuttaDisplayColumn[],
+): string | null {
+  if (s.layout !== "sidebyside") {
+    return null;
+  }
+  const n_cols = Math.min(columns.length, MAX_COLOR_COLUMNS);
+  if (n_cols < 1) {
+    return null;
+  }
+  const colors = columns.slice(0, n_cols).map((col) => s.author_bg_colors[col.author] || null);
+  if (!colors.some((c) => c !== null)) {
+    return null;
+  }
+  // Stripe geometry mirrors `span.segment { display: flex; column-gap: 1em }`
+  // with equal flex: 1 1 0 cells.
+  const w = `(100% - ${n_cols - 1} * 1em) / ${n_cols}`;
+  const stops: string[] = [];
+  colors.forEach((color, i) => {
+    const c = color || "transparent";
+    const start = `calc((${w}) * ${i} + ${i} * 1em)`;
+    const end = `calc((${w}) * ${i + 1} + ${i} * 1em)`;
+    stops.push(`${c} ${start}`, `${c} ${end}`);
+    if (i < n_cols - 1) {
+      const next_start = `calc((${w}) * ${i + 1} + ${i + 1} * 1em)`;
+      stops.push(`transparent ${end}`, `transparent ${next_start}`);
+    }
+  });
+  return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
 async function post_settings(): Promise<void> {
@@ -201,22 +269,61 @@ export function set_layout(layout: string): void {
     return;
   }
   settings.layout = layout;
-  if (layout_change_handler) {
-    layout_change_handler(layout);
-  }
+  request_rerender();
   if (scope === "save_default") {
     post_settings();
   }
 }
 
+export function set_repeat_pali(repeat_pali: string): void {
+  if (settings.repeat_pali === repeat_pali) {
+    return;
+  }
+  settings.repeat_pali = repeat_pali;
+  request_rerender();
+  if (scope === "save_default") {
+    post_settings();
+  }
+}
+
+/**
+ * The Repeat Pāli column arrangement, mirroring the server's
+ * `AppData::arrange_repeat_pali` (keep the two in sync): the first Pāli
+ * column anchors, translations keep their order. Off = Pāli first, once;
+ * alternate = Pāli before each translation; atend = Pāli first and once more
+ * as the last column. Idempotent: re-arranging an arranged list collapses
+ * the repeated Pāli entries back to one anchor first.
+ */
+export function arrange_display_columns(
+  columns: SuttaDisplayColumn[],
+  repeat_pali: string,
+): SuttaDisplayColumn[] {
+  const pali = columns.find((col) => col.is_pali) || null;
+  const translations = columns.filter((col) => !col.is_pali);
+  if (!pali) {
+    return translations;
+  }
+  if (translations.length === 0) {
+    return [pali];
+  }
+  if (repeat_pali === "alternate") {
+    return translations.flatMap((tr) => [pali, tr]);
+  }
+  if (repeat_pali === "atend") {
+    return [pali, ...translations, pali];
+  }
+  return [pali, ...translations];
+}
+
 export function reset_all(): void {
   const previous_layout = settings.layout;
+  const previous_repeat_pali = settings.repeat_pali;
   settings = built_in_defaults();
   sync_controls();
   render_color_rows();
   apply_css_vars();
-  if (settings.layout !== previous_layout && layout_change_handler) {
-    layout_change_handler(settings.layout);
+  if (settings.layout !== previous_layout || settings.repeat_pali !== previous_repeat_pali) {
+    request_rerender();
   }
   if (scope === "save_default") {
     post_settings();
@@ -254,6 +361,21 @@ function sync_lh_preset_highlight(group: string): void {
   }
 }
 
+/**
+ * Highlight the Narrow/Normal/Wide width preset matching the current width
+ * percent; no preset is active when the slider sits between preset values.
+ */
+function sync_width_preset_highlight(): void {
+  const panel = panel_el();
+  if (!panel) {
+    return;
+  }
+  const presets = panel.querySelector<HTMLElement>(".ds-segmented[data-setting='width-preset']");
+  if (presets) {
+    set_segmented_active(presets, String(settings.width_percent));
+  }
+}
+
 /** Set the panel's controls to the current settings state. */
 function sync_controls(): void {
   const panel = panel_el();
@@ -270,6 +392,21 @@ function sync_controls(): void {
   if (layout_seg) {
     set_segmented_active(layout_seg, settings.layout);
   }
+
+  const repeat_seg = panel.querySelector<HTMLElement>(".ds-segmented[data-setting='repeat-pali']");
+  if (repeat_seg) {
+    set_segmented_active(repeat_seg, settings.repeat_pali);
+  }
+
+  const width = panel.querySelector<HTMLInputElement>("input.ds-width");
+  if (width) {
+    width.value = String(settings.width_percent);
+  }
+  const width_value = panel.querySelector<HTMLElement>("span.ds-width-value");
+  if (width_value) {
+    width_value.textContent = `${settings.width_percent}%`;
+  }
+  sync_width_preset_highlight();
 
   for (const group of ["pali", "translation"]) {
     const fg = font_group(group);
@@ -396,6 +533,201 @@ const PALETTE_BGS: string[] = [
 
 let open_palette_el: HTMLElement | null = null;
 
+// --- Color conversions for the custom picker (hex <-> HSV) ---
+
+/** Parse "#rrggbb" (leading # optional) to [r, g, b] 0-255, or null. */
+export function parse_hex_color(text: string): [number, number, number] | null {
+  const m = text.trim().match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) {
+    return null;
+  }
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+function rgb_to_hex(r: number, g: number, b: number): string {
+  const to2 = (x: number) => Math.round(Math.min(255, Math.max(0, x))).toString(16).padStart(2, "0");
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+/** [r, g, b] 0-255 -> [h, s, v] with h 0-360, s/v 0-100. */
+function rgb_to_hsv(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === rn) {
+      h = 60 * (((gn - bn) / d) % 6);
+    } else if (max === gn) {
+      h = 60 * ((bn - rn) / d + 2);
+    } else {
+      h = 60 * ((rn - gn) / d + 4);
+    }
+  }
+  if (h < 0) {
+    h += 360;
+  }
+  const s = max === 0 ? 0 : (d / max) * 100;
+  return [h, s, max * 100];
+}
+
+/** [h, s, v] (h 0-360, s/v 0-100) -> [r, g, b] 0-255. */
+function hsv_to_rgb(h: number, s: number, v: number): [number, number, number] {
+  const sn = s / 100, vn = v / 100;
+  const c = vn * sn;
+  const hp = ((h % 360) + 360) % 360 / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let rgb: [number, number, number];
+  if (hp < 1) { rgb = [c, x, 0]; }
+  else if (hp < 2) { rgb = [x, c, 0]; }
+  else if (hp < 3) { rgb = [0, c, x]; }
+  else if (hp < 4) { rgb = [0, x, c]; }
+  else if (hp < 5) { rgb = [x, 0, c]; }
+  else { rgb = [c, 0, x]; }
+  const m = vn - c;
+  return [(rgb[0] + m) * 255, (rgb[1] + m) * 255, (rgb[2] + m) * 255];
+}
+
+function hsv_to_hex(h: number, s: number, v: number): string {
+  const [r, g, b] = hsv_to_rgb(h, s, v);
+  return rgb_to_hex(r, g, b);
+}
+
+/**
+ * Build the custom color picker shown under the swatch rows: a 2D
+ * saturation/value area, a hue slider and a hex input. Drawn with CSS
+ * gradients and pointer events — the native <input type="color"> dialog is
+ * unreliable in the embedded WebEngineView / Android WebView. Dragging
+ * applies the color live; persistence (POST) happens on release / commit.
+ */
+function build_custom_picker(
+  palette: HTMLElement,
+  map: Record<string, string>,
+  author: string,
+  dot: HTMLElement,
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "ds-custom";
+
+  const sv_area = document.createElement("div");
+  sv_area.className = "ds-sv-area";
+  const sv_cursor = document.createElement("div");
+  sv_cursor.className = "ds-sv-cursor";
+  sv_area.appendChild(sv_cursor);
+  wrap.appendChild(sv_area);
+
+  const hue = document.createElement("input");
+  hue.type = "range";
+  hue.className = "ds-hue";
+  hue.min = "0";
+  hue.max = "360";
+  hue.step = "1";
+  hue.title = "Hue";
+  wrap.appendChild(hue);
+
+  const hex_row = document.createElement("div");
+  hex_row.className = "ds-hex-row";
+  const preview = document.createElement("span");
+  preview.className = "ds-custom-preview";
+  hex_row.appendChild(preview);
+  const hex_input = document.createElement("input");
+  hex_input.type = "text";
+  hex_input.className = "ds-hex";
+  hex_input.spellcheck = false;
+  hex_input.placeholder = "#rrggbb";
+  hex_input.title = "Hex colour, e.g. #fff8e1";
+  hex_row.appendChild(hex_input);
+  wrap.appendChild(hex_row);
+
+  // Picker state, initialized from the current color when set.
+  const initial = parse_hex_color(map[author] || "");
+  let [h, s, v] = initial ? rgb_to_hsv(...initial) : [45, 25, 95];
+
+  function sync_ui(): void {
+    const hex = hsv_to_hex(h, s, v);
+    sv_area.style.background =
+      `linear-gradient(to top, #000, rgba(0, 0, 0, 0)), linear-gradient(to right, #fff, hsl(${Math.round(h)}, 100%, 50%))`;
+    sv_cursor.style.left = `${s}%`;
+    sv_cursor.style.top = `${100 - v}%`;
+    hue.value = String(Math.round(h));
+    hex_input.value = hex;
+    preview.style.backgroundColor = hex;
+  }
+
+  function apply_color(persist: boolean): void {
+    const hex = hsv_to_hex(h, s, v);
+    map[author] = hex;
+    set_dot_color(dot, hex);
+    // A custom color supersedes any highlighted swatch.
+    palette.querySelectorAll(".ds-swatch.selected").forEach((el) => el.classList.remove("selected"));
+    if (persist) {
+      on_setting_changed();
+    } else {
+      apply_css_vars();
+    }
+  }
+
+  let dragging = false;
+  function sv_update_from_event(event: PointerEvent): void {
+    const rect = sv_area.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+    s = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * 100;
+    v = 100 - Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) * 100;
+    sync_ui();
+    apply_color(false);
+  }
+  sv_area.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    sv_area.setPointerCapture(event.pointerId);
+    sv_update_from_event(event);
+  });
+  sv_area.addEventListener("pointermove", (event) => {
+    if (dragging) {
+      sv_update_from_event(event);
+    }
+  });
+  sv_area.addEventListener("pointerup", (event) => {
+    dragging = false;
+    sv_area.releasePointerCapture(event.pointerId);
+    apply_color(true);
+  });
+
+  hue.addEventListener("input", () => {
+    h = Number(hue.value);
+    sync_ui();
+    apply_color(false);
+  });
+  hue.addEventListener("change", () => {
+    apply_color(true);
+  });
+
+  hex_input.addEventListener("change", () => {
+    const rgb = parse_hex_color(hex_input.value);
+    if (rgb) {
+      [h, s, v] = rgb_to_hsv(...rgb);
+      sync_ui();
+      apply_color(true);
+    } else {
+      // Invalid input: revert the field to the current picker color.
+      sync_ui();
+    }
+  });
+  // Keep Enter in the hex field from bubbling into page-level key handlers.
+  hex_input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      hex_input.dispatchEvent(new Event("change"));
+    }
+  });
+
+  sync_ui();
+  return wrap;
+}
+
 function set_dot_color(dot: HTMLElement, color: string | undefined): void {
   dot.style.backgroundColor = color || "transparent";
   dot.classList.toggle("is-set", !!color);
@@ -457,6 +789,8 @@ function open_palette(row: HTMLElement, author: string, kind: "ink" | "bg", dot:
     palette.appendChild(swatch);
   }
 
+  palette.appendChild(build_custom_picker(palette, map, author, dot));
+
   row.insertAdjacentElement("afterend", palette);
   open_palette_el = palette;
 }
@@ -507,6 +841,22 @@ function wire_panel(): void {
           case "layout":
             set_layout(value);
             break;
+          case "repeat-pali":
+            set_repeat_pali(value);
+            break;
+          case "width-preset": {
+            settings.width_percent = Number(value);
+            const width_slider = panel.querySelector<HTMLInputElement>("input.ds-width");
+            if (width_slider) {
+              width_slider.value = value;
+            }
+            const width_span = panel.querySelector<HTMLElement>("span.ds-width-value");
+            if (width_span) {
+              width_span.textContent = `${value}%`;
+            }
+            on_setting_changed();
+            break;
+          }
           case "font-family":
             font_group(group).family_kind = value as FontFamilyKind;
             on_setting_changed();
@@ -543,6 +893,19 @@ function wire_panel(): void {
       on_setting_changed();
     });
   });
+
+  const width_slider = panel.querySelector<HTMLInputElement>("input.ds-width");
+  if (width_slider) {
+    width_slider.addEventListener("input", () => {
+      settings.width_percent = Number(width_slider.value);
+      const width_span = panel.querySelector<HTMLElement>("span.ds-width-value");
+      if (width_span) {
+        width_span.textContent = `${width_slider.value}%`;
+      }
+      sync_width_preset_highlight();
+      on_setting_changed();
+    });
+  }
 
   panel.querySelectorAll<HTMLInputElement>("input.ds-font-size").forEach((range) => {
     range.addEventListener("input", () => {
@@ -591,6 +954,9 @@ export function init_display_settings(): void {
     // the panel reflects the effective layout.
     settings.layout = sd.layout;
   }
+  if (sd && sd.repeat_pali) {
+    settings.repeat_pali = sd.repeat_pali;
+  }
   scope = "save_default";
 
   wire_panel();
@@ -603,5 +969,5 @@ export function init_display_settings(): void {
 export function reset_module_state_for_tests(): void {
   settings = built_in_defaults();
   scope = "save_default";
-  layout_change_handler = null;
+  rerender_handler = null;
 }

@@ -2223,6 +2223,9 @@ pub fn bilara_multi_column_html(
     let layout_class = match layout {
         SuttaLayout::LineByLine => "layout-lines",
         SuttaLayout::SideBySide => "layout-columns",
+        // Not reached: Solo renders via the standard whole-document path in
+        // render_content_block_for_columns, never through this builder.
+        SuttaLayout::Solo => "layout-lines",
     };
     let wrapper_extra_classes = format!("{} cols-{}", layout_class, columns.len());
 

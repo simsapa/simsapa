@@ -13,7 +13,7 @@ use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
-use crate::app_settings::{AppSettings, SuttaDisplayDefaults, SuttaLayout};
+use crate::app_settings::{AppSettings, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
 use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
@@ -322,6 +322,15 @@ impl AppData {
             SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), show_references, overrides)
         };
 
+        // The Pāli placement (first column; repeated per repeat_pali) is
+        // applied to the resolved column set. Solo keeps the columns as
+        // resolved: the renderer shows only the opened sutta, but the page
+        // state (SUTTA_DISPLAY.columns) retains the full set so switching
+        // back to Columns/Lines restores it.
+        if options.layout != SuttaLayout::Solo {
+            options.columns = self.arrange_repeat_pali(sutta, &options.columns, options.repeat_pali);
+        }
+
         // Lines mode cannot interleave non-segmented texts, so they are
         // excluded here, at options resolution — the renderer never sees them
         // (PRD FR 8). The UI disables such entries in the bottom-bar dropdowns
@@ -347,6 +356,64 @@ impl AppData {
         }
 
         options
+    }
+
+    /// Applies the `repeat_pali` arrangement to a resolved column uid list.
+    /// The first Pāli column (by the sutta's language) is the anchor; the
+    /// translations keep their order. Off: Pāli first, once. Alternate: Pāli
+    /// before each translation. AtEnd: Pāli first and once more as the last
+    /// column. Without a Pāli column (or with no translations) the list is
+    /// returned with the Pāli-first normalization only. Unknown uids are kept
+    /// as translations — the renderer reports them, not this arrangement.
+    ///
+    /// Mirrored client-side by `arrange_display_columns` in
+    /// `src-ts/display_settings.ts` (the panel keeps `SUTTA_DISPLAY.columns`
+    /// in sync without re-reading the server state) — keep the two in sync.
+    fn arrange_repeat_pali(&self, sutta: &Sutta, columns: &[String], repeat: RepeatPali) -> Vec<String> {
+        let is_pali = |col_uid: &str| -> bool {
+            if col_uid == sutta.uid {
+                return sutta.language == "pli";
+            }
+            match self.dbm.appdata.get_sutta(col_uid) {
+                Some(s) => s.language == "pli",
+                None => false,
+            }
+        };
+
+        let mut pali: Option<String> = None;
+        let mut translations: Vec<String> = Vec::new();
+        for col_uid in columns {
+            if is_pali(col_uid) {
+                // Repeated Pāli entries (e.g. an atend arrangement echoed
+                // back by the client) collapse to one anchor.
+                if pali.is_none() {
+                    pali = Some(col_uid.clone());
+                }
+            } else {
+                translations.push(col_uid.clone());
+            }
+        }
+
+        match pali {
+            None => translations,
+            Some(p) if translations.is_empty() => vec![p],
+            Some(p) => match repeat {
+                RepeatPali::Off => {
+                    let mut cols = vec![p];
+                    cols.extend(translations);
+                    cols
+                }
+                RepeatPali::Alternate => {
+                    translations.into_iter().flat_map(|t| [p.clone(), t]).collect()
+                }
+                RepeatPali::AtEnd => {
+                    let mut cols = vec![p.clone()];
+                    cols.extend(translations);
+                    cols.push(p);
+                    cols
+                }
+            },
+        }
     }
 
     /// Renders one sutta's standard whole-document content body: segmented
@@ -424,7 +491,13 @@ impl AppData {
         let all_segmented = column_suttas.iter()
             .all(|s| s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false));
 
-        let content_html_body = if column_suttas.len() >= 2 && all_segmented {
+        let content_html_body = if options.layout == SuttaLayout::Solo {
+            // Solo: only the opened translation, via the standard
+            // whole-document path — the resolved columns are page state for
+            // switching back to Columns/Lines, not render input.
+            self.render_sutta_standard_body(sutta, show_references)?
+
+        } else if column_suttas.len() >= 2 && all_segmented {
             // Per-segment aligned multi-column view: each column's segments
             // carry that text's own variants/comments/glosses.
             let mut columns: Vec<ColumnSource> = Vec::new();
@@ -494,6 +567,7 @@ impl AppData {
         };
         let obj = serde_json::json!({
             "layout": options.layout.as_str(),
+            "repeat_pali": options.repeat_pali.as_str(),
             "columns": columns,
             "show_references": options.show_references,
             "defaults": defaults,
@@ -529,8 +603,15 @@ impl AppData {
         let font_size = app_settings.sutta_font_size;
         let max_width = app_settings.sutta_max_width;
 
-        // Format CSS and JS extras
-        let css_extra = format!("html {{ font-size: {}px; }} body {{ max-width: {}ex; }}", font_size, max_width);
+        // Format CSS and JS extras. The reading measure is passed as CSS vars,
+        // not a direct body max-width: body { max-width } reads
+        // --single-max-width (suttas.sass), while the side-by-side layout
+        // widens the body to the viewport and instead caps each column at
+        // --col-max-width (see _suttacentral.sass).
+        let css_extra = format!(
+            "html {{ font-size: {}px; }} body {{ --single-max-width: {}ex; --col-max-width: {}ex; }}",
+            font_size, max_width, max_width,
+        );
 
         // window.SUTTA_UID: a top-level `const` is not a globalThis property,
         // and the webpack bundle (content_reload.ts) reads it via globalThis —
@@ -989,7 +1070,9 @@ impl AppData {
         let max_width = app_settings.sutta_max_width;
 
         // Format CSS and JS extras
-        let css_extra = format!("html {{ font-size: {}px; }} body {{ max-width: {}ex; }}", font_size, max_width);
+        // --single-max-width: body { max-width } in suttas.sass reads this var
+        // (an inline/direct max-width would fight the layout rules there).
+        let css_extra = format!("html {{ font-size: {}px; }} body {{ --single-max-width: {}ex; }}", font_size, max_width);
 
         let mut js_extra = format!("const BOOK_SPINE_ITEM_UID = '{}';", spine_item.spine_item_uid);
 

@@ -175,22 +175,46 @@ $solarized_light_bg: #FAE6B2
       color: var(--col-#{$n}-ink, inherit)
       background-color: var(--col-#{$n}-bg, transparent)
 
-// Columns mode needs more page width than the single-text default
+// Columns mode uses the full page width — the single-text reading measure
 // (body { max-width: 75ex } in suttas.sass plus the sutta_max_width
-// css_extra), or the text columns become too narrow. Give the page up to
-// ~75ex per column, capped by the viewport. body:has() out-specifies the
-// inline `body { max-width: …ex }` from css_extra (0,1,1 vs 0,0,1), and
+// css_extra) fits one text only. body:has() out-specifies the inline
+// `body { max-width: …ex }` from css_extra (0,1,1 vs 0,0,1), and
 // re-evaluates automatically when a content-block swap changes the wrapper
 // classes. The sbs-blocks fallback wrapper carries layout-columns cols-N
 // too, so these rules cover both. Lines mode and single-column views keep
 // the narrow reading measure.
-@for $n from 2 through 12
-  body:has(.suttacentral.layout-columns.cols-#{$n})
-    max-width: min(#{$n * 75}ex, 96vw)
+body:has(.suttacentral.layout-columns)
+  max-width: 100vw
+
+// On very wide screens each column keeps the single-text reading measure:
+// the wrapper is centered and capped at N columns of --col-max-width (set
+// from AppSettings.sutta_max_width by the css_extra on body; 75ex default)
+// plus the column gaps. The #ssp_main prefix out-specifies the
+// `#ssp_main * { max-width: 100% }` rule in suttas.sass (1,3,0 vs 1,0,1).
+@for $n from 1 through 12
+  #ssp_main .suttacentral.layout-columns.cols-#{$n}
+    max-width: calc(#{$n} * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + #{$n - 1} * 1em)
+    margin-left: auto
+    margin-right: auto
+
+// Columns (side-by-side): continuous per-column backgrounds. The per-cell
+// background above leaves the template block margins (paragraph gaps)
+// uncolored, so Columns mode paints full-height column stripes on the
+// wrapper instead — a hard-stop linear-gradient computed in JS from the
+// per-column bg colors and the flex geometry (see column_bg_gradient in
+// src-ts/display_settings.ts) — and turns the per-cell background off. The
+// sbs-blocks fallback is excluded: its .sbs-col divs already paint
+// continuous columns.
+.suttacentral.layout-columns:not(.sbs-blocks)
+  background-image: var(--cols-bg-image, none)
+  span.colcell
+    background-color: transparent
 
 // Columns (side-by-side): the cells of each segment become equal-width flex
 // columns. The per-segment reference anchor must keep full width and sit
 // above the cells, or it steals a column.
+// The cells carry inner side padding so the column background stripe edge
+// is never flush against the text.
 .suttacentral.layout-columns
   span.segment
     display: flex
@@ -198,6 +222,8 @@ $solarized_light_bg: #FAE6B2
     span.colcell
       flex: 1 1 0
       min-width: 0
+      padding-left: 0.75em
+      padding-right: 0.75em
     span.reference
       flex: 0 0 100%
       order: -1
@@ -210,6 +236,8 @@ $solarized_light_bg: #FAE6B2
     span.colcell
       flex: 1 1 0
       min-width: 0
+      padding-left: 0.75em
+      padding-right: 0.75em
       font-family: "Source Sans 3 SSP"
       font-weight: bold
       text-align: center
@@ -224,6 +252,7 @@ $solarized_light_bg: #FAE6B2
   .sbs-col
     flex: 1 1 0
     min-width: 0
+    padding: 0 0.75em
   .sbs-col-header
     font-family: "Source Sans 3 SSP"
     font-weight: bold

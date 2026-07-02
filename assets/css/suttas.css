@@ -489,48 +489,87 @@ div.btn a, span.btn a {
   background-color: var(--col-11-bg, transparent);
 }
 
-body:has(.suttacentral.layout-columns.cols-2) {
-  max-width: min(150ex, 96vw);
+body:has(.suttacentral.layout-columns) {
+  max-width: 100vw;
 }
 
-body:has(.suttacentral.layout-columns.cols-3) {
-  max-width: min(225ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-1 {
+  max-width: calc(1 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 0 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-4) {
-  max-width: min(300ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-2 {
+  max-width: calc(2 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 1 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-5) {
-  max-width: min(375ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-3 {
+  max-width: calc(3 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 2 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-6) {
-  max-width: min(450ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-4 {
+  max-width: calc(4 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 3 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-7) {
-  max-width: min(525ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-5 {
+  max-width: calc(5 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 4 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-8) {
-  max-width: min(600ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-6 {
+  max-width: calc(6 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 5 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-9) {
-  max-width: min(675ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-7 {
+  max-width: calc(7 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 6 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-10) {
-  max-width: min(750ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-8 {
+  max-width: calc(8 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 7 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-11) {
-  max-width: min(825ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-9 {
+  max-width: calc(9 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 8 * 1em);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-body:has(.suttacentral.layout-columns.cols-12) {
-  max-width: min(900ex, 96vw);
+#ssp_main .suttacentral.layout-columns.cols-10 {
+  max-width: calc(10 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 9 * 1em);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#ssp_main .suttacentral.layout-columns.cols-11 {
+  max-width: calc(11 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 10 * 1em);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#ssp_main .suttacentral.layout-columns.cols-12 {
+  max-width: calc(12 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 11 * 1em);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.suttacentral.layout-columns:not(.sbs-blocks) {
+  background-image: var(--cols-bg-image, none);
+}
+.suttacentral.layout-columns:not(.sbs-blocks) span.colcell {
+  background-color: transparent;
 }
 
 .suttacentral.layout-columns span.segment {
@@ -540,6 +579,8 @@ body:has(.suttacentral.layout-columns.cols-12) {
 .suttacentral.layout-columns span.segment span.colcell {
   flex: 1 1 0;
   min-width: 0;
+  padding-left: 0.75em;
+  padding-right: 0.75em;
 }
 .suttacentral.layout-columns span.segment span.reference {
   flex: 0 0 100%;
@@ -554,6 +595,8 @@ body:has(.suttacentral.layout-columns.cols-12) {
 .suttacentral.layout-columns .column-headers span.colcell {
   flex: 1 1 0;
   min-width: 0;
+  padding-left: 0.75em;
+  padding-right: 0.75em;
   font-family: "Source Sans 3 SSP";
   font-weight: bold;
   text-align: center;
@@ -567,6 +610,7 @@ body:has(.suttacentral.layout-columns.cols-12) {
 .suttacentral.sbs-blocks .sbs-col {
   flex: 1 1 0;
   min-width: 0;
+  padding: 0 0.75em;
 }
 .suttacentral.sbs-blocks .sbs-col-header {
   font-family: "Source Sans 3 SSP";
@@ -742,7 +786,7 @@ body {
 
 body {
   padding: 0 1em;
-  max-width: 75ex;
+  max-width: calc(var(--single-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1));
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -1854,6 +1898,88 @@ body.footnote-bar-visible #ssp_content {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1;
+}
+
+.ds-palette .ds-custom {
+  flex: 0 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--menu-separator);
+}
+
+.ds-palette .ds-custom .ds-sv-area {
+  position: relative;
+  width: 100%;
+  height: 90px;
+  border: 1px solid var(--menu-separator);
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.ds-palette .ds-custom .ds-sv-cursor {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  transform: translate(-6px, -6px);
+  pointer-events: none;
+}
+
+.ds-palette .ds-custom .ds-hue {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  cursor: pointer;
+}
+
+.ds-palette .ds-custom .ds-hue::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.ds-palette .ds-custom .ds-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ds-palette .ds-custom .ds-hex-row .ds-custom-preview {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+}
+
+.ds-palette .ds-custom .ds-hex-row .ds-hex {
+  flex: 1 1 auto;
+  width: 0;
+  padding: 2px 6px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+}
+
+.ds-palette .ds-custom .ds-hex-row .ds-hex:focus {
+  outline: none;
+  border-color: var(--btn-border-active);
 }
 
 .ds-hint {

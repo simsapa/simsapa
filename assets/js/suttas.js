@@ -278,7 +278,6 @@ class TextResizeController {
         this.minScale = 0.3;
         this.maxScale = 2.0;
         this.scaleStep = 0.1;
-        this.baseMaxWidth = 75;
 
         this.init();
     }
@@ -314,8 +313,12 @@ class TextResizeController {
 
     applyScale() {
         this.contentDiv.style.fontSize = `${this.currentScale}em`;
-        const adjustedMaxWidth = this.baseMaxWidth * this.currentScale;
-        document.body.style.maxWidth = `${adjustedMaxWidth}ex`;
+        // Scale the reading measure through a CSS var, never an inline
+        // body max-width: an inline style out-prioritizes every stylesheet
+        // rule, including the side-by-side full-width layout
+        // (body:has(.suttacentral.layout-columns) in suttas.sass) and the
+        // sutta_max_width setting emitted by the css_extra.
+        document.body.style.setProperty('--text-scale', this.currentScale);
     }
 }
 

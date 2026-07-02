@@ -189,11 +189,15 @@ pub struct AppSettings {
     pub sutta_display: SuttaDisplayDefaults,
 }
 
-/// Sutta view layout mode. UI labels are "Lines" / "Columns"; the enum keeps
-/// the descriptive line-by-line / side-by-side naming. Both spellings are
-/// accepted when parsing (`linebyline`/`lines`, `sidebyside`/`columns`).
+/// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
+/// enum keeps the descriptive line-by-line / side-by-side naming. Both
+/// spellings are accepted when parsing (`linebyline`/`lines`,
+/// `sidebyside`/`columns`). Solo renders only the opened translation via the
+/// standard whole-document path (no Pāli / other translation columns).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SuttaLayout {
+    #[serde(rename = "solo")]
+    Solo,
     #[default]
     #[serde(rename = "linebyline", alias = "lines", alias = "line-by-line")]
     LineByLine,
@@ -204,6 +208,7 @@ pub enum SuttaLayout {
 impl SuttaLayout {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
+            "solo" => Some(SuttaLayout::Solo),
             "linebyline" | "lines" | "line-by-line" => Some(SuttaLayout::LineByLine),
             "sidebyside" | "columns" | "side-by-side" => Some(SuttaLayout::SideBySide),
             _ => None,
@@ -212,8 +217,44 @@ impl SuttaLayout {
 
     pub fn as_str(&self) -> &'static str {
         match self {
+            SuttaLayout::Solo => "solo",
             SuttaLayout::LineByLine => "linebyline",
             SuttaLayout::SideBySide => "sidebyside",
+        }
+    }
+}
+
+/// Where the Pāli text appears in the multi-column sutta view (follows the
+/// study.jhana.info "Repeat Pāli" control). The Pāli's default position is
+/// the first column; this controls whether/where it repeats:
+/// Off = first column only; Alternate = before each translation;
+/// AtEnd = first column and once more as the last column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RepeatPali {
+    #[default]
+    #[serde(rename = "off")]
+    Off,
+    #[serde(rename = "alternate")]
+    Alternate,
+    #[serde(rename = "atend", alias = "at-end", alias = "at_end")]
+    AtEnd,
+}
+
+impl RepeatPali {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "off" => Some(RepeatPali::Off),
+            "alternate" => Some(RepeatPali::Alternate),
+            "atend" | "at-end" | "at_end" => Some(RepeatPali::AtEnd),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RepeatPali::Off => "off",
+            RepeatPali::Alternate => "alternate",
+            RepeatPali::AtEnd => "atend",
         }
     }
 }
@@ -261,6 +302,12 @@ impl Default for SuttaFontGroup {
 #[serde(default)]
 pub struct SuttaDisplayDefaults {
     pub layout: SuttaLayout,
+    /// Pāli column placement/repetition in the multi-column layouts.
+    pub repeat_pali: RepeatPali,
+    /// Reading-measure width as a percentage of the base `sutta_max_width`
+    /// (100 = unchanged). Applied as the `--width-scale` CSS var to both the
+    /// line-by-line body measure and the side-by-side per-column cap.
+    pub width_percent: usize,
     pub pali_font: SuttaFontGroup,
     pub translation_font: SuttaFontGroup,
     /// Per-author text ("ink") colors, e.g. "sujato" -> "#663399".
@@ -273,6 +320,8 @@ impl Default for SuttaDisplayDefaults {
     fn default() -> Self {
         SuttaDisplayDefaults {
             layout: SuttaLayout::default(),
+            repeat_pali: RepeatPali::default(),
+            width_percent: 100,
             // Matches the stylesheet's un-overridden look: Pāli cells render
             // in "Source Sans 3 SSP" at 0.8em (see _suttacentral.sass),
             // translations in the serif body font at 1em. The CSS custom

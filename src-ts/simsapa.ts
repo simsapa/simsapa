@@ -154,11 +154,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Display-settings cogwheel panel: only present on sutta pages
-    // (init is a no-op when the chrome is absent). Layout changes re-render
-    // the content block through the localhost API.
+    // (init is a no-op when the chrome is absent). Layout / Repeat Pāli
+    // changes re-render the content block through the localhost API.
     if (document.getElementById('displaySettingsButton')) {
-        display_settings.set_layout_change_handler((layout) => {
-            content_reload.refetch_with_layout(layout);
+        display_settings.set_rerender_handler((layout, repeat_pali) => {
+            content_reload.refetch_with_params(layout, repeat_pali);
         });
         display_settings.init_display_settings();
     }

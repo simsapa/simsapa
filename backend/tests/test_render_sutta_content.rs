@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serial_test::serial;
 use simsapa_backend::get_app_data;
-use simsapa_backend::app_settings::SuttaLayout;
+use simsapa_backend::app_settings::{RepeatPali, SuttaLayout};
 use simsapa_backend::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use simsapa_backend::html_format::{html_indent, extract_element_by_id_from_indented, normalize_attribute_order};
 
@@ -19,6 +19,7 @@ fn lines_options(sutta_uid: &str) -> SuttaDisplayOptions {
     SuttaDisplayOptions {
         layout: SuttaLayout::LineByLine,
         columns: vec![sutta_uid.to_string()],
+        repeat_pali: RepeatPali::Off,
         show_references: false,
     }
 }
@@ -35,6 +36,7 @@ fn default_lines_options(sutta_uid: &str) -> SuttaDisplayOptions {
     SuttaDisplayOptions {
         layout: SuttaLayout::LineByLine,
         columns,
+        repeat_pali: RepeatPali::Off,
         show_references: false,
     }
 }
@@ -44,6 +46,7 @@ fn columns_options(uids: &[&str], layout: SuttaLayout, show_references: bool) ->
     SuttaDisplayOptions {
         layout,
         columns: uids.iter().map(|s| s.to_string()).collect(),
+        repeat_pali: RepeatPali::Off,
         show_references,
     }
 }
@@ -567,11 +570,11 @@ fn test_resolve_default_columns_for_translated() {
 
     // Layout override keeps the test independent of the persisted default;
     // the column set is resolved from the DB.
-    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None };
+    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None };
     let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
 
     assert_eq!(options.layout, SuttaLayout::SideBySide);
-    assert_eq!(options.columns, vec!["mn1/en/sujato".to_string(), "mn1/pli/ms".to_string()]);
+    assert_eq!(options.columns, vec!["mn1/pli/ms".to_string(), "mn1/en/sujato".to_string()]);
 }
 
 #[test]
@@ -581,7 +584,7 @@ fn test_resolve_single_column_pali_only() {
     let app_data = get_app_data();
     let sutta = app_data.dbm.appdata.get_sutta("sn56.11/pli/ms").expect("Can't get sutta from db");
 
-    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None };
+    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None };
     let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
     assert_eq!(options.columns, vec!["sn56.11/pli/ms".to_string()]);
 
@@ -600,7 +603,7 @@ fn test_resolve_single_column_no_pali_counterpart() {
     // sn12.72-81/en/sujato is segmented but has no sn12.72-81/pli/ms sibling.
     let sutta = app_data.dbm.appdata.get_sutta("sn12.72-81/en/sujato").expect("Can't get sutta from db");
 
-    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None };
+    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None };
     let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
     assert_eq!(options.columns, vec!["sn12.72-81/en/sujato".to_string()]);
 
@@ -623,11 +626,86 @@ fn test_resolve_lines_mode_drops_non_segmented_columns() {
             "mn1/en/bodhi".to_string(),
             "mn1/pli/ms".to_string(),
         ]),
+        repeat_pali: None,
     };
     let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
 
-    // mn1/en/bodhi has no content_json: silently dropped in Lines mode.
+    // mn1/en/bodhi has no content_json: silently dropped in Lines mode. The
+    // repeat_pali arrangement puts the Pali column first.
+    assert_eq!(options.columns, vec!["mn1/pli/ms".to_string(), "mn1/en/sujato".to_string()]);
+}
+
+#[test]
+#[serial]
+fn test_resolve_repeat_pali_arrangements() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let sutta = app_data.dbm.appdata.get_sutta("mn1/en/sujato").expect("Can't get sutta from db");
+
+    // Alternate with one translation: Pali before the translation.
+    let overrides = SuttaDisplayOverrides {
+        layout: Some(SuttaLayout::SideBySide),
+        columns: None,
+        repeat_pali: Some(RepeatPali::Alternate),
+    };
+    let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
+    assert_eq!(options.columns, vec!["mn1/pli/ms".to_string(), "mn1/en/sujato".to_string()]);
+
+    // At end: Pali first and once more as the last column.
+    let overrides = SuttaDisplayOverrides {
+        layout: Some(SuttaLayout::SideBySide),
+        columns: None,
+        repeat_pali: Some(RepeatPali::AtEnd),
+    };
+    let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
+    assert_eq!(options.columns, vec![
+        "mn1/pli/ms".to_string(),
+        "mn1/en/sujato".to_string(),
+        "mn1/pli/ms".to_string(),
+    ]);
+
+    // An atend arrangement echoed back by the client collapses to one anchor
+    // before re-arranging (idempotent).
+    let overrides = SuttaDisplayOverrides {
+        layout: Some(SuttaLayout::SideBySide),
+        columns: Some(vec![
+            "mn1/pli/ms".to_string(),
+            "mn1/en/sujato".to_string(),
+            "mn1/pli/ms".to_string(),
+        ]),
+        repeat_pali: Some(RepeatPali::Off),
+    };
+    let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
+    assert_eq!(options.columns, vec!["mn1/pli/ms".to_string(), "mn1/en/sujato".to_string()]);
+}
+
+#[test]
+#[serial]
+fn test_render_solo_layout() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let sutta = app_data.dbm.appdata.get_sutta("mn1/en/sujato").expect("Can't get sutta from db");
+
+    let overrides = SuttaDisplayOverrides {
+        layout: Some(SuttaLayout::Solo),
+        columns: None,
+        repeat_pali: None,
+    };
+    let options = app_data.resolve_sutta_display_options(&sutta, false, &overrides);
+    assert_eq!(options.layout, SuttaLayout::Solo);
+    // Solo keeps the resolved columns as page state (no arrangement): the
+    // renderer shows only the opened sutta.
     assert_eq!(options.columns, vec!["mn1/en/sujato".to_string(), "mn1/pli/ms".to_string()]);
+
+    let html = app_data.render_sutta_content(&sutta, None, None, &options).expect("Can't render the html");
+    // Standard whole-document rendering: no layout-/cols- wrapper classes,
+    // no column cells in the content markup (the embedded stylesheet still
+    // mentions .colcell, so check the markup form).
+    assert!(html.contains("<div class='suttacentral bilara-text'>"));
+    assert!(!html.contains("bilara-text layout-"));
+    assert!(!html.contains("class='colcell"));
+    // The page state reports the solo layout for the settings panel.
+    assert!(html.contains("\"layout\":\"solo\""));
 }
 
 #[test]

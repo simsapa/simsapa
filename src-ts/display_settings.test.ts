@@ -66,28 +66,42 @@ describe("display_settings scope semantics", () => {
 
   test("set_layout triggers the re-render handler and POSTs in default scope", () => {
     const handler = jest.fn();
-    ds.set_layout_change_handler(handler);
+    ds.set_rerender_handler(handler);
     ds.set_layout("sidebyside");
-    expect(handler).toHaveBeenCalledWith("sidebyside");
+    expect(handler).toHaveBeenCalledWith("sidebyside", "off");
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     expect(ds.get_settings().layout).toBe("sidebyside");
   });
 
   test("set_layout in local scope re-renders but does not POST", () => {
     const handler = jest.fn();
-    ds.set_layout_change_handler(handler);
+    ds.set_rerender_handler(handler);
     ds.on_scope_changed("this_view");
     ds.set_layout("sidebyside");
-    expect(handler).toHaveBeenCalledWith("sidebyside");
+    expect(handler).toHaveBeenCalledWith("sidebyside", "off");
     expect(save_settings_calls(fetch_mock).length).toBe(0);
   });
 
   test("set_layout with the unchanged layout is a no-op", () => {
     const handler = jest.fn();
-    ds.set_layout_change_handler(handler);
+    ds.set_rerender_handler(handler);
     ds.set_layout("linebyline");
     expect(handler).not.toHaveBeenCalled();
     expect(save_settings_calls(fetch_mock).length).toBe(0);
+  });
+
+  test("set_repeat_pali re-renders with the current layout and POSTs", () => {
+    const handler = jest.fn();
+    ds.set_rerender_handler(handler);
+    ds.set_repeat_pali("atend");
+    expect(handler).toHaveBeenCalledWith("linebyline", "atend");
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
+    expect(ds.get_settings().repeat_pali).toBe("atend");
+
+    // Unchanged value is a no-op.
+    handler.mockClear();
+    ds.set_repeat_pali("atend");
+    expect(handler).not.toHaveBeenCalled();
   });
 
   test("reset_all restores built-in defaults and POSTs in default scope", () => {
@@ -147,6 +161,42 @@ describe("color rows and swatch palette", () => {
     expect(document.querySelector(".ds-palette")).toBeNull();
     const saves = fetch_mock.mock.calls.filter((c) => String(c[0]).includes("save_sutta_display_settings"));
     expect(saves.length).toBe(1);
+  });
+
+  test("the palette includes the custom picker; a hex value applies and persists", () => {
+    ds.render_color_rows();
+    const bg_dot = document.querySelector<HTMLButtonElement>(".ds-color-row[data-author='sujato'] .ds-bg-color")!;
+    bg_dot.click();
+
+    const palette = document.querySelector<HTMLElement>(".ds-palette")!;
+    const custom = palette.querySelector<HTMLElement>(".ds-custom")!;
+    expect(custom).not.toBeNull();
+    expect(custom.querySelector(".ds-sv-area")).not.toBeNull();
+    expect(custom.querySelector(".ds-hue")).not.toBeNull();
+
+    const hex_input = custom.querySelector<HTMLInputElement>("input.ds-hex")!;
+    hex_input.value = "#123456";
+    hex_input.dispatchEvent(new Event("change"));
+
+    expect(ds.get_settings().author_bg_colors["sujato"]).toBe("#123456");
+    expect(document.documentElement.style.getPropertyValue("--col-0-bg")).toBe("#123456");
+    const saves = fetch_mock.mock.calls.filter((c) => String(c[0]).includes("save_sutta_display_settings"));
+    expect(saves.length).toBe(1);
+    // The picker does not close the palette (it is part of it).
+    expect(document.querySelector(".ds-palette")).not.toBeNull();
+  });
+
+  test("an invalid hex value reverts the field and stores nothing", () => {
+    ds.render_color_rows();
+    const bg_dot = document.querySelector<HTMLButtonElement>(".ds-color-row[data-author='sujato'] .ds-bg-color")!;
+    bg_dot.click();
+
+    const hex_input = document.querySelector<HTMLInputElement>(".ds-palette input.ds-hex")!;
+    hex_input.value = "not-a-color";
+    hex_input.dispatchEvent(new Event("change"));
+
+    expect(ds.get_settings().author_bg_colors["sujato"]).toBeUndefined();
+    expect(hex_input.value).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   test("the none-swatch clears the stored color", () => {
@@ -220,6 +270,63 @@ describe("apply_css_vars", () => {
     expect(style.getPropertyValue("--col-1-ink")).toBe("#663399");
     expect(style.getPropertyValue("--col-0-ink")).toBe("");
     expect(style.getPropertyValue("--col-1-bg")).toBe("");
+  });
+
+  test("width_percent sets the --width-scale var", () => {
+    ds.apply_css_vars();
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue("--width-scale")).toBe("1");
+
+    ds.get_settings().width_percent = 125;
+    ds.apply_css_vars();
+    expect(style.getPropertyValue("--width-scale")).toBe("1.25");
+  });
+
+  test("arrange_display_columns mirrors the server arrangement", () => {
+    const pali = { uid: "mn1/pli/ms", label: "Pāli", author: "pali", is_pali: true };
+    const tr = { uid: "mn1/en/sujato", label: "sujato", author: "sujato", is_pali: false };
+
+    // Off: Pāli first, once — regardless of the incoming order.
+    expect(ds.arrange_display_columns([tr, pali], "off").map((c) => c.uid))
+      .toEqual(["mn1/pli/ms", "mn1/en/sujato"]);
+    // Alternate: Pāli before each translation.
+    expect(ds.arrange_display_columns([tr, pali], "alternate").map((c) => c.uid))
+      .toEqual(["mn1/pli/ms", "mn1/en/sujato"]);
+    // At end: Pāli first and once more as the last column.
+    expect(ds.arrange_display_columns([tr, pali], "atend").map((c) => c.uid))
+      .toEqual(["mn1/pli/ms", "mn1/en/sujato", "mn1/pli/ms"]);
+    // Idempotent: re-arranging an atend list under off collapses it.
+    expect(ds.arrange_display_columns([pali, tr, pali], "off").map((c) => c.uid))
+      .toEqual(["mn1/pli/ms", "mn1/en/sujato"]);
+    // No Pāli column / no translations.
+    expect(ds.arrange_display_columns([tr], "atend").map((c) => c.uid))
+      .toEqual(["mn1/en/sujato"]);
+    expect(ds.arrange_display_columns([pali], "atend").map((c) => c.uid))
+      .toEqual(["mn1/pli/ms"]);
+  });
+
+  test("side-by-side paints continuous column stripes via --cols-bg-image", () => {
+    const s = ds.get_settings();
+    s.layout = "sidebyside";
+    s.author_bg_colors["pali"] = "#fff8e1";
+    ds.apply_css_vars();
+    const style = document.documentElement.style;
+    const image = style.getPropertyValue("--cols-bg-image");
+    expect(image).toContain("linear-gradient(to right");
+    // pali is column 0: its stripe carries the color; sujato's is transparent.
+    expect(image).toContain("#fff8e1 calc(((100% - 1 * 1em) / 2) * 0 + 0 * 1em)");
+    expect(image).toContain("transparent");
+
+    // No stripes in line-by-line mode (per-cell backgrounds apply there).
+    s.layout = "linebyline";
+    ds.apply_css_vars();
+    expect(style.getPropertyValue("--cols-bg-image")).toBe("");
+
+    // No stripes when no column has a background color.
+    s.layout = "sidebyside";
+    delete s.author_bg_colors["pali"];
+    ds.apply_css_vars();
+    expect(style.getPropertyValue("--cols-bg-image")).toBe("");
   });
 
   test("clears stale column vars when the column order changes", () => {

@@ -15,6 +15,7 @@ export function build_content_block_url(
   layout: string,
   columns: string[],
   show_references: boolean,
+  repeat_pali: string = "off",
 ): string {
   const API_URL = (globalThis as any).API_URL || "http://localhost:4848";
   // Uids contain "/" — encode each, keep "|" as the separator.
@@ -22,7 +23,8 @@ export function build_content_block_url(
   return `${API_URL}/sutta_content_block?uid=${encodeURIComponent(uid)}`
     + `&layout=${encodeURIComponent(layout)}`
     + `&columns=${cols}`
-    + `&show_references=${show_references}`;
+    + `&show_references=${show_references}`
+    + `&repeat_pali=${encodeURIComponent(repeat_pali)}`;
 }
 
 /**
@@ -83,6 +85,7 @@ export async function fetch_content_block(
   layout: string,
   columns: string[],
   show_references: boolean,
+  repeat_pali: string = "off",
 ): Promise<boolean> {
   const uid = (globalThis as any).SUTTA_UID;
   const content = document.getElementById("ssp_content");
@@ -91,7 +94,7 @@ export async function fetch_content_block(
     return false;
   }
 
-  const url = build_content_block_url(uid, layout, columns, show_references);
+  const url = build_content_block_url(uid, layout, columns, show_references, repeat_pali);
 
   let response: Response;
   try {
@@ -111,13 +114,20 @@ export async function fetch_content_block(
   content.innerHTML = html;
 
   // Keep the injected page state in sync so later fetches (and the settings
-  // panel) reproduce the current render parameters. The column list itself
-  // is updated by the caller when it changes (the column bar knows the
-  // labels; a layout-only change leaves it untouched).
+  // panel) reproduce the current render parameters. The base column list is
+  // updated by the caller when it changes (the column bar knows the labels);
+  // the Repeat Pāli arrangement is mirrored here so the per-column color
+  // vars and color rows follow what the server actually rendered. Solo keeps
+  // the columns untouched: the render shows only the opened sutta, but the
+  // state must survive a switch back to Columns/Lines.
   const sd = (globalThis as any).SUTTA_DISPLAY;
   if (sd) {
     sd.layout = layout;
     sd.show_references = show_references;
+    sd.repeat_pali = repeat_pali;
+    if (layout !== "solo" && Array.isArray(sd.columns)) {
+      sd.columns = ds.arrange_display_columns(sd.columns, repeat_pali);
+    }
   }
 
   reinit_sutta_content();
@@ -127,13 +137,16 @@ export async function fetch_content_block(
 
 /**
  * Re-render the content block with the current page state, changing only the
- * layout. Used by the display-settings panel's Layout control.
+ * render parameters (layout, Repeat Pāli). Used by the display-settings
+ * panel's Layout / Repeat Pāli controls. The current column list may carry a
+ * previous arrangement's repeated Pāli entries — the server collapses them
+ * back to one anchor before applying the requested arrangement.
  */
-export function refetch_with_layout(layout: string): Promise<boolean> {
+export function refetch_with_params(layout: string, repeat_pali: string = "off"): Promise<boolean> {
   const sd = (globalThis as any).SUTTA_DISPLAY || {};
   const columns: string[] = Array.isArray(sd.columns)
     ? sd.columns.map((c: any) => c.uid)
     : [];
   const show_references = !!sd.show_references;
-  return fetch_content_block(layout, columns, show_references);
+  return fetch_content_block(layout, columns, show_references, repeat_pali);
 }

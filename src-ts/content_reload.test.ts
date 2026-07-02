@@ -23,7 +23,8 @@ describe("build_content_block_url", () => {
       + "?uid=mn1%2Fen%2Fsujato"
       + "&layout=sidebyside"
       + "&columns=mn1%2Fen%2Fsujato|mn1%2Fpli%2Fms"
-      + "&show_references=false",
+      + "&show_references=false"
+      + "&repeat_pali=off",
     );
   });
 
@@ -31,6 +32,11 @@ describe("build_content_block_url", () => {
     const url = cr.build_content_block_url("mn1/en/sujato", "linebyline", [], true);
     expect(url).toContain("&show_references=true");
     expect(url).toContain("&columns=&");
+  });
+
+  test("includes the repeat_pali parameter", () => {
+    const url = cr.build_content_block_url("mn1/en/sujato", "sidebyside", [], false, "atend");
+    expect(url).toContain("&repeat_pali=atend");
   });
 });
 
@@ -116,9 +122,9 @@ describe("fetch_content_block", () => {
     expect(document.getElementById("ssp_content")!.innerHTML).toContain("old");
   });
 
-  test("refetch_with_layout uses the current page state", async () => {
+  test("refetch_with_params uses the current page state", async () => {
     (globalThis as any).SUTTA_DISPLAY.show_references = true;
-    const ok = await cr.refetch_with_layout("sidebyside");
+    const ok = await cr.refetch_with_params("sidebyside", "off");
     expect(ok).toBe(true);
 
     const url = String(fetch_mock.mock.calls.find((c) =>
@@ -126,5 +132,26 @@ describe("fetch_content_block", () => {
     expect(url).toContain("layout=sidebyside");
     expect(url).toContain("columns=mn1%2Fen%2Fsujato|mn1%2Fpli%2Fms");
     expect(url).toContain("show_references=true");
+    expect(url).toContain("repeat_pali=off");
+  });
+
+  test("the swap mirrors the repeat_pali arrangement into SUTTA_DISPLAY.columns", async () => {
+    const ok = await cr.fetch_content_block("sidebyside", ["mn1/en/sujato", "mn1/pli/ms"], false, "atend");
+    expect(ok).toBe(true);
+
+    const sd = (globalThis as any).SUTTA_DISPLAY;
+    expect(sd.repeat_pali).toBe("atend");
+    expect(sd.columns.map((c: any) => c.uid)).toEqual([
+      "mn1/pli/ms", "mn1/en/sujato", "mn1/pli/ms",
+    ]);
+
+    // Off collapses the repeated Pāli back to the first column.
+    await cr.fetch_content_block("sidebyside", sd.columns.map((c: any) => c.uid), false, "off");
+    expect(sd.columns.map((c: any) => c.uid)).toEqual(["mn1/pli/ms", "mn1/en/sujato"]);
+
+    // Solo keeps the column state untouched.
+    await cr.fetch_content_block("solo", sd.columns.map((c: any) => c.uid), false, "off");
+    expect(sd.layout).toBe("solo");
+    expect(sd.columns.map((c: any) => c.uid)).toEqual(["mn1/pli/ms", "mn1/en/sujato"]);
   });
 });

@@ -26,9 +26,27 @@
         <div class="ds-section-header">Layout</div>
         <div class="ds-card">
             <div class="ds-segmented" data-setting="layout">
+                <button type="button" class="ds-seg-btn" data-value="solo">Solo</button>
                 <button type="button" class="ds-seg-btn" data-value="sidebyside">Columns</button>
                 <button type="button" class="ds-seg-btn" data-value="linebyline">Lines</button>
             </div>
+
+            <div class="ds-label">Repeat Pāli</div>
+            <div class="ds-segmented" data-setting="repeat-pali">
+                <button type="button" class="ds-seg-btn" data-value="off">Off</button>
+                <button type="button" class="ds-seg-btn" data-value="alternate">Alternate</button>
+                <button type="button" class="ds-seg-btn" data-value="atend">At end</button>
+            </div>
+
+            <div class="ds-label ds-label-row">Width
+                <span class="ds-value ds-width-value"></span>
+            </div>
+            <div class="ds-segmented ds-width-presets" data-setting="width-preset">
+                <button type="button" class="ds-seg-btn" data-value="75">Narrow</button>
+                <button type="button" class="ds-seg-btn" data-value="100">Normal</button>
+                <button type="button" class="ds-seg-btn" data-value="125">Wide</button>
+            </div>
+            <input type="range" class="ds-slider ds-width" min="50" max="150" step="5">
         </div>
     </div>
 
