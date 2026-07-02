@@ -136,3 +136,76 @@ $solarized_light_bg: #FAE6B2
 
   .variant, .comment
     font-size: 0.8em
+
+// --- Multi-column sutta view (Lines / Columns layouts) ---
+//
+// The segmented multi-column builder emits the same markup for both layouts
+// (per segment: one `span.colcell.col-<n>` cell per column, keeping the
+// translated/pali classes); only the CSS below differs. Typography and
+// per-column colors are driven by CSS custom properties set from the in-page
+// display settings menu; the fallbacks match the classic rendering above so
+// pages look unchanged until the user customises them.
+
+.suttacentral
+  span.segment
+    span.colcell
+      display: block
+      padding-top: 0.5em
+    span.colcell.translated
+      font-family: var(--tr-font-family, inherit)
+      font-size: var(--tr-font-size, 1em)
+      line-height: var(--tr-line-height, inherit)
+    span.colcell.pali
+      font-family: var(--pali-font-family, "Source Sans 3 SSP")
+      font-size: var(--pali-font-size, 0.8em)
+      line-height: var(--pali-line-height, inherit)
+
+  // Per-column ink / background colors (set by JS from the per-author color
+  // maps, keyed to the current column indexes).
+  @for $n from 0 through 11
+    .colcell.col-#{$n},
+    .sbs-col.col-#{$n}
+      color: var(--col-#{$n}-ink, inherit)
+      background-color: var(--col-#{$n}-bg, transparent)
+
+// Columns (side-by-side): the cells of each segment become equal-width flex
+// columns. The per-segment reference anchor must keep full width and sit
+// above the cells, or it steals a column.
+.suttacentral.layout-columns
+  span.segment
+    display: flex
+    column-gap: 1em
+    span.colcell
+      flex: 1 1 0
+      min-width: 0
+    span.reference
+      flex: 0 0 100%
+      order: -1
+
+  .column-headers
+    display: flex
+    column-gap: 1em
+    margin-top: 0.5em
+    margin-bottom: 0.5em
+    span.colcell
+      flex: 1 1 0
+      min-width: 0
+      font-family: "Source Sans 3 SSP"
+      font-weight: bold
+      text-align: center
+
+// Unaligned block-columns fallback (a selected text has no segmented
+// format): each text's standard whole-document rendering in one flex column.
+.suttacentral.sbs-blocks
+  .sbs-row
+    display: flex
+    column-gap: 1.5em
+    align-items: flex-start
+  .sbs-col
+    flex: 1 1 0
+    min-width: 0
+  .sbs-col-header
+    font-family: "Source Sans 3 SSP"
+    font-weight: bold
+    text-align: center
+    padding-bottom: 0.5em

@@ -13,9 +13,10 @@ use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
-use crate::app_settings::AppSettings;
+use crate::app_settings::{AppSettings, SuttaLayout};
+use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
-use crate::helpers::{bilara_text_to_segments, bilara_line_by_line_html, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
+use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
 use crate::db::dictionaries_models::DictWord;
 use crate::html_content::{blank_html_page, sutta_html_page};
 use crate::{get_app_globals, init_app_globals};
@@ -67,6 +68,16 @@ impl ResolvedWord {
     /// The correlated `dict_words` row for the HTML route, if present.
     pub fn html_dict_word(&self) -> Option<&DictWord> {
         self.dict_word.as_ref()
+    }
+}
+
+/// Column header / dropdown label for a sutta text: "Pāli" for the Pāli
+/// source, otherwise the translator/author uid (falling back to the language).
+pub fn sutta_column_label(sutta: &Sutta) -> String {
+    if sutta.language == "pli" {
+        "Pāli".to_string()
+    } else {
+        sutta.source_uid.clone().unwrap_or_else(|| sutta.language.clone())
     }
 }
 
@@ -273,54 +284,70 @@ impl AppData {
         )
     }
 
-    /// Renders the complete HTML page for a sutta.
-    ///
-    /// See also: simsapa/simsapa/app/export_helpers.py::render_sutta_content()
-    ///
-    /// The `show_references` parameter controls whether segment reference anchors (e.g., 37.5)
-    /// are rendered in the HTML. These are needed when navigating to a specific anchor in the sutta.
-    pub fn render_sutta_content(
+    /// Resolve the effective display options for a sutta render: persisted
+    /// defaults from the settings cache, overridden by explicit request
+    /// parameters, with the default column set (opened sutta + Pāli
+    /// counterpart) filled in.
+    pub fn resolve_sutta_display_options(
         &self,
         sutta: &Sutta,
-        sutta_quote: Option<&SuttaQuote>,
-        js_extra_pre: Option<String>,
         show_references: bool,
-    ) -> Result<String> {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-
-        let content_html_body = if let Some(ref content_json_str) = sutta.content_json {
-            if !content_json_str.is_empty() {
-                // Check setting for line-by-line view
-                let line_by_line = app_settings.show_translation_and_pali_line_by_line;
-
-                // Attempt to fetch Pali sutta if needed
-                let pali_sutta_result = if line_by_line && sutta.language != "pli" {
-                    self.get_pali_for_translated(sutta)
-                } else {
-                    Ok(None)
-                };
-                let pali_sutta = pali_sutta_result.context("Failed to get Pali sutta for translated version")?;
-
-                if let (true, Some(pali_sutta)) = (line_by_line, pali_sutta) {
-                    // Generate line-by-line HTML
-                    let translated_segments = self.sutta_to_segments_json(sutta, false, show_references)
-                                                      .context("Failed to generate translated segments for line-by-line view")?;
-                    let pali_segments = self.sutta_to_segments_json(&pali_sutta, false, show_references)
-                                                .context("Failed to generate Pali segments for line-by-line view")?;
-
-                    let tmpl_str = sutta.content_json_tmpl.as_deref()
-                                                          .ok_or_else(|| anyhow!("Sutta {} requires content_json_tmpl for line-by-line view", sutta.uid))?;
-                    // Parse template into IndexMap as well
-                    let tmpl_json: IndexMap<String, String> = serde_json::from_str(tmpl_str)
-                        .with_context(|| format!("Failed to parse template JSON into IndexMap for line-by-line view (Sutta: {})", sutta.uid))?;
-
-                    bilara_line_by_line_html(&translated_segments, &pali_segments, &tmpl_json, show_references)?
-                } else {
-                    // Generate standard HTML view (using template within sutta_to_segments_json)
-                    let segments_json = self.sutta_to_segments_json(sutta, true, show_references)
-                                                .context("Failed to generate segments for standard view")?;
-                    bilara_content_json_to_html(&segments_json)?
+        overrides: &SuttaDisplayOverrides,
+    ) -> SuttaDisplayOptions {
+        let pali_uid = if overrides.columns.is_none() {
+            match self.get_pali_for_translated(sutta) {
+                Ok(pali) => pali.map(|p| p.uid),
+                Err(e) => {
+                    error(&format!("resolve_sutta_display_options: {:#}", e));
+                    None
                 }
+            }
+        } else {
+            None
+        };
+        let mut options = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), show_references, overrides)
+        };
+
+        // Lines mode cannot interleave non-segmented texts, so they are
+        // excluded here, at options resolution — the renderer never sees them
+        // (PRD FR 8). The UI disables such entries in the bottom-bar dropdowns
+        // while in Lines mode; an API request that includes one simply drops
+        // that column (no error), so UI and API behave identically. When the
+        // opened sutta itself is non-segmented, it renders alone via the
+        // standard whole-document path.
+        if options.layout == SuttaLayout::LineByLine {
+            let opened_is_segmented = sutta.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false);
+            if opened_is_segmented {
+                options.columns.retain(|col_uid| {
+                    if col_uid == &sutta.uid {
+                        return true;
+                    }
+                    match self.dbm.appdata.get_sutta(col_uid) {
+                        Some(s) => s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false),
+                        None => true, // unknown uids are reported by the renderer, not dropped
+                    }
+                });
+            } else {
+                options.columns = vec![sutta.uid.clone()];
+            }
+        }
+
+        options
+    }
+
+    /// Renders one sutta's standard whole-document content body: segmented
+    /// texts via their own template, otherwise the stored HTML / plain text.
+    /// Used for the single-column view and for each column of the unaligned
+    /// block-columns fallback.
+    fn render_sutta_standard_body(&self, sutta: &Sutta, show_references: bool) -> Result<String> {
+        let body = if let Some(ref content_json_str) = sutta.content_json {
+            if !content_json_str.is_empty() {
+                // Generate standard HTML view (using template within sutta_to_segments_json)
+                let segments_json = self.sutta_to_segments_json(sutta, true, show_references)
+                                            .context("Failed to generate segments for standard view")?;
+                bilara_content_json_to_html(&segments_json)?
             } else {
                 "<div class='suttacentral bilara-text'></div>".to_string()
             }
@@ -335,6 +362,84 @@ impl AppData {
 
         } else {
             "<div class='suttacentral bilara-text'><p>No content.</p></div>".to_string()
+        };
+        Ok(body)
+    }
+
+    /// Renders the complete HTML page for a sutta.
+    ///
+    /// See also: simsapa/simsapa/app/export_helpers.py::render_sutta_content()
+    ///
+    /// Layout and column choices come from `options` (resolved once at the
+    /// call boundary via `resolve_sutta_display_options`, not read from the
+    /// settings cache here). `options.show_references` controls whether
+    /// segment reference anchors (e.g., 37.5) are rendered in the HTML;
+    /// these are needed when navigating to a specific anchor in the sutta.
+    pub fn render_sutta_content(
+        &self,
+        sutta: &Sutta,
+        sutta_quote: Option<&SuttaQuote>,
+        js_extra_pre: Option<String>,
+        options: &SuttaDisplayOptions,
+    ) -> Result<String> {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        let show_references = options.show_references;
+
+        // Resolve the column source suttas. Single-column cases (including the
+        // opened sutta itself) go through the standard whole-document path.
+        let mut column_suttas: Vec<Sutta> = Vec::new();
+        for col_uid in &options.columns {
+            if col_uid == &sutta.uid {
+                column_suttas.push(sutta.clone());
+            } else if let Some(s) = self.dbm.appdata.get_sutta(col_uid) {
+                column_suttas.push(s);
+            } else {
+                return Err(anyhow!("Unknown column sutta uid: {}", col_uid));
+            }
+        }
+        if column_suttas.is_empty() {
+            column_suttas.push(sutta.clone());
+        }
+
+        let all_segmented = column_suttas.iter()
+            .all(|s| s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false));
+
+        let content_html_body = if column_suttas.len() >= 2 && all_segmented {
+            // Per-segment aligned multi-column view: each column's segments
+            // carry that text's own variants/comments/glosses.
+            let mut columns: Vec<ColumnSource> = Vec::new();
+            for col in &column_suttas {
+                let segments = self.sutta_to_segments_json(col, false, show_references)
+                    .with_context(|| format!("Failed to generate segments for column {}", col.uid))?;
+                columns.push(ColumnSource {
+                    uid: col.uid.clone(),
+                    label: sutta_column_label(col),
+                    is_pali: col.language == "pli",
+                    segments,
+                });
+            }
+
+            let tmpl_str = sutta.content_json_tmpl.as_deref()
+                .ok_or_else(|| anyhow!("Sutta {} requires content_json_tmpl for the multi-column view", sutta.uid))?;
+            let tmpl_json: IndexMap<String, String> = serde_json::from_str(tmpl_str)
+                .with_context(|| format!("Failed to parse template JSON into IndexMap for the multi-column view (Sutta: {})", sutta.uid))?;
+
+            bilara_multi_column_html(&columns, &tmpl_json, show_references, options.layout)?
+
+        } else if column_suttas.len() >= 2 {
+            // A selected text lacks content_json: unaligned block-columns
+            // fallback — each text's standard whole-document rendering in one
+            // flex column.
+            let mut cols: Vec<(String, String, String)> = Vec::new();
+            for col in &column_suttas {
+                let html = self.render_sutta_standard_body(col, show_references)
+                    .with_context(|| format!("Failed to render block column {}", col.uid))?;
+                cols.push((sutta_column_label(col), col.uid.clone(), html));
+            }
+            multi_column_html_blocks(&cols)
+
+        } else {
+            self.render_sutta_standard_body(sutta, show_references)?
         };
 
         // Get display settings
@@ -443,7 +548,8 @@ impl AppData {
             Some(sutta) => {
                 // Render the sutta with WINDOW_ID in the JavaScript
                 let js_extra = format!("const WINDOW_ID = '{}'; window.WINDOW_ID = WINDOW_ID;", window_id);
-                self.render_sutta_content(&sutta, None, Some(js_extra), show_references)
+                let options = self.resolve_sutta_display_options(&sutta, show_references, &SuttaDisplayOverrides::default());
+                self.render_sutta_content(&sutta, None, Some(js_extra), &options)
                     .unwrap_or_else(|_| sutta_html_page("Rendering error", None, None, None, Some(body_class)))
             },
             None => blank_page_html,
@@ -1574,32 +1680,6 @@ impl AppData {
 
         let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
         app_settings.open_find_in_sutta_results = enabled;
-
-        let a = app_settings.clone();
-        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
-
-        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
-
-        match diesel::update(app_settings::table)
-            .filter(app_settings::key.eq("app_settings"))
-            .set(app_settings::value.eq(Some(settings_json)))
-            .execute(db_conn)
-        {
-            Ok(_) => (),
-            Err(e) => error(&format!("Failed to update app settings: {}", e)),
-        }
-    }
-
-    pub fn get_show_translation_and_pali_line_by_line(&self) -> bool {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.show_translation_and_pali_line_by_line
-    }
-
-    pub fn set_show_translation_and_pali_line_by_line(&self, enabled: bool) {
-        use crate::db::appdata_schema::app_settings;
-
-        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
-        app_settings.show_translation_and_pali_line_by_line = enabled;
 
         let a = app_settings.clone();
         let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");

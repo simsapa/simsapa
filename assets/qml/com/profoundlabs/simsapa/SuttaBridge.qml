@@ -646,14 +646,6 @@ Item {
         console.log("set_show_bottom_footnotes():", enabled);
     }
 
-    function get_show_translation_and_pali_line_by_line(): bool {
-        return true;
-    }
-
-    function set_show_translation_and_pali_line_by_line(enabled: bool) {
-        console.log("set_show_translation_and_pali_line_by_line():", enabled);
-    }
-
     function get_common_words_json(): string {
         return `
 [

@@ -9,6 +9,7 @@ pub mod query_task;
 pub mod html_content;
 pub mod dir_list;
 pub mod app_data;
+pub mod sutta_display;
 pub mod stardict_parse;
 pub mod dictionary_manager_core;
 pub mod dict_index_reconcile;

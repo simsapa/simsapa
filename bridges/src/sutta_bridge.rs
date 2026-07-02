@@ -1142,12 +1142,6 @@ pub mod qobject {
         fn set_show_bottom_footnotes(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         #[qinvokable]
-        fn get_show_translation_and_pali_line_by_line(self: &SuttaBridge) -> bool;
-
-        #[qinvokable]
-        fn set_show_translation_and_pali_line_by_line(self: Pin<&mut SuttaBridge>, enabled: bool);
-
-        #[qinvokable]
         fn get_sutta_language_labels(self: &SuttaBridge) -> QStringList;
 
         #[qinvokable]
@@ -3841,16 +3835,6 @@ impl qobject::SuttaBridge {
         let app_data = get_app_data();
         app_data.set_show_bottom_footnotes(enabled);
         self.as_mut().show_bottom_footnotes_changed();
-    }
-
-    pub fn get_show_translation_and_pali_line_by_line(&self) -> bool {
-        let app_data = get_app_data();
-        app_data.get_show_translation_and_pali_line_by_line()
-    }
-
-    pub fn set_show_translation_and_pali_line_by_line(self: Pin<&mut Self>, enabled: bool) {
-        let app_data = get_app_data();
-        app_data.set_show_translation_and_pali_line_by_line(enabled);
     }
 
     pub fn get_sutta_language_labels(&self) -> QStringList {

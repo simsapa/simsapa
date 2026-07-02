@@ -410,6 +410,123 @@ div.btn a, span.btn a {
   font-size: 0.8em;
 }
 
+.suttacentral span.segment span.colcell {
+  display: block;
+  padding-top: 0.5em;
+}
+.suttacentral span.segment span.colcell.translated {
+  font-family: var(--tr-font-family, inherit);
+  font-size: var(--tr-font-size, 1em);
+  line-height: var(--tr-line-height, inherit);
+}
+.suttacentral span.segment span.colcell.pali {
+  font-family: var(--pali-font-family, "Source Sans 3 SSP");
+  font-size: var(--pali-font-size, 0.8em);
+  line-height: var(--pali-line-height, inherit);
+}
+.suttacentral .colcell.col-0,
+.suttacentral .sbs-col.col-0 {
+  color: var(--col-0-ink, inherit);
+  background-color: var(--col-0-bg, transparent);
+}
+.suttacentral .colcell.col-1,
+.suttacentral .sbs-col.col-1 {
+  color: var(--col-1-ink, inherit);
+  background-color: var(--col-1-bg, transparent);
+}
+.suttacentral .colcell.col-2,
+.suttacentral .sbs-col.col-2 {
+  color: var(--col-2-ink, inherit);
+  background-color: var(--col-2-bg, transparent);
+}
+.suttacentral .colcell.col-3,
+.suttacentral .sbs-col.col-3 {
+  color: var(--col-3-ink, inherit);
+  background-color: var(--col-3-bg, transparent);
+}
+.suttacentral .colcell.col-4,
+.suttacentral .sbs-col.col-4 {
+  color: var(--col-4-ink, inherit);
+  background-color: var(--col-4-bg, transparent);
+}
+.suttacentral .colcell.col-5,
+.suttacentral .sbs-col.col-5 {
+  color: var(--col-5-ink, inherit);
+  background-color: var(--col-5-bg, transparent);
+}
+.suttacentral .colcell.col-6,
+.suttacentral .sbs-col.col-6 {
+  color: var(--col-6-ink, inherit);
+  background-color: var(--col-6-bg, transparent);
+}
+.suttacentral .colcell.col-7,
+.suttacentral .sbs-col.col-7 {
+  color: var(--col-7-ink, inherit);
+  background-color: var(--col-7-bg, transparent);
+}
+.suttacentral .colcell.col-8,
+.suttacentral .sbs-col.col-8 {
+  color: var(--col-8-ink, inherit);
+  background-color: var(--col-8-bg, transparent);
+}
+.suttacentral .colcell.col-9,
+.suttacentral .sbs-col.col-9 {
+  color: var(--col-9-ink, inherit);
+  background-color: var(--col-9-bg, transparent);
+}
+.suttacentral .colcell.col-10,
+.suttacentral .sbs-col.col-10 {
+  color: var(--col-10-ink, inherit);
+  background-color: var(--col-10-bg, transparent);
+}
+.suttacentral .colcell.col-11,
+.suttacentral .sbs-col.col-11 {
+  color: var(--col-11-ink, inherit);
+  background-color: var(--col-11-bg, transparent);
+}
+
+.suttacentral.layout-columns span.segment {
+  display: flex;
+  column-gap: 1em;
+}
+.suttacentral.layout-columns span.segment span.colcell {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.suttacentral.layout-columns span.segment span.reference {
+  flex: 0 0 100%;
+  order: -1;
+}
+.suttacentral.layout-columns .column-headers {
+  display: flex;
+  column-gap: 1em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.suttacentral.layout-columns .column-headers span.colcell {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: "Source Sans 3 SSP";
+  font-weight: bold;
+  text-align: center;
+}
+
+.suttacentral.sbs-blocks .sbs-row {
+  display: flex;
+  column-gap: 1.5em;
+  align-items: flex-start;
+}
+.suttacentral.sbs-blocks .sbs-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.suttacentral.sbs-blocks .sbs-col-header {
+  font-family: "Source Sans 3 SSP";
+  font-weight: bold;
+  text-align: center;
+  padding-bottom: 0.5em;
+}
+
 .cst .note {
   color: blue;
 }
