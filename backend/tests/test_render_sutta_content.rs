@@ -554,9 +554,9 @@ fn test_block_fallback_with_non_segmented_column() {
 
     assert!(html.contains("<div class='suttacentral bilara-text layout-columns cols-3 sbs-blocks'>"));
     assert!(html.contains("<div class='sbs-row'>"));
-    assert!(html.contains("<div class='sbs-col col-0' data-uid='mn1/en/sujato'>"));
-    assert!(html.contains("<div class='sbs-col col-1' data-uid='mn1/pli/ms'>"));
-    assert!(html.contains("<div class='sbs-col col-2' data-uid='mn1/en/bodhi'>"));
+    assert!(html.contains("<div class='sbs-col col-0 translated' data-uid='mn1/en/sujato'>"));
+    assert!(html.contains("<div class='sbs-col col-1 pali' data-uid='mn1/pli/ms'>"));
+    assert!(html.contains("<div class='sbs-col col-2 translated' data-uid='mn1/en/bodhi'>"));
     assert!(html.contains("<div class='sbs-col-header'>Pāli</div>"));
     assert!(html.contains("<div class='sbs-col-header'>bodhi</div>"));
 }

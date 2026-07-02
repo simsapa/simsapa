@@ -13,6 +13,7 @@ static FOOTNOTE_MODAL_HTML: &str = include_str!("../../assets/templates/footnote
 static INVALID_LINK_MODAL_HTML: &str = include_str!("../../assets/templates/invalid_link_modal.html");
 static ICONS_HTML: &str = include_str!("../../assets/templates/icons.html");
 static DISPLAY_SETTINGS_HTML: &str = include_str!("../../assets/templates/display_settings.html");
+static COLUMN_BAR_HTML: &str = include_str!("../../assets/templates/column_bar.html");
 
 static SUTTAS_CSS: &str = include_str!("../../assets/css/suttas.css");
 static SUTTAS_JS: &str = include_str!("../../assets/js/suttas.js");
@@ -107,8 +108,7 @@ pub fn sutta_html_page_with_nav(content: &str,
 
     if sutta_display_chrome {
         ctx.display_settings_html = DISPLAY_SETTINGS_HTML.replace("{api_url}", &ctx.api_url);
-        // column_bar_html is populated here too once its template exists
-        // (bottom column bar stage); until then it stays empty.
+        ctx.column_bar_html = COLUMN_BAR_HTML.to_string();
     }
 
     if let Some(s) = css_extra {

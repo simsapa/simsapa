@@ -2252,12 +2252,14 @@ pub fn bilara_multi_column_html(
 /// placed in one flex column. This is deliberately a separate, simple code
 /// path from the segmented `bilara_multi_column_html` builder (PRD §11.3).
 ///
-/// `columns` items are `(label, uid, standard_rendered_html)`.
-pub fn multi_column_html_blocks(columns: &[(String, String, String)]) -> String {
-    let cols: String = columns.iter().enumerate().map(|(n, (label, col_uid, html))| {
+/// `columns` items are `(label, uid, is_pali, standard_rendered_html)`. The
+/// `pali` / `translated` class carries the font-group CSS custom properties
+/// (--pali-font-family etc.), same as the segmented builder's colcells.
+pub fn multi_column_html_blocks(columns: &[(String, String, bool, String)]) -> String {
+    let cols: String = columns.iter().enumerate().map(|(n, (label, col_uid, is_pali, html))| {
         format!(
-            "<div class='sbs-col col-{}' data-uid='{}'><div class='sbs-col-header'>{}</div>{}</div>",
-            n, col_uid, label, html,
+            "<div class='sbs-col col-{} {}' data-uid='{}'><div class='sbs-col-header'>{}</div>{}</div>",
+            n, if *is_pali { "pali" } else { "translated" }, col_uid, label, html,
         )
     }).collect();
 

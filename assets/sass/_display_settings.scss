@@ -375,3 +375,207 @@ $font_size_small: 11px;
     color: var(--text-muted);
     font-size: $font_size_small;
 }
+
+// --- Bottom column bar ---
+// One <select> per displayed column, "×" to remove, trailing "+" to add
+// (rendered by src-ts/column_bar.ts). Fixed full-width bottom bar with a
+// constant height so the footnote bottom bar can stack above it.
+
+$column_bar_height: 40px;
+
+.column-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: $column_bar_height;
+    // Hidden until the TS init runs; also hidden in the Solo layout and on
+    // non-sutta pages (no .show).
+    display: none;
+    align-items: center;
+    // Space for the absolutely positioned "+" button on the right, plus a
+    // buffer so the last column's "×" is not right next to it.
+    padding: 0 ($edge_margin + 24px + 20px) 0 $edge_margin;
+    background: var(--menu-bg-start);
+    border-top: 1px solid var(--menu-border);
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.15);
+    // Below the footnote bar (1000): footnotes slide over their own strip,
+    // not over the column bar (it gets a bottom offset below).
+    z-index: 998;
+    font-family: sans-serif;
+    font-size: $font_size;
+    color: var(--text-primary);
+
+    &.show {
+        display: flex;
+    }
+}
+
+// The dropdowns mirror the column geometry: equal flex cells with the same
+// 1em gap as the segment cells, centered under the columns wrapper's
+// max-width cap (see the matching layout-columns cols-N rules in
+// _suttacentral.sass; the cols-N class is set by column_bar.ts).
+.column-bar-items {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    column-gap: 1em;
+}
+
+@for $n from 1 through 12 {
+    .column-bar-items.cols-#{$n} {
+        max-width: calc(#{$n} * var(--col-max-width, 75ex) * var(--width-scale, 1) + #{$n - 1} * 1em);
+    }
+}
+
+.column-bar-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+// A custom dropdown (button + menu opening upward): the embedded
+// WebEngineView renders a native <select> popup downward and clips it at the
+// window edge — it does not flip up from a bottom-of-screen bar.
+.column-bar-dropdown {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+}
+
+.column-bar-select {
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    padding: 3px 22px 3px 8px;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: $font_size;
+    color: var(--text-primary);
+    background: var(--bg-content);
+    border: 1px solid var(--btn-border);
+    border-radius: $border_radius;
+    cursor: pointer;
+
+    &:hover {
+        border-color: var(--btn-border-hover);
+    }
+
+    // Dropdown arrow.
+    &::after {
+        content: "▾";
+        position: absolute;
+        right: 8px;
+        color: var(--text-muted);
+        pointer-events: none;
+    }
+}
+
+.column-bar-menu {
+    display: none;
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    min-width: 100%;
+    max-width: 60vw;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--menu-bg-start);
+    border: 1px solid var(--menu-border);
+    border-radius: $card_radius;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+    // Above the footnote bottom bar (1000).
+    z-index: 1001;
+
+    &.show {
+        display: block;
+    }
+
+    .column-bar-option {
+        display: block;
+        width: 100%;
+        padding: 5px 10px;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: $font_size;
+        color: var(--text-primary);
+        background: none;
+        border: none;
+        border-radius: $border_radius;
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+            background: var(--menu-item-hover, var(--bg-primary));
+        }
+
+        &.selected {
+            font-weight: 600;
+        }
+
+        &:disabled {
+            color: var(--text-muted);
+            opacity: 0.6;
+            cursor: default;
+        }
+    }
+}
+
+.column-bar-add {
+    position: absolute;
+    right: $edge_margin;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.column-bar-remove, .column-bar-add {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
+    border: 1px solid var(--btn-border);
+    border-radius: $border_radius;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        color: var(--text-primary);
+        background: linear-gradient(to bottom, var(--btn-bg-hover-start) 0%, var(--btn-bg-hover-end) 100%);
+        border-color: var(--btn-border-hover);
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+}
+
+// When the column bar is visible, the footnote bottom bar stacks above it
+// and the reading area gets enough bottom padding that the text end is not
+// covered by the fixed chrome (suttas.sass sets 4em; the :has selector's id
+// out-specifies it).
+body:has(#columnBar.show) {
+    .footnote-bottom-bar {
+        bottom: $column_bar_height;
+    }
+
+    #ssp_main {
+        padding-bottom: 8em;
+    }
+}

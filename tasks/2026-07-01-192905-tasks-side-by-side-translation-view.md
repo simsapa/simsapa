@@ -30,15 +30,15 @@ Based on PRD: `2026-07-01-192905-prd---side-by-side-translation-view.md` (v2, 20
 
 - `assets/templates/page.html` — `#ssp_content` (31); `{display_settings_html}` / `{column_bar_html}` placeholders added as `#ssp_content` siblings (4.1).
 - `assets/templates/display_settings.html` — NEW (4.1): cogwheel button (fixed bottom-right, `fa_gear-solid.png`) + hidden settings panel (scope, layout, two font groups, `#dsColorRows`, Reset all).
-- `assets/templates/column_bar.html` — NEW: fixed bottom column bar. *(5.1, not created yet.)*
+- `assets/templates/column_bar.html` — NEW (5.1): fixed bottom column bar shell (`#columnBarItems` + `#columnBarAdd`), filled by `column_bar.ts`; injected via `TmplContext.column_bar_html` only under `sutta_display_chrome`.
 - `src-ts/display_settings.ts` (+ `display_settings.test.ts`) — NEW (4.2–4.3): settings panel logic, CSS-var application (`apply_css_vars`, `refresh_columns`), scope semantics, POST persistence, `set_layout_change_handler` hook.
-- `src-ts/column_bar.ts` (+ `column_bar.test.ts`) — NEW: dropdowns, add/remove, re-render trigger. *(5.2, not created yet.)*
-- `src-ts/content_reload.ts` (+ `content_reload.test.ts`) — NEW (4.4): `build_content_block_url` / `fetch_content_block()` / `refetch_with_layout()` + `reinit_sutta_content()`.
-- `src-ts/simsapa.ts` — wires display_settings + content_reload on DOMContentLoaded (guarded on `#displaySettingsButton`); `attach_link_handlers` reused via `document.SSP`.
+- `src-ts/column_bar.ts` (+ `column_bar.test.ts`) — NEW (5.2/5.4): dropdowns from `GET /translations_for_sutta`, add/remove/select-change → `fetch_content_block`; min-1 / "+"-exhaustion / Lines-mode disable rules; re-renders on the `ssp-content-swapped` event; edits the base (Repeat-Pāli-collapsed) column set in `SUTTA_DISPLAY.columns`, reverting on a failed fetch.
+- `src-ts/content_reload.ts` (+ `content_reload.test.ts`) — NEW (4.4): `build_content_block_url` / `fetch_content_block()` / `refetch_with_params()` + `reinit_sutta_content()`; (5.2) dispatches `ssp-content-swapped` after re-init for the column bar.
+- `src-ts/simsapa.ts` — wires display_settings + content_reload on DOMContentLoaded (guarded on `#displaySettingsButton`); (5.2) wires `column_bar.init_column_bar()` (guarded on `#columnBar`); `attach_link_handlers` reused via `document.SSP`.
 - `src-ts/footnote_bottom_bar.ts` — existing `refresh()` (destroy + init) serves as the post-swap re-init entry; no change needed.
 - `assets/js/suttas.js` — inlined page JS (not webpack): variant/comment mark bindings factored into `window.ssp_rebind_content_handlers()` (top-level fn, called at DOMContentLoaded and after swaps); document-level delegated handlers (click/selectionchange/dblclick) survive swaps unchanged; no bookmark markup existed here.
 - `assets/sass/_suttacentral.sass` — `layout-columns` / `layout-lines` / `cols-N` rules, column header row, CSS custom properties.
-- `assets/sass/_display_settings.scss` — NEW (4.7): cogwheel button + panel styles reusing `_menu.scss` theme vars; loaded from `suttas.sass`; column bar styles join in 5.3.
+- `assets/sass/_display_settings.scss` — NEW (4.7): cogwheel button + panel styles reusing `_menu.scss` theme vars; loaded from `suttas.sass`; (5.3) `.column-bar` styles — fixed 40px bottom bar, z-index 998; `body:has(#columnBar.show)` lifts the footnote bar and raises `#ssp_main` bottom padding to 8em.
 
 ### Docs
 
@@ -190,7 +190,7 @@ handlers in the inlined `assets/js/suttas.js` (click 601 / selectionchange 684
 **Depends on:** 3.0 (`SUTTA_DISPLAY` injection, content-block +
 save-settings routes).
 
-- [ ] 4.0 In-page display settings menu (cogwheel)
+- [x] 4.0 In-page display settings menu (cogwheel)
   - [x] 4.1 Create `assets/templates/display_settings.html` (cogwheel button fixed bottom-right + hidden panel; follow `menu.html`'s structure/`{api_url}` icon pattern) and add `display_settings_html` (+ `column_bar_html`, prepared here for 5.0) to `TmplContext` in `html_content.rs`, default empty; populate them only in the sutta page render path; verify dictionary pages (`render_bold_definition`, `render_dppn_entry`) and `blank_html_page` stay chrome-free. *(`sutta_html_page_with_nav` gained a `sutta_display_chrome: bool` param — true only from `render_sutta_content`; book path false, `sutta_html_page` wrapper false, `blank_html_page` empty defaults. `{display_settings_html}`/`{column_bar_html}` placeholders added to `page.html`; cogwheel icon `fa_gear-solid.png`.)*
   - [x] 4.2 Create `src-ts/display_settings.ts`: panel open/close, read initial state from `window.SUTTA_DISPLAY`, render the per-translation color rows from the current column list, and an `apply_css_vars(settings)` that sets the custom properties on `document.documentElement`. *(`SUTTA_DISPLAY` gained `defaults` — the persisted `SuttaDisplayDefaults` — and per-column `author`/`is_pali` keys for the color maps; `SuttaDisplayDefaults::default()` pali_font changed to sans/80/150 so applying CSS vars on a fresh install reproduces the stylesheet's un-overridden look. Color rows include the Pāli column, keyed "pali"; `refresh_columns()` is the post-swap/column-change hook.)*
   - [x] 4.3 Implement the scope logic: a module-level `scope` state defaulting to `save_default`; `on_setting_changed()` → apply locally + (if `save_default`) `POST /save_sutta_display_settings`; `on_scope_changed(local→default)` → immediate POST of current state; Reset all → restore built-in defaults, apply, and POST when in default scope.
@@ -216,12 +216,12 @@ column state is the single source of truth, shared with `display_settings.ts`
 **Depends on:** 2.0 (renderer), 3.0 (routes), 4.0 (chrome injection fields,
 CSS vars module, `content_reload.ts`).
 
-- [ ] 5.0 Bottom column bar + live re-render
-  - [ ] 5.1 Create `assets/templates/column_bar.html` and populate the `column_bar_html` `TmplContext` field on sutta pages (prepared in 4.1).
-  - [ ] 5.2 Create `src-ts/column_bar.ts`: render dropdowns from `GET /translations_for_sutta` + current `SUTTA_DISPLAY.columns`; implement select-change / remove / add (each calling `fetch_content_block`); enforce min-1 and the "+"-disabled-when-exhausted rule; implement the Lines-mode disable-with-notice rule (`has_content_json == false` entries disabled with an explanatory title); share the column state with `display_settings.ts`.
-  - [ ] 5.3 Bar styles in the sass partial (coexist with `footnoteBottomBar` and the cogwheel button — check stacking/position so all can show); `make sass`.
-  - [ ] 5.4 Unit tests: `column_bar.test.ts` (dropdown state rules, +/× enablement, Lines-mode disabling) with mocked `fetch`/DOM; `npx webpack` clean build.
-  - [ ] 5.5 Build; backend tests still green.
+- [x] 5.0 Bottom column bar + live re-render *(User-verified 2026-07-02. Post-review fixes: block-fallback `.sbs-col` divs gained `pali`/`translated` classes + font-var CSS so typography survives the fallback switch; bar dropdowns mirror the column geometry (`cols-N` max-width cap, equal flex, 1em gap); native `<select>` replaced with a custom upward-opening menu — the WebEngineView clips a bottom-anchored select popup at the window edge; ×/+ spacing widened.)*
+  - [x] 5.1 Create `assets/templates/column_bar.html` and populate the `column_bar_html` `TmplContext` field on sutta pages (prepared in 4.1). *(Template is a shell — `#columnBarItems` + `#columnBarAdd` — filled by `column_bar.ts`; injected only under `sutta_display_chrome`, hidden until TS adds `.show`.)*
+  - [x] 5.2 Create `src-ts/column_bar.ts`: render dropdowns from `GET /translations_for_sutta` + current `SUTTA_DISPLAY.columns`; implement select-change / remove / add (each calling `fetch_content_block`); enforce min-1 and the "+"-disabled-when-exhausted rule; implement the Lines-mode disable-with-notice rule (`has_content_json == false` entries disabled with an explanatory title); share the column state with `display_settings.ts`. *(The bar edits the base column set — `arrange_display_columns(columns, "off")` collapses Repeat-Pāli duplicates; the server re-applies the arrangement. The route excludes the opened sutta, so `ensure_current_columns_present()` synthesizes missing entries. Options shown in another column are disabled too (no duplicate columns). Bar hidden in Solo. Re-renders on the new `ssp-content-swapped` event dispatched by `reinit_sutta_content()` — event, not import, to avoid a module cycle. Failed fetch reverts `SUTTA_DISPLAY.columns`.)*
+  - [x] 5.3 Bar styles in the sass partial (coexist with `footnoteBottomBar` and the cogwheel button — check stacking/position so all can show); `make sass`. *(Fixed full-width 40px bar at z-index 998; `body:has(#columnBar.show)` lifts the footnote bar's `bottom` to 40px and raises `#ssp_main` bottom padding to 8em so fixed chrome never covers the text end.)*
+  - [x] 5.4 Unit tests: `column_bar.test.ts` (dropdown state rules, +/× enablement, Lines-mode disabling) with mocked `fetch`/DOM; `npx webpack` clean build. *(13 new tests; full jest run 71/71. Note: a failed-fetch revert restores the exact previous `SUTTA_DISPLAY.columns` order — the bar display re-anchors Pāli first via `base_columns()`.)*
+  - [x] 5.5 Build; backend tests still green. *(`make build -B` clean; all 46 backend test suites pass, 0 failures. An initial `cargo test` run failed with linker SIGBUS — out of disk space, not code; passed after the user freed space.)*
 
 ### 6.0 Integration, verification and docs
 
@@ -231,8 +231,19 @@ plus curl checks by the agent (live API port from `api-port.txt`).
 **Depends on:** all previous.
 
 - [ ] 6.0 Integration, verification and docs
-  - [ ] 6.1 Curl-verify the full matrix on the live API: default render (no params) = Lines translation+Pāli; `?layout=sidebyside` and `?layout=columns` equivalence; 3-column content block; non-segmented fallback; Pāli-only single column; translations list; save-settings persistence across a fresh render.
-  - [ ] 6.2 Manual GUI checklist for the user (write it into the PR/commit message or a short note): cogwheel opens, layout toggles live with menu open, fonts/colors instant, scope semantics (incl. local→default switch persisting), bar add/swap/remove, "+" disable at exhaustion, post-swap link clicks / lookup / footnote bar / find bar / bookmarks still work, prev-next navigation drops local settings (expected).
-  - [ ] 6.3 Write `docs/sutta-display-settings-and-multi-column-view.md`: rendering pipeline (CSS-on-cells, block fallback), options resolution/precedence (defaults < GET params < in-page state), route surface, scope semantics, re-init hook contract, and the §11 traps that remain load-bearing.
-  - [ ] 6.4 Update `PROJECT_MAP.md` (new module/templates/TS files/routes) and the AGENTS.md notable-docs list; confirm `docs/simsapa-localhost-api-search-endpoints.md` entry from 3.7 is complete.
-  - [ ] 6.5 Final `make build -B`, `cd backend && cargo test`, `npx webpack`; review the diff for leftover references to the removed boolean (`grep -rn show_translation_and_pali_line_by_line`).
+  - [x] 6.1 Curl-verify the full matrix on the live API: default render (no params) = Lines translation+Pāli; `?layout=sidebyside` and `?layout=columns` equivalence; 3-column content block; non-segmented fallback; Pāli-only single column; translations list; save-settings persistence across a fresh render. *(All pass on the live app (port 4848): default render honors the persisted defaults (user's saved Columns) with correct `SUTTA_DISPLAY`; sidebyside≡columns and lines≡linebyline byte-identical; an4.1 3-col segmented; mn1+horner → `sbs-blocks` with `sbs-col col-0 pali`; sn56.11/pli/ms single column; Lines drops horner (cols-2); 400 bad layout / 404 bad uid; translations list with `has_content_json`; save round-trip verified on a fresh render and the user's settings restored.)*
+  - [x] 6.2 Manual GUI checklist for the user (write it into the PR/commit message or a short note): cogwheel opens, layout toggles live with menu open, fonts/colors instant, scope semantics (incl. local→default switch persisting), bar add/swap/remove, "+" disable at exhaustion, post-swap link clicks / lookup / footnote bar / find bar / bookmarks still work, prev-next navigation drops local settings (expected). *(Checklist below; the bar/dropdown/font items were already user-verified during 5.0 review.)*
+
+    **Manual GUI checklist** (on e.g. mn1/en/sujato):
+    1. Cogwheel opens/closes; opening it closes the find bar / hamburger menu and vice versa.
+    2. Layout Columns|Lines|Solo toggles re-render live with the panel open; scroll position kept.
+    3. Font family/size/line-height/Bold/Italic and width slider apply instantly (no re-render); Pāli vs Translation groups affect the right columns — including after adding a non-segmented text (block fallback).
+    4. Translator ink/background dots recolor the right columns; Repeat Pāli alternate/atend rearranges.
+    5. Scope: "This view only" changes don't persist across a window reopen; switching back to "Save as default" persists the current state immediately; Reset all restores defaults.
+    6. Column bar: swap/add/remove re-render live; "+" disabled when every text shown; last "×" disabled; Lines mode greys non-segmented entries with the tooltip; dropdown menus open upward, fully visible.
+    7. After a swap: sutta links, double-click word lookup, variant/comment marks, footnote bottom bar and find bar still work.
+    8. Prev/next navigation drops "This view only" state (expected) and honors saved defaults.
+    9. Dictionary/book/blank pages show no cogwheel or column bar.
+  - [x] 6.3 Write `docs/sutta-display-settings-and-multi-column-view.md`: rendering pipeline (CSS-on-cells, block fallback), options resolution/precedence (defaults < GET params < in-page state), route surface, scope semantics, re-init hook contract, and the §11 traps that remain load-bearing.
+  - [x] 6.4 Update `PROJECT_MAP.md` (new module/templates/TS files/routes) and the AGENTS.md notable-docs list; confirm `docs/simsapa-localhost-api-search-endpoints.md` entry from 3.7 is complete. *(PROJECT_MAP: src-ts tree + descriptions, templates tree, `sutta_display.rs`, a Content Rendering feature bullet; AGENTS.md notable-docs entry added; api-endpoints doc §13/§14.5 rows confirmed present.)*
+  - [x] 6.5 Final `make build -B`, `cd backend && cargo test`, `npx webpack`; review the diff for leftover references to the removed boolean (`grep -rn show_translation_and_pali_line_by_line`). *(Build clean, 46/46 backend suites pass, webpack clean, jest 71/71; no references to the removed boolean outside `tasks/`.)*

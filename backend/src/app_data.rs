@@ -523,11 +523,11 @@ impl AppData {
             // A selected text lacks content_json: unaligned block-columns
             // fallback — each text's standard whole-document rendering in one
             // flex column.
-            let mut cols: Vec<(String, String, String)> = Vec::new();
+            let mut cols: Vec<(String, String, bool, String)> = Vec::new();
             for col in column_suttas {
                 let html = self.render_sutta_standard_body(col, show_references)
                     .with_context(|| format!("Failed to render block column {}", col.uid))?;
-                cols.push((sutta_column_label(col), col.uid.clone(), html));
+                cols.push((sutta_column_label(col), col.uid.clone(), col.language == "pli", html));
             }
             multi_column_html_blocks(&cols)
 

@@ -176,6 +176,23 @@ Notable feature docs:
   multi-line responses; the height is now pushed up via
   `Layout.onPreferredHeightChanged`). **No per-save `ANALYZE`** (see
   [user-data-and-sqlite-analyze.md](./docs/user-data-and-sqlite-analyze.md)).
+- [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
+  the N-column sutta reading view (Lines / Columns / Solo layouts, Repeat Pāli),
+  the in-page cogwheel settings menu and the bottom column bar. Covers the
+  **CSS-on-cells rendering rule** (both layouts emit the same per-segment
+  `colcell` markup, only CSS differs — **never** split the Bilara document into
+  per-row DOM blocks; the template is not self-contained per segment), the
+  `sbs-blocks` fallback for non-segmented texts (whose `.sbs-col` divs must
+  carry the `pali`/`translated` font-var classes), options resolution &
+  precedence (`SuttaDisplayOptions` resolved once at the call boundary —
+  render tests pass explicit options, never read the settings cache), the
+  route surface (`/sutta_content_block`, `/translations_for_sutta`,
+  `POST /save_sutta_display_settings`, display params on the full-page sutta
+  routes), the settings-panel scope semantics, the **post-swap re-init
+  contract** (`reinit_sutta_content()` + `window.ssp_rebind_content_handlers()`
+  + the `ssp-content-swapped` event), and why the column bar uses custom
+  upward-opening dropdowns (WebEngineView clips native select popups at the
+  window edge).
 
 ## Specific coding procedures
 

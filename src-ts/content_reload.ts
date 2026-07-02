@@ -73,6 +73,10 @@ export function reinit_sutta_content(): void {
   }
 
   ds.refresh_columns();
+
+  // The column bar listens for this (an event rather than an import, to
+  // avoid a module cycle: column_bar.ts imports this module for the fetch).
+  document.dispatchEvent(new CustomEvent("ssp-content-swapped"));
 }
 
 /**

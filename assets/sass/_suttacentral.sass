@@ -253,6 +253,21 @@ body:has(.suttacentral.layout-columns)
     flex: 1 1 0
     min-width: 0
     padding: 0 0.75em
+  // The same font-group custom properties as the segmented builder's
+  // colcells: the display-settings typography must keep applying when a
+  // non-segmented column switches the render to this fallback.
+  .sbs-col.translated
+    font-family: var(--tr-font-family, inherit)
+    font-size: var(--tr-font-size, 1em)
+    line-height: var(--tr-line-height, inherit)
+    font-weight: var(--tr-font-weight, inherit)
+    font-style: var(--tr-font-style, inherit)
+  .sbs-col.pali
+    font-family: var(--pali-font-family, "Source Sans 3 SSP")
+    font-size: var(--pali-font-size, 0.8em)
+    line-height: var(--pali-line-height, inherit)
+    font-weight: var(--pali-font-weight, inherit)
+    font-style: var(--pali-font-style, inherit)
   .sbs-col-header
     font-family: "Source Sans 3 SSP"
     font-weight: bold

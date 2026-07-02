@@ -127,6 +127,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── fonts
 │   ├── dpd-res
 │   ├── templates
+│   │   ├── column_bar.html
+│   │   ├── display_settings.html
 │   │   ├── icons.html
 │   │   ├── menu.html
 │   │   └── page.html
@@ -176,6 +178,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   │   ├── tokenizer.rs
 │   │   │   └── types.rs
 │   │   ├── stardict_parse.rs
+│   │   ├── sutta_display.rs
 │   │   ├── theme_colors_dark.json
 │   │   ├── theme_colors_light.json
 │   │   ├── theme_colors.rs
@@ -201,7 +204,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/pali_stemmer.rs` - Pali language stemming for better search
   - `src/stardict_parse.rs` - StarDict dictionary format parser
   - `src/theme_colors.rs` - Theme color management for dark/light modes
-  - `src/app_settings.rs` - Application settings and configuration
+  - `src/app_settings.rs` - Application settings and configuration (incl. `SuttaLayout` / `SuttaDisplayDefaults`)
+  - `src/sutta_display.rs` - per-request `SuttaDisplayOptions` + display GET-param parsing (multi-column sutta view)
   - `src/helpers.rs` - Utility functions including Linux desktop launcher creation
 - `backend/tests/` - Rust backend unit tests
 
@@ -282,15 +286,27 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 
 ```
 ├── src-ts
-│   ├── helpers.ts
-│   ├── index.d.ts
-│   ├── simsapa.ts
-│   └── tsconfig.json
+│   ├── column_bar.ts (+ .test.ts)
+│   ├── confirm_modal.ts (+ .test.ts)
+│   ├── content_reload.ts (+ .test.ts)
+│   ├── display_settings.ts (+ .test.ts)
+│   ├── find.ts (+ .test.ts)
+│   ├── footnote_bottom_bar.ts
+│   ├── footnote_modal.ts
+│   ├── helpers.ts
+│   ├── index.d.ts
+│   ├── invalid_link_modal.ts
+│   ├── simsapa.ts
+│   ├── test-setup.ts
+│   └── tsconfig.json
 ```
 
 - **Entry Point:** `simsapa.ts`
 - **Build Process:** `npx webpack` → `assets/js/simsapa.min.js`
+- **Tests:** `npx jest` (ts-jest + jsdom, `*.test.ts`)
 - `helpers.ts` - TypeScript utility functions
+- `find.ts` - in-page find bar (punctuation-tolerant matching)
+- `display_settings.ts` / `content_reload.ts` / `column_bar.ts` - in-page sutta display settings panel, content-block re-render + re-init contract, bottom column bar (see [docs/sutta-display-settings-and-multi-column-view.md](./docs/sutta-display-settings-and-multi-column-view.md))
 - `tsconfig.json` - TypeScript configuration
 
 #### Root Configuration Files
@@ -347,6 +363,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - **HTML Generation:** `backend/src/html_content.rs`
 - **Template Processing:** Uses `tinytemplate` crate for HTML templates
 - **Content Display:** QML views in `assets/qml/`
+- **Sutta display settings & multi-column view:** `SuttaLayout` (Lines / Columns / Solo) + `SuttaDisplayDefaults` in `backend/src/app_settings.rs`; per-request `SuttaDisplayOptions` + GET-param parsing in `backend/src/sutta_display.rs` (resolved once at the call boundary by `AppData::resolve_sutta_display_options`, incl. Repeat-Pāli arrangement and the Lines-mode non-segmented drop). Renderers in `backend/src/helpers.rs`: `bilara_multi_column_html` (segmented N-column colcell markup, CSS-on-cells) and `multi_column_html_blocks` (`sbs-blocks` fallback with `pali`/`translated` classes). Page chrome (cogwheel panel + column bar templates `assets/templates/display_settings.html` / `column_bar.html`) injected via `sutta_html_page_with_nav(…, sutta_display_chrome)` in `html_content.rs`, sutta pages only. Routes in `bridges/src/api.rs`: `GET /sutta_content_block`, `GET /translations_for_sutta`, `POST /save_sutta_display_settings`, plus `layout`/`columns`/`repeat_pali` params on both full-page sutta routes. Front-end: `src-ts/display_settings.ts` (panel, scope semantics, CSS vars), `content_reload.ts` (content-block swap + `reinit_sutta_content()` re-init contract + `ssp-content-swapped` event), `column_bar.ts` (upward-opening custom dropdowns); styles `assets/sass/_display_settings.scss` + multi-column rules in `_suttacentral.sass`. Full design: [docs/sutta-display-settings-and-multi-column-view.md](./docs/sutta-display-settings-and-multi-column-view.md).
 - **DPPN Entries:** `backend/src/html_content.rs::render_dppn_entry` mirrors `render_bold_definition` — wraps the (already `<div class="dppn">`-prefixed) `definition_html` with the standard page chrome (`sutta_html_page` + `DICTIONARY_CSS` + `WINDOW_ID` JS). Dispatched from `backend/src/app_data.rs::render_word_uid_to_html` when `dict_label == "dppn"`, ahead of the generic full-document rewrite path. Bootstrap-time transform in `cli/src/bootstrap/dppn.rs::transform_dppn_definition_html` rewrites every `<span class="t14">TEXT</span>` to `<a class="dppn-ref" href="ssp://dppn_lookup/{ENCODED}">…</a>` with percent-encoded UTF-8 (preserves diacritics). Styling lives under `.dppn` scope in `assets/css/dictionary.css` (no leakage into other dict entries).
 
 ### UI Components
