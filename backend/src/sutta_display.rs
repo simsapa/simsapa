@@ -65,3 +65,120 @@ impl SuttaDisplayOptions {
         }
     }
 }
+
+/// Parses the optional `layout` / `columns` GET parameters shared by the
+/// sutta-HTML routes and `GET /sutta_content_block` into overrides.
+///
+/// `layout` accepts both spellings per mode (`lines`/`linebyline`,
+/// `columns`/`sidebyside`); an unknown value is an `Err` whose message the
+/// route maps to HTTP 400. `columns` is a `|`-separated list of column sutta
+/// uids — Rocket hands query values fully percent-decoded (uids contain `/`),
+/// so no decoding happens here; empty items are skipped, and an
+/// effectively-empty list is treated as absent (falls back to defaults).
+pub fn parse_display_overrides(
+    layout: Option<&str>,
+    columns: Option<&str>,
+) -> Result<SuttaDisplayOverrides, String> {
+    let layout = match layout {
+        Some(s) => match SuttaLayout::from_str(s) {
+            Some(l) => Some(l),
+            None => {
+                return Err(format!(
+                    "Unknown layout value: '{}' (expected one of: lines, linebyline, columns, sidebyside)",
+                    s
+                ));
+            }
+        },
+        None => None,
+    };
+
+    let columns = columns.and_then(|s| {
+        let cols: Vec<String> = s.split('|')
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty())
+            .map(|c| c.to_string())
+            .collect();
+        if cols.is_empty() { None } else { Some(cols) }
+    });
+
+    Ok(SuttaDisplayOverrides { layout, columns })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_layout_spellings() {
+        for s in ["lines", "linebyline", "line-by-line", "LineByLine", "LINES"] {
+            let o = parse_display_overrides(Some(s), None).unwrap();
+            assert_eq!(o.layout, Some(SuttaLayout::LineByLine), "spelling: {}", s);
+        }
+        for s in ["columns", "sidebyside", "side-by-side", "SideBySide", "COLUMNS"] {
+            let o = parse_display_overrides(Some(s), None).unwrap();
+            assert_eq!(o.layout, Some(SuttaLayout::SideBySide), "spelling: {}", s);
+        }
+    }
+
+    #[test]
+    fn test_parse_layout_unknown_is_err() {
+        let e = parse_display_overrides(Some("stacked"), None).unwrap_err();
+        assert!(e.contains("stacked"), "error should name the bad value: {}", e);
+        assert!(e.contains("sidebyside"), "error should list accepted values: {}", e);
+    }
+
+    #[test]
+    fn test_parse_absent_params() {
+        let o = parse_display_overrides(None, None).unwrap();
+        assert_eq!(o.layout, None);
+        assert_eq!(o.columns, None);
+    }
+
+    #[test]
+    fn test_parse_columns_pipe_separated() {
+        let o = parse_display_overrides(None, Some("mn1/en/sujato|mn1/pli/ms|mn1/en/bodhi")).unwrap();
+        assert_eq!(o.columns, Some(vec![
+            "mn1/en/sujato".to_string(),
+            "mn1/pli/ms".to_string(),
+            "mn1/en/bodhi".to_string(),
+        ]));
+    }
+
+    #[test]
+    fn test_parse_columns_skips_empty_items() {
+        let o = parse_display_overrides(None, Some("|mn1/en/sujato|| mn1/pli/ms |")).unwrap();
+        assert_eq!(o.columns, Some(vec![
+            "mn1/en/sujato".to_string(),
+            "mn1/pli/ms".to_string(),
+        ]));
+    }
+
+    #[test]
+    fn test_parse_columns_empty_is_absent() {
+        for s in ["", "|", " | "] {
+            let o = parse_display_overrides(None, Some(s)).unwrap();
+            assert_eq!(o.columns, None, "columns value: '{}'", s);
+        }
+    }
+
+    #[test]
+    fn test_resolve_default_columns() {
+        let settings = AppSettings::default();
+        let o = SuttaDisplayOptions::resolve(&settings, "mn1/en/sujato", Some("mn1/pli/ms"), false, &SuttaDisplayOverrides::default());
+        assert_eq!(o.layout, SuttaLayout::LineByLine);
+        assert_eq!(o.columns, vec!["mn1/en/sujato".to_string(), "mn1/pli/ms".to_string()]);
+    }
+
+    #[test]
+    fn test_resolve_overrides_win() {
+        let settings = AppSettings::default();
+        let overrides = SuttaDisplayOverrides {
+            layout: Some(SuttaLayout::SideBySide),
+            columns: Some(vec!["an4.1/pli/ms".to_string()]),
+        };
+        let o = SuttaDisplayOptions::resolve(&settings, "an4.1/en/sujato", Some("an4.1/pli/ms"), true, &overrides);
+        assert_eq!(o.layout, SuttaLayout::SideBySide);
+        assert_eq!(o.columns, vec!["an4.1/pli/ms".to_string()]);
+        assert!(o.show_references);
+    }
+}

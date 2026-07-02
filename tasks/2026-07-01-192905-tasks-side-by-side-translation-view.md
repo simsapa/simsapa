@@ -11,13 +11,14 @@ Based on PRD: `2026-07-01-192905-prd---side-by-side-translation-view.md` (v2, 20
 - `backend/src/lib.rs` — module declaration for `sutta_display`.
 - `backend/src/app_data.rs` — `get_pali_for_translated` (193), `sutta_to_segments_json` (218), `render_sutta_content` (282), `render_sutta_html_by_uid` (428); options plumbing and content-block/page split.
 - `backend/src/helpers.rs` — `bilara_content_json_to_html` (2108), `bilara_line_by_line_html` (2125); generalise to the N-column builder; block-columns fallback.
+- `backend/src/db/appdata.rs` — `get_translations_data_json_for_sutta_uid`: `TranslationData` gained additive `language` / `author` / `has_content_json` fields (3.4).
 - `backend/src/html_content.rs` — `TmplContext` / `sutta_html_page_with_nav`; new sutta-only template fields for the cogwheel panel and column bar.
 - `backend/tests/test_render_sutta_content.rs` — exact-match render tests; switch to explicit `SuttaDisplayOptions`.
 - `backend/tests/helpers/mod.rs` — `app_data_setup()`; remove `set_translation_pali_layout_in_memory`-style hack (explicit options make it unnecessary).
 
 ### Bridges / API
 
-- `bridges/src/api.rs` — `sutta_html_response` (685), `get_sutta_html_by_uid` (718), `get_sutta_html_q` (1548), route mounting (~1673); new routes and GET params.
+- `bridges/src/api.rs` — `sutta_html_response` (685), `get_sutta_html_by_uid` (718), `get_sutta_html_q` (1548), route mounting (~1673); new routes and GET params. *(Done: `layout`/`columns` params on both full-page routes; new `get_sutta_content_block`, `get_translations_for_sutta`, `save_sutta_display_settings`.)*
 - `bridges/src/sutta_bridge.rs` — remove `get_/set_show_translation_and_pali_line_by_line` (decls 1145–1148, impls ~3846); `get_translations_data_json_for_sutta_uid` (2207) stays (QML tabs still use it).
 
 ### QML
@@ -113,7 +114,7 @@ reference anchor `flex:0 0 100%; order:-1`; no responsive collapse (FR 29–31).
 **Depends on:** 1.0 (`SuttaDisplayOptions` drives which builder runs and with
 which columns).
 
-- [ ] 2.0 N-column renderer: multi-column segment builder, block-columns fallback, Sass rules
+- [x] 2.0 N-column renderer: multi-column segment builder, block-columns fallback, Sass rules
   - [x] 2.1 In `backend/src/helpers.rs`: add a `ColumnSource { uid: String, label: String, is_pali: bool, segments: IndexMap<String, String> }` (or similar) and implement `bilara_multi_column_html(columns: &[ColumnSource], tmpl_json, show_references, layout: SuttaLayout) -> Result<String>` by generalising `bilara_line_by_line_html` (2125): keep the template ordered-keys logic, the union-of-keys fallback (now across **all** columns), and the Pāli-only-segment safeguard; emit the `colcell` markup and wrapper classes per the spec. Add a `bilara_content_json_to_html_with_class`-style wrapper-class parameter to `bilara_content_json_to_html` (2108). *(`bilara_line_by_line_html` removed — fully replaced by the N-column builder.)*
   - [x] 2.2 Implement the column header row for Columns mode (a `div.column-headers` with one `span.colcell` per column, emitted before the article content inside the wrapper div).
   - [x] 2.3 Implement the unaligned block-columns fallback builder (e.g. `multi_column_html_blocks(columns_html: &[(label, html)], …)`) producing `.sbs-row`/`.sbs-col` flex columns from each text's standard whole-document rendering; keep it a separate function from the segmented builder. *(Signature: `&[(label, uid, html)]`; wrapper adds `sbs-blocks`.)*
@@ -135,13 +136,13 @@ containing `/`):
 **Depends on:** 1.0 (options resolution), 2.0 (content-block renderer).
 
 - [ ] 3.0 API surface: content-block split, GET params, translations + save-settings routes
-  - [ ] 3.1 In `app_data.rs`: split `render_sutta_content` into `render_sutta_content_block(&sutta, &options) -> Result<String>` (the wrapper div) and the page composition (chrome, css/js extras, nav); the full-page path calls the block fn. Add the `SUTTA_DISPLAY` JS object injection (serde_json to a JS literal; escape `</script>` sequences).
-  - [ ] 3.2 Add shared query-param parsing (layout spellings, `|`-separated percent-decoded column uids) → `SuttaDisplayOptions` overrides; unit-test the parser (reject unknown layout with an error the route maps to 400).
-  - [ ] 3.3 Add `GET /sutta_content_block` route; extend `sutta_html_response` / `get_sutta_html_by_uid` / `get_sutta_html_q` with the optional `layout`/`columns` params; mount routes (~1673).
-  - [ ] 3.4 Add `GET /translations_for_sutta`: wrap `get_translations_data_json_for_sutta_uid()`; extend the returned entries with `has_content_json` (adjust the DB fn or post-process); reuse its include-commentary flags from app settings as the QML path does.
-  - [ ] 3.5 Add `POST /save_sutta_display_settings`: deserialize the `SuttaDisplayDefaults` payload, persist via `AppData` (follow the existing settings-setter pattern incl. cache refresh + DB write lock); return 200/400.
-  - [ ] 3.6 Integration-test the routes against the running app or a test-spawned Rocket instance (follow existing api tests if any; else curl the live API): content block for `mn1/en/sujato` with `layout=columns&columns=…`, layout-param spellings, 400 on bad layout, 404 on bad uid, translations list for `mn1`, save-settings round-trip (`GET /health`-style verification via a follow-up render using defaults).
-  - [ ] 3.7 Update `docs/simsapa-localhost-api-search-endpoints.md` with the new routes; build + backend tests.
+  - [x] 3.1 In `app_data.rs`: split `render_sutta_content` into `render_sutta_content_block(&sutta, &options) -> Result<String>` (the wrapper div) and the page composition (chrome, css/js extras, nav); the full-page path calls the block fn. Add the `SUTTA_DISPLAY` JS object injection (serde_json to a JS literal; escape `</script>` sequences). *(Split as `resolve_column_suttas` + `render_content_block_for_columns` (private) + public `render_sutta_content_block`; the page fn resolves columns once and reuses them for the block and for `sutta_display_js` — `{layout, columns:[{uid,label}], show_references}`, `</` escaped, also set on `window.SUTTA_DISPLAY`.)*
+  - [x] 3.2 Add shared query-param parsing (layout spellings, `|`-separated percent-decoded column uids) → `SuttaDisplayOptions` overrides; unit-test the parser (reject unknown layout with an error the route maps to 400). *(`parse_display_overrides` in `sutta_display.rs` — Rocket hands query values pre-decoded, so it only splits on `|`; 8 unit tests.)*
+  - [x] 3.3 Add `GET /sutta_content_block` route; extend `sutta_html_response` / `get_sutta_html_by_uid` / `get_sutta_html_q` with the optional `layout`/`columns` params; mount routes (~1673). *(Full-page routes render via new `render_sutta_html_by_uid_with_overrides`; block route: 400 bad layout, 404 unknown sutta/column uid, 500 other render errors.)*
+  - [x] 3.4 Add `GET /translations_for_sutta`: wrap `get_translations_data_json_for_sutta_uid()`; extend the returned entries with `has_content_json` (adjust the DB fn or post-process); reuse its include-commentary flags from app settings as the QML path does. *(`TranslationData` gained additive `language`/`author`/`has_content_json` fields — QML consumers unaffected.)*
+  - [x] 3.5 Add `POST /save_sutta_display_settings`: deserialize the `SuttaDisplayDefaults` payload, persist via `AppData` (follow the existing settings-setter pattern incl. cache refresh + DB write lock); return 200/400. *(`AppData::save_sutta_display_defaults` = cache write + `persist_app_settings`, same as `refresh_language_caches`; malformed body rejected by the Rocket `Json` guard.)*
+  - [x] 3.6 Integration-test the routes against the running app or a test-spawned Rocket instance (follow existing api tests if any; else curl the live API): content block for `mn1/en/sujato` with `layout=columns&columns=…`, layout-param spellings, 400 on bad layout, 404 on bad uid, translations list for `mn1`, save-settings round-trip (`GET /health`-style verification via a follow-up render using defaults). *(Curl-verified on the live app: aligned 3-col an4.1 sujato|pli|kovilo, block fallback with thanissaro, spelling equivalence, 400/404/404-column, Lines-mode drop, Pāli-only single column, both full-page twins + 400, `SUTTA_DISPLAY` injection, save round-trip incl. DB row + fresh-render check + restore, malformed body → 422.)*
+  - [x] 3.7 Update `docs/simsapa-localhost-api-search-endpoints.md` with the new routes; build + backend tests. *(New §14.5 + §13/§14.1 table rows; user did a fresh build; all backend test suites pass — including the previously failing `test_sutta_search_contains_match`.)*
 
 ### 4.0 In-page display settings menu (cogwheel)
 
