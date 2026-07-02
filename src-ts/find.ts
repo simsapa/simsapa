@@ -129,6 +129,16 @@ class FindManager {
 
         // Global keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
+
+        // The find bar, the display settings panel and the hamburger menu
+        // overlap at the top-right: whichever opens announces itself on
+        // 'ssp-panel-open' and the other two close.
+        document.addEventListener('ssp-panel-open', (e) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail && detail.panel !== 'find' && this.isVisible) {
+                this.hide();
+            }
+        });
     }
 
     /**
@@ -233,7 +243,11 @@ class FindManager {
      */
     show(): void {
         if (!this.findBar || !this.searchButton) return;
-        
+
+        // Close the display settings panel / hamburger menu (see the
+        // 'ssp-panel-open' listener in setupEventListeners()).
+        document.dispatchEvent(new CustomEvent('ssp-panel-open', { detail: { panel: 'find' } }));
+
         this.isVisible = true;
         this.searchButton.classList.add('active');
         this.findBar.classList.add('show');

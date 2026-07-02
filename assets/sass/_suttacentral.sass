@@ -193,7 +193,7 @@ body:has(.suttacentral.layout-columns)
 // `#ssp_main * { max-width: 100% }` rule in suttas.sass (1,3,0 vs 1,0,1).
 @for $n from 1 through 12
   #ssp_main .suttacentral.layout-columns.cols-#{$n}
-    max-width: calc(#{$n} * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + #{$n - 1} * 1em)
+    max-width: calc(#{$n} * var(--col-max-width, 75ex) * var(--width-scale, 1) + #{$n - 1} * 1em)
     margin-left: auto
     margin-right: auto
 

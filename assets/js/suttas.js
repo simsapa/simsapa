@@ -135,6 +135,15 @@ class HamburgerMenu {
                 this.closeMenu();
             }
         });
+
+        // The find bar, the display settings panel and the hamburger menu
+        // overlap at the top-right: whichever opens announces itself on
+        // 'ssp-panel-open' and the other two close.
+        document.addEventListener('ssp-panel-open', (e) => {
+            if (e.detail && e.detail.panel !== 'menu' && this.isOpen) {
+                this.closeMenu();
+            }
+        });
     }
 
     toggleMenu() {
@@ -146,6 +155,9 @@ class HamburgerMenu {
     }
 
     openMenu() {
+        // Close the find bar / display settings panel (see the
+        // 'ssp-panel-open' listener in init()).
+        document.dispatchEvent(new CustomEvent('ssp-panel-open', { detail: { panel: 'menu' } }));
         this.isOpen = true;
         this.menuButton.classList.add('active');
         this.menuDropdown.classList.add('show');
@@ -269,59 +281,6 @@ function toggle_comment (event) {
     })
 }
 
-class TextResizeController {
-    constructor() {
-        this.increaseButton = document.getElementById('textSizeIncreaseButton');
-        this.decreaseButton = document.getElementById('textSizeDecreaseButton');
-        this.contentDiv = document.getElementById('ssp_content');
-        this.currentScale = this.getInitialScale();
-        this.minScale = 0.3;
-        this.maxScale = 2.0;
-        this.scaleStep = 0.1;
-
-        this.init();
-    }
-
-    getInitialScale() {
-        const mediaQuery = window.matchMedia('(max-width: 768px)');
-        return mediaQuery.matches ? 0.8 : 1.0;
-    }
-
-    init() {
-        if (!this.increaseButton || !this.decreaseButton || !this.contentDiv) {
-            return;
-        }
-
-        this.increaseButton.addEventListener('click', () => this.increaseTextSize());
-        this.decreaseButton.addEventListener('click', () => this.decreaseTextSize());
-        this.applyScale();
-    }
-
-    increaseTextSize() {
-        if (this.currentScale < this.maxScale) {
-            this.currentScale += this.scaleStep;
-            this.applyScale();
-        }
-    }
-
-    decreaseTextSize() {
-        if (this.currentScale > this.minScale) {
-            this.currentScale -= this.scaleStep;
-            this.applyScale();
-        }
-    }
-
-    applyScale() {
-        this.contentDiv.style.fontSize = `${this.currentScale}em`;
-        // Scale the reading measure through a CSS var, never an inline
-        // body max-width: an inline style out-prioritizes every stylesheet
-        // rule, including the side-by-side full-width layout
-        // (body:has(.suttacentral.layout-columns) in suttas.sass) and the
-        // sutta_max_width setting emitted by the css_extra.
-        document.body.style.setProperty('--text-scale', this.currentScale);
-    }
-}
-
 class ReadingModeController {
     constructor() {
         this.readingModeButton = document.getElementById('readingModeButton');
@@ -423,7 +382,6 @@ class ChapterNavigationController {
 
 document.addEventListener("DOMContentLoaded", function(_event) {
     new HamburgerMenu();
-    new TextResizeController();
     new ReadingModeController();
     new ChapterNavigationController();
     if (IS_MOBILE) {

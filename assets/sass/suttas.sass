@@ -39,15 +39,14 @@ body
   padding-top: 30px
 
 // The reading measure is var-driven: --single-max-width is emitted by the
-// css_extra from AppSettings.sutta_max_width, --text-scale is set by
-// TextResizeController (suttas.js) on the +/- text-size buttons, and
-// --width-scale by the display-settings Width control
-// (display_settings.ts). They must stay CSS vars — an inline body max-width
-// would out-prioritize every stylesheet rule, including the side-by-side
-// full-width body:has() layout in _suttacentral.sass.
+// css_extra from AppSettings.sutta_max_width, and --width-scale by the
+// display-settings Width control (display_settings.ts). They must stay CSS
+// vars — an inline body max-width would out-prioritize every stylesheet
+// rule, including the side-by-side full-width body:has() layout in
+// _suttacentral.sass.
 body
   padding: 0 1em
-  max-width: calc(var(--single-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1))
+  max-width: calc(var(--single-max-width, 75ex) * var(--width-scale, 1))
   margin: 0 auto
   box-sizing: border-box
 
@@ -59,7 +58,7 @@ body
   body
     max-width: 100vw
 
-  // Corresponding to TextResizeController's this.currentScale default in suttas.js
+  // Smaller default reading size on narrow (mobile) screens
   #ssp_content
     font-size: 0.8em
 
@@ -118,8 +117,6 @@ h4
 @include meta.load-css("invalid_link_modal")
 
 @include meta.load-css("find")
-
-@include meta.load-css("text_resize")
 
 @include meta.load-css("reading_mode")
 

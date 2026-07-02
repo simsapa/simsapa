@@ -494,73 +494,73 @@ body:has(.suttacentral.layout-columns) {
 }
 
 #ssp_main .suttacentral.layout-columns.cols-1 {
-  max-width: calc(1 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 0 * 1em);
+  max-width: calc(1 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 0 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-2 {
-  max-width: calc(2 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 1 * 1em);
+  max-width: calc(2 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 1 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-3 {
-  max-width: calc(3 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 2 * 1em);
+  max-width: calc(3 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 2 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-4 {
-  max-width: calc(4 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 3 * 1em);
+  max-width: calc(4 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 3 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-5 {
-  max-width: calc(5 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 4 * 1em);
+  max-width: calc(5 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 4 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-6 {
-  max-width: calc(6 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 5 * 1em);
+  max-width: calc(6 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 5 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-7 {
-  max-width: calc(7 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 6 * 1em);
+  max-width: calc(7 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 6 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-8 {
-  max-width: calc(8 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 7 * 1em);
+  max-width: calc(8 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 7 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-9 {
-  max-width: calc(9 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 8 * 1em);
+  max-width: calc(9 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 8 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-10 {
-  max-width: calc(10 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 9 * 1em);
+  max-width: calc(10 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 9 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-11 {
-  max-width: calc(11 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 10 * 1em);
+  max-width: calc(11 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 10 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
 
 #ssp_main .suttacentral.layout-columns.cols-12 {
-  max-width: calc(12 * var(--col-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1) + 11 * 1em);
+  max-width: calc(12 * var(--col-max-width, 75ex) * var(--width-scale, 1) + 11 * 1em);
   margin-left: auto;
   margin-right: auto;
 }
@@ -786,7 +786,7 @@ body {
 
 body {
   padding: 0 1em;
-  max-width: calc(var(--single-max-width, 75ex) * var(--text-scale, 1) * var(--width-scale, 1));
+  max-width: calc(var(--single-max-width, 75ex) * var(--width-scale, 1));
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -1653,8 +1653,8 @@ body.footnote-bar-visible #ssp_content {
 
 .display-settings-button {
   position: fixed;
-  bottom: 10px;
-  right: 10px;
+  top: 10px;
+  right: 45px;
   width: 30px;
   height: 30px;
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
@@ -1689,7 +1689,7 @@ body.footnote-bar-visible #ssp_content {
 
 .display-settings-panel {
   position: fixed;
-  bottom: 45px;
+  top: 45px;
   right: 10px;
   width: 320px;
   max-height: 80vh;
@@ -1702,7 +1702,7 @@ body.footnote-bar-visible #ssp_content {
   z-index: 999;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(5px) translateZ(0);
+  transform: translateY(-5px) translateZ(0);
   transition: all 0.2s ease;
   color: var(--text-primary);
   font-size: 13px;
@@ -2157,7 +2157,7 @@ body.dark {
 .find-search-button {
   position: fixed;
   top: 10px;
-  right: 115px;
+  right: 80px;
   width: 30px;
   height: 30px;
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
@@ -2194,7 +2194,7 @@ body.dark {
 .find-bar {
   position: fixed;
   top: 10px;
-  right: 153px;
+  right: 118px;
   height: 40px;
   width: 380px;
   background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);
@@ -2387,28 +2387,6 @@ body.dark .ssp-find-highlight.current {
     min-width: 100px;
   }
 }
-#textSizeDecreaseButton {
-  position: fixed;
-  top: 10px;
-  right: 80px;
-  z-index: 1000;
-  transform: translateZ(0);
-}
-
-#textSizeIncreaseButton {
-  position: fixed;
-  top: 10px;
-  right: 45px;
-  z-index: 1000;
-  transform: translateZ(0);
-}
-
-.text-resize-button .resize-icon {
-  width: 15px;
-  height: 15px;
-  opacity: 0.8;
-}
-
 #readingModeButton {
   position: fixed;
   top: 10px;

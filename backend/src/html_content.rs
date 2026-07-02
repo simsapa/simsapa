@@ -5,7 +5,6 @@ use crate::{get_app_globals, is_mobile};
 
 static PAGE_HTML: &str = include_str!("../../assets/templates/page.html");
 static FIND_HTML: &str = include_str!("../../assets/templates/find.html");
-static TEXT_RESIZE_HTML: &str = include_str!("../../assets/templates/text_resize.html");
 static READING_MODE_HTML: &str = include_str!("../../assets/templates/reading_mode.html");
 pub static PREV_NEXT_CHAPTER_HTML: &str = include_str!("../../assets/templates/prev_next_chapter.html");
 static MENU_HTML: &str = include_str!("../../assets/templates/menu.html");
@@ -27,7 +26,6 @@ struct TmplContext {
     reading_mode_html: String,
     prev_next_chapter_html: String,
     find_html: String,
-    text_resize_html: String,
     menu_html: String,
     confirm_modal_html: String,
     footnote_modal_html: String,
@@ -53,7 +51,6 @@ impl Default for TmplContext {
             reading_mode_html: READING_MODE_HTML.replace("{api_url}", &g.api_url).to_string(),
             prev_next_chapter_html: "".to_string(),  // Default to empty for suttas
             find_html: FIND_HTML.replace("{api_url}", &g.api_url).to_string(),
-            text_resize_html: TEXT_RESIZE_HTML.replace("{api_url}", &g.api_url).to_string(),
             menu_html: MENU_HTML.replace("{api_url}", &g.api_url).to_string(),
             confirm_modal_html: CONFIRM_MODAL_HTML.to_string(),
             footnote_modal_html: FOOTNOTE_MODAL_HTML.to_string(),
@@ -242,7 +239,6 @@ pub fn blank_html_page(body_class: Option<String>) -> String {
     let mut ctx = TmplContext {
         reading_mode_html: "".to_string(),
         find_html: "".to_string(),
-        text_resize_html: "".to_string(),
         menu_html: "".to_string(),
         confirm_modal_html: "".to_string(),
         footnote_modal_html: "".to_string(),

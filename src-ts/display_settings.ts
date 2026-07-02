@@ -813,7 +813,20 @@ function wire_panel(): void {
   }
 
   button.addEventListener("click", () => {
-    panel.classList.toggle("show");
+    const opening = !panel.classList.contains("show");
+    if (opening) {
+      // Close the find bar / hamburger menu: the top-right panels overlap,
+      // so whichever opens announces itself and the other two close.
+      document.dispatchEvent(new CustomEvent("ssp-panel-open", { detail: { panel: "display_settings" } }));
+    }
+    panel.classList.toggle("show", opening);
+  });
+
+  document.addEventListener("ssp-panel-open", (e) => {
+    const detail = (e as CustomEvent).detail;
+    if (detail && detail.panel !== "display_settings") {
+      panel.classList.remove("show");
+    }
   });
 
   // Click-away closes an open swatch palette (clicks on dots and swatches

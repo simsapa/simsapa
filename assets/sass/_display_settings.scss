@@ -1,5 +1,6 @@
-// In-page sutta display settings: the fixed cogwheel button (bottom-right)
-// and its settings panel. The panel layout follows the study.jhana.info
+// In-page sutta display settings: the fixed cogwheel button (top-right,
+// between the find button and the hamburger menu button) and its settings
+// panel. The panel layout follows the study.jhana.info
 // settings menu (screenshots reviewed 2026-07-02): top-right "Reset all"
 // link, uppercase section headers, rounded cards, segmented toggle buttons,
 // sliders with the value at the label's right, translator ink rows with
@@ -27,8 +28,8 @@ $font_size_small: 11px;
 
 .display-settings-button {
     position: fixed;
-    bottom: $edge_margin;
-    right: $edge_margin;
+    top: $edge_margin;
+    right: ($edge_margin + $button_size + $button_spacing);
     width: $button_size;
     height: $button_size;
     background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
@@ -66,7 +67,7 @@ $font_size_small: 11px;
 
 .display-settings-panel {
     position: fixed;
-    bottom: ($edge_margin + $button_size + $button_spacing);
+    top: ($edge_margin + $button_size + $button_spacing);
     right: $edge_margin;
     width: 320px;
     max-height: 80vh;
@@ -79,7 +80,7 @@ $font_size_small: 11px;
     z-index: 999;
     opacity: 0;
     visibility: hidden;
-    transform: translateY(5px) translateZ(0);
+    transform: translateY(-5px) translateZ(0);
     transition: all 0.2s ease;
     color: var(--text-primary);
     font-size: $font_size;

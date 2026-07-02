@@ -22,7 +22,7 @@ $animation_duration: 1s;
 .find-search-button {
     position: fixed;
     top: $edge_margin;  // Same height as menu button
-    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing + $find_button_size + $button_spacing);  // Position to the left of resize buttons
+    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing);  // Position to the left of the display settings button
     width: $find_button_size;
     height: $find_button_size;
     background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
@@ -65,7 +65,7 @@ $animation_duration: 1s;
 .find-bar {
     position: fixed;
     top: $edge_margin;
-    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing + $find_button_size + $button_spacing + $find_button_size + 8px);  // Start from search button position
+    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing + $find_button_size + 8px);  // Start from search button position
     height: $find_bar_height;
     width: 380px;
     background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);
