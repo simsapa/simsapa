@@ -83,7 +83,7 @@ fn test_sutta_search_contains_match() {
     assert!(results[1].snippet.contains("<span class='match'>satipaṭṭhāna</span>"));
 
     assert_eq!(results[1].uid, "mn10/en/horner");
-    assert!(results[1].snippet.starts_with("... middle length sayings <span class='match'>satipaṭṭhāna</span> suttaṁ"));
+    assert!(results[1].snippet.starts_with("... nikāya the middle length sayings <span class='match'>satipaṭṭhāna</span> suttaṁ"));
 
     // Verify all results are English
     for result in &results {
