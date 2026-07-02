@@ -238,6 +238,8 @@ pub struct SuttaFontGroup {
     pub size_percent: usize,
     /// Line height as a percentage (150 = 1.5).
     pub line_height_percent: usize,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 impl Default for SuttaFontGroup {
@@ -246,6 +248,8 @@ impl Default for SuttaFontGroup {
             family_kind: SuttaFontFamilyKind::Serif,
             size_percent: 100,
             line_height_percent: 150,
+            bold: false,
+            italic: false,
         }
     }
 }
@@ -253,7 +257,7 @@ impl Default for SuttaFontGroup {
 /// Persisted sutta display defaults, nested in `AppSettings` as
 /// `sutta_display`. Color maps are keyed by author uid (e.g. "sujato"); "pali"
 /// is used for the Pāli column.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SuttaDisplayDefaults {
     pub layout: SuttaLayout,
@@ -263,6 +267,28 @@ pub struct SuttaDisplayDefaults {
     pub author_ink_colors: IndexMap<String, String>,
     /// Per-author column background colors.
     pub author_bg_colors: IndexMap<String, String>,
+}
+
+impl Default for SuttaDisplayDefaults {
+    fn default() -> Self {
+        SuttaDisplayDefaults {
+            layout: SuttaLayout::default(),
+            // Matches the stylesheet's un-overridden look: Pāli cells render
+            // in "Source Sans 3 SSP" at 0.8em (see _suttacentral.sass),
+            // translations in the serif body font at 1em. The CSS custom
+            // properties applied from these values must not change the
+            // appearance of a fresh install.
+            pali_font: SuttaFontGroup {
+                family_kind: SuttaFontFamilyKind::Sans,
+                size_percent: 80,
+                line_height_percent: 150,
+                ..SuttaFontGroup::default()
+            },
+            translation_font: SuttaFontGroup::default(),
+            author_ink_colors: IndexMap::new(),
+            author_bg_colors: IndexMap::new(),
+        }
+    }
 }
 
 fn default_true() -> bool {

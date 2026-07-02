@@ -811,10 +811,21 @@ document.addEventListener("DOMContentLoaded", function(_event) {
         });
     }
 
+    ssp_rebind_content_handlers();
+});
+
+// Re-binds the per-node handlers inside #ssp_content. Called at
+// DOMContentLoaded, and again by the webpack bundle's
+// reinit_sutta_content() (src-ts/content_reload.ts) after a content-block
+// swap replaces those nodes. The document-level delegated handlers above
+// (click / selectionchange / dblclick) survive swaps and must not be
+// re-registered here.
+function ssp_rebind_content_handlers() {
     document.querySelectorAll(".variant-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_variant);
     });
     document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_comment);
     });
-});
+}
+window.ssp_rebind_content_handlers = ssp_rebind_content_handlers;

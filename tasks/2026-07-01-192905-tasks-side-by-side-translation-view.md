@@ -28,17 +28,17 @@ Based on PRD: `2026-07-01-192905-prd---side-by-side-translation-view.md` (v2, 20
 
 ### Templates / TS / styles
 
-- `assets/templates/page.html` — `#ssp_content` (31); new chrome placeholders if needed.
-- `assets/templates/display_settings.html` — NEW: cogwheel button + settings panel (pattern: `menu.html`).
-- `assets/templates/column_bar.html` — NEW: fixed bottom column bar.
-- `src-ts/display_settings.ts` (+ `display_settings.test.ts`) — NEW: settings panel logic, CSS-var application, scope semantics, POST persistence.
-- `src-ts/column_bar.ts` (+ `column_bar.test.ts`) — NEW: dropdowns, add/remove, re-render trigger.
-- `src-ts/content_reload.ts` (+ `content_reload.test.ts`) — NEW: `fetch_content_block()` + `reinit_sutta_content()`.
-- `src-ts/simsapa.ts` — wire the new modules; expose `attach_link_handlers_to_element` reuse.
-- `src-ts/footnote_bottom_bar.ts` — needs a re-init entry point after content swap.
-- `assets/js/suttas.js` — inlined page JS (not webpack): factor its per-node DOMContentLoaded bindings (variant/comment marks ~814–818, bookmark markup) into an exported `window.ssp_rebind_content_handlers()`; document-level delegated handlers (601/684/805) survive swaps unchanged.
+- `assets/templates/page.html` — `#ssp_content` (31); `{display_settings_html}` / `{column_bar_html}` placeholders added as `#ssp_content` siblings (4.1).
+- `assets/templates/display_settings.html` — NEW (4.1): cogwheel button (fixed bottom-right, `fa_gear-solid.png`) + hidden settings panel (scope, layout, two font groups, `#dsColorRows`, Reset all).
+- `assets/templates/column_bar.html` — NEW: fixed bottom column bar. *(5.1, not created yet.)*
+- `src-ts/display_settings.ts` (+ `display_settings.test.ts`) — NEW (4.2–4.3): settings panel logic, CSS-var application (`apply_css_vars`, `refresh_columns`), scope semantics, POST persistence, `set_layout_change_handler` hook.
+- `src-ts/column_bar.ts` (+ `column_bar.test.ts`) — NEW: dropdowns, add/remove, re-render trigger. *(5.2, not created yet.)*
+- `src-ts/content_reload.ts` (+ `content_reload.test.ts`) — NEW (4.4): `build_content_block_url` / `fetch_content_block()` / `refetch_with_layout()` + `reinit_sutta_content()`.
+- `src-ts/simsapa.ts` — wires display_settings + content_reload on DOMContentLoaded (guarded on `#displaySettingsButton`); `attach_link_handlers` reused via `document.SSP`.
+- `src-ts/footnote_bottom_bar.ts` — existing `refresh()` (destroy + init) serves as the post-swap re-init entry; no change needed.
+- `assets/js/suttas.js` — inlined page JS (not webpack): variant/comment mark bindings factored into `window.ssp_rebind_content_handlers()` (top-level fn, called at DOMContentLoaded and after swaps); document-level delegated handlers (click/selectionchange/dblclick) survive swaps unchanged; no bookmark markup existed here.
 - `assets/sass/_suttacentral.sass` — `layout-columns` / `layout-lines` / `cols-N` rules, column header row, CSS custom properties.
-- `assets/sass/` (new partial, e.g. `_display_settings.sass`) — cogwheel panel + column bar styles.
+- `assets/sass/_display_settings.scss` — NEW (4.7): cogwheel button + panel styles reusing `_menu.scss` theme vars; loaded from `suttas.sass`; column bar styles join in 5.3.
 
 ### Docs
 
@@ -135,7 +135,7 @@ containing `/`):
 
 **Depends on:** 1.0 (options resolution), 2.0 (content-block renderer).
 
-- [ ] 3.0 API surface: content-block split, GET params, translations + save-settings routes
+- [x] 3.0 API surface: content-block split, GET params, translations + save-settings routes
   - [x] 3.1 In `app_data.rs`: split `render_sutta_content` into `render_sutta_content_block(&sutta, &options) -> Result<String>` (the wrapper div) and the page composition (chrome, css/js extras, nav); the full-page path calls the block fn. Add the `SUTTA_DISPLAY` JS object injection (serde_json to a JS literal; escape `</script>` sequences). *(Split as `resolve_column_suttas` + `render_content_block_for_columns` (private) + public `render_sutta_content_block`; the page fn resolves columns once and reuses them for the block and for `sutta_display_js` — `{layout, columns:[{uid,label}], show_references}`, `</` escaped, also set on `window.SUTTA_DISPLAY`.)*
   - [x] 3.2 Add shared query-param parsing (layout spellings, `|`-separated percent-decoded column uids) → `SuttaDisplayOptions` overrides; unit-test the parser (reject unknown layout with an error the route maps to 400). *(`parse_display_overrides` in `sutta_display.rs` — Rocket hands query values pre-decoded, so it only splits on `|`; 8 unit tests.)*
   - [x] 3.3 Add `GET /sutta_content_block` route; extend `sutta_html_response` / `get_sutta_html_by_uid` / `get_sutta_html_q` with the optional `layout`/`columns` params; mount routes (~1673). *(Full-page routes render via new `render_sutta_html_by_uid_with_overrides`; block route: 400 bad layout, 404 unknown sutta/column uid, 500 other render errors.)*
@@ -145,6 +145,27 @@ containing `/`):
   - [x] 3.7 Update `docs/simsapa-localhost-api-search-endpoints.md` with the new routes; build + backend tests. *(New §14.5 + §13/§14.1 table rows; user did a fresh build; all backend test suites pass — including the previously failing `test_sutta_search_contains_match`.)*
 
 ### 4.0 In-page display settings menu (cogwheel)
+
+**Design reference (2026-07-02):** the study.jhana.info settings menu
+screenshots (`~/Downloads/Screenshot 2026-07-02 at 07-13-47…` and
+`…07-14-28…`) were reviewed after the first panel build; the panel was
+reworked to match: top-right "Reset all" link, uppercase section headers
+(Settings scope / Layout / Pāli / Translation / Translator inks), rounded
+cards, segmented toggle buttons (`.ds-segmented`/`.ds-seg-btn`) instead of
+radios/selects, sliders with the value at the label's right, and translator
+ink rows (ink dot + bg dot + name + per-row Reset). Also adopted
+(2026-07-02, user request): **Bold/Italic style toggles** per font group
+(`SuttaFontGroup` gained `bold`/`italic`; CSS vars `--pali/--tr-font-weight`
+/ `-font-style` are set **only while toggled on** — the `inherit` fallback
+keeps template headings bold) and **Compact/Normal/Relaxed line-height
+presets** (120/150/180%) alongside the percent slider (preset highlight
+follows the slider, none active in between). Not adopted: jhana's Repeat
+Pāli and masthead/framing toggles (out of scope). Additionally, **Columns
+mode widens the page**: `body:has(.suttacentral.layout-columns.cols-N)`
+rules in `_suttacentral.sass` give ~75ex per column capped at 96vw,
+out-specifying the inline `body { max-width }` css_extra; Lines/single
+column keep the narrow reading measure (sbs-blocks carries the same wrapper
+classes, so the fallback is covered).
 
 **Specs.** Chrome injection: new `TmplContext` fields
 (`display_settings_html`, `column_bar_html`) defaulting to **empty**, filled
@@ -170,13 +191,13 @@ handlers in the inlined `assets/js/suttas.js` (click 601 / selectionchange 684
 save-settings routes).
 
 - [ ] 4.0 In-page display settings menu (cogwheel)
-  - [ ] 4.1 Create `assets/templates/display_settings.html` (cogwheel button fixed bottom-right + hidden panel; follow `menu.html`'s structure/`{api_url}` icon pattern) and add `display_settings_html` (+ `column_bar_html`, prepared here for 5.0) to `TmplContext` in `html_content.rs`, default empty; populate them only in the sutta page render path; verify dictionary pages (`render_bold_definition`, `render_dppn_entry`) and `blank_html_page` stay chrome-free.
-  - [ ] 4.2 Create `src-ts/display_settings.ts`: panel open/close, read initial state from `window.SUTTA_DISPLAY`, render the per-translation color rows from the current column list, and an `apply_css_vars(settings)` that sets the custom properties on `document.documentElement`.
-  - [ ] 4.3 Implement the scope logic: a module-level `scope` state defaulting to `save_default`; `on_setting_changed()` → apply locally + (if `save_default`) `POST /save_sutta_display_settings`; `on_scope_changed(local→default)` → immediate POST of current state; Reset all → restore built-in defaults, apply, and POST when in default scope.
-  - [ ] 4.4 Create `src-ts/content_reload.ts`: `fetch_content_block(layout, columns, show_references)` building the query URL (`encodeURIComponent` every uid; `|` separator; `show_references` from `SUTTA_DISPLAY`), swapping `#ssp_content` innerHTML on 200 (non-200 → keep current content, log the error), preserving `window.scrollY`; and `reinit_sutta_content()` per the re-init contract — webpack-side re-binds (link handlers, footnote observer re-init entry point in `footnote_bottom_bar.ts`, find-bar state) + call `window.ssp_rebind_content_handlers()` + re-apply CSS vars. Add the `ssp_rebind_content_handlers()` export to `assets/js/suttas.js` (factor its DOMContentLoaded per-node bindings — variant/comment marks, bookmark markup — into it and call it on load too).
-  - [ ] 4.5 Connect the panel's Layout control to `fetch_content_block`; verify the panel and its open state survive a swap (panel lives outside `#ssp_content`).
-  - [ ] 4.6 Wire the modules into `src-ts/simsapa.ts` init (guard: only when the panel element exists in the DOM); run `npx webpack`; add `display_settings.test.ts` unit tests for the scope semantics (change-in-local-then-switch persists; local changes don't POST) and `content_reload.test.ts` (URL building incl. show_references, swap + re-init sequence) with mocked `fetch`/DOM.
-  - [ ] 4.7 Style the button/panel in a new sass partial imported by the suttas stylesheet; keep visual consistency with the top menu; ensure content bottom padding so fixed chrome doesn't cover the text end (FR 30). `make sass`, `make build -B`, visual check by the user (agents avoid GUI runs).
+  - [x] 4.1 Create `assets/templates/display_settings.html` (cogwheel button fixed bottom-right + hidden panel; follow `menu.html`'s structure/`{api_url}` icon pattern) and add `display_settings_html` (+ `column_bar_html`, prepared here for 5.0) to `TmplContext` in `html_content.rs`, default empty; populate them only in the sutta page render path; verify dictionary pages (`render_bold_definition`, `render_dppn_entry`) and `blank_html_page` stay chrome-free. *(`sutta_html_page_with_nav` gained a `sutta_display_chrome: bool` param — true only from `render_sutta_content`; book path false, `sutta_html_page` wrapper false, `blank_html_page` empty defaults. `{display_settings_html}`/`{column_bar_html}` placeholders added to `page.html`; cogwheel icon `fa_gear-solid.png`.)*
+  - [x] 4.2 Create `src-ts/display_settings.ts`: panel open/close, read initial state from `window.SUTTA_DISPLAY`, render the per-translation color rows from the current column list, and an `apply_css_vars(settings)` that sets the custom properties on `document.documentElement`. *(`SUTTA_DISPLAY` gained `defaults` — the persisted `SuttaDisplayDefaults` — and per-column `author`/`is_pali` keys for the color maps; `SuttaDisplayDefaults::default()` pali_font changed to sans/80/150 so applying CSS vars on a fresh install reproduces the stylesheet's un-overridden look. Color rows include the Pāli column, keyed "pali"; `refresh_columns()` is the post-swap/column-change hook.)*
+  - [x] 4.3 Implement the scope logic: a module-level `scope` state defaulting to `save_default`; `on_setting_changed()` → apply locally + (if `save_default`) `POST /save_sutta_display_settings`; `on_scope_changed(local→default)` → immediate POST of current state; Reset all → restore built-in defaults, apply, and POST when in default scope.
+  - [x] 4.4 Create `src-ts/content_reload.ts`: `fetch_content_block(layout, columns, show_references)` building the query URL (`encodeURIComponent` every uid; `|` separator; `show_references` from `SUTTA_DISPLAY`), swapping `#ssp_content` innerHTML on 200 (non-200 → keep current content, log the error), preserving `window.scrollY`; and `reinit_sutta_content()` per the re-init contract — webpack-side re-binds (link handlers, footnote observer re-init entry point in `footnote_bottom_bar.ts`, find-bar state) + call `window.ssp_rebind_content_handlers()` + re-apply CSS vars. Add the `ssp_rebind_content_handlers()` export to `assets/js/suttas.js` (factor its DOMContentLoaded per-node bindings — variant/comment marks, bookmark markup — into it and call it on load too). *(Footnote re-init = existing `footnote_bottom_bar.refresh()`; find-bar reset = `findManager.hide()` (clears stale highlight recover state); suttas.js per-node bindings were only the variant/comment marks — no bookmark markup exists there. On success `SUTTA_DISPLAY.layout`/`show_references` are updated in place; the column list is the caller's to update. `refetch_with_layout(layout)` = layout-only re-render from current page state.)*
+  - [x] 4.5 Connect the panel's Layout control to `fetch_content_block`; verify the panel and its open state survive a swap (panel lives outside `#ssp_content`). *(Wired via `set_layout_change_handler` → `content_reload.refetch_with_layout` in simsapa.ts, avoiding a circular import. Panel/button are `page.html` siblings of `#ssp_content` — only the content div's innerHTML is swapped.)*
+  - [x] 4.6 Wire the modules into `src-ts/simsapa.ts` init (guard: only when the panel element exists in the DOM); run `npx webpack`; add `display_settings.test.ts` unit tests for the scope semantics (change-in-local-then-switch persists; local changes don't POST) and `content_reload.test.ts` (URL building incl. show_references, swap + re-init sequence) with mocked `fetch`/DOM. *(46 jest tests pass; the content_reload fetch mock must keep `/logger` POSTs succeeding — `helpers.log_error` fire-and-forgets them and a blanket non-200 mock turns into unhandled rejections.)*
+  - [x] 4.7 Style the button/panel in a new sass partial imported by the suttas stylesheet; keep visual consistency with the top menu; ensure content bottom padding so fixed chrome doesn't cover the text end (FR 30). `make sass`, `make build -B`, visual check by the user (agents avoid GUI runs). *(`assets/sass/_display_settings.scss`, loaded via `meta.load-css` in suttas.sass; reuses the `--btn-*`/`--menu-*` theme vars from `_menu.scss` so dark mode follows. `#ssp_main` already has 4em bottom padding (> button height); revisit with the column bar in 5.3. Build + full backend test run clean.)*
 
 ### 5.0 Bottom column bar + live content re-render
 

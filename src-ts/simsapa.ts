@@ -4,6 +4,8 @@ import "./confirm_modal";
 import "./footnote_modal";
 import "./invalid_link_modal";
 import { footnote_bottom_bar } from "./footnote_bottom_bar";
+import * as display_settings from "./display_settings";
+import * as content_reload from "./content_reload";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -149,5 +151,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const sspContent = document.getElementById('ssp_content');
     if (sspContent && document.SSP.show_bottom_footnotes) {
         footnote_bottom_bar.init();
+    }
+
+    // Display-settings cogwheel panel: only present on sutta pages
+    // (init is a no-op when the chrome is absent). Layout changes re-render
+    // the content block through the localhost API.
+    if (document.getElementById('displaySettingsButton')) {
+        display_settings.set_layout_change_handler((layout) => {
+            content_reload.refetch_with_layout(layout);
+        });
+        display_settings.init_display_settings();
     }
 });

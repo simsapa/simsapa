@@ -13,6 +13,7 @@ static CONFIRM_MODAL_HTML: &str = include_str!("../../assets/templates/confirm_m
 static FOOTNOTE_MODAL_HTML: &str = include_str!("../../assets/templates/footnote_modal.html");
 static INVALID_LINK_MODAL_HTML: &str = include_str!("../../assets/templates/invalid_link_modal.html");
 static ICONS_HTML: &str = include_str!("../../assets/templates/icons.html");
+static DISPLAY_SETTINGS_HTML: &str = include_str!("../../assets/templates/display_settings.html");
 
 static SUTTAS_CSS: &str = include_str!("../../assets/css/suttas.css");
 static SUTTAS_JS: &str = include_str!("../../assets/js/suttas.js");
@@ -32,6 +33,11 @@ struct TmplContext {
     footnote_modal_html: String,
     invalid_link_modal_html: String,
     icons_html: String,
+    // Sutta-page-only chrome (cogwheel display-settings panel and bottom
+    // column bar). Must default to empty: sutta_html_page() also renders
+    // dictionary/DPPN/blank pages, which get no display chrome.
+    display_settings_html: String,
+    column_bar_html: String,
     content: String,
     body_class: String,
 }
@@ -53,6 +59,8 @@ impl Default for TmplContext {
             footnote_modal_html: FOOTNOTE_MODAL_HTML.to_string(),
             invalid_link_modal_html: INVALID_LINK_MODAL_HTML.to_string(),
             icons_html: ICONS_HTML.to_string(),
+            display_settings_html: "".to_string(),
+            column_bar_html: "".to_string(),
             content: "".to_string(),
             body_class: "".to_string(),
         }
@@ -64,15 +72,20 @@ pub fn sutta_html_page(content: &str,
                        css_extra: Option<String>,
                        js_extra: Option<String>,
                        body_class: Option<String>) -> String {
-    sutta_html_page_with_nav(content, api_url, css_extra, js_extra, body_class, None)
+    sutta_html_page_with_nav(content, api_url, css_extra, js_extra, body_class, None, false)
 }
 
+/// `sutta_display_chrome`: include the sutta-page-only display chrome (the
+/// cogwheel display-settings panel and the bottom column bar). Only the sutta
+/// render path passes true — dictionary, DPPN, book and blank pages stay
+/// chrome-free.
 pub fn sutta_html_page_with_nav(content: &str,
                                  api_url: Option<String>,
                                  css_extra: Option<String>,
                                  js_extra: Option<String>,
                                  body_class: Option<String>,
-                                 prev_next_chapter_html: Option<String>) -> String {
+                                 prev_next_chapter_html: Option<String>,
+                                 sutta_display_chrome: bool) -> String {
 
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);
@@ -94,6 +107,12 @@ pub fn sutta_html_page_with_nav(content: &str,
         ctx.api_url = s.clone();
     }
     css.push_str(&SUTTAS_CSS.to_string().replace("http://localhost:8000", &ctx.api_url));
+
+    if sutta_display_chrome {
+        ctx.display_settings_html = DISPLAY_SETTINGS_HTML.replace("{api_url}", &ctx.api_url);
+        // column_bar_html is populated here too once its template exists
+        // (bottom column bar stage); until then it stays empty.
+    }
 
     if let Some(s) = css_extra {
         css.push_str("\n\n");

@@ -471,13 +471,32 @@ impl AppData {
     /// in-page display-settings menu and column bar read as their initial
     /// state and reproduce in content-block fetches.
     fn sutta_display_js(&self, column_suttas: &[Sutta], options: &SuttaDisplayOptions) -> String {
+        // Color maps in the persisted defaults are keyed by author; "pali"
+        // is the key for the Pāli column (see SuttaDisplayDefaults).
         let columns: Vec<serde_json::Value> = column_suttas.iter()
-            .map(|s| serde_json::json!({ "uid": s.uid, "label": sutta_column_label(s) }))
+            .map(|s| {
+                let author = if s.language == "pli" {
+                    "pali".to_string()
+                } else {
+                    s.source_uid.clone().unwrap_or_else(|| s.language.clone())
+                };
+                serde_json::json!({
+                    "uid": s.uid,
+                    "label": sutta_column_label(s),
+                    "author": author,
+                    "is_pali": s.language == "pli",
+                })
+            })
             .collect();
+        let defaults = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            serde_json::to_value(&app_settings.sutta_display).unwrap_or(serde_json::Value::Null)
+        };
         let obj = serde_json::json!({
             "layout": options.layout.as_str(),
             "columns": columns,
             "show_references": options.show_references,
+            "defaults": defaults,
         });
         // Escape "</" so a value can never terminate the surrounding
         // <script> block ("<\/" is "/" in a JS string literal).
@@ -513,7 +532,10 @@ impl AppData {
         // Format CSS and JS extras
         let css_extra = format!("html {{ font-size: {}px; }} body {{ max-width: {}ex; }}", font_size, max_width);
 
-        let mut js_extra = format!("const SUTTA_UID = '{}';", sutta.uid);
+        // window.SUTTA_UID: a top-level `const` is not a globalThis property,
+        // and the webpack bundle (content_reload.ts) reads it via globalThis —
+        // same pattern as WINDOW_ID.
+        let mut js_extra = format!("const SUTTA_UID = '{}'; window.SUTTA_UID = SUTTA_UID;", sutta.uid);
 
         if let Some(js_pre) = js_extra_pre {
             js_extra = format!("{}; {}", js_pre, js_extra);
@@ -576,6 +598,7 @@ impl AppData {
             Some(js_extra.to_string()),
             Some(body_class),
             Some(nav_html),
+            true,
         );
 
         Ok(final_html)
@@ -1014,6 +1037,7 @@ impl AppData {
             Some(js_extra.to_string()),
             Some(body_class),
             Some(nav_html),
+            false,
         );
 
         Ok(final_html)

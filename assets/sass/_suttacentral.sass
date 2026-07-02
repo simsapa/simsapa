@@ -151,14 +151,21 @@ $solarized_light_bg: #FAE6B2
     span.colcell
       display: block
       padding-top: 0.5em
+    // The weight/style vars are only set by JS while the Bold/Italic toggle
+    // is on; unset they fall back to inherit so template headings (h1 etc.
+    // wrapping a segment) keep their own weight.
     span.colcell.translated
       font-family: var(--tr-font-family, inherit)
       font-size: var(--tr-font-size, 1em)
       line-height: var(--tr-line-height, inherit)
+      font-weight: var(--tr-font-weight, inherit)
+      font-style: var(--tr-font-style, inherit)
     span.colcell.pali
       font-family: var(--pali-font-family, "Source Sans 3 SSP")
       font-size: var(--pali-font-size, 0.8em)
       line-height: var(--pali-line-height, inherit)
+      font-weight: var(--pali-font-weight, inherit)
+      font-style: var(--pali-font-style, inherit)
 
   // Per-column ink / background colors (set by JS from the per-author color
   // maps, keyed to the current column indexes).
@@ -167,6 +174,19 @@ $solarized_light_bg: #FAE6B2
     .sbs-col.col-#{$n}
       color: var(--col-#{$n}-ink, inherit)
       background-color: var(--col-#{$n}-bg, transparent)
+
+// Columns mode needs more page width than the single-text default
+// (body { max-width: 75ex } in suttas.sass plus the sutta_max_width
+// css_extra), or the text columns become too narrow. Give the page up to
+// ~75ex per column, capped by the viewport. body:has() out-specifies the
+// inline `body { max-width: …ex }` from css_extra (0,1,1 vs 0,0,1), and
+// re-evaluates automatically when a content-block swap changes the wrapper
+// classes. The sbs-blocks fallback wrapper carries layout-columns cols-N
+// too, so these rules cover both. Lines mode and single-column views keep
+// the narrow reading measure.
+@for $n from 2 through 12
+  body:has(.suttacentral.layout-columns.cols-#{$n})
+    max-width: min(#{$n * 75}ex, 96vw)
 
 // Columns (side-by-side): the cells of each segment become equal-width flex
 // columns. The per-segment reference anchor must keep full width and sit
