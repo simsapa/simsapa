@@ -407,6 +407,10 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - **Android JNI init:** `backend/src/lib.rs` `init_android_context()` (called from `cpp/gui.cpp`) registers Qt's JavaVM + Activity with `ndk_context` so cpal's AAudio backend works.
   - **Mic permission:** native via `cpp/android_helpers.*` + `AssetManager` (not Qt Multimedia).
 
+### File Saving (user "Save As…")
+- **Scheme dispatch:** `bridges/src/sutta_bridge.rs` `save_file` / `check_file_exists_in_folder` branch on `folder_url.scheme()` — Android `content://` (Storage Access Framework tree URI) → the JNI writer, otherwise `qurl_to_local_path` + `save_to_file_checked` (`backend/src/lib.rs`, `std::fs`). `save_file` returns the real write outcome (was previously always `true`).
+- **Android SAF writer:** `backend/src/android_saf.rs` (`#[cfg(target_os = "android")]`) — `write_to_tree_uri` / `child_exists` / shared `find_child_doc_uri` / `mime_from_filename`, via `ContentResolver`/`DocumentsContract` JNI (jni 0.21), reusing the `ndk_context` set up by `init_android_context`. Create-or-truncate overwrite parity; pass the fully-encoded `folder_url.to_encoded()`. Docs: [docs/android-file-saving-saf.md](./docs/android-file-saving-saf.md).
+
 ### AI Integration
 - **Prompt Manager:** `bridges/src/prompt_manager.rs` - AI API communication and request handling
 - **Translation Requests:** Multi-model support with automatic retry logic and error handling

@@ -282,9 +282,19 @@ ApplicationWindow {
             let ok = SuttaBridge.save_file(save_log_file_dialog.selectedFolder,
                                            save_log_file_dialog.current_file_name,
                                            contents);
-            if (!ok) {
+            if (ok) {
+                save_log_msg_dialog.text = "Saved: " + save_log_file_dialog.current_file_name;
+                save_log_msg_dialog.open();
+            } else {
                 logger.error("Failed to save log file");
+                save_log_msg_dialog.text = "Failed to save log file.";
+                save_log_msg_dialog.open();
             }
         }
+    }
+
+    MessageDialog {
+        id: save_log_msg_dialog
+        buttons: MessageDialog.Ok
     }
 }

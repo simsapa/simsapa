@@ -35,6 +35,8 @@ pub mod search;
 pub mod waveform;
 pub mod audio;
 pub mod global_hotkeys;
+#[cfg(target_os = "android")]
+pub mod android_saf;
 
 use std::env;
 use std::io::{self, Read, Write};
@@ -1142,12 +1144,17 @@ pub fn create_parent_directory(path: &str) -> String {
     }
 }
 
+/// Write `data` to `path`, returning a real `Result` so callers can branch on
+/// the outcome. `save_to_file` is a thin message-formatting wrapper over this.
+pub fn save_to_file_checked(data: &[u8], path: &str) -> Result<(), std::io::Error> {
+    let mut file = File::create(path)?;
+    file.write_all(data)?;
+    Ok(())
+}
+
 pub fn save_to_file(data: &[u8], path: &str) -> String {
-    match File::create(path) {
-        Ok(mut file) => match file.write_all(data) {
-            Ok(_) => format!("File saved successfully to {}", path),
-            Err(e) => format!("Failed to write file: {}", e),
-        },
+    match save_to_file_checked(data, path) {
+        Ok(_) => format!("File saved successfully to {}", path),
         Err(e) => format!("Failed to create file: {}", e),
     }
 }

@@ -193,6 +193,21 @@ Notable feature docs:
   + the `ssp-content-swapped` event), and why the column bar uses custom
   upward-opening dropdowns (WebEngineView clips native select popups at the
   window edge).
+- [Android file saving via SAF](./docs/android-file-saving-saf.md) — how
+  `SuttaBridge.save_file` writes user-chosen files. On Android `FolderDialog`
+  returns a **Storage Access Framework `content://` tree URI** (not a path) and
+  `targetSdkVersion 35` scoped storage forbids `std::fs` writes, so `save_file`
+  **dispatches on the URL scheme**: `content://` → `backend/src/android_saf.rs`
+  (JNI `ContentResolver`/`DocumentsContract` writer reusing the already-initialized
+  `ndk_context` from the audio backend), otherwise the desktop `qurl_to_local_path`
+  + `std::fs` path. Covers the **`to_encoded()` trap** (pass the fully-encoded URI;
+  `.path()` drops scheme/authority, `toString()` pretty-decodes `%3A`/`%2F` and
+  breaks `Uri.parse`), the create/**overwrite-truncate** parity via the shared
+  `find_child_doc_uri`, why `jni` is pinned to **0.21** (reuse app_dirs2's
+  Android-compiled copy; cpal's 0.22.4 is an experimental redesign), the
+  `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
+  (`save_file` discarded the write result and always returned `true`) that made the
+  failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
 
 ## Specific coding procedures
 

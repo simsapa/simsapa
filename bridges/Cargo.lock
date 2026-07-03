@@ -3949,6 +3949,7 @@ dependencies = [
  "html-escape",
  "html5ever 0.27.0",
  "indexmap",
+ "jni 0.21.1",
  "lazy_static",
  "libsqlite3-sys",
  "log",

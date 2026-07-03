@@ -13,7 +13,7 @@ use cxx_qt::Threading;
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
 use simsapa_backend::theme_colors::ThemeColors;
-use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file, check_file_exists_print_err, with_fulltext_searcher};
+use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file_checked, check_file_exists_print_err, with_fulltext_searcher};
 use simsapa_backend::dir_list::{generate_html_directory_listing, generate_plain_directory_listing};
 use simsapa_backend::helpers::{extract_words, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
 use simsapa_backend::prompt_utils::markdown_to_html;
@@ -2756,20 +2756,66 @@ impl qobject::SuttaBridge {
                      folder_url: &QUrl,
                      filename: &QString,
                      content: &QString) -> bool {
+        // Android: FolderDialog returns a SAF content:// tree URI (not a path);
+        // scoped storage forbids std::fs writes there. Route through the
+        // ContentResolver. Pass the *fully-encoded* URI (to_encoded) — .path()
+        // drops scheme/authority and toString() pretty-decodes %3A/%2F.
+        #[cfg(target_os = "android")]
+        {
+            if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
+                let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
+                let fname = filename.to_string();
+                let mime = simsapa_backend::android_saf::mime_from_filename(&fname);
+                return match simsapa_backend::android_saf::write_to_tree_uri(
+                    &tree_uri, &fname, mime, content.to_string().as_bytes()) {
+                    Ok(_) => true,
+                    Err(e) => {
+                        error(&format!("save_file SAF write failed for {}: {}", fname, e));
+                        false
+                    }
+                };
+            }
+        }
+
         let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
         let output_path = folder_path.join(filename.to_string());
         match output_path.to_str() {
-            Some(p) => {
-                save_to_file(content.to_string().as_bytes(), p);
-                true
+            Some(p) => match save_to_file_checked(content.to_string().as_bytes(), p) {
+                Ok(_) => true,
+                Err(e) => {
+                    error(&format!("save_file failed to write {}: {}", p, e));
+                    false
+                }
             },
-            None => false,
+            None => {
+                error(&format!("save_file: output path is not valid UTF-8: {:?}", output_path));
+                false
+            }
         }
     }
 
     pub fn check_file_exists_in_folder(&self,
                                        folder_url: &QUrl,
                                        filename: &QString) -> bool {
+        // Android SAF: the folder is a content:// tree URI, not a path. Query
+        // the ContentResolver so the Gloss/Prompts overwrite prompts work.
+        #[cfg(target_os = "android")]
+        {
+            if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
+                let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
+                let fname = filename.to_string();
+                return match simsapa_backend::android_saf::child_exists(&tree_uri, &fname) {
+                    Ok(exists) => exists,
+                    Err(e) => {
+                        error(&format!("check_file_exists_in_folder SAF query failed for {}: {}", fname, e));
+                        // On query failure, report "not present" rather than
+                        // blocking the save; the write path handles overwrite.
+                        false
+                    }
+                };
+            }
+        }
+
         let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
         let output_path = folder_path.join(filename.to_string());
 

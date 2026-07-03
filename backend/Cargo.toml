@@ -58,6 +58,13 @@ log = "0.4"
 # for Android does not initialize. We set it explicitly at startup (see
 # init_android_context in lib.rs).
 ndk-context = "0.1"
+# Writing into a Storage Access Framework tree URI (FolderDialog on Android
+# returns a content:// URI, not a path) requires the Android ContentResolver via
+# JNI. Pinned to 0.21 to reuse the copy app_dirs2 already compiles for Android
+# (0.22.4 — cpal's copy — is an experimental redesign with a closure-scoped Env
+# and typed method signatures; 0.21 is the stable classic API). This adds no new
+# jni copy to the tree. See docs/android-file-saving-saf.md.
+jni = "0.21"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 colored = "3.0"
