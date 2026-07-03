@@ -70,10 +70,12 @@ Frame {
 
         onAccepted: root.run_lookup(short_query_dpd_dialog.query + "/dpd", 1)
 
-        Label {
-            width: parent.width
-            wrapMode: Text.WordWrap
-            text: "Short queries can return a very large number of results.\n\nLook up \"" + short_query_dpd_dialog.query + "\" as a dictionary word using the /dpd form (\"" + short_query_dpd_dialog.query + "/dpd\")?"
+        contentItem: ColumnLayout {
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Short queries can return a very large number of results.\n\nLook up \"" + short_query_dpd_dialog.query + "\" as a dictionary word using the /dpd form (\"" + short_query_dpd_dialog.query + "/dpd\")?"
+            }
         }
     }
 
