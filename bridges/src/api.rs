@@ -686,7 +686,10 @@ fn shutdown(shutdown: Shutdown) {
 /// blank-page body) on a genuine miss — the success body is unchanged.
 /// The optional `layout` / `columns` GET parameters override the persisted
 /// display defaults (param parity across both sutta-HTML routes); an unknown
-/// `layout` value → `400` with the parser's message.
+/// `layout` value → `400` with the parser's message; an unknown `columns`
+/// uid → `404` with the render error message (same mapping as
+/// `/sutta_content_block`, via `render_error_status`); other render errors
+/// → `500`.
 fn sutta_html_response(
     window_id: &str,
     uid: &str,
@@ -706,16 +709,33 @@ fn sutta_html_response(
     let app_data = get_app_data();
     let processed_uid = convert_verse_ref_to_sutta_uid(uid);
 
-    match lookup_sutta_with_fallback(dbm, &processed_uid) {
-        Some(sutta) => {
-            let html = app_data.render_sutta_html_by_uid_with_overrides(window_id, &sutta.uid, show_references, &overrides);
-            (Status::Ok, RawHtml(html))
+    let (ok_status, render_uid) = match lookup_sutta_with_fallback(dbm, &processed_uid) {
+        Some(sutta) => (Status::Ok, sutta.uid),
+        // Keep the prior blank-page body; add the 404 status signal.
+        None => (Status::NotFound, processed_uid),
+    };
+
+    match app_data.try_render_sutta_html_by_uid_with_overrides(window_id, &render_uid, show_references, &overrides) {
+        Ok(html) => (ok_status, RawHtml(html)),
+        Err(e) => {
+            let msg = format!("{:#}", e);
+            error(&format!("sutta_html_response(): {}", msg));
+            // Same mapping as /sutta_content_block (param/error parity):
+            // unknown column uid → 404 with the message, else 500.
+            (render_error_status(&msg), RawHtml(msg))
         }
-        None => {
-            // Keep the prior blank-page body; add the 404 status signal.
-            let html = app_data.render_sutta_html_by_uid_with_overrides(window_id, &processed_uid, show_references, &overrides);
-            (Status::NotFound, RawHtml(html))
-        }
+    }
+}
+
+/// Shared render-error → HTTP status mapping for the sutta routes, so the
+/// full-page routes and `/sutta_content_block` can't drift: a bad `columns`
+/// override ("Unknown column sutta uid") is a client error (404), anything
+/// else is a 500.
+fn render_error_status(msg: &str) -> Status {
+    if msg.contains("Unknown column sutta uid") {
+        Status::NotFound
+    } else {
+        Status::InternalServerError
     }
 }
 
@@ -1569,6 +1589,24 @@ fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Op
     sutta_html_response(window_id, uid, anchor, layout, columns, repeat_pali, dbm)
 }
 
+/// The successful `/sutta_content_block` response: the block HTML plus the
+/// server-resolved column list in the `X-SSP-Columns` header (percent-encoded
+/// JSON in the `SUTTA_DISPLAY.columns` shape, `{uid, label, author,
+/// is_pali}`). The client adopts the header list after the swap, so the page
+/// state can't diverge from what was actually rendered (Lines-mode
+/// non-segmented drop, Repeat-Pāli arrangement).
+#[derive(rocket::Responder)]
+struct ContentBlockResponse {
+    html: RawHtml<String>,
+    columns: rocket::http::Header<'static>,
+}
+
+fn ssp_columns_header(columns_json: &serde_json::Value) -> rocket::http::Header<'static> {
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    let encoded = utf8_percent_encode(&columns_json.to_string(), NON_ALPHANUMERIC).to_string();
+    rocket::http::Header::new("X-SSP-Columns", encoded)
+}
+
 /// GET /sutta_content_block?<uid>&<layout>&<columns>&<show_references>
 /// Returns just the sutta content-block HTML (the `<div class='suttacentral
 /// bilara-text …'>` wrapper incl. the Columns-mode header row) without page
@@ -1576,16 +1614,18 @@ fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Op
 /// bottom column bar swap `#ssp_content` with it). Query-param style because
 /// uids contain `/`. `columns` is `|`-separated; unknown `layout` → 400;
 /// unknown sutta or column uid → 404 with a message. Lines mode silently
-/// drops non-segmented columns at options resolution (PRD FR 8). No
-/// `window_id`: the block carries no window-specific JS (`WINDOW_ID` is
-/// page-level `js_extra`).
+/// drops non-segmented columns at options resolution (PRD FR 8) — the
+/// `X-SSP-Columns` header on the 200 response carries the resolved column
+/// list so the client can adopt it (and notice the drop). No `window_id`:
+/// the block carries no window-specific JS (`WINDOW_ID` is page-level
+/// `js_extra`).
 #[get("/sutta_content_block?<uid>&<layout>&<columns>&<show_references>&<repeat_pali>")]
-fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> Result<ContentBlockResponse, (Status, RawHtml<String>)> {
     info(&format!("get_sutta_content_block(): uid: {}, layout: {:?}, columns: {:?}, repeat_pali: {:?}", uid, layout, columns, repeat_pali));
 
     let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
         Ok(o) => o,
-        Err(msg) => return (Status::BadRequest, RawHtml(msg)),
+        Err(msg) => return Err((Status::BadRequest, RawHtml(msg))),
     };
 
     let app_data = get_app_data();
@@ -1593,21 +1633,19 @@ fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str
 
     let sutta = match lookup_sutta_with_fallback(dbm, &processed_uid) {
         Some(s) => s,
-        None => return (Status::NotFound, RawHtml(format!("Unknown sutta uid: {}", uid))),
+        None => return Err((Status::NotFound, RawHtml(format!("Unknown sutta uid: {}", uid)))),
     };
 
     let options = app_data.resolve_sutta_display_options(&sutta, show_references.unwrap_or(false), &overrides);
-    match app_data.render_sutta_content_block(&sutta, &options) {
-        Ok(html) => (Status::Ok, RawHtml(html)),
+    match app_data.render_sutta_content_block_with_columns(&sutta, &options) {
+        Ok((html, columns_json)) => Ok(ContentBlockResponse {
+            html: RawHtml(html),
+            columns: ssp_columns_header(&columns_json),
+        }),
         Err(e) => {
             let msg = format!("{:#}", e);
             error(&format!("get_sutta_content_block(): {}", msg));
-            let status = if msg.contains("Unknown column sutta uid") {
-                Status::NotFound
-            } else {
-                Status::InternalServerError
-            };
-            (status, RawHtml(msg))
+            Err((render_error_status(&msg), RawHtml(msg)))
         }
     }
 }

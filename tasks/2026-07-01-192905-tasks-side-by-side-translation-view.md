@@ -230,7 +230,7 @@ plus curl checks by the agent (live API port from `api-port.txt`).
 
 **Depends on:** all previous.
 
-- [ ] 6.0 Integration, verification and docs
+- [x] 6.0 Integration, verification and docs
   - [x] 6.1 Curl-verify the full matrix on the live API: default render (no params) = Lines translation+Pāli; `?layout=sidebyside` and `?layout=columns` equivalence; 3-column content block; non-segmented fallback; Pāli-only single column; translations list; save-settings persistence across a fresh render. *(All pass on the live app (port 4848): default render honors the persisted defaults (user's saved Columns) with correct `SUTTA_DISPLAY`; sidebyside≡columns and lines≡linebyline byte-identical; an4.1 3-col segmented; mn1+horner → `sbs-blocks` with `sbs-col col-0 pali`; sn56.11/pli/ms single column; Lines drops horner (cols-2); 400 bad layout / 404 bad uid; translations list with `has_content_json`; save round-trip verified on a fresh render and the user's settings restored.)*
   - [x] 6.2 Manual GUI checklist for the user (write it into the PR/commit message or a short note): cogwheel opens, layout toggles live with menu open, fonts/colors instant, scope semantics (incl. local→default switch persisting), bar add/swap/remove, "+" disable at exhaustion, post-swap link clicks / lookup / footnote bar / find bar / bookmarks still work, prev-next navigation drops local settings (expected). *(Checklist below; the bar/dropdown/font items were already user-verified during 5.0 review.)*
 

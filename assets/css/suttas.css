@@ -2221,6 +2221,28 @@ body:has(#columnBar.show) #ssp_main {
   padding-bottom: 8em;
 }
 
+.ssp-drop-notice {
+  position: fixed;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 0.4em 1em;
+  border-radius: 6px;
+  background: var(--menu-bg-start);
+  border: 1px solid var(--menu-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  color: var(--text-primary);
+  font-family: sans-serif;
+  font-size: 13px;
+  z-index: 1001;
+  display: none;
+}
+
+.ssp-drop-notice.show {
+  display: block;
+}
+
 :root {
   --invalid-link-modal-overlay-bg: rgba(0, 0, 0, 0.5);
   --invalid-link-modal-bg: rgb(253.1097560976, 245.5487804878, 225.8902439024);

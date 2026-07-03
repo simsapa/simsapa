@@ -81,6 +81,33 @@ pub fn sutta_column_label(sutta: &Sutta) -> String {
     }
 }
 
+/// The resolved column list as a JSON array of `{uid, label, author,
+/// is_pali}` — the shape of `SUTTA_DISPLAY.columns`. Used for the page-init
+/// `SUTTA_DISPLAY` injection and for the `X-SSP-Columns` response header on
+/// `GET /sutta_content_block`, through which the client adopts the
+/// server-resolved column state (e.g. after the Lines-mode non-segmented
+/// drop). See docs/sutta-display-settings-and-multi-column-view.md.
+pub fn display_columns_json(column_suttas: &[Sutta]) -> serde_json::Value {
+    // Color maps in the persisted defaults are keyed by author; "pali"
+    // is the key for the Pāli column (see SuttaDisplayDefaults).
+    let columns: Vec<serde_json::Value> = column_suttas.iter()
+        .map(|s| {
+            let author = if s.language == "pli" {
+                "pali".to_string()
+            } else {
+                s.source_uid.clone().unwrap_or_else(|| s.language.clone())
+            };
+            serde_json::json!({
+                "uid": s.uid,
+                "label": sutta_column_label(s),
+                "author": author,
+                "is_pali": s.language == "pli",
+            })
+        })
+        .collect();
+    serde_json::Value::Array(columns)
+}
+
 /// Represents the application data and settings
 #[derive(Debug)]
 pub struct AppData {
@@ -378,9 +405,11 @@ impl AppData {
     /// returned with the Pāli-first normalization only. Unknown uids are kept
     /// as translations — the renderer reports them, not this arrangement.
     ///
-    /// Mirrored client-side by `arrange_display_columns` in
-    /// `src-ts/display_settings.ts` (the panel keeps `SUTTA_DISPLAY.columns`
-    /// in sync without re-reading the server state) — keep the two in sync.
+    /// The client no longer mirrors this after a swap — `fetch_content_block`
+    /// adopts the resolved list from the `X-SSP-Columns` header. The
+    /// client-side `arrange_display_columns` (src-ts/display_settings.ts)
+    /// remains only for the column bar's base-set collapse (repeat "off"),
+    /// which must keep matching this function's collapse rule.
     fn arrange_repeat_pali(&self, sutta: &Sutta, columns: &[String], repeat: RepeatPali) -> Vec<String> {
         let is_pali = |col_uid: &str| -> bool {
             if col_uid == sutta.uid {
@@ -485,8 +514,22 @@ impl AppData {
     /// in-page layout/column re-renders; `render_sutta_content` composes it
     /// into the full page.
     pub fn render_sutta_content_block(&self, sutta: &Sutta, options: &SuttaDisplayOptions) -> Result<String> {
+        self.render_sutta_content_block_with_columns(sutta, options).map(|(html, _)| html)
+    }
+
+    /// `render_sutta_content_block` plus the resolved column list (as the
+    /// `SUTTA_DISPLAY.columns`-shaped JSON array), for the `X-SSP-Columns`
+    /// response header: the client adopts the server-resolved columns after a
+    /// block swap, so the two can't diverge (Lines-mode drop, Repeat-Pāli
+    /// arrangement).
+    pub fn render_sutta_content_block_with_columns(
+        &self,
+        sutta: &Sutta,
+        options: &SuttaDisplayOptions,
+    ) -> Result<(String, serde_json::Value)> {
         let column_suttas = self.resolve_column_suttas(sutta, options)?;
-        self.render_content_block_for_columns(sutta, &column_suttas, options)
+        let html = self.render_content_block_for_columns(sutta, &column_suttas, options)?;
+        Ok((html, display_columns_json(&column_suttas)))
     }
 
     /// The content-block branching for already-resolved column suttas:
@@ -556,23 +599,7 @@ impl AppData {
     /// in-page display-settings menu and column bar read as their initial
     /// state and reproduce in content-block fetches.
     fn sutta_display_js(&self, column_suttas: &[Sutta], options: &SuttaDisplayOptions) -> String {
-        // Color maps in the persisted defaults are keyed by author; "pali"
-        // is the key for the Pāli column (see SuttaDisplayDefaults).
-        let columns: Vec<serde_json::Value> = column_suttas.iter()
-            .map(|s| {
-                let author = if s.language == "pli" {
-                    "pali".to_string()
-                } else {
-                    s.source_uid.clone().unwrap_or_else(|| s.language.clone())
-                };
-                serde_json::json!({
-                    "uid": s.uid,
-                    "label": sutta_column_label(s),
-                    "author": author,
-                    "is_pali": s.language == "pli",
-                })
-            })
-            .collect();
+        let columns = display_columns_json(column_suttas);
         let defaults = {
             let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
             serde_json::to_value(&app_settings.sutta_display).unwrap_or(serde_json::Value::Null)
@@ -720,7 +747,10 @@ impl AppData {
 
     /// `render_sutta_html_by_uid` with explicit display overrides (from the
     /// API routes' optional `layout` / `columns` GET parameters); absent
-    /// overrides fall back to the persisted defaults.
+    /// overrides fall back to the persisted defaults. Infallible: maps a
+    /// render error to a generic "Rendering error" page (the QML bridge
+    /// contract). The API routes use the `try_` variant instead so they can
+    /// map render errors (e.g. unknown column uid) to HTTP statuses.
     pub fn render_sutta_html_by_uid_with_overrides(
         &self,
         window_id: &str,
@@ -728,6 +758,29 @@ impl AppData {
         show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> String {
+        self.try_render_sutta_html_by_uid_with_overrides(window_id, sutta_uid, show_references, overrides)
+            .unwrap_or_else(|_| {
+                let body_class = {
+                    let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+                    app_settings.theme_name_as_string()
+                };
+                sutta_html_page("Rendering error", None, None, None, Some(body_class))
+            })
+    }
+
+    /// Fallible variant of `render_sutta_html_by_uid_with_overrides`: an
+    /// empty or unknown sutta uid is still a non-error blank page (`Ok`),
+    /// but a render failure (e.g. "Unknown column sutta uid" from a bad
+    /// `columns` override) is returned as `Err` so the API routes can map
+    /// it to an HTTP status with the message (parity with
+    /// `/sutta_content_block`).
+    pub fn try_render_sutta_html_by_uid_with_overrides(
+        &self,
+        window_id: &str,
+        sutta_uid: &str,
+        show_references: bool,
+        overrides: &SuttaDisplayOverrides,
+    ) -> Result<String> {
         // Guard scoped to the value copy: resolve_sutta_display_options and
         // render_sutta_content below re-lock the settings cache.
         let body_class = {
@@ -735,11 +788,11 @@ impl AppData {
             app_settings.theme_name_as_string()
         };
 
-        let blank_page_html = blank_html_page(Some(body_class.clone()));
+        let blank_page_html = blank_html_page(Some(body_class));
 
         // Return blank page for empty UID
         if sutta_uid.is_empty() {
-            return blank_page_html;
+            return Ok(blank_page_html);
         }
 
         // Try to get the sutta from database
@@ -751,9 +804,8 @@ impl AppData {
                 let js_extra = format!("const WINDOW_ID = '{}'; window.WINDOW_ID = WINDOW_ID;", window_id);
                 let options = self.resolve_sutta_display_options(&sutta, show_references, overrides);
                 self.render_sutta_content(&sutta, None, Some(js_extra), &options)
-                    .unwrap_or_else(|_| sutta_html_page("Rendering error", None, None, None, Some(body_class)))
             },
-            None => blank_page_html,
+            None => Ok(blank_page_html),
         }
     }
 

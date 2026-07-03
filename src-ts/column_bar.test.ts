@@ -48,8 +48,20 @@ function make_fetch_mock(): jest.Mock {
       return Promise.resolve({ ok: true, status: 200, json: async () => TRANSLATIONS });
     }
     if (u.includes("/sutta_content_block")) {
+      // Echo the requested columns back as the X-SSP-Columns header, like
+      // the server's resolved-columns response (repeat off, nothing dropped).
+      const m = u.match(/[?&]columns=([^&]*)/);
+      const uids = m && m[1] ? m[1].split("|").map(decodeURIComponent) : [];
+      const cols = uids.map((uid: string) => ({
+        uid,
+        label: uid.includes("/pli/") ? "Pāli" : uid.split("/").pop(),
+        author: uid.includes("/pli/") ? "pali" : uid.split("/").pop(),
+        is_pali: uid.includes("/pli/"),
+      }));
+      const encoded = encodeURIComponent(JSON.stringify(cols));
       return Promise.resolve({
         ok: true, status: 200,
+        headers: { get: (name: string) => (name === "X-SSP-Columns" ? encoded : null) },
         text: async () => "<div class='suttacentral bilara-text layout-columns cols-2'>new</div>",
       });
     }
@@ -81,11 +93,29 @@ describe("column_bar helpers", () => {
   });
 
   test("next_unshown suggests the Pāli first, then unshown translations in order", () => {
-    expect(cb.next_unshown(options, ["mn1/en/sujato"])!.uid).toBe("mn1/pli/ms");
-    expect(cb.next_unshown(options, ["mn1/en/sujato", "mn1/pli/ms"])!.uid).toBe("mn1/en/bodhi");
+    expect(cb.next_unshown(options, ["mn1/en/sujato"], "sidebyside")!.uid).toBe("mn1/pli/ms");
+    expect(cb.next_unshown(options, ["mn1/en/sujato", "mn1/pli/ms"], "sidebyside")!.uid).toBe("mn1/en/bodhi");
     expect(cb.next_unshown(
       options,
       ["mn1/en/sujato", "mn1/pli/ms", "mn1/en/bodhi", "mn1/hu/gambhiro"],
+      "sidebyside",
+    )).toBeNull();
+  });
+
+  test("next_unshown skips non-segmented texts in the Lines layout", () => {
+    // bodhi has no content_json: the server would silently drop it in Lines
+    // mode, so it must not be suggested there …
+    expect(cb.next_unshown(options, ["mn1/en/sujato", "mn1/pli/ms"], "linebyline")!.uid)
+      .toBe("mn1/hu/gambhiro");
+    // … but it is still suggested in the Columns layout.
+    expect(cb.next_unshown(options, ["mn1/en/sujato", "mn1/pli/ms"], "sidebyside")!.uid)
+      .toBe("mn1/en/bodhi");
+    // Null when only disabled options remain ("+" disabled), even though an
+    // unshown text exists.
+    expect(cb.next_unshown(
+      options,
+      ["mn1/en/sujato", "mn1/pli/ms", "mn1/hu/gambhiro"],
+      "linebyline",
     )).toBeNull();
   });
 

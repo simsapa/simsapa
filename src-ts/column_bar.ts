@@ -103,16 +103,20 @@ export function ensure_current_columns_present(): void {
 
 /**
  * The "+" button's suggestion: the Pāli text if not shown, else the first
- * unshown translation in list order. Null when every text is displayed
- * (the button is disabled then, FR 23).
+ * unshown translation in list order. Only options the dropdowns would allow
+ * are suggested (option_disabled_reason is the shared rule): in the Lines
+ * layout non-segmented texts are skipped — the server would silently drop
+ * them (PRD FR 8). Null when nothing selectable remains (the button is
+ * disabled then, FR 23).
  */
-export function next_unshown(opts: TranslationOption[], shown_uids: string[]): TranslationOption | null {
-  const shown = new Set(shown_uids);
-  const pali = opts.find((opt) => opt.is_pali && !shown.has(opt.uid));
+export function next_unshown(opts: TranslationOption[], shown_uids: string[], layout: string): TranslationOption | null {
+  const selectable = (opt: TranslationOption) =>
+    option_disabled_reason(opt, layout, shown_uids, "") === null;
+  const pali = opts.find((opt) => opt.is_pali && selectable(opt));
   if (pali) {
     return pali;
   }
-  return opts.find((opt) => !opt.is_pali && !shown.has(opt.uid)) || null;
+  return opts.find((opt) => !opt.is_pali && selectable(opt)) || null;
 }
 
 export const LINES_DISABLED_TITLE = "No segmented text — available in the Columns layout";
@@ -297,9 +301,9 @@ export function render_bar(): void {
     items.appendChild(item);
   });
 
-  const suggestion = next_unshown(options, shown_uids);
+  const suggestion = next_unshown(options, shown_uids, layout);
   add.disabled = suggestion === null;
-  add.title = suggestion === null ? "All texts are displayed" : "Add a column";
+  add.title = suggestion === null ? "No more texts can be added" : "Add a column";
 }
 
 async function fetch_options(): Promise<void> {
@@ -337,7 +341,9 @@ export async function init_column_bar(): Promise<void> {
 
   add.addEventListener("click", () => {
     const columns = base_columns();
-    const suggestion = next_unshown(options, columns.map((col) => col.uid));
+    const sd = sutta_display();
+    const layout = (sd && sd.layout) || "linebyline";
+    const suggestion = next_unshown(options, columns.map((col) => col.uid), layout);
     if (!suggestion) {
       return;
     }

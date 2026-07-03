@@ -300,7 +300,8 @@ Reference designs reviewed (screenshots from 2026-07-02 session):
 - No **section-level** alignment mode (the enchiridion style) — noted as a
   future idea for non-segmented texts (§11.4), not built now.
 - No responsive collapse of Columns on narrow/mobile screens.
-- No jhana.info "Repeat Pāli" (off/alternate/at-end) option.
+- No jhana.info "Repeat Pāli" (off/alternate/at-end) option. *(Superseded —
+  adopted during implementation; see the v2.1 note in §9.)*
 - No per-sutta *persisted* overrides (local settings are per-view state).
 - No change to how the Pāli counterpart is discovered
   (`get_pali_for_translated`, `<ref>/pli/ms` only).
@@ -435,6 +436,14 @@ Reference designs reviewed (screenshots from 2026-07-02 session):
   (FR 23).
 - **Variants/comments/glosses (2026-07-02):** rendered **per column**, each
   column using its own records (FR 10).
+- **v2.1 (2026-07-02, recorded 2026-07-03):** the **Solo** layout and the
+  **Repeat Pāli** option (off/alternate/atend) were adopted at user request
+  during implementation, superseding the §5 "No jhana.info Repeat Pāli"
+  non-goal and the two-mode `SuttaLayout { LineByLine, SideBySide }` wording
+  in §2/§4 (the enum is now `LineByLine | SideBySide | Solo`, serialised
+  `lines`/`columns`/`solo`, plus a separate `repeat_pali` setting). Details
+  in the v2 task-list notes and
+  `docs/sutta-display-settings-and-multi-column-view.md`.
 
 ## 10. Open Questions
 

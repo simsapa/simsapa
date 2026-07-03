@@ -779,7 +779,7 @@ views, not for headless data retrieval.
 | `GET /sutta_and_dict_search_options` | Filter option lists (`sutta_languages[]`, `dict_languages[]`, `dict_sources[]`) | §10; struct `SearchOptions` §15 |
 | `GET /get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>` | Full rendered sutta HTML (text retrieval); 404 on miss; optional display params | §13, §14.5 |
 | `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]&[layout=…]&[columns=…]` | Query-param twin of `get_sutta_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss; optional display params | §13, §14.5 |
-| `GET /sutta_content_block?uid=<uid>&[layout=…]&[columns=…]&[show_references=…]` | Just the sutta content-block HTML (no page chrome) for in-page layout/column re-renders; 400 bad layout, 404 unknown uid/column | §14.5 |
+| `GET /sutta_content_block?uid=<uid>&[layout=…]&[columns=…]&[show_references=…]` | Just the sutta content-block HTML (no page chrome) for in-page layout/column re-renders; 400 bad layout, 404 unknown uid/column; 200 carries the resolved column list in the `X-SSP-Columns` header | §14.5 |
 | `GET /translations_for_sutta?uid=<uid>` | JSON array of the other texts sharing the sutta's reference (column-bar dropdowns): `item_uid`, `sutta_title`, `sutta_ref`, `language`, `author`, `has_content_json` | §14.5 |
 | `POST /save_sutta_display_settings` | Persist the `sutta_display` defaults (cogwheel menu "Save as default"). Body: `SuttaDisplayDefaults` JSON; 200 on success, 400/422 on malformed body | §14.5 |
 | `GET /get_word_html_by_uid/<window_id>/<uid..>` | Full rendered dictionary-word HTML; 404 on miss | §13 |
@@ -870,11 +870,20 @@ Routes:
   overrides applied (param parity between the twins). The page injects a
   `SUTTA_DISPLAY` JS object (resolved layout, column `{uid, label}` list,
   `show_references`) next to `SUTTA_UID` for the in-page menu/column bar.
+  **Error parity with `/sutta_content_block`:** an unknown `columns` uid →
+  **404** with the message ("Unknown column sutta uid: …"), other render
+  errors → 500 (shared `render_error_status` mapping in `api.rs`); an
+  unknown *sutta* uid stays the blank page + 404.
 - `GET /sutta_content_block?uid=…&layout=…&columns=…&show_references=…` —
   returns only the `<div class='suttacentral bilara-text …'>` content block
   (incl. the Columns-mode header row), no page chrome / `window_id`; used by
   the in-page cogwheel menu and column bar to swap `#ssp_content` live.
   400 on a bad `layout`, 404 with a message on an unknown sutta or column uid.
+  The 200 response carries an **`X-SSP-Columns` header**: the server-resolved
+  column list (after the Lines-mode non-segmented drop and the Repeat-Pāli
+  arrangement) as a percent-encoded JSON array of
+  `{uid, label, author, is_pali}` — same shape as `SUTTA_DISPLAY.columns`;
+  decode with `decodeURIComponent`. The client adopts it after the swap.
 - `GET /translations_for_sutta?uid=…` — JSON array of the other texts sharing
   the sutta's reference, each entry `{item_uid, table_name, sutta_title,
   sutta_ref, language, author, has_content_json}`. `has_content_json: false`

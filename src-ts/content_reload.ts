@@ -118,25 +118,90 @@ export async function fetch_content_block(
   content.innerHTML = html;
 
   // Keep the injected page state in sync so later fetches (and the settings
-  // panel) reproduce the current render parameters. The base column list is
-  // updated by the caller when it changes (the column bar knows the labels);
-  // the Repeat Pāli arrangement is mirrored here so the per-column color
-  // vars and color rows follow what the server actually rendered. Solo keeps
-  // the columns untouched: the render shows only the opened sutta, but the
-  // state must survive a switch back to Columns/Lines.
+  // panel) reproduce the current render parameters. The column list is
+  // adopted from the server's X-SSP-Columns header — the authoritative
+  // resolved state (Lines-mode non-segmented drop, Repeat-Pāli arrangement)
+  // — before reinit runs, so the per-column color vars and the bar's
+  // re-render see it. In Solo the server resolution keeps the full column
+  // set (only the renderer shows one text), so adoption is safe there too.
   const sd = (globalThis as any).SUTTA_DISPLAY;
   if (sd) {
     sd.layout = layout;
     sd.show_references = show_references;
     sd.repeat_pali = repeat_pali;
-    if (layout !== "solo" && Array.isArray(sd.columns)) {
-      sd.columns = ds.arrange_display_columns(sd.columns, repeat_pali);
+    const adopted = parse_columns_header(response.headers.get("X-SSP-Columns"));
+    if (adopted) {
+      notice_dropped_columns(columns, adopted, sd.columns);
+      sd.columns = adopted;
+    } else {
+      h.log_error("fetch_content_block: no usable X-SSP-Columns header; keeping the client column state");
     }
   }
 
   reinit_sutta_content();
   window.scrollTo(0, scroll_y);
   return true;
+}
+
+/** Decode the X-SSP-Columns header (percent-encoded JSON array of
+ * `{uid, label, author, is_pali}`); null when absent or unparsable. */
+export function parse_columns_header(header: string | null): ds.SuttaDisplayColumn[] | null {
+  if (!header) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(header));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+/**
+ * PRD FR 8: a Lines-mode request whose columns include a non-segmented text
+ * drops that column server-side. When the adopted (resolved) list is missing
+ * a requested uid, show a one-line transient notice naming the dropped text
+ * (label looked up in the pre-swap column state, falling back to the uid).
+ */
+function notice_dropped_columns(
+  requested_uids: string[],
+  adopted: ds.SuttaDisplayColumn[],
+  previous_columns: ds.SuttaDisplayColumn[] | undefined,
+): void {
+  const adopted_uids = new Set(adopted.map((col) => col.uid));
+  const dropped = Array.from(new Set(requested_uids.filter((uid) => !adopted_uids.has(uid))));
+  if (dropped.length === 0) {
+    return;
+  }
+  const label_of = (uid: string): string => {
+    const prev = (previous_columns || []).find((col) => col.uid === uid);
+    return prev ? prev.label : uid;
+  };
+  const names = dropped.map(label_of).join(", ");
+  show_transient_notice(`${names} has no segmented text — shown only in the Columns layout`);
+}
+
+const NOTICE_TIMEOUT_MS = 6000;
+
+/** Show (or replace) the one-line transient notice above the bottom chrome. */
+export function show_transient_notice(message: string): void {
+  let notice = document.getElementById("sspDropNotice");
+  if (!notice) {
+    notice = document.createElement("div");
+    notice.id = "sspDropNotice";
+    notice.className = "ssp-drop-notice";
+    document.body.appendChild(notice);
+  }
+  notice.textContent = message;
+  notice.classList.add("show");
+  const el = notice;
+  const prev_timer = (el as any)._ssp_notice_timer;
+  if (prev_timer) {
+    clearTimeout(prev_timer);
+  }
+  (el as any)._ssp_notice_timer = setTimeout(() => {
+    el.classList.remove("show");
+  }, NOTICE_TIMEOUT_MS);
 }
 
 /**

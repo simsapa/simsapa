@@ -61,13 +61,27 @@ Precedence, weakest first:
   Pāli column anchors first, translations keep their order; `alternate` =
   Pāli before each translation, `atend` = Pāli first and once more last.
   Idempotent — an already-arranged list collapses back to one anchor.
-  Mirrored in TS by `arrange_display_columns` in
-  `src-ts/display_settings.ts`; **keep the two in sync**. Solo skips the
-  arrangement (the column state is retained for switching back);
+  The client does **not** mirror the arrangement — it adopts the server's
+  resolved list from the `X-SSP-Columns` response header (§4); the only TS
+  twin that must stay in sync is the bar's *base-set collapse*
+  (`arrange_display_columns(columns, "off")` in `display_settings.ts`).
+  Solo skips the arrangement (the column state is retained for switching
+  back);
 - in **Lines mode drops non-segmented columns** (no `content_json`) at
   resolution — the renderer never sees them, so the API and the UI (which
   disables such entries in the bar) behave identically. A non-segmented
-  *opened* sutta reduces to a single column.
+  *opened* sutta reduces to a single column. On a content-block fetch the
+  client learns of the drop from `X-SSP-Columns` and shows a transient
+  notice (§6).
+
+**Settings-cache guard scoping (locking rule).** `app_settings_cache` is a
+`std::sync::RwLock` and the settings panel POSTs writes while renders read:
+a read guard is scoped to copying the needed values out, and is **never held
+across a call into a function that may re-lock the cache** (std RwLock
+read-read re-entry can deadlock against a queued writer on
+writer-preferring implementations — macOS pthreads; Linux/glibc masks it).
+The rule is stated at the field declaration in `app_data.rs`; every guard in
+the sutta/book/word render call graph is a scoped value-copy block.
 
 ## 3. Rendering pipeline (CSS-on-cells, never DOM block-splitting)
 
@@ -127,10 +141,23 @@ Details and JSON shapes in
 - `GET /sutta_content_block?uid=…&layout=…&columns=<enc-uid>|<enc-uid>&show_references=…&repeat_pali=…`
   → the wrapper div only (no page chrome; no `window_id` — the block
   contains no window-specific JS). 400 unknown layout, 404 unknown
-  sutta/column uid.
+  sutta/column uid. The 200 response carries an **`X-SSP-Columns` header**:
+  the server-resolved column list (after the Lines-mode drop and the
+  Repeat-Pāli arrangement; Solo keeps the full set) as a percent-encoded
+  JSON array in the same `{uid, label, author, is_pali}` shape as
+  `SUTTA_DISPLAY.columns` (shared producer: `display_columns_json` in
+  `app_data.rs`; `render_sutta_content_block_with_columns` returns both the
+  HTML and the list). Percent-encoded because labels like "Pāli" are
+  non-ASCII and header values must be ASCII-safe;
+  `decodeURIComponent`-compatible.
 - `layout` / `columns` / `repeat_pali` are also accepted by both full-page
   routes (`/get_sutta_html_by_uid/<window_id>/<uid..>` and the query-param
   twin `/sutta_html?window_id=…&uid=…`); absent → persisted defaults.
+  **Error parity:** an unknown `columns` uid is a 404 with the message on
+  the full-page routes too (`try_render_sutta_html_by_uid_with_overrides` +
+  the shared `render_error_status` helper in `api.rs`; other render errors
+  → 500). The QML bridge path (`render_sutta_html_by_uid`, no overrides)
+  keeps the infallible generic-error-page behavior.
 - `GET /translations_for_sutta?uid=…` → JSON array (`item_uid`,
   `sutta_title`, `sutta_ref`, `language`, `author`, `has_content_json`).
   **Excludes the opened sutta itself**; the column bar synthesizes its
@@ -168,6 +195,15 @@ book and blank pages stay chrome-free (empty defaults).
   view only" applies locally without persisting; **switching local →
   default immediately POSTs the current state** even with no further
   change. Reset all restores built-in defaults (and POSTs in default scope).
+- **Autosave debounce:** the POST path is debounced (~300 ms trailing timer,
+  `schedule_post()`) so slider / color-picker drag ticks coalesce into one
+  write — `apply_css_vars()` stays instant, but the settings write lock and
+  `app_settings` row rewrite happen once per burst. **Flush points** (POST
+  immediately, cancel the timer): the local→default scope switch (FR 19),
+  Reset all (`post_now()`), a default→local switch with a pending POST (the
+  change was made under default scope), and `pagehide`
+  (`flush_pending_post(true)` with `keepalive: true` so the fetch survives
+  page teardown — prev/next navigation replaces the page).
 - Typography/colors apply as CSS custom properties only (no re-render);
   layout / Repeat Pāli changes go through a re-render handler wired in
   `simsapa.ts` to `content_reload.refetch_with_params`.
@@ -179,9 +215,19 @@ book and blank pages stay chrome-free (empty defaults).
 
 `fetch_content_block(layout, columns, show_references, repeat_pali)` fetches
 `GET /sutta_content_block`, swaps `#ssp_content`'s innerHTML on 200 (non-200
-keeps the current content), preserves `window.scrollY`, updates
-`SUTTA_DISPLAY` in place (mirroring the Repeat Pāli arrangement into
-`.columns`), then runs `reinit_sutta_content()`.
+keeps the current content), preserves `window.scrollY`, **adopts the
+server-resolved column list** from the `X-SSP-Columns` header
+(`parse_columns_header`: `decodeURIComponent` + `JSON.parse`) into
+`SUTTA_DISPLAY.columns` *before* `reinit_sutta_content()` runs — so
+`ds.refresh_columns()` and the bar's re-render see the adopted list and the
+per-column-index CSS vars (`--col-N-ink`/`-bg`, the bg gradient) land on the
+columns actually rendered. This replaced the old client-side Repeat-Pāli
+arrangement mirroring. A missing/unparsable header falls back to keeping the
+client's own list (with a logged warning). If the adopted list is shorter
+than the requested one (the Lines-mode non-segmented drop, FR 8), a
+transient notice strip (`#sspDropNotice`, 6 s auto-dismiss, styles in
+`_display_settings.scss`) names the dropped text: "*<label>* has no
+segmented text — shown only in the Columns layout".
 
 **Re-init contract** — what is bound to content *nodes* and must re-run
 after a swap (page chrome lives outside `#ssp_content` and survives):
@@ -209,10 +255,14 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   arrangement. `SUTTA_DISPLAY.columns` is the single source of truth shared
   with the settings panel; a failed fetch reverts it.
 - Rules: minimum one column (last "×" disabled); "+" suggests the Pāli
-  first, then the next unshown translation, and is disabled when every text
-  is shown; options displayed in another column are disabled; in Lines mode
-  `has_content_json == false` entries are disabled with the notice title
-  ("No segmented text — available in the Columns layout"). Hidden in Solo.
+  first, then the next unshown translation; options displayed in another
+  column are disabled; in Lines mode `has_content_json == false` entries are
+  disabled with the notice title ("No segmented text — available in the
+  Columns layout"). **`next_unshown` is layout-aware**: it reuses
+  `option_disabled_reason` with the shown set, so the "+" suggestion can
+  never propose an entry the dropdowns would disable (non-segmented in Lines
+  mode); "+" is disabled when no *selectable* option remains — not merely
+  when all are shown (tooltip "No more texts can be added"). Hidden in Solo.
 - **Custom dropdown, not `<select>`:** the embedded WebEngineView renders a
   native select popup downward and clips it at the window edge — it does not
   flip up from a bottom-anchored bar. The custom menu opens upward
