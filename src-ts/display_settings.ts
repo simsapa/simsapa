@@ -223,13 +223,15 @@ export function column_bg_gradient(
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
-async function post_settings(): Promise<void> {
+async function post_settings(keepalive: boolean = false): Promise<void> {
   const API_URL = (globalThis as any).API_URL || "http://localhost:4848";
   try {
     const response = await fetch(`${API_URL}/save_sutta_display_settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
+      // keepalive lets the pagehide flush survive the page teardown.
+      keepalive,
     });
     if (!response.ok) {
       h.log_error(`save_sutta_display_settings failed: ${response.status}`);
@@ -240,6 +242,43 @@ async function post_settings(): Promise<void> {
   }
 }
 
+// Persistence is debounced: slider / color-picker drags fire
+// on_setting_changed() on every input tick, and each POST takes the backend
+// settings write lock and rewrites the full app_settings row. The CSS-var
+// application stays instant; only the POST coalesces. Discrete flush points
+// (scope switch, Reset all, pagehide) post immediately.
+const POST_DEBOUNCE_MS = 300;
+let post_timer: ReturnType<typeof setTimeout> | null = null;
+
+function schedule_post(): void {
+  if (post_timer !== null) {
+    clearTimeout(post_timer);
+  }
+  post_timer = setTimeout(() => {
+    post_timer = null;
+    post_settings();
+  }, POST_DEBOUNCE_MS);
+}
+
+/** Cancel any pending debounced POST and persist the current state now. */
+function post_now(keepalive: boolean = false): void {
+  if (post_timer !== null) {
+    clearTimeout(post_timer);
+    post_timer = null;
+  }
+  post_settings(keepalive);
+}
+
+/**
+ * Flush a pending debounced POST (no-op when nothing is pending). Used on
+ * pagehide so a trailing change is not lost when navigating away.
+ */
+export function flush_pending_post(keepalive: boolean = false): void {
+  if (post_timer !== null) {
+    post_now(keepalive);
+  }
+}
+
 /**
  * A setting changed in the panel: apply it locally, and persist when the
  * scope is "Save as default".
@@ -247,20 +286,23 @@ async function post_settings(): Promise<void> {
 export function on_setting_changed(): void {
   apply_css_vars();
   if (scope === "save_default") {
-    post_settings();
+    schedule_post();
   }
 }
 
 /**
  * Scope switch. Switching from "This view only" to "Save as default"
  * immediately persists the current in-page settings state, even with no
- * further changes.
+ * further changes. Switching to "This view only" flushes a pending
+ * debounced POST first — that change was made under the default scope.
  */
 export function on_scope_changed(new_scope: Scope): void {
   const was_local = scope === "this_view";
   scope = new_scope;
   if (was_local && new_scope === "save_default") {
-    post_settings();
+    post_now();
+  } else if (new_scope === "this_view") {
+    flush_pending_post();
   }
 }
 
@@ -271,7 +313,7 @@ export function set_layout(layout: string): void {
   settings.layout = layout;
   request_rerender();
   if (scope === "save_default") {
-    post_settings();
+    schedule_post();
   }
 }
 
@@ -282,7 +324,7 @@ export function set_repeat_pali(repeat_pali: string): void {
   settings.repeat_pali = repeat_pali;
   request_rerender();
   if (scope === "save_default") {
-    post_settings();
+    schedule_post();
   }
 }
 
@@ -326,7 +368,7 @@ export function reset_all(): void {
     request_rerender();
   }
   if (scope === "save_default") {
-    post_settings();
+    post_now();
   }
 }
 
@@ -976,6 +1018,12 @@ export function init_display_settings(): void {
   sync_controls();
   render_color_rows();
   apply_css_vars();
+
+  // Navigation away (incl. prev/next replacing the page) must not lose the
+  // last debounced change; keepalive lets the POST outlive the page.
+  window.addEventListener("pagehide", () => {
+    flush_pending_post(true);
+  });
 }
 
 // Test-only state reset (module state persists between jest test cases).
@@ -983,4 +1031,8 @@ export function reset_module_state_for_tests(): void {
   settings = built_in_defaults();
   scope = "save_default";
   rerender_handler = null;
+  if (post_timer !== null) {
+    clearTimeout(post_timer);
+    post_timer = null;
+  }
 }

@@ -85,6 +85,13 @@ pub fn sutta_column_label(sutta: &Sutta) -> String {
 #[derive(Debug)]
 pub struct AppData {
     pub dbm: DbManager,
+    /// Guard-scoping rule: take a read/write guard only to copy values out
+    /// (or apply a mutation) and drop it before calling any function that may
+    /// lock this cache again. std::sync::RwLock read-read re-entry on one
+    /// thread can deadlock against a queued writer (writer-preferring
+    /// implementations, e.g. macOS pthreads), and writers are frequent at
+    /// runtime (save_sutta_display_defaults is POSTed on every in-page
+    /// settings change).
     pub app_settings_cache: RwLock<AppSettings>,
     pub api_url: String,
 }
@@ -282,7 +289,12 @@ impl AppData {
         let content_str = sutta.content_json.as_deref()
             .ok_or_else(|| anyhow!("Sutta {} is missing content_json", sutta.uid))?;
 
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        // Guard scoped to the value copy — see the guard-scoping rule at the
+        // app_settings_cache field.
+        let (show_all_variant_readings, show_glosses) = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            (app_settings.show_all_variant_readings, app_settings.show_glosses)
+        };
 
         bilara_text_to_segments(
             content_str,
@@ -290,8 +302,8 @@ impl AppData {
             variant_json_str.as_deref(),
             comment_json_str.as_deref(),
             gloss_json_str.as_deref(),
-            app_settings.show_all_variant_readings,
-            app_settings.show_glosses,
+            show_all_variant_readings,
+            show_glosses,
             show_references,
         )
     }
@@ -594,14 +606,17 @@ impl AppData {
         js_extra_pre: Option<String>,
         options: &SuttaDisplayOptions,
     ) -> Result<String> {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        // Copy the needed settings values out and drop the guard before any
+        // call that may re-lock the cache (resolve_column_suttas →
+        // sutta_to_segments_json, sutta_display_js, get_theme_name) — see the
+        // guard-scoping rule at the app_settings_cache field.
+        let (font_size, max_width, show_bookmarks) = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            (app_settings.sutta_font_size, app_settings.sutta_max_width, app_settings.show_bookmarks)
+        };
 
         let column_suttas = self.resolve_column_suttas(sutta, options)?;
         let content_html_body = self.render_content_block_for_columns(sutta, &column_suttas, options)?;
-
-        // Get display settings
-        let font_size = app_settings.sutta_font_size;
-        let max_width = app_settings.sutta_max_width;
 
         // Format CSS and JS extras. The reading measure is passed as CSS vars,
         // not a direct body max-width: body { max-width } reads
@@ -622,7 +637,7 @@ impl AppData {
             js_extra = format!("{}; {}", js_pre, js_extra);
         }
 
-        js_extra.push_str(&format!(" const SHOW_BOOKMARKS = {};", app_settings.show_bookmarks));
+        js_extra.push_str(&format!(" const SHOW_BOOKMARKS = {};", show_bookmarks));
         js_extra.push_str(&self.sutta_display_js(&column_suttas, options));
 
         if let Some(quote) = sutta_quote {
@@ -713,8 +728,12 @@ impl AppData {
         show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> String {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-        let body_class = app_settings.theme_name_as_string();
+        // Guard scoped to the value copy: resolve_sutta_display_options and
+        // render_sutta_content below re-lock the settings cache.
+        let body_class = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            app_settings.theme_name_as_string()
+        };
 
         let blank_page_html = blank_html_page(Some(body_class.clone()));
 
@@ -754,8 +773,12 @@ impl AppData {
     /// `AppData::resolve_word_uid` resolver (which this delegates to), so the
     /// HTML and JSON (api.rs::get_word_json) word routes stay in lockstep.
     pub fn render_word_html_by_uid(&self, window_id: &str, word_uid: &str) -> String {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-        let body_class = app_settings.theme_name_as_string();
+        // Guard scoped to the value copy — see the guard-scoping rule at the
+        // app_settings_cache field.
+        let body_class = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            app_settings.theme_name_as_string()
+        };
 
         let blank_page_html = blank_html_page(Some(body_class.clone()));
 
@@ -990,8 +1013,12 @@ impl AppData {
     /// Used by both QML bridge (sutta_bridge.rs::get_book_spine_html) and
     /// API endpoint (api.rs::get_book_spine_item_html_by_uid) to ensure consistent behavior.
     pub fn render_book_spine_html_by_uid(&self, window_id: &str, spine_item_uid: &str) -> String {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-        let body_class = app_settings.theme_name_as_string();
+        // Guard scoped to the value copy: render_book_spine_item_html below
+        // re-locks the settings cache.
+        let body_class = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            app_settings.theme_name_as_string()
+        };
 
         let blank_page_html = blank_html_page(Some(body_class.clone()));
 
@@ -1027,7 +1054,13 @@ impl AppData {
         window_id: Option<String>,
         js_extra_pre: Option<String>,
     ) -> Result<String> {
-        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        // Copy the needed settings values out and drop the guard before
+        // get_theme_name() below re-locks the cache — see the guard-scoping
+        // rule at the app_settings_cache field.
+        let (font_size, max_width, show_bookmarks) = {
+            let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+            (app_settings.sutta_font_size, app_settings.sutta_max_width, app_settings.show_bookmarks)
+        };
 
         // Get book information to check enable_embedded_css flag
         let book_enable_embedded_css = if let Ok(Some(book)) = self.dbm.appdata.get_book_by_uid(&spine_item.book_uid) {
@@ -1065,10 +1098,6 @@ impl AppData {
             content_html_body = CSS_STYLE_RE.replace_all(&content_html_body, "").into_owned();
         }
 
-        // Get display settings
-        let font_size = app_settings.sutta_font_size;
-        let max_width = app_settings.sutta_max_width;
-
         // Format CSS and JS extras
         // --single-max-width: body { max-width } in suttas.sass reads this var
         // (an inline/direct max-width would fight the layout rules there).
@@ -1084,7 +1113,7 @@ impl AppData {
             js_extra = format!("{}; {}", js_pre, js_extra);
         }
 
-        js_extra.push_str(&format!(" const SHOW_BOOKMARKS = {};", app_settings.show_bookmarks));
+        js_extra.push_str(&format!(" const SHOW_BOOKMARKS = {};", show_bookmarks));
 
         // Build body_class with theme and language
         let mut body_class = self.get_theme_name();

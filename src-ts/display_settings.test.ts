@@ -14,6 +14,7 @@ describe("display_settings scope semantics", () => {
   let fetch_mock: jest.Mock;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     ds.reset_module_state_for_tests();
     fetch_mock = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
     (globalThis as any).fetch = fetch_mock;
@@ -30,19 +31,42 @@ describe("display_settings scope semantics", () => {
     document.documentElement.removeAttribute("style");
   });
 
-  test("default scope is save_default and changes POST the settings", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("default scope is save_default and changes POST the settings (debounced)", () => {
     expect(ds.get_scope()).toBe("save_default");
     ds.on_setting_changed();
+    // The POST is debounced — nothing is sent immediately.
+    expect(save_settings_calls(fetch_mock).length).toBe(0);
+    jest.advanceTimersByTime(300);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     const body = JSON.parse(save_settings_calls(fetch_mock)[0][1].body);
     expect(body.pali_font.size_percent).toBe(80);
     expect(body.translation_font.family_kind).toBe("serif");
   });
 
+  test("a burst of changes coalesces to one POST", () => {
+    for (let i = 0; i < 25; i++) {
+      ds.get_settings().translation_font.size_percent = 100 + i;
+      ds.on_setting_changed();
+      jest.advanceTimersByTime(50); // input ticks arrive faster than the debounce
+    }
+    expect(save_settings_calls(fetch_mock).length).toBe(0);
+    jest.advanceTimersByTime(300);
+    const calls = save_settings_calls(fetch_mock);
+    expect(calls.length).toBe(1);
+    // The final state is what gets persisted.
+    const body = JSON.parse(calls[0][1].body);
+    expect(body.translation_font.size_percent).toBe(124);
+  });
+
   test("changes in local scope do not POST", () => {
     ds.on_scope_changed("this_view");
     ds.on_setting_changed();
     ds.on_setting_changed();
+    jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(0);
   });
 
@@ -50,18 +74,45 @@ describe("display_settings scope semantics", () => {
     ds.on_scope_changed("this_view");
     ds.get_settings().translation_font.size_percent = 120;
     ds.on_setting_changed();
+    jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(0);
 
     ds.on_scope_changed("save_default");
+    // No timer advance: the scope-switch POST is immediate (FR 19).
     const calls = save_settings_calls(fetch_mock);
     expect(calls.length).toBe(1);
     const body = JSON.parse(calls[0][1].body);
     expect(body.translation_font.size_percent).toBe(120);
   });
 
-  test("switching default -> local does not POST", () => {
+  test("a scope switch mid-burst POSTs immediately and cancels the pending timer", () => {
+    ds.on_setting_changed(); // default scope: schedules a debounced POST
     ds.on_scope_changed("this_view");
+    // The pending change was made under the default scope — flushed now.
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
+    jest.advanceTimersByTime(1000);
+    // The cancelled timer must not fire a second POST.
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
+  });
+
+  test("switching default -> local with nothing pending does not POST", () => {
+    ds.on_scope_changed("this_view");
+    jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(0);
+  });
+
+  test("flush_pending_post posts a pending change once, with keepalive", () => {
+    ds.on_setting_changed();
+    expect(save_settings_calls(fetch_mock).length).toBe(0);
+    ds.flush_pending_post(true);
+    const calls = save_settings_calls(fetch_mock);
+    expect(calls.length).toBe(1);
+    expect(calls[0][1].keepalive).toBe(true);
+    jest.advanceTimersByTime(1000);
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
+    // No-op when nothing is pending.
+    ds.flush_pending_post(true);
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
   });
 
   test("set_layout triggers the re-render handler and POSTs in default scope", () => {
@@ -69,6 +120,7 @@ describe("display_settings scope semantics", () => {
     ds.set_rerender_handler(handler);
     ds.set_layout("sidebyside");
     expect(handler).toHaveBeenCalledWith("sidebyside", "off");
+    jest.advanceTimersByTime(300);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     expect(ds.get_settings().layout).toBe("sidebyside");
   });
@@ -79,6 +131,7 @@ describe("display_settings scope semantics", () => {
     ds.on_scope_changed("this_view");
     ds.set_layout("sidebyside");
     expect(handler).toHaveBeenCalledWith("sidebyside", "off");
+    jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(0);
   });
 
@@ -95,6 +148,7 @@ describe("display_settings scope semantics", () => {
     ds.set_rerender_handler(handler);
     ds.set_repeat_pali("atend");
     expect(handler).toHaveBeenCalledWith("linebyline", "atend");
+    jest.advanceTimersByTime(300);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     expect(ds.get_settings().repeat_pali).toBe("atend");
 
@@ -104,10 +158,14 @@ describe("display_settings scope semantics", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  test("reset_all restores built-in defaults and POSTs in default scope", () => {
+  test("reset_all restores built-in defaults and POSTs immediately in default scope", () => {
     ds.get_settings().pali_font.size_percent = 150;
+    ds.on_setting_changed(); // pending debounced POST
     ds.reset_all();
     expect(ds.get_settings().pali_font.size_percent).toBe(80);
+    // Immediate POST; the pending timer is cancelled, not fired later.
+    expect(save_settings_calls(fetch_mock).length).toBe(1);
+    jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
   });
 });
@@ -116,6 +174,7 @@ describe("color rows and swatch palette", () => {
   let fetch_mock: jest.Mock;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     ds.reset_module_state_for_tests();
     fetch_mock = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
     (globalThis as any).fetch = fetch_mock;
@@ -130,6 +189,10 @@ describe("color rows and swatch palette", () => {
     };
     document.body.innerHTML = "<div id='dsColorRows'></div>";
     document.documentElement.removeAttribute("style");
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test("renders one row per author with ink/bg dots", () => {
@@ -157,8 +220,10 @@ describe("color rows and swatch palette", () => {
     expect(color).toBeTruthy();
     // sujato is column 0; the CSS var follows immediately.
     expect(document.documentElement.style.getPropertyValue("--col-0-ink")).toBe(color);
-    // Palette closes after picking; default scope POSTs the settings.
+    // Palette closes after picking; default scope POSTs the settings
+    // (debounced).
     expect(document.querySelector(".ds-palette")).toBeNull();
+    jest.advanceTimersByTime(300);
     const saves = fetch_mock.mock.calls.filter((c) => String(c[0]).includes("save_sutta_display_settings"));
     expect(saves.length).toBe(1);
   });
@@ -180,6 +245,7 @@ describe("color rows and swatch palette", () => {
 
     expect(ds.get_settings().author_bg_colors["sujato"]).toBe("#123456");
     expect(document.documentElement.style.getPropertyValue("--col-0-bg")).toBe("#123456");
+    jest.advanceTimersByTime(300);
     const saves = fetch_mock.mock.calls.filter((c) => String(c[0]).includes("save_sutta_display_settings"));
     expect(saves.length).toBe(1);
     // The picker does not close the palette (it is part of it).
