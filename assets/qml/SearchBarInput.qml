@@ -104,7 +104,7 @@ Frame {
         logger.debug("SearchBarInput: Qt.platform.os=" + Qt.platform.os
             + " is_mobile=" + root.is_mobile + " is_desktop=" + root.is_desktop
             + " search_input.focus=" + search_input.focus
-            + " inputMethod.visible=" + Qt.inputMethod.visible);
+            + " inputMethod.visible=" + Qt.inputMethod.visible); // qmllint disable missing-property
         root.handle_query_fn(search_input.text); // qmllint disable use-proper-function
     }
 
@@ -244,7 +244,7 @@ Frame {
                 // (the precondition for the IME to be raised).
                 onActiveFocusChanged: logger.debug("search_input: activeFocus="
                     + search_input.activeFocus + " inputMethod.visible="
-                    + Qt.inputMethod.visible)
+                    + Qt.inputMethod.visible) // qmllint disable missing-property
 
                 // Reliably raise the Android/ChromeOS soft keyboard on the
                 // first tap. See docs/android-soft-keyboard.md.

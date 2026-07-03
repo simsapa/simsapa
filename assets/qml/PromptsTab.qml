@@ -381,9 +381,12 @@ Item {
         // The init above set the user message programmatically; clear the flag so a
         // freshly started conversation isn't marked dirty before the send.
         root.session_needs_saving = false;
+        // `item` is the inline delegate root, typed as QQuickItem by qmllint, so
+        // its `send_btn` alias isn't visible to the linter. There is no named
+        // type to cast to, so suppress the missing-property warnings here.
         var item = messages_repeater.itemAt(1);
-        if (item && item.send_btn) {
-            item.send_btn.click();
+        if (item && item.send_btn) { // qmllint disable missing-property
+            item.send_btn.click(); // qmllint disable missing-property
         }
     }
 
