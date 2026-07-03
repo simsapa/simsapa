@@ -49,7 +49,6 @@ pub struct AppSettings {
     pub sutta_font_size: usize,
     pub sutta_max_width: usize,
     pub show_bookmarks: bool,
-    pub show_translation_and_pali_line_by_line: bool,
     pub show_all_variant_readings: bool,
     pub show_glosses: bool,
     pub theme_name: ThemeName,
@@ -181,6 +180,164 @@ pub struct AppSettings {
     /// Fixed item height in pixels (used when item_height_use_default is false)
     #[serde(default)]
     pub item_height_fixed: usize,
+    /// Persisted defaults for the sutta display (layout, typography, per-author
+    /// colors). Concrete column uid lists are per-view state and are NOT part
+    /// of these defaults — the default column set is resolved at render time
+    /// (opened sutta + Pāli counterpart). See
+    /// tasks/2026-07-01-192905-prd---side-by-side-translation-view.md.
+    #[serde(default)]
+    pub sutta_display: SuttaDisplayDefaults,
+}
+
+/// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
+/// enum keeps the descriptive line-by-line / side-by-side naming. Both
+/// spellings are accepted when parsing (`linebyline`/`lines`,
+/// `sidebyside`/`columns`). Solo renders only the opened translation via the
+/// standard whole-document path (no Pāli / other translation columns).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SuttaLayout {
+    #[serde(rename = "solo")]
+    Solo,
+    #[default]
+    #[serde(rename = "linebyline", alias = "lines", alias = "line-by-line")]
+    LineByLine,
+    #[serde(rename = "sidebyside", alias = "columns", alias = "side-by-side")]
+    SideBySide,
+}
+
+impl SuttaLayout {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "solo" => Some(SuttaLayout::Solo),
+            "linebyline" | "lines" | "line-by-line" => Some(SuttaLayout::LineByLine),
+            "sidebyside" | "columns" | "side-by-side" => Some(SuttaLayout::SideBySide),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SuttaLayout::Solo => "solo",
+            SuttaLayout::LineByLine => "linebyline",
+            SuttaLayout::SideBySide => "sidebyside",
+        }
+    }
+}
+
+/// Where the Pāli text appears in the multi-column sutta view (follows the
+/// study.jhana.info "Repeat Pāli" control). The Pāli's default position is
+/// the first column; this controls whether/where it repeats:
+/// Off = first column only; Alternate = before each translation;
+/// AtEnd = first column and once more as the last column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RepeatPali {
+    #[default]
+    #[serde(rename = "off")]
+    Off,
+    #[serde(rename = "alternate")]
+    Alternate,
+    #[serde(rename = "atend", alias = "at-end", alias = "at_end")]
+    AtEnd,
+}
+
+impl RepeatPali {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "off" => Some(RepeatPali::Off),
+            "alternate" => Some(RepeatPali::Alternate),
+            "atend" | "at-end" | "at_end" => Some(RepeatPali::AtEnd),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RepeatPali::Off => "off",
+            RepeatPali::Alternate => "alternate",
+            RepeatPali::AtEnd => "atend",
+        }
+    }
+}
+
+/// Font family kind for a sutta text column group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SuttaFontFamilyKind {
+    #[default]
+    Serif,
+    Sans,
+}
+
+/// Typography settings for one group of sutta view cells (the Pāli cells or
+/// the translation cells). Sizes are stored as integer percentages so
+/// `AppSettings` stays `Eq` (100 = 1em / normal line height baseline 1.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SuttaFontGroup {
+    pub family_kind: SuttaFontFamilyKind,
+    /// Font size as a percentage of the base sutta font size (100 = 1em).
+    pub size_percent: usize,
+    /// Line height as a percentage (150 = 1.5).
+    pub line_height_percent: usize,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+impl Default for SuttaFontGroup {
+    fn default() -> Self {
+        SuttaFontGroup {
+            family_kind: SuttaFontFamilyKind::Serif,
+            size_percent: 100,
+            line_height_percent: 150,
+            bold: false,
+            italic: false,
+        }
+    }
+}
+
+/// Persisted sutta display defaults, nested in `AppSettings` as
+/// `sutta_display`. Color maps are keyed by author uid (e.g. "sujato"); "pali"
+/// is used for the Pāli column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SuttaDisplayDefaults {
+    pub layout: SuttaLayout,
+    /// Pāli column placement/repetition in the multi-column layouts.
+    pub repeat_pali: RepeatPali,
+    /// Reading-measure width as a percentage of the base `sutta_max_width`
+    /// (100 = unchanged). Applied as the `--width-scale` CSS var to both the
+    /// line-by-line body measure and the side-by-side per-column cap.
+    pub width_percent: usize,
+    pub pali_font: SuttaFontGroup,
+    pub translation_font: SuttaFontGroup,
+    /// Per-author text ("ink") colors, e.g. "sujato" -> "#663399".
+    pub author_ink_colors: IndexMap<String, String>,
+    /// Per-author column background colors.
+    pub author_bg_colors: IndexMap<String, String>,
+}
+
+impl Default for SuttaDisplayDefaults {
+    fn default() -> Self {
+        SuttaDisplayDefaults {
+            layout: SuttaLayout::default(),
+            repeat_pali: RepeatPali::default(),
+            width_percent: 100,
+            // Matches the stylesheet's un-overridden look: Pāli cells render
+            // in "Source Sans 3 SSP" at 0.8em (see _suttacentral.sass),
+            // translations in the serif body font at 1em. The CSS custom
+            // properties applied from these values must not change the
+            // appearance of a fresh install.
+            pali_font: SuttaFontGroup {
+                family_kind: SuttaFontFamilyKind::Sans,
+                size_percent: 80,
+                line_height_percent: 150,
+                ..SuttaFontGroup::default()
+            },
+            translation_font: SuttaFontGroup::default(),
+            author_ink_colors: IndexMap::new(),
+            author_bg_colors: IndexMap::new(),
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -215,7 +372,6 @@ impl Default for AppSettings {
             sutta_font_size: 22,
             sutta_max_width: 75,
             show_bookmarks: true,
-            show_translation_and_pali_line_by_line: true,
             show_all_variant_readings: false,
             show_glosses: false,
             theme_name: ThemeName::Light,
@@ -365,6 +521,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             snippet_all_chars_after: default_snippet_all_chars_after(),
             item_height_use_default: true,
             item_height_fixed: 100,
+            sutta_display: SuttaDisplayDefaults::default(),
         }
     }
 }

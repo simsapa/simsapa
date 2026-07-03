@@ -1,0 +1,126 @@
+<!-- Display Settings Button (cogwheel, fixed bottom-right) -->
+<button class="display-settings-button" id="displaySettingsButton" title="Display settings">
+    <img src="{api_url}/assets/icons/32x32/fa_gear-solid.png" alt="Display settings" class="display-settings-icon">
+</button>
+
+<!-- Display Settings Panel (layout follows the study.jhana.info settings
+     menu: top-right Reset all, uppercase section headers, segmented toggle
+     buttons, sliders with the value at the label's right, translator ink
+     rows with color dots) -->
+<div class="display-settings-panel" id="displaySettingsPanel">
+    <div class="ds-panel-header">
+        <button type="button" class="ds-reset-all" id="dsResetAll">Reset all</button>
+    </div>
+
+    <div class="ds-section">
+        <div class="ds-section-header">Settings scope</div>
+        <div class="ds-card">
+            <div class="ds-segmented" data-setting="scope">
+                <button type="button" class="ds-seg-btn" data-value="save_default">Save as default</button>
+                <button type="button" class="ds-seg-btn" data-value="this_view">This view only</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="ds-section">
+        <div class="ds-section-header">Layout</div>
+        <div class="ds-card">
+            <div class="ds-segmented" data-setting="layout">
+                <button type="button" class="ds-seg-btn" data-value="solo">Solo</button>
+                <button type="button" class="ds-seg-btn" data-value="sidebyside">Columns</button>
+                <button type="button" class="ds-seg-btn" data-value="linebyline">Lines</button>
+            </div>
+
+            <div class="ds-label">Repeat Pāli</div>
+            <div class="ds-segmented" data-setting="repeat-pali">
+                <button type="button" class="ds-seg-btn" data-value="off">Off</button>
+                <button type="button" class="ds-seg-btn" data-value="alternate">Alternate</button>
+                <button type="button" class="ds-seg-btn" data-value="atend">At end</button>
+            </div>
+
+            <div class="ds-label ds-label-row">Width
+                <span class="ds-value ds-width-value"></span>
+            </div>
+            <div class="ds-segmented ds-width-presets" data-setting="width-preset">
+                <button type="button" class="ds-seg-btn" data-value="75">Narrow</button>
+                <button type="button" class="ds-seg-btn" data-value="100">Normal</button>
+                <button type="button" class="ds-seg-btn" data-value="125">Wide</button>
+            </div>
+            <input type="range" class="ds-slider ds-width" min="50" max="150" step="5">
+        </div>
+    </div>
+
+    <div class="ds-section" id="dsPaliFontGroup">
+        <div class="ds-section-header">Pāli</div>
+        <div class="ds-card">
+            <div class="ds-label">Font</div>
+            <div class="ds-segmented" data-setting="font-family" data-group="pali">
+                <button type="button" class="ds-seg-btn" data-value="sans">Sans</button>
+                <button type="button" class="ds-seg-btn" data-value="serif">Serif</button>
+            </div>
+
+            <div class="ds-label">Style</div>
+            <div class="ds-segmented ds-style-toggles" data-group="pali">
+                <button type="button" class="ds-seg-btn ds-toggle" data-toggle="bold" data-group="pali"><b>Bold</b></button>
+                <button type="button" class="ds-seg-btn ds-toggle" data-toggle="italic" data-group="pali"><i>Italic</i></button>
+            </div>
+
+            <div class="ds-label ds-label-row">Size
+                <span class="ds-value ds-font-size-value" data-group="pali"></span>
+            </div>
+            <input type="range" class="ds-slider ds-font-size" data-group="pali" min="50" max="200" step="5">
+
+            <div class="ds-label ds-label-row">Line height
+                <span class="ds-value ds-line-height-value" data-group="pali"></span>
+            </div>
+            <div class="ds-segmented ds-lh-presets" data-setting="line-height-preset" data-group="pali">
+                <button type="button" class="ds-seg-btn" data-value="120">Compact</button>
+                <button type="button" class="ds-seg-btn" data-value="150">Normal</button>
+                <button type="button" class="ds-seg-btn" data-value="180">Relaxed</button>
+            </div>
+            <input type="range" class="ds-slider ds-line-height" data-group="pali" min="100" max="250" step="5">
+        </div>
+    </div>
+
+    <div class="ds-section" id="dsTranslationFontGroup">
+        <div class="ds-section-header">Translation</div>
+        <div class="ds-card">
+            <div class="ds-label">Font</div>
+            <div class="ds-segmented" data-setting="font-family" data-group="translation">
+                <button type="button" class="ds-seg-btn" data-value="sans">Sans</button>
+                <button type="button" class="ds-seg-btn" data-value="serif">Serif</button>
+            </div>
+
+            <div class="ds-label">Style</div>
+            <div class="ds-segmented ds-style-toggles" data-group="translation">
+                <button type="button" class="ds-seg-btn ds-toggle" data-toggle="bold" data-group="translation"><b>Bold</b></button>
+                <button type="button" class="ds-seg-btn ds-toggle" data-toggle="italic" data-group="translation"><i>Italic</i></button>
+            </div>
+
+            <div class="ds-label ds-label-row">Size
+                <span class="ds-value ds-font-size-value" data-group="translation"></span>
+            </div>
+            <input type="range" class="ds-slider ds-font-size" data-group="translation" min="50" max="200" step="5">
+
+            <div class="ds-label ds-label-row">Line height
+                <span class="ds-value ds-line-height-value" data-group="translation"></span>
+            </div>
+            <div class="ds-segmented ds-lh-presets" data-setting="line-height-preset" data-group="translation">
+                <button type="button" class="ds-seg-btn" data-value="120">Compact</button>
+                <button type="button" class="ds-seg-btn" data-value="150">Normal</button>
+                <button type="button" class="ds-seg-btn" data-value="180">Relaxed</button>
+            </div>
+            <input type="range" class="ds-slider ds-line-height" data-group="translation" min="100" max="250" step="5">
+        </div>
+    </div>
+
+    <div class="ds-section">
+        <div class="ds-section-header">Translator inks</div>
+        <div class="ds-card">
+            <!-- One row per currently shown column, rendered by
+                 display_settings.ts from the current column list. -->
+            <div id="dsColorRows"></div>
+            <div class="ds-hint">Click the dots to pick a text and column background colour.</div>
+        </div>
+    </div>
+</div>

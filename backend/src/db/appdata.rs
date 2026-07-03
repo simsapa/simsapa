@@ -373,14 +373,27 @@ impl AppdataDbHandle {
             table_name: String,
             sutta_title: String,
             sutta_ref: String,
+            language: String,
+            author: String,
+            /// Whether the text has segmented (Bilara) content — a
+            /// non-segmented text cannot be interleaved in the Lines layout,
+            /// so the column-bar dropdowns disable it there.
+            has_content_json: bool,
         }
 
         let res_sorted_data: Vec<TranslationData> = sort_suttas(res)
-            .into_iter().map(|s| TranslationData {
-                item_uid: s.uid,
-                table_name: "suttas".to_string(),
-                sutta_title: s.title.unwrap_or("".to_string()),
-                sutta_ref: s.sutta_ref,
+            .into_iter().map(|s| {
+                // uid format: "mn1/en/sujato" — the third part is the author.
+                let author = s.uid.split('/').nth(2).unwrap_or("").to_string();
+                TranslationData {
+                    has_content_json: s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false),
+                    language: s.language.clone(),
+                    author,
+                    item_uid: s.uid,
+                    table_name: "suttas".to_string(),
+                    sutta_title: s.title.unwrap_or("".to_string()),
+                    sutta_ref: s.sutta_ref,
+                }
             }).collect();
 
         serde_json::to_string(&res_sorted_data).expect("Can't encode JSON")

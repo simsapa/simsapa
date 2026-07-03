@@ -21,6 +21,8 @@ use simsapa_backend::db::DbManager;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::helpers::{create_or_update_linux_desktop_icon_file, query_text_to_uid_field_query, verse_sutta_ref_to_uid, normalize_human_word_uid};
 use simsapa_backend::logger::{info, warn, error, profile};
+use simsapa_backend::app_settings::SuttaDisplayDefaults;
+use simsapa_backend::sutta_display::parse_display_overrides;
 use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea};
 use simsapa_backend::query_task::SearchQueryTask;
 
@@ -682,22 +684,58 @@ fn shutdown(shutdown: Shutdown) {
 /// `/pli/ms` / range fallbacks via `lookup_sutta_with_fallback` (Finding 3),
 /// then renders. Returns `200` when the sutta exists, `404` (with the prior
 /// blank-page body) on a genuine miss — the success body is unchanged.
-fn sutta_html_response(window_id: &str, uid: &str, anchor: Option<&str>, dbm: &DbManager) -> (Status, RawHtml<String>) {
+/// The optional `layout` / `columns` GET parameters override the persisted
+/// display defaults (param parity across both sutta-HTML routes); an unknown
+/// `layout` value → `400` with the parser's message; an unknown `columns`
+/// uid → `404` with the render error message (same mapping as
+/// `/sutta_content_block`, via `render_error_status`); other render errors
+/// → `500`.
+fn sutta_html_response(
+    window_id: &str,
+    uid: &str,
+    anchor: Option<&str>,
+    layout: Option<&str>,
+    columns: Option<&str>,
+    repeat_pali: Option<&str>,
+    dbm: &DbManager,
+) -> (Status, RawHtml<String>) {
+    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
+        Ok(o) => o,
+        Err(msg) => return (Status::BadRequest, RawHtml(msg)),
+    };
+
     // Show reference anchors only when navigating to a specific anchor
     let show_references = anchor.is_some();
     let app_data = get_app_data();
     let processed_uid = convert_verse_ref_to_sutta_uid(uid);
 
-    match lookup_sutta_with_fallback(dbm, &processed_uid) {
-        Some(sutta) => {
-            let html = app_data.render_sutta_html_by_uid(window_id, &sutta.uid, show_references);
-            (Status::Ok, RawHtml(html))
+    let (ok_status, render_uid) = match lookup_sutta_with_fallback(dbm, &processed_uid) {
+        Some(sutta) => (Status::Ok, sutta.uid),
+        // Keep the prior blank-page body; add the 404 status signal.
+        None => (Status::NotFound, processed_uid),
+    };
+
+    match app_data.try_render_sutta_html_by_uid_with_overrides(window_id, &render_uid, show_references, &overrides) {
+        Ok(html) => (ok_status, RawHtml(html)),
+        Err(e) => {
+            let msg = format!("{:#}", e);
+            error(&format!("sutta_html_response(): {}", msg));
+            // Same mapping as /sutta_content_block (param/error parity):
+            // unknown column uid → 404 with the message, else 500.
+            (render_error_status(&msg), RawHtml(msg))
         }
-        None => {
-            // Keep the prior blank-page body; add the 404 status signal.
-            let html = app_data.render_sutta_html_by_uid(window_id, &processed_uid, show_references);
-            (Status::NotFound, RawHtml(html))
-        }
+    }
+}
+
+/// Shared render-error → HTTP status mapping for the sutta routes, so the
+/// full-page routes and `/sutta_content_block` can't drift: a bad `columns`
+/// override ("Unknown column sutta uid") is a client error (404), anything
+/// else is a 500.
+fn render_error_status(msg: &str) -> Status {
+    if msg.contains("Unknown column sutta uid") {
+        Status::NotFound
+    } else {
+        Status::InternalServerError
     }
 }
 
@@ -715,8 +753,8 @@ fn word_html_response(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
     (status, RawHtml(html))
 }
 
-#[get("/get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>")]
-fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+#[get("/get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>&<repeat_pali>")]
+fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
     // Convert path to forward slashes for cross-platform consistency
     let uid_str = pathbuf_to_forward_slash_string(&uid);
 
@@ -727,7 +765,7 @@ fn get_sutta_html_by_uid(window_id: &str, uid: PathBuf, anchor: Option<&str>, db
     };
     info(&log_msg);
 
-    sutta_html_response(window_id, &uid_str, anchor, dbm)
+    sutta_html_response(window_id, &uid_str, anchor, layout, columns, repeat_pali, dbm)
 }
 
 #[get("/get_word_html_by_uid/<window_id>/<uid..>")]
@@ -1544,11 +1582,115 @@ fn get_word_html_q(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
 /// existence/normalization reuses `convert_verse_ref_to_sutta_uid` +
 /// `lookup_sutta_with_fallback` (not the word resolver), so verse refs,
 /// `/pli/ms` fallback and ranges resolve to the canonical uid before rendering.
-#[get("/sutta_html?<window_id>&<uid>&<anchor>")]
-fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
+#[get("/sutta_html?<window_id>&<uid>&<anchor>&<layout>&<columns>&<repeat_pali>")]
+fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Option<&str>, columns: Option<&str>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> (Status, RawHtml<String>) {
     info(&format!("get_sutta_html_q(): window_id: {}, uid: {}", window_id, uid));
 
-    sutta_html_response(window_id, uid, anchor, dbm)
+    sutta_html_response(window_id, uid, anchor, layout, columns, repeat_pali, dbm)
+}
+
+/// The successful `/sutta_content_block` response: the block HTML plus the
+/// server-resolved column list in the `X-SSP-Columns` header (percent-encoded
+/// JSON in the `SUTTA_DISPLAY.columns` shape, `{uid, label, author,
+/// is_pali}`). The client adopts the header list after the swap, so the page
+/// state can't diverge from what was actually rendered (Lines-mode
+/// non-segmented drop, Repeat-Pāli arrangement).
+#[derive(rocket::Responder)]
+struct ContentBlockResponse {
+    html: RawHtml<String>,
+    columns: rocket::http::Header<'static>,
+}
+
+fn ssp_columns_header(columns_json: &serde_json::Value) -> rocket::http::Header<'static> {
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    let encoded = utf8_percent_encode(&columns_json.to_string(), NON_ALPHANUMERIC).to_string();
+    rocket::http::Header::new("X-SSP-Columns", encoded)
+}
+
+/// GET /sutta_content_block?<uid>&<layout>&<columns>&<show_references>
+/// Returns just the sutta content-block HTML (the `<div class='suttacentral
+/// bilara-text …'>` wrapper incl. the Columns-mode header row) without page
+/// chrome, for in-page layout/column re-renders (the cogwheel menu and the
+/// bottom column bar swap `#ssp_content` with it). Query-param style because
+/// uids contain `/`. `columns` is `|`-separated; unknown `layout` → 400;
+/// unknown sutta or column uid → 404 with a message. Lines mode silently
+/// drops non-segmented columns at options resolution (PRD FR 8) — the
+/// `X-SSP-Columns` header on the 200 response carries the resolved column
+/// list so the client can adopt it (and notice the drop). No `window_id`:
+/// the block carries no window-specific JS (`WINDOW_ID` is page-level
+/// `js_extra`).
+#[get("/sutta_content_block?<uid>&<layout>&<columns>&<show_references>&<repeat_pali>")]
+fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> Result<ContentBlockResponse, (Status, RawHtml<String>)> {
+    info(&format!("get_sutta_content_block(): uid: {}, layout: {:?}, columns: {:?}, repeat_pali: {:?}", uid, layout, columns, repeat_pali));
+
+    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
+        Ok(o) => o,
+        Err(msg) => return Err((Status::BadRequest, RawHtml(msg))),
+    };
+
+    let app_data = get_app_data();
+    let processed_uid = convert_verse_ref_to_sutta_uid(uid);
+
+    let sutta = match lookup_sutta_with_fallback(dbm, &processed_uid) {
+        Some(s) => s,
+        None => return Err((Status::NotFound, RawHtml(format!("Unknown sutta uid: {}", uid)))),
+    };
+
+    let options = app_data.resolve_sutta_display_options(&sutta, show_references.unwrap_or(false), &overrides);
+    match app_data.render_sutta_content_block_with_columns(&sutta, &options) {
+        Ok((html, columns_json)) => Ok(ContentBlockResponse {
+            html: RawHtml(html),
+            columns: ssp_columns_header(&columns_json),
+        }),
+        Err(e) => {
+            let msg = format!("{:#}", e);
+            error(&format!("get_sutta_content_block(): {}", msg));
+            Err((render_error_status(&msg), RawHtml(msg)))
+        }
+    }
+}
+
+/// GET /translations_for_sutta?<uid>
+/// JSON array of the other texts available for the sutta's reference (for
+/// the bottom column-bar dropdowns): `item_uid`, `sutta_title`, `sutta_ref`,
+/// `language`, `author`, and `has_content_json` (false → not available in the
+/// Lines layout). Reuses `get_translations_data_json_for_sutta_uid` with the
+/// same include-commentary app settings as the QML tabs path.
+#[get("/translations_for_sutta?<uid>")]
+fn get_translations_for_sutta(uid: &str) -> (Status, Json<serde_json::Value>) {
+    info(&format!("get_translations_for_sutta(): uid: {}", uid));
+
+    let app_data = get_app_data();
+    let processed_uid = convert_verse_ref_to_sutta_uid(uid);
+    let include_cst_commentary = app_data.get_include_cst_commentary_in_translations();
+    let include_cst_mula = app_data.get_include_cst_mula_in_translations();
+
+    let json_str = app_data.dbm.appdata.get_translations_data_json_for_sutta_uid(
+        &processed_uid,
+        include_cst_commentary,
+        include_cst_mula,
+    );
+
+    match serde_json::from_str::<serde_json::Value>(&json_str) {
+        Ok(v) => (Status::Ok, Json(v)),
+        Err(e) => {
+            error(&format!("get_translations_for_sutta(): {}", e));
+            (Status::InternalServerError, Json(serde_json::Value::Array(Vec::new())))
+        }
+    }
+}
+
+/// POST /save_sutta_display_settings
+/// Body: a `SuttaDisplayDefaults` JSON object (the cogwheel menu's full
+/// settings state). Persists it as the new `sutta_display` defaults through
+/// `AppData` (in-memory cache + settings row write). Malformed bodies are
+/// rejected by the `Json` guard (400/422) before this handler runs.
+#[post("/save_sutta_display_settings", data = "<settings>")]
+fn save_sutta_display_settings(settings: Json<SuttaDisplayDefaults>) -> Status {
+    info("save_sutta_display_settings()");
+    let app_data = get_app_data();
+    app_data.save_sutta_display_defaults(settings.into_inner());
+    Status::Ok
 }
 
 /// GET /sutta_titles_flat_completion_list
@@ -1694,6 +1836,9 @@ pub async extern "C" fn start_webserver() {
             get_word_json_q,
             get_word_html_q,
             get_sutta_html_q,
+            get_sutta_content_block,
+            get_translations_for_sutta,
+            save_sutta_display_settings,
             sutta_titles_completion,
             dict_words_completion,
             health,

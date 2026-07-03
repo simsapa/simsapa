@@ -577,6 +577,9 @@ endpoints. These return rendered HTML; strip the tags to get plain text.
 | `GET /word_html?window_id=<id>&uid=<uid>` | **Query-param twin** of `get_word_html_by_uid`. Same HTML, but the uid is a query parameter so its `/` may be `%2F`-encoded (or raw — encoding-agnostic). Both params required (missing either → HTTP 422). Use when a client must percent-encode the uid. |
 | `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]` | **Query-param twin** of `get_sutta_html_by_uid`. Same sutta HTML, uid as an encoding-agnostic query parameter (`%2F` or raw `/`). `window_id` + `uid` required, `anchor` optional. Also applies verse-ref / `/pli/ms` / range normalization (§14.4). |
 
+Both sutta-HTML routes also accept the optional `layout` / `columns` display
+parameters (multi-column side-by-side view) — see §14.5.
+
 ```sh
 # Full sutta text (e.g. to verify an exact pāda in Snp 1.8, the Metta Sutta):
 curl -s "localhost:$PORT/get_sutta_html_by_uid/web/snp1.8/pli/ms"   # then strip HTML
@@ -774,8 +777,11 @@ views, not for headless data retrieval.
 | `POST /suttas_contains_search` | Suttas, ContainsMatch (literal) / Uid auto-detect | §1, §12.1 |
 | `POST /dict_combined_search` | Dictionary, DpdLookup + deconstructor / Uid auto-detect | §1, §12.2 |
 | `GET /sutta_and_dict_search_options` | Filter option lists (`sutta_languages[]`, `dict_languages[]`, `dict_sources[]`) | §10; struct `SearchOptions` §15 |
-| `GET /get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>` | Full rendered sutta HTML (text retrieval); 404 on miss | §13 |
-| `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]` | Query-param twin of `get_sutta_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss | §13 |
+| `GET /get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>` | Full rendered sutta HTML (text retrieval); 404 on miss; optional display params | §13, §14.5 |
+| `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]&[layout=…]&[columns=…]` | Query-param twin of `get_sutta_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss; optional display params | §13, §14.5 |
+| `GET /sutta_content_block?uid=<uid>&[layout=…]&[columns=…]&[show_references=…]` | Just the sutta content-block HTML (no page chrome) for in-page layout/column re-renders; 400 bad layout, 404 unknown uid/column; 200 carries the resolved column list in the `X-SSP-Columns` header | §14.5 |
+| `GET /translations_for_sutta?uid=<uid>` | JSON array of the other texts sharing the sutta's reference (column-bar dropdowns): `item_uid`, `sutta_title`, `sutta_ref`, `language`, `author`, `has_content_json` | §14.5 |
+| `POST /save_sutta_display_settings` | Persist the `sutta_display` defaults (cogwheel menu "Save as default"). Body: `SuttaDisplayDefaults` JSON; 200 on success, 400/422 on malformed body | §14.5 |
 | `GET /get_word_html_by_uid/<window_id>/<uid..>` | Full rendered dictionary-word HTML; 404 on miss | §13 |
 | `GET /word_html?window_id=<id>&uid=<uid>` | Query-param twin of `get_word_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss | §13 |
 | `GET /words/<uid>.json` | Full dictionary-word record as JSON (path form; raw `/` only); 404 + `[]` on miss | §13.3 |
@@ -836,6 +842,71 @@ share two helpers, so they accept more than a literal stored uid:
 
 The search routes' reference auto-detect (§5) is a different mechanism
 (`query_text_to_uid_field_query`, query-string → `uid:` field query).
+
+### 14.5 Sutta display parameters and routes (multi-column view)
+
+The multi-translation side-by-side feature (see
+`docs/sutta-display-settings-and-multi-column-view.md`) adds optional display
+parameters to the sutta render routes plus three dedicated routes. Shared
+parameter semantics (parsed by `parse_display_overrides` in
+`backend/src/sutta_display.rs`; absent parameters fall back to the persisted
+`sutta_display` defaults in `AppSettings`):
+
+- `layout` — `lines` / `linebyline` (interleaved) or `columns` / `sidebyside`
+  (one flex column per text). Unknown value → **HTTP 400** with a message.
+- `columns` — `|`-separated ordered column sutta uids (percent-encode each uid
+  if needed; the query value is decoded once). Default when absent: the opened
+  sutta + its Pāli counterpart. In Lines mode, non-segmented columns (no
+  `content_json`) are **silently dropped** at options resolution; in Columns
+  mode a non-segmented column switches the render to the unaligned
+  block-columns fallback.
+- `show_references` — `true`/`false`, render per-segment reference anchors
+  (`sutta_content_block` only; the full-page routes derive it from `anchor`).
+
+Routes:
+
+- `GET /get_sutta_html_by_uid/…?layout=…&columns=…` and
+  `GET /sutta_html?…&layout=…&columns=…` — full page with the display
+  overrides applied (param parity between the twins). The page injects a
+  `SUTTA_DISPLAY` JS object (resolved layout, column `{uid, label}` list,
+  `show_references`) next to `SUTTA_UID` for the in-page menu/column bar.
+  **Error parity with `/sutta_content_block`:** an unknown `columns` uid →
+  **404** with the message ("Unknown column sutta uid: …"), other render
+  errors → 500 (shared `render_error_status` mapping in `api.rs`); an
+  unknown *sutta* uid stays the blank page + 404.
+- `GET /sutta_content_block?uid=…&layout=…&columns=…&show_references=…` —
+  returns only the `<div class='suttacentral bilara-text …'>` content block
+  (incl. the Columns-mode header row), no page chrome / `window_id`; used by
+  the in-page cogwheel menu and column bar to swap `#ssp_content` live.
+  400 on a bad `layout`, 404 with a message on an unknown sutta or column uid.
+  The 200 response carries an **`X-SSP-Columns` header**: the server-resolved
+  column list (after the Lines-mode non-segmented drop and the Repeat-Pāli
+  arrangement) as a percent-encoded JSON array of
+  `{uid, label, author, is_pali}` — same shape as `SUTTA_DISPLAY.columns`;
+  decode with `decodeURIComponent`. The client adopts it after the swap.
+- `GET /translations_for_sutta?uid=…` — JSON array of the other texts sharing
+  the sutta's reference, each entry `{item_uid, table_name, sutta_title,
+  sutta_ref, language, author, has_content_json}`. `has_content_json: false`
+  means the text is only available in the Columns layout.
+- `POST /save_sutta_display_settings` — body is a `SuttaDisplayDefaults` JSON
+  object (`layout`, `pali_font`, `translation_font`, `author_ink_colors`,
+  `author_bg_colors`); persists through `AppData` and refreshes the settings
+  cache, so a following render without params uses the new defaults.
+
+```sh
+# Three-column aligned view (every column segmented):
+curl -s -G "localhost:$PORT/sutta_content_block" \
+  --data-urlencode "uid=an4.1/en/sujato" \
+  --data-urlencode "layout=columns" \
+  --data-urlencode "columns=an4.1/en/sujato|an4.1/pli/ms|an4.1/en/kovilo"
+
+# Which texts can be columns (has_content_json)?
+curl -s -G "localhost:$PORT/translations_for_sutta" --data-urlencode "uid=an4.1/en/sujato"
+
+# Save new display defaults:
+curl -s -X POST "localhost:$PORT/save_sutta_display_settings" \
+  -H "Content-Type: application/json" -d '{"layout":"sidebyside"}'
+```
 
 ## 15. Other request / response structs
 

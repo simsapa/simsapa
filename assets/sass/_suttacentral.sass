@@ -136,3 +136,140 @@ $solarized_light_bg: #FAE6B2
 
   .variant, .comment
     font-size: 0.8em
+
+// --- Multi-column sutta view (Lines / Columns layouts) ---
+//
+// The segmented multi-column builder emits the same markup for both layouts
+// (per segment: one `span.colcell.col-<n>` cell per column, keeping the
+// translated/pali classes); only the CSS below differs. Typography and
+// per-column colors are driven by CSS custom properties set from the in-page
+// display settings menu; the fallbacks match the classic rendering above so
+// pages look unchanged until the user customises them.
+
+.suttacentral
+  span.segment
+    span.colcell
+      display: block
+      padding-top: 0.5em
+    // The weight/style vars are only set by JS while the Bold/Italic toggle
+    // is on; unset they fall back to inherit so template headings (h1 etc.
+    // wrapping a segment) keep their own weight.
+    span.colcell.translated
+      font-family: var(--tr-font-family, inherit)
+      font-size: var(--tr-font-size, 1em)
+      line-height: var(--tr-line-height, inherit)
+      font-weight: var(--tr-font-weight, inherit)
+      font-style: var(--tr-font-style, inherit)
+    span.colcell.pali
+      font-family: var(--pali-font-family, "Source Sans 3 SSP")
+      font-size: var(--pali-font-size, 0.8em)
+      line-height: var(--pali-line-height, inherit)
+      font-weight: var(--pali-font-weight, inherit)
+      font-style: var(--pali-font-style, inherit)
+
+  // Per-column ink / background colors (set by JS from the per-author color
+  // maps, keyed to the current column indexes).
+  @for $n from 0 through 11
+    .colcell.col-#{$n},
+    .sbs-col.col-#{$n}
+      color: var(--col-#{$n}-ink, inherit)
+      background-color: var(--col-#{$n}-bg, transparent)
+
+// Columns mode uses the full page width — the single-text reading measure
+// (body { max-width: 75ex } in suttas.sass plus the sutta_max_width
+// css_extra) fits one text only. body:has() out-specifies the inline
+// `body { max-width: …ex }` from css_extra (0,1,1 vs 0,0,1), and
+// re-evaluates automatically when a content-block swap changes the wrapper
+// classes. The sbs-blocks fallback wrapper carries layout-columns cols-N
+// too, so these rules cover both. Lines mode and single-column views keep
+// the narrow reading measure.
+body:has(.suttacentral.layout-columns)
+  max-width: 100vw
+
+// On very wide screens each column keeps the single-text reading measure:
+// the wrapper is centered and capped at N columns of --col-max-width (set
+// from AppSettings.sutta_max_width by the css_extra on body; 75ex default)
+// plus the column gaps. The #ssp_main prefix out-specifies the
+// `#ssp_main * { max-width: 100% }` rule in suttas.sass (1,3,0 vs 1,0,1).
+@for $n from 1 through 12
+  #ssp_main .suttacentral.layout-columns.cols-#{$n}
+    max-width: calc(#{$n} * var(--col-max-width, 75ex) * var(--width-scale, 1) + #{$n - 1} * 1em)
+    margin-left: auto
+    margin-right: auto
+
+// Columns (side-by-side): continuous per-column backgrounds. The per-cell
+// background above leaves the template block margins (paragraph gaps)
+// uncolored, so Columns mode paints full-height column stripes on the
+// wrapper instead — a hard-stop linear-gradient computed in JS from the
+// per-column bg colors and the flex geometry (see column_bg_gradient in
+// src-ts/display_settings.ts) — and turns the per-cell background off. The
+// sbs-blocks fallback is excluded: its .sbs-col divs already paint
+// continuous columns.
+.suttacentral.layout-columns:not(.sbs-blocks)
+  background-image: var(--cols-bg-image, none)
+  span.colcell
+    background-color: transparent
+
+// Columns (side-by-side): the cells of each segment become equal-width flex
+// columns. The per-segment reference anchor must keep full width and sit
+// above the cells, or it steals a column.
+// The cells carry inner side padding so the column background stripe edge
+// is never flush against the text.
+.suttacentral.layout-columns
+  span.segment
+    display: flex
+    column-gap: 1em
+    span.colcell
+      flex: 1 1 0
+      min-width: 0
+      padding-left: 0.75em
+      padding-right: 0.75em
+    span.reference
+      flex: 0 0 100%
+      order: -1
+
+  .column-headers
+    display: flex
+    column-gap: 1em
+    margin-top: 0.5em
+    margin-bottom: 0.5em
+    span.colcell
+      flex: 1 1 0
+      min-width: 0
+      padding-left: 0.75em
+      padding-right: 0.75em
+      font-family: "Source Sans 3 SSP"
+      font-weight: bold
+      text-align: center
+
+// Unaligned block-columns fallback (a selected text has no segmented
+// format): each text's standard whole-document rendering in one flex column.
+.suttacentral.sbs-blocks
+  .sbs-row
+    display: flex
+    column-gap: 1.5em
+    align-items: flex-start
+  .sbs-col
+    flex: 1 1 0
+    min-width: 0
+    padding: 0 0.75em
+  // The same font-group custom properties as the segmented builder's
+  // colcells: the display-settings typography must keep applying when a
+  // non-segmented column switches the render to this fallback.
+  .sbs-col.translated
+    font-family: var(--tr-font-family, inherit)
+    font-size: var(--tr-font-size, 1em)
+    line-height: var(--tr-line-height, inherit)
+    font-weight: var(--tr-font-weight, inherit)
+    font-style: var(--tr-font-style, inherit)
+  .sbs-col.pali
+    font-family: var(--pali-font-family, "Source Sans 3 SSP")
+    font-size: var(--pali-font-size, 0.8em)
+    line-height: var(--pali-line-height, inherit)
+    font-weight: var(--pali-font-weight, inherit)
+    font-style: var(--pali-font-style, inherit)
+  .sbs-col-header
+    font-family: "Source Sans 3 SSP"
+    font-weight: bold
+    text-align: center
+    padding-bottom: 0.5em

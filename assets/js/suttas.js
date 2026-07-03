@@ -135,6 +135,15 @@ class HamburgerMenu {
                 this.closeMenu();
             }
         });
+
+        // The find bar, the display settings panel and the hamburger menu
+        // overlap at the top-right: whichever opens announces itself on
+        // 'ssp-panel-open' and the other two close.
+        document.addEventListener('ssp-panel-open', (e) => {
+            if (e.detail && e.detail.panel !== 'menu' && this.isOpen) {
+                this.closeMenu();
+            }
+        });
     }
 
     toggleMenu() {
@@ -146,6 +155,9 @@ class HamburgerMenu {
     }
 
     openMenu() {
+        // Close the find bar / display settings panel (see the
+        // 'ssp-panel-open' listener in init()).
+        document.dispatchEvent(new CustomEvent('ssp-panel-open', { detail: { panel: 'menu' } }));
         this.isOpen = true;
         this.menuButton.classList.add('active');
         this.menuDropdown.classList.add('show');
@@ -269,56 +281,6 @@ function toggle_comment (event) {
     })
 }
 
-class TextResizeController {
-    constructor() {
-        this.increaseButton = document.getElementById('textSizeIncreaseButton');
-        this.decreaseButton = document.getElementById('textSizeDecreaseButton');
-        this.contentDiv = document.getElementById('ssp_content');
-        this.currentScale = this.getInitialScale();
-        this.minScale = 0.3;
-        this.maxScale = 2.0;
-        this.scaleStep = 0.1;
-        this.baseMaxWidth = 75;
-
-        this.init();
-    }
-
-    getInitialScale() {
-        const mediaQuery = window.matchMedia('(max-width: 768px)');
-        return mediaQuery.matches ? 0.8 : 1.0;
-    }
-
-    init() {
-        if (!this.increaseButton || !this.decreaseButton || !this.contentDiv) {
-            return;
-        }
-
-        this.increaseButton.addEventListener('click', () => this.increaseTextSize());
-        this.decreaseButton.addEventListener('click', () => this.decreaseTextSize());
-        this.applyScale();
-    }
-
-    increaseTextSize() {
-        if (this.currentScale < this.maxScale) {
-            this.currentScale += this.scaleStep;
-            this.applyScale();
-        }
-    }
-
-    decreaseTextSize() {
-        if (this.currentScale > this.minScale) {
-            this.currentScale -= this.scaleStep;
-            this.applyScale();
-        }
-    }
-
-    applyScale() {
-        this.contentDiv.style.fontSize = `${this.currentScale}em`;
-        const adjustedMaxWidth = this.baseMaxWidth * this.currentScale;
-        document.body.style.maxWidth = `${adjustedMaxWidth}ex`;
-    }
-}
-
 class ReadingModeController {
     constructor() {
         this.readingModeButton = document.getElementById('readingModeButton');
@@ -420,7 +382,6 @@ class ChapterNavigationController {
 
 document.addEventListener("DOMContentLoaded", function(_event) {
     new HamburgerMenu();
-    new TextResizeController();
     new ReadingModeController();
     new ChapterNavigationController();
     if (IS_MOBILE) {
@@ -811,10 +772,21 @@ document.addEventListener("DOMContentLoaded", function(_event) {
         });
     }
 
+    ssp_rebind_content_handlers();
+});
+
+// Re-binds the per-node handlers inside #ssp_content. Called at
+// DOMContentLoaded, and again by the webpack bundle's
+// reinit_sutta_content() (src-ts/content_reload.ts) after a content-block
+// swap replaces those nodes. The document-level delegated handlers above
+// (click / selectionchange / dblclick) survive swaps and must not be
+// re-registered here.
+function ssp_rebind_content_handlers() {
     document.querySelectorAll(".variant-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_variant);
     });
     document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_comment);
     });
-});
+}
+window.ssp_rebind_content_handlers = ssp_rebind_content_handlers;

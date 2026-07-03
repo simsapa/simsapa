@@ -39,6 +39,9 @@ tar = "0.4.44"
 bzip2 = "0.6.0"
 regex = "1.0"
 lazy_static = "1.5.0"
+# X-SSP-Columns header value encoding (JSON with non-ASCII labels; decoded
+# client-side with decodeURIComponent).
+percent-encoding = "2"
 rig-core = { version = "0.30.0", default-features = false, features = ["reqwest-rustls"] }
 tokio = { version = "1.0", features = ["full"] }
 

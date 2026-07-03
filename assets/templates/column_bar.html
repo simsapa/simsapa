@@ -1,0 +1,9 @@
+<!-- Bottom column bar: one text dropdown per displayed column, an "×" per
+     column, a trailing "+" to append a column. The dropdowns are rendered by
+     src-ts/column_bar.ts from GET /translations_for_sutta and the injected
+     SUTTA_DISPLAY state. Hidden (no .show) until the TS init runs, and in
+     the Solo layout. -->
+<div class="column-bar" id="columnBar">
+    <div class="column-bar-items" id="columnBarItems"></div>
+    <button type="button" class="column-bar-add" id="columnBarAdd" title="Add a column">+</button>
+</div>

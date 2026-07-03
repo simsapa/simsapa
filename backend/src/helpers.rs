@@ -12,6 +12,7 @@ use html_escape::decode_html_entities;
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
 
+use crate::app_settings::SuttaLayout;
 use crate::types::{SearchResult, WordInfo, WordProcessingOptions, WordProcessingResult, ProcessedWord, UnrecognizedWord};
 use crate::lookup::*;
 use crate::logger::{error, info};
@@ -2106,6 +2107,18 @@ pub fn bilara_text_to_segments(
 
 /// Converts an IndexMap of processed HTML segments into a single HTML string, preserving insertion order.
 pub fn bilara_content_json_to_html(content_json: &IndexMap<String, String>) -> Result<String> {
+    bilara_content_json_to_html_with_class(content_json, "", "")
+}
+
+/// Like `bilara_content_json_to_html`, but with extra classes appended to the
+/// `suttacentral bilara-text` wrapper div (e.g. `layout-columns cols-3`) and
+/// optional HTML emitted inside the wrapper before the article content (used
+/// for the Columns-mode column header row).
+pub fn bilara_content_json_to_html_with_class(
+    content_json: &IndexMap<String, String>,
+    wrapper_extra_classes: &str,
+    pre_content_html: &str,
+) -> Result<String> {
     // IndexMap preserves insertion order from JSON, so no custom sorting needed
     let page: String = content_json
         .values()
@@ -2116,45 +2129,66 @@ pub fn bilara_content_json_to_html(content_json: &IndexMap<String, String>) -> R
     let body = html_get_sutta_page_body(&page)?;
     let processed_body = bilara_html_post_process(&body);
 
-    let content_html = format!("<div class='suttacentral bilara-text'>{}</div>", processed_body);
+    let wrapper_classes = if wrapper_extra_classes.is_empty() {
+        "suttacentral bilara-text".to_string()
+    } else {
+        format!("suttacentral bilara-text {}", wrapper_extra_classes)
+    };
+
+    let content_html = format!("<div class='{}'>{}{}</div>", wrapper_classes, pre_content_html, processed_body);
 
     Ok(content_html)
 }
 
-/// Creates line-by-line HTML view combining translated and Pali segments using IndexMaps.
-pub fn bilara_line_by_line_html(
-    translated_content_json: &IndexMap<String, String>,
-    pali_content_json: &IndexMap<String, String>,
+/// One column of the multi-column sutta view: a source text with its
+/// per-segment HTML (built per column with that text's own
+/// variants/comments/glosses via `sutta_to_segments_json(col, false, …)`).
+#[derive(Debug, Clone)]
+pub struct ColumnSource {
+    pub uid: String,
+    /// Column header label: "Pāli" or the translator/author.
+    pub label: String,
+    pub is_pali: bool,
+    pub segments: IndexMap<String, String>,
+}
+
+/// Creates the multi-column sutta view combining the segments of N column
+/// sources, in both Lines (line-by-line, stacked cells) and Columns
+/// (side-by-side, flex cells) layout. The two layouts share this markup —
+/// the difference is CSS only (see `assets/sass/_suttacentral.sass`), never
+/// DOM block-splitting: the Bilara template is not self-contained per segment
+/// (a block tag can open in one segment's template and close in a later one),
+/// so the template structure must never be cut.
+pub fn bilara_multi_column_html(
+    columns: &[ColumnSource],
     tmpl_json: &IndexMap<String, String>,
     show_references: bool,
+    layout: SuttaLayout,
 ) -> Result<String> {
     let mut content_json: IndexMap<String, String> = IndexMap::new();
 
     // Iterate through the template map, which holds the full document structure
-    // in order. The template is a superset of both the translated and Pali
-    // segment keys, so iterating it (rather than the translated map alone)
-    // ensures Pali-only segments — those that have no corresponding translation
-    // segment, e.g. "Idaṁ vuccati, bhikkhave, vaggakammaṁ." in
-    // pli-tv-kd9/en/brahmali — are not dropped from the line-by-line view.
+    // in order. The template is a superset of every column's segment keys, so
+    // iterating it (rather than any one column's map) ensures segments present
+    // in only some columns — e.g. Pali-only segments like
+    // "Idaṁ vuccati, bhikkhave, vaggakammaṁ." in pli-tv-kd9/en/brahmali —
+    // are not dropped from the view.
     //
-    // Fall back to the union of translated + Pali keys for the (unexpected) case
+    // Fall back to the union of all columns' keys for the (unexpected) case
     // of a missing/empty template, so no segment is ever silently lost.
     let ordered_keys: Vec<String> = if tmpl_json.is_empty() {
-        let mut keys: Vec<String> = translated_content_json.keys().cloned().collect();
-        for k in pali_content_json.keys() {
-            if !translated_content_json.contains_key(k) {
-                keys.push(k.clone());
+        let mut keys: indexmap::IndexSet<String> = indexmap::IndexSet::new();
+        for col in columns {
+            for k in col.segments.keys() {
+                keys.insert(k.clone());
             }
         }
-        keys
+        keys.into_iter().collect()
     } else {
         tmpl_json.keys().cloned().collect()
     };
 
     for i in &ordered_keys {
-        let translated_segment = translated_content_json.get(i).cloned().unwrap_or_default();
-        let pali_segment = pali_content_json.get(i).cloned().unwrap_or_default(); // Get Pali or empty string
-
         // Generate reference anchor for this segment only if show_references is true
         let reference_anchor = if show_references {
             generate_reference_anchor(i)
@@ -2162,9 +2196,19 @@ pub fn bilara_line_by_line_html(
             String::new()
         };
 
+        let mut cells = String::new();
+        for (n, col) in columns.iter().enumerate() {
+            let segment = col.segments.get(i).cloned().unwrap_or_default();
+            let kind = if col.is_pali { "pali" } else { "translated" };
+            cells.push_str(&format!(
+                "<span class='colcell col-{} {}' data-uid='{}'>{}</span>",
+                n, kind, col.uid, segment,
+            ));
+        }
+
         let combined_segment = format!(
-            "<span class='segment' id='{}'>{}<span class='translated'>{}</span><span class='pali'>{}</span></span>",
-            i, reference_anchor, translated_segment, pali_segment
+            "<span class='segment' id='{}'>{}{}</span>",
+            i, reference_anchor, cells,
         );
 
         // Apply template if available
@@ -2176,8 +2220,53 @@ pub fn bilara_line_by_line_html(
         }
     }
 
-    // Convert the combined segments map (which now respects template structure) to final HTML
-    bilara_content_json_to_html(&content_json)
+    let layout_class = match layout {
+        SuttaLayout::LineByLine => "layout-lines",
+        SuttaLayout::SideBySide => "layout-columns",
+        // Not reached: Solo renders via the standard whole-document path in
+        // render_content_block_for_columns, never through this builder.
+        SuttaLayout::Solo => "layout-lines",
+    };
+    let wrapper_extra_classes = format!("{} cols-{}", layout_class, columns.len());
+
+    // Column header row: Columns mode only (one labelled cell per column,
+    // aligned by the same flex rules as the segment cells).
+    let header_html = if layout == SuttaLayout::SideBySide {
+        let header_cells: String = columns.iter().enumerate().map(|(n, col)| {
+            let kind = if col.is_pali { "pali" } else { "translated" };
+            format!(
+                "<span class='colcell col-{} {}' data-uid='{}'>{}</span>",
+                n, kind, col.uid, col.label,
+            )
+        }).collect();
+        format!("<div class='column-headers'>{}</div>", header_cells)
+    } else {
+        String::new()
+    };
+
+    bilara_content_json_to_html_with_class(&content_json, &wrapper_extra_classes, &header_html)
+}
+
+/// Unaligned block-columns fallback for column sets that include a
+/// non-segmented text: each text's standard whole-document rendering is
+/// placed in one flex column. This is deliberately a separate, simple code
+/// path from the segmented `bilara_multi_column_html` builder (PRD §11.3).
+///
+/// `columns` items are `(label, uid, is_pali, standard_rendered_html)`. The
+/// `pali` / `translated` class carries the font-group CSS custom properties
+/// (--pali-font-family etc.), same as the segmented builder's colcells.
+pub fn multi_column_html_blocks(columns: &[(String, String, bool, String)]) -> String {
+    let cols: String = columns.iter().enumerate().map(|(n, (label, col_uid, is_pali, html))| {
+        format!(
+            "<div class='sbs-col col-{} {}' data-uid='{}'><div class='sbs-col-header'>{}</div>{}</div>",
+            n, if *is_pali { "pali" } else { "translated" }, col_uid, label, html,
+        )
+    }).collect();
+
+    format!(
+        "<div class='suttacentral bilara-text layout-columns cols-{} sbs-blocks'><div class='sbs-row'>{}</div></div>",
+        columns.len(), cols,
+    )
 }
 
 /// Convenience function to convert Bilara text JSON directly to HTML.

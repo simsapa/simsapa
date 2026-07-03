@@ -4,6 +4,9 @@ import "./confirm_modal";
 import "./footnote_modal";
 import "./invalid_link_modal";
 import { footnote_bottom_bar } from "./footnote_bottom_bar";
+import * as display_settings from "./display_settings";
+import * as content_reload from "./content_reload";
+import * as column_bar from "./column_bar";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -149,5 +152,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const sspContent = document.getElementById('ssp_content');
     if (sspContent && document.SSP.show_bottom_footnotes) {
         footnote_bottom_bar.init();
+    }
+
+    // Display-settings cogwheel panel: only present on sutta pages
+    // (init is a no-op when the chrome is absent). Layout / Repeat Pāli
+    // changes re-render the content block through the localhost API.
+    if (document.getElementById('displaySettingsButton')) {
+        display_settings.set_rerender_handler((layout, repeat_pali) => {
+            content_reload.refetch_with_params(layout, repeat_pali);
+        });
+        display_settings.init_display_settings();
+    }
+
+    // Bottom column bar: only present on sutta pages (init is a no-op when
+    // the chrome is absent). Column changes re-render the content block.
+    if (document.getElementById('columnBar')) {
+        column_bar.init_column_bar();
     }
 });
