@@ -1885,11 +1885,30 @@ pub fn compact_rich_text(text: &str) -> String {
 }
 
 pub fn sutta_html_to_plain_text(html: &str) -> String {
-    // Remove <header> element so that nikāya names etc. are not included in the fulltext index.
+    // Remove the <header> and <footer> boilerplate so that nikāya / vagga /
+    // division / subdivision names and publication credits are not included in
+    // the fulltext index. The sutta title (the <h1> inside the header) is
+    // preserved — including any leading reference number.
+    //
+    // Both regexes are DOTALL (`(?s)`) because every shipped <header> is
+    // multi-line (the old non-DOTALL regex silently stripped nothing). The
+    // <footer> is always emitted as `<footer class='noindex'>` by
+    // `bilara_html_post_process`, but the `[^>]*` tolerates the bare form too.
     lazy_static! {
-        static ref RE_HEADER: Regex = Regex::new(r"<header(.*?)</header>").unwrap();
+        static ref RE_HEADER: Regex = Regex::new(r"(?s)<header\b[^>]*>.*?</header>").unwrap();
+        static ref RE_H1: Regex = Regex::new(r"(?s)<h1\b[^>]*>.*?</h1>").unwrap();
+        static ref RE_FOOTER: Regex = Regex::new(r"(?s)<footer\b[^>]*>.*?</footer>").unwrap();
     }
-    let s = RE_HEADER.replace(html, "").to_string();
+    // Replace each header region with just its <h1> title (if any).
+    let s = RE_HEADER
+        .replace_all(html, |caps: &regex::Captures| {
+            match RE_H1.find(&caps[0]) {
+                Some(m) => m.as_str().to_string(),
+                None => String::new(),
+            }
+        })
+        .to_string();
+    let s = RE_FOOTER.replace_all(&s, "").to_string();
     compact_rich_text(&s)
 }
 
@@ -2928,6 +2947,85 @@ mod tests {
         // The resulting plain text must not contain the sutta name.
         let plain = compact_rich_text(&dpd_strip_sutta_ref_paragraphs(input));
         assert!(!plain.contains("kaccāna"));
+    }
+
+    #[test]
+    fn test_sutta_html_to_plain_text_html_header_footer() {
+        // ja239 shape: multi-line header with division/subdivision markup and an
+        // <h1> title (incl. leading number), plus a trailing footer.
+        let input = "<article>\n\
+            <header>\n\
+              <ul>\n\
+                <li class='division'>Stories of the Buddha's Former Births</li>\n\
+                <li class='subdivision'>Book 2. Dukanipāta</li>\n\
+              </ul>\n\
+              <h1>239. Harita-Mata Jātaka</h1>\n\
+            </header>\n\
+            <p>\"Whoever, once at peace,\" etc.</p>\n\
+            <footer class='noindex'>\n\
+              The Jātaka or Stories of the Buddha's Former Births.\n\
+            </footer>\n\
+            </article>";
+        let plain = sutta_html_to_plain_text(input);
+        assert!(plain.contains("239"), "leading number preserved: {plain}");
+        assert!(plain.contains("harita"), "title preserved: {plain}");
+        assert!(!plain.contains("former births book"), "division/subdivision removed: {plain}");
+        assert!(!plain.contains("stories of the buddha"), "footer removed: {plain}");
+        assert!(plain.contains("whoever"), "body preserved: {plain}");
+    }
+
+    #[test]
+    fn test_sutta_html_to_plain_text_bilara_shape() {
+        // Bilara JSON path renders the title as <h1 class='sutta-title'> inside
+        // <header>, with preceding division segments and a noindex footer.
+        // sn1.10-style (title an early segment).
+        let sn = "<header>\n\
+            <ul><li class='division'>Saṁyutta Nikāya 1</li>\
+            <li class='subdivision'>10. 1. Naḷavagga</li></ul>\n\
+            <h1 class='sutta-title'>Araññasutta</h1></header>\n\
+            <p>Sāvatthinidānaṁ.</p>\n\
+            <footer class='noindex'>Translated by ...</footer>";
+        let plain = sn.to_string();
+        let plain = sutta_html_to_plain_text(&plain);
+        assert!(plain.contains("araññasutta"), "title kept: {plain}");
+        assert!(plain.contains("sāvatthinidānaṁ"), "body kept: {plain}");
+        assert!(!plain.contains("naḷavagga"), "vagga removed: {plain}");
+        assert!(!plain.contains("saṁyutta nikāya"), "nikāya removed: {plain}");
+        assert!(!plain.contains("translated by"), "footer removed: {plain}");
+
+        // thag7.3-style (title a later segment): more collection levels.
+        let thag = "<header>\n\
+            <ul><li class='division'>Verses of the Senior Monks</li>\
+            <li class='subdivision'>The Book of the Sevens</li>\
+            <li class='subdivision'>Chapter One</li></ul>\n\
+            <h1 class='sutta-title'>Sopāka</h1></header>\n\
+            <p>The teacher saw me.</p>";
+        let plain2 = sutta_html_to_plain_text(thag);
+        assert!(plain2.contains("sopāka"), "title kept: {plain2}");
+        assert!(!plain2.contains("senior monks"), "division removed: {plain2}");
+        assert!(!plain2.contains("book of the sevens"), "subdivision removed: {plain2}");
+    }
+
+    #[test]
+    fn test_sutta_html_to_plain_text_cst_header_shape() {
+        // CST uses an <h3> for the nikāya line instead of <ul><li>.
+        let input = "<header>\n\
+            <h3>Saṁyuttanikāyo 1.10</h3>\n\
+            <h1>10. Araññasuttaṁ</h1></header>\n\
+            <p>Body text.</p>";
+        let plain = sutta_html_to_plain_text(input);
+        assert!(plain.contains("araññasuttaṁ"), "title kept: {plain}");
+        assert!(!plain.contains("saṁyuttanikāyo"), "h3 nikāya removed: {plain}");
+    }
+
+    #[test]
+    fn test_sutta_html_to_plain_text_idempotent() {
+        let input = "<header>\n<ul><li class='division'>Div</li></ul>\n\
+            <h1>1. Title</h1></header>\n<p>Body</p>\n\
+            <footer class='noindex'>Credits</footer>";
+        let once = sutta_html_to_plain_text(input);
+        let twice = sutta_html_to_plain_text(&once);
+        assert_eq!(once, twice, "second pass is a no-op");
     }
 
     #[test]

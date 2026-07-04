@@ -84,35 +84,35 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
 - **Ordering:** header/footer removal happens on the raw HTML, before
   `compact_rich_text` strips remaining tags.
 
-- [ ] 1.0 Fix and centralize sutta header/footer removal in the plain-text pass
-  - [ ] 1.1 In `sutta_html_to_plain_text`, replace the `RE_HEADER` regex with a
+- [x] 1.0 Fix and centralize sutta header/footer removal in the plain-text pass
+  - [x] 1.1 In `sutta_html_to_plain_text`, replace the `RE_HEADER` regex with a
         multi-line-safe (`(?s)`) match of `<header\b[^>]*>…</header>` whose
         replacement **preserves the inner `<h1>…</h1>`** (keep the h1 element/text,
         drop the surrounding `<ul>`/`<li>` division/subdivision markup and header
         tags). If no `<h1>` is present, the whole header is removed.
-  - [ ] 1.2 Add a multi-line-safe footer removal (`(?s)<footer\b[^>]*>.*?</footer>`
+  - [x] 1.2 Add a multi-line-safe footer removal (`(?s)<footer\b[^>]*>.*?</footer>`
         → empty) matching `<footer class='noindex'>` (and any bare `<footer>` for
         robustness). Apply before `compact_rich_text`.
-  - [ ] 1.3 Confirm ordering: header + footer removal run on the raw HTML string
+  - [x] 1.3 Confirm ordering: header + footer removal run on the raw HTML string
         first, then the existing `compact_rich_text(&s)` call; verify the `<h1>`
         text survives `compact_rich_text` (word boundaries around tags).
-  - [ ] 1.4 Add a unit test for the **HTML path** (ja239 shape): a multi-line
+  - [x] 1.4 Add a unit test for the **HTML path** (ja239 shape): a multi-line
         `<header>` with `<ul><li class='division'>…</li><li class='subdivision'>…</li></ul>`
         + `<h1>239. Harita-Mata Jātaka</h1>`, and a trailing `<footer>…</footer>`.
         Assert the title (incl. `239`) is present and the division/subdivision and
         footer text are absent.
-  - [ ] 1.5 Add a unit test for the **Bilara JSON path** shape: render an
+  - [x] 1.5 Add a unit test for the **Bilara JSON path** shape: render an
         `<h1 class='sutta-title'>` title with preceding `<ul><li class='division'>`
         header segments and a `<footer class='noindex'>` (sn1.10 and a thag7.3-style
         case where the title is a later segment). Assert the title survives, nikāya/
         vagga are removed, and the noindex footer is removed.
-  - [ ] 1.5a Add a unit test for the **CST header shape**
+  - [x] 1.5a Add a unit test for the **CST header shape**
         (`<header><h3>Saṁyuttanikāyo 1.10</h3><h1>10. Araññasuttaṁ</h1></header>`):
         assert the `<h1>` title survives and the `<h3>` nikāya line is removed
         (different markup from the SuttaCentral `<ul><li>` shape, same rule).
-  - [ ] 1.6 Add a regression test asserting idempotency: running
+  - [x] 1.6 Add a regression test asserting idempotency: running
         `sutta_html_to_plain_text` twice yields the same result.
-  - [ ] 1.7 Run `cd backend && cargo test` and `make build -B`; confirm the new and
+  - [x] 1.7 Run `cd backend && cargo test` and `make build -B`; confirm the new and
         existing tests pass.
 
 ### Specs & dependencies for 2.0
