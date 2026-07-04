@@ -29,7 +29,7 @@ Source PRD: `tasks/2026-07-04-075328-prd---dpd-epd-word-links.md`
 
 ---
 
-## Task 1.0 — Bootstrap text-processing: rewrite epd word items into `ssp://word_lookup` links
+## Task 1.0 ✅ — Bootstrap text-processing: rewrite epd word items into `ssp://word_lookup` links
 
 **Specs / context to keep in mind:**
 - **Input markup (unquoted attr):** `<b class=epd>attamana</b> adj. pleased; ...<br>` — note `class=epd` is **unquoted** in the shipped HTML. ~77,850 dpd `dict_words` rows contain `epd`.
@@ -41,15 +41,15 @@ Source PRD: `tasks/2026-07-04-075328-prd---dpd-epd-word-links.md`
 
 **Depends on:** nothing (self-contained backend/cli change).
 
-- [ ] 1.1 Add the `urlencoding` dependency to `backend/Cargo.toml` (match the version used by the `cli` crate / `dppn.rs`).
-- [ ] 1.2 In `backend/src/helpers.rs`, add a `lazy_static` regex that matches a bare `<b class=epd>...</b>` item (unquoted `class=epd`), capturing the inner word text.
-- [ ] 1.3 Implement `pub fn dpd_convert_epd_word_links(html: &str) -> String` that replaces each matched item with `<a class="epd word_link" href="ssp://word_lookup/{encoded}">{word}</a>`, where `encoded = urlencoding::encode(word.trim())` and `{word}` is the original inner text. Leave any `<b class=epd>` already inside/adjacent to an existing `ssp://word_lookup/` anchor untouched (idempotency guard).
-- [ ] 1.4 Add `#[cfg(test)]` unit tests in `helpers.rs`: single item, multiple items on one `<br>`-separated line, a word with diacritics (e.g. `pīṇa` → verify percent-encoding), the unquoted-attribute form, and an idempotency test (running the transform twice yields the same output).
-- [ ] 1.5 In `backend/src/db/dpd.rs`, add `pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()>` modeled on `convert_dpd_example_sutta_links`: batched scan of `dict_words WHERE dict_label='dpd' AND definition_html LIKE '%class=epd%' AND id > ? ORDER BY id LIMIT ?`, per-batch transaction, call `dpd_convert_epd_word_links` on `definition_html`, recompute `definition_plain` from the rewritten HTML via `compact_rich_text`, and UPDATE only when changed.
-- [ ] 1.6 In `cli/src/bootstrap/dpd.rs` `dpd_bootstrap()`, call `simsapa_backend::db::dpd::convert_dpd_epd_word_links(&dict_db_path)` after `convert_dpd_example_sutta_links(...)` and before `create_dictionaries_fts5_indexes(...)`, with the same error-wrapping/logging style.
-- [ ] 1.7 Run `cd backend && cargo test` for the new transform tests and confirm a clean `make build -B`.
+- [x] 1.1 Add the `urlencoding` dependency to `backend/Cargo.toml` (match the version used by the `cli` crate / `dppn.rs`).
+- [x] 1.2 In `backend/src/helpers.rs`, add a `lazy_static` regex that matches a bare `<b class=epd>...</b>` item (unquoted `class=epd`), capturing the inner word text.
+- [x] 1.3 Implement `pub fn dpd_convert_epd_word_links(html: &str) -> String` that replaces each matched item with `<a class="epd word_link" href="ssp://word_lookup/{encoded}">{word}</a>`, where `encoded = urlencoding::encode(word.trim())` and `{word}` is the original inner text. Leave any `<b class=epd>` already inside/adjacent to an existing `ssp://word_lookup/` anchor untouched (idempotency guard).
+- [x] 1.4 Add `#[cfg(test)]` unit tests in `helpers.rs`: single item, multiple items on one `<br>`-separated line, a word with diacritics (e.g. `pīṇa` → verify percent-encoding), the unquoted-attribute form, and an idempotency test (running the transform twice yields the same output).
+- [x] 1.5 In `backend/src/db/dpd.rs`, add `pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()>` modeled on `convert_dpd_example_sutta_links`: batched scan of `dict_words WHERE dict_label='dpd' AND definition_html LIKE '%class=epd%' AND id > ? ORDER BY id LIMIT ?`, per-batch transaction, call `dpd_convert_epd_word_links` on `definition_html`, recompute `definition_plain` from the rewritten HTML via `compact_rich_text`, and UPDATE only when changed.
+- [x] 1.6 In `cli/src/bootstrap/dpd.rs` `dpd_bootstrap()`, call `simsapa_backend::db::dpd::convert_dpd_epd_word_links(&dict_db_path)` after `convert_dpd_example_sutta_links(...)` and before `create_dictionaries_fts5_indexes(...)`, with the same error-wrapping/logging style.
+- [x] 1.7 Run `cd backend && cargo test` for the new transform tests and confirm a clean `make build -B`.
 
-## Task 2.0 — DPD word-link styling
+## Task 2.0 ✅ — DPD word-link styling
 
 **Specs / context to keep in mind:**
 - The DPD word page is rendered with `assets/dpd-res/dpd-css-and-fonts.css`. Existing precedent: `a.sutta_link` (`:163`) and `a.sutta_link:hover` (`:170`) use `var(--primary-text)` / `var(--primary-alt)`. The `:root` block injected into each word page defines `--primary`, `--primary-alt`, `--primary-text` (see the `happy/dpd` page `<style>`).
@@ -57,11 +57,11 @@ Source PRD: `tasks/2026-07-04-075328-prd---dpd-epd-word-links.md`
 
 **Depends on:** the class name chosen in Task 1.0 (1.3).
 
-- [ ] 2.1 Add `a.word_link { ... }` to `assets/dpd-res/dpd-css-and-fonts.css` giving linked words a distinct, intentional link affordance (e.g. `var(--primary)` color, no underline until hover), and an `a.word_link:hover { ... }` rule (color shift + underline), mirroring the `a.sutta_link` rules.
-- [ ] 2.2 Confirm the rule reads correctly against the `--primary*` variables in both light and dark contexts (the variables are theme-driven), and that it doesn't visually clash with the inherited `.epd` rule (adjust specificity/precedence as needed).
-- [ ] 2.3 If a sass source drives this CSS, update it too; otherwise edit the CSS directly (verify whether `dpd-css-and-fonts.css` is generated or hand-maintained before editing).
+- [x] 2.1 Add `a.word_link { ... }` to `assets/dpd-res/dpd-css-and-fonts.css` giving linked words a distinct, intentional link affordance (e.g. `var(--primary)` color, no underline until hover), and an `a.word_link:hover { ... }` rule (color shift + underline), mirroring the `a.sutta_link` rules.
+- [x] 2.2 Confirm the rule reads correctly against the `--primary*` variables in both light and dark contexts (the variables are theme-driven), and that it doesn't visually clash with the inherited `.epd` rule (adjust specificity/precedence as needed). — `a.word_link` (element+class) outranks `.epd` (single class), so it wins the colour; both use `--primary*`.
+- [x] 2.3 If a sass source drives this CSS, update it too; otherwise edit the CSS directly (verify whether `dpd-css-and-fonts.css` is generated or hand-maintained before editing). — Confirmed hand-maintained (sass pipeline outputs to `assets/css/`, not `dpd-res/`; no `sutta_link`/`epd` rules in `sass/dpd/`), edited CSS directly.
 
-## Task 3.0 — Combined-lookup signal path (route → C++ → QML)
+## Task 3.0 ✅ — Combined-lookup signal path (route → C++ → QML)
 
 **Specs / context to keep in mind:**
 - **Full chain to mirror (DPPN):** `POST /dppn_lookup` (`api.rs:375`) → `callback_run_dppn_dictionary_query` (extern decl `api.rs:224`) → `cpp/gui.cpp:100` emits `signal_run_dppn_dictionary_query` → `cpp/window_manager.cpp:176` connects signal→slot → slot (`:412`) does `QMetaObject::invokeMethod(m_root, "run_dppn_dictionary_query", Q_ARG(QString, query))` → QML `run_dppn_dictionary_query` (`SuttaSearchWindow.qml:1330`).
@@ -72,17 +72,17 @@ Source PRD: `tasks/2026-07-04-075328-prd---dpd-epd-word-links.md`
 
 **Depends on:** nothing structural (independent of Tasks 1/2), but conceptually the front-end (Task 4) will call this route.
 
-- [ ] 3.1 In `bridges/src/api.rs`, add a `WordLookupRequest { window_id: String, query: String }` deserialize struct (or reuse the DPPN struct shape) and a `#[post("/word_lookup", data = "<request>")] fn word_lookup(...)` that calls `ffi::callback_run_combined_dictionary_query(window_id, query)` and returns `Status::Ok`.
-- [ ] 3.2 Add `fn callback_run_combined_dictionary_query(window_id: QString, query: QString);` to the `extern "C++"` block (next to `callback_run_dppn_dictionary_query`, ~line 224).
-- [ ] 3.3 Register `word_lookup` in the Rocket `.mount(...)` route list (next to `dppn_lookup`, ~line 1814).
-- [ ] 3.4 In `cpp/gui.h`, declare `void callback_run_combined_dictionary_query(QString window_id, QString query);`.
-- [ ] 3.5 In `cpp/gui.cpp`, implement it to `emit AppGlobals::manager->signal_run_combined_dictionary_query(window_id, query);`.
-- [ ] 3.6 In `cpp/window_manager.h`, declare the `signal_run_combined_dictionary_query(const QString&, const QString&)` signal and the `run_combined_dictionary_query(const QString&, const QString&)` slot.
-- [ ] 3.7 In `cpp/window_manager.cpp`, add the `QObject::connect(this, &WindowManager::signal_run_combined_dictionary_query, this, &WindowManager::run_combined_dictionary_query);` in the constructor, and implement the slot to find the window by `window_id` and `QMetaObject::invokeMethod(m_root, "run_combined_dictionary_query", Q_ARG(QString, query))` (mirror `run_dppn_dictionary_query`).
-- [ ] 3.8 In `assets/qml/SuttaSearchWindow.qml`, add `function run_combined_dictionary_query(query: string)`: guard empty query, reveal sidebar + activate Results tab (idx 0), `search_bar_input.set_search_area("Dictionary")`, select the `"Combined"` search mode in `search_mode_dropdown`, ensure the dictionary filter is correct (clear any solo-lock as described in specs), set `search_bar_input.search_input.text = query`, and `root.handle_query(query, 1)`. Use `Logger` (not `console`) for any logging.
-- [ ] 3.9 Confirm a clean `make build -B` (verifies the Rust route, the CXX bridge, and the C++ signal wiring all compile/link).
+- [x] 3.1 In `bridges/src/api.rs`, add a `WordLookupRequest { window_id: String, query: String }` deserialize struct (or reuse the DPPN struct shape) and a `#[post("/word_lookup", data = "<request>")] fn word_lookup(...)` that calls `ffi::callback_run_combined_dictionary_query(window_id, query)` and returns `Status::Ok`.
+- [x] 3.2 Add `fn callback_run_combined_dictionary_query(window_id: QString, query: QString);` to the `extern "C++"` block (next to `callback_run_dppn_dictionary_query`, ~line 224).
+- [x] 3.3 Register `word_lookup` in the Rocket `.mount(...)` route list (next to `dppn_lookup`, ~line 1814).
+- [x] 3.4 In `cpp/gui.h`, declare `void callback_run_combined_dictionary_query(QString window_id, QString query);`.
+- [x] 3.5 In `cpp/gui.cpp`, implement it to `emit AppGlobals::manager->signal_run_combined_dictionary_query(window_id, query);`.
+- [x] 3.6 In `cpp/window_manager.h`, declare the `signal_run_combined_dictionary_query(const QString&, const QString&)` signal and the `run_combined_dictionary_query(const QString&, const QString&)` slot.
+- [x] 3.7 In `cpp/window_manager.cpp`, add the `QObject::connect(this, &WindowManager::signal_run_combined_dictionary_query, this, &WindowManager::run_combined_dictionary_query);` in the constructor, and implement the slot to find the window by `window_id` and `QMetaObject::invokeMethod(m_root, "run_combined_dictionary_query", Q_ARG(QString, query))` (mirror `run_dppn_dictionary_query`).
+- [x] 3.8 In `assets/qml/SuttaSearchWindow.qml`, add `function run_combined_dictionary_query(query: string)`: guard empty query, reveal sidebar + activate Results tab (idx 0), `search_bar_input.set_search_area("Dictionary")`, select the `"Combined"` search mode in `search_mode_dropdown`, ensure the dictionary filter is correct (clear any solo-lock as described in specs), set `search_bar_input.search_input.text = query`, and `root.handle_query(query, 1)`. Use `Logger` (not `console`) for any logging.
+- [x] 3.9 Confirm a clean `make build -B` (verifies the Rust route, the CXX bridge, and the C++ signal wiring all compile/link).
 
-## Task 4.0 — Front-end link handling for `ssp://word_lookup`
+## Task 4.0 ✅ — Front-end link handling for `ssp://word_lookup`
 
 **Specs / context to keep in mind:**
 - **Reference:** the `ssp://dppn_lookup/` branch in `handle_link_click` (`src-ts/helpers.ts:428`) and the `run_dppn_lookup` helper (`:361`) which POSTs `{ window_id, query }` to `/dppn_lookup`.
@@ -91,10 +91,10 @@ Source PRD: `tasks/2026-07-04-075328-prd---dpd-epd-word-links.md`
 
 **Depends on:** Task 3.0 (the `/word_lookup` route must exist for the POST to succeed) and Task 1.0 (the link form the DB now emits).
 
-- [ ] 4.1 In `src-ts/helpers.ts`, add `async function run_word_lookup(word: string)` mirroring `run_dppn_lookup`: POST to `${API_URL}/word_lookup` with `{ window_id: WINDOW_ID, query: word }`, logging failures via `log_error`.
-- [ ] 4.2 In `handle_link_click`, add a branch (placed alongside the `ssp://dppn_lookup/` case, before the sutta-UID extraction): if `href.startsWith('ssp://word_lookup/')`, `event.preventDefault()`, decode the word (`decodeURIComponent`, with try/catch fallback), and call `run_word_lookup(word)`.
-- [ ] 4.3 Add `run_word_lookup` to the module `export { ... }` block.
-- [ ] 4.4 Rebuild the bundle with `npx webpack` and confirm `assets/js/simsapa.min.js` updates without errors.
+- [x] 4.1 In `src-ts/helpers.ts`, add `async function run_word_lookup(word: string)` mirroring `run_dppn_lookup`: POST to `${API_URL}/word_lookup` with `{ window_id: WINDOW_ID, query: word }`, logging failures via `log_error`.
+- [x] 4.2 In `handle_link_click`, add a branch (placed alongside the `ssp://dppn_lookup/` case, before the sutta-UID extraction): if `href.startsWith('ssp://word_lookup/')`, `event.preventDefault()`, decode the word (`decodeURIComponent`, with try/catch fallback), and call `run_word_lookup(word)`.
+- [x] 4.3 Add `run_word_lookup` to the module `export { ... }` block.
+- [x] 4.4 Rebuild the bundle with `npx webpack` and confirm `assets/js/simsapa.min.js` updates without errors.
 
 ## Task 5.0 — Integration & verification
 

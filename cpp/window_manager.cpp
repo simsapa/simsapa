@@ -174,6 +174,7 @@ WindowManager::WindowManager(QApplication* app, QObject* parent)
     QObject::connect(this, &WindowManager::signal_run_summary_query, this, &WindowManager::run_summary_query);
     QObject::connect(this, &WindowManager::signal_run_sutta_menu_action, this, &WindowManager::run_sutta_menu_action);
     QObject::connect(this, &WindowManager::signal_run_dppn_dictionary_query, this, &WindowManager::run_dppn_dictionary_query);
+    QObject::connect(this, &WindowManager::signal_run_combined_dictionary_query, this, &WindowManager::run_combined_dictionary_query);
     QObject::connect(this, &WindowManager::signal_open_sutta_search_window, this, &WindowManager::open_sutta_search_window_with_query);
     QObject::connect(this, &WindowManager::signal_open_sutta_tab, this, &WindowManager::open_sutta_tab_in_window);
     QObject::connect(this, &WindowManager::signal_toggle_reading_mode, this, &WindowManager::toggle_reading_mode);
@@ -426,6 +427,25 @@ void WindowManager::run_dppn_dictionary_query(const QString& window_id, const QS
     }
 
     QMetaObject::invokeMethod(target_window->m_root, "run_dppn_dictionary_query", Q_ARG(QString, query));
+}
+
+void WindowManager::run_combined_dictionary_query(const QString& window_id, const QString& query) {
+    SuttaSearchWindow* target_window = nullptr;
+    for (auto w : this->sutta_search_windows) {
+        QVariant prop = w->m_root->property("window_id");
+        if (prop.isValid() && prop.toString() == window_id) {
+            target_window = w;
+            break;
+        }
+    }
+
+    if (target_window == nullptr || target_window->m_root == nullptr) {
+        QString msg = QString("run_combined_dictionary_query: no window found for window_id: %1").arg(window_id);
+        log_error_c(msg.toUtf8().constData());
+        return;
+    }
+
+    QMetaObject::invokeMethod(target_window->m_root, "run_combined_dictionary_query", Q_ARG(QString, query));
 }
 
 void WindowManager::run_sutta_menu_action(const QString& window_id, const QString& action, const QString& query_text) {

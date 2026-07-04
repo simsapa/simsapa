@@ -56,6 +56,7 @@ class WindowManager : public QObject {
         void signal_run_summary_query(const QString& window_id, const QString& query_text);
         void signal_run_sutta_menu_action(const QString& window_id, const QString& action, const QString& query_text);
         void signal_run_dppn_dictionary_query(const QString& window_id, const QString& query);
+        void signal_run_combined_dictionary_query(const QString& window_id, const QString& query);
         void signal_open_sutta_search_window(const QString& show_result_data_json);
         void signal_open_sutta_tab(const QString& window_id, const QString& show_result_data_json);
         void signal_toggle_reading_mode(const QString& window_id, bool is_active);
@@ -66,6 +67,7 @@ class WindowManager : public QObject {
         void run_summary_query(const QString& window_id, const QString& query_text);
         void run_sutta_menu_action(const QString& window_id, const QString& action, const QString& query_text);
         void run_dppn_dictionary_query(const QString& window_id, const QString& query);
+        void run_combined_dictionary_query(const QString& window_id, const QString& query);
         void open_sutta_search_window_with_query(const QString& show_result_data_json);
         void open_sutta_tab_in_window(const QString& window_id, const QString& show_result_data_json);
         void show_chapter_in_sutta_window(const QString& window_id, const QString& result_data_json);

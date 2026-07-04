@@ -625,6 +625,50 @@ pub fn dpd_strip_sutta_ref_paragraphs(html: &str) -> String {
     RE_DPD_SUTTA_P_STRIP.replace_all(html, "").to_string()
 }
 
+/// Rewrite DPD English→Pāḷi (EPD) reverse-lookup word items into clickable
+/// internal links that trigger a Combined dictionary lookup.
+///
+/// The DPD EPD pages (e.g. `happy/dpd`) list Pāḷi equivalents as plain bold
+/// text:
+///
+/// ```html
+/// <b class=epd>attamana</b> adj. pleased; happy; delighted; elated<br>
+/// ```
+///
+/// (Note `class=epd` is **unquoted** in the shipped DPD HTML.) Each such item is
+/// rewritten to:
+///
+/// ```html
+/// <a class="epd word_link" href="ssp://word_lookup/attamana">attamana</a>
+/// ```
+///
+/// where the href value is the percent-encoded (URL-encoded) trimmed word and
+/// the visible word text is preserved verbatim. Clicking the link runs a
+/// Combined dictionary lookup for the word (see `run_word_lookup` in
+/// `src-ts/helpers.ts` and the `run_combined_dictionary_query` QML handler).
+///
+/// The transform is naturally idempotent: it only matches bare
+/// `<b class=epd>WORD</b>` items, and its output is an `<a>` element, so a
+/// re-bootstrap will not double-wrap already-linked items.
+pub fn dpd_convert_epd_word_links(html: &str) -> String {
+    lazy_static! {
+        // <b class=epd>WORD</b> — class attribute may be unquoted (shipped form)
+        // or quoted. Captures the inner word text (no nested tags).
+        static ref RE_DPD_EPD_WORD: Regex =
+            Regex::new(r#"<b class=(?:"epd"|epd)>([^<]*)</b>"#).unwrap();
+    }
+    RE_DPD_EPD_WORD
+        .replace_all(html, |caps: &regex::Captures| {
+            let word = &caps[1];
+            let encoded = urlencoding::encode(word.trim());
+            format!(
+                r#"<a class="epd word_link" href="ssp://word_lookup/{}">{}</a>"#,
+                encoded, word
+            )
+        })
+        .to_string()
+}
+
 /// Convert thebuddhaswords.net URL to sutta UID
 /// Handles URLs like:
 /// - https://thebuddhaswords.net/dn/dn11.html → dn11/pli/ms
@@ -2839,6 +2883,34 @@ mod tests {
         let input8 = "<p class=sutta>thag50 someName";
         let expected8 = "<p class=\"sutta\"><a href=\"ssp://suttas/thag1.50/pli/ms\" class=\"sutta-link\">thag 50</a> someName";
         assert_eq!(dpd_convert_example_sutta_refs(input8, &map), expected8);
+    }
+
+    #[test]
+    fn test_dpd_convert_epd_word_links() {
+        // Single unquoted-attribute item.
+        let input = "<b class=epd>attamana</b> adj. pleased; happy<br>";
+        let expected = "<a class=\"epd word_link\" href=\"ssp://word_lookup/attamana\">attamana</a> adj. pleased; happy<br>";
+        assert_eq!(dpd_convert_epd_word_links(input), expected);
+
+        // Multiple items on one <br>-separated line.
+        let input2 = "<b class=epd>attamana</b> adj.<br><b class=epd>abhiraddha</b> pp.<br>";
+        let expected2 = "<a class=\"epd word_link\" href=\"ssp://word_lookup/attamana\">attamana</a> adj.<br><a class=\"epd word_link\" href=\"ssp://word_lookup/abhiraddha\">abhiraddha</a> pp.<br>";
+        assert_eq!(dpd_convert_epd_word_links(input2), expected2);
+
+        // Word with diacritics: href is percent-encoded, visible text preserved.
+        let input3 = "<b class=epd>pīṇa</b> adj.";
+        let expected3 = "<a class=\"epd word_link\" href=\"ssp://word_lookup/p%C4%AB%E1%B9%87a\">pīṇa</a> adj.";
+        assert_eq!(dpd_convert_epd_word_links(input3), expected3);
+
+        // Quoted-attribute form is also matched.
+        let input4 = "<b class=\"epd\">sukha</b>";
+        let expected4 = "<a class=\"epd word_link\" href=\"ssp://word_lookup/sukha\">sukha</a>";
+        assert_eq!(dpd_convert_epd_word_links(input4), expected4);
+
+        // Idempotency: running the transform twice yields the same output.
+        let once = dpd_convert_epd_word_links(input2);
+        let twice = dpd_convert_epd_word_links(&once);
+        assert_eq!(once, twice);
     }
 
     #[test]

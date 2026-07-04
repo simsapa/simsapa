@@ -50,6 +50,7 @@ flacenc = "0.5"
 rubato = "3"
 tempfile = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+urlencoding = "2.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
