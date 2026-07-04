@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_parse_an6_20() {
         let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas");
-        let importer = DhammatalksSuttaImporter { resource_path };
+        let importer = DhammatalksSuttaImporter { resource_path, limit: None };
 
         let file_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas/AN/AN6_20.html");
 
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn test_parse_snp5_4() {
         let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas");
-        let importer = DhammatalksSuttaImporter { resource_path };
+        let importer = DhammatalksSuttaImporter { resource_path, limit: None };
 
         let file_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas/KN/StNp/StNp5_4.html");
 
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn test_parse_dhp17() {
         let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas");
-        let importer = DhammatalksSuttaImporter { resource_path };
+        let importer = DhammatalksSuttaImporter { resource_path, limit: None };
 
         let file_path = PathBuf::from("../../bootstrap-assets-resources/dhammatalks-org/www.dhammatalks.org/suttas/KN/Dhp/Ch17.html");
 

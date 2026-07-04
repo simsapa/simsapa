@@ -989,6 +989,86 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Remove the DPD footer boilerplate (feedback prompts, loading placeholders,
+/// and the "Inflections not found…" note) from `definition_plain` so it does
+/// not pollute the fulltext / contains search index.
+///
+/// This is the **authoritative final writer** of `definition_plain` for
+/// footer-bearing rows: it recomputes the plain text from the final,
+/// epd/sutta-converted `definition_html` via
+/// `compact_rich_text(dpd_strip_footer(dpd_strip_sutta_ref_paragraphs(html)))`,
+/// and leaves `definition_html` unchanged (HTML is out of scope, PRD §5).
+/// Composing with `dpd_strip_sutta_ref_paragraphs` is required so the converted
+/// `<p class=sutta><a…>DISPLAY</a>` sutta names don't leak back in.
+///
+/// Must run **before** `create_dictionaries_fts5_indexes` so the FTS sync
+/// triggers don't fire, and after the epd/sutta link conversions so it operates
+/// on the final HTML. Only footer-bearing rows are touched (LIKE pre-filter);
+/// the write is skipped when the plain text is unchanged.
+pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
+    info("strip_dpd_footers_from_plain()");
+
+    let dict_abs = fs::canonicalize(dict_db_path).unwrap_or_else(|_| dict_db_path.to_path_buf());
+    let dict_url = dict_abs
+        .to_str()
+        .context("dictionaries db path is not valid UTF-8")?
+        .to_string();
+    let mut dict_conn = SqliteConnection::establish(&dict_url)
+        .with_context(|| format!("Failed to connect to {}", dict_url))?;
+
+    let batch_size: i32 = 2000;
+    let mut last_id: i32 = 0;
+    let mut updated_total: u64 = 0;
+
+    loop {
+        let batch: Vec<DictWordHtmlRow> = sql_query(
+            "SELECT id, definition_html, COALESCE(definition_plain, '') AS definition_plain FROM dict_words \
+             WHERE dict_label = 'dpd' AND id > ? \
+             AND (definition_html LIKE '%dpd-footer%' OR definition_html LIKE '%loading...%' \
+                  OR definition_html LIKE '%Inflections not found%') \
+             ORDER BY id LIMIT ?",
+        )
+        .bind::<Integer, _>(last_id)
+        .bind::<Integer, _>(batch_size)
+        .load(&mut dict_conn)
+        .context("Failed to load dict_words batch")?;
+
+        if batch.is_empty() {
+            break;
+        }
+        last_id = batch.last().unwrap().id;
+
+        let updated_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
+            let mut n = 0u64;
+            for row in &batch {
+                let stripped = crate::helpers::dpd_strip_footer(
+                    &crate::helpers::dpd_strip_sutta_ref_paragraphs(&row.definition_html),
+                );
+                let new_plain = crate::helpers::compact_rich_text(&stripped);
+
+                if new_plain != row.definition_plain {
+                    sql_query("UPDATE dict_words SET definition_plain = ? WHERE id = ?")
+                        .bind::<Text, _>(&new_plain)
+                        .bind::<Integer, _>(row.id)
+                        .execute(conn)?;
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+        .context("Failed to update dict_words batch")?;
+
+        updated_total += updated_batch;
+    }
+
+    info(&format!(
+        "Stripped DPD footers from definition_plain in {} dict_words rows",
+        updated_total
+    ));
+
+    Ok(())
+}
+
 #[derive(QueryableByName)]
 struct BoldDefColInfo {
     #[diesel(sql_type = Text)]

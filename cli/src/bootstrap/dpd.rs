@@ -38,6 +38,13 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
     simsapa_backend::db::dpd::convert_dpd_epd_word_links(&dict_db_path)
         .map_err(|e| anyhow::anyhow!("Failed to convert DPD epd word links: {}", e))?;
 
+    // Strip DPD footer boilerplate (feedback prompts, loading placeholders,
+    // "Inflections not found…" note) from definition_plain. Runs last, on the
+    // final epd/sutta-converted definition_html, and before the FTS5 indexes
+    // exist so the sync triggers don't fire.
+    simsapa_backend::db::dpd::strip_dpd_footers_from_plain(&dict_db_path)
+        .map_err(|e| anyhow::anyhow!("Failed to strip DPD footers from definition_plain: {}", e))?;
+
     // Create FTS5 indexes for dictionaries database
     create_dictionaries_fts5_indexes(assets_dir)?;
 
