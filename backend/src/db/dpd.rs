@@ -910,6 +910,85 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
     Ok(())
 }
 
+/// Rewrite the DPD English→Pāḷi (EPD) `<b class=epd>WORD</b>` word-list items in
+/// DPD `dict_words` rows into clickable `ssp://word_lookup/<encoded>` links that
+/// trigger a Combined dictionary lookup (see
+/// `crate::helpers::dpd_convert_epd_word_links`).
+///
+/// Like `convert_dpd_example_sutta_links`, this runs after the DPD Stardict
+/// import but *before* the dictionaries FTS5 indexes are created, so the bulk
+/// updates do not fire the FTS sync triggers. `definition_plain` is recomputed
+/// from the rewritten HTML so the added `<a>` wrapper does not leak into the
+/// plain search field, while the visible word text remains (search still
+/// matches the word). The transform is idempotent, so a re-bootstrap will not
+/// double-wrap already-linked items.
+pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
+    info("convert_dpd_epd_word_links()");
+
+    let dict_abs = fs::canonicalize(dict_db_path).unwrap_or_else(|_| dict_db_path.to_path_buf());
+    let dict_url = dict_abs
+        .to_str()
+        .context("dictionaries db path is not valid UTF-8")?
+        .to_string();
+    let mut dict_conn = SqliteConnection::establish(&dict_url)
+        .with_context(|| format!("Failed to connect to {}", dict_url))?;
+
+    let batch_size: i32 = 2000;
+    let mut last_id: i32 = 0;
+    let mut converted_total: u64 = 0;
+
+    loop {
+        let batch: Vec<DictWordHtmlRow> = sql_query(
+            "SELECT id, definition_html, COALESCE(definition_plain, '') AS definition_plain FROM dict_words \
+             WHERE dict_label = 'dpd' AND id > ? AND definition_html LIKE '%class=epd%' \
+             ORDER BY id LIMIT ?",
+        )
+        .bind::<Integer, _>(last_id)
+        .bind::<Integer, _>(batch_size)
+        .load(&mut dict_conn)
+        .context("Failed to load dict_words batch")?;
+
+        if batch.is_empty() {
+            break;
+        }
+        last_id = batch.last().unwrap().id;
+
+        let converted_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
+            let mut n = 0u64;
+            for row in &batch {
+                let new_html = crate::helpers::dpd_convert_epd_word_links(&row.definition_html);
+
+                // Recompute the plain text from the rewritten html so the added
+                // <a> wrapper does not leak into the fulltext / contains search
+                // field; the visible word text remains.
+                let new_plain = crate::helpers::compact_rich_text(&new_html);
+
+                let html_changed = new_html != row.definition_html;
+                let plain_changed = new_plain != row.definition_plain;
+                if html_changed || plain_changed {
+                    sql_query("UPDATE dict_words SET definition_html = ?, definition_plain = ? WHERE id = ?")
+                        .bind::<Text, _>(&new_html)
+                        .bind::<Text, _>(&new_plain)
+                        .bind::<Integer, _>(row.id)
+                        .execute(conn)?;
+                    n += 1;
+                }
+            }
+            Ok(n)
+        })
+        .context("Failed to update dict_words batch")?;
+
+        converted_total += converted_batch;
+    }
+
+    info(&format!(
+        "Converted epd word links in {} dpd dict_words rows",
+        converted_total
+    ));
+
+    Ok(())
+}
+
 #[derive(QueryableByName)]
 struct BoldDefColInfo {
     #[diesel(sql_type = Text)]

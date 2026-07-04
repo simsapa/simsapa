@@ -1368,6 +1368,51 @@ ${query_text}`;
         root.handle_query(query, 1);
     }
 
+    // Run a Combined dictionary lookup (DPD lookup + word deconstructor) in the
+    // dictionary area by driving the search bar UI: switch to Dictionary, set
+    // Combined mode, populate the input, and run the query. Unlike the DPPN
+    // handler, this releases any dictionary solo-lock so all relevant
+    // dictionaries contribute to the Combined lookup. Triggered by clicking an
+    // EPD word-list link (ssp://word_lookup/...) on a DPD word page.
+    function run_combined_dictionary_query(query: string) {
+        if (!query || query.length === 0) {
+            return;
+        }
+
+        // Reveal the side panel and activate the Results tab (idx 0) where
+        // dictionary search results are rendered.
+        if (!show_sidebar_btn.checked) {
+            show_sidebar_btn.checked = true;
+        }
+        rightside_tabs.setCurrentIndex(0);
+
+        // Switch to Dictionary search area. This rebinds the mode dropdown
+        // model and may fire an intermediate query with the previous input
+        // text — that's fine, our explicit handle_query() call at the end is
+        // the authoritative one.
+        search_bar_input.set_search_area("Dictionary");
+
+        // Force search mode to Combined.
+        const dropdown = search_bar_input.search_mode_dropdown;
+        for (let i = 0; i < dropdown.count; i++) {
+            if (dropdown.textAt(i) === "Combined") {
+                dropdown.currentIndex = i;
+                break;
+            }
+        }
+
+        // Release any dictionary solo-lock so DPD and the other dictionaries the
+        // Combined lookup relies on all contribute (the opposite of the DPPN
+        // handler, which solo-locks a single dictionary).
+        if (dictionaries_panel.locked_label !== "") {
+            dictionaries_panel.toggle_lock(dictionaries_panel.locked_label);
+        }
+
+        // Populate the search input and run the query.
+        search_bar_input.search_input.text = query;
+        root.handle_query(query, 1);
+    }
+
     function get_tab_with_web_item_key(web_item_key) {
         var tab = null;
         for (var i=0; i < tabs_row.children.length; i++) {

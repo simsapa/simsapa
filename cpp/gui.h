@@ -10,6 +10,7 @@ extern "C++" {
     void callback_run_summary_query(QString window_id, QString query_text = "");
     void callback_run_sutta_menu_action(QString window_id, QString action, QString query_text = "");
     void callback_run_dppn_dictionary_query(QString window_id, QString query);
+    void callback_run_combined_dictionary_query(QString window_id, QString query);
     void callback_open_sutta_search_window(QString show_result_data_json = "");
     void callback_open_sutta_tab(QString window_id, QString show_result_data_json = "");
     void callback_open_sutta_languages_window();

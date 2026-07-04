@@ -172,6 +172,21 @@ a.sutta_link:hover {
   text-decoration: underline;
 }
 
+/* EPD word-list links (Combined dictionary lookup on click). The anchor also
+   carries the `epd` class, so `a.word_link` is given higher specificity than
+   the `.epd` rule above to win the colour. Uses the theme-driven `--primary*`
+   variables so it reads correctly in light and dark. */
+a.word_link {
+  color: var(--primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.word_link:hover {
+  color: var(--primary-alt);
+  text-decoration: underline;
+}
+
 /* inflection tables */
 
 table.inflection {

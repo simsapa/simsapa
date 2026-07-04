@@ -382,6 +382,34 @@ async function run_dppn_lookup(query: string): Promise<void> {
 }
 
 /**
+ * Triggers a Combined dictionary lookup (DPD lookup + word deconstructor) in
+ * the dictionary tab for the given word. Used by the DPD EPD word-list links
+ * (ssp://word_lookup/...). Backed by POST /word_lookup.
+ */
+async function run_word_lookup(word: string): Promise<void> {
+    const win = window as any;
+    const API_URL = win.API_URL || (globalThis as any).API_URL || 'http://localhost:4848';
+    const WINDOW_ID = win.WINDOW_ID || (globalThis as any).WINDOW_ID || '';
+
+    try {
+        const response = await fetch(`${API_URL}/word_lookup`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ window_id: WINDOW_ID, query: word })
+        });
+
+        if (!response.ok) {
+            await log_error(`Failed word lookup for '${word}': ${response.status}`);
+        }
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        await log_error(`Error during word lookup for '${word}': ${errorMsg}`);
+    }
+}
+
+/**
  * Shows a confirmation dialog for external links
  * Returns a Promise that resolves to true if user confirms, false otherwise
  * NOTE: This function is now imported from confirm_modal.ts
@@ -435,6 +463,22 @@ async function handle_link_click(event: MouseEvent): Promise<void> {
             query = encoded;
         }
         await run_dppn_lookup(query);
+        return;
+    }
+
+    // Case 2b: EPD word-list lookup link (DPD English->Pāḷi word items)
+    // Format: ssp://word_lookup/<percent-encoded-word>
+    // Triggers a Combined dictionary lookup for the word.
+    if (href.startsWith('ssp://word_lookup/')) {
+        event.preventDefault();
+        const encoded = href.substring('ssp://word_lookup/'.length);
+        let word: string;
+        try {
+            word = decodeURIComponent(encoded);
+        } catch (_) {
+            word = encoded;
+        }
+        await run_word_lookup(word);
         return;
     }
 
@@ -504,6 +548,7 @@ export {
     open_book_page_in_tab,
     open_external_url,
     run_dppn_lookup,
+    run_word_lookup,
     handle_link_click,
     log_info,
     log_error,

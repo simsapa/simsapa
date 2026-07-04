@@ -31,6 +31,13 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
     simsapa_backend::db::dpd::convert_dpd_example_sutta_links(&dict_db_path, &source_dpd_db_path)
         .map_err(|e| anyhow::anyhow!("Failed to convert DPD example sutta links: {}", e))?;
 
+    // Convert the DPD English->Pāḷi (EPD) `<b class=epd>WORD</b>` word-list items
+    // into internal ssp://word_lookup links that trigger a Combined dictionary
+    // lookup. Also before the FTS5 indexes exist so the bulk updates don't fire
+    // the sync triggers.
+    simsapa_backend::db::dpd::convert_dpd_epd_word_links(&dict_db_path)
+        .map_err(|e| anyhow::anyhow!("Failed to convert DPD epd word links: {}", e))?;
+
     // Create FTS5 indexes for dictionaries database
     create_dictionaries_fts5_indexes(assets_dir)?;
 
