@@ -6,7 +6,7 @@ The plain text version is stored in `suttas.content_plain` field, converted from
 
 Processing flow:
 
-- `sutta_html_to_plain_text()` -- removes `<header>...</header>` to not include nikāya names in fulltext index
+- `sutta_html_to_plain_text()` -- removes header/footer boilerplate (see below), then:
 - `compact_rich_text()` -- strips html
 - `compact_plain_text()` -- nomalizes spaces
 - `consistent_niggahita()` -- ensures ṁ
@@ -16,7 +16,75 @@ Processing flow:
   - normalize spaces, newlines, tabs
   - Remove remaining straight quotes: `'` and `"`, `manopubbaṅ'gamā` → `manopubbaṅgamā`
 
-- [ ] bootstrap
+## Header / footer removal at bootstrap
+
+The header/footer boilerplate is stripped **before** `compact_rich_text()` (i.e.
+on the raw HTML, while the semantic tags are still present). Two content types,
+three rules. Delivery is by **re-bootstrap** (regenerate `content_plain` /
+`definition_plain` + rebuild the FTS5 / Tantivy indexes), not in-place migration.
+All rules are **idempotent** (safe to re-run) and no-op when the structure is
+absent. The `backend` `regex` crate is `regex = "1.0"` — it has **no
+lookaround**, so "match up to the next block tag" is expressed by *enumerating the
+allowed inner inline tags* (the match halts at the first block tag without
+consuming it, so `replace_all` handles adjacent boilerplate correctly).
+
+### Suttas — `sutta_html_to_plain_text()` (`backend/src/helpers.rs`)
+
+Shared entry point for **all** sutta bootstrap sources (SuttaCentral HTML + Bilara
+JSON, dhammatalks_org, nyanadipa, tipitaka_xml/CST, buddha_ujja,
+dhammapada_munindo).
+
+- **Header rule:** remove the whole `<header>…</header>` region **but preserve the
+  inner `<h1>…</h1>`** — the sutta title, *including any leading reference number*
+  (e.g. keep `239. Harita-Mata Jātaka`). Drops the nikāya / vagga / division /
+  subdivision markup (SuttaCentral `<ul><li class='division'>…`, CST `<h3>` nikāya
+  line). Multi-line safe (`(?s)` DOTALL — the previous non-DOTALL
+  `<header(.*?)</header>` silently stripped *nothing* from multi-line headers). If
+  a header has no `<h1>`, the whole header is removed. One HTML rule covers both
+  sutta paths: the Bilara JSON path renders segments to HTML with an
+  `<h1 class='sutta-title'>` title *before* the plain-text pass, so keying off the
+  `:0.x` segment index is unnecessary (and unreliable — the title is `:0.3` in
+  sn1.10 but `:0.4` in thag7.3).
+- **Footer rule:** remove `<footer …>…</footer>` (multi-line safe). Both sutta
+  paths run `bilara_html_post_process` first, which rewrites `<footer>` →
+  `<footer class='noindex'>`, so the match is `<footer\b[^>]*>…</footer>` (covers
+  bare + `noindex`). All `noindex` markers in the corpus are on `<footer>`, so this
+  satisfies the `noindex` convention.
+
+*Out of scope:* CST bodies embed nikāya/vagga heading names as **body** text (e.g.
+`dn1.att/pli/cst` → `…dīghanikāye…`); the header rule does not touch body text.
+Flagged as a possible follow-up, not part of this rule.
+
+### DPD dictionary — `dpd_strip_footer()` (`backend/src/helpers.rs`)
+
+Applied by the `strip_dpd_footers_from_plain()` DB pass (`backend/src/db/dpd.rs`,
+wired into `cli/src/bootstrap/dpd.rs` before the dictionaries FTS5 indexes) which
+recomputes only `definition_plain` (never `definition_html`) as
+`compact_rich_text( dpd_strip_footer( dpd_strip_sutta_ref_paragraphs( definition_html ) ) )`.
+Footer boilerplate is **interleaved with real content** (example verse, declension
+/ conjugation table), so each structure is removed **in place — never
+truncate-to-end**. The real example verse / grammar / declension divs and tables
+are preserved. Four structures:
+
+1. **Feedback prompts** — `<p class=dpd-footer>…` (≈3/entry, varied wording, all
+   caught by the class). Unclosed `<p>`, nested `<a>`/`<br>`/`<span>`.
+2. **Loading placeholders** — `<div …id=…>…loading...</div>` matched by **id
+   prefix** (`family_word_` / `family_compound_` / `family_set_` / `frequency_` /
+   `feedback_`), **not** by the `dpd content hidden` class (shared with the real
+   `grammar_` / `example_` / `declension_` divs).
+3. **Inflection-not-found note** — a bare unclosed `<p>Inflections not found in any
+   Pāḷi corpus…`, matched by leading text (spans the nested `<span class=gray>`).
+4. **Conjugation/declension-table feedback** — a bare unclosed `<p>Did you spot a
+   mistake in the {conjugation|declension} table? … Report it here.</a>` inside the
+   conjugation/declension div after its `</table>` (no class, no id), matched by
+   leading text, halting at the closing `</div>`. *(Discovered during
+   verification; the only source of the residual "report it here" leak — 442
+   verb/declension entries.)*
+
+`dpd_strip_sutta_ref_paragraphs()` was extended to also span the **converted**
+`<p class="sutta"><a href="ssp://suttas/…">DISPLAY</a>` form (not just the bare
+pre-conversion text), so the footer pass — which runs on post-conversion HTML —
+does not leak the sutta display text back into `definition_plain`.
 
 - ? When removing single and double quote marks, should we remove unicode smart quote?
 Are there examples within compounds? `manopubbaṅ’gamā` (with smart quote)

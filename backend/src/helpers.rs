@@ -654,6 +654,11 @@ pub fn dpd_strip_sutta_ref_paragraphs(html: &str) -> String {
 /// 3. **Inflection-not-found note** — a bare unclosed
 ///    `<p>Inflections not found in any Pāḷi corpus…` (no class/id), matched by
 ///    its known leading text, spanning the nested `<span class=gray>`.
+/// 4. **Conjugation/declension-table feedback** — a bare unclosed
+///    `<p>Did you spot a mistake in the {conjugation|declension} table? … Report
+///    it here.</a>` that sits inside the conjugation/declension div after its
+///    `</table>` (no `dpd-footer` class). Matched by its known leading text,
+///    spanning the nested `<a>`, halting at the closing `</div>`.
 ///
 /// The `regex` crate has **no lookaround**, so "up to the next block tag" is
 /// expressed by enumerating the allowed inner inline tags (the match halts at
@@ -667,10 +672,13 @@ pub fn dpd_strip_footer(html: &str) -> String {
             Regex::new(r#"(?s)<div\b[^>]*\bid=["']?(?:family_word_|family_compound_|family_set_|frequency_|feedback_)[^>]*>.*?</div>"#).unwrap();
         static ref RE_DPD_INFLECTIONS_NOTE: Regex =
             Regex::new(r"(?is)<p>\s*Inflections not found in any pāḷi corpus(?:[^<]|</?span\b[^>]*>|<br\s*/?>)*").unwrap();
+        static ref RE_DPD_TABLE_FEEDBACK: Regex =
+            Regex::new(r"(?is)<p>\s*Did you spot a mistake in the (?:conjugation|declension) table(?:[^<]|</?a\b[^>]*>|<br\s*/?>|</?span\b[^>]*>)*").unwrap();
     }
     let s = RE_DPD_FEEDBACK.replace_all(html, "").to_string();
     let s = RE_DPD_LOADING_DIV.replace_all(&s, "").to_string();
-    RE_DPD_INFLECTIONS_NOTE.replace_all(&s, "").to_string()
+    let s = RE_DPD_INFLECTIONS_NOTE.replace_all(&s, "").to_string();
+    RE_DPD_TABLE_FEEDBACK.replace_all(&s, "").to_string()
 }
 
 /// Rewrite DPD English→Pāḷi (EPD) reverse-lookup word items into clickable
@@ -3017,7 +3025,9 @@ mod tests {
 <div class=\"dpd content hidden\" id=example_cūḷā>the topknot verse\
 <p class=\"sutta\"><a href=\"ssp://suttas/th155/pli/ms\">Thag 155</a></div>\
 <p class=dpd-footer>Can you think of a better example? <a href=\"y\">Report it here</a></p>\
-<table id=declension_cūḷā><tr><td>cūḷā</td><td>cūḷāya</td></tr></table>\
+<div class=\"dpd content hidden\" id=declension_cūḷā>\
+<table><tr><td>cūḷā</td><td>cūḷāya</td></tr></table>\
+<p>Did you spot a mistake in the declension table? Something missing? <a href=\"q\">Report it here.</a></div>\
 <p class=dpd-footer>Something missing? <a href=\"z\">Report it here</a></p>\
 <p>Inflections not found in any Pāḷi corpus, or are <span class=gray>grayed out</span>.</p>\
 <div class=\"dpd content hidden\" id=family_word_cūḷā>family word loading...</div>\
@@ -3035,6 +3045,7 @@ mod tests {
         assert!(!plain.contains("report it here"), "feedback removed: {plain}");
         assert!(!plain.contains("better example"), "feedback removed: {plain}");
         assert!(!plain.contains("something missing"), "feedback removed: {plain}");
+        assert!(!plain.contains("mistake in the declension table"), "table feedback removed: {plain}");
         assert!(!plain.contains("inflections not found"), "note removed: {plain}");
         assert!(!plain.contains("loading"), "loading placeholders removed: {plain}");
         assert!(!plain.contains("grayed out"), "note span removed: {plain}");

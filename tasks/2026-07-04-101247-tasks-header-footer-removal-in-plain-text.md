@@ -274,47 +274,80 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
   separate decision.
 
 - [ ] 3.0 Re-bootstrap the databases and verify
-  - [ ] 3.1 Run the CLI bootstrap to regenerate `appdata.sqlite3` (suttas) and
+  - [x] 3.1 Run the CLI bootstrap to regenerate `appdata.sqlite3` (suttas) and
         `dictionaries.sqlite3` (DPD), including the FTS5 index scripts and Tantivy
         index rebuild. Capture/verify a clean run (no errors/warnings for the
-        affected paths).
-  - [ ] 3.2 Verify sn1.10/pli/ms `content_plain` starts with `araññasutta
-        sāvatthinidānaṁ …` (no `saṁyutta nikāya … naḷavagga`).
-  - [ ] 3.3 Verify ja239/en/rouse `content_plain` starts with the title (incl.
+        affected paths). **(Done by user.)**
+  - [x] 3.2 Verify sn1.10/pli/ms `content_plain` starts with `araññasutta
+        sāvatthinidānaṁ …` (no `saṁyutta nikāya … naḷavagga`). **Verified.**
+  - [x] 3.3 Verify ja239/en/rouse `content_plain` starts with the title (incl.
         `239`, no `stories of the buddha s former births book 2 dukanipāta` prefix)
         and has no trailing `the jātaka or stories of the …` footer text.
-  - [ ] 3.4 Verify cūḷā/dpd (and a few other DPD entries) `definition_plain`
+        **Verified** (`239 haritamata jātaka …`, no footer).
+  - [x] 3.4 Verify cūḷā/dpd (and a few other DPD entries) `definition_plain`
         contains the definition + inflected forms but **no** "inflections not
-        found…", "report it here", or "…loading…" text.
-  - [ ] 3.5 Spot-check the PRD §8 remaining cases: a headerless HTML sutta
+        found…", "report it here", or "…loading…" text. **cūḷā clean, BUT
+        verification surfaced a 4th DPD footer structure not in the PRD (task
+        3.7): 442 verb/declension entries still leaked "report it here" via a
+        bare `<p>Did you spot a mistake in the {conjugation|declension} table…`.
+        Fixed in code; needs the DPD `definition_plain` pass re-run (see 3.7).**
+  - [x] 3.5 Spot-check the PRD §8 remaining cases: a headerless HTML sutta
         (e.g. `thanissaro`/`nyanadipa` source), a **CST** sutta (`…/pli/cst` —
         `<h3>` nikāya removed, `<h1>` title kept), a DPD deconstructor/root entry
         lacking `</table>`/footer (confirm no content loss), and confirm the
         `<footer class='noindex'>` markup is present at the point
         `sutta_html_to_plain_text` runs.
-  - [ ] 3.5a Confirm the **Bilara no-template fallback** (`suttacentral.rs:623-639`)
+  - [x] 3.5a Confirm the **Bilara no-template fallback** (`suttacentral.rs:623-639`)
         is not exercised by any shipped sutta: grep the bootstrap log for
         `No template available for` — expect **zero** hits. If any appear, record
         the uids (their header segments are not covered by this PRD) and flag for a
-        follow-up decision.
-  - [ ] 3.5b **Observation (out of scope — record, do not fix here):** CST bodies
+        follow-up decision. **No bootstrap log retained; verified indirectly — 0
+        Bilara `/pli/ms`,`/en/sujato`,`/en/brahmali` suttas have `content_plain`
+        starting with a nikāya name, so the fallback did not leak header segments.**
+  - [x] 3.5b **Observation (out of scope — record, do not fix here):** CST bodies
         also embed nikāya/vagga/vagga-heading names as *body* text (e.g. mn1/pli/cst
         `content_plain`: `…majjhimanikāyo mūlapaṇṇāsapāḷi 1 mūlapariyāyavaggo…`),
         which the header rule does not touch. If this proves to pollute search,
         it is a separate follow-up (not part of this PRD's header/footer scope).
-  - [ ] 3.6 Sanity-check a search for a title word (e.g. `araññasutta`) still
+        **Confirmed present (e.g. `dn1.att/pli/cst` → `…dīghanikāye…`); left as-is
+        per scope.**
+  - [x] 3.6 Sanity-check a search for a title word (e.g. `araññasutta`) still
         returns the sutta, and a common collection word no longer matches purely
-        on header text.
+        on header text. **`araññasutta` still matches sn1.10/pli/ms.**
 
-- [ ] 4.0 Update documentation
-  - [ ] 4.1 Update
+### Discovered during 3.4 verification (fourth DPD footer structure)
+
+- **4th structure (not in PRD):** verbs (conjugation table) and some declension
+  entries carry a **bare unclosed** `<p>Did you spot a mistake in the
+  {conjugation|declension} table? Something missing? <a …>Report it here.</a>`
+  that sits *inside* the `conjugation_`/`declension_` div after its `</table>`
+  (no `dpd-footer` class, no id) — 442 entries, and the *only* remaining
+  "report it here" leak after re-bootstrap. Same class of boilerplate as FR 13–15.
+
+- [x] 3.7 Extend `dpd_strip_footer` (`helpers.rs`) with a 4th rule matching the
+      bare `<p>Did you spot a mistake in the {conjugation|declension} table…`
+      note by its known leading text, spanning the nested `<a>`, halting at the
+      next block tag (`(?is)<p>\s*Did you spot a mistake in the (?:conjugation|declension) table(?:[^<]|</?a\b[^>]*>|<br\s*/?>|</?span\b[^>]*>)*`).
+      Extend the `test_dpd_strip_footer` fixture + assertion. **Done; tests pass.**
+  - [ ] 3.8 Re-run the DPD `definition_plain` footer pass (re-bootstrap
+        `dictionaries.sqlite3`, or re-run `strip_dpd_footers_from_plain` + rebuild
+        the dictionaries FTS5/Tantivy indexes) so the 442 entries pick up the fix,
+        then re-verify the "report it here" leak count is 0. **Requires user
+        re-bootstrap.**
+
+- [x] 4.0 Update documentation
+  - [x] 4.1 Update
         `docs/text-processing-for-contains-match-and-fulltext-match-search.md`:
         describe the header rule (remove header, preserve `<h1>` title incl.
         number), the footer rule (`<footer>` / `noindex`), and the DPD footer rule
         (three structures, id-prefix vs class vs text-boundary); resolve the
-        `- [ ] bootstrap` checkbox.
-  - [ ] 4.2 Update `PROJECT_MAP.md` if function responsibilities/locations changed
-        (new `dpd_strip_footer`, `strip_dpd_footers_from_plain`).
-  - [ ] 4.3 Add a short cross-reference in `AGENTS.md` (the CLAUDE.md symlink
+        `- [ ] bootstrap` checkbox. **Done — documented all four DPD structures +
+        the extended `dpd_strip_sutta_ref_paragraphs`; checkbox resolved.**
+  - [x] 4.2 Update `PROJECT_MAP.md` if function responsibilities/locations changed
+        (new `dpd_strip_footer`, `strip_dpd_footers_from_plain`). **Done — added a
+        "Plain-text indexing & header/footer removal (bootstrap)" bullet.**
+  - [x] 4.3 Add a short cross-reference in `AGENTS.md` (the CLAUDE.md symlink
         target) notable-feature-docs list only if a new standalone doc is warranted;
-        otherwise leave the existing bullet and skip.
+        otherwise leave the existing bullet and skip. **Skipped — no new standalone
+        doc (extended the existing `text-processing-*` doc, already referenced in
+        AGENTS.md line 97).**
