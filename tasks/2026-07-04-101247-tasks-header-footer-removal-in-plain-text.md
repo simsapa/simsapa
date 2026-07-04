@@ -198,8 +198,8 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
   don't fire). Reuse `compact_rich_text`. Only touch footer-bearing rows via a
   `LIKE` pre-filter (like the existing passes filter on `class=sutta`/`class=epd`).
 
-- [ ] 2.0 Add DPD dictionary footer removal for `definition_plain`
-  - [ ] 2.0a **Extend `dpd_strip_sutta_ref_paragraphs`** (`helpers.rs:620`) to also
+- [x] 2.0 Add DPD dictionary footer removal for `definition_plain`
+  - [x] 2.0a **Extend `dpd_strip_sutta_ref_paragraphs`** (`helpers.rs:620`) to also
         strip the **converted** `<p class="sutta"><a href="ssp://suttas/…">DISPLAY
         </a>` form, not just the bare pre-conversion text. Replace the current
         `<p class=(?:"sutta"|sutta)>[^<]*` with
@@ -209,7 +209,7 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
         **required** so the footer pass — which runs on post-conversion HTML — does
         not leak the sutta display text back into `definition_plain`. Add/extend a
         unit test asserting both the bare and the `<a>`-wrapped forms are stripped.
-  - [ ] 2.1 Add a `dpd_strip_footer(html: &str) -> String` helper in
+  - [x] 2.1 Add a `dpd_strip_footer(html: &str) -> String` helper in
         `backend/src/helpers.rs` (next to `dpd_strip_sutta_ref_paragraphs`) that
         removes, **in place**, using the **no-lookahead, enumerate-inner-tags**
         patterns from the 2.0 spec (the `regex` crate has no lookaround; do **not**
@@ -224,7 +224,7 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
         Idempotent; no-op when a structure is absent. **Must not** touch
         `grammar_`/`example_`/`declension_` divs, the declension `<table>`, or
         `<p class=sutta>`.
-  - [ ] 2.2 Add unit tests for `dpd_strip_footer` using a realistic interleaved
+  - [x] 2.2 Add unit tests for `dpd_strip_footer` using a realistic interleaved
         fixture (a cūḷā-shaped input: grammar table, an `example_` div with a
         verse + `<p class=sutta>`, multiple `<p class=dpd-footer>` prompts with
         nested `<a>`, a declension `<table>`, the bare `Inflections not found`
@@ -238,7 +238,7 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
         `compact_rich_text(dpd_strip_footer(dpd_strip_sutta_ref_paragraphs(html)))`)
         that `DISPLAY` does **not** appear in the resulting plain text (guards the
         Composition-gotcha-#2 regression).
-  - [ ] 2.3 Add a `strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()>`
+  - [x] 2.3 Add a `strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()>`
         pass in `backend/src/db/dpd.rs`, modeled on
         `convert_dpd_example_sutta_links`: batch-iterate (keyset `id > ?`) the
         `dict_label = 'dpd'` rows whose `definition_html LIKE '%dpd-footer%' OR
@@ -246,11 +246,11 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
         `definition_plain = compact_rich_text( dpd_strip_footer( dpd_strip_sutta_ref_paragraphs( definition_html ) ) )`,
         and `UPDATE dict_words SET definition_plain = ?` **only** (leave
         `definition_html` unchanged). Skip the write when unchanged.
-  - [ ] 2.4 Wire `strip_dpd_footers_from_plain` into `cli/src/bootstrap/dpd.rs`
+  - [x] 2.4 Wire `strip_dpd_footers_from_plain` into `cli/src/bootstrap/dpd.rs`
         `dpd_bootstrap`, after `convert_dpd_epd_word_links` and **before**
         `create_dictionaries_fts5_indexes` (so triggers don't fire and it operates
         on the final, epd/sutta-converted `definition_html`).
-  - [ ] 2.5 Run `cd backend && cargo test` and `make build -B`; confirm tests pass.
+  - [x] 2.5 Run `cd backend && cargo test` and `make build -B`; confirm tests pass.
 
 ### Specs & dependencies for 3.0
 

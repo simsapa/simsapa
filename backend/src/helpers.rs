@@ -614,15 +614,63 @@ pub fn dpd_convert_example_sutta_refs(
 /// search — otherwise a search for e.g. `kaccāna` matches `viharati-1/dpd`
 /// purely because of `TH155 sambulakaccānattheragāthā` in its examples.
 ///
-/// The DPD source has no closing `</p>`; each paragraph runs to the next tag,
-/// so we strip from `<p class=sutta>` (class quoted or unquoted) up to the next
-/// `<`. Run this on the raw `definition_html` before `compact_rich_text`.
+/// The DPD source has no closing `</p>`; each paragraph runs to the next block
+/// tag, so we strip from `<p class=sutta>` (class quoted or unquoted) up to the
+/// next block tag. Run this on the raw `definition_html` before
+/// `compact_rich_text`.
+///
+/// The paragraph exists in two shapes: the **bare** pre-conversion form
+/// (`<p class=sutta>TH155 sambulakaccānattheragāthā`) and the **converted** form
+/// produced by `convert_dpd_example_sutta_links`
+/// (`<p class="sutta"><a href="ssp://suttas/…">DISPLAY</a>`). The pattern spans
+/// the optional inner `<a>…</a>` / `<br>` so both are stripped; because the
+/// `regex` crate has no lookaround, the boundary is expressed by enumerating the
+/// allowed inner inline tags (the match halts naturally at the next block tag).
 pub fn dpd_strip_sutta_ref_paragraphs(html: &str) -> String {
     lazy_static! {
         static ref RE_DPD_SUTTA_P_STRIP: Regex =
-            Regex::new(r#"<p class=(?:"sutta"|sutta)>[^<]*"#).unwrap();
+            Regex::new(r#"(?s)<p class=(?:"sutta"|sutta)>(?:[^<]|<a\b[^>]*>|</a>|<br\s*/?>)*"#).unwrap();
     }
     RE_DPD_SUTTA_P_STRIP.replace_all(html, "").to_string()
+}
+
+/// Remove the three DPD dictionary **footer** structures from HTML so they do
+/// not leak into `definition_plain` (which feeds the fulltext / contains
+/// search). Run this on the raw `definition_html`, composed with
+/// `dpd_strip_sutta_ref_paragraphs`, before `compact_rich_text`.
+///
+/// The footer boilerplate is **interleaved with real content** (grammar,
+/// example verse, declension table), so each structure is removed **in place**,
+/// never truncate-to-end. The three structures:
+///
+/// 1. **Feedback prompts** — `<p class=dpd-footer>…` (≈3 per entry, varied
+///    wording, all caught by the class). The `<p>` is unclosed (runs to the next
+///    block tag) and contains nested `<a>`/`<br>`/`<span>`.
+/// 2. **Loading placeholders** — `<div …id=…>…loading...</div>` whose `id`
+///    begins with `family_word_` / `family_compound_` / `family_set_` /
+///    `frequency_` / `feedback_`. Identified by **id prefix, not class** — the
+///    `dpd content hidden` class is shared with the real `grammar_` / `example_`
+///    / `declension_` divs (which must be preserved).
+/// 3. **Inflection-not-found note** — a bare unclosed
+///    `<p>Inflections not found in any Pāḷi corpus…` (no class/id), matched by
+///    its known leading text, spanning the nested `<span class=gray>`.
+///
+/// The `regex` crate has **no lookaround**, so "up to the next block tag" is
+/// expressed by enumerating the allowed inner inline tags (the match halts at
+/// the first block tag without consuming it, so adjacent feedback prompts are
+/// each matched by `replace_all`). Idempotent; no-op when a structure is absent.
+pub fn dpd_strip_footer(html: &str) -> String {
+    lazy_static! {
+        static ref RE_DPD_FEEDBACK: Regex =
+            Regex::new(r"(?s)<p class=dpd-footer>(?:[^<]|</?a\b[^>]*>|<br\s*/?>|</?span\b[^>]*>)*").unwrap();
+        static ref RE_DPD_LOADING_DIV: Regex =
+            Regex::new(r#"(?s)<div\b[^>]*\bid=["']?(?:family_word_|family_compound_|family_set_|frequency_|feedback_)[^>]*>.*?</div>"#).unwrap();
+        static ref RE_DPD_INFLECTIONS_NOTE: Regex =
+            Regex::new(r"(?is)<p>\s*Inflections not found in any pāḷi corpus(?:[^<]|</?span\b[^>]*>|<br\s*/?>)*").unwrap();
+    }
+    let s = RE_DPD_FEEDBACK.replace_all(html, "").to_string();
+    let s = RE_DPD_LOADING_DIV.replace_all(&s, "").to_string();
+    RE_DPD_INFLECTIONS_NOTE.replace_all(&s, "").to_string()
 }
 
 /// Rewrite DPD English→Pāḷi (EPD) reverse-lookup word items into clickable
@@ -2947,6 +2995,72 @@ mod tests {
         // The resulting plain text must not contain the sutta name.
         let plain = compact_rich_text(&dpd_strip_sutta_ref_paragraphs(input));
         assert!(!plain.contains("kaccāna"));
+
+        // The CONVERTED form (post `convert_dpd_example_sutta_links`) — the
+        // paragraph wraps an <a> with display text — must also be stripped, so
+        // the display text does not leak into plain.
+        let converted = "<p>before<p class=\"sutta\"><a href=\"ssp://suttas/th155/pli/ms\" class=\"sutta-link\">Thag 155</a><p>after";
+        let stripped = dpd_strip_sutta_ref_paragraphs(converted);
+        assert_eq!(stripped, "<p>before<p>after");
+        assert!(!compact_rich_text(&stripped).contains("thag 155"));
+    }
+
+    #[test]
+    fn test_dpd_strip_footer() {
+        // cūḷā-shaped interleaved fixture: grammar → feedback → example verse
+        // (+ converted <p class=sutta>) → feedback → declension table → feedback
+        // → inflection note → loading divs. Real content is interleaved with
+        // footer boilerplate, so removal must be in place (never truncate-to-end).
+        let input = "\
+<div class=\"dpd content hidden\" id=grammar_cūḷā>grammar: feminine noun</div>\
+<p class=dpd-footer>Did you spot a mistake? <a href=\"x\">Correct it here</a><br>thanks</p>\
+<div class=\"dpd content hidden\" id=example_cūḷā>the topknot verse\
+<p class=\"sutta\"><a href=\"ssp://suttas/th155/pli/ms\">Thag 155</a></div>\
+<p class=dpd-footer>Can you think of a better example? <a href=\"y\">Report it here</a></p>\
+<table id=declension_cūḷā><tr><td>cūḷā</td><td>cūḷāya</td></tr></table>\
+<p class=dpd-footer>Something missing? <a href=\"z\">Report it here</a></p>\
+<p>Inflections not found in any Pāḷi corpus, or are <span class=gray>grayed out</span>.</p>\
+<div class=\"dpd content hidden\" id=family_word_cūḷā>family word loading...</div>\
+<div class=\"dpd content hidden\" id=family_compound_cūḷā>compound families loading...</div>\
+<div class=\"dpd content hidden\" id=family_set_cūḷā>sets loading...</div>\
+<div class=\"dpd content hidden\" id=frequency_cūḷā>frequency loading...</div>\
+<div class=\"dpd content hidden\" id=feedback_cūḷā>feedback loading...</div>";
+
+        let stripped = dpd_strip_footer(input);
+        let plain = compact_rich_text(&stripped);
+
+        // Footer boilerplate is gone.
+        assert!(!plain.contains("spot a mistake"), "feedback removed: {plain}");
+        assert!(!plain.contains("correct it here"), "feedback removed: {plain}");
+        assert!(!plain.contains("report it here"), "feedback removed: {plain}");
+        assert!(!plain.contains("better example"), "feedback removed: {plain}");
+        assert!(!plain.contains("something missing"), "feedback removed: {plain}");
+        assert!(!plain.contains("inflections not found"), "note removed: {plain}");
+        assert!(!plain.contains("loading"), "loading placeholders removed: {plain}");
+        assert!(!plain.contains("grayed out"), "note span removed: {plain}");
+
+        // Real content is preserved, incl. the class-sharing grammar/example/
+        // declension divs and the declension table.
+        assert!(plain.contains("grammar"), "grammar preserved: {plain}");
+        assert!(plain.contains("topknot verse"), "example verse preserved: {plain}");
+        assert!(plain.contains("cūḷāya"), "declension table preserved: {plain}");
+
+        // Second application is a no-op (idempotent).
+        assert_eq!(dpd_strip_footer(&stripped), stripped, "idempotent");
+    }
+
+    #[test]
+    fn test_dpd_footer_full_recompute_pipeline() {
+        // Composition-gotcha #2 regression: the full recompute pipeline must not
+        // leak the converted <p class=sutta> display text into plain.
+        let html = "\
+<div class=\"dpd content hidden\" id=example_cūḷā>the verse\
+<p class=\"sutta\"><a href=\"ssp://suttas/th155/pli/ms\">Thag 155</a></div>\
+<p class=dpd-footer>Report it here</p>";
+        let plain = compact_rich_text(&dpd_strip_footer(&dpd_strip_sutta_ref_paragraphs(html)));
+        assert!(!plain.contains("thag 155"), "converted display text stripped: {plain}");
+        assert!(!plain.contains("report it here"), "feedback stripped: {plain}");
+        assert!(plain.contains("the verse"), "example verse preserved: {plain}");
     }
 
     #[test]
