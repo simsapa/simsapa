@@ -177,14 +177,22 @@ a.sutta_link:hover {
    the `.epd` rule above to win the colour. Uses the theme-driven `--primary*`
    variables so it reads correctly in light and dark. */
 a.word_link {
-  color: var(--primary);
+  color: var(--primary-alt);
   text-decoration: none;
+  border-bottom: 1px dashed var(--primary-alt);
   cursor: pointer;
 }
 
 a.word_link:hover {
-  color: var(--primary-alt);
-  text-decoration: underline;
+  color: var(--primary-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--primary-text);
+}
+
+/* Give the EPD word-list rows extra vertical breathing room so the dashed
+   underlines don't crowd the line below. */
+p:has(a.word_link) {
+  line-height: 200%;
 }
 
 /* inflection tables */
