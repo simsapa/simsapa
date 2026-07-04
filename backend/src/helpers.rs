@@ -647,10 +647,12 @@ pub fn dpd_strip_sutta_ref_paragraphs(html: &str) -> String {
 ///    wording, all caught by the class). The `<p>` is unclosed (runs to the next
 ///    block tag) and contains nested `<a>`/`<br>`/`<span>`.
 /// 2. **Loading placeholders** — `<div …id=…>…loading...</div>` whose `id`
-///    begins with `family_word_` / `family_compound_` / `family_set_` /
-///    `frequency_` / `feedback_`. Identified by **id prefix, not class** — the
+///    begins with `family_` (all `family_*` families: `family_word_` /
+///    `family_compound_` / `family_set_` / `family_root_` / `family_idiom_`),
+///    `frequency_`, or `feedback_`. Identified by **id prefix, not class** — the
 ///    `dpd content hidden` class is shared with the real `grammar_` / `example_`
-///    / `declension_` divs (which must be preserved).
+///    / `declension_` / `conjugation_` divs (which must be preserved). Verified
+///    corpus-wide that every `family_*` div is a loading placeholder.
 /// 3. **Inflection-not-found note** — a bare unclosed
 ///    `<p>Inflections not found in any Pāḷi corpus…` (no class/id), matched by
 ///    its known leading text, spanning the nested `<span class=gray>`.
@@ -669,7 +671,7 @@ pub fn dpd_strip_footer(html: &str) -> String {
         static ref RE_DPD_FEEDBACK: Regex =
             Regex::new(r"(?s)<p class=dpd-footer>(?:[^<]|</?a\b[^>]*>|<br\s*/?>|</?span\b[^>]*>)*").unwrap();
         static ref RE_DPD_LOADING_DIV: Regex =
-            Regex::new(r#"(?s)<div\b[^>]*\bid=["']?(?:family_word_|family_compound_|family_set_|frequency_|feedback_)[^>]*>.*?</div>"#).unwrap();
+            Regex::new(r#"(?s)<div\b[^>]*\bid=["']?(?:family_|frequency_|feedback_)[^>]*>.*?</div>"#).unwrap();
         static ref RE_DPD_INFLECTIONS_NOTE: Regex =
             Regex::new(r"(?is)<p>\s*Inflections not found in any pāḷi corpus(?:[^<]|</?span\b[^>]*>|<br\s*/?>)*").unwrap();
         static ref RE_DPD_TABLE_FEEDBACK: Regex =
@@ -3032,6 +3034,8 @@ mod tests {
 <p>Inflections not found in any Pāḷi corpus, or are <span class=gray>grayed out</span>.</p>\
 <div class=\"dpd content hidden\" id=family_word_cūḷā>family word loading...</div>\
 <div class=\"dpd content hidden\" id=family_compound_cūḷā>compound families loading...</div>\
+<div class=\"dpd content hidden\" id=family_root_cūḷā>root family loading...</div>\
+<div class=\"dpd content hidden\" id=family_idiom_cūḷā>idioms loading...</div>\
 <div class=\"dpd content hidden\" id=family_set_cūḷā>sets loading...</div>\
 <div class=\"dpd content hidden\" id=frequency_cūḷā>frequency loading...</div>\
 <div class=\"dpd content hidden\" id=feedback_cūḷā>feedback loading...</div>";

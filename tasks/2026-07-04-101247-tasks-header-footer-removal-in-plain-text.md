@@ -273,7 +273,7 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
   header/footer rule's reach (no `<h1>` is produced without a template) and need a
   separate decision.
 
-- [ ] 3.0 Re-bootstrap the databases and verify
+- [x] 3.0 Re-bootstrap the databases and verify
   - [x] 3.1 Run the CLI bootstrap to regenerate `appdata.sqlite3` (suttas) and
         `dictionaries.sqlite3` (DPD), including the FTS5 index scripts and Tantivy
         index rebuild. Capture/verify a clean run (no errors/warnings for the
@@ -329,11 +329,30 @@ PRD: `2026-07-04-101247-prd---header-footer-removal-in-plain-text.md`
       note by its known leading text, spanning the nested `<a>`, halting at the
       next block tag (`(?is)<p>\s*Did you spot a mistake in the (?:conjugation|declension) table(?:[^<]|</?a\b[^>]*>|<br\s*/?>|</?span\b[^>]*>)*`).
       Extend the `test_dpd_strip_footer` fixture + assertion. **Done; tests pass.**
-  - [ ] 3.8 Re-run the DPD `definition_plain` footer pass (re-bootstrap
+  - [x] 3.8 Re-run the DPD `definition_plain` footer pass (re-bootstrap
         `dictionaries.sqlite3`, or re-run `strip_dpd_footers_from_plain` + rebuild
         the dictionaries FTS5/Tantivy indexes) so the 442 entries pick up the fix,
-        then re-verify the "report it here" leak count is 0. **Requires user
-        re-bootstrap.**
+        then re-verify the "report it here" leak count is 0. **Re-bootstrapped;
+        report/spot/inflections leaks now 0. Surfaced a 5th issue (task 3.9).**
+
+- [x] 3.9 **Loading-placeholder id prefixes were under-enumerated (fix).** After
+      the re-bootstrap, ~41k entries still leaked `…loading` text (the earlier
+      `LIKE '%loading...%'` check missed it — the `...` is stripped by punctuation
+      normalization, so it shows as `root family loading`). Corpus scan showed the
+      loading placeholders use exactly three id prefixes — **`family_`** (all
+      `family_*`: `family_word_`/`family_compound_`/`family_set_`/`family_root_`/
+      `family_idiom_`), `frequency_`, `feedback_` — but `dpd_strip_footer`'s regex
+      only listed three of the five `family_*` variants, missing `family_root_` and
+      `family_idiom_`. Generalized the regex to the `family_` prefix (verified
+      corpus-wide that every `family_*` div is a loading placeholder). Extended the
+      test fixture with `family_root_`/`family_idiom_` divs. **Done; needs one more
+      DPD `definition_plain` re-run (task 3.10).**
+  - [x] 3.10 Re-run the DPD footer pass once more so `family_root_`/`family_idiom_`
+        placeholders are removed, then verify `definition_plain LIKE '%loading%'`
+        count is 0 (and report/spot/inflections stay 0). **Re-bootstrapped; full
+        DPD boilerplate sweep (loading / report it here / did you spot / inflections
+        not found / correct it here / table feedback / something missing) all 0;
+        cūḷā declension + hotu-1 conjugation content preserved; sutta metrics hold.**
 
 - [x] 4.0 Update documentation
   - [x] 4.1 Update

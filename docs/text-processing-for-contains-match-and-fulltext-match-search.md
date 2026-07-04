@@ -69,9 +69,13 @@ are preserved. Four structures:
 1. **Feedback prompts** — `<p class=dpd-footer>…` (≈3/entry, varied wording, all
    caught by the class). Unclosed `<p>`, nested `<a>`/`<br>`/`<span>`.
 2. **Loading placeholders** — `<div …id=…>…loading...</div>` matched by **id
-   prefix** (`family_word_` / `family_compound_` / `family_set_` / `frequency_` /
-   `feedback_`), **not** by the `dpd content hidden` class (shared with the real
-   `grammar_` / `example_` / `declension_` divs).
+   prefix** `family_` (all `family_*` families — `family_word_` /
+   `family_compound_` / `family_set_` / `family_root_` / `family_idiom_`),
+   `frequency_`, or `feedback_`; **not** by the `dpd content hidden` class (shared
+   with the real `grammar_` / `example_` / `declension_` / `conjugation_` divs).
+   Verified corpus-wide that every `family_*` div is a loading placeholder. (Note:
+   the `...` is stripped by later punctuation normalization, so a leaked
+   placeholder shows as e.g. `root family loading` in `definition_plain`.)
 3. **Inflection-not-found note** — a bare unclosed `<p>Inflections not found in any
    Pāḷi corpus…`, matched by leading text (spans the nested `<span class=gray>`).
 4. **Conjugation/declension-table feedback** — a bare unclosed `<p>Did you spot a
