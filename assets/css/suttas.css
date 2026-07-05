@@ -612,7 +612,7 @@ body:has(.suttacentral.layout-columns) {
 .suttacentral.sbs-blocks .sbs-col {
   flex: 1 1 0;
   min-width: 0;
-  padding: 0 0.75em;
+  padding: 0 0.2em;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
@@ -646,116 +646,15 @@ body:has(.suttacentral.layout-columns) {
   font-style: var(--pali-font-style, inherit);
 }
 .suttacentral.sbs-blocks .sbs-col-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   font-family: "Source Sans 3 SSP";
   font-weight: bold;
   text-align: center;
-  padding-top: 0.25em;
   padding-bottom: 0.5em;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
 }
 
 body.dark .suttacentral.sbs-blocks .sbs-col {
   --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35);
   --sbs-scrollbar-track: rgba(255, 255, 255, 0.08);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-0 .sbs-col-header {
-  background-color: var(--col-0-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-0 .sbs-col-header {
-  background-color: var(--col-0-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-1 .sbs-col-header {
-  background-color: var(--col-1-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-1 .sbs-col-header {
-  background-color: var(--col-1-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-2 .sbs-col-header {
-  background-color: var(--col-2-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-2 .sbs-col-header {
-  background-color: var(--col-2-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-3 .sbs-col-header {
-  background-color: var(--col-3-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-3 .sbs-col-header {
-  background-color: var(--col-3-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-4 .sbs-col-header {
-  background-color: var(--col-4-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-4 .sbs-col-header {
-  background-color: var(--col-4-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-5 .sbs-col-header {
-  background-color: var(--col-5-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-5 .sbs-col-header {
-  background-color: var(--col-5-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-6 .sbs-col-header {
-  background-color: var(--col-6-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-6 .sbs-col-header {
-  background-color: var(--col-6-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-7 .sbs-col-header {
-  background-color: var(--col-7-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-7 .sbs-col-header {
-  background-color: var(--col-7-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-8 .sbs-col-header {
-  background-color: var(--col-8-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-8 .sbs-col-header {
-  background-color: var(--col-8-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-9 .sbs-col-header {
-  background-color: var(--col-9-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-9 .sbs-col-header {
-  background-color: var(--col-9-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-10 .sbs-col-header {
-  background-color: var(--col-10-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-10 .sbs-col-header {
-  background-color: var(--col-10-bg, #23272E);
-}
-
-.suttacentral.sbs-blocks .sbs-col.col-11 .sbs-col-header {
-  background-color: var(--col-11-bg, #FAE6B2);
-}
-
-body.dark .suttacentral.sbs-blocks .sbs-col.col-11 .sbs-col-header {
-  background-color: var(--col-11-bg, #23272E);
 }
 
 .cst .note {

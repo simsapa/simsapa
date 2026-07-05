@@ -148,12 +148,10 @@ untouched.
   each `.sbs-col` is `height: 100%; min-height: 0; overflow-y: auto;
   overflow-x: hidden; -webkit-overflow-scrolling: touch`. The `70vh` is a
   pre-JS fallback; JS sets the real height (below).
-- **Pinned headers**: `.sbs-col-header` is `position: sticky; top: 0; z-index: 2`
-  with a bottom shadow. Its background **must be opaque** (scrolled text shows
-  through otherwise) and theme-aware, so a per-column `@for` loop sets
-  `background-color: var(--col-N-bg, <light body bg>)` with a `body.dark`
-  override to the dark body bg — a per-column custom color wins, the reading
-  background is the fallback.
+- **Headers scroll with the body** (not pinned): the bottom column bar already
+  shows each column's author, so a fixed top label is unnecessary.
+  `.sbs-col-header` keeps the same plain bold/centered treatment as the aligned
+  Columns headers — no sticky, no shadow, no opaque per-column background.
 - **Always-visible touch scrollbars**: `::-webkit-scrollbar` (12px) +
   `-thumb`/`-track` on `.sbs-blocks .sbs-col`, colored from `--sbs-scrollbar-thumb`
   / `--sbs-scrollbar-track` (overridden under `body.dark`), plus

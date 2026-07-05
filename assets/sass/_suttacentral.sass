@@ -1,7 +1,6 @@
 @use 'sass:color'
 
 $solarized_light_bg: #FAE6B2
-$body_bg_color_dark: #23272E
 
 .suttacentral
   span.segment
@@ -260,7 +259,7 @@ body:has(.suttacentral.layout-columns)
   .sbs-col
     flex: 1 1 0
     min-width: 0
-    padding: 0 0.75em
+    padding: 0 0.2em
     // Independent vertical scroll container filling the row height.
     height: 100%
     min-height: 0
@@ -294,30 +293,17 @@ body:has(.suttacentral.layout-columns)
     line-height: var(--pali-line-height, inherit)
     font-weight: var(--pali-font-weight, inherit)
     font-style: var(--pali-font-style, inherit)
-  // Header stays pinned to the top of its scrolling column. The opaque,
-  // theme-aware background is set per-column in the @for loop below so
-  // scrolled text doesn't show through.
+  // The header scrolls with the column body (not pinned): the bottom column
+  // bar already shows each column's author, so a fixed top label is
+  // unnecessary. Same plain bold/centered treatment as the aligned Columns
+  // headers.
   .sbs-col-header
-    position: sticky
-    top: 0
-    z-index: 2
     font-family: "Source Sans 3 SSP"
     font-weight: bold
     text-align: center
-    padding-top: 0.25em
     padding-bottom: 0.5em
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12)
 
 // Block-fallback scrollbar colors in dark mode.
 body.dark .suttacentral.sbs-blocks .sbs-col
   --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35)
   --sbs-scrollbar-track: rgba(255, 255, 255, 0.08)
-
-// Block-fallback sticky-header backgrounds: opaque and theme-aware. A
-// per-column custom color (--col-N-bg) wins; the reading background is the
-// fallback (light body bg; dark body bg under body.dark).
-@for $n from 0 through 11
-  .suttacentral.sbs-blocks .sbs-col.col-#{$n} .sbs-col-header
-    background-color: var(--col-#{$n}-bg, #{$solarized_light_bg})
-  body.dark .suttacentral.sbs-blocks .sbs-col.col-#{$n} .sbs-col-header
-    background-color: var(--col-#{$n}-bg, #{$body_bg_color_dark})
