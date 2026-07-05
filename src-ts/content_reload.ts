@@ -139,6 +139,10 @@ export async function fetch_content_block(
   }
 
   reinit_sutta_content();
+  // Restore the page scroll position across the swap. Harmless in the
+  // block-fallback (sbs-blocks) view: there the page can't scroll (body is
+  // overflow: hidden and each column scrolls independently), so scroll_y is 0
+  // and this is a no-op — the per-column scroll resets to the top as intended.
   window.scrollTo(0, scroll_y);
   return true;
 }

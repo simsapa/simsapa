@@ -69,17 +69,17 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
 - Embedded view is Chromium (WebEngineView) on desktop and Android — style
   scrollbars with `::-webkit-scrollbar` / `::-webkit-scrollbar-thumb`.
 
-- [ ] 1.0 Make block-fallback columns fixed-height, independently scrollable panes with pinned headers and touch-visible scrollbars
-  - [ ] 1.1 In `_suttacentral.sass` under `.suttacentral.sbs-blocks`, give
+- [x] 1.0 Make block-fallback columns fixed-height, independently scrollable panes with pinned headers and touch-visible scrollbars
+  - [x] 1.1 In `_suttacentral.sass` under `.suttacentral.sbs-blocks`, give
     `.sbs-row` a fixed height driven by a CSS custom property (e.g.
     `height: var(--sbs-pane-height, 70vh)`) with a sensible fallback for when JS
     hasn't set it yet; keep the existing `display: flex`, `column-gap`, and
     change `align-items` so columns stretch to full height (`stretch`).
-  - [ ] 1.2 Make each `.sbs-col` an independent vertical scroll container:
+  - [x] 1.2 Make each `.sbs-col` an independent vertical scroll container:
     `overflow-y: auto`, `overflow-x: hidden`, `min-height: 0`, full height of the
     row, and `-webkit-overflow-scrolling: touch` for momentum scrolling on
     touch.
-  - [ ] 1.3 Pin `.sbs-col-header` to the top of its scrolling column
+  - [x] 1.3 Pin `.sbs-col-header` to the top of its scrolling column
     (`position: sticky; top: 0`), give it an **opaque, theme-aware** background
     and a bottom border/shadow, and ensure it sits above the scrolled content
     (`z-index`). The background must not be transparent (`_suttacentral.sass:176`
@@ -89,29 +89,29 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
     `var(--col-#{$n}-bg, #{$solarized_light_bg})`, with a `body.dark` override to
     the dark body bg, so a per-column custom color wins and the reading
     background is the fallback.
-  - [ ] 1.4 Add always-visible touch-friendly scrollbars scoped to
+  - [x] 1.4 Add always-visible touch-friendly scrollbars scoped to
     `.sbs-blocks .sbs-col`: `::-webkit-scrollbar` (width sized for touch, ~10–12px),
     `::-webkit-scrollbar-thumb` (rounded, uses a theme-aware color var so it's
     visible in light and dark), and `::-webkit-scrollbar-track` subtle. Also set
     `scrollbar-width`/`scrollbar-color` as a standards fallback.
-  - [ ] 1.5 Confirm the per-column color stripes and typography still apply:
+  - [x] 1.5 Confirm the per-column color stripes and typography still apply:
     the `.sbs-col.pali` / `.sbs-col.translated` font-group vars and any
     `--col-N-*` colors must remain on the scrolling `.sbs-col` (do not move them
     onto an inner wrapper). If an inner scroll-body wrapper is introduced, carry
     the font-group classes/vars onto the element that actually contains the text.
-  - [ ] 1.6 Only if 1.3's sticky header cannot be made to work cleanly with the
+  - [x] 1.6 Only if 1.3's sticky header cannot be made to work cleanly with the
     scroll body: adjust `multi_column_html_blocks` in `helpers.rs` to wrap the
     body html in an inner scroll `<div>` (header stays outside it), and update
     the affected render tests to expect the new structure. Prefer the pure-CSS
     sticky approach and skip this if unnecessary.
-  - [ ] 1.7 Suppress the page scroll in block mode (FR 2): add a
+  - [x] 1.7 Suppress the page scroll in block mode (FR 2): add a
     `body:has(.suttacentral.sbs-blocks)` rule that neutralizes `#ssp_main`'s
     `padding-bottom` (currently `4em`, lifted to `8em` by
     `body:has(#columnBar.show)` in `_display_settings.scss:577`) — set it to a
     small/zero value — and set the page to `overflow: hidden` so only the columns
     scroll. Verify the fixed column bar and footnote bottom bar still show (they
     are `position: fixed`, so unaffected).
-  - [ ] 1.8 `make sass` to compile; visually confirm the `sbs-blocks` fallback
+  - [x] 1.8 `make sass` to compile; visually confirm the `sbs-blocks` fallback
     renders as fixed-height columns with no page scroll (manual/GUI check by
     user).
 
@@ -131,8 +131,8 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
   the page shouldn't scroll, so this is a no-op there — verify it doesn't fight
   the fixed layout.
 
-- [ ] 2.0 Size the column panes to fill the viewport and keep it correct across resize, column-bar show/hide, and content swaps
-  - [ ] 2.1 Create `src-ts/sbs_blocks.ts` with an exported
+- [x] 2.0 Size the column panes to fill the viewport and keep it correct across resize, column-bar show/hide, and content swaps
+  - [x] 2.1 Create `src-ts/sbs_blocks.ts` with an exported
     `update_pane_height()` that: finds the `.suttacentral.sbs-blocks` wrapper
     (return early / clear the var if absent), measures **the wrapper's own** top
     via `getBoundingClientRect().top` (the wrapper sits inside `#ssp_content`,
@@ -142,21 +142,21 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
     sets `--sbs-pane-height` on the wrapper to the resulting pixel height
     (`window.innerHeight - top - barHeight - margin`, clamped to a sensible
     minimum).
-  - [ ] 2.2 Add an exported `init_sbs_blocks()` (or similar) that registers a
+  - [x] 2.2 Add an exported `init_sbs_blocks()` (or similar) that registers a
     `window` `resize` listener and a `document` `ssp-content-swapped` listener,
     both calling `update_pane_height()`; debounce/throttle the resize handler.
     Guard against double-registration if called more than once.
-  - [ ] 2.3 Wire it up in the `DOMContentLoaded` handler of `src-ts/simsapa.ts`
+  - [x] 2.3 Wire it up in the `DOMContentLoaded` handler of `src-ts/simsapa.ts`
     (`:147`), calling `init_sbs_blocks()` **after** `column_bar.init_column_bar()`
     (`:169`) so the initial `#columnBar.show` state is set before the first
     `update_pane_height()`. For the `ssp-content-swapped` recompute, run it on a
     `requestAnimationFrame` so `column_bar`'s same-event `.show` update (its own
     `ssp-content-swapped` listener) has already applied; recompute is idempotent
     so an extra pass is harmless.
-  - [ ] 2.4 Verify the `window.scrollY` save/restore in `content_reload.ts` is
+  - [x] 2.4 Verify the `window.scrollY` save/restore in `content_reload.ts` is
     harmless in block mode (page not scrollable → restore is a no-op). No change
     expected; add a short comment if a subtlety is found.
-  - [ ] 2.5 `npx webpack` to rebuild the bundle; confirm no type/build errors.
+  - [x] 2.5 `npx webpack` to rebuild the bundle; confirm no type/build errors.
 
 ### Specs to keep in mind (Task 3 — find-bar auto-scroll)
 
