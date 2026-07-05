@@ -7,6 +7,7 @@ import { footnote_bottom_bar } from "./footnote_bottom_bar";
 import * as display_settings from "./display_settings";
 import * as content_reload from "./content_reload";
 import * as column_bar from "./column_bar";
+import * as sbs_blocks from "./sbs_blocks";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -168,5 +169,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // the chrome is absent). Column changes re-render the content block.
     if (document.getElementById('columnBar')) {
         column_bar.init_column_bar();
+    }
+
+    // Block-fallback multi-column view: size the fixed-height scroll panes to
+    // fill the viewport. Runs after init_column_bar() so the initial
+    // #columnBar.show state (which the pane height reserves space for) is set
+    // before the first measurement.
+    if (document.getElementById('ssp_content')) {
+        sbs_blocks.init_sbs_blocks();
     }
 });

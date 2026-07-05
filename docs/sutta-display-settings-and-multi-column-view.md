@@ -133,6 +133,57 @@ CSS (`assets/sass/_suttacentral.sass`):
   wrapper at `N × --col-max-width × --width-scale + gaps`, centered.
   Lines/single-column keep the narrow measure.
 
+### Block-fallback scrollable columns
+
+Because the `sbs-blocks` columns can't be aligned per-segment, each `.sbs-col`
+is an **independently scrollable, fixed-height pane** so the reader can scroll a
+column on its own to line up passages across texts. This is CSS-only markup-wise
+(the `multi_column_html_blocks` output is unchanged) plus one small JS sizing
+helper. It applies **only** to `.suttacentral.sbs-blocks` — the aligned
+`layout-columns:not(.sbs-blocks)` view, Lines, Solo, and single-column are
+untouched.
+
+- **Fixed-height panes** (`_suttacentral.sass`, under `.suttacentral.sbs-blocks`):
+  `.sbs-row` is `display: flex; align-items: stretch; height: var(--sbs-pane-height, 70vh)`;
+  each `.sbs-col` is `height: 100%; min-height: 0; overflow-y: auto;
+  overflow-x: hidden; -webkit-overflow-scrolling: touch`. The `70vh` is a
+  pre-JS fallback; JS sets the real height (below).
+- **Headers scroll with the body** (not pinned): the bottom column bar already
+  shows each column's author, so a fixed top label is unnecessary.
+  `.sbs-col-header` keeps the same plain bold/centered treatment as the aligned
+  Columns headers — no sticky, no shadow, no opaque per-column background.
+- **Always-visible touch scrollbars**: `::-webkit-scrollbar` (12px) +
+  `-thumb`/`-track` on `.sbs-blocks .sbs-col`, colored from `--sbs-scrollbar-thumb`
+  / `--sbs-scrollbar-track` (overridden under `body.dark`), plus
+  `scrollbar-width`/`scrollbar-color` as the standards fallback. Chromium
+  (WebEngineView) auto-hides overlay scrollbars on touch, so the explicit style
+  keeps them discoverable on Android tablets.
+- **No page scroll** (`_display_settings.scss`):
+  `body:has(.suttacentral.sbs-blocks)` sets `overflow: hidden` and zeroes
+  `#ssp_main`'s `padding-bottom` (the `body:has(#columnBar.show)` rule lifts it to
+  `8em`, which would re-introduce a page scroll below the panes). This rule
+  follows the columnBar rule in source order at equal specificity, so it wins in
+  block mode. The column bar and footnote bottom bar are `position: fixed`, so
+  unaffected.
+- **Viewport-fill sizing** (`src-ts/sbs_blocks.ts`): CSS can't know the wrapper's
+  top offset (the chrome above `#ssp_content` is conditional), so
+  `update_pane_height()` measures the wrapper's own `getBoundingClientRect().top`
+  (which already includes `#ssp_content`'s `padding-top`), subtracts the shown
+  `#columnBar` height (0 when it lacks `.show`) plus a small bottom margin, and
+  sets `--sbs-pane-height` on the wrapper (clamped to a minimum). `init_sbs_blocks()`
+  wires a rAF-throttled `resize` listener and an `ssp-content-swapped` listener
+  (deferred one frame so the column bar's own swap handler settles its `.show`
+  state first) into the re-init contract, and is called from
+  `simsapa.ts`'s `DOMContentLoaded` **after** `init_column_bar()`. Recompute is
+  idempotent.
+- **Find-bar auto-scroll**: no code change — `find.ts` `scrollToElement` uses
+  `element.scrollIntoView({ block: 'center' })`, and once `.sbs-col` is the
+  nearest scrollable ancestor (page is `overflow: hidden`) the match reveals
+  within its own column.
+- **Content swaps**: `content_reload.ts`'s `window.scrollY` save/restore is a
+  no-op in block mode (page can't scroll); per-column scroll resets to the top
+  as the passages are re-fetched fresh.
+
 ## 4. Route surface (`bridges/src/api.rs`)
 
 Details and JSON shapes in
@@ -274,10 +325,19 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   the footnote bottom bar above the 40px bar and raises `#ssp_main`'s
   bottom padding.
 
+### sbs_blocks.ts — block-fallback pane sizing
+
+`update_pane_height()` sizes the fixed-height, independently scrollable
+`sbs-blocks` columns to fill the viewport down to the column bar (sets
+`--sbs-pane-height` on the wrapper); `init_sbs_blocks()` wires the `resize` +
+`ssp-content-swapped` recompute into the re-init contract. See §3
+"Block-fallback scrollable columns".
+
 Tests: `display_settings.test.ts`, `content_reload.test.ts`,
-`column_bar.test.ts` (jest/jsdom). Mock note: `helpers.log_error`
-fire-and-forgets a POST to `/logger`; a blanket non-200 fetch mock turns
-those into unhandled rejections — always let `/logger` succeed.
+`column_bar.test.ts`, `sbs_blocks.test.ts` (jest/jsdom). Mock note:
+`helpers.log_error` fire-and-forgets a POST to `/logger`; a blanket non-200
+fetch mock turns those into unhandled rejections — always let `/logger`
+succeed.
 
 ## 7. Load-bearing traps (PRD §11, still valid)
 

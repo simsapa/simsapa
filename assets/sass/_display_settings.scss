@@ -579,6 +579,22 @@ body:has(#columnBar.show) {
     }
 }
 
+// Block-fallback multi-column view (sbs-blocks): the columns are fixed-height,
+// independently scrollable panes (src-ts/sbs_blocks.ts sizes them to fill the
+// viewport down to the column bar), so the page itself must not scroll. Kill
+// the page overflow and neutralize the #ssp_main bottom padding that the
+// body:has(#columnBar.show) rule above lifts to 8em (which would otherwise
+// re-introduce a page scroll below the panes). This rule follows that one in
+// source order at equal specificity, so it wins in block mode. The fixed
+// column bar and footnote bottom bar are position: fixed, so unaffected.
+body:has(.suttacentral.sbs-blocks) {
+    overflow: hidden;
+
+    #ssp_main {
+        padding-bottom: 0;
+    }
+}
+
 // One-line transient notice (created by content_reload.ts) reporting a
 // server-dropped column: a Lines-layout request that included a
 // non-segmented text (PRD FR 8). Sits above the bottom chrome and

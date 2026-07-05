@@ -244,15 +244,40 @@ body:has(.suttacentral.layout-columns)
 
 // Unaligned block-columns fallback (a selected text has no segmented
 // format): each text's standard whole-document rendering in one flex column.
+// Each column is an independently scrollable, fixed-height pane with a pinned
+// header, so the reader can align passages manually (the columns can't be
+// aligned per-segment). See
+// docs/sutta-display-settings-and-multi-column-view.md §3.
 .suttacentral.sbs-blocks
   .sbs-row
     display: flex
     column-gap: 1.5em
-    align-items: flex-start
+    align-items: stretch
+    // Height is set from JS (src-ts/sbs_blocks.ts) to fill the viewport down
+    // to the column bar; 70vh is a pre-JS fallback.
+    height: var(--sbs-pane-height, 70vh)
   .sbs-col
     flex: 1 1 0
     min-width: 0
-    padding: 0 0.75em
+    padding: 0 0.2em
+    // Independent vertical scroll container filling the row height.
+    height: 100%
+    min-height: 0
+    overflow-y: auto
+    overflow-x: hidden
+    -webkit-overflow-scrolling: touch
+    // Always-visible, touch-friendly scrollbar (Chromium WebEngineView on
+    // desktop and Android). The thumb/track colors are theme-aware vars,
+    // overridden under body.dark below.
+    scrollbar-width: thin
+    scrollbar-color: var(--sbs-scrollbar-thumb, rgba(0, 0, 0, 0.35)) var(--sbs-scrollbar-track, rgba(0, 0, 0, 0.06))
+    &::-webkit-scrollbar
+      width: 12px
+    &::-webkit-scrollbar-thumb
+      background-color: var(--sbs-scrollbar-thumb, rgba(0, 0, 0, 0.35))
+      border-radius: 6px
+    &::-webkit-scrollbar-track
+      background-color: var(--sbs-scrollbar-track, rgba(0, 0, 0, 0.06))
   // The same font-group custom properties as the segmented builder's
   // colcells: the display-settings typography must keep applying when a
   // non-segmented column switches the render to this fallback.
@@ -268,8 +293,17 @@ body:has(.suttacentral.layout-columns)
     line-height: var(--pali-line-height, inherit)
     font-weight: var(--pali-font-weight, inherit)
     font-style: var(--pali-font-style, inherit)
+  // The header scrolls with the column body (not pinned): the bottom column
+  // bar already shows each column's author, so a fixed top label is
+  // unnecessary. Same plain bold/centered treatment as the aligned Columns
+  // headers.
   .sbs-col-header
     font-family: "Source Sans 3 SSP"
     font-weight: bold
     text-align: center
     padding-bottom: 0.5em
+
+// Block-fallback scrollbar colors in dark mode.
+body.dark .suttacentral.sbs-blocks .sbs-col
+  --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35)
+  --sbs-scrollbar-track: rgba(255, 255, 255, 0.08)

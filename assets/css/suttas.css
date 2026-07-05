@@ -606,12 +606,30 @@ body:has(.suttacentral.layout-columns) {
 .suttacentral.sbs-blocks .sbs-row {
   display: flex;
   column-gap: 1.5em;
-  align-items: flex-start;
+  align-items: stretch;
+  height: var(--sbs-pane-height, 70vh);
 }
 .suttacentral.sbs-blocks .sbs-col {
   flex: 1 1 0;
   min-width: 0;
-  padding: 0 0.75em;
+  padding: 0 0.2em;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sbs-scrollbar-thumb, rgba(0, 0, 0, 0.35)) var(--sbs-scrollbar-track, rgba(0, 0, 0, 0.06));
+}
+.suttacentral.sbs-blocks .sbs-col::-webkit-scrollbar {
+  width: 12px;
+}
+.suttacentral.sbs-blocks .sbs-col::-webkit-scrollbar-thumb {
+  background-color: var(--sbs-scrollbar-thumb, rgba(0, 0, 0, 0.35));
+  border-radius: 6px;
+}
+.suttacentral.sbs-blocks .sbs-col::-webkit-scrollbar-track {
+  background-color: var(--sbs-scrollbar-track, rgba(0, 0, 0, 0.06));
 }
 .suttacentral.sbs-blocks .sbs-col.translated {
   font-family: var(--tr-font-family, inherit);
@@ -632,6 +650,11 @@ body:has(.suttacentral.layout-columns) {
   font-weight: bold;
   text-align: center;
   padding-bottom: 0.5em;
+}
+
+body.dark .suttacentral.sbs-blocks .sbs-col {
+  --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35);
+  --sbs-scrollbar-track: rgba(255, 255, 255, 0.08);
 }
 
 .cst .note {
@@ -2219,6 +2242,14 @@ body:has(#columnBar.show) .footnote-bottom-bar {
 
 body:has(#columnBar.show) #ssp_main {
   padding-bottom: 8em;
+}
+
+body:has(.suttacentral.sbs-blocks) {
+  overflow: hidden;
+}
+
+body:has(.suttacentral.sbs-blocks) #ssp_main {
+  padding-bottom: 0;
 }
 
 .ssp-drop-notice {
