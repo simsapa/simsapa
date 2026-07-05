@@ -158,8 +158,7 @@ $font_size_small: 11px;
 // Segmented toggle button group (Columns | Lines, Sans | Serif, scope).
 .ds-segmented {
     display: flex;
-    background: var(--bg-primary);
-    border: 1px solid var(--menu-separator);
+    background: var(--bg-primary-darker);
     border-radius: $card_radius;
     padding: 2px;
 

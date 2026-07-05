@@ -872,6 +872,7 @@ h4 {
 
 :root {
   --bg-primary: #f5f5f5;
+  --bg-primary-darker: #ededed;
   --bg-content: white;
   --text-primary: $black_90;
   --text-secondary: #666;
@@ -1794,8 +1795,7 @@ body.footnote-bar-visible #ssp_content {
 
 .ds-segmented {
   display: flex;
-  background: var(--bg-primary);
-  border: 1px solid var(--menu-separator);
+  background: var(--bg-primary-darker);
   border-radius: 8px;
   padding: 2px;
 }

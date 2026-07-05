@@ -534,6 +534,7 @@ Frame {
             Button {
                 id: search_help_btn
                 icon.source: "icons/32x32/fa_circle-info-solid.png"
+                flat: true
                 Layout.preferredHeight: root.icon_size
                 Layout.preferredWidth: root.icon_size
                 ToolTip.visible: hovered
