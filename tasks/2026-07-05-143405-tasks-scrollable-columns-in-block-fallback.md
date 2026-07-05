@@ -165,16 +165,16 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
   `scrollIntoView` scrolls the nearest scrollable ancestor, so once `.sbs-col` is
   the scroll container it should scroll the column, not the page.
 
-- [ ] 3.0 Ensure the find bar auto-scrolls the containing column to reveal a match
-  - [ ] 3.1 Trace the find flow with the `sbs-blocks` layout: confirm highlighted
+- [x] 3.0 Ensure the find bar auto-scrolls the containing column to reveal a match
+  - [x] 3.1 Trace the find flow with the `sbs-blocks` layout: confirm highlighted
     match spans are inside a `.sbs-col` scroll container and that
     `scrollToElement`'s `scrollIntoView` scrolls that column into view (not the
     page). No code change if it already works.
-  - [ ] 3.2 If the match does not reveal correctly (e.g. `block: 'center'`
+  - [x] 3.2 If the match does not reveal correctly (e.g. `block: 'center'`
     behaves oddly inside a `sticky` header or a nested scroller), adjust
     `scrollToElement` minimally — e.g. detect the `.sbs-col` ancestor and scroll
     it explicitly — without regressing normal (single-scroll) pages.
-  - [ ] 3.3 Add/extend a `find.test.ts` case for the scroll behavior only if a
+  - [x] 3.3 Add/extend a `find.test.ts` case for the scroll behavior only if a
     code change was made in 3.2 (jsdom can't do real layout; assert the code path
     picks the column ancestor).
 
@@ -184,22 +184,22 @@ PRD: `tasks/2026-07-05-143405-prd---scrollable-columns-in-block-fallback.md`
   are complete; skip build/tests for the docs-only sub-task; use `make build -B`.
 
 - [ ] 4.0 Tests, Android-tablet verification, and documentation
-  - [ ] 4.1 Write `src-ts/sbs_blocks.test.ts` (jsdom): stub `#ssp_content`,
+  - [x] 4.1 Write `src-ts/sbs_blocks.test.ts` (jsdom): stub `#ssp_content`,
     `#columnBar`, and a `.sbs-blocks` wrapper; mock `getBoundingClientRect` /
     `window.innerHeight`; assert `--sbs-pane-height` is set to the expected value
     with the bar shown vs. hidden, and that it clears / is skipped when no
     `.sbs-blocks` wrapper is present.
-  - [ ] 4.2 If `multi_column_html_blocks` markup changed (task 1.6), update the
+  - [x] 4.2 If `multi_column_html_blocks` markup changed (task 1.6), update the
     Rust render tests in `backend/src/helpers.rs`; otherwise confirm they still
     pass. Run `cd backend && cargo test` for the affected tests.
-  - [ ] 4.3 Run the TS suite (`npx jest`) and `make build -B`; confirm a clean
+  - [x] 4.3 Run the TS suite (`npx jest`) and `make build -B`; confirm a clean
     build and green tests (ignore pre-existing unrelated failures per memory).
   - [ ] 4.4 Manual verification (user): desktop — columns fill the viewport, each
     scrolls independently, headers stay pinned, page doesn't scroll, layout
     survives window resize and toggling the column bar / find bar, and swapping
     columns via the bar re-applies the layout. Android tablet — the styled
     scrollbar is visible and touch-scroll works.
-  - [ ] 4.5 Update `docs/sutta-display-settings-and-multi-column-view.md` (§3
+  - [x] 4.5 Update `docs/sutta-display-settings-and-multi-column-view.md` (§3
     block fallback) to describe the fixed-height, independently scrollable
     columns, the sticky headers, the touch-visible scrollbars, and the
     `--sbs-pane-height` helper wired into the re-init contract. Update

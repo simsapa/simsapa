@@ -296,6 +296,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── helpers.ts
 │   ├── index.d.ts
 │   ├── invalid_link_modal.ts
+│   ├── sbs_blocks.ts (+ .test.ts)
 │   ├── simsapa.ts
 │   ├── test-setup.ts
 │   └── tsconfig.json
@@ -306,7 +307,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - **Tests:** `npx jest` (ts-jest + jsdom, `*.test.ts`)
 - `helpers.ts` - TypeScript utility functions
 - `find.ts` - in-page find bar (punctuation-tolerant matching)
-- `display_settings.ts` / `content_reload.ts` / `column_bar.ts` - in-page sutta display settings panel, content-block re-render + re-init contract, bottom column bar (see [docs/sutta-display-settings-and-multi-column-view.md](./docs/sutta-display-settings-and-multi-column-view.md))
+- `display_settings.ts` / `content_reload.ts` / `column_bar.ts` / `sbs_blocks.ts` - in-page sutta display settings panel, content-block re-render + re-init contract, bottom column bar, and block-fallback scrollable-column pane sizing (see [docs/sutta-display-settings-and-multi-column-view.md](./docs/sutta-display-settings-and-multi-column-view.md))
 - `tsconfig.json` - TypeScript configuration
 
 #### Root Configuration Files
