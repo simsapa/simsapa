@@ -306,9 +306,12 @@ Item {
 
     ColumnLayout {
         id: main_column
-        x: 8
+        x: 10
         y: 8
-        width: root.width - 16
+        // Slightly wider side inset (10px) than the frame's border so the
+        // scrubber/volume slider handles at the 0% and 100% extremes stay
+        // fully within the item and are not clipped at the right edge.
+        width: root.width - 20
         spacing: 6
 
         // Header row with label, duration, edit and close button (6.7)
@@ -436,8 +439,10 @@ Item {
         }
 
         // Audio controls row (6.2) — hidden when file not found, disabled while
-        // the player is still decoding.
-        RowLayout {
+        // the player is still decoding. A Flow (not a RowLayout) so that on a
+        // narrow phone the trailing time display wraps to a second line instead
+        // of being pushed off the right edge.
+        Flow {
             Layout.fillWidth: true
             spacing: 4
             visible: !root.file_not_found
@@ -463,6 +468,7 @@ Item {
 
             // Play/Pause button
             Button {
+                id: play_button
                 icon.source: audio.state === root.player_playing ? "icons/32x32/fluent--pause-circle-24-regular.png" : "icons/32x32/fluent--play-circle-24-regular.png"
                 icon.width: 20
                 icon.height: 20
@@ -520,12 +526,12 @@ Item {
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
             // Time display (6.3)
             Label {
                 text: root.format_time(audio.position_ms) + " / " + root.format_time(audio.duration_ms)
                 font.family: "monospace"
+                verticalAlignment: Text.AlignVCenter
+                height: play_button.height
                 visible: !root.is_recording && root.file_path !== "" && !root.file_not_found
             }
         }
@@ -643,8 +649,10 @@ Item {
             }
         }
 
-        // Marker controls row (8.2, 8.3, 8.9)
-        RowLayout {
+        // Marker controls row (8.2, 8.3, 8.9) — a Flow so the trailing Loop /
+        // Resample controls wrap to a second line on a narrow phone instead of
+        // the Resample button being truncated at the right edge.
+        Flow {
             Layout.fillWidth: true
             spacing: 6
             visible: !root.is_recording && root.file_path !== "" && !root.file_not_found
@@ -684,8 +692,6 @@ Item {
                     ? "Click on the waveform to set the range start (or click here to cancel)"
                     : "Click on the waveform to set the range end (or click here to cancel)"
             }
-
-            Item { Layout.fillWidth: true }
 
             CheckBox {
                 id: loop_checkbox

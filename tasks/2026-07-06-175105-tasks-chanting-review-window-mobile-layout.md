@@ -120,12 +120,12 @@ implementing — they show the exact defects to fix and to check against.
   add enough inner horizontal inset (or reduce `main_column` width) to leave room for
   slider-handle overshoot.
 
-- [ ] 2.1 Reproduce/trace the overflow: confirm which items in `main_column` extend past `root.width` (controls `RowLayout` time `Label` at ≈ line 526; `scrubber` `Slider` ≈ 595; volume `Slider` + `%` `Label` ≈ 622–643; marker-controls `RowLayout` with `Resample` ≈ 647–718).
-- [ ] 2.2 Increase the inner horizontal inset so slider handles are fully visible — e.g. widen `main_column`'s side margins (adjust `x`/`width`) or add left/right padding so the `Slider` handle radius at the 0% and 100% ends stays within `root.width`.
-- [ ] 2.3 Ensure the audio controls `RowLayout` (Record/Play/Stop/-5s/+5s + time) does not clip the trailing time `Label`: allow it to wrap or shrink (e.g. reduce spacing, let the spacer `Item { Layout.fillWidth: true }` absorb slack, or wrap on narrow widths) so `mm:ss / mm:ss` is fully shown.
-- [ ] 2.4 Ensure the marker-controls `RowLayout` (＋ Position / ＋ Range / Loop / Resample) keeps the `Resample` button fully visible on narrow widths (wrap or shrink rather than truncate).
-- [ ] 2.5 Verify the volume row's `%` `Label` (`Layout.preferredWidth: 40`, right-aligned) is not pushed off-screen once the inset is corrected.
-- [ ] 2.6 Sanity-check that these changes don't regress desktop layout (wider width should just have extra slack).
+- [x] 2.1 Reproduce/trace the overflow: confirm which items in `main_column` extend past `root.width` (controls `RowLayout` time `Label` at ≈ line 526; `scrubber` `Slider` ≈ 595; volume `Slider` + `%` `Label` ≈ 622–643; marker-controls `RowLayout` with `Resample` ≈ 647–718).
+- [x] 2.2 Increase the inner horizontal inset so slider handles are fully visible — e.g. widen `main_column`'s side margins (adjust `x`/`width`) or add left/right padding so the `Slider` handle radius at the 0% and 100% ends stays within `root.width`.
+- [x] 2.3 Ensure the audio controls `RowLayout` (Record/Play/Stop/-5s/+5s + time) does not clip the trailing time `Label`: allow it to wrap or shrink (e.g. reduce spacing, let the spacer `Item { Layout.fillWidth: true }` absorb slack, or wrap on narrow widths) so `mm:ss / mm:ss` is fully shown.
+- [x] 2.4 Ensure the marker-controls `RowLayout` (＋ Position / ＋ Range / Loop / Resample) keeps the `Resample` button fully visible on narrow widths (wrap or shrink rather than truncate).
+- [x] 2.5 Verify the volume row's `%` `Label` (`Layout.preferredWidth: 40`, right-aligned) is not pushed off-screen once the inset is corrected.
+- [x] 2.6 Sanity-check that these changes don't regress desktop layout (wider width should just have extra slack).
 
 ### 3.0 Fix end-of-track waveform and playback-cursor visibility in `WaveformView.qml`
 
