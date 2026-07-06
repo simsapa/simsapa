@@ -66,7 +66,7 @@ implementing — they show the exact defects to fix and to check against.
 
 ## Tasks
 
-### 1.0 Restructure the recordings area — heading removal + fixed bottom button bar
+### 1.0 [x] Restructure the recordings area — heading removal + fixed bottom button bar
 
 **Specs / context (PRD §4.1, §4.2, §4.3):**
 - Screenshots: `Screenshot_20260706_172707.jpg` (heading truncated to "Rec" behind
@@ -97,7 +97,7 @@ implementing — they show the exact defects to fix and to check against.
 - [x] 1.6 Confirm `recordings_scroll` still has `Layout.fillHeight: true` so it fills the space above the bar, and that the internal bottom `Item { Layout.fillHeight: true }` spacer is still appropriate (remove if it now causes excess blank space).
 - [x] 1.7 Verify no leftover references to the removed heading/RowLayout ids; build with `make build -B` after 2.0 and 3.0 are also done (per the run-tests-once convention), or at minimum confirm the file has no obvious syntax breakage.
 
-### 2.0 Fix right-edge clipping in `RecordingPlaybackItem.qml`
+### 2.0 [x] Fix right-edge clipping in `RecordingPlaybackItem.qml`
 
 **Specs / context (PRD §4.5):**
 - Screenshot: `Screenshot_20260706_172930.jpg` — controls-row time display
@@ -127,7 +127,7 @@ implementing — they show the exact defects to fix and to check against.
 - [x] 2.5 Verify the volume row's `%` `Label` (`Layout.preferredWidth: 40`, right-aligned) is not pushed off-screen once the inset is corrected.
 - [x] 2.6 Sanity-check that these changes don't regress desktop layout (wider width should just have extra slack).
 
-### 3.0 Fix end-of-track waveform and playback-cursor visibility in `WaveformView.qml`
+### 3.0 [SKIPPED — not needed per user] Fix end-of-track waveform and playback-cursor visibility in `WaveformView.qml`
 
 **Specs / context (PRD §4.4):**
 - Screenshot: `Screenshot_20260706_172930.jpg` — the waveform fills to the right
@@ -154,7 +154,7 @@ implementing — they show the exact defects to fix and to check against.
 - [ ] 3.3 Keep `x_to_ms` / `ms_to_x` mutually consistent so waveform clicks/drags still seek to the correct time after the padding change (verify a click at the far right still seeks to ≈ end, and a click at the far left to ≈ 0).
 - [ ] 3.4 Confirm the waveform bars `Row`, range-marker backgrounds, and drag-preview rectangle still align with the adjusted mapping (no visual gap/overhang at either edge).
 
-### 4.0 Build verification and manual mobile/desktop check
+### 4.0 [SKIPPED — not needed per user; UI verified working on mobile and desktop] Build verification and manual mobile/desktop check
 
 - [ ] 4.1 Run `make build -B` and confirm a clean compile (QML changes are picked up by the rebuild).
 - [ ] 4.2 Manual check on mobile (or narrow window), comparing against the reference screenshots: heading gone (cf. `…172707.jpg`); three control buttons always visible at the bottom with a long recordings list (cf. `…172723.jpg`); all three fit with labels; playing a recording to the end shows the cursor at the visible right end, and time display / both slider handles / volume `%` / Resample all fully visible (cf. `…172930.jpg`).

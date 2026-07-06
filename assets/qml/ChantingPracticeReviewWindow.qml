@@ -62,9 +62,17 @@ ApplicationWindow {
         target_window: root
     }
 
+    // Used to keep the screen awake while the review window is open so the
+    // device does not suspend during a chanting practice/playback session
+    // (same FLAG_KEEP_SCREEN_ON mechanism used by the download windows).
+    AssetManager { id: screen_manager }
+
     // 7.2 Load section detail on completed
     Component.onCompleted: {
         theme_helper.apply();
+        if (root.is_mobile) {
+            screen_manager.set_keep_screen_on(true);
+        }
         root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
         // Only load if current_section_uid is already set (may not be if set by C++ after this)
         if (root.current_section_uid !== "") {
@@ -72,8 +80,19 @@ ApplicationWindow {
         }
     }
 
+    // Release the screen-on flag if the window is destroyed while still open.
+    Component.onDestruction: {
+        if (root.is_mobile) {
+            screen_manager.set_keep_screen_on(false);
+        }
+    }
+
     // Stop all playback and save state when window is closed
     onClosing: {
+        if (root.is_mobile) {
+            screen_manager.set_keep_screen_on(false);
+        }
+
         function cleanup_repeater(repeater: Repeater) {
             for (let i = 0; i < repeater.count; i++) {
                 let item = repeater.itemAt(i);
