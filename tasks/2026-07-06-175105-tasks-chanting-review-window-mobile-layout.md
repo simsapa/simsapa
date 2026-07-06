@@ -89,13 +89,13 @@ implementing — they show the exact defects to fix and to check against.
   (existing block); Add from File → `user_file_dialog.open()`; Add Reference →
   `reference_file_dialog.open()`.
 
-- [ ] 1.1 In `ChantingPracticeReviewWindow.qml`, remove the `Label { text: "Recordings" }` heading and the `RowLayout` wrapper that grouped it with the three buttons, from inside `recordings_scroll`'s content `ColumnLayout`.
-- [ ] 1.2 Add a fixed bottom bar (e.g. a `Frame` or `RowLayout`) as a sibling below `recordings_scroll` in the outer `ColumnLayout`, with `Layout.fillWidth: true` and `Layout.bottomMargin: root.is_mobile ? 60 : 20` (plus small top/side margins) so it stays clear of the OS nav bar on mobile.
-- [ ] 1.3 Move the three buttons into the bottom bar, each with `icon.source: "icons/32x32/fa_circle-plus-solid.png"`, an appropriately sized icon, and a short text label (e.g. "New Recording"/"New", "From File", "Reference"). Keep the exact wording readable; do not drop the label.
-- [ ] 1.4 Make the buttons share/shrink to the available width (e.g. `Layout.fillWidth` with elide, or a `Flow`/`GridLayout` that wraps) so all three fit on a narrow phone without horizontal clipping or scrolling.
-- [ ] 1.5 Reconnect the button handlers to their existing logic: New Recording → the existing `new_recordings_model.append({...})` block; Add from File → `user_file_dialog.open()`; Add Reference → `reference_file_dialog.open()`.
-- [ ] 1.6 Confirm `recordings_scroll` still has `Layout.fillHeight: true` so it fills the space above the bar, and that the internal bottom `Item { Layout.fillHeight: true }` spacer is still appropriate (remove if it now causes excess blank space).
-- [ ] 1.7 Verify no leftover references to the removed heading/RowLayout ids; build with `make build -B` after 2.0 and 3.0 are also done (per the run-tests-once convention), or at minimum confirm the file has no obvious syntax breakage.
+- [x] 1.1 In `ChantingPracticeReviewWindow.qml`, remove the `Label { text: "Recordings" }` heading and the `RowLayout` wrapper that grouped it with the three buttons, from inside `recordings_scroll`'s content `ColumnLayout`.
+- [x] 1.2 Add a fixed bottom bar (e.g. a `Frame` or `RowLayout`) as a sibling below `recordings_scroll` in the outer `ColumnLayout`, with `Layout.fillWidth: true` and `Layout.bottomMargin: root.is_mobile ? 60 : 20` (plus small top/side margins) so it stays clear of the OS nav bar on mobile.
+- [x] 1.3 Move the three buttons into the bottom bar, each with `icon.source: "icons/32x32/fa_circle-plus-solid.png"`, an appropriately sized icon, and a short text label (e.g. "New Recording"/"New", "From File", "Reference"). Keep the exact wording readable; do not drop the label.
+- [x] 1.4 Make the buttons share/shrink to the available width (e.g. `Layout.fillWidth` with elide, or a `Flow`/`GridLayout` that wraps) so all three fit on a narrow phone without horizontal clipping or scrolling.
+- [x] 1.5 Reconnect the button handlers to their existing logic: New Recording → the existing `new_recordings_model.append({...})` block; Add from File → `user_file_dialog.open()`; Add Reference → `reference_file_dialog.open()`.
+- [x] 1.6 Confirm `recordings_scroll` still has `Layout.fillHeight: true` so it fills the space above the bar, and that the internal bottom `Item { Layout.fillHeight: true }` spacer is still appropriate (remove if it now causes excess blank space).
+- [x] 1.7 Verify no leftover references to the removed heading/RowLayout ids; build with `make build -B` after 2.0 and 3.0 are also done (per the run-tests-once convention), or at minimum confirm the file has no obvious syntax breakage.
 
 ### 2.0 Fix right-edge clipping in `RecordingPlaybackItem.qml`
 

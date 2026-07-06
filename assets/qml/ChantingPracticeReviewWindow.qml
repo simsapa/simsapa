@@ -396,50 +396,6 @@ ApplicationWindow {
                     width: recordings_scroll.availableWidth
                     spacing: 8
 
-                    // Recording list header
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Label {
-                            text: "Recordings"
-                            font.pointSize: root.pointSize + 2
-                            font.bold: true
-                            Layout.fillWidth: true
-                        }
-
-                        // 7.6 New Recording button
-                        Button {
-                            text: "New Recording"
-                            onClicked: {
-                                let uid = root.current_section_uid + "_user_" + Date.now();
-                                new_recordings_model.append({
-                                    "model_recording_uid": uid,
-                                    "model_file_path": "",
-                                    "model_label": "Recording — " + new Date().toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}),
-                                    "model_recording_type": "user",
-                                    "model_is_new_recording": true,
-                                    "model_volume": 1.0,
-                                    "model_playback_position_ms": 0,
-                                    "model_markers_json": "[]",
-                                    "model_waveform_json": ""
-                                });
-                            }
-                        }
-
-                        // Add recording from existing file
-                        Button {
-                            text: "Add from File"
-                            onClicked: user_file_dialog.open()
-                        }
-
-                        // 7.7 Add Reference Recording button
-                        Button {
-                            text: "Add Reference"
-                            onClicked: reference_file_dialog.open()
-                        }
-                    }
-
                     // Reference recordings group with inline playback
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -813,10 +769,57 @@ ApplicationWindow {
                         }
                     }
 
-                    // Bottom spacer
-                    Item {
-                        Layout.fillHeight: true
+                }
+            }
+
+            // Fixed control bar — always visible below the scrollable list, so
+            // the recording-control buttons never scroll out of reach.
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                // A little extra bottom space on mobile so the OS nav bar does
+                // not crowd the buttons.
+                Layout.bottomMargin: root.is_mobile ? 12 : 8
+                spacing: 8
+
+                // 7.6 New Recording button
+                Button {
+                    text: "New Recording"
+                    icon.source: "icons/32x32/fa_circle-plus-solid.png"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: {
+                        let uid = root.current_section_uid + "_user_" + Date.now();
+                        new_recordings_model.append({
+                            "model_recording_uid": uid,
+                            "model_file_path": "",
+                            "model_label": "Recording — " + new Date().toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}),
+                            "model_recording_type": "user",
+                            "model_is_new_recording": true,
+                            "model_volume": 1.0,
+                            "model_playback_position_ms": 0,
+                            "model_markers_json": "[]",
+                            "model_waveform_json": ""
+                        });
                     }
+                }
+
+                // Add recording from existing file
+                Button {
+                    text: "From File"
+                    icon.source: "icons/32x32/fa_circle-plus-solid.png"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: user_file_dialog.open()
+                }
+
+                // 7.7 Add Reference Recording button
+                Button {
+                    text: "Reference"
+                    icon.source: "icons/32x32/fa_circle-plus-solid.png"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: reference_file_dialog.open()
                 }
             }
         }
