@@ -468,6 +468,55 @@ fn import_html(db_path: &Path, html_path: &Path, book_uid: &str) -> Result<(), S
     Ok(())
 }
 
+/// Import chanting practice data from a TOML config file, copying recording files
+/// to the destination directory. By default, existing records are deleted before
+/// the re-import. Pass `no_overwrite: true` to skip existing items instead.
+fn import_chanting_practice_command(
+    data_dir: &Path,
+    db_path: &Path,
+    recordings_dir: Option<&Path>,
+    no_overwrite: bool,
+) -> Result<(), String> {
+    if !data_dir.exists() {
+        return Err(format!("Data directory not found: {:?}", data_dir));
+    }
+
+    let toml_path = data_dir.join("chanting-practice.toml");
+    if !toml_path.exists() {
+        return Err(format!("TOML file not found at {:?}", toml_path));
+    }
+
+    if !db_path.exists() {
+        return Err(format!("Database not found: {:?}", db_path));
+    }
+
+    let recordings_dest_dir = match recordings_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => {
+            let parent = db_path.parent()
+                .ok_or_else(|| "Could not determine database parent directory".to_string())?;
+            parent.join("chanting-recordings")
+        }
+    };
+
+    let mut conn = bootstrap::create_database_connection(db_path)
+        .map_err(|e| format!("Failed to connect to database: {}", e))?;
+
+    let overwrite = !no_overwrite;
+
+    let mut importer = bootstrap::ChantingPracticeImporter::new(
+        data_dir.to_path_buf(),
+        recordings_dest_dir,
+        overwrite,
+    );
+
+    bootstrap::SuttaImporter::import(&mut importer, &mut conn)
+        .map_err(|e| format!("Failed to import chanting practice data: {}", e))?;
+
+    println!("Chanting practice import completed successfully");
+    Ok(())
+}
+
 /// Generate statistics for an appdata.sqlite3 database
 fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool) -> Result<(), String> {
     use std::fs;
@@ -1198,6 +1247,28 @@ enum Commands {
     /// List all language codes and their names in SuttaCentral ArangoDB
     SuttacentralLangCodeToName,
 
+    /// Import chanting practice data from a TOML config into the appdata database.
+    /// Overwrites existing items with matching uids by default.
+    #[command(arg_required_else_help = true)]
+    ImportChantingPractice {
+        /// Path to the directory containing chanting-practice.toml and audio files
+        #[arg(long, value_name = "DATA_DIR")]
+        data_dir: PathBuf,
+
+        /// Path to the appdata.sqlite3 database
+        #[arg(long, value_name = "DB_PATH")]
+        db_path: PathBuf,
+
+        /// Directory to copy recording files into
+        /// (defaults to <db_path_parent>/chanting-recordings)
+        #[arg(long, value_name = "RECORDINGS_DIR")]
+        recordings_dir: Option<PathBuf>,
+
+        /// Keep existing items instead of overwriting
+        #[arg(long, default_value_t = false)]
+        no_overwrite: bool,
+    },
+
     /// Import an EPUB file into the appdata database
     #[command(arg_required_else_help = true)]
     ImportEpub {
@@ -1404,7 +1475,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::BootstrapOld { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } => {
+        Commands::Bootstrap { .. } | Commands::BootstrapOld { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
             // Skip app data initialization for bootstrap, export, stats, suttacentral, import, and parse commands
         }
         _ => {
@@ -1499,6 +1570,10 @@ fn main() {
 
         Commands::SuttacentralLangCodeToName => {
             suttacentral_lang_code_to_name()
+        }
+
+        Commands::ImportChantingPractice { data_dir, db_path, recordings_dir, no_overwrite } => {
+            import_chanting_practice_command(&data_dir, &db_path, recordings_dir.as_deref(), no_overwrite)
         }
 
         Commands::ImportEpub { db_path, epub_path, uid } => {

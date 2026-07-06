@@ -274,6 +274,7 @@ RELEASE_CHANNEL=development
             let mut importer = ChantingPracticeImporter::new(
                 chanting_practice_dir,
                 recordings_dest_dir,
+                false,
             );
 
             match importer.import(&mut conn) {

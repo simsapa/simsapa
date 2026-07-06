@@ -93,15 +93,18 @@ pub struct ChantingPracticeImporter {
     toml_path: PathBuf,
     /// The destination directory for recording files (the app's chanting-recordings/ folder).
     recordings_dest_dir: PathBuf,
+    /// When true, existing records with the same uid are deleted before inserting.
+    pub overwrite: bool,
 }
 
 impl ChantingPracticeImporter {
-    pub fn new(base_dir: PathBuf, recordings_dest_dir: PathBuf) -> Self {
+    pub fn new(base_dir: PathBuf, recordings_dest_dir: PathBuf, overwrite: bool) -> Self {
         let toml_path = base_dir.join("chanting-practice.toml");
         Self {
             base_dir,
             toml_path,
             recordings_dest_dir,
+            overwrite,
         }
     }
 
@@ -202,6 +205,50 @@ impl ChantingPracticeImporter {
             "Found {} collections with {} total items to import",
             collection_count, total_items
         ));
+
+        // Delete existing records before re-import when overwrite is enabled.
+        // We delete from child tables up to parents so the operation works even
+        // without SQLite foreign-key enforcement.
+        if self.overwrite {
+            logger::info("Overwrite mode: deleting existing records");
+
+            for col_entry in &config.collections {
+                for chant_entry in &col_entry.chants {
+                    for section_entry in &chant_entry.sections {
+                        diesel::delete(
+                            appdata_schema::chanting_recordings::table
+                                .filter(appdata_schema::chanting_recordings::section_uid.eq(&section_entry.uid)),
+                        )
+                        .execute(conn)
+                        .with_context(|| format!("Failed to delete recordings for section '{}'", section_entry.uid))?;
+                    }
+
+                    diesel::delete(
+                        appdata_schema::chanting_sections::table
+                            .filter(appdata_schema::chanting_sections::chant_uid.eq(&chant_entry.uid)),
+                    )
+                    .execute(conn)
+                    .with_context(|| format!("Failed to delete sections for chant '{}'", chant_entry.uid))?;
+                }
+
+                diesel::delete(
+                    appdata_schema::chanting_chants::table
+                        .filter(appdata_schema::chanting_chants::collection_uid.eq(&col_entry.uid)),
+                )
+                .execute(conn)
+                .with_context(|| format!("Failed to delete chants for collection '{}'", col_entry.uid))?;
+            }
+
+            let col_uids: Vec<&str> = config.collections.iter().map(|c| c.uid.as_str()).collect();
+            diesel::delete(
+                appdata_schema::chanting_collections::table
+                    .filter(appdata_schema::chanting_collections::uid.eq_any(&col_uids)),
+            )
+            .execute(conn)
+            .with_context(|| "Failed to delete collections")?;
+
+            logger::info("Deleted existing records, proceeding with import");
+        }
 
         let pb = ProgressBar::new(total_items as u64);
         pb.set_style(
@@ -440,6 +487,7 @@ sort_index = 1
         let importer = ChantingPracticeImporter::new(
             base.to_path_buf(),
             base.join("dest-recordings"),
+            false,
         );
 
         let section = SectionEntry {
@@ -462,6 +510,7 @@ sort_index = 1
         let importer = ChantingPracticeImporter::new(
             tmp.path().to_path_buf(),
             tmp.path().join("dest-recordings"),
+            false,
         );
 
         let section = SectionEntry {
@@ -484,6 +533,7 @@ sort_index = 1
         let importer = ChantingPracticeImporter::new(
             tmp.path().to_path_buf(),
             tmp.path().join("dest-recordings"),
+            false,
         );
 
         let section = SectionEntry {
@@ -511,7 +561,7 @@ sort_index = 1
         fs::create_dir_all(&recordings_dir).unwrap();
         fs::write(recordings_dir.join("test.mp3"), b"fake audio data").unwrap();
 
-        let importer = ChantingPracticeImporter::new(base.clone(), dest.clone());
+        let importer = ChantingPracticeImporter::new(base.clone(), dest.clone(), false);
 
         let result = importer.copy_recording_file("recordings/test.mp3").unwrap();
         assert_eq!(result, "test.mp3");
@@ -525,6 +575,7 @@ sort_index = 1
         let importer = ChantingPracticeImporter::new(
             tmp.path().to_path_buf(),
             tmp.path().join("dest-recordings"),
+            false,
         );
 
         let result = importer.copy_recording_file("recordings/nonexistent.mp3");
