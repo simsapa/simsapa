@@ -1689,6 +1689,8 @@ ${main_text}
                                 placeholderText: "Enter paragraphs to gloss ..."
                                 selectByMouse: true
                                 wrapMode: TextEdit.WordWrap
+                                // Multi-line: no EnterKey override (Enter inserts a newline).
+                                MobileKeyboardHelper {}
                                 background: Rectangle {
                                     color: "transparent"
                                 }
@@ -1929,6 +1931,8 @@ ${main_text}
                                 font.pointSize: 12
                                 selectByMouse: true
                                 wrapMode: TextEdit.WordWrap
+                                // Multi-line: no EnterKey override (Enter inserts a newline).
+                                MobileKeyboardHelper {}
                                 onTextChanged: {
                                     if (text !== paragraph_item.text) {
                                         root.update_paragraph_text(paragraph_item.index, text);
@@ -2299,6 +2303,8 @@ ${main_text}
                         id: commonWordsTextArea
                         selectByMouse: true
                         text: root.common_words.join('\n')
+                        // Multi-line: no EnterKey override (Enter inserts a newline).
+                        MobileKeyboardHelper {}
                         background: Rectangle {
                             color: "transparent"
                         }

@@ -202,6 +202,8 @@ ApplicationWindow {
                                     placeholderText: "Select a prompt from the list to edit..."
                                     wrapMode: TextArea.Wrap
                                     selectByMouse: true
+                                    // Multi-line: no EnterKey override (Enter inserts a newline).
+                                    MobileKeyboardHelper {}
                                     font.pointSize: root.pointSize
                                     enabled: root.selected_prompt_key !== ""
                                     background: Rectangle {

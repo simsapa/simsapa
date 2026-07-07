@@ -1240,6 +1240,12 @@ Item {
                                 background: Rectangle {
                                     color: "transparent"
                                 }
+                                // Multi-line: no EnterKey override (Enter inserts a newline).
+                                // A null field disables the helper, so the keyboard is not
+                                // raised for read-only messages.
+                                MobileKeyboardHelper {
+                                    field: message_item.is_editable ? message_content : null
+                                }
                                 onTextChanged: {
                                     // Guard against firing during delegate
                                     // instantiation on load (PRD §10.5/§10.6): only
