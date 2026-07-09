@@ -909,6 +909,9 @@ pub mod qobject {
         fn clear_gloss_word_cache(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
+        fn parse_word_selection_response(self: &SuttaBridge, response: &QString, expected_items_json: &QString) -> QString;
+
+        #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -2494,6 +2497,22 @@ impl qobject::SuttaBridge {
                 error(&format!("clear_gloss_word_cache(): {}", e));
                 false
             }
+        }
+    }
+
+    /// Parse and validate an AI word-selection response against the request's
+    /// items array (see `simsapa_backend::helpers::parse_word_selection_response`).
+    /// Returns `{"selections": [{"id": "...", "uid": "..."}]}` on success or
+    /// `{"error": "..."}` on failure (incl. in-band `Error:` responses).
+    pub fn parse_word_selection_response(&self, response: &QString, expected_items_json: &QString) -> QString {
+        match simsapa_backend::helpers::parse_word_selection_response(&response.to_string(), &expected_items_json.to_string()) {
+            Ok(pairs) => {
+                let selections: Vec<serde_json::Value> = pairs.iter()
+                    .map(|(id, uid)| serde_json::json!({"id": id, "uid": uid}))
+                    .collect();
+                QString::from(serde_json::json!({"selections": selections}).to_string())
+            }
+            Err(e) => QString::from(serde_json::json!({"error": e}).to_string()),
         }
     }
 

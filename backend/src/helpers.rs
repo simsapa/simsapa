@@ -2570,6 +2570,112 @@ pub fn gloss_cache_word_key(word: &str) -> String {
     consistent_niggahita(Some(word.to_lowercase())).trim().to_string()
 }
 
+/// Extract the first top-level JSON object from a text, tolerating markdown
+/// code fences and surrounding prose. Scans for a balanced `{...}` while
+/// respecting string literals and escapes.
+fn extract_first_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in text[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..start + i + c.len_utf8()].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse and validate an AI word-selection response (PRD: Gloss Tab AI word
+/// selection, `docs/gloss-ai-word-selection.md`).
+///
+/// `response` is the raw model output; a leading `Error:` (the in-band error
+/// convention of `PromptManager`) is treated as request failure. Otherwise the
+/// first top-level JSON object is extracted (lenient: code fences / prose
+/// around it are ignored) and its `selections` array validated against
+/// `expected_items_json` — the request payload's `items` array. Entries with
+/// unknown `id`s or a `uid` not among that item's options are logged and
+/// skipped; a completely unparseable response is an `Err`.
+///
+/// Returns the valid `(id, uid)` pairs.
+pub fn parse_word_selection_response(response: &str, expected_items_json: &str) -> Result<Vec<(String, String)>, String> {
+    let trimmed = response.trim();
+    if trimmed.is_empty() {
+        return Err("Empty response".to_string());
+    }
+    if trimmed.starts_with("Error:") {
+        return Err(trimmed.to_string());
+    }
+
+    // Map of item id -> allowed option uids, from the request payload items.
+    let items: serde_json::Value = serde_json::from_str(expected_items_json)
+        .map_err(|e| format!("Invalid expected items JSON: {}", e))?;
+    let items = items.as_array().ok_or("Expected items JSON is not an array")?;
+    let mut allowed: HashMap<String, HashSet<String>> = HashMap::new();
+    for item in items {
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        let uids: HashSet<String> = item.get("options")
+            .and_then(|v| v.as_array())
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|o| o.get("uid").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        allowed.insert(id.to_string(), uids);
+    }
+
+    let json_text = extract_first_json_object(trimmed)
+        .ok_or_else(|| format!("No JSON object found in response: {}", &trimmed.chars().take(200).collect::<String>()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_text)
+        .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
+    let selections = parsed.get("selections")
+        .and_then(|v| v.as_array())
+        .ok_or("Response JSON has no 'selections' array")?;
+
+    let mut result: Vec<(String, String)> = Vec::new();
+    for sel in selections {
+        let id = sel.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        let uid = sel.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
+        if id.is_empty() || uid.is_empty() {
+            info(&format!("parse_word_selection_response(): skipping malformed selection entry: {}", sel));
+            continue;
+        }
+        match allowed.get(id) {
+            None => {
+                info(&format!("parse_word_selection_response(): unknown item id '{}', skipping", id));
+            }
+            Some(uids) if !uids.contains(uid) => {
+                info(&format!("parse_word_selection_response(): uid '{}' is not an option of item '{}', skipping", uid, id));
+            }
+            Some(_) => result.push((id.to_string(), uid.to_string())),
+        }
+    }
+    Ok(result)
+}
+
 /// Process a single word for glossing, equivalent to QML process_word_for_glossing function
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
@@ -2632,6 +2738,7 @@ pub fn process_word_for_glossing(
         selected_index: 0,
         stem,
         example_sentence: word_info.sentence.clone(),
+        context_hash: gloss_context_hash(&normalize_gloss_context(&word_info.sentence)),
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -3416,6 +3523,68 @@ mod tests {
         // ṁ/ṃ surface forms produce the same key.
         assert_eq!(gloss_cache_word_key("dhammaṃ"), gloss_cache_word_key("dhammaṁ"));
         assert_eq!(gloss_cache_word_key("ārāme"), "ārāme");
+    }
+
+    fn word_selection_items_json() -> &'static str {
+        r#"[
+            {"id": "p0w4", "word": "ārāme",
+             "context": "jetavane anāthapiṇḍikassa <b>ārāme</b>.",
+             "options": [
+                {"uid": "ārāma-1/dpd", "word": "ārāma 1", "summary": "(adj) enjoying"},
+                {"uid": "ārāma-4/dpd", "word": "ārāma 4", "summary": "(masc) monastery; park"}
+             ]},
+            {"id": "p1w2", "word": "bhikkhū",
+             "context": "manobhāvanīyā <b>bhikkhū</b>",
+             "options": [
+                {"uid": "bhikkhu/dpd", "word": "bhikkhu", "summary": "(masc) monk"},
+                {"uid": "bhikkhū/dpd", "word": "bhikkhū", "summary": "(masc) monks"}
+             ]}
+        ]"#
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_plain_and_fenced() {
+        let items = word_selection_items_json();
+
+        // Plain JSON.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w4", "uid": "ārāma-4/dpd"}]}"#, items).unwrap();
+        assert_eq!(r, vec![("p0w4".to_string(), "ārāma-4/dpd".to_string())]);
+
+        // Fenced JSON with prose around it.
+        let fenced = "Here are the selections:\n```json\n{\"selections\": [\n  {\"id\": \"p0w4\", \"uid\": \"ārāma-4/dpd\"},\n  {\"id\": \"p1w2\", \"uid\": \"bhikkhu/dpd\"}\n]}\n```\nLet me know if you need anything else.";
+        let r = parse_word_selection_response(fenced, items).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[1], ("p1w2".to_string(), "bhikkhu/dpd".to_string()));
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_invalid_entries_skipped() {
+        let items = word_selection_items_json();
+
+        // Unknown id and a uid that is not among the item's options are
+        // skipped; the valid entry survives.
+        let mixed = r#"{"selections": [
+            {"id": "p9w9", "uid": "ārāma-4/dpd"},
+            {"id": "p0w4", "uid": "bhikkhu/dpd"},
+            {"id": "p1w2", "uid": "bhikkhu/dpd"}
+        ]}"#;
+        let r = parse_word_selection_response(mixed, items).unwrap();
+        assert_eq!(r, vec![("p1w2".to_string(), "bhikkhu/dpd".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_errors() {
+        let items = word_selection_items_json();
+
+        // In-band provider error.
+        assert!(parse_word_selection_response("Error: Provider Gemini is disabled", items).is_err());
+        // Garbage input without a JSON object.
+        assert!(parse_word_selection_response("I could not decide.", items).is_err());
+        // A JSON object without a selections array.
+        assert!(parse_word_selection_response(r#"{"answers": []}"#, items).is_err());
+        // Empty response.
+        assert!(parse_word_selection_response("   ", items).is_err());
     }
 
     #[test]

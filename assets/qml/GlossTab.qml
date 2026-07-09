@@ -48,6 +48,11 @@ Item {
     Connections {
         target: pm
 
+        function onWordSelectionResponse(request_id: int, model_name: string, response: string) {
+            logger.debug(`onWordSelectionResponse received: request_id=${request_id}, model_name=${model_name}`);
+            root.handle_word_selection_response(request_id, model_name, response);
+        }
+
         function onPromptResponse (paragraph_idx: int, translation_idx: int, model_name: string, response: string) {
             logger.debug(`🤖 onPromptResponse received: paragraph_idx=${paragraph_idx}, translation_idx=${translation_idx}, model_name=${model_name}`);
             logger.debug(`📝 Response content: "${response.substring(0, 100)}..."`);
@@ -241,6 +246,252 @@ Item {
             root.word_selection_model = "";
             root.word_selection_provider = "";
         }
+    }
+
+    // === AI word-selection request pipeline (docs/gloss-ai-word-selection.md) ===
+
+    // Single batched request when the substituted prompt is under this length,
+    // otherwise sequential per-paragraph requests.
+    readonly property int word_selection_batch_char_limit: 40000
+    // Minimum ms between sequential request starts (free-tier requests-per-minute limits).
+    readonly property int word_selection_request_spacing_ms: 6500
+
+    property int ws_next_request_id: 1
+    // request_id (as string key) -> array of covered paragraph indexes
+    property var ws_request_paragraphs: ({})
+    // request_id (as string key) -> the request's items array JSON (response validation)
+    property var ws_request_items: ({})
+    // Sequential mode: paragraph indexes waiting for their request to start.
+    property var ws_queue: []
+    property bool ws_queue_forced: false
+    property double ws_last_start_time: 0
+    // paragraph index -> { state: "waiting"|"busy"|"success"|"error", message }
+    // Always reassigned (never only mutated) so bindings re-evaluate.
+    property var ws_status: ({})
+
+    Timer {
+        id: ws_pacing_timer
+        repeat: false
+        onTriggered: root.ws_send_next_from_queue()
+    }
+
+    function ws_set_status(paragraph_idx, state, message) {
+        let st = root.ws_status;
+        st[paragraph_idx] = { state: state, message: message };
+        root.ws_status = Object.assign({}, st);
+    }
+
+    // Remove a paragraph's status entry; when only_state is given, only if it
+    // is currently in that state.
+    function ws_clear_status(paragraph_idx, only_state) {
+        let st = root.ws_status;
+        if (st[paragraph_idx] === undefined) return;
+        if (only_state !== undefined && st[paragraph_idx].state !== only_state) return;
+        delete st[paragraph_idx];
+        root.ws_status = Object.assign({}, st);
+    }
+
+    // Whether a selection request covering this paragraph is in flight or queued.
+    function is_ws_paragraph_active(paragraph_idx) {
+        let s = root.ws_status[paragraph_idx];
+        return s !== undefined && (s.state === "waiting" || s.state === "busy");
+    }
+
+    // Drop all pipeline state (queued requests, statuses, request maps). A
+    // response for a dropped request id is ignored by the response handler.
+    function ws_reset() {
+        ws_pacing_timer.stop();
+        root.ws_queue = [];
+        root.ws_status = ({});
+        root.ws_request_paragraphs = ({});
+        root.ws_request_items = ({});
+    }
+
+    // Build the AI request items for the given paragraphs from words_data_json:
+    // ambiguous words only (results.length > 1), summaries HTML-stripped and
+    // truncated to 200 chars. Words already resolved from the cache or the
+    // phrase table (resolution set by the Rust gloss processing) are excluded;
+    // the forced pass re-includes "ai"-resolved words but never
+    // "user"/"phrase"/"built-in".
+    function build_word_selection_items(paragraph_indexes, forced) {
+        let items = [];
+        for (let pi of paragraph_indexes) {
+            if (pi >= paragraph_model.count) continue;
+            let paragraph = paragraph_model.get(pi);
+            if (!paragraph || !paragraph.words_data_json) continue;
+            let words_data;
+            try {
+                words_data = JSON.parse(paragraph.words_data_json);
+            } catch (e) {
+                logger.error("build_word_selection_items: failed to parse words_data_json: " + e);
+                continue;
+            }
+            for (let wi = 0; wi < words_data.length; wi++) {
+                let w = words_data[wi];
+                if (!w || !w.results || w.results.length <= 1) continue;
+                let resolution = w.resolution || null;
+                if (resolution !== null && !(forced && resolution === "ai")) continue;
+                let options = [];
+                for (let r of w.results) {
+                    options.push({
+                        uid: r.uid,
+                        word: r.word,
+                        summary: (r.summary || "").replace(/<[^>]*>/g, "").substring(0, 200),
+                    });
+                }
+                items.push({
+                    id: "p" + pi + "w" + wi,
+                    word: w.original_word,
+                    context: w.example_sentence || "",
+                    options: options,
+                });
+            }
+        }
+        return items;
+    }
+
+    // Assemble the combined prompt following the AI Translate convention:
+    // system prompt + "\n\n" + request template with the payload substituted.
+    function build_word_selection_prompt(items) {
+        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection System Prompt");
+        let template = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection Request");
+        let payload = { task: "pali_word_selection", items: items };
+        let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", JSON.stringify(payload));
+        let combined_prompt = user_prompt;
+        if (system_prompt && system_prompt.trim() !== "") {
+            combined_prompt = system_prompt + "\n\n" + user_prompt;
+        }
+        return combined_prompt;
+    }
+
+    // Entry point: run AI word selection for the given paragraphs. Batched
+    // (one request) when the combined prompt is under the char limit, else
+    // sequential per-paragraph requests spaced by the pacing Timer. forced =
+    // re-ask for "ai"-resolved words (per-paragraph "Update Selections").
+    function start_word_selection(paragraph_indexes, forced) {
+        if (!root.is_word_selection_enabled()) return;
+
+        // Overlap guard: skip paragraphs already covered by an active request.
+        let indexes = paragraph_indexes.filter(pi => !root.is_ws_paragraph_active(pi));
+        if (indexes.length === 0) return;
+
+        let items = root.build_word_selection_items(indexes, forced);
+        if (items.length === 0) return;
+
+        let prompt = root.build_word_selection_prompt(items);
+        if (indexes.length === 1 || prompt.length < root.word_selection_batch_char_limit) {
+            root.ws_send_request(indexes, forced);
+        } else {
+            root.ws_queue_forced = forced;
+            for (let pi of indexes) {
+                root.ws_set_status(pi, "waiting", "");
+            }
+            root.ws_queue = indexes.slice(1);
+            root.ws_send_request([indexes[0]], forced);
+        }
+    }
+
+    // Send one request covering the given paragraphs. Returns false when there
+    // is nothing to ask for them.
+    function ws_send_request(paragraph_indexes, forced) {
+        let items = root.build_word_selection_items(paragraph_indexes, forced);
+        if (items.length === 0) {
+            for (let pi of paragraph_indexes) {
+                root.ws_clear_status(pi, "waiting");
+            }
+            return false;
+        }
+
+        let request_id = root.ws_next_request_id;
+        root.ws_next_request_id += 1;
+
+        let rp = root.ws_request_paragraphs;
+        rp["" + request_id] = paragraph_indexes;
+        root.ws_request_paragraphs = Object.assign({}, rp);
+
+        let ri = root.ws_request_items;
+        ri["" + request_id] = JSON.stringify(items);
+        root.ws_request_items = ri;
+
+        for (let pi of paragraph_indexes) {
+            root.ws_set_status(pi, "busy", `Selecting words with ${root.word_selection_model}...`);
+        }
+
+        let prompt = root.build_word_selection_prompt(items);
+        root.ws_last_start_time = Date.now();
+        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${paragraph_indexes.join(", ")}], model ${root.word_selection_model}`);
+        pm.word_selection_request(request_id, root.word_selection_provider, root.word_selection_model, prompt);
+        return true;
+    }
+
+    // Sequential pacing: start the next queued request no sooner than the
+    // spacing interval after the previous request start.
+    function ws_schedule_next() {
+        if (root.ws_queue.length === 0) return;
+        let elapsed = Date.now() - root.ws_last_start_time;
+        ws_pacing_timer.interval = Math.max(10, root.word_selection_request_spacing_ms - elapsed);
+        ws_pacing_timer.restart();
+    }
+
+    function ws_send_next_from_queue() {
+        let queue = root.ws_queue;
+        while (queue.length > 0) {
+            let pi = queue.shift();
+            root.ws_queue = queue;
+            if (root.ws_send_request([pi], root.ws_queue_forced)) return;
+            // Nothing to request for that paragraph; move on immediately.
+        }
+    }
+
+    function handle_word_selection_response(request_id, model_name, response) {
+        let key = "" + request_id;
+        let covered = root.ws_request_paragraphs[key];
+        if (covered === undefined) {
+            // Stale response for a request dropped by ws_reset().
+            logger.info(`Ignoring stale word selection response for request ${request_id}`);
+            root.ws_schedule_next();
+            return;
+        }
+        let items_json = root.ws_request_items[key];
+
+        let rp = root.ws_request_paragraphs;
+        delete rp[key];
+        root.ws_request_paragraphs = Object.assign({}, rp);
+        let ri = root.ws_request_items;
+        delete ri[key];
+        root.ws_request_items = ri;
+
+        let parsed;
+        try {
+            parsed = JSON.parse(SuttaBridge.parse_word_selection_response(response, items_json));
+        } catch (e) {
+            parsed = { error: "Failed to parse word selection response: " + e };
+        }
+
+        if (parsed.error !== undefined) {
+            logger.error(`Word selection request ${request_id} failed: ${parsed.error}`);
+            for (let pi of covered) {
+                root.ws_set_status(pi, "error", parsed.error);
+            }
+        } else {
+            // Group the valid selections by paragraph index (id = p<pi>w<wi>).
+            let by_para = {};
+            for (let sel of parsed.selections) {
+                let m = sel.id.match(/^p(\d+)w(\d+)$/);
+                if (!m) continue;
+                let pi = parseInt(m[1], 10);
+                if (by_para[pi] === undefined) by_para[pi] = [];
+                by_para[pi].push({ word_idx: parseInt(m[2], 10), uid: sel.uid });
+            }
+            for (let pi of covered) {
+                let applied = root.apply_word_selections(pi, by_para[pi] || []);
+                let noun = applied === 1 ? "word" : "words";
+                root.ws_set_status(pi, "success", `Word selections updated (${applied} ${noun})`);
+            }
+        }
+
+        // Sequential mode: schedule the next queued request.
+        root.ws_schedule_next();
     }
 
     // Current session data
@@ -758,6 +1009,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // paragraphs, and global state.
     function new_session() {
         root.flush_if_needed();
+        root.ws_reset();
         root.current_session_id = "";
         gloss_text_input.text = "";
         root.current_text = "";
@@ -960,6 +1212,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     function handle_all_paragraphs_results(results) {
         logger.debug(`🔄 Processing results for ${results.paragraphs.length} paragraphs`);
 
+        // The paragraph list is rebuilt: any in-flight/queued word-selection
+        // request now refers to stale content.
+        root.ws_reset();
+
         // Clear the paragraph model
         paragraph_model.clear();
 
@@ -988,6 +1244,15 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         logger.debug(`✅ Successfully processed ${results.paragraphs.length} paragraphs`);
         root.session_needs_saving = true;
+
+        // Auto-run AI word selection over all glossed paragraphs.
+        if (root.is_word_selection_enabled() && paragraph_model.count > 0) {
+            let all_indexes = [];
+            for (var pi = 0; pi < paragraph_model.count; pi++) {
+                all_indexes.push(pi);
+            }
+            root.start_word_selection(all_indexes, false);
+        }
     }
 
     // Handle results from background processing of a single paragraph
@@ -1020,6 +1285,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         logger.debug(`✅ Successfully processed paragraph ${paragraph_index}`);
         root.session_needs_saving = true;
+
+        // Auto-run AI word selection for the re-glossed paragraph.
+        if (root.is_word_selection_enabled()) {
+            root.start_word_selection([paragraph_index], false);
+        }
     }
 
     // Start background processing for all paragraphs
@@ -1105,6 +1375,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         try {
             var session_data = JSON.parse(gloss_data_json);
 
+            root.ws_reset();
             paragraph_model.clear();
             root.current_text = session_data.text || "";
             root.no_duplicates_globally = session_data.no_duplicates_globally !== undefined ?
@@ -1163,6 +1434,51 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
 
         root.session_needs_saving = true;
+    }
+
+    // Batch variant of update_word_selection() for applying an AI response:
+    // all of a paragraph's selections in one words_data_json rewrite + a
+    // single setProperty (the per-word function rebuilds the whole word-row
+    // Repeater on every call). selections = [{ word_idx, uid }]; the option
+    // index is found by uid. Returns the number of applied selections.
+    function apply_word_selections(paragraph_idx, selections) {
+        if (paragraph_idx >= paragraph_model.count) return 0;
+
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return 0;
+
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("apply_word_selections: failed to parse words_data_json: " + e);
+            return 0;
+        }
+
+        var applied = 0;
+        for (let sel of selections) {
+            let wi = sel.word_idx;
+            if (wi >= words_data.length) continue;
+            let w = words_data[wi];
+            if (!w || !w.results) continue;
+            let opt_idx = -1;
+            for (var i = 0; i < w.results.length; i++) {
+                if (w.results[i].uid === sel.uid) {
+                    opt_idx = i;
+                    break;
+                }
+            }
+            if (opt_idx < 0) continue;
+            words_data[wi].selected_index = opt_idx;
+            words_data[wi].stem = w.results[opt_idx].word;
+            applied += 1;
+        }
+
+        if (applied > 0) {
+            paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+            root.session_needs_saving = true;
+        }
+        return applied;
     }
 
     function update_paragraph_text(index, new_text) {
@@ -1994,12 +2310,70 @@ ${main_text}
                             }
 
                             Button {
+                                id: update_selections_btn
+                                text: "Update Selections"
+                                visible: root.is_word_selection_enabled()
+                                enabled: !root.is_ws_paragraph_active(paragraph_item.index)
+                                onClicked: root.start_word_selection([paragraph_item.index], true)
+                            }
+
+                            Button {
                                 id: update_gloss_btn
                                 text: "Update Gloss"
                                 enabled: !root.is_processing_single
                                 icon.source: root.is_processing_single ? "icons/32x32/fa_stopwatch-solid.png" : ""
                                 onClicked: root.start_background_paragraph_gloss(paragraph_item.index)
                             }
+                        }
+                    }
+                }
+
+                // AI word-selection status: waiting / busy / auto-hiding
+                // success / persistent error, under the paragraph text input.
+                RowLayout {
+                    id: ws_status_row
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
+                    spacing: 8
+
+                    property var ws_state: root.ws_status[paragraph_item.index]
+                    visible: ws_state !== undefined
+
+                    onWs_stateChanged: {
+                        if (ws_state !== undefined && ws_state.state === "success") {
+                            ws_success_hide_timer.restart();
+                        }
+                    }
+
+                    Timer {
+                        id: ws_success_hide_timer
+                        interval: 4000
+                        onTriggered: root.ws_clear_status(paragraph_item.index, "success")
+                    }
+
+                    BusyIndicator {
+                        visible: ws_status_row.ws_state !== undefined && ws_status_row.ws_state.state === "busy"
+                        running: visible
+                        Layout.preferredHeight: 24
+                        Layout.preferredWidth: 24
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        font.pointSize: root.vocab_font_point_size
+                        text: {
+                            let s = ws_status_row.ws_state;
+                            if (s === undefined) return "";
+                            if (s.state === "waiting") return "Waiting for word selection...";
+                            return s.message || "";
+                        }
+                        color: {
+                            let s = ws_status_row.ws_state;
+                            if (s !== undefined && s.state === "error") return "#E53935";
+                            if (s !== undefined && s.state === "success") return "#4CAF50";
+                            return root.text_color;
                         }
                     }
                 }

@@ -37,9 +37,16 @@ pub mod qobject {
         #[qinvokable]
         fn prompt_request_with_messages(self: Pin<&mut PromptManager>, sender_message_idx: usize, provider_name: &QString, model_name: &QString, messages_json: &QString);
 
+        #[qinvokable]
+        fn word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString);
+
         #[qsignal]
         #[cxx_name = "promptResponse"]
         fn prompt_response(self: Pin<&mut PromptManager>, paragraph_idx: usize, translation_idx: usize, model_name: QString, response: QString, response_html: QString);
+
+        #[qsignal]
+        #[cxx_name = "wordSelectionResponse"]
+        fn word_selection_response(self: Pin<&mut PromptManager>, request_id: usize, model_name: QString, response: QString);
 
         #[qsignal]
         #[cxx_name = "promptResponseForMessages"]
@@ -190,6 +197,53 @@ impl qobject::PromptManager {
                     QString::from(model_name_text),
                     QString::from(response_content.trim()),
                     QString::from(response_content_html.trim()));
+            }).unwrap();
+        }); // end of thread
+    }
+
+    /// Gloss Tab AI word selection. Same request machinery as `prompt_request`
+    /// (thread + in-band `Error:` responses), keyed by a caller-chosen
+    /// `request_id` which QML maps back to the covered paragraph indexes.
+    fn word_selection_request(self: Pin<&mut Self>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
+        let qt_thread = self.qt_thread();
+
+        let prompt_text = prompt.to_string();
+        let model_name_text = model_name.to_string();
+        let provider_name_text = provider_name.to_string();
+
+        // Spawn a thread so Qt event loop is not blocked
+        thread::spawn(move || {
+            // Check if provider is enabled
+            if !is_provider_enabled(&provider_name_text) {
+                let error_msg = format!("Error: Provider {} is disabled", provider_name_text);
+                qt_thread.queue(move |mut qo| {
+                    qo.as_mut().word_selection_response(
+                        request_id,
+                        QString::from(model_name_text),
+                        QString::from(error_msg));
+                }).unwrap();
+                return;
+            }
+            // The system prompt is already prepended to the prompt content
+            // (single-message convention, same as GlossTab's AI Translate).
+            let single_message = vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt_text,
+            }];
+
+            let response_content = {
+                let rt = Runtime::new().unwrap();
+                match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
+                    Ok(content) => content,
+                    Err(e) => format!("Error: {}", e),
+                }
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().word_selection_response(
+                    request_id,
+                    QString::from(model_name_text),
+                    QString::from(response_content.trim()));
             }).unwrap();
         }); // end of thread
     }

@@ -361,6 +361,10 @@ Item {
         return true;
     }
 
+    function parse_word_selection_response(response: string, expected_items_json: string): string {
+        return '{"selections": []}';
+    }
+
     function get_providers_json(): string {
         return '[]';
     }
