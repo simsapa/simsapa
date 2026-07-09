@@ -1397,7 +1397,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                     var para_data = session_data.paragraphs[i];
                     var model_item = {
                         text: para_data.text || "",
-                        words_data_json: JSON.stringify(para_data.words || []),
+                        // Re-derive resolution / checked state from the current
+                        // cache + phrase tables — never trust the serialized
+                        // session's annotations (the cache may have changed, and
+                        // pre-feature sessions lack context_hash).
+                        words_data_json: SuttaBridge.annotate_gloss_words_json(JSON.stringify(para_data.words || [])),
                         translations_json: JSON.stringify(para_data.translations || []),
                         selected_ai_tab: para_data.selected_ai_tab || 0
                     };
@@ -1471,6 +1475,18 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (opt_idx < 0) continue;
             words_data[wi].selected_index = opt_idx;
             words_data[wi].stem = w.results[opt_idx].word;
+            // Persist the AI choice (origin "ai" never downgrades a "user" or
+            // "built-in" row); mark the word ai-resolved only when the row was
+            // actually written, so the robot icon / checked state stays true
+            // to the cache table.
+            let saved = SuttaBridge.save_gloss_word_cache(
+                w.original_word,
+                w.example_sentence || "",
+                sel.uid,
+                "ai");
+            if (saved) {
+                words_data[wi].resolution = "ai";
+            }
             applied += 1;
         }
 
@@ -1479,6 +1495,26 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             root.session_needs_saving = true;
         }
         return applied;
+    }
+
+    // Set or clear (null) a word's resolution annotation in words_data_json.
+    // UI/session state only — the cache row itself is written/deleted by the
+    // caller (saved-toggle click, unsave confirm dialog).
+    function set_word_resolution(paragraph_idx, word_idx, resolution) {
+        if (paragraph_idx >= paragraph_model.count) return;
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return;
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("set_word_resolution: failed to parse words_data_json: " + e);
+            return;
+        }
+        if (word_idx >= words_data.length) return;
+        words_data[word_idx].resolution = resolution;
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.session_needs_saving = true;
     }
 
     function update_paragraph_text(index, new_text) {
@@ -2625,6 +2661,62 @@ ${main_text}
                                         wrapMode: TextEdit.WordWrap
                                     }
 
+                                    // AI-resolved indicator: the cached choice for this
+                                    // (word, context) came from an AI response.
+                                    Image {
+                                        id: robot_icon
+                                        source: "icons/32x32/pixel--robot-solid.png"
+                                        Layout.alignment: Qt.AlignTop
+                                        Layout.preferredWidth: 20
+                                        Layout.preferredHeight: 20
+                                        fillMode: Image.PreserveAspectFit
+                                        visible: word_select.visible &&
+                                                 (wordItem.modelData.resolution || null) === "ai"
+                                    }
+
+                                    // Saved toggle: checked = a cache row exists for this
+                                    // (word, context) — origin "user", "ai" or "built-in".
+                                    // Phrase matches have no cache row and show unchecked.
+                                    Button {
+                                        id: saved_toggle
+                                        visible: word_select.visible
+                                        property bool is_saved: {
+                                            let r = wordItem.modelData.resolution || null;
+                                            return r === "user" || r === "ai" || r === "built-in";
+                                        }
+                                        icon.source: is_saved ? "icons/32x32/fa_square-check-solid.png"
+                                                              : "icons/32x32/fa_square-check-regular.png"
+                                        Layout.preferredHeight: word_select.height
+                                        Layout.preferredWidth: word_select.height
+                                        Layout.alignment: Qt.AlignTop
+                                        ToolTip.visible: hovered
+                                        ToolTip.delay: 500
+                                        ToolTip.text: is_saved ? "Selection saved for this context. Click to remove."
+                                                               : "Save this selection for this context"
+                                        onClicked: {
+                                            if (is_saved) {
+                                                unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
+                                                unsave_word_dialog.word_idx = wordItem.index;
+                                                unsave_word_dialog.word = wordItem.modelData.original_word;
+                                                unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
+                                                unsave_word_dialog.open();
+                                            } else {
+                                                var idx = word_select.currentIndex || 0;
+                                                let uid = wordItem.modelData.results[idx].uid;
+                                                let ok = SuttaBridge.save_gloss_word_cache(
+                                                    wordItem.modelData.original_word,
+                                                    wordItem.modelData.example_sentence || "",
+                                                    uid,
+                                                    "user");
+                                                if (ok) {
+                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user");
+                                                } else {
+                                                    logger.error("Failed to save word selection for '" + wordItem.modelData.original_word + "'");
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     RowLayout {
                                         Layout.preferredWidth: wordItem.width * 0.8
                                         Layout.fillHeight: true
@@ -2672,6 +2764,35 @@ ${main_text}
                     }
                 }
 
+            }
+        }
+    }
+
+    // Confirm removing a saved word-selection cache row (unchecking the saved
+    // toggle) — covers "user", "ai" and "built-in" rows alike. Cancel keeps
+    // the row and the checked state.
+    Dialog {
+        id: unsave_word_dialog
+        title: "Remove Saved Selection"
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        property int paragraph_idx: -1
+        property int word_idx: -1
+        property string word: ""
+        property string word_context_hash: ""
+
+        Label {
+            text: "Remove the saved selection for '" + unsave_word_dialog.word + "' in this context?"
+            wrapMode: Text.WordWrap
+        }
+
+        onAccepted: {
+            if (SuttaBridge.delete_gloss_word_cache(unsave_word_dialog.word, unsave_word_dialog.word_context_hash)) {
+                root.set_word_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, null);
+            } else {
+                logger.error("Failed to delete word selection cache row for '" + unsave_word_dialog.word + "'");
             }
         }
     }

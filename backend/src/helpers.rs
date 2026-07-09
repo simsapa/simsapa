@@ -2570,6 +2570,221 @@ pub fn gloss_cache_word_key(word: &str) -> String {
     consistent_niggahita(Some(word.to_lowercase())).trim().to_string()
 }
 
+/// Pre-fetched word-selection cache rows and set-phrase rules for gloss
+/// processing (`process_word_for_glossing` takes no appdata connection, so the
+/// caller fetches these up front — one batch query per paragraph plus the tiny
+/// phrase table — and passes them in).
+#[derive(Debug, Clone, Default)]
+pub struct GlossResolutionData {
+    /// Set-phrase rules as stored: (normalized phrase, word key, selected_uid).
+    pub phrases: Vec<(String, String, String)>,
+    /// Cache rows keyed by `(word_key, context_hash)` → `(selected_uid, origin)`.
+    pub cache: HashMap<(String, String), (String, String)>,
+}
+
+impl GlossResolutionData {
+    /// Fetch the phrase table and the cache rows for the given words' keys in
+    /// one batch query. Key derivation matches `process_word_for_glossing`:
+    /// `gloss_cache_word_key(clean_word_pali(word))` + the context hash of the
+    /// word's window.
+    pub fn fetch(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        words_with_context: &[GlossWordContext],
+    ) -> Self {
+        let pairs: Vec<(String, String)> = words_with_context
+            .iter()
+            .map(|w| {
+                (
+                    gloss_cache_word_key(&clean_word_pali(&w.clean_word)),
+                    gloss_context_hash(&normalize_gloss_context(&w.context_snippet)),
+                )
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        Self::fetch_for_pairs(appdata, &pairs)
+    }
+
+    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
+    /// pairs (e.g. re-annotating a restored session's words_data JSON).
+    pub fn fetch_for_pairs(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        pairs: &[(String, String)],
+    ) -> Self {
+        let cache = appdata
+            .get_gloss_word_cache_batch(pairs)
+            .into_iter()
+            .map(|r| ((r.word, r.context_hash), (r.selected_uid, r.origin)))
+            .collect();
+
+        let phrases = appdata
+            .get_all_gloss_phrase_selections()
+            .into_iter()
+            .map(|p| (p.phrase, p.word, p.selected_uid))
+            .collect();
+
+        GlossResolutionData { phrases, cache }
+    }
+}
+
+/// Re-derive the `resolution` / `selected_index` / `context_hash` annotations
+/// of a session's words_data JSON from the **current** cache and phrase
+/// tables. Restored history sessions must not trust the serialized resolution
+/// state — the cache may have changed since the session was saved — and
+/// pre-feature sessions lack `context_hash` entirely (filled in here, which
+/// the saved-toggle delete path needs).
+///
+/// Words are kept as raw JSON values so unknown/extra fields survive the
+/// round trip. Ambiguous words (more than one result) get `selected_index` +
+/// `resolution` where the lookup resolves, and `resolution: null` where it
+/// does not (clearing stale annotations); unambiguous words only get their
+/// `context_hash` refreshed.
+pub fn annotate_gloss_words_json(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    words_json: &str,
+) -> Result<String, String> {
+    let mut words: Vec<serde_json::Value> = serde_json::from_str(words_json)
+        .map_err(|e| format!("Failed to parse words JSON: {}", e))?;
+
+    struct WordKeyInfo {
+        word_key: String,
+        normalized_context: String,
+        context_hash: String,
+    }
+
+    let infos: Vec<Option<WordKeyInfo>> = words
+        .iter()
+        .map(|w| {
+            let original_word = w.get("original_word").and_then(|v| v.as_str()).unwrap_or("");
+            if original_word.is_empty() {
+                return None;
+            }
+            let sentence = w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or("");
+            let normalized_context = normalize_gloss_context(sentence);
+            Some(WordKeyInfo {
+                word_key: gloss_cache_word_key(original_word),
+                context_hash: gloss_context_hash(&normalized_context),
+                normalized_context,
+            })
+        })
+        .collect();
+
+    let pairs: Vec<(String, String)> = infos
+        .iter()
+        .flatten()
+        .map(|i| (i.word_key.clone(), i.context_hash.clone()))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let data = GlossResolutionData::fetch_for_pairs(appdata, &pairs);
+
+    for (w, info) in words.iter_mut().zip(infos.iter()) {
+        let Some(info) = info else { continue };
+
+        let results: Vec<crate::db::dpd::LookupResult> = w
+            .get("results")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| crate::db::dpd::LookupResult {
+                        uid: r.get("uid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        word: r.get("word").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        summary: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let Some(obj) = w.as_object_mut() else { continue };
+        obj.insert("context_hash".to_string(), serde_json::json!(info.context_hash));
+
+        if results.len() > 1 {
+            match resolve_gloss_word_selection(
+                &info.word_key,
+                &info.normalized_context,
+                &info.context_hash,
+                &results,
+                &data,
+            ) {
+                Some((idx, res)) => {
+                    obj.insert("selected_index".to_string(), serde_json::json!(idx));
+                    obj.insert("stem".to_string(), serde_json::json!(results[idx as usize].word));
+                    obj.insert("resolution".to_string(), serde_json::json!(res));
+                }
+                None => {
+                    obj.insert("resolution".to_string(), serde_json::Value::Null);
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&words).map_err(|e| format!("Failed to serialize words JSON: {}", e))
+}
+
+/// Whether a stored `selected_uid` refers to the given gloss option. Gloss
+/// options carry the `dpd_lookup` uid — **numeric** `<row_id>/dpd` for DPD
+/// headwords — while curated data (the set-phrase JSON, shipped built-in cache
+/// rows) stores the stable, human-readable dict_words form built from the
+/// lemma (`ārāma-4/dpd`; see "DPD records correlate to dict_words" in
+/// AGENTS.md). Match the uid directly, or via the sanitized lemma form of the
+/// option's word (`word_uid_sanitize("ārāma 4") == "ārāma-4"`).
+pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_uid: &str) -> bool {
+    if result.uid == selected_uid {
+        return true;
+    }
+    match selected_uid.strip_suffix("/dpd") {
+        Some(base) => word_uid_sanitize(&result.word) == base,
+        None => false,
+    }
+}
+
+/// Resolve an ambiguous glossed word's selection from the pre-fetched cache /
+/// phrase data. Precedence: user cache > set phrase > built-in cache > ai
+/// cache. An entry whose `selected_uid` matches none of the word's lookup
+/// results (dictionary data changed) is ignored, falling through to the next
+/// level. Returns the matching option index and the resolution origin
+/// (`"user"` / `"phrase"` / `"built-in"` / `"ai"`).
+pub fn resolve_gloss_word_selection(
+    word_key: &str,
+    normalized_context: &str,
+    context_hash: &str,
+    results: &[crate::db::dpd::LookupResult],
+    data: &GlossResolutionData,
+) -> Option<(i32, String)> {
+    let option_index = |uid: &str| results.iter().position(|r| gloss_option_uid_matches(r, uid));
+
+    let cached = data
+        .cache
+        .get(&(word_key.to_string(), context_hash.to_string()));
+
+    if let Some((uid, origin)) = cached {
+        if origin == "user" {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, origin.clone()));
+            }
+        }
+    }
+
+    for (phrase, word, uid) in &data.phrases {
+        if word == word_key && gloss_phrase_occurs(phrase, normalized_context) {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, "phrase".to_string()));
+            }
+        }
+    }
+
+    if let Some((uid, origin)) = cached {
+        if origin == "built-in" || origin == "ai" {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, origin.clone()));
+            }
+        }
+    }
+
+    None
+}
+
 /// Extract the first top-level JSON object from a text, tolerating markdown
 /// code fences and surrounding prose. Scans for a balanced `{...}` while
 /// respecting string literals and escapes.
@@ -2684,6 +2899,7 @@ pub fn process_word_for_glossing(
     check_global: bool,
     options: &WordProcessingOptions,
     dpd: &crate::db::dpd::DpdDbHandle,
+    resolution_data: Option<&GlossResolutionData>,
 ) -> Result<Option<WordProcessingResult>, String> {
     // Call the DPD lookup function directly - much more efficient than JSON serialization
     let search_results = match dpd.dpd_lookup(&word_info.word.to_lowercase(), false, true, None, None) {
@@ -2731,14 +2947,40 @@ pub fn process_word_for_glossing(
         global_stems.insert(dedup_key, true);
     }
 
+    let original_word = clean_word_pali(&word_info.word);
+    let normalized_context = normalize_gloss_context(&word_info.sentence);
+    let context_hash = gloss_context_hash(&normalized_context);
+
+    // Resolve ambiguous words from the pre-fetched cache / set-phrase data
+    // (user cache > phrase > built-in cache > ai cache); unambiguous words
+    // need no resolution.
+    let mut selected_index = 0;
+    let mut resolution = None;
+    if results.len() > 1 {
+        if let Some(data) = resolution_data {
+            let word_key = gloss_cache_word_key(&original_word);
+            if let Some((idx, res)) = resolve_gloss_word_selection(
+                &word_key,
+                &normalized_context,
+                &context_hash,
+                &results,
+                data,
+            ) {
+                selected_index = idx;
+                resolution = Some(res);
+            }
+        }
+    }
+
     // Create the processed word result
     let processed_word = ProcessedWord {
-        original_word: clean_word_pali(&word_info.word),
+        original_word,
         results,
-        selected_index: 0,
+        selected_index,
         stem,
         example_sentence: word_info.sentence.clone(),
-        context_hash: gloss_context_hash(&normalize_gloss_context(&word_info.sentence)),
+        context_hash,
+        resolution,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -3585,6 +3827,106 @@ mod tests {
         assert!(parse_word_selection_response(r#"{"answers": []}"#, items).is_err());
         // Empty response.
         assert!(parse_word_selection_response("   ", items).is_err());
+    }
+
+    fn lookup_results(uids: &[&str]) -> Vec<crate::db::dpd::LookupResult> {
+        uids.iter()
+            .map(|uid| crate::db::dpd::LookupResult {
+                uid: uid.to_string(),
+                word: uid.trim_end_matches("/dpd").to_string(),
+                summary: String::new(),
+            })
+            .collect()
+    }
+
+    fn resolution_data_with(
+        cache: &[(&str, &str, &str, &str)],
+        phrases: &[(&str, &str, &str)],
+    ) -> GlossResolutionData {
+        GlossResolutionData {
+            phrases: phrases
+                .iter()
+                .map(|(p, w, u)| (p.to_string(), w.to_string(), u.to_string()))
+                .collect(),
+            cache: cache
+                .iter()
+                .map(|(w, h, u, o)| ((w.to_string(), h.to_string()), (u.to_string(), o.to_string())))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_resolve_gloss_word_selection_precedence() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+        let hash = "h1";
+
+        // user cache beats a phrase match pointing elsewhere.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "user")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user".to_string())),
+        );
+
+        // phrase beats built-in and ai cache rows.
+        for origin in ["built-in", "ai"] {
+            let data = resolution_data_with(
+                &[("ārāme", "h1", "ārāma-1/dpd", origin)],
+                &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+            );
+            assert_eq!(
+                resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+                Some((1, "phrase".to_string())),
+                "phrase must beat a {} cache row", origin,
+            );
+        }
+
+        // Without a phrase match, built-in and ai rows resolve with their origin.
+        for origin in ["built-in", "ai"] {
+            let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", origin)], &[]);
+            assert_eq!(
+                resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+                Some((1, origin.to_string())),
+            );
+        }
+
+        // No cache row, no phrase → unresolved.
+        let data = resolution_data_with(&[], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data), None);
+    }
+
+    #[test]
+    fn test_resolve_gloss_word_selection_misses_and_stale_uids() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+
+        // A different context hash is a cache miss.
+        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user")], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+
+        // A phrase rule only fires when the normalized phrase occurs in the
+        // context on word boundaries.
+        let data = resolution_data_with(&[], &[("gahapatissa ārāme", "ārāme", "ārāma-4/dpd")]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+
+        // A stale uid (dictionary data changed) is ignored and resolution
+        // falls through to the next precedence level.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "gone-uid/dpd", "user")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
+            Some((1, "phrase".to_string())),
+            "stale user uid falls through to the phrase match",
+        );
+
+        // Stale uid everywhere → unresolved.
+        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai")], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
     }
 
     #[test]

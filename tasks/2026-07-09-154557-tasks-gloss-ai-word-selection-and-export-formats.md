@@ -9,8 +9,9 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 - `backend/src/db/appdata_schema.rs` - Diesel schema for the two new tables.
 - `backend/src/db/appdata.rs` - CRUD: cache get/upsert/delete/count/clear, phrase lookup, seeding.
 - `backend/migrations/appdata/2026-07-09-XXXXXX_create_gloss_word_selection/` - Migration creating `gloss_word_context_cache` + `gloss_phrase_selections`.
-- `backend/src/helpers.rs` - Context normalization + stable hashing over the existing per-word window (`example_sentence` from `extract_words_with_context`); response-parsing helper (`parse_word_selection_response` + `extract_first_json_object`); cache/phrase resolution in `process_word_for_glossing`.
-- `backend/src/types.rs` - `ProcessedWord.context_hash` field (`#[serde(default)]`), computed in `process_word_for_glossing`.
+- `backend/src/helpers.rs` - Context normalization + stable hashing over the existing per-word window (`example_sentence` from `extract_words_with_context`); response-parsing helper (`parse_word_selection_response` + `extract_first_json_object`); cache/phrase resolution in `process_word_for_glossing` (`GlossResolutionData` pre-fetch struct, `resolve_gloss_word_selection`, `gloss_option_uid_matches`).
+- `backend/src/types.rs` - `ProcessedWord.context_hash` + `resolution` fields (`#[serde(default)]`), computed in `process_word_for_glossing`.
+- `backend/tests/test_gloss_word_resolution.rs` - Integration tests: seeded phrase resolves ārāme, user > phrase precedence, stale-uid fallthrough, ai/built-in origins, unambiguous words untouched (real DPD DB + temp appdata DB).
 - `backend/src/docx_export.rs` - New DOCX generation module (embedded template + `word/document.xml` generation).
 - `backend/tests/` (or in-module `#[cfg(test)]`) - Tests for context windows, hashing, cache CRUD, phrase matching, payload/response serde, docx generation.
 - `bridges/src/sutta_bridge.rs` - Bridge fns: cache save/clear/count, `get_default_system_prompt`, word-selection settings accessors, `export_gloss_docx`.
@@ -128,13 +129,13 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 
 **Dependencies:** 1.x (CRUD, helpers, seeding), 4.x (pipeline, words_data context fields).
 
-- [ ] 5.1 Integrate cache + phrase resolution into the Rust gloss processing (per-word lookup with precedence, `selected_index` + `resolution` annotation). Unit/integration tests against the real appdata DB, incl. stale-uid entries being ignored.
-- [ ] 5.2 Exclude resolved words from `build_word_selection_items` (automatic mode) and implement the forced-pass re-inclusion of `"ai"`-resolved words only.
-- [ ] 5.3 On AI response application, upsert `origin="ai"` cache rows and update `words_data_json` entries (`resolution: "ai"`), refreshing the row UI state.
-- [ ] 5.4 Add the robot icon + checkable saved toggle to the word row delegate in `GlossTab.qml`, bound to the entry's `resolution`; implement check (save as `user`) and uncheck (confirm dialog → delete) flows.
-- [ ] 5.5 Re-derive `resolution`/checked state from the cache table when restoring a history session (`load_session`) — a bridge fn that takes the restored `words_data_json` and returns it annotated (reusing the 5.1 lookup logic).
-- [ ] 5.6 Verify PRD test cases end-to-end against the localhost API / backend tests: (1) `ārāme` → `ārāma-4/dpd` resolves from the seeded phrase with zero AI requests; (2) `bhikkhūnaṁ` → `bhikkhu` via AI selection (mock or live model), and `bhikkhū` via the phrase. Verify re-gloss of an unchanged text issues zero requests and that a `user` row survives a forced pass.
-- [ ] 5.7 Build and run backend tests; fix fallout.
+- [x] 5.1 Integrate cache + phrase resolution into the Rust gloss processing (per-word lookup with precedence, `selected_index` + `resolution` annotation). Unit/integration tests against the real appdata DB, incl. stale-uid entries being ignored. **Discovered:** gloss options carry the **numeric** dpd_headwords uid (`12463/dpd`), while curated data (phrase JSON, shipped built-in rows) stores the lemma-based dict_words form (`ārāma-4/dpd`) — `gloss_option_uid_matches` accepts both (direct match or `word_uid_sanitize(option.word)`); cache rows written at runtime (5.3) will store the option's numeric uid.
+- [x] 5.2 Exclude resolved words from `build_word_selection_items` (automatic mode) and implement the forced-pass re-inclusion of `"ai"`-resolved words only.
+- [x] 5.3 On AI response application, upsert `origin="ai"` cache rows and update `words_data_json` entries (`resolution: "ai"`), refreshing the row UI state.
+- [x] 5.4 Add the robot icon + checkable saved toggle to the word row delegate in `GlossTab.qml`, bound to the entry's `resolution`; implement check (save as `user`) and uncheck (confirm dialog → delete) flows.
+- [x] 5.5 Re-derive `resolution`/checked state from the cache table when restoring a history session (`load_session`) — a bridge fn that takes the restored `words_data_json` and returns it annotated (reusing the 5.1 lookup logic).
+- [x] 5.6 Verify PRD test cases end-to-end against the localhost API / backend tests: (1) `ārāme` → `ārāma-4/dpd` resolves from the seeded phrase with zero AI requests; (2) `bhikkhūnaṁ` → `bhikkhu` via AI selection (mock or live model), and `bhikkhū` via the phrase. Verify re-gloss of an unchanged text issues zero requests and that a `user` row survives a forced pass.
+- [x] 5.7 Build and run backend tests; fix fallout.
 
 ### 6.0 DOCX export
 

@@ -912,6 +912,9 @@ pub mod qobject {
         fn parse_word_selection_response(self: &SuttaBridge, response: &QString, expected_items_json: &QString) -> QString;
 
         #[qinvokable]
+        fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
+
+        #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -2500,6 +2503,22 @@ impl qobject::SuttaBridge {
         }
     }
 
+    /// Re-derive `resolution` / `selected_index` / `context_hash` for a
+    /// restored session's words_data JSON from the current cache and phrase
+    /// tables (see `simsapa_backend::helpers::annotate_gloss_words_json`).
+    /// Returns the input unchanged when annotation fails.
+    pub fn annotate_gloss_words_json(&self, words_data_json: &QString) -> QString {
+        let app_data = get_app_data();
+        let words_json = words_data_json.to_string();
+        match simsapa_backend::helpers::annotate_gloss_words_json(&app_data.dbm.appdata, &words_json) {
+            Ok(annotated) => QString::from(annotated),
+            Err(e) => {
+                error(&format!("annotate_gloss_words_json(): {}", e));
+                words_data_json.clone()
+            }
+        }
+    }
+
     /// Parse and validate an AI word-selection response against the request's
     /// items array (see `simsapa_backend::helpers::parse_word_selection_response`).
     /// Returns `{"selections": [{"id": "...", "uid": "..."}]}` on success or
@@ -3546,6 +3565,12 @@ impl qobject::SuttaBridge {
 
                 // Extract words with context from paragraph
                 let words_with_context = simsapa_backend::helpers::extract_words_with_context(paragraph_text);
+                // Pre-fetch the word-selection cache rows + set-phrase table for
+                // this paragraph (process_word_for_glossing takes no appdata handle).
+                let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
+                    &app_data.dbm.appdata,
+                    &words_with_context,
+                );
                 let mut paragraph_shown_stems = std::collections::HashMap::new();
                 let mut processed_words = Vec::new();
 
@@ -3563,6 +3588,7 @@ impl qobject::SuttaBridge {
                         input_data.options.no_duplicates_globally,
                         &input_data.options,
                         &app_data.dbm.dpd,
+                        Some(&resolution_data),
                     ) {
                         Ok(result) => processed_words.push(result),
                         Err(e) => {
@@ -3655,6 +3681,12 @@ impl qobject::SuttaBridge {
 
             // Extract words with context from paragraph
             let words_with_context = simsapa_backend::helpers::extract_words_with_context(&input_data.paragraph_text);
+            // Pre-fetch the word-selection cache rows + set-phrase table for
+            // this paragraph (process_word_for_glossing takes no appdata handle).
+            let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
+                &app_data.dbm.appdata,
+                &words_with_context,
+            );
             let mut paragraph_shown_stems = std::collections::HashMap::new();
             let mut global_stems = input_data.options.existing_global_stems.clone();
             let mut processed_words = Vec::new();
@@ -3673,6 +3705,7 @@ impl qobject::SuttaBridge {
                     input_data.options.no_duplicates_globally,
                     &input_data.options,
                     &app_data.dbm.dpd,
+                    Some(&resolution_data),
                 ) {
                     Ok(result) => processed_words.push(result),
                     Err(e) => {

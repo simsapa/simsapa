@@ -365,6 +365,10 @@ Item {
         return '{"selections": []}';
     }
 
+    function annotate_gloss_words_json(words_data_json: string): string {
+        return words_data_json;
+    }
+
     function get_providers_json(): string {
         return '[]';
     }

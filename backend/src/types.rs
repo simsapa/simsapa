@@ -379,6 +379,13 @@ pub struct ProcessedWord {
     /// `gloss_prompts_history` sessions without the field still deserialize.
     #[serde(default)]
     pub context_hash: String,
+    /// How `selected_index` was resolved from the word-selection cache /
+    /// set-phrase tables: `"user"`, `"phrase"`, `"built-in"` or `"ai"`;
+    /// `None` = unresolved (fresh AI request candidate). Precedence:
+    /// user cache > phrase > built-in cache > ai cache. `#[serde(default)]`
+    /// for pre-existing history sessions (see `context_hash` above).
+    #[serde(default)]
+    pub resolution: Option<String>,
 }
 
 /// Result indicating an unrecognized word

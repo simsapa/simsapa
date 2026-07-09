@@ -99,6 +99,7 @@ fn assert_compound_survives_component(component: &str, compound: &str) {
         true,
         &options,
         dpd,
+        None,
     )
     .unwrap();
     assert!(
@@ -113,6 +114,7 @@ fn assert_compound_survives_component(component: &str, compound: &str) {
         true,
         &options,
         dpd,
+        None,
     )
     .unwrap();
     assert!(
@@ -127,6 +129,7 @@ fn assert_compound_survives_component(component: &str, compound: &str) {
         true,
         &options,
         dpd,
+        None,
     )
     .unwrap();
     assert!(
