@@ -2518,6 +2518,58 @@ pub fn clean_word_pali(word: &str) -> String {
     without_end.into_owned()
 }
 
+/// Normalize a gloss context window (a `ProcessedWord.example_sentence` value
+/// or a curated set phrase) for cache hashing and phrase matching.
+///
+/// Pipeline: strip the `<b>`/`</b>` target markers, `normalize_plain_text`
+/// (lowercase, `consistent_niggahita`, `normalize_iti_sandhi`, space collapse),
+/// then collapse *all* whitespace to single spaces (`normalize_plain_text`'s
+/// `RE_SPACES` only collapses runs of spaces — verse texts arrive with varying
+/// line wrapping), strip remaining punctuation, and trim.
+pub fn normalize_gloss_context(text: &str) -> String {
+    lazy_static! {
+        static ref RE_ALL_WS: Regex = Regex::new(r"\s+").unwrap();
+        // Punctuation to strip after iti-sandhi normalization has consumed the
+        // quote marks it needs. Includes parens/brackets (variant readings).
+        static ref RE_GLOSS_PUNCT: Regex = Regex::new(r#"[\.,;:\!\?'‘’"“”…—–\-\(\)\[\]]+"#).unwrap();
+    }
+
+    let text = text.replace("<b>", "").replace("</b>", "");
+    let text = normalize_plain_text(&text);
+    let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
+    let text = RE_GLOSS_PUNCT.replace_all(&text, " ").into_owned();
+    let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
+    text.trim().to_string()
+}
+
+/// Stable hex digest of a normalized gloss context window (see
+/// `normalize_gloss_context`). SHA-256 — std's `DefaultHasher` is not stable
+/// across Rust versions and the hashes are persisted in the appdata DB.
+pub fn gloss_context_hash(normalized_context: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(normalized_context.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Whether a normalized set phrase occurs in a normalized context window
+/// (both sides already passed through `normalize_gloss_context`), matching on
+/// word boundaries so a phrase cannot match inside a longer word.
+pub fn gloss_phrase_occurs(normalized_phrase: &str, normalized_context: &str) -> bool {
+    if normalized_phrase.is_empty() {
+        return false;
+    }
+    format!(" {} ", normalized_context).contains(&format!(" {} ", normalized_phrase))
+}
+
+/// Derive the `gloss_word_context_cache.word` key from a glossed surface form.
+/// `ProcessedWord.original_word` is `clean_word_pali` output and NOT lowercased,
+/// and sources differ in niggahīta (`dhammaṁ` vs `dhammaṃ`) — one shared helper
+/// keeps Rust and QML callers producing the same key.
+pub fn gloss_cache_word_key(word: &str) -> String {
+    consistent_niggahita(Some(word.to_lowercase())).trim().to_string()
+}
+
 /// Process a single word for glossing, equivalent to QML process_word_for_glossing function
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
@@ -3306,6 +3358,64 @@ mod tests {
     fn test_consistent_niggahita() {
         assert_eq!(consistent_niggahita(Some("saṃsāra".to_string())), "saṁsāra");
         assert_eq!(consistent_niggahita(Some("dhammaṁ".to_string())), "dhammaṁ");
+    }
+
+    #[test]
+    fn test_normalize_gloss_context() {
+        // PRD test sentence 1, with the <b> target marker as delivered in
+        // ProcessedWord.example_sentence.
+        let s1 = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa <b>ārāme</b>.";
+        assert_eq!(
+            normalize_gloss_context(s1),
+            "ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme",
+        );
+
+        // PRD test sentence 2.
+        let s2 = "Paṭisallīnā manobhāvanīyā <b>bhikkhū</b>.";
+        assert_eq!(
+            normalize_gloss_context(s2),
+            "paṭisallīnā manobhāvanīyā bhikkhū",
+        );
+
+        // A curated set phrase normalizes with the same pipeline.
+        assert_eq!(
+            normalize_gloss_context("anāthapiṇḍikassa ārāme"),
+            "anāthapiṇḍikassa ārāme",
+        );
+    }
+
+    #[test]
+    fn test_gloss_context_hash_whitespace_and_niggahita_invariance() {
+        // Line-wrapped verse variant: newlines and indentation collapse to
+        // single spaces, so different pasted wrappings hash identically.
+        let wrapped = "Manopubbaṅgamā dhammā,\n  manoseṭṭhā <b>manomayā</b>;";
+        let unwrapped = "Manopubbaṅgamā dhammā, manoseṭṭhā <b>manomayā</b>;";
+        assert_eq!(
+            gloss_context_hash(&normalize_gloss_context(wrapped)),
+            gloss_context_hash(&normalize_gloss_context(unwrapped)),
+        );
+
+        // ṃ (PTS/DPD) and ṁ (CST/MS) variants hash identically.
+        let with_m1 = "Ekaṁ samayaṁ bhagavā <b>dhammaṁ</b> deseti.";
+        let with_m2 = "Ekaṃ samayaṃ bhagavā <b>dhammaṃ</b> deseti.";
+        assert_eq!(
+            gloss_context_hash(&normalize_gloss_context(with_m1)),
+            gloss_context_hash(&normalize_gloss_context(with_m2)),
+        );
+
+        // The digest is a stable 64-char hex string.
+        let h = gloss_context_hash(&normalize_gloss_context(with_m1));
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_gloss_cache_word_key() {
+        // clean_word_pali output is not lowercased; the key must be.
+        assert_eq!(gloss_cache_word_key("Dhammaṁ"), "dhammaṁ");
+        // ṁ/ṃ surface forms produce the same key.
+        assert_eq!(gloss_cache_word_key("dhammaṃ"), gloss_cache_word_key("dhammaṁ"));
+        assert_eq!(gloss_cache_word_key("ārāme"), "ārāme");
     }
 
     #[test]

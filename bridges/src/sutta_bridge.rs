@@ -882,10 +882,31 @@ pub mod qobject {
         fn get_system_prompt(self: &SuttaBridge, prompt_name: &QString) -> QString;
 
         #[qinvokable]
+        fn get_default_system_prompt(self: &SuttaBridge, prompt_name: &QString) -> QString;
+
+        #[qinvokable]
         fn set_system_prompts_json(self: Pin<&mut SuttaBridge>, prompts_json: &QString);
 
         #[qinvokable]
         fn get_system_prompts_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn get_gloss_word_selection_settings_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_word_selection_settings_json(self: Pin<&mut SuttaBridge>, settings_json: &QString);
+
+        #[qinvokable]
+        fn save_gloss_word_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool;
+
+        #[qinvokable]
+        fn delete_gloss_word_cache(self: &SuttaBridge, word: &QString, context_hash: &QString) -> bool;
+
+        #[qinvokable]
+        fn gloss_word_cache_count(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn clear_gloss_word_cache(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
@@ -2382,6 +2403,14 @@ impl qobject::SuttaBridge {
         QString::from(prompt)
     }
 
+    /// Get the built-in default text of a system prompt by name.
+    /// Returns an empty string when the key has no built-in default.
+    pub fn get_default_system_prompt(&self, prompt_name: &QString) -> QString {
+        let prompts = simsapa_backend::app_settings::default_system_prompts();
+        let prompt = prompts.get(&prompt_name.to_string()).cloned().unwrap_or_default();
+        QString::from(prompt)
+    }
+
     /// Save system prompts in the db as JSON
     pub fn set_system_prompts_json(self: Pin<&mut Self>, prompts_json: &QString) {
         let app_data = get_app_data();
@@ -2393,6 +2422,79 @@ impl qobject::SuttaBridge {
         let app_data = get_app_data();
         let prompts_json = app_data.get_system_prompts_json();
         QString::from(prompts_json)
+    }
+
+    /// Get the Gloss tab's AI word-selection settings as JSON
+    /// (`{"enabled": bool, "provider": "...", "model": "..."}`).
+    pub fn get_gloss_word_selection_settings_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_gloss_word_selection_settings_json())
+    }
+
+    /// Save the Gloss tab's AI word-selection settings from JSON.
+    pub fn set_gloss_word_selection_settings_json(self: Pin<&mut Self>, settings_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_gloss_word_selection_settings_json(&settings_json.to_string());
+    }
+
+    /// Save (upsert) a gloss word-selection cache row. `word` is the glossed
+    /// surface form (`ProcessedWord.original_word`), `context_snippet` the
+    /// word's context window (`example_sentence`, `<b>` markers allowed);
+    /// key normalization and hashing happen here. Respects origin precedence
+    /// (an `ai` write never downgrades a `user` or `built-in` row).
+    pub fn save_gloss_word_cache(&self, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool {
+        use simsapa_backend::helpers::{gloss_cache_word_key, gloss_context_hash, normalize_gloss_context};
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        let snippet = context_snippet.to_string();
+        let hash = gloss_context_hash(&normalize_gloss_context(&snippet));
+        match app_data.dbm.appdata.upsert_gloss_word_cache(
+            &word_key,
+            &hash,
+            &snippet,
+            &selected_uid.to_string(),
+            &origin.to_string(),
+        ) {
+            Ok(written) => written,
+            Err(e) => {
+                error(&format!("save_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Delete the cache row for (word, context_hash). `word` may be the raw
+    /// surface form (key-normalized here); `context_hash` is the stored hash.
+    pub fn delete_gloss_word_cache(&self, word: &QString, context_hash: &QString) -> bool {
+        use simsapa_backend::helpers::gloss_cache_word_key;
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        match app_data.dbm.appdata.delete_gloss_word_cache(&word_key, &context_hash.to_string()) {
+            Ok(()) => true,
+            Err(e) => {
+                error(&format!("delete_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Count of user-clearable (`ai` + `user`) word-selection cache rows.
+    pub fn gloss_word_cache_count(&self) -> i32 {
+        let app_data = get_app_data();
+        app_data.dbm.appdata.count_gloss_word_cache() as i32
+    }
+
+    /// Bulk clear of `ai` + `user` cache rows (`built-in` rows and the phrase
+    /// table are untouched).
+    pub fn clear_gloss_word_cache(&self) -> bool {
+        let app_data = get_app_data();
+        match app_data.dbm.appdata.clear_gloss_word_cache() {
+            Ok(()) => true,
+            Err(e) => {
+                error(&format!("clear_gloss_word_cache(): {}", e));
+                false
+            }
+        }
     }
 
     /// Get all providers as JSON

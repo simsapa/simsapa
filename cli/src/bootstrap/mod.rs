@@ -427,6 +427,18 @@ RELEASE_CHANNEL=development
     // `suttas_lang_*.sqlite3` files (not the main appdata), so they don't
     // affect these caches.
     if !skip_appdata {
+        // Seed the Gloss tab's curated set-phrase selections before archiving.
+        // Bootstrap-only: a new database version ships new built-in data, there
+        // is no app-init re-seeding (see docs/gloss-ai-word-selection.md).
+        logger::info("=== Seed gloss phrase selections ===");
+        {
+            let app_data = simsapa_backend::get_app_data();
+            match app_data.dbm.appdata.seed_gloss_phrase_selections() {
+                Ok(n) => logger::info(&format!("Seeded {} gloss phrase selection rows", n)),
+                Err(e) => logger::warn(&format!("Failed to seed gloss phrase selections: {}", e)),
+            }
+        }
+
         logger::info("=== Warm AppSettings caches ===");
         simsapa_backend::app_data::warm_caches_into_appdata();
 

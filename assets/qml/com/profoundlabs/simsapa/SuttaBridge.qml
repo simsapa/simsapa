@@ -325,12 +325,40 @@ Item {
         return 'prompt_value';
     }
 
+    function get_default_system_prompt(prompt_name: string): string {
+        return 'prompt_value';
+    }
+
     function set_system_prompts_json(prompts_json: string) {
         console.log("set_system_prompts_json()");
     }
 
     function get_system_prompts_json(): string {
         return '{}';
+    }
+
+    function get_gloss_word_selection_settings_json(): string {
+        return '{"enabled": false, "provider": "", "model": ""}';
+    }
+
+    function set_gloss_word_selection_settings_json(settings_json: string) {
+        console.log("set_gloss_word_selection_settings_json()");
+    }
+
+    function save_gloss_word_cache(word: string, context_snippet: string, selected_uid: string, origin: string): bool {
+        return true;
+    }
+
+    function delete_gloss_word_cache(word: string, context_hash: string): bool {
+        return true;
+    }
+
+    function gloss_word_cache_count(): int {
+        return 0;
+    }
+
+    function clear_gloss_word_cache(): bool {
+        return true;
     }
 
     function get_providers_json(): string {

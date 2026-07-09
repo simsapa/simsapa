@@ -590,6 +590,53 @@ pub struct NewGlossPromptsHistory<'a> {
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
 
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, PartialEq, Serialize, Deserialize)]
+#[diesel(table_name = gloss_word_context_cache)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct GlossWordContextCache {
+    pub id: i32,
+    pub word: String,
+    pub context_hash: String,
+    pub context_snippet: String,
+    pub selected_uid: String,
+    /// "ai", "user" or "built-in"
+    pub origin: String,
+    pub created_at: Option<chrono::NaiveDateTime>,
+    pub updated_at: Option<chrono::NaiveDateTime>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = gloss_word_context_cache)]
+pub struct NewGlossWordContextCache<'a> {
+    pub word: &'a str,
+    pub context_hash: &'a str,
+    pub context_snippet: &'a str,
+    pub selected_uid: &'a str,
+    pub origin: &'a str,
+    pub created_at: Option<chrono::NaiveDateTime>,
+    pub updated_at: Option<chrono::NaiveDateTime>,
+}
+
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, PartialEq, Serialize, Deserialize)]
+#[diesel(table_name = gloss_phrase_selections)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct GlossPhraseSelection {
+    pub id: i32,
+    /// Normalized set phrase (via `normalize_gloss_context`).
+    pub phrase: String,
+    /// The surface form the rule applies to (via `gloss_cache_word_key`).
+    pub word: String,
+    pub selected_uid: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = gloss_phrase_selections)]
+pub struct NewGlossPhraseSelection<'a> {
+    pub phrase: &'a str,
+    pub word: &'a str,
+    pub selected_uid: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkItemUpdate {
     pub item_uid: Option<String>,

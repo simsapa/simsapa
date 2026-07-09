@@ -1,0 +1,16 @@
+{
+  "comment": "Curated Pāli set phrases that unambiguously determine a word's dictionary entry in the Gloss tab. 'phrase' is the human-readable phrase; the seeder normalizes it with normalize_gloss_context before insert. 'word' is the surface form the rule applies to; 'selected_uid' is the dict_words uid to select. See docs/gloss-ai-word-selection.md.",
+  "version": 1,
+  "phrases": [
+    {
+      "phrase": "anāthapiṇḍikassa ārāme",
+      "word": "ārāme",
+      "selected_uid": "ārāma-4/dpd"
+    },
+    {
+      "phrase": "manobhāvanīyā bhikkhū",
+      "word": "bhikkhū",
+      "selected_uid": "bhikkhu/dpd"
+    }
+  ]
+}
