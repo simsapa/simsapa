@@ -15,8 +15,8 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 - `bridges/src/sutta_bridge.rs` - Bridge fns: cache save/clear/count, `get_default_system_prompt`, word-selection settings accessors, `export_gloss_docx`.
 - `bridges/src/prompt_manager.rs` - `word_selection_request` invokable + `word_selection_response` signal.
 - `assets/qml/GlossTab.qml` - Word Selection dialog wiring, Update Selections buttons, payload building, batching/sequential logic, status UI, saved toggle + robot icon, Export As entry.
-- `assets/qml/GlossWordSelectionDialog.qml` - New dialog (model dropdown, explanation, cache-clear) — register in `bridges/build.rs`.
-- `assets/qml/SystemPromptsDialog.qml` - "Reset to Default" button.
+- `assets/qml/GlossWordSelectionDialog.qml` - New dialog: explanation, "Disabled" + enabled-models dropdown persisted via the settings JSON accessors, clear-cache button with count confirm (done; registered in `bridges/build.rs`).
+- `assets/qml/SystemPromptsDialog.qml` - "Reset to Default" button + confirmation dialog next to the prompt editor (done).
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` / `assets/qml/com/profoundlabs/simsapa/PromptManager.qml` - qmllint stubs for all new bridge functions/signals.
 - `bridges/build.rs` - Register new QML file(s).
 - `assets/gloss-phrase-selections.json` - Curated set-phrase data (embedded via `include_str!`, versioned).
@@ -76,8 +76,8 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 
 **Dependencies:** 1.4.
 
-- [ ] 2.1 Add the "Reset to Default" button and wiring in `SystemPromptsDialog.qml` (disabled state for keys without a built-in default).
-- [ ] 2.2 Add a confirmation dialog (the current edit is lost on reset) and verify the saved JSON round-trips; build check.
+- [x] 2.1 Add the "Reset to Default" button and wiring in `SystemPromptsDialog.qml` (disabled state for keys without a built-in default).
+- [x] 2.2 Add a confirmation dialog (the current edit is lost on reset) and verify the saved JSON round-trips; build check.
 
 ### 3.0 Word Selection settings dialog in the Gloss tab
 
@@ -85,10 +85,10 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 
 **Dependencies:** 1.11 (bridge accessors), 1.7 (count/clear).
 
-- [ ] 3.1 Create `assets/qml/GlossWordSelectionDialog.qml` (explanation, dropdown, clear-cache button + confirm dialog); register in `bridges/build.rs` `qml_files`.
-- [ ] 3.2 Populate the dropdown from enabled providers/models with a leading "Disabled" entry; select the persisted entry, falling back to "Disabled" when stale (PRD req. 4).
-- [ ] 3.3 Persist selection changes through the bridge accessors; expose a `is_word_selection_enabled()` / current provider+model helper on `GlossTab.qml` root for later stages.
-- [ ] 3.4 Add the "Word Selection..." toolbar button before "Common Words..." in `GlossTab.qml`; build check.
+- [x] 3.1 Create `assets/qml/GlossWordSelectionDialog.qml` (explanation, dropdown, clear-cache button + confirm dialog); register in `bridges/build.rs` `qml_files`.
+- [x] 3.2 Populate the dropdown from enabled providers/models with a leading "Disabled" entry; select the persisted entry, falling back to "Disabled" when stale (PRD req. 4).
+- [x] 3.3 Persist selection changes through the bridge accessors; expose a `is_word_selection_enabled()` / current provider+model helper on `GlossTab.qml` root for later stages.
+- [x] 3.4 Add the "Word Selection..." toolbar button before "Common Words..." in `GlossTab.qml`; build check.
 
 ### 4.0 AI word-selection request/response pipeline
 

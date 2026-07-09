@@ -216,6 +216,33 @@ Item {
         }
     }
 
+    // AI word-selection settings, mirrored from the Word Selection dialog.
+    // Empty model = feature disabled (also the stale provider/model fallback).
+    property string word_selection_provider: ""
+    property string word_selection_model: ""
+
+    function is_word_selection_enabled(): bool {
+        return root.word_selection_model !== "";
+    }
+
+    function load_word_selection_settings() {
+        try {
+            let s = JSON.parse(SuttaBridge.get_gloss_word_selection_settings_json());
+            let model_name = (s.enabled && s.model) ? s.model : "";
+            if (model_name !== "" && word_selection_dialog.enabled_model_names().indexOf(model_name) < 0) {
+                // The saved provider/model is no longer enabled: behave as
+                // disabled without rewriting the stored settings.
+                model_name = "";
+            }
+            root.word_selection_model = model_name;
+            root.word_selection_provider = model_name !== "" ? SuttaBridge.get_provider_for_model(model_name) : "";
+        } catch (e) {
+            logger.error("Failed to parse word selection settings: " + e);
+            root.word_selection_model = "";
+            root.word_selection_provider = "";
+        }
+    }
+
     // Current session data
     property string current_session_id: ""
     property string current_text: ""
@@ -320,6 +347,7 @@ Item {
     Component.onCompleted: {
         load_history();
         load_common_words();
+        load_word_selection_settings();
         if (root.is_qml_preview) {
             qml_preview_state();
         }
@@ -1750,6 +1778,11 @@ ${main_text}
                             }
 
                             Button {
+                                text: "Word Selection..."
+                                onClicked: word_selection_dialog.open()
+                            }
+
+                            Button {
                                 text: "Common Words..."
                                 onClicked: commonWordsDialog.open()
                             }
@@ -2266,6 +2299,15 @@ ${main_text}
                 }
 
             }
+        }
+    }
+
+    GlossWordSelectionDialog {
+        id: word_selection_dialog
+        anchors.centerIn: parent
+        onSelection_saved: function(provider_name, model_name) {
+            root.word_selection_provider = provider_name;
+            root.word_selection_model = model_name;
         }
     }
 
