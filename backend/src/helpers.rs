@@ -2894,6 +2894,167 @@ pub fn resolve_gloss_word_selection(
     None
 }
 
+// --- Gloss session JSON export / Load JSON (PRD §4.9, docs/gloss-ai-word-selection.md) ---
+
+/// The `format` marker of a gloss session JSON export envelope.
+pub const GLOSS_SESSION_EXPORT_FORMAT: &str = "simsapa-gloss-session";
+/// Envelope version; bump on breaking changes to the envelope structure.
+pub const GLOSS_SESSION_EXPORT_FORMAT_VERSION: u64 = 1;
+
+/// One `word_cache` entry of a gloss session export: a
+/// `gloss_word_context_cache` row without the local id / timestamps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossWordCacheExportEntry {
+    pub word: String,
+    pub context_hash: String,
+    #[serde(default)]
+    pub context_snippet: String,
+    pub selected_uid: String,
+    pub origin: String,
+}
+
+/// Collect the distinct `(word_key, context_hash)` pairs referenced by a
+/// serialized gloss session's words. Derivation matches
+/// `annotate_gloss_words_json`: the hash is recomputed from
+/// `example_sentence`, falling back to the stored `context_hash` when the
+/// sentence is missing. Sorted for deterministic export output.
+fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String)> {
+    let mut pairs = HashSet::new();
+    let paragraphs = session.get("paragraphs").and_then(|v| v.as_array());
+    for para in paragraphs.into_iter().flatten() {
+        let words = para.get("words").and_then(|v| v.as_array());
+        for w in words.into_iter().flatten() {
+            let original_word = w.get("original_word").and_then(|v| v.as_str()).unwrap_or("");
+            if original_word.is_empty() {
+                continue;
+            }
+            let sentence = w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or("");
+            let hash = if sentence.is_empty() {
+                w.get("context_hash").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            } else {
+                gloss_context_hash(&normalize_gloss_context(sentence))
+            };
+            if hash.is_empty() {
+                continue;
+            }
+            pairs.insert((gloss_cache_word_key(original_word), hash));
+        }
+    }
+    let mut pairs: Vec<(String, String)> = pairs.into_iter().collect();
+    pairs.sort();
+    pairs
+}
+
+/// Build the versioned gloss session export envelope (PRD req 38): the same
+/// session serialization the Gloss history saves, plus the word-selection
+/// cache rows (any origin) referenced by the session's words.
+pub fn build_gloss_session_export_json(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    session_json: &str,
+) -> Result<String, String> {
+    let session: serde_json::Value = serde_json::from_str(session_json)
+        .map_err(|e| format!("Failed to parse session JSON: {}", e))?;
+
+    let pairs = gloss_session_cache_pairs(&session);
+    let mut word_cache: Vec<GlossWordCacheExportEntry> = appdata
+        .get_gloss_word_cache_batch(&pairs)
+        .into_iter()
+        .map(|r| GlossWordCacheExportEntry {
+            word: r.word,
+            context_hash: r.context_hash,
+            context_snippet: r.context_snippet,
+            selected_uid: r.selected_uid,
+            origin: r.origin,
+        })
+        .collect();
+    word_cache.sort_by(|a, b| (&a.word, &a.context_hash).cmp(&(&b.word, &b.context_hash)));
+
+    let envelope = serde_json::json!({
+        "format": GLOSS_SESSION_EXPORT_FORMAT,
+        "format_version": GLOSS_SESSION_EXPORT_FORMAT_VERSION,
+        "app_version": crate::update_checker::get_app_version(),
+        "exported_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "session": session,
+        "word_cache": word_cache,
+    });
+
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|e| format!("Failed to serialize the export envelope: {}", e))
+}
+
+/// Parse and validate a gloss session export envelope. Wrong or missing
+/// `format` / `format_version`, a missing `session` object, or malformed
+/// `word_cache` entries are rejected (PRD req 41: nothing is imported from a
+/// malformed file). Returns the session value and the `word_cache` entries.
+pub fn parse_gloss_session_export(
+    json: &str,
+) -> Result<(serde_json::Value, Vec<GlossWordCacheExportEntry>), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("Not valid JSON: {}", e))?;
+
+    let format = value.get("format").and_then(|v| v.as_str()).unwrap_or("");
+    if format != GLOSS_SESSION_EXPORT_FORMAT {
+        return Err(format!(
+            "Not a gloss session export (expected format '{}', found '{}')",
+            GLOSS_SESSION_EXPORT_FORMAT, format
+        ));
+    }
+    let version = value.get("format_version").and_then(|v| v.as_u64()).unwrap_or(0);
+    if version != GLOSS_SESSION_EXPORT_FORMAT_VERSION {
+        return Err(format!("Unsupported format_version: {}", version));
+    }
+    let session = value
+        .get("session")
+        .cloned()
+        .filter(|s| s.is_object())
+        .ok_or_else(|| "Missing 'session' object".to_string())?;
+    let word_cache = match value.get("word_cache") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|e| format!("Invalid word_cache entries: {}", e))?,
+    };
+    Ok((session, word_cache))
+}
+
+/// Import exported cache rows with the strictly-higher precedence rule
+/// (PRD req 40; `AppdataDbHandle::import_gloss_word_cache_row`). The word is
+/// key-normalized; entries with empty fields or an unknown origin count as
+/// skipped. Returns `(imported, skipped)`.
+pub fn import_gloss_word_cache_entries(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    entries: &[GlossWordCacheExportEntry],
+) -> (usize, usize) {
+    let mut imported = 0;
+    let mut skipped = 0;
+    for e in entries {
+        let word_key = gloss_cache_word_key(&e.word);
+        let valid_origin = matches!(e.origin.as_str(), "ai" | "user" | "built-in");
+        if word_key.is_empty()
+            || e.context_hash.is_empty()
+            || e.selected_uid.is_empty()
+            || !valid_origin
+        {
+            skipped += 1;
+            continue;
+        }
+        match appdata.import_gloss_word_cache_row(
+            &word_key,
+            &e.context_hash,
+            &e.context_snippet,
+            &e.selected_uid,
+            &e.origin,
+        ) {
+            Ok(true) => imported += 1,
+            Ok(false) => skipped += 1,
+            Err(err) => {
+                error(&format!("import_gloss_word_cache_entries(): {}", err));
+                skipped += 1;
+            }
+        }
+    }
+    (imported, skipped)
+}
+
 /// Extract the first top-level JSON object from a text, tolerating markdown
 /// code fences and surrounding prose. Scans for a balanced `{...}` while
 /// respecting string literals and escapes.
@@ -4154,6 +4315,62 @@ mod tests {
         assert!(parse_word_selection_response(r#"{"answers": []}"#, items).is_err());
         // Empty response.
         assert!(parse_word_selection_response("   ", items).is_err());
+    }
+
+    #[test]
+    fn test_parse_gloss_session_export_validation() {
+        // Valid minimal envelope.
+        let valid = r#"{
+            "format": "simsapa-gloss-session",
+            "format_version": 1,
+            "session": {"text": "Ekaṁ samayaṁ", "paragraphs": []},
+            "word_cache": [
+                {"word": "ārāme", "context_hash": "h1", "context_snippet": "c",
+                 "selected_uid": "ārāma-4/dpd", "origin": "user"}
+            ]
+        }"#;
+        let (session, word_cache) = parse_gloss_session_export(valid).unwrap();
+        assert_eq!(session.get("text").unwrap().as_str().unwrap(), "Ekaṁ samayaṁ");
+        assert_eq!(word_cache.len(), 1);
+        assert_eq!(word_cache[0].origin, "user");
+
+        // Missing word_cache is tolerated (empty).
+        let no_cache = r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}}"#;
+        let (_, word_cache) = parse_gloss_session_export(no_cache).unwrap();
+        assert!(word_cache.is_empty());
+
+        // Rejections: not JSON, wrong format, wrong version, missing session,
+        // malformed word_cache entries.
+        assert!(parse_gloss_session_export("not json").is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "other", "format_version": 1, "session": {}}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 99, "session": {}}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 1}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}, "word_cache": [{"word": 42}]}"#).is_err());
+    }
+
+    #[test]
+    fn test_gloss_session_cache_pairs_derivation() {
+        // The pair's hash is recomputed from example_sentence (word-key
+        // normalized word), with the stored context_hash as fallback; words
+        // without either are skipped.
+        let sentence = "anāthapiṇḍikassa <b>ārāme</b>";
+        let expected_hash = gloss_context_hash(&normalize_gloss_context(sentence));
+        let session = serde_json::json!({
+            "paragraphs": [
+                {"words": [
+                    {"original_word": "Ārāme", "example_sentence": sentence},
+                    {"original_word": "dhammaṁ", "context_hash": "stored-hash"},
+                    {"original_word": "skipped-no-hash"},
+                    {"example_sentence": "no original_word"}
+                ]},
+                // Duplicate pair in another paragraph collapses.
+                {"words": [{"original_word": "ārāme", "example_sentence": sentence}]}
+            ]
+        });
+        let pairs = gloss_session_cache_pairs(&session);
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs.contains(&("ārāme".to_string(), expected_hash)));
+        assert!(pairs.contains(&(gloss_cache_word_key("dhammaṁ"), "stored-hash".to_string())));
     }
 
     fn lookup_results(uids: &[&str]) -> Vec<crate::db::dpd::LookupResult> {

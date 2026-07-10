@@ -2131,6 +2131,65 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Import a cache row from an exported gloss session with the
+    /// **strictly-higher** precedence rule (PRD req 40): write only when there
+    /// is no local row for `(word, context_hash)` or the imported origin
+    /// outranks the local one (`user > built-in > ai`). Equal precedence is a
+    /// no-op — unlike `upsert_gloss_word_cache` — so the local user's own
+    /// `user` rows are never overwritten and an imported `ai` row never churns
+    /// an existing local `ai` row.
+    ///
+    /// Returns true when a row was written (inserted or updated).
+    pub fn import_gloss_word_cache_row(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        context_snippet_param: &str,
+        selected_uid_param: &str,
+        origin_param: &str,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let existing = self.get_gloss_word_cache(word_param, context_hash_param);
+        let now = chrono::Utc::now().naive_utc();
+
+        match existing {
+            None => {
+                let new_row = NewGlossWordContextCache {
+                    word: word_param,
+                    context_hash: context_hash_param,
+                    context_snippet: context_snippet_param,
+                    selected_uid: selected_uid_param,
+                    origin: origin_param,
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                };
+                self.do_write(|db_conn| {
+                    diesel::insert_into(gloss_word_context_cache)
+                        .values(&new_row)
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+            Some(row) => {
+                if gloss_cache_origin_rank(origin_param) <= gloss_cache_origin_rank(&row.origin) {
+                    return Ok(false);
+                }
+                self.do_write(|db_conn| {
+                    diesel::update(gloss_word_context_cache.find(row.id))
+                        .set((
+                            context_snippet.eq(context_snippet_param),
+                            selected_uid.eq(selected_uid_param),
+                            origin.eq(origin_param),
+                            updated_at.eq(Some(now)),
+                        ))
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+        }
+    }
+
     pub fn delete_gloss_word_cache(&self, word_param: &str, context_hash_param: &str) -> Result<()> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
@@ -2491,6 +2550,37 @@ mod gloss_word_selection_tests {
         // built-in never overwrites user.
         assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-c/dpd");
+    }
+
+    // Session-export import: strictly-higher precedence only (PRD req 40).
+    #[test]
+    fn import_row_strict_precedence() {
+        let db = setup();
+
+        // No local row: any valid origin inserts.
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai");
+
+        // Imported ai vs local ai: equal precedence is a no-op (no churn).
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-imported/dpd");
+
+        // Imported user beats local ai.
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user").unwrap());
+        let row = db.get_gloss_word_cache("w1", "h1").unwrap();
+        assert_eq!(row.origin, "user");
+        assert_eq!(row.selected_uid, "uid-user/dpd");
+
+        // Local user row survives an imported user row (equal precedence).
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
+
+        // built-in untouched by imported ai; overwritten by imported user.
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in").unwrap();
+        assert!(!db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user");
     }
 
     #[test]

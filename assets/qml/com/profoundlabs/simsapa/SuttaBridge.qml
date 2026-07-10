@@ -369,6 +369,18 @@ Item {
         return words_data_json;
     }
 
+    function export_gloss_session_json(session_json: string): string {
+        return '{"format": "simsapa-gloss-session", "format_version": 1}';
+    }
+
+    function import_gloss_word_cache(entries_json: string): string {
+        return '{"imported": 0, "skipped": 0}';
+    }
+
+    function load_gloss_session_export(file_path: string): string {
+        return '{"ok": true, "session": {}, "imported": 0, "skipped": 0}';
+    }
+
     function get_providers_json(): string {
         return '[]';
     }

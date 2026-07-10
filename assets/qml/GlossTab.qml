@@ -698,6 +698,19 @@ Item {
             save_file_name = "gloss_export.org";
             save_content = root.gloss_as_orgmode();
 
+        } else if (export_btn.currentValue === "JSON") {
+            // Full session export (PRD §4.9 req 38): the history-session
+            // serialization wrapped in the versioned envelope, plus the
+            // word-selection cache rows referenced by the session's words.
+            save_file_name = "gloss_export.json";
+            save_content = SuttaBridge.export_gloss_session_json(root.session_data_json());
+            if (!save_content) {
+                msg_dialog_ok.text = "Export failed.";
+                msg_dialog_ok.open();
+                export_btn.currentIndex = 0;
+                return;
+            }
+
         } else if (export_btn.currentValue === "Anki CSV") {
             is_anki_csv = true;
         }
@@ -769,6 +782,81 @@ Item {
         }
 
         export_btn.currentIndex = 0;
+    }
+
+    FileDialog {
+        id: load_json_file_dialog
+        title: "Load Gloss Session JSON"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["JSON files (*.json)", "All files (*)"]
+        onAccepted: root.load_json_session_from_url(selectedFile.toString())
+    }
+
+    function file_url_to_path(file_url_str) {
+        if (file_url_str.startsWith("file:///")) {
+            const without_prefix = file_url_str.substring(8);
+            if (Qt.platform.os === "windows" && without_prefix.match(/^[A-Za-z]:/)) {
+                return decodeURIComponent(without_prefix);
+            } else {
+                return "/" + decodeURIComponent(without_prefix);
+            }
+        } else if (file_url_str.startsWith("file://")) {
+            return decodeURIComponent(file_url_str.substring(7));
+        }
+        return file_url_str;
+    }
+
+    // "Load JSON" (PRD §4.9 reqs 39-41): restore an exported gloss session as
+    // a new unsaved session, importing its word_cache entries with the
+    // strict-precedence upsert. When the current session has content, confirm
+    // first — it is flushed to history, same as opening a history item.
+    function load_json_session() {
+        if (root.is_session_empty()) {
+            load_json_file_dialog.open();
+            return;
+        }
+        msg_dialog_cancel_ok.text = "Save the current gloss session and load the JSON session?";
+        msg_dialog_cancel_ok.accept_fn = function() {
+            root.flush_if_needed();
+            load_json_file_dialog.open();
+        };
+        msg_dialog_cancel_ok.open();
+    }
+
+    function load_json_session_from_url(file_url_str) {
+        let file_path = root.file_url_to_path(file_url_str);
+        // On Android the file picker returns a SAF content:// URI; copy it to
+        // a readable temp file (std::fs cannot open content:// paths).
+        if (Qt.platform.os === "android" && file_path.startsWith("content://")) {
+            const temp_path = SuttaBridge.copy_content_uri_to_temp(file_path);
+            if (temp_path === "") {
+                msg_dialog_ok.text = "Error: Failed to access the selected file.";
+                msg_dialog_ok.open();
+                return;
+            }
+            file_path = temp_path;
+        }
+
+        let result;
+        try {
+            result = JSON.parse(SuttaBridge.load_gloss_session_export(file_path));
+        } catch (e) {
+            result = { error: "Failed to parse the load result: " + e };
+        }
+        if (!result.ok) {
+            msg_dialog_ok.text = "Failed to load: " + (result.error || "Unknown error");
+            msg_dialog_ok.open();
+            return;
+        }
+
+        // The bridge imported word_cache before we restore: load_session()'s
+        // annotate pass re-derives resolution / checked state from the
+        // now-updated cache table. Empty db_id = a new unsaved session.
+        root.load_session("", JSON.stringify(result.session));
+        root.selected_history_id = -1;
+        msg_dialog_ok.text = "Gloss session loaded.\nWord cache entries imported: "
+            + result.imported + ", skipped: " + result.skipped + ".";
+        msg_dialog_ok.open();
     }
 
     MessageDialog {
@@ -2254,13 +2342,19 @@ ${main_text}
 
                             ComboBox {
                                 id: export_btn
-                                model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Anki CSV", "Word (.docx)"]
+                                model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Anki CSV", "Word (.docx)", "JSON"]
                                 enabled: paragraph_model.count > 0 && !root.is_exporting_anki
                                 onCurrentIndexChanged: {
                                     if (export_btn.currentIndex !== 0) {
                                         export_folder_dialog.open();
                                     }
                                 }
+                            }
+
+                            Button {
+                                text: "Load JSON"
+                                enabled: !root.is_exporting_anki
+                                onClicked: root.load_json_session()
                             }
 
                             Button {

@@ -956,6 +956,15 @@ pub mod qobject {
         fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
 
         #[qinvokable]
+        fn export_gloss_session_json(self: &SuttaBridge, session_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn import_gloss_word_cache(self: &SuttaBridge, entries_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn load_gloss_session_export(self: &SuttaBridge, file_path: &QString) -> QString;
+
+        #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -2561,6 +2570,84 @@ impl qobject::SuttaBridge {
                 words_data_json.clone()
             }
         }
+    }
+
+    /// Build the gloss session JSON export envelope (PRD §4.9 req 38): the
+    /// session serialization the Gloss history saves, plus the word-selection
+    /// cache rows referenced by the session's words. Returns an empty string
+    /// on failure.
+    pub fn export_gloss_session_json(&self, session_json: &QString) -> QString {
+        let app_data = get_app_data();
+        match simsapa_backend::helpers::build_gloss_session_export_json(
+            &app_data.dbm.appdata,
+            &session_json.to_string(),
+        ) {
+            Ok(json) => QString::from(json),
+            Err(e) => {
+                error(&format!("export_gloss_session_json(): {}", e));
+                QString::from("")
+            }
+        }
+    }
+
+    /// Import word-selection cache entries (a session export's `word_cache`
+    /// array) with the strictly-higher precedence rule (`user > built-in >
+    /// ai`; equal precedence is a no-op). Returns
+    /// `{"imported": n, "skipped": m}` or `{"error": "..."}`.
+    pub fn import_gloss_word_cache(&self, entries_json: &QString) -> QString {
+        use simsapa_backend::helpers::{import_gloss_word_cache_entries, GlossWordCacheExportEntry};
+        let entries: Vec<GlossWordCacheExportEntry> =
+            match serde_json::from_str(&entries_json.to_string()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return QString::from(
+                        serde_json::json!({"error": format!("Invalid entries JSON: {}", e)}).to_string(),
+                    );
+                }
+            };
+        let app_data = get_app_data();
+        let (imported, skipped) = import_gloss_word_cache_entries(&app_data.dbm.appdata, &entries);
+        QString::from(serde_json::json!({"imported": imported, "skipped": skipped}).to_string())
+    }
+
+    /// Load a gloss session JSON export from a local file path ("Load JSON",
+    /// PRD §4.9 reqs 39-41): validate the envelope, import its `word_cache`
+    /// with the strict-precedence upsert, and return
+    /// `{"ok": true, "session": {...}, "imported": n, "skipped": m}` or
+    /// `{"error": "..."}`. A malformed or wrong-format file imports nothing.
+    /// On Android the caller converts a `content://` URI to a temp file first
+    /// (`copy_content_uri_to_temp`).
+    pub fn load_gloss_session_export(&self, file_path: &QString) -> QString {
+        let err_json =
+            |msg: String| QString::from(serde_json::json!({"error": msg}).to_string());
+
+        let path = file_path.to_string();
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => return err_json(format!("Failed to read the file: {}", e)),
+        };
+
+        let (session, word_cache) =
+            match simsapa_backend::helpers::parse_gloss_session_export(&content) {
+                Ok(v) => v,
+                Err(e) => return err_json(e),
+            };
+
+        let app_data = get_app_data();
+        let (imported, skipped) = simsapa_backend::helpers::import_gloss_word_cache_entries(
+            &app_data.dbm.appdata,
+            &word_cache,
+        );
+
+        QString::from(
+            serde_json::json!({
+                "ok": true,
+                "session": session,
+                "imported": imported,
+                "skipped": skipped,
+            })
+            .to_string(),
+        )
     }
 
     /// Parse and validate an AI word-selection response against the request's
