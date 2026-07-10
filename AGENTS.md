@@ -36,6 +36,20 @@ Notable feature docs:
   `Loader` vs. `Component + createObject` rule for QML wrapping based on root
   element type (`Dialog`/`Popup` vs `ApplicationWindow`), and the eager-binding
   pre-flight required before deferring components.
+- [Why `appdata` has two migration mechanisms](./docs/appdata-migration-mechanisms.md) —
+  `dictionaries.sqlite3` is migrated at runtime by Diesel, but `appdata.sqlite3`
+  is upgraded in place by `upgrade_appdata_schema()`, a **hand-maintained array**
+  of `include_str!`'d `up.sql` files. Explains the historical reason (the array is
+  a leftover from when `APPDATA_MIGRATIONS` built a separate `userdata.sqlite3`),
+  why the code comment's rationale ("outside Diesel's migration system") is now
+  **false** (bootstrap does stamp `__diesel_schema_migrations`), what keeps the two
+  in sync today (the `major.minor` DB-version gate forces a re-download; the array
+  covers additive changes within a minor series), and the **two live divergences**
+  (`upgrade_appdata_schema` never stamps the ledger; the non-replayable table-rewrite
+  migration `2026-04-14-000001` has never run on an upgraded install). Concludes
+  that unifying on Diesel is **safe today but only until 0.4.4 ships** — afterwards
+  it needs a ledger-baseline pre-pass or `run_pending_migrations` hard-fails startup
+  with `table already exists`.
 - [User data imports and SQLite `ANALYZE`](./docs/user-data-and-sqlite-analyze.md) —
   every code path that grows a shipped DB at runtime (StarDict zip/dir,
   EPUB/PDF/HTML books, sutta language downloads) and where the matching
@@ -379,6 +393,64 @@ When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, it ha
 assets/qml/com/profoundlabs/simsapa/PromptManager.qml
 assets/qml/com/profoundlabs/simsapa/qmldir
 ```
+
+### Database migrations (appdata vs. dictionaries)
+
+The two databases apply migrations by **different mechanisms**. Adding a folder
+under `backend/migrations/` is only half the job for `appdata`.
+
+| DB | Migration folder | Applied at runtime by |
+|---|---|---|
+| `dictionaries.sqlite3` | `backend/migrations/dictionaries/` | `run_dictionaries_migrations()` — real Diesel `run_pending_migrations()`. Nothing else to do. |
+| `appdata.sqlite3` | `backend/migrations/appdata/` | `upgrade_appdata_schema()` — a **hand-maintained list** in `backend/src/db/mod.rs`. |
+
+`appdata.sqlite3` is shipped pre-built, downloaded once at first-run setup, and
+then **kept across app updates** because it also holds user data (bookmarks,
+gloss/prompts history, chanting recordings, imported books).
+`run_pending_migrations(APPDATA_MIGRATIONS)` is called **only** during CLI
+bootstrap (`cli/src/`), in the DB-export paths, and in tests. On app startup
+`DatabaseManager` instead calls `upgrade_appdata_schema()`, which replays an
+explicit array of `include_str!`'d `up.sql` files, swallowing "already exists" /
+"duplicate column" errors so the whole list is idempotent.
+
+Note that the shipped `appdata.sqlite3` **does** carry a populated
+`__diesel_schema_migrations` ledger (bootstrap wrote it). `upgrade_appdata_schema()`
+does **not** update that ledger, so on an in-place-upgraded install the ledger
+under-reports what the schema actually contains. See
+[appdata-migration-mechanisms.md](./docs/appdata-migration-mechanisms.md) for why
+the two mechanisms exist and what it would take to unify them.
+
+**IMPORTANT — when you add an `appdata` migration, you MUST also append its
+`up.sql` to the `statements` array in `upgrade_appdata_schema()`
+(`backend/src/db/mod.rs`), in date order.** Otherwise the new tables/columns
+exist only for anyone who re-bootstraps the DB from scratch; every existing
+install fails at runtime with `no such table: …` (the errors surface as `ERROR`
+log lines from the query functions, not from the migration code, so they are
+easy to misread as a query bug).
+
+```rust
+let statements = [
+    // ...
+    // 2026-07-09: gloss word context cache and phrase selections
+    include_str!("../../migrations/appdata/2026-07-09-160000_create_gloss_word_selection/up.sql"),
+];
+```
+
+Constraints on `appdata` `up.sql` files, imposed by the replay:
+
+- The file is split on `;`, so **no semicolons inside a statement** (no triggers
+  with `BEGIN … END` bodies — those belong in the `scripts/` FTS5 SQL instead).
+- Only `CREATE TABLE` and `ALTER TABLE … ADD COLUMN` failures are suppressed
+  ("already exists" / "duplicate column"). Write everything else with
+  `IF NOT EXISTS` (e.g. `CREATE INDEX IF NOT EXISTS`) or it will log a warning on
+  every launch.
+- Never edit a migration that has already shipped — replaying it must be a no-op
+  on an upgraded DB. Add a new dated folder instead.
+- Migrations that **rewrite** a table (the SQLite `CREATE new` / `INSERT SELECT` /
+  `DROP old` / `RENAME` dance, e.g. `2026-04-14-000001_chanting_is_user_added_default_true`)
+  are **not replayable** and are deliberately left **out** of the array. They only
+  ever run at bootstrap. Prefer additive migrations; if you must rewrite a table,
+  it needs a DB minor-version bump so installs re-download instead.
 
 ### FTS5 fulltext search tables (scripts in `scripts/`)
 

@@ -2667,8 +2667,8 @@ ${main_text}
                                         id: robot_icon
                                         source: "icons/32x32/pixel--robot-solid.png"
                                         Layout.alignment: Qt.AlignTop
-                                        Layout.preferredWidth: 20
-                                        Layout.preferredHeight: 20
+                                        sourceSize.width: word_select.height
+                                        sourceSize.height: word_select.height
                                         fillMode: Image.PreserveAspectFit
                                         visible: word_select.visible &&
                                                  (wordItem.modelData.resolution || null) === "ai"
