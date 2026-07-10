@@ -417,3 +417,89 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
     assert_eq!(target.resolution.as_deref(), Some("user"));
     assert_eq!(target.results[target.selected_index as usize].uid, user_uid);
 }
+
+// Iti-sandhi quote variants and punctuation changes:
+// "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan”ti?" glosses
+// as diṭṭhaṁ / vo / bhikkhave / caraṇaṁ / nāma / cittaṁ — the ”ti is absorbed
+// by iti-sandhi handling — and a cache row saved from one edition's context
+// window resolves the same word in editions with straight quote marks
+// (cittan'ti), changed commas, or a missing quote mark (cittanti — the target
+// word itself then differs, but the shared window still resolves the
+// sentence's other words).
+#[test]
+#[serial]
+fn test_iti_sandhi_quote_variants_share_cache() {
+    use simsapa_backend::helpers::gloss_cache_word_key;
+
+    h::app_data_setup();
+    let db = temp_appdata();
+
+    let smart = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan”ti?";
+    let straight = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan'ti?";
+    let commas_changed = "Diṭṭhaṁ vo bhikkhave, caraṇaṁ nāma cittan”ti.";
+    let bare = "Diṭṭhaṁ vo bhikkhave caraṇaṁ nāma cittanti?";
+
+    // Screenshot expectation: the glossed word list ("ti" is not glossed).
+    let words = gloss_paragraph(smart, Some(&db));
+    let list: Vec<&str> = words.iter().map(|w| w.original_word.as_str()).collect();
+    assert_eq!(list, ["diṭṭhaṁ", "vo", "bhikkhave", "caraṇaṁ", "nāma", "cittaṁ"]);
+
+    let citta = find_word(&words, "cittaṁ");
+    assert!(citta.results.len() > 1, "cittaṁ should be ambiguous");
+    // The screenshot's selection: "citta 2.3" (nt, painting; picture).
+    let citta_23_uid = citta
+        .results
+        .iter()
+        .find(|r| r.word == "citta 2.3")
+        .map(|r| r.uid.clone())
+        .expect("citta 2.3 should be among the options");
+
+    // Save a user row from the smart-quote edition's window.
+    assert!(db
+        .upsert_gloss_word_cache(
+            &gloss_cache_word_key(&citta.original_word),
+            &citta.context_hash,
+            &citta.example_sentence,
+            &citta_23_uid,
+            "user",
+        )
+        .expect("upsert user row"));
+
+    // The straight-quote and comma-variant editions produce the same window
+    // hash and hit the saved row.
+    for variant in [straight, commas_changed] {
+        let words_v = gloss_paragraph(variant, Some(&db));
+        let citta_v = find_word(&words_v, "cittaṁ");
+        assert_eq!(
+            citta_v.context_hash, citta.context_hash,
+            "window hash differs for variant: {}", variant,
+        );
+        assert_eq!(citta_v.resolution.as_deref(), Some("user"), "no cache hit for: {}", variant);
+        assert_eq!(citta_v.results[citta_v.selected_index as usize].word, "citta 2.3");
+    }
+
+    // Missing-quote edition: cittanti is one written word there, but the
+    // normalized window is identical — a row saved for another word of the
+    // sentence (vo) resolves across all quote forms.
+    let vo = find_word(&words, "vo");
+    assert!(vo.results.len() > 1, "vo should be ambiguous");
+    let vo_uid = vo.results.last().unwrap().uid.clone();
+    assert!(db
+        .upsert_gloss_word_cache(
+            &gloss_cache_word_key(&vo.original_word),
+            &vo.context_hash,
+            &vo.example_sentence,
+            &vo_uid,
+            "user",
+        )
+        .expect("upsert vo row"));
+
+    let words_bare = gloss_paragraph(bare, Some(&db));
+    let vo_bare = find_word(&words_bare, "vo");
+    assert_eq!(
+        vo_bare.context_hash, vo.context_hash,
+        "vo window hash differs between the quoted and bare iti-sandhi editions",
+    );
+    assert_eq!(vo_bare.resolution.as_deref(), Some("user"));
+    assert_eq!(vo_bare.results[vo_bare.selected_index as usize].uid, vo_uid);
+}

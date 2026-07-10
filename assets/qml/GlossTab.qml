@@ -297,6 +297,56 @@ Item {
         return s !== undefined && (s.state === "waiting" || s.state === "busy");
     }
 
+    // Whether any selection request is in flight or queued (top progress row,
+    // "Update All Glosses" overlap guard).
+    function is_ws_any_active(): bool {
+        let st = root.ws_status;
+        for (let k in st) {
+            if (st[k].state === "waiting" || st[k].state === "busy") return true;
+        }
+        return false;
+    }
+
+    // Number of paragraphs still waiting for or covered by an in-flight request.
+    function ws_pending_count(): int {
+        let n = 0;
+        let st = root.ws_status;
+        for (let k in st) {
+            if (st[k].state === "waiting" || st[k].state === "busy") n += 1;
+        }
+        return n;
+    }
+
+    // Cancel waiting for a paragraph's selection: drop it from the sequential
+    // queue, and when it is covered by an in-flight request, drop that whole
+    // request (its response arrives stale and is ignored — a batched request
+    // is cancelled for all the paragraphs it covers).
+    function ws_cancel_paragraph(paragraph_idx) {
+        root.ws_queue = root.ws_queue.filter(pi => pi !== paragraph_idx);
+
+        let rp = root.ws_request_paragraphs;
+        let ri = root.ws_request_items;
+        let dropped = [];
+        for (let key in rp) {
+            if (rp[key].indexOf(paragraph_idx) >= 0) {
+                dropped = dropped.concat(rp[key]);
+                delete rp[key];
+                delete ri[key];
+            }
+        }
+        root.ws_request_paragraphs = Object.assign({}, rp);
+        root.ws_request_items = ri;
+
+        for (let pi of dropped) {
+            root.ws_clear_status(pi);
+        }
+        root.ws_clear_status(paragraph_idx);
+
+        // Keep the sequential queue moving: the dropped request's response is
+        // now stale and no longer schedules the next request.
+        root.ws_schedule_next();
+    }
+
     // Drop all pipeline state (queued requests, statuses, request maps). A
     // response for a dropped request id is ignored by the response handler.
     function ws_reset() {
@@ -395,10 +445,22 @@ Item {
     // is nothing to ask for them.
     function ws_send_request(paragraph_indexes, forced) {
         let items = root.build_word_selection_items(paragraph_indexes, forced);
-        if (items.length === 0) {
-            for (let pi of paragraph_indexes) {
+
+        // Only the paragraphs that actually contributed items are covered by
+        // the request; the rest have nothing to ask (PRD req 9) and must not
+        // show request status.
+        let with_items = {};
+        for (let it of items) {
+            let m = it.id.match(/^p(\d+)w/);
+            if (m) with_items[m[1]] = true;
+        }
+        let covered = paragraph_indexes.filter(pi => with_items["" + pi] === true);
+        for (let pi of paragraph_indexes) {
+            if (covered.indexOf(pi) < 0) {
                 root.ws_clear_status(pi, "waiting");
             }
+        }
+        if (items.length === 0) {
             return false;
         }
 
@@ -406,20 +468,20 @@ Item {
         root.ws_next_request_id += 1;
 
         let rp = root.ws_request_paragraphs;
-        rp["" + request_id] = paragraph_indexes;
+        rp["" + request_id] = covered;
         root.ws_request_paragraphs = Object.assign({}, rp);
 
         let ri = root.ws_request_items;
         ri["" + request_id] = JSON.stringify(items);
         root.ws_request_items = ri;
 
-        for (let pi of paragraph_indexes) {
-            root.ws_set_status(pi, "busy", `Selecting words with ${root.word_selection_model}...`);
+        for (let pi of covered) {
+            root.ws_set_status(pi, "busy", `Selecting words with ${root.word_selection_model} (3min timeout)...`);
         }
 
         let prompt = root.build_word_selection_prompt(items);
         root.ws_last_start_time = Date.now();
-        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${paragraph_indexes.join(", ")}], model ${root.word_selection_model}`);
+        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}], model ${root.word_selection_model}`);
         pm.word_selection_request(request_id, root.word_selection_provider, root.word_selection_model, prompt);
         return true;
     }
@@ -447,9 +509,12 @@ Item {
         let key = "" + request_id;
         let covered = root.ws_request_paragraphs[key];
         if (covered === undefined) {
-            // Stale response for a request dropped by ws_reset().
+            // Stale response for a request dropped by ws_reset() or a cancel.
+            // Do NOT schedule the next queued request here: the current
+            // pipeline's own (non-stale) responses drive the queue, and
+            // scheduling from a stale response could start a queued request
+            // while another one is still in flight.
             logger.info(`Ignoring stale word selection response for request ${request_id}`);
-            root.ws_schedule_next();
             return;
         }
         let items_json = root.ws_request_items[key];
@@ -1434,6 +1499,24 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         words_data[word_idx].selected_index = selected_idx;
         words_data[word_idx].stem = word_item.results[selected_idx].word;
 
+        // A manual ComboBox choice is the user's decision: persist it as a
+        // "user" cache row (overwrites any ai/built-in row for this context)
+        // so it survives re-glossing and session restore, and is never
+        // re-asked from the AI. Only ambiguous words are cached; the caller
+        // must be a real user interaction (ComboBox onActivated).
+        if (word_item.results.length > 1) {
+            let saved = SuttaBridge.save_gloss_word_cache(
+                word_item.original_word,
+                word_item.example_sentence || "",
+                word_item.results[selected_idx].uid,
+                "user");
+            if (saved) {
+                words_data[word_idx].resolution = "user";
+            } else {
+                logger.error("update_word_selection: failed to save user selection for '" + word_item.original_word + "'");
+            }
+        }
+
         // Update model with new JSON
         paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
 
@@ -1465,6 +1548,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (wi >= words_data.length) continue;
             let w = words_data[wi];
             if (!w || !w.results) continue;
+            // The word may have been resolved while the request was in
+            // flight (e.g. the user corrected the ComboBox, which now saves
+            // a "user" row): never let a late AI response override anything
+            // but an earlier AI resolution.
+            let resolution = w.resolution || null;
+            if (resolution !== null && resolution !== "ai") continue;
             let opt_idx = -1;
             for (var i = 0; i < w.results.length; i++) {
                 if (w.results[i].uid === sel.uid) {
@@ -2081,6 +2170,39 @@ ${main_text}
                             }
                         }
 
+                        // Global AI word-selection progress: visible while any
+                        // selection request is in flight or queued; Cancel drops
+                        // the whole run (in-flight responses arrive stale and
+                        // are ignored).
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: root.is_ws_any_active()
+                            spacing: 8
+
+                            BusyIndicator {
+                                running: parent.visible
+                                Layout.preferredHeight: 24
+                                Layout.preferredWidth: 24
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                font.pointSize: root.vocab_font_point_size
+                                color: root.text_color
+                                text: {
+                                    let n = root.ws_pending_count();
+                                    let noun = n === 1 ? "paragraph" : "paragraphs";
+                                    return `Selecting words with ${root.word_selection_model} (3min timeout)... ${n} ${noun} remaining.`;
+                                }
+                            }
+
+                            Button {
+                                text: "Cancel"
+                                onClicked: root.ws_reset()
+                            }
+                        }
+
                         Flow {
                             Layout.fillWidth: true
                             spacing: 10
@@ -2142,7 +2264,10 @@ ${main_text}
                             Button {
                                 id: update_all_glosses_btn
                                 text: "Update All Glosses"
-                                enabled: !root.is_processing_all
+                                // Also disabled while an AI word-selection request is in
+                                // flight or queued (re-glossing would rebuild the paragraph
+                                // list under it).
+                                enabled: !root.is_processing_all && !root.is_ws_any_active()
                                 icon.source: root.is_processing_all ? "icons/32x32/fa_stopwatch-solid.png" : ""
                                 onClicked: root.start_background_all_glosses()
                             }
@@ -2412,6 +2537,16 @@ ${main_text}
                             return root.text_color;
                         }
                     }
+
+                    // Cancel waiting for this paragraph's selection (drops the
+                    // whole covering request in batched mode).
+                    Button {
+                        text: "Cancel"
+                        visible: ws_status_row.ws_state !== undefined &&
+                                 (ws_status_row.ws_state.state === "waiting" ||
+                                  ws_status_row.ws_state.state === "busy")
+                        onClicked: root.ws_cancel_paragraph(paragraph_item.index)
+                    }
                 }
 
                 AssistantResponses {
@@ -2629,11 +2764,15 @@ ${main_text}
                                         font.bold: true
                                         font.pointSize: root.vocab_font_point_size
                                         currentIndex: wordItem.modelData.selected_index || 0
-                                        onCurrentIndexChanged: {
-                                            if (currentIndex !== wordItem.modelData.selected_index) {
+                                        // onActivated fires only on real user interaction —
+                                        // update_word_selection() now writes a "user" cache
+                                        // row, so programmatic currentIndex churn (delegate
+                                        // rebuilds) must never reach it.
+                                        onActivated: (index) => {
+                                            if (index !== wordItem.modelData.selected_index) {
                                                 root.update_word_selection(wordItem.paragraph_index,
                                                                         wordItem.index,
-                                                                        currentIndex);
+                                                                        index);
                                             }
                                         }
                                     }
@@ -2701,7 +2840,9 @@ ${main_text}
                                                 unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
                                                 unsave_word_dialog.open();
                                             } else {
-                                                var idx = word_select.currentIndex || 0;
+                                                // currentIndex can be -1 (no selection); `|| 0` would
+                                                // keep -1 since it is truthy.
+                                                var idx = word_select.currentIndex >= 0 ? word_select.currentIndex : 0;
                                                 let uid = wordItem.modelData.results[idx].uid;
                                                 let ok = SuttaBridge.save_gloss_word_cache(
                                                     wordItem.modelData.original_word,

@@ -1643,7 +1643,105 @@ pub fn build_context_snippet(
     snippet.trim().to_string()
 }
 
+/// Recognize and remove source annotations from a gloss paragraph — at the
+/// start, at the end, or mid-text.
+///
+/// Digits are not used in Pāli text, so a digit-bearing token is always some
+/// form of annotation from the user's notes. Two kinds are handled:
+///
+/// - **Sutta uids / references**: `(sn56.11/pli/ms)`, `mn8/en/bodhi`,
+///   `SN 56.11`, `Dhp 183-184` — with or without parentheses. These are
+///   returned in order of occurrence (callers that want to keep the source,
+///   e.g. as a session attribute, can use them).
+/// - **Numeric annotations**: verse numbers (`183.`), PTS page references
+///   (`(48.50)`), bracketed numbers (`[12]`), section numbers (`1.2.3`) —
+///   bare or in parentheses/brackets. Removed, not reported.
+///
+/// Neither may enter gloss word extraction: they would be glossed themselves
+/// and pollute the surrounding words' context windows and cache hashes.
+///
+/// A reference token is delimited ASCII letters followed by numbers (`mn8`,
+/// `SN 56.11`, optional `/lang/author` uid segments); a numeric token
+/// contains digits and numeric punctuation only. Pāli words never contain
+/// digits — and words with diacritics fall outside `[a-z]` — so passage text
+/// is never affected.
+pub fn strip_gloss_annotations(text: &str) -> (String, Vec<String>) {
+    lazy_static! {
+        // Parenthesized reference, anywhere: "(sn56.11/pli/ms)", "( SN 56.11 )".
+        static ref RE_PAREN_SUTTA_REF: Regex = Regex::new(
+            r"(?i)\(\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\)"
+        ).unwrap();
+        // Bare reference, anywhere: "mn8/en/bodhi", "SN 56.11." — must be
+        // delimited by whitespace or text start/end on both sides so a word
+        // can never be truncated ("Sn56xyz" stays intact).
+        static ref RE_BARE_SUTTA_REF: Regex = Regex::new(
+            r"(?i)(^|\s)([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)[.,:;]*(\s|$)"
+        ).unwrap();
+        // Parenthesized / bracketed numeric annotation: "(48.50)", "[12]",
+        // "(183-184)" — digits and numeric punctuation only, no letters.
+        static ref RE_PAREN_NUMERIC: Regex = Regex::new(
+            r"[(\[]\s*[0-9][0-9.,:;/\s—–-]*[)\]]"
+        ).unwrap();
+        // Bare numeric annotation: "183.", "56.11", "183-184", "1.2.3".
+        static ref RE_BARE_NUMERIC: Regex = Regex::new(
+            r"(^|\s)[0-9]+(?:[.,:—–-][0-9]+)*[.,:;]*(\s|$)"
+        ).unwrap();
+        // Tidy the removal sites: runs of spaces/tabs left behind where an
+        // annotation was cut out (newlines are kept for the verse layout).
+        static ref RE_SPACE_RUNS: Regex = Regex::new(r"[ \t]{2,}").unwrap();
+    }
+
+    let mut refs: Vec<String> = Vec::new();
+
+    let mut current = RE_PAREN_SUTTA_REF
+        .replace_all(text, |caps: &regex::Captures| {
+            refs.push(caps[1].trim().to_string());
+            String::new()
+        })
+        .into_owned();
+
+    // Loop: consecutive bare tokens share their whitespace boundary, and
+    // regex has no lookbehind, so one pass may leave the next one unmatched.
+    loop {
+        let replaced = RE_BARE_SUTTA_REF
+            .replace_all(&current, |caps: &regex::Captures| {
+                refs.push(caps[2].trim().to_string());
+                // Keep one boundary so the surrounding words stay separated.
+                let sep = format!("{}{}", &caps[1], &caps[3]);
+                if sep.is_empty() { sep } else { " ".to_string() }
+            })
+            .into_owned();
+        if replaced == current {
+            break;
+        }
+        current = replaced;
+    }
+
+    current = RE_PAREN_NUMERIC.replace_all(&current, "").into_owned();
+
+    loop {
+        let replaced = RE_BARE_NUMERIC
+            .replace_all(&current, |caps: &regex::Captures| {
+                let sep = format!("{}{}", &caps[1], &caps[2]);
+                if sep.is_empty() { sep } else { " ".to_string() }
+            })
+            .into_owned();
+        if replaced == current {
+            break;
+        }
+        current = replaced;
+    }
+
+    let stripped = RE_SPACE_RUNS.replace_all(&current, " ").trim().to_string();
+    (stripped, refs)
+}
+
 pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
+    // Source annotations from the user's notes ("(sn56.11/pli/ms) ...",
+    // "... SN 56.11", verse numbers, PTS pages) are not part of the passage:
+    // strip them so they are not glossed and cannot pollute the surrounding
+    // context windows / hashes.
+    let (text, _sutta_refs) = strip_gloss_annotations(text);
     let original_text = text.trim();
     if original_text.is_empty() {
         return Vec::new();
@@ -2525,7 +2623,17 @@ pub fn clean_word_pali(word: &str) -> String {
 /// (lowercase, `consistent_niggahita`, `normalize_iti_sandhi`, space collapse),
 /// then collapse *all* whitespace to single spaces (`normalize_plain_text`'s
 /// `RE_SPACES` only collapses runs of spaces — verse texts arrive with varying
-/// line wrapping), strip remaining punctuation, and trim.
+/// line wrapping), rejoin the `-nti` iti-sandhi, strip remaining punctuation,
+/// and trim.
+///
+/// The `ṁ ti` → `nti` rejoin makes the hash invariant across the iti-sandhi
+/// quote variants: editions write `cittan”ti` (smart), `cittan'ti` (straight)
+/// or `cittanti` (no quote mark). `normalize_iti_sandhi` turns both quoted
+/// forms into `cittaṁ ti` but deliberately leaves the bare `-nti` form alone
+/// (ambiguous with plural verbs like `gacchanti` for search purposes), so the
+/// canonical *hash* form is the rejoined bare spelling — `gantunti` →
+/// `gantuṁ ti` → `gantunti` round-trips. This is a hash/phrase-matching
+/// canonicalization only; the shared search/fulltext normalizer is untouched.
 pub fn normalize_gloss_context(text: &str) -> String {
     lazy_static! {
         static ref RE_ALL_WS: Regex = Regex::new(r"\s+").unwrap();
@@ -2537,6 +2645,7 @@ pub fn normalize_gloss_context(text: &str) -> String {
     let text = text.replace("<b>", "").replace("</b>", "");
     let text = normalize_plain_text(&text);
     let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
+    let text = text.replace("ṁ ti", "nti");
     let text = RE_GLOSS_PUNCT.replace_all(&text, " ").into_owned();
     let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
     text.trim().to_string()
@@ -3710,6 +3819,179 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_gloss_annotations_formats() {
+        // Leading uid, with and without parentheses.
+        assert_eq!(
+            strip_gloss_annotations("(sn56.11/pli/ms) Ekaṁ samayaṁ bhagavā."),
+            ("Ekaṁ samayaṁ bhagavā.".to_string(), vec!["sn56.11/pli/ms".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("mn8/en/bodhi Evaṁ me sutaṁ."),
+            ("Evaṁ me sutaṁ.".to_string(), vec!["mn8/en/bodhi".to_string()]),
+        );
+
+        // Leading sutta reference numbers: with/without parentheses, optional
+        // trailing punctuation, spaces inside the parens.
+        assert_eq!(
+            strip_gloss_annotations("SN 56.11 Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("SN 56.11. Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("( MN 8 ) Evaṁ me sutaṁ."),
+            ("Evaṁ me sutaṁ.".to_string(), vec!["MN 8".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Dhp 183-184: Sabbapāpassa akaraṇaṁ."),
+            ("Sabbapāpassa akaraṇaṁ.".to_string(), vec!["Dhp 183-184".to_string()]),
+        );
+        // Uid without slash segments.
+        assert_eq!(
+            strip_gloss_annotations("an10.60 Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["an10.60".to_string()]),
+        );
+        // A reference that is the whole input.
+        assert_eq!(
+            strip_gloss_annotations("(SN 56.11)"),
+            ("".to_string(), vec!["SN 56.11".to_string()]),
+        );
+
+        // Trailing references (with and without parens / punctuation).
+        assert_eq!(
+            strip_gloss_annotations("Anāthapiṇḍikassa ārāme. (SN 56.11)"),
+            ("Anāthapiṇḍikassa ārāme.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Anāthapiṇḍikassa ārāme. sn56.11/pli/ms"),
+            ("Anāthapiṇḍikassa ārāme.".to_string(), vec!["sn56.11/pli/ms".to_string()]),
+        );
+
+        // Mid-text references.
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ (MN 8) ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["MN 8".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ SN 56.11 ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+
+        // Several references in one paragraph, including consecutive bare
+        // ones (they share a whitespace boundary).
+        assert_eq!(
+            strip_gloss_annotations("(SN 56.11) Evaṁ me sutaṁ mn8/en/bodhi ekaṁ samayaṁ. SN 22.59 SN 35.28"),
+            (
+                "Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(),
+                vec![
+                    "SN 56.11".to_string(),
+                    "mn8/en/bodhi".to_string(),
+                    "SN 22.59".to_string(),
+                    "SN 35.28".to_string(),
+                ],
+            ),
+        );
+
+        // Numeric annotations: digits are not used in Pāli text, so verse
+        // numbers, PTS pages and other bare/parenthesized/bracketed numbers
+        // are always annotations. Removed, but not reported as references.
+        assert_eq!(
+            strip_gloss_annotations("183. Sabbapāpassa akaraṇaṁ."),
+            ("Sabbapāpassa akaraṇaṁ.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("(48.50) samādhi."),
+            ("samādhi.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Sabbapāpassa akaraṇaṁ, kusalassa upasampadā. 183"),
+            ("Sabbapāpassa akaraṇaṁ, kusalassa upasampadā.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Manopubbaṅgamā dhammā [12] manoseṭṭhā manomayā."),
+            ("Manopubbaṅgamā dhammā manoseṭṭhā manomayā.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("1.2.3 Evaṁ me sutaṁ 56.11 ekaṁ samayaṁ (183-184)."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ .".to_string(), vec![]),
+        );
+
+        // NOT stripped: plain Pāli text — no digits, and words with
+        // diacritics fall outside [a-z].
+        for text in [
+            "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati.",
+            "Gāthā dve honti.",
+        ] {
+            assert_eq!(strip_gloss_annotations(text), (text.to_string(), vec![]), "must not strip: {}", text);
+        }
+
+        // A word must never be truncated when the boundary is missing.
+        assert_eq!(strip_gloss_annotations("Sn56xyz abc."), ("Sn56xyz abc.".to_string(), vec![]));
+        assert_eq!(strip_gloss_annotations("abc xSN 56.11x def."), ("abc xSN 56.11x def.".to_string(), vec![]));
+    }
+
+    #[test]
+    fn test_gloss_annotations_do_not_pollute_contexts() {
+        // The PRD test sentence, with the phrase-relevant word ārāme near the
+        // start-side window: uid / reference / numeric annotations must
+        // produce the identical word list, context windows and cache hashes
+        // as the bare passage.
+        let bare = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme.";
+        let words_bare = extract_words_with_context(bare);
+        assert!(!words_bare.is_empty());
+
+        // Leading, trailing and mid-text placements; sutta references and
+        // numeric annotations (verse numbers, PTS pages).
+        let mid_split = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati";
+        let mid_rest = "jetavane anāthapiṇḍikassa ārāme.";
+        for prefixed in [
+            format!("(sn56.11/pli/ms) {}", bare),
+            format!("sn56.11/pli/ms {}", bare),
+            format!("(SN 56.11) {}", bare),
+            format!("SN 56.11. {}", bare),
+            format!("{} (SN 56.11)", bare),
+            format!("{} sn56.11/pli/ms", bare),
+            format!("{} (SN 56.11) {}", mid_split, mid_rest),
+            format!("{} SN 56.11 {}", mid_split, mid_rest),
+            format!("183. {}", bare),
+            format!("(48.50) {}", bare),
+            format!("{} 183", bare),
+            format!("{} [12] {}", mid_split, mid_rest),
+        ] {
+            let words_prefixed = extract_words_with_context(&prefixed);
+            assert_eq!(
+                words_bare.len(),
+                words_prefixed.len(),
+                "word count differs for: {}", prefixed,
+            );
+            for (a, b) in words_bare.iter().zip(words_prefixed.iter()) {
+                assert_eq!(a.clean_word, b.clean_word, "clean_word differs for: {}", prefixed);
+                assert_eq!(
+                    a.context_snippet, b.context_snippet,
+                    "context window of '{}' polluted by the prefix in: {}", a.clean_word, prefixed,
+                );
+                assert_eq!(
+                    gloss_context_hash(&normalize_gloss_context(&a.context_snippet)),
+                    gloss_context_hash(&normalize_gloss_context(&b.context_snippet)),
+                    "cache hash of '{}' differs for: {}", a.clean_word, prefixed,
+                );
+            }
+        }
+
+        // The first word of the bare passage is the first glossed word — the
+        // reference itself must not appear as a word.
+        assert_eq!(words_bare[0].clean_word, extract_words_with_context("(MN 8) Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme.")[0].clean_word);
+        // A mid-text "(SN 56.11)" between viharati and jetavane must not leak
+        // into either neighbour's context window: the bare-text windows span
+        // the removal point and would differ if anything was left behind.
+        let mid = extract_words_with_context(
+            "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati (SN 56.11) jetavane anāthapiṇḍikassa ārāme.");
+        assert!(mid.iter().zip(words_bare.iter()).all(|(a, b)| a.context_snippet == b.context_snippet));
+    }
+
+    #[test]
     fn test_normalize_gloss_context() {
         // PRD test sentence 1, with the <b> target marker as delivered in
         // ProcessedWord.example_sentence.
@@ -3756,6 +4038,51 @@ mod tests {
         let h = gloss_context_hash(&normalize_gloss_context(with_m1));
         assert_eq!(h.len(), 64);
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_gloss_context_iti_sandhi_and_punctuation_invariance() {
+        // Editions differ in iti-sandhi quote marks — smart (cittan”ti),
+        // straight (cittan'ti) or missing (cittanti) — and in comma
+        // placement. All variants must normalize to the same canonical form
+        // (the rejoined bare -nti spelling, punctuation stripped) so the
+        // context hash hits the same cache row.
+        let smart = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma <b>cittan”ti</b>?";
+        let straight = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan'ti?";
+        let bare = "Diṭṭhaṁ vo bhikkhave caraṇaṁ nāma cittanti?";
+        let commas_changed = "Diṭṭhaṁ vo bhikkhave, caraṇaṁ nāma cittan”ti.";
+
+        let canonical = "diṭṭhaṁ vo bhikkhave caraṇaṁ nāma cittanti";
+        for variant in [smart, straight, bare, commas_changed] {
+            assert_eq!(
+                normalize_gloss_context(variant),
+                canonical,
+                "variant does not normalize to the canonical form: {}", variant,
+            );
+        }
+
+        let h = gloss_context_hash(canonical);
+        for variant in [smart, straight, bare, commas_changed] {
+            assert_eq!(
+                gloss_context_hash(&normalize_gloss_context(variant)),
+                h,
+                "hash differs for variant: {}", variant,
+            );
+        }
+
+        // The -unti round trip: the bare spelling and the quoted forms of
+        // gantuṁ + ti canonicalize identically.
+        assert_eq!(
+            normalize_gloss_context("na dāni sukaraṁ gantunti."),
+            normalize_gloss_context("na dāni sukaraṁ gantun’ti."),
+        );
+
+        // Vowel-sandhi variants (quoted and bare) already unify via
+        // normalize_iti_sandhi.
+        assert_eq!(
+            normalize_gloss_context("evaṁ dhārayāmī’ti."),
+            normalize_gloss_context("evaṁ dhārayāmīti."),
+        );
     }
 
     #[test]

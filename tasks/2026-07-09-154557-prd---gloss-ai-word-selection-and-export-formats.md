@@ -236,11 +236,50 @@ This feature adds:
     own `\s+` → single-space collapse so that **all whitespace including
     line breaks** becomes single spaces (verse texts are pasted with
     varying line wrapping), then strip remaining punctuation and trim.
+    **Iti-sandhi quote variants (added 2026-07-10):** editions write the
+    `-nti` sandhi as `cittan”ti` (smart quote), `cittan'ti` (straight) or
+    `cittanti` (no quote mark). `normalize_iti_sandhi` turns both quoted
+    forms into `cittaṁ ti` but deliberately leaves the bare `-nti` form
+    alone (ambiguous with plural verbs like `gacchanti` for search
+    purposes), so `normalize_gloss_context` additionally **rejoins
+    `ṁ ti` → `nti`** — the canonical hash form is the bare spelling
+    (`gantunti` → `gantuṁ ti` → `gantunti` round-trips), and all three
+    quote variants plus comma changes hash identically. This
+    canonicalization is gloss-hash/phrase-matching only; the shared
+    search/fulltext normalizer is untouched. Test case:
+    *"Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan”ti?"* glosses as
+    diṭṭhaṁ / vo / bhikkhave / caraṇaṁ / nāma / cittaṁ (the `”ti` absorbed
+    by iti-sandhi), and a cache row saved from one edition's window
+    resolves the word under the other quote/comma variants.
     Hash with a stable
     algorithm (e.g. SHA-256 or blake3 — not `std` `DefaultHasher`, which is
     not stable across versions). Niggahīta unification matters because
     sources differ (SuttaCentral/CST use ṁ, PTS/DPD use ṃ) and the cache
     must hit across them.
+16a. **Annotation stripping before glossing (added 2026-07-10).** Digits are
+    not used in Pāli text, so a digit-bearing token is always some form of
+    annotation from the user's notes. Two kinds are recognized and **removed
+    before gloss word extraction** (`strip_gloss_annotations()` in
+    `backend/src/helpers.rs`, called at the top of
+    `extract_words_with_context`) — at the start, end, or mid-text:
+    - **sutta uids / references** — `mn8/en/bodhi`, `sn56.11/pli/ms`,
+      `an10.60`, `SN 56.11`, `Dhp 183-184`, with or without parentheses
+      (a whitespace/parenthesis-delimited token of ASCII letters followed
+      by digits, optional `/lang/author` segments). These are returned by
+      the helper for callers that want to keep the source as an attribute
+      (see req 47);
+    - **numeric annotations** — verse numbers (`183.`), PTS page references
+      (`(48.50)`), bracketed numbers (`[12]`), section numbers (`1.2.3`),
+      bare or in parentheses/brackets (digits and numeric punctuation only).
+      Removed, not reported.
+
+    Otherwise these would be glossed themselves and pollute the surrounding
+    words' context windows and cache hashes. Pāli words never contain
+    digits, and words with diacritics fall outside `[a-z]`, so passage text
+    is never affected; undelimited tokens (`Sn56xyz`) are never truncated.
+    Stripping applies to word extraction only — the paragraph text shown in
+    the Gloss tab keeps the user's annotations.
+
 17. Matching a cached choice back to a ComboBox option: match `selected_uid`
     against the option `uid` values; if no option matches (dictionary data
     changed), ignore the cache entry.
@@ -547,25 +586,19 @@ appdata DB.
       - **candidate gloss session JSONs** in the §4.9
         `simsapa-gloss-session` envelope (empty `word_cache`), batched into
         review-sized files (e.g. ≤ 25 paragraphs per file, ordered by
-        frequency rank). Each paragraph's text is the verbatim source
-        passage **prefixed with the source sutta uid in parentheses at the
-        beginning of the paragraph**, e.g.
-        `(sn56.11/pli/ms) Ekaṁ samayaṁ bhagavā …` — the uid travels
-        visibly with the paragraph through review and re-export.
-        `words_data` is **pre-computed via `process_word_for_glossing`**
-        on that same paragraph text — options, uids, `example_sentence`
-        and `context_hash` are identical-by-construction to what the app
-        would compute. **Uid-prefix caveat:** words within ~50 chars of
-        the paragraph start get the prefix inside their context window,
-        so their cache rows would key on the prefixed context and not hit
-        when the bare sutta text is glossed later. Mitigation: the target
-        word/phrase must sit **at least one window-length into the
-        selected passage** — the script includes preceding source text as
-        lead-in (or prefers a mid-sutta occurrence of the same normalized
-        context), so the reviewed words' windows never contain the uid
-        prefix. Words inside the lead-in itself may still key on the
-        prefix; they are not the words the paragraph was selected for,
-        and confirming them is optional;
+        frequency rank). Each paragraph's text is the **verbatim source
+        passage only**; the source sutta uid is stored as a per-paragraph
+        **attribute** (e.g. `source_uid` on the session's paragraph
+        object), NOT prefixed into the paragraph text. *(Design revision,
+        2026-07-10: the original plan prefixed `(sn56.11/pli/ms) ` into the
+        text, which polluted the leading words' context windows/hashes and
+        required a lead-in mitigation. Storing the uid as an attribute
+        removes the problem entirely; additionally, uids/references that
+        users paste into paragraph text are recognized and stripped before
+        glossing — see req 16a.)* `words_data` is **pre-computed via
+        `process_word_for_glossing`** on that same paragraph text —
+        options, uids, `example_sentence` and `context_hash` are
+        identical-by-construction to what the app would compute;
       - a **report** (`report.md` / `report.json`): word and phrase
         frequency tables, ambiguity stats, and the estimated corpus
         coverage of the generated batches (what share of all ambiguous
