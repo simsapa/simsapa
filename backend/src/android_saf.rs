@@ -29,6 +29,10 @@ pub fn mime_from_filename(filename: &str) -> &'static str {
         "text/plain"
     } else if lower.ends_with(".csv") {
         "text/csv"
+    } else if lower.ends_with(".json") {
+        "application/json"
+    } else if lower.ends_with(".docx") {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     } else {
         "application/octet-stream"
     }

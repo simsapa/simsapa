@@ -491,6 +491,11 @@ Item {
         return true;
     }
 
+    function export_gloss_docx(folder_url: url, filename: string, gloss_json: string): bool {
+        console.log(`export_gloss_docx(): ${folder_url}, ${filename}, ${gloss_json}`);
+        return true;
+    }
+
     function check_file_exists_in_folder(folder_url: url, filename: string): bool {
         console.log(`check_file_exists_in_folder(): ${folder_url}, ${filename}`);
         return true;

@@ -12,7 +12,9 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 - `backend/src/helpers.rs` - Context normalization + stable hashing over the existing per-word window (`example_sentence` from `extract_words_with_context`); response-parsing helper (`parse_word_selection_response` + `extract_first_json_object`); cache/phrase resolution in `process_word_for_glossing` (`GlossResolutionData` pre-fetch struct, `resolve_gloss_word_selection`, `gloss_option_uid_matches`).
 - `backend/src/types.rs` - `ProcessedWord.context_hash` + `resolution` fields (`#[serde(default)]`), computed in `process_word_for_glossing`.
 - `backend/tests/test_gloss_word_resolution.rs` - Integration tests: seeded phrase resolves ārāme, user > phrase precedence, stale-uid fallthrough, ai/built-in origins, unambiguous words untouched (real DPD DB + temp appdata DB).
-- `backend/src/docx_export.rs` - New DOCX generation module (embedded template + `word/document.xml` generation).
+- `backend/src/docx_export.rs` - DOCX generation: parses the gloss export JSON, generates `word/document.xml` referencing the template styles (Title/Heading1/Heading2/BodyText/VocabEntry), rezips around the embedded template; summary `<b>`/`<i>` → runs.
+- `assets/docx-template/gloss-template.docx` - Embedded minimal OOXML template defining the named styles (`include_bytes!` in `docx_export.rs`).
+- `backend/src/android_saf.rs` - `mime_from_filename` gained `.docx` / `.json` MIME entries.
 - `backend/tests/` (or in-module `#[cfg(test)]`) - Tests for context windows, hashing, cache CRUD, phrase matching, payload/response serde, docx generation.
 - `bridges/src/sutta_bridge.rs` - Bridge fns: cache save/clear/count, `get_default_system_prompt`, word-selection settings accessors, `export_gloss_docx`.
 - `bridges/src/prompt_manager.rs` - `word_selection_request` invokable + `word_selection_response` signal.
@@ -26,7 +28,6 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 - `cli/src/gloss_corpus_explore.rs` - The `gloss-corpus-explore` CLI (PRD §4.10 req 47/48, decision §7.6): read-only frequency/n-gram scan of the appdata suttas → glossable candidate session JSONs + report, `words_data` pre-computed via `process_word_for_glossing`.
 - `bootstrap-assets-resources/gloss-data-cache/candidates/` - Output folder for generated candidate session files (reviewed via Load JSON; not scanned by `import-gloss-data`).
 - `bootstrap-assets-resources/gloss-data-cache/` - Committed gloss session JSON exports from the UI (the data bank scanned at bootstrap).
-- `assets/docx-template/` (or similar) - Embedded template `.docx` bytes (`include_bytes!`).
 - `cli/src/main.rs` + `cli/src/bootstrap/mod.rs` / `bootstrap/appdata.rs` - Bootstrap: phrase-table seeding + `gloss-data-cache/` import **before** the "Create appdata.tar.bz2" step (`bootstrap/mod.rs:433`).
 - `docs/gloss-ai-word-selection.md` - New feature doc.
 - `PROJECT_MAP.md`, `AGENTS.md` (CLAUDE.md symlink target) - Doc pointers.
@@ -157,11 +158,11 @@ PRD: `tasks/2026-07-09-154557-prd---gloss-ai-word-selection-and-export-formats.m
 
 **Dependencies:** none beyond existing export flow (can be done in parallel with 4/5).
 
-- [ ] 6.1 Create the template `.docx` with the named styles and add it under `assets/`; document the style names in the module header.
-- [ ] 6.2 Implement `backend/src/docx_export.rs`: parse the gloss export JSON, generate `word/document.xml`, rezip with the template's other parts intact. Unit test: output unzips, contains expected text, and `document.xml` is well-formed.
-- [ ] 6.3 Refactor/extend the save path so binary content can be written to a user-chosen folder on both desktop and Android SAF (a bytes variant of the `save_file` dispatch in `sutta_bridge.rs` / `android_saf.rs`).
-- [ ] 6.4 Add `export_gloss_docx(...)` bridge fn + qmllint stub; wire `"Word (.docx)"` into the Export As ComboBox and `export_dialog_accepted()` (existing-file overwrite confirm).
-- [ ] 6.5 Build + tests; user manually verifies the file opens without repair warnings in LibreOffice and Word.
+- [x] 6.1 Create the template `.docx` with the named styles and add it under `assets/`; document the style names in the module header. (Generated `assets/docx-template/gloss-template.docx` — minimal hand-crafted OOXML with styles Title/Heading1/Heading2/BodyText/VocabEntry; validated via `soffice --headless --convert-to pdf`.)
+- [x] 6.2 Implement `backend/src/docx_export.rs`: parse the gloss export JSON, generate `word/document.xml`, rezip with the template's other parts intact. Unit test: output unzips, contains expected text, and `document.xml` is well-formed. (6 unit tests; `<b>`/`<i>` summary markup → bold/italic runs, other tags stripped, entities decoded; a generated sample also converts cleanly in LibreOffice headless.)
+- [x] 6.3 Refactor/extend the save path so binary content can be written to a user-chosen folder on both desktop and Android SAF (a bytes variant of the `save_file` dispatch in `sutta_bridge.rs` / `android_saf.rs`). (`save_bytes_to_folder(folder_url, filename, bytes)` free fn; `save_file` now delegates to it; `mime_from_filename` gained `.docx` and `.json` entries.)
+- [x] 6.4 Add `export_gloss_docx(...)` bridge fn + qmllint stub; wire `"Word (.docx)"` into the Export As ComboBox and `export_dialog_accepted()` (existing-file overwrite confirm).
+- [x] 6.5 Build + tests; user manually verifies the file opens without repair warnings in LibreOffice and Word. (`make build -B` clean; backend tests pass except the 4 known pre-existing dhp/snp comparison failures; LibreOffice headless converts a generated sample without warnings — Word check pending user verification.)
 
 ### 7.0 JSON session export and Load JSON (PRD §4.9 reqs 38–41)
 

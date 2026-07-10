@@ -562,6 +562,47 @@ fn qurl_to_local_path(url: &QUrl) -> String {
     path_str
 }
 
+/// Write bytes to a file in a user-chosen folder, shared by the text
+/// (`save_file`) and binary (`export_gloss_docx`) export paths.
+///
+/// Android: FolderDialog returns a SAF content:// tree URI (not a path);
+/// scoped storage forbids std::fs writes there. Route through the
+/// ContentResolver. Pass the *fully-encoded* URI (to_encoded) — .path()
+/// drops scheme/authority and toString() pretty-decodes %3A/%2F.
+fn save_bytes_to_folder(folder_url: &QUrl, filename: &str, bytes: &[u8]) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
+            let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
+            let mime = simsapa_backend::android_saf::mime_from_filename(filename);
+            return match simsapa_backend::android_saf::write_to_tree_uri(
+                &tree_uri, filename, mime, bytes) {
+                Ok(_) => true,
+                Err(e) => {
+                    error(&format!("save_bytes_to_folder SAF write failed for {}: {}", filename, e));
+                    false
+                }
+            };
+        }
+    }
+
+    let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
+    let output_path = folder_path.join(filename);
+    match output_path.to_str() {
+        Some(p) => match save_to_file_checked(bytes, p) {
+            Ok(_) => true,
+            Err(e) => {
+                error(&format!("save_bytes_to_folder failed to write {}: {}", p, e));
+                false
+            }
+        },
+        None => {
+            error(&format!("save_bytes_to_folder: output path is not valid UTF-8: {:?}", output_path));
+            false
+        }
+    }
+}
+
 /// Shared INSERT/UPDATE logic for a history session, used by both the async and
 /// the blocking (app-close) save paths. `session_id` is the QML-side string:
 /// empty means INSERT a new row, otherwise UPDATE the row with that parsed id.
@@ -1101,6 +1142,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn save_file(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, content: &QString) -> bool;
+
+        #[qinvokable]
+        fn export_gloss_docx(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, gloss_json: &QString) -> bool;
 
         #[qinvokable]
         fn check_file_exists_in_folder(self: &SuttaBridge, folder_url: &QUrl, filename: &QString) -> bool;
@@ -2896,42 +2940,23 @@ impl qobject::SuttaBridge {
                      folder_url: &QUrl,
                      filename: &QString,
                      content: &QString) -> bool {
-        // Android: FolderDialog returns a SAF content:// tree URI (not a path);
-        // scoped storage forbids std::fs writes there. Route through the
-        // ContentResolver. Pass the *fully-encoded* URI (to_encoded) — .path()
-        // drops scheme/authority and toString() pretty-decodes %3A/%2F.
-        #[cfg(target_os = "android")]
-        {
-            if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
-                let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
-                let fname = filename.to_string();
-                let mime = simsapa_backend::android_saf::mime_from_filename(&fname);
-                return match simsapa_backend::android_saf::write_to_tree_uri(
-                    &tree_uri, &fname, mime, content.to_string().as_bytes()) {
-                    Ok(_) => true,
-                    Err(e) => {
-                        error(&format!("save_file SAF write failed for {}: {}", fname, e));
-                        false
-                    }
-                };
-            }
-        }
+        save_bytes_to_folder(folder_url, &filename.to_string(), content.to_string().as_bytes())
+    }
 
-        let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
-        let output_path = folder_path.join(filename.to_string());
-        match output_path.to_str() {
-            Some(p) => match save_to_file_checked(content.to_string().as_bytes(), p) {
-                Ok(_) => true,
-                Err(e) => {
-                    error(&format!("save_file failed to write {}: {}", p, e));
-                    false
-                }
-            },
-            None => {
-                error(&format!("save_file: output path is not valid UTF-8: {:?}", output_path));
-                false
+    /// Generate a DOCX from the gloss export JSON and write it to the chosen
+    /// folder (desktop path or Android SAF, same dispatch as `save_file`).
+    pub fn export_gloss_docx(&self,
+                             folder_url: &QUrl,
+                             filename: &QString,
+                             gloss_json: &QString) -> bool {
+        let bytes = match simsapa_backend::docx_export::generate_gloss_docx(&gloss_json.to_string()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error(&format!("export_gloss_docx failed to generate the document: {}", e));
+                return false;
             }
-        }
+        };
+        save_bytes_to_folder(folder_url, &filename.to_string(), &bytes)
     }
 
     pub fn check_file_exists_in_folder(&self,

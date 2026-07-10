@@ -680,8 +680,13 @@ Item {
         let save_file_name = null;
         let save_content = null;
         let is_anki_csv = false;
+        let is_docx = false;
 
-        if (export_btn.currentValue === "HTML") {
+        if (export_btn.currentValue === "Word (.docx)") {
+            save_file_name = "gloss_export.docx";
+            is_docx = true;
+
+        } else if (export_btn.currentValue === "HTML") {
             save_file_name = "gloss_export.html";
             save_content = root.gloss_as_html();
 
@@ -701,7 +706,14 @@ Item {
             if (is_anki_csv) {
                 root.start_anki_export_background(export_folder_dialog.selectedFolder);
             } else {
-                let ok = SuttaBridge.save_file(export_folder_dialog.selectedFolder, save_file_name, save_content);
+                let ok = false;
+                if (is_docx) {
+                    // The DOCX bytes are generated in Rust from the export data JSON.
+                    let gloss_json = JSON.stringify(root.gloss_export_data());
+                    ok = SuttaBridge.export_gloss_docx(export_folder_dialog.selectedFolder, save_file_name, gloss_json);
+                } else {
+                    ok = SuttaBridge.save_file(export_folder_dialog.selectedFolder, save_file_name, save_content);
+                }
                 if (ok) {
                     msg_dialog_ok.text = "Exported as: " + save_file_name;
                     msg_dialog_ok.open();
@@ -2242,7 +2254,7 @@ ${main_text}
 
                             ComboBox {
                                 id: export_btn
-                                model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Anki CSV"]
+                                model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Anki CSV", "Word (.docx)"]
                                 enabled: paragraph_model.count > 0 && !root.is_exporting_anki
                                 onCurrentIndexChanged: {
                                     if (export_btn.currentIndex !== 0) {
