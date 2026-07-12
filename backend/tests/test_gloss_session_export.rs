@@ -1,6 +1,6 @@
-// Round-trip test for the gloss session JSON export / Load JSON feature
+// Round-trip test for the gloss session JSON export / Open JSON feature
 // (PRD §4.9 reqs 38-41, docs/gloss-ai-word-selection.md): export a session
-// with cache rows on one appdata DB, import it into a fresh DB (as Load JSON
+// with cache rows on one appdata DB, import it into a fresh DB (as Open JSON
 // does), and verify the counts, the strict-precedence import rule, and that
 // the restored words re-derive their resolution / checked state from the
 // imported cache rows.
@@ -105,7 +105,7 @@ fn test_gloss_session_export_round_trip() {
     );
     assert!(value.get("app_version").unwrap().as_str().unwrap().len() > 0);
 
-    // --- Import side (Load JSON): a fresh DB where the user has already
+    // --- Import side (Open JSON): a fresh DB where the user has already
     // made their own choice for cittaṁ — the imported ai row must not
     // overwrite it; the imported user row for ārāme lands.
     let db_b = temp_appdata("b");

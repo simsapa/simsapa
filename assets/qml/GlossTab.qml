@@ -785,11 +785,11 @@ Item {
     }
 
     FileDialog {
-        id: load_json_file_dialog
-        title: "Load Gloss Session JSON"
+        id: open_json_file_dialog
+        title: "Open Gloss Session JSON"
         fileMode: FileDialog.OpenFile
         nameFilters: ["JSON files (*.json)", "All files (*)"]
-        onAccepted: root.load_json_session_from_url(selectedFile.toString())
+        onAccepted: root.open_json_session_from_url(selectedFile.toString())
     }
 
     function file_url_to_path(file_url_str) {
@@ -806,24 +806,24 @@ Item {
         return file_url_str;
     }
 
-    // "Load JSON" (PRD §4.9 reqs 39-41): restore an exported gloss session as
+    // "Open JSON" (PRD §4.9 reqs 39-41): restore an exported gloss session as
     // a new unsaved session, importing its word_cache entries with the
     // strict-precedence upsert. When the current session has content, confirm
     // first — it is flushed to history, same as opening a history item.
-    function load_json_session() {
+    function open_json_session() {
         if (root.is_session_empty()) {
-            load_json_file_dialog.open();
+            open_json_file_dialog.open();
             return;
         }
-        msg_dialog_cancel_ok.text = "Save the current gloss session and load the JSON session?";
+        msg_dialog_cancel_ok.text = "Save the current gloss session and open the JSON session?";
         msg_dialog_cancel_ok.accept_fn = function() {
             root.flush_if_needed();
-            load_json_file_dialog.open();
+            open_json_file_dialog.open();
         };
         msg_dialog_cancel_ok.open();
     }
 
-    function load_json_session_from_url(file_url_str) {
+    function open_json_session_from_url(file_url_str) {
         let file_path = root.file_url_to_path(file_url_str);
         // On Android the file picker returns a SAF content:// URI; copy it to
         // a readable temp file (std::fs cannot open content:// paths).
@@ -839,12 +839,12 @@ Item {
 
         let result;
         try {
-            result = JSON.parse(SuttaBridge.load_gloss_session_export(file_path));
+            result = JSON.parse(SuttaBridge.open_gloss_session_export(file_path));
         } catch (e) {
-            result = { error: "Failed to parse the load result: " + e };
+            result = { error: "Failed to parse the result: " + e };
         }
         if (!result.ok) {
-            msg_dialog_ok.text = "Failed to load: " + (result.error || "Unknown error");
+            msg_dialog_ok.text = "Failed to open: " + (result.error || "Unknown error");
             msg_dialog_ok.open();
             return;
         }
@@ -854,8 +854,21 @@ Item {
         // now-updated cache table. Empty db_id = a new unsaved session.
         root.load_session("", JSON.stringify(result.session));
         root.selected_history_id = -1;
-        msg_dialog_ok.text = "Gloss session loaded.\nWord cache entries imported: "
-            + result.imported + ", skipped: " + result.skipped + ".";
+
+        // The file also carries the word choices (word + context -> meaning)
+        // that were saved when it was exported. They are merged into this
+        // app's saved word choices, without overriding a local choice of equal
+        // or higher precedence (user > built-in > ai).
+        const added = result.imported;
+        const kept = result.skipped;
+        if (added + kept === 0) {
+            msg_dialog_ok.text = "Gloss session opened.\n\nThe file contained no saved word choices.";
+        } else {
+            msg_dialog_ok.text = "Gloss session opened.\n\n"
+                + "Saved word choices in the file: " + (added + kept) + ".\n"
+                + added + " added to your saved word choices.\n"
+                + kept + " ignored, your own choice for the word was kept.";
+        }
         msg_dialog_ok.open();
     }
 
@@ -2352,9 +2365,9 @@ ${main_text}
                             }
 
                             Button {
-                                text: "Load JSON"
+                                text: "Open JSON"
                                 enabled: !root.is_exporting_anki
-                                onClicked: root.load_json_session()
+                                onClicked: root.open_json_session()
                             }
 
                             Button {

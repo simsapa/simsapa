@@ -2894,7 +2894,7 @@ pub fn resolve_gloss_word_selection(
     None
 }
 
-// --- Gloss session JSON export / Load JSON (PRD §4.9, docs/gloss-ai-word-selection.md) ---
+// --- Gloss session JSON export / Open JSON (PRD §4.9, docs/gloss-ai-word-selection.md) ---
 
 /// The `format` marker of a gloss session JSON export envelope.
 pub const GLOSS_SESSION_EXPORT_FORMAT: &str = "simsapa-gloss-session";

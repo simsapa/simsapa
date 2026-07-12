@@ -962,7 +962,7 @@ pub mod qobject {
         fn import_gloss_word_cache(self: &SuttaBridge, entries_json: &QString) -> QString;
 
         #[qinvokable]
-        fn load_gloss_session_export(self: &SuttaBridge, file_path: &QString) -> QString;
+        fn open_gloss_session_export(self: &SuttaBridge, file_path: &QString) -> QString;
 
         #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
@@ -2610,14 +2610,14 @@ impl qobject::SuttaBridge {
         QString::from(serde_json::json!({"imported": imported, "skipped": skipped}).to_string())
     }
 
-    /// Load a gloss session JSON export from a local file path ("Load JSON",
+    /// Open a gloss session JSON export from a local file path ("Open JSON",
     /// PRD §4.9 reqs 39-41): validate the envelope, import its `word_cache`
     /// with the strict-precedence upsert, and return
     /// `{"ok": true, "session": {...}, "imported": n, "skipped": m}` or
     /// `{"error": "..."}`. A malformed or wrong-format file imports nothing.
     /// On Android the caller converts a `content://` URI to a temp file first
     /// (`copy_content_uri_to_temp`).
-    pub fn load_gloss_session_export(&self, file_path: &QString) -> QString {
+    pub fn open_gloss_session_export(&self, file_path: &QString) -> QString {
         let err_json =
             |msg: String| QString::from(serde_json::json!({"error": msg}).to_string());
 

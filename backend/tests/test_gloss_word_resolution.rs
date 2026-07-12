@@ -503,3 +503,52 @@ fn test_iti_sandhi_quote_variants_share_cache() {
     assert_eq!(vo_bare.resolution.as_deref(), Some("user"));
     assert_eq!(vo_bare.results[vo_bare.selected_index as usize].uid, vo_uid);
 }
+
+// Bootstrap data-bank import parity (docs/gloss-ai-word-selection.md): a
+// confirmed session-export entry imported as a built-in row — as
+// `import-gloss-data` and the bootstrap do — must resolve during gloss
+// processing. The hashes come from the app's own gloss run, so this asserts
+// the export -> import -> re-gloss hash parity end to end.
+#[test]
+#[serial]
+fn test_imported_builtin_row_resolves_during_glossing() {
+    use simsapa_backend::helpers::{import_gloss_word_cache_entries, GlossWordCacheExportEntry};
+
+    h::app_data_setup();
+    let db = temp_appdata();
+
+    // First gloss pass with no resolution data: as the exporting user's app
+    // would compute the words (context windows + hashes).
+    let words = gloss_paragraph(ARAME_SENTENCE, None);
+    let arame = find_word(&words, "ārāme");
+    assert!(arame.results.len() > 1, "ārāme should be ambiguous");
+    assert!(arame.resolution.is_none());
+
+    // The confirmed selection, as a session-export word_cache entry. The
+    // bootstrap import writes it as origin "built-in".
+    let selected = arame
+        .results
+        .iter()
+        .find(|r| gloss_option_uid_matches(r, "ārāma-4/dpd"))
+        .expect("ārāma-4 should be among the options");
+    let entries = vec![GlossWordCacheExportEntry {
+        word: arame.original_word.clone(),
+        context_hash: arame.context_hash.clone(),
+        context_snippet: arame.example_sentence.clone(),
+        selected_uid: selected.uid.clone(),
+        origin: "built-in".to_string(),
+    }];
+    let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
+    assert_eq!((imported, skipped), (1, 0));
+
+    // Re-gloss the same passage against the imported bank: the row resolves
+    // (hash parity between the exporting and importing gloss runs).
+    let words2 = gloss_paragraph(ARAME_SENTENCE, Some(&db));
+    let arame2 = find_word(&words2, "ārāme");
+    assert_eq!(arame2.context_hash, arame.context_hash, "hash parity");
+    assert_eq!(arame2.resolution.as_deref(), Some("built-in"));
+    assert!(gloss_option_uid_matches(
+        &arame2.results[arame2.selected_index as usize],
+        "ārāma-4/dpd"
+    ));
+}

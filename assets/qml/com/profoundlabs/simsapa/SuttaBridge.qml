@@ -377,7 +377,7 @@ Item {
         return '{"imported": 0, "skipped": 0}';
     }
 
-    function load_gloss_session_export(file_path: string): string {
+    function open_gloss_session_export(file_path: string): string {
         return '{"ok": true, "session": {}, "imported": 0, "skipped": 0}';
     }
 
