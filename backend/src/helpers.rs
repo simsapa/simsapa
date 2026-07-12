@@ -1650,7 +1650,8 @@ pub fn build_context_snippet(
 /// form of annotation from the user's notes. Two kinds are handled:
 ///
 /// - **Sutta uids / references**: `(sn56.11/pli/ms)`, `mn8/en/bodhi`,
-///   `SN 56.11`, `Dhp 183-184` — with or without parentheses. These are
+///   `SN 56.11`, `[SN 48:10]`, `Dhp 183-184` — bare, in parentheses or in
+///   square brackets, with a dotted or a colon chapter separator. These are
 ///   returned in order of occurrence (callers that want to keep the source,
 ///   e.g. as a session attribute, can use them).
 /// - **Numeric annotations**: verse numbers (`183.`), PTS page references
@@ -1667,9 +1668,13 @@ pub fn build_context_snippet(
 /// is never affected.
 pub fn strip_gloss_annotations(text: &str) -> (String, Vec<String>) {
     lazy_static! {
-        // Parenthesized reference, anywhere: "(sn56.11/pli/ms)", "( SN 56.11 )".
-        static ref RE_PAREN_SUTTA_REF: Regex = Regex::new(
-            r"(?i)\(\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\)"
+        // Delimited reference, anywhere: "(sn56.11/pli/ms)", "( SN 56.11 )",
+        // "[SN 48:10]". Parentheses and square brackets are both accepted, as
+        // are the dotted (48.10) and colon (48:10) chapter separators. The two
+        // delimiter pairs are separate alternatives so a mismatched pair
+        // ("(SN 48.10]") is not treated as an annotation.
+        static ref RE_DELIMITED_SUTTA_REF: Regex = Regex::new(
+            r"(?i)\(\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\)|\[\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\]"
         ).unwrap();
         // Bare reference, anywhere: "mn8/en/bodhi", "SN 56.11." — must be
         // delimited by whitespace or text start/end on both sides so a word
@@ -1693,9 +1698,12 @@ pub fn strip_gloss_annotations(text: &str) -> (String, Vec<String>) {
 
     let mut refs: Vec<String> = Vec::new();
 
-    let mut current = RE_PAREN_SUTTA_REF
+    let mut current = RE_DELIMITED_SUTTA_REF
         .replace_all(text, |caps: &regex::Captures| {
-            refs.push(caps[1].trim().to_string());
+            // Group 1 = parenthesized alternative, group 2 = bracketed one.
+            if let Some(m) = caps.get(1).or_else(|| caps.get(2)) {
+                refs.push(m.as_str().trim().to_string());
+            }
             String::new()
         })
         .into_owned();
@@ -4008,6 +4016,27 @@ mod tests {
         assert_eq!(
             strip_gloss_annotations("Dhp 183-184: Sabbapāpassa akaraṇaṁ."),
             ("Sabbapāpassa akaraṇaṁ.".to_string(), vec!["Dhp 183-184".to_string()]),
+        );
+        // Square brackets, and the colon chapter separator, in either delimiter.
+        assert_eq!(
+            strip_gloss_annotations("[SN 48.10] Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48.10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("[SN 48:10] Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("(SN 48:10) Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("SN 48:10 Katamañca, bhikkhave."),
+            ("Katamañca, bhikkhave.".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ [mn8/en/bodhi] ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["mn8/en/bodhi".to_string()]),
         );
         // Uid without slash segments.
         assert_eq!(

@@ -135,12 +135,15 @@ not stable across Rust versions — these hashes are persisted and shipped.
 
 Digits never occur in Pāli text, so a digit-bearing token in a pasted passage is
 always an annotation. `strip_gloss_annotations()` (called at the top of
-`extract_words_with_context`) removes, anywhere in the text and with or without
-parentheses:
+`extract_words_with_context`) removes, anywhere in the text — bare, in
+parentheses or in square brackets:
 
 - **sutta uids / references** — `mn8/en/bodhi`, `sn56.11/pli/ms`, `an10.60`,
-  `SN 56.11`, `Dhp 183-184` (returned to the caller, which is how the corpus
-  explorer keeps the source uid, §7);
+  `SN 56.11`, `[SN 48:10]`, `Dhp 183-184` (returned to the caller, which is how
+  the corpus explorer keeps the source uid, §7). Both the dotted (`48.10`) and
+  the colon (`48:10`) chapter separator are recognized; the two delimiter pairs
+  are separate regex alternatives, so a mismatched pair (`(SN 48.10]`) is not
+  taken for an annotation;
 - **numeric annotations** — verse numbers (`183.`), PTS pages (`(48.50)`),
   bracketed numbers (`[12]`), section numbers (`1.2.3`) (removed silently).
 

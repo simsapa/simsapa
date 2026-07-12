@@ -92,6 +92,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── DrawerMenu.qml
 │   │   ├── FulltextResults.qml
 │   │   ├── GlossTab.qml
+│   │   ├── GlossWordSelectionDialog.qml
 │   │   ├── ListBackground.qml
 │   │   ├── PromptsTab.qml
 │   │   ├── SearchBarInput.qml
@@ -114,7 +115,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `DictionaryHtmlView.qml`, `SuttaHtmlView.qml` - Content display views
   - `DrawerMenu.qml` - Navigation drawer menu
   - `SearchBarInput.qml`, - Search interface component
-  - `AboutDialog.qml`, `StorageDialog.qml`, `ColorThemeDialog.qml` - Dialog windows
+  - `AboutDialog.qml`, `StorageDialog.qml`, `ColorThemeDialog.qml`, `GlossWordSelectionDialog.qml` - Dialog windows
 
 - `assets/qml/tst_*.qml` - QML component tests
 - `assets/qml/profoundlabs/simsapa/` - type definition dummies for qmllint
@@ -126,6 +127,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── icons
 │   ├── fonts
 │   ├── dpd-res
+│   ├── docx-template
+│   │   └── gloss-template.docx
 │   ├── templates
 │   │   ├── column_bar.html
 │   │   ├── display_settings.html
@@ -133,6 +136,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── menu.html
 │   │   └── page.html
 │   ├── common-words.json
+│   ├── gloss-phrase-selections.json
 │   └── icons.qrc
 ```
 
@@ -140,6 +144,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `fonts/` - Custom fonts (Abhaya Libre, Crimson Pro, Source Sans)
 - `templates/` - HTML templates for content rendering
 - `dpd-res/` - Digital Pali Dictionary specific resources
+- `docx-template/gloss-template.docx` - Minimal OOXML template defining the named styles (Title/Heading1/Heading2/BodyText/VocabEntry) used by the Gloss DOCX export; embedded with `include_bytes!` in `backend/src/docx_export.rs`
+- `gloss-phrase-selections.json` - Curated set-phrase → word → uid data (`include_str!`), seeded into `gloss_phrase_selections` at bootstrap
 
 #### `/backend/` - Rust Backend Core
 
@@ -162,6 +168,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── app_data.rs
 │   │   ├── app_settings.rs
 │   │   ├── dir_list.rs
+│   │   ├── docx_export.rs
 │   │   ├── helpers.rs
 │   │   ├── html_content.rs
 │   │   ├── lib.rs
@@ -188,8 +195,11 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   │   └── mod.rs
 │   │   ├── test_dpd_deconstructor_list.rs
 │   │   ├── test_dpd_lookup.rs
+│   │   ├── test_gloss_session_export.rs
+│   │   ├── test_gloss_word_resolution.rs
 │   │   ├── test_query_task.rs
-│   │   └── test_render_sutta_content.rs
+│   │   ├── test_render_sutta_content.rs
+│   │   └── ... (40+ integration test files)
 │   ├── Cargo.toml
 ```
 
@@ -206,8 +216,9 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/theme_colors.rs` - Theme color management for dark/light modes
   - `src/app_settings.rs` - Application settings and configuration (incl. `SuttaLayout` / `SuttaDisplayDefaults`)
   - `src/sutta_display.rs` - per-request `SuttaDisplayOptions` + display GET-param parsing (multi-column sutta view)
-  - `src/helpers.rs` - Utility functions including Linux desktop launcher creation
-- `backend/tests/` - Rust backend unit tests
+  - `src/helpers.rs` - Utility functions including Linux desktop launcher creation; also the Gloss word-processing pipeline (`extract_words_with_context`, `process_word_for_glossing`) and the AI word-selection layer on top of it (`normalize_gloss_context` / `gloss_context_hash` / `gloss_cache_word_key`, `strip_gloss_annotations`, `resolve_gloss_word_selection`, `parse_word_selection_response`, `build_gloss_session_export_json` / `parse_gloss_session_export`)
+  - `src/docx_export.rs` - Gloss DOCX export: gloss export JSON → `word/document.xml`, rezipped around the embedded `assets/docx-template/gloss-template.docx`
+- `backend/tests/` - Rust backend unit + integration tests (the tree above lists a sample). Gloss word selection: `test_gloss_word_resolution.rs` (resolution chain + precedence + the bootstrap built-in-import hash-parity test), `test_gloss_session_export.rs` (JSON export → strict-precedence import → re-annotation round-trip).
 
 #### `/bridges/` - Rust-C++ Bridge Layer
 
@@ -241,11 +252,22 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 ```
 ├── cli
 │   ├── src
-│   │   └── main.rs
+│   │   ├── bootstrap
+│   │   ├── gloss_corpus_explore.rs
+│   │   ├── gloss_ngrams.rs
+│   │   ├── import_gloss_data.rs
+│   │   ├── main.rs
+│   │   ├── update_provider_models.rs
+│   │   └── update_releases_fallback.rs
 │   └── Cargo.toml
 ```
 
-- `src/main.rs` - CLI entry point using the backend library
+- `src/main.rs` - CLI entry point (clap subcommands) using the backend library
+- `src/bootstrap/` - The `bootstrap` subcommand: builds the shipped databases (suttacentral, DPD, DPPN, chanting practice, library imports, …), seeds `gloss_phrase_selections`, and imports the `gloss-data-cache/` data bank as `built-in` gloss cache rows before `appdata.tar.bz2` is created (`bootstrap/mod.rs`)
+- `src/import_gloss_data.rs` - `import-gloss-data <appdata.sqlite3> [DIR_OR_FILES]`: scans exported gloss session JSONs (directories non-recursively, so `candidates/` is skipped), dedupes confirmed (`user`/`built-in`) selections, validates uids via `AppData::resolve_word_uid`, imports them as `origin="built-in"` cache rows, and prints a coverage + phrase-candidate report. Also invoked from the bootstrap.
+- `src/gloss_corpus_explore.rs` - `gloss-corpus-explore`: read-only nikāya-scoped frequency + n-gram scan of the sutta corpus → candidate gloss session JSONs (paragraphs verbatim from `content_json`, `words_data` pre-computed, `source_uid` attribute) + a frequency/coverage report, for curation in the Gloss UI via Open JSON
+- `src/gloss_ngrams.rs` - Shared n-gram helpers for both of the above (`ngrams_containing`, `PhraseCandidateCollector`, `NgramCounter`)
+- `src/update_provider_models.rs`, `src/update_releases_fallback.rs` - Refresh the embedded `assets/providers.json` / `assets/releases-fallback.json` snapshots
 
 #### `/cpp/` - C++ Layer
 
@@ -345,6 +367,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - **Connection Management:** `backend/src/db/` modules
 - **Query Processing:** `backend/src/query_task.rs`
 - **Gloss/Prompts history:** table `gloss_prompts_history` (migration `backend/migrations/appdata/2026-06-27-131935_create_gloss_prompts_history`, schema in `appdata_schema.rs`, model `GlossPromptsHistory`/`NewGlossPromptsHistory` + `HistoryItemType` in `appdata_models.rs`). CRUD helpers in `appdata.rs` (`get_history_for_type` / `save_new_history` / `update_history` → affected-row count for INSERT-fallback / `delete_history_item` / `clear_history`), tested by `history_tests`. Indexed on `(item_type, updated_at)`; **no per-save `ANALYZE`** (see [docs/user-data-and-sqlite-analyze.md](./docs/user-data-and-sqlite-analyze.md)).
+- **Gloss word selection:** tables `gloss_word_context_cache` (`word`, `context_hash`, `context_snippet`, `selected_uid`, `origin` ∈ `ai` / `user` / `built-in`; UNIQUE `(word, context_hash)`) and `gloss_phrase_selections` (`phrase`, `word`, `selected_uid`; UNIQUE `(phrase, word)`) — migration `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection`, schema in `appdata_schema.rs`, models `GlossWordContextCache` / `NewGlossWordContextCache` / `GlossPhraseSelection` in `appdata_models.rs`. CRUD in `appdata.rs`: `get_gloss_word_cache` / `upsert_gloss_word_cache` (precedence-guarded: `ai` never overwrites `user` or `built-in`) / `delete_gloss_word_cache` / `count_gloss_word_cache` / `clear_gloss_word_cache` (leaves `built-in` rows) / `get_gloss_phrase_selections` / `seed_gloss_phrase_selections` / `import_gloss_word_cache_row` (strictly-higher precedence, for session-export imports). `built-in` rows are shipped by the bootstrap from the `gloss-data-cache/` data bank. **No per-save `ANALYZE`.** Full design: [docs/gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
 
 ### Search & Lookup
 - **Word Lookup:** `backend/src/lookup.rs`
@@ -379,6 +402,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - **Language Downloads:** Downloads suttas_lang_{lang}.tar.bz2 files and imports into appdata.sqlite3
   - **Auto-initialization:** Reads download_languages.txt from app_assets_dir if present
 - **Gloss Tab:** `assets/qml/GlossTab.qml` - Pali text analysis with vocabulary and AI translations
+  - **AI Word Selection:** per-paragraph "Update Selections" buttons + status UI (waiting / busy with cancel / success / error), the robot icon + checkable saved toggle on each word row, and the `assets/qml/GlossWordSelectionDialog.qml` settings dialog (provider/model dropdown with a leading "Disabled" entry, bulk cache clear). Requests go out via `PromptManager.word_selection_request`; selections resolve against the gloss cache/phrase tables first. Full design: [docs/gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
+  - **Exports:** Export As → HTML / Markdown / Org-Mode / **Word (.docx)** (`backend/src/docx_export.rs`) / **JSON** (the whole session + its cache rows, re-openable with the "Open JSON" button — the round-trip format used to curate the built-in data bank).
   - **AI Translation Interface:** `assets/qml/AssistantResponses.qml` - Tabbed interface for multiple AI model responses. **Height note:** the selected response renders as RichText and the `StackLayout` height is driven by a `content_height` property the inner item pushes up via `Layout.onPreferredHeightChanged` (not a one-shot `itemAt()` binding, which isn't reactive to late RichText `contentHeight` and truncated restored sessions).
   - **Response Tab Buttons:** `assets/qml/ResponseTabButton.qml` - Individual tabs with status indicators
 - **Prompts Tab:** `assets/qml/PromptsTab.qml` - AI conversation interface
@@ -411,17 +436,19 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - **Mic permission:** native via `cpp/android_helpers.*` + `AssetManager` (not Qt Multimedia).
 
 ### File Saving (user "Save As…")
+- **Binary content:** `save_bytes_to_folder(folder_url, filename, bytes)` is the shared writer under both the text `save_file` and the binary exports (e.g. `export_gloss_docx`); it runs the same desktop/SAF scheme dispatch.
 - **Scheme dispatch:** `bridges/src/sutta_bridge.rs` `save_file` / `check_file_exists_in_folder` branch on `folder_url.scheme()` — Android `content://` (Storage Access Framework tree URI) → the JNI writer, otherwise `qurl_to_local_path` + `save_to_file_checked` (`backend/src/lib.rs`, `std::fs`). `save_file` returns the real write outcome (was previously always `true`).
 - **Android SAF writer:** `backend/src/android_saf.rs` (`#[cfg(target_os = "android")]`) — `write_to_tree_uri` / `child_exists` / shared `find_child_doc_uri` / `mime_from_filename`, via `ContentResolver`/`DocumentsContract` JNI (jni 0.21), reusing the `ndk_context` set up by `init_android_context`. Create-or-truncate overwrite parity; pass the fully-encoded `folder_url.to_encoded()`. Docs: [docs/android-file-saving-saf.md](./docs/android-file-saving-saf.md).
 
 ### AI Integration
-- **Prompt Manager:** `bridges/src/prompt_manager.rs` - AI API communication and request handling
+- **Prompt Manager:** `bridges/src/prompt_manager.rs` - AI API communication and request handling (`prompt_request` / `prompt_response`, plus `word_selection_request` / `word_selection_response` for the Gloss tab; fixed 180 s HTTP timeout)
 - **Translation Requests:** Multi-model support with automatic retry logic and error handling
 - **Markdown Processing:** Built-in markdown to HTML conversion for AI responses
-- **Export Integration:** AI translations included in HTML, Markdown, and Org-Mode exports
+- **Export Integration:** AI translations included in HTML, Markdown, Org-Mode, DOCX, and JSON exports
+- **Gloss AI word selection:** picks the dictionary sense of an ambiguous word. Resolution chain (`user` cache row → `built-in` row → set phrase → `ai` row → AI request → unresolved) in `backend/src/helpers.rs` (`resolve_gloss_word_selection`, `GlossResolutionData`, `gloss_option_uid_matches` — accepts both uid lanes: the numeric `12463/dpd` option uid and the lemma-based `ārāma-4/dpd` curated form). Cache key = `(gloss_cache_word_key(word), gloss_context_hash(normalize_gloss_context(example_sentence)))`. Request assembly / batching / status UI / saved-toggle in `assets/qml/GlossTab.qml`; settings dialog `assets/qml/GlossWordSelectionDialog.qml`; response parsing `parse_word_selection_response`. Bridge fns in `bridges/src/sutta_bridge.rs`: `get_gloss_word_selection_settings_json` / `set_gloss_word_selection_settings_json`, `save_gloss_word_cache`, `delete_gloss_word_cache`, `gloss_word_cache_count`, `clear_gloss_word_cache`, `annotate_gloss_words_json`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_gloss_session_json`, `import_gloss_word_cache`, `open_gloss_session_export`. Full design + gotchas: [docs/gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
 
 ### Configuration & Settings
-- **App Settings:** `backend/src/app_settings.rs` — includes `search_last_mode: IndexMap<String, String>` keyed by area name (`"Suttas"` / `"Dictionary"` / `"Library"`); per-area defaults applied at read time (`"Combined"` for Dictionary, `"Fulltext Match"` for Suttas/Library) via `AppData::get_last_search_mode(area)` / `set_last_search_mode(area, mode)`. Surfaced to QML as `SuttaBridge.get_last_search_mode` / `set_last_search_mode` (area-generic).
+- **App Settings:** `backend/src/app_settings.rs` — also `gloss_word_selection_enabled` / `_provider` / `_model` (the Gloss AI word-selection model, empty/disabled by default) and the `system_prompts` map, whose built-in defaults (incl. the two Gloss word-selection prompts) are merged into existing user settings on load — a missing default key is inserted without overwriting edits, and `get_default_system_prompt` backs the "Reset to Default" button in `SystemPromptsDialog.qml`. Includes `search_last_mode: IndexMap<String, String>` keyed by area name (`"Suttas"` / `"Dictionary"` / `"Library"`); per-area defaults applied at read time (`"Combined"` for Dictionary, `"Fulltext Match"` for Suttas/Library) via `AppData::get_last_search_mode(area)` / `set_last_search_mode(area, mode)`. Surfaced to QML as `SuttaBridge.get_last_search_mode` / `set_last_search_mode` (area-generic).
 - **Theme Colors:** `backend/src/theme_colors.rs`
 - **Directory Paths:** `backend/src/lib.rs:131` - `AppGlobalPaths`
 - **Portable-mode path resolution:** `backend/src/lib.rs` - `init_dotenv()` also

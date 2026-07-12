@@ -222,6 +222,30 @@ Notable feature docs:
   `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
   (`save_file` discarded the write result and always returned `true`) that made the
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
+- [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
+  how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
+  **resolution chain** (user cache row → built-in row → set phrase → AI row → AI
+  request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
+  numeric `12463/dpd` headword uid, curated data stores the lemma form
+  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The **cache key** is
+  `(word, context_hash)` over the *existing* ±50-char gloss context window
+  (`ProcessedWord.example_sentence`), normalized by `normalize_gloss_context()` —
+  covers why each step is there (verse line-wrap `\s+` collapse, ṁ/ṃ, the
+  **iti-sandhi quote-variant** rejoin `ṁ ti` → `nti` so smart/straight/bare
+  editions share one hash) and the **annotation stripping** that runs before word
+  extraction. Tables `gloss_word_context_cache` (origins `ai` / `user` /
+  `built-in`, precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
+  settings/dialog + the two editable system prompts, the request format,
+  **batching/pacing constants** (char limit, ≥ 6.5 s sequential spacing, 180 s
+  timeout, client-side cancel), the three load-bearing rules when applying
+  selections (ComboBox `onActivated` not `onCurrentIndexChanged`; a manual change
+  auto-saves a `user` row; late AI responses must not clobber a fresh user
+  choice), the **JSON session export / Open JSON** round-trip and its
+  strictly-higher-precedence import, **DOCX export** (hand-built OOXML around an
+  embedded template), and the **built-in data-bank pipeline**
+  (`gloss-corpus-explore` → candidate sessions → curate in the UI →
+  `gloss-data-cache/` → `import-gloss-data` → bootstrap), incl. the
+  Rust-vs-Python-API decision.
 
 ## Specific coding procedures
 
