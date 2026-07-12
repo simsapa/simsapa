@@ -1643,7 +1643,113 @@ pub fn build_context_snippet(
     snippet.trim().to_string()
 }
 
+/// Recognize and remove source annotations from a gloss paragraph — at the
+/// start, at the end, or mid-text.
+///
+/// Digits are not used in Pāli text, so a digit-bearing token is always some
+/// form of annotation from the user's notes. Two kinds are handled:
+///
+/// - **Sutta uids / references**: `(sn56.11/pli/ms)`, `mn8/en/bodhi`,
+///   `SN 56.11`, `[SN 48:10]`, `Dhp 183-184` — bare, in parentheses or in
+///   square brackets, with a dotted or a colon chapter separator. These are
+///   returned in order of occurrence (callers that want to keep the source,
+///   e.g. as a session attribute, can use them).
+/// - **Numeric annotations**: verse numbers (`183.`), PTS page references
+///   (`(48.50)`), bracketed numbers (`[12]`), section numbers (`1.2.3`) —
+///   bare or in parentheses/brackets. Removed, not reported.
+///
+/// Neither may enter gloss word extraction: they would be glossed themselves
+/// and pollute the surrounding words' context windows and cache hashes.
+///
+/// A reference token is delimited ASCII letters followed by numbers (`mn8`,
+/// `SN 56.11`, optional `/lang/author` uid segments); a numeric token
+/// contains digits and numeric punctuation only. Pāli words never contain
+/// digits — and words with diacritics fall outside `[a-z]` — so passage text
+/// is never affected.
+pub fn strip_gloss_annotations(text: &str) -> (String, Vec<String>) {
+    lazy_static! {
+        // Delimited reference, anywhere: "(sn56.11/pli/ms)", "( SN 56.11 )",
+        // "[SN 48:10]". Parentheses and square brackets are both accepted, as
+        // are the dotted (48.10) and colon (48:10) chapter separators. The two
+        // delimiter pairs are separate alternatives so a mismatched pair
+        // ("(SN 48.10]") is not treated as an annotation.
+        static ref RE_DELIMITED_SUTTA_REF: Regex = Regex::new(
+            r"(?i)\(\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\)|\[\s*([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)\s*\]"
+        ).unwrap();
+        // Bare reference, anywhere: "mn8/en/bodhi", "SN 56.11." — must be
+        // delimited by whitespace or text start/end on both sides so a word
+        // can never be truncated ("Sn56xyz" stays intact).
+        static ref RE_BARE_SUTTA_REF: Regex = Regex::new(
+            r"(?i)(^|\s)([a-z]{1,10}\.?\s?[0-9]+(?:[.:][0-9]+)*(?:-[0-9]+)?(?:/[a-z0-9._-]+)*)[.,:;]*(\s|$)"
+        ).unwrap();
+        // Parenthesized / bracketed numeric annotation: "(48.50)", "[12]",
+        // "(183-184)" — digits and numeric punctuation only, no letters.
+        static ref RE_PAREN_NUMERIC: Regex = Regex::new(
+            r"[(\[]\s*[0-9][0-9.,:;/\s—–-]*[)\]]"
+        ).unwrap();
+        // Bare numeric annotation: "183.", "56.11", "183-184", "1.2.3".
+        static ref RE_BARE_NUMERIC: Regex = Regex::new(
+            r"(^|\s)[0-9]+(?:[.,:—–-][0-9]+)*[.,:;]*(\s|$)"
+        ).unwrap();
+        // Tidy the removal sites: runs of spaces/tabs left behind where an
+        // annotation was cut out (newlines are kept for the verse layout).
+        static ref RE_SPACE_RUNS: Regex = Regex::new(r"[ \t]{2,}").unwrap();
+    }
+
+    let mut refs: Vec<String> = Vec::new();
+
+    let mut current = RE_DELIMITED_SUTTA_REF
+        .replace_all(text, |caps: &regex::Captures| {
+            // Group 1 = parenthesized alternative, group 2 = bracketed one.
+            if let Some(m) = caps.get(1).or_else(|| caps.get(2)) {
+                refs.push(m.as_str().trim().to_string());
+            }
+            String::new()
+        })
+        .into_owned();
+
+    // Loop: consecutive bare tokens share their whitespace boundary, and
+    // regex has no lookbehind, so one pass may leave the next one unmatched.
+    loop {
+        let replaced = RE_BARE_SUTTA_REF
+            .replace_all(&current, |caps: &regex::Captures| {
+                refs.push(caps[2].trim().to_string());
+                // Keep one boundary so the surrounding words stay separated.
+                let sep = format!("{}{}", &caps[1], &caps[3]);
+                if sep.is_empty() { sep } else { " ".to_string() }
+            })
+            .into_owned();
+        if replaced == current {
+            break;
+        }
+        current = replaced;
+    }
+
+    current = RE_PAREN_NUMERIC.replace_all(&current, "").into_owned();
+
+    loop {
+        let replaced = RE_BARE_NUMERIC
+            .replace_all(&current, |caps: &regex::Captures| {
+                let sep = format!("{}{}", &caps[1], &caps[2]);
+                if sep.is_empty() { sep } else { " ".to_string() }
+            })
+            .into_owned();
+        if replaced == current {
+            break;
+        }
+        current = replaced;
+    }
+
+    let stripped = RE_SPACE_RUNS.replace_all(&current, " ").trim().to_string();
+    (stripped, refs)
+}
+
 pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
+    // Source annotations from the user's notes ("(sn56.11/pli/ms) ...",
+    // "... SN 56.11", verse numbers, PTS pages) are not part of the passage:
+    // strip them so they are not glossed and cannot pollute the surrounding
+    // context windows / hashes.
+    let (text, _sutta_refs) = strip_gloss_annotations(text);
     let original_text = text.trim();
     if original_text.is_empty() {
         return Vec::new();
@@ -2518,6 +2624,551 @@ pub fn clean_word_pali(word: &str) -> String {
     without_end.into_owned()
 }
 
+/// Normalize a gloss context window (a `ProcessedWord.example_sentence` value
+/// or a curated set phrase) for cache hashing and phrase matching.
+///
+/// Pipeline: strip the `<b>`/`</b>` target markers, `normalize_plain_text`
+/// (lowercase, `consistent_niggahita`, `normalize_iti_sandhi`, space collapse),
+/// then collapse *all* whitespace to single spaces (`normalize_plain_text`'s
+/// `RE_SPACES` only collapses runs of spaces — verse texts arrive with varying
+/// line wrapping), rejoin the `-nti` iti-sandhi, strip remaining punctuation,
+/// and trim.
+///
+/// The `ṁ ti` → `nti` rejoin makes the hash invariant across the iti-sandhi
+/// quote variants: editions write `cittan”ti` (smart), `cittan'ti` (straight)
+/// or `cittanti` (no quote mark). `normalize_iti_sandhi` turns both quoted
+/// forms into `cittaṁ ti` but deliberately leaves the bare `-nti` form alone
+/// (ambiguous with plural verbs like `gacchanti` for search purposes), so the
+/// canonical *hash* form is the rejoined bare spelling — `gantunti` →
+/// `gantuṁ ti` → `gantunti` round-trips. This is a hash/phrase-matching
+/// canonicalization only; the shared search/fulltext normalizer is untouched.
+pub fn normalize_gloss_context(text: &str) -> String {
+    lazy_static! {
+        static ref RE_ALL_WS: Regex = Regex::new(r"\s+").unwrap();
+        // Punctuation to strip after iti-sandhi normalization has consumed the
+        // quote marks it needs. Includes parens/brackets (variant readings).
+        static ref RE_GLOSS_PUNCT: Regex = Regex::new(r#"[\.,;:\!\?'‘’"“”…—–\-\(\)\[\]]+"#).unwrap();
+    }
+
+    let text = text.replace("<b>", "").replace("</b>", "");
+    let text = normalize_plain_text(&text);
+    let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
+    let text = text.replace("ṁ ti", "nti");
+    let text = RE_GLOSS_PUNCT.replace_all(&text, " ").into_owned();
+    let text = RE_ALL_WS.replace_all(&text, " ").into_owned();
+    text.trim().to_string()
+}
+
+/// Stable hex digest of a normalized gloss context window (see
+/// `normalize_gloss_context`). SHA-256 — std's `DefaultHasher` is not stable
+/// across Rust versions and the hashes are persisted in the appdata DB.
+pub fn gloss_context_hash(normalized_context: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(normalized_context.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Whether a normalized set phrase occurs in a normalized context window
+/// (both sides already passed through `normalize_gloss_context`), matching on
+/// word boundaries so a phrase cannot match inside a longer word.
+pub fn gloss_phrase_occurs(normalized_phrase: &str, normalized_context: &str) -> bool {
+    if normalized_phrase.is_empty() {
+        return false;
+    }
+    format!(" {} ", normalized_context).contains(&format!(" {} ", normalized_phrase))
+}
+
+/// Derive the `gloss_word_context_cache.word` key from a glossed surface form.
+/// `ProcessedWord.original_word` is `clean_word_pali` output and NOT lowercased,
+/// and sources differ in niggahīta (`dhammaṁ` vs `dhammaṃ`) — one shared helper
+/// keeps Rust and QML callers producing the same key.
+pub fn gloss_cache_word_key(word: &str) -> String {
+    consistent_niggahita(Some(word.to_lowercase())).trim().to_string()
+}
+
+/// Pre-fetched word-selection cache rows and set-phrase rules for gloss
+/// processing (`process_word_for_glossing` takes no appdata connection, so the
+/// caller fetches these up front — one batch query per paragraph plus the tiny
+/// phrase table — and passes them in).
+#[derive(Debug, Clone, Default)]
+pub struct GlossResolutionData {
+    /// Set-phrase rules as stored: (normalized phrase, word key, selected_uid).
+    pub phrases: Vec<(String, String, String)>,
+    /// Cache rows keyed by `(word_key, context_hash)` → `(selected_uid, origin)`.
+    pub cache: HashMap<(String, String), (String, String)>,
+}
+
+impl GlossResolutionData {
+    /// Fetch the phrase table and the cache rows for the given words' keys in
+    /// one batch query. Key derivation matches `process_word_for_glossing`:
+    /// `gloss_cache_word_key(clean_word_pali(word))` + the context hash of the
+    /// word's window.
+    pub fn fetch(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        words_with_context: &[GlossWordContext],
+    ) -> Self {
+        let pairs: Vec<(String, String)> = words_with_context
+            .iter()
+            .map(|w| {
+                (
+                    gloss_cache_word_key(&clean_word_pali(&w.clean_word)),
+                    gloss_context_hash(&normalize_gloss_context(&w.context_snippet)),
+                )
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        Self::fetch_for_pairs(appdata, &pairs)
+    }
+
+    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
+    /// pairs (e.g. re-annotating a restored session's words_data JSON).
+    pub fn fetch_for_pairs(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        pairs: &[(String, String)],
+    ) -> Self {
+        let cache = appdata
+            .get_gloss_word_cache_batch(pairs)
+            .into_iter()
+            .map(|r| ((r.word, r.context_hash), (r.selected_uid, r.origin)))
+            .collect();
+
+        let phrases = appdata
+            .get_all_gloss_phrase_selections()
+            .into_iter()
+            .map(|p| (p.phrase, p.word, p.selected_uid))
+            .collect();
+
+        GlossResolutionData { phrases, cache }
+    }
+}
+
+/// Re-derive the `resolution` / `selected_index` / `context_hash` annotations
+/// of a session's words_data JSON from the **current** cache and phrase
+/// tables. Restored history sessions must not trust the serialized resolution
+/// state — the cache may have changed since the session was saved — and
+/// pre-feature sessions lack `context_hash` entirely (filled in here, which
+/// the saved-toggle delete path needs).
+///
+/// Words are kept as raw JSON values so unknown/extra fields survive the
+/// round trip. Ambiguous words (more than one result) get `selected_index` +
+/// `resolution` where the lookup resolves, and `resolution: null` where it
+/// does not (clearing stale annotations); unambiguous words only get their
+/// `context_hash` refreshed.
+pub fn annotate_gloss_words_json(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    words_json: &str,
+) -> Result<String, String> {
+    let mut words: Vec<serde_json::Value> = serde_json::from_str(words_json)
+        .map_err(|e| format!("Failed to parse words JSON: {}", e))?;
+
+    struct WordKeyInfo {
+        word_key: String,
+        normalized_context: String,
+        context_hash: String,
+    }
+
+    let infos: Vec<Option<WordKeyInfo>> = words
+        .iter()
+        .map(|w| {
+            let original_word = w.get("original_word").and_then(|v| v.as_str()).unwrap_or("");
+            if original_word.is_empty() {
+                return None;
+            }
+            let sentence = w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or("");
+            let normalized_context = normalize_gloss_context(sentence);
+            Some(WordKeyInfo {
+                word_key: gloss_cache_word_key(original_word),
+                context_hash: gloss_context_hash(&normalized_context),
+                normalized_context,
+            })
+        })
+        .collect();
+
+    let pairs: Vec<(String, String)> = infos
+        .iter()
+        .flatten()
+        .map(|i| (i.word_key.clone(), i.context_hash.clone()))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let data = GlossResolutionData::fetch_for_pairs(appdata, &pairs);
+
+    for (w, info) in words.iter_mut().zip(infos.iter()) {
+        let Some(info) = info else { continue };
+
+        let results: Vec<crate::db::dpd::LookupResult> = w
+            .get("results")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|r| crate::db::dpd::LookupResult {
+                        uid: r.get("uid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        word: r.get("word").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        summary: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let Some(obj) = w.as_object_mut() else { continue };
+        obj.insert("context_hash".to_string(), serde_json::json!(info.context_hash));
+
+        if results.len() > 1 {
+            match resolve_gloss_word_selection(
+                &info.word_key,
+                &info.normalized_context,
+                &info.context_hash,
+                &results,
+                &data,
+            ) {
+                Some((idx, res)) => {
+                    obj.insert("selected_index".to_string(), serde_json::json!(idx));
+                    obj.insert("stem".to_string(), serde_json::json!(results[idx as usize].word));
+                    obj.insert("resolution".to_string(), serde_json::json!(res));
+                }
+                None => {
+                    obj.insert("resolution".to_string(), serde_json::Value::Null);
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&words).map_err(|e| format!("Failed to serialize words JSON: {}", e))
+}
+
+/// Whether a stored `selected_uid` refers to the given gloss option. Gloss
+/// options carry the `dpd_lookup` uid — **numeric** `<row_id>/dpd` for DPD
+/// headwords — while curated data (the set-phrase JSON, shipped built-in cache
+/// rows) stores the stable, human-readable dict_words form built from the
+/// lemma (`ārāma-4/dpd`; see "DPD records correlate to dict_words" in
+/// AGENTS.md). Match the uid directly, or via the sanitized lemma form of the
+/// option's word (`word_uid_sanitize("ārāma 4") == "ārāma-4"`).
+pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_uid: &str) -> bool {
+    if result.uid == selected_uid {
+        return true;
+    }
+    match selected_uid.strip_suffix("/dpd") {
+        Some(base) => word_uid_sanitize(&result.word) == base,
+        None => false,
+    }
+}
+
+/// Resolve an ambiguous glossed word's selection from the pre-fetched cache /
+/// phrase data. Precedence: user cache > set phrase > built-in cache > ai
+/// cache. An entry whose `selected_uid` matches none of the word's lookup
+/// results (dictionary data changed) is ignored, falling through to the next
+/// level. Returns the matching option index and the resolution origin
+/// (`"user"` / `"phrase"` / `"built-in"` / `"ai"`).
+pub fn resolve_gloss_word_selection(
+    word_key: &str,
+    normalized_context: &str,
+    context_hash: &str,
+    results: &[crate::db::dpd::LookupResult],
+    data: &GlossResolutionData,
+) -> Option<(i32, String)> {
+    let option_index = |uid: &str| results.iter().position(|r| gloss_option_uid_matches(r, uid));
+
+    let cached = data
+        .cache
+        .get(&(word_key.to_string(), context_hash.to_string()));
+
+    if let Some((uid, origin)) = cached {
+        if origin == "user" {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, origin.clone()));
+            }
+        }
+    }
+
+    for (phrase, word, uid) in &data.phrases {
+        if word == word_key && gloss_phrase_occurs(phrase, normalized_context) {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, "phrase".to_string()));
+            }
+        }
+    }
+
+    if let Some((uid, origin)) = cached {
+        if origin == "built-in" || origin == "ai" {
+            if let Some(idx) = option_index(uid) {
+                return Some((idx as i32, origin.clone()));
+            }
+        }
+    }
+
+    None
+}
+
+// --- Gloss session JSON export / Open JSON (PRD §4.9, docs/gloss-ai-word-selection.md) ---
+
+/// The `format` marker of a gloss session JSON export envelope.
+pub const GLOSS_SESSION_EXPORT_FORMAT: &str = "simsapa-gloss-session";
+/// Envelope version; bump on breaking changes to the envelope structure.
+pub const GLOSS_SESSION_EXPORT_FORMAT_VERSION: u64 = 1;
+
+/// One `word_cache` entry of a gloss session export: a
+/// `gloss_word_context_cache` row without the local id / timestamps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossWordCacheExportEntry {
+    pub word: String,
+    pub context_hash: String,
+    #[serde(default)]
+    pub context_snippet: String,
+    pub selected_uid: String,
+    pub origin: String,
+}
+
+/// Collect the distinct `(word_key, context_hash)` pairs referenced by a
+/// serialized gloss session's words. Derivation matches
+/// `annotate_gloss_words_json`: the hash is recomputed from
+/// `example_sentence`, falling back to the stored `context_hash` when the
+/// sentence is missing. Sorted for deterministic export output.
+fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String)> {
+    let mut pairs = HashSet::new();
+    let paragraphs = session.get("paragraphs").and_then(|v| v.as_array());
+    for para in paragraphs.into_iter().flatten() {
+        let words = para.get("words").and_then(|v| v.as_array());
+        for w in words.into_iter().flatten() {
+            let original_word = w.get("original_word").and_then(|v| v.as_str()).unwrap_or("");
+            if original_word.is_empty() {
+                continue;
+            }
+            let sentence = w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or("");
+            let hash = if sentence.is_empty() {
+                w.get("context_hash").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            } else {
+                gloss_context_hash(&normalize_gloss_context(sentence))
+            };
+            if hash.is_empty() {
+                continue;
+            }
+            pairs.insert((gloss_cache_word_key(original_word), hash));
+        }
+    }
+    let mut pairs: Vec<(String, String)> = pairs.into_iter().collect();
+    pairs.sort();
+    pairs
+}
+
+/// Build the versioned gloss session export envelope (PRD req 38): the same
+/// session serialization the Gloss history saves, plus the word-selection
+/// cache rows (any origin) referenced by the session's words.
+pub fn build_gloss_session_export_json(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    session_json: &str,
+) -> Result<String, String> {
+    let session: serde_json::Value = serde_json::from_str(session_json)
+        .map_err(|e| format!("Failed to parse session JSON: {}", e))?;
+
+    let pairs = gloss_session_cache_pairs(&session);
+    let mut word_cache: Vec<GlossWordCacheExportEntry> = appdata
+        .get_gloss_word_cache_batch(&pairs)
+        .into_iter()
+        .map(|r| GlossWordCacheExportEntry {
+            word: r.word,
+            context_hash: r.context_hash,
+            context_snippet: r.context_snippet,
+            selected_uid: r.selected_uid,
+            origin: r.origin,
+        })
+        .collect();
+    word_cache.sort_by(|a, b| (&a.word, &a.context_hash).cmp(&(&b.word, &b.context_hash)));
+
+    let envelope = serde_json::json!({
+        "format": GLOSS_SESSION_EXPORT_FORMAT,
+        "format_version": GLOSS_SESSION_EXPORT_FORMAT_VERSION,
+        "app_version": crate::update_checker::get_app_version(),
+        "exported_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "session": session,
+        "word_cache": word_cache,
+    });
+
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|e| format!("Failed to serialize the export envelope: {}", e))
+}
+
+/// Parse and validate a gloss session export envelope. Wrong or missing
+/// `format` / `format_version`, a missing `session` object, or malformed
+/// `word_cache` entries are rejected (PRD req 41: nothing is imported from a
+/// malformed file). Returns the session value and the `word_cache` entries.
+pub fn parse_gloss_session_export(
+    json: &str,
+) -> Result<(serde_json::Value, Vec<GlossWordCacheExportEntry>), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("Not valid JSON: {}", e))?;
+
+    let format = value.get("format").and_then(|v| v.as_str()).unwrap_or("");
+    if format != GLOSS_SESSION_EXPORT_FORMAT {
+        return Err(format!(
+            "Not a gloss session export (expected format '{}', found '{}')",
+            GLOSS_SESSION_EXPORT_FORMAT, format
+        ));
+    }
+    let version = value.get("format_version").and_then(|v| v.as_u64()).unwrap_or(0);
+    if version != GLOSS_SESSION_EXPORT_FORMAT_VERSION {
+        return Err(format!("Unsupported format_version: {}", version));
+    }
+    let session = value
+        .get("session")
+        .cloned()
+        .filter(|s| s.is_object())
+        .ok_or_else(|| "Missing 'session' object".to_string())?;
+    let word_cache = match value.get("word_cache") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|e| format!("Invalid word_cache entries: {}", e))?,
+    };
+    Ok((session, word_cache))
+}
+
+/// Import exported cache rows with the strictly-higher precedence rule
+/// (PRD req 40; `AppdataDbHandle::import_gloss_word_cache_row`). The word is
+/// key-normalized; entries with empty fields or an unknown origin count as
+/// skipped. Returns `(imported, skipped)`.
+pub fn import_gloss_word_cache_entries(
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    entries: &[GlossWordCacheExportEntry],
+) -> (usize, usize) {
+    let mut imported = 0;
+    let mut skipped = 0;
+    for e in entries {
+        let word_key = gloss_cache_word_key(&e.word);
+        let valid_origin = matches!(e.origin.as_str(), "ai" | "user" | "built-in");
+        if word_key.is_empty()
+            || e.context_hash.is_empty()
+            || e.selected_uid.is_empty()
+            || !valid_origin
+        {
+            skipped += 1;
+            continue;
+        }
+        match appdata.import_gloss_word_cache_row(
+            &word_key,
+            &e.context_hash,
+            &e.context_snippet,
+            &e.selected_uid,
+            &e.origin,
+        ) {
+            Ok(true) => imported += 1,
+            Ok(false) => skipped += 1,
+            Err(err) => {
+                error(&format!("import_gloss_word_cache_entries(): {}", err));
+                skipped += 1;
+            }
+        }
+    }
+    (imported, skipped)
+}
+
+/// Extract the first top-level JSON object from a text, tolerating markdown
+/// code fences and surrounding prose. Scans for a balanced `{...}` while
+/// respecting string literals and escapes.
+fn extract_first_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, c) in text[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..start + i + c.len_utf8()].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse and validate an AI word-selection response (PRD: Gloss Tab AI word
+/// selection, `docs/gloss-ai-word-selection.md`).
+///
+/// `response` is the raw model output; a leading `Error:` (the in-band error
+/// convention of `PromptManager`) is treated as request failure. Otherwise the
+/// first top-level JSON object is extracted (lenient: code fences / prose
+/// around it are ignored) and its `selections` array validated against
+/// `expected_items_json` — the request payload's `items` array. Entries with
+/// unknown `id`s or a `uid` not among that item's options are logged and
+/// skipped; a completely unparseable response is an `Err`.
+///
+/// Returns the valid `(id, uid)` pairs.
+pub fn parse_word_selection_response(response: &str, expected_items_json: &str) -> Result<Vec<(String, String)>, String> {
+    let trimmed = response.trim();
+    if trimmed.is_empty() {
+        return Err("Empty response".to_string());
+    }
+    if trimmed.starts_with("Error:") {
+        return Err(trimmed.to_string());
+    }
+
+    // Map of item id -> allowed option uids, from the request payload items.
+    let items: serde_json::Value = serde_json::from_str(expected_items_json)
+        .map_err(|e| format!("Invalid expected items JSON: {}", e))?;
+    let items = items.as_array().ok_or("Expected items JSON is not an array")?;
+    let mut allowed: HashMap<String, HashSet<String>> = HashMap::new();
+    for item in items {
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        let uids: HashSet<String> = item.get("options")
+            .and_then(|v| v.as_array())
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|o| o.get("uid").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        allowed.insert(id.to_string(), uids);
+    }
+
+    let json_text = extract_first_json_object(trimmed)
+        .ok_or_else(|| format!("No JSON object found in response: {}", &trimmed.chars().take(200).collect::<String>()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_text)
+        .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
+    let selections = parsed.get("selections")
+        .and_then(|v| v.as_array())
+        .ok_or("Response JSON has no 'selections' array")?;
+
+    let mut result: Vec<(String, String)> = Vec::new();
+    for sel in selections {
+        let id = sel.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        let uid = sel.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
+        if id.is_empty() || uid.is_empty() {
+            info(&format!("parse_word_selection_response(): skipping malformed selection entry: {}", sel));
+            continue;
+        }
+        match allowed.get(id) {
+            None => {
+                info(&format!("parse_word_selection_response(): unknown item id '{}', skipping", id));
+            }
+            Some(uids) if !uids.contains(uid) => {
+                info(&format!("parse_word_selection_response(): uid '{}' is not an option of item '{}', skipping", uid, id));
+            }
+            Some(_) => result.push((id.to_string(), uid.to_string())),
+        }
+    }
+    Ok(result)
+}
+
 /// Process a single word for glossing, equivalent to QML process_word_for_glossing function
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
@@ -2526,6 +3177,7 @@ pub fn process_word_for_glossing(
     check_global: bool,
     options: &WordProcessingOptions,
     dpd: &crate::db::dpd::DpdDbHandle,
+    resolution_data: Option<&GlossResolutionData>,
 ) -> Result<Option<WordProcessingResult>, String> {
     // Call the DPD lookup function directly - much more efficient than JSON serialization
     let search_results = match dpd.dpd_lookup(&word_info.word.to_lowercase(), false, true, None, None) {
@@ -2573,13 +3225,40 @@ pub fn process_word_for_glossing(
         global_stems.insert(dedup_key, true);
     }
 
+    let original_word = clean_word_pali(&word_info.word);
+    let normalized_context = normalize_gloss_context(&word_info.sentence);
+    let context_hash = gloss_context_hash(&normalized_context);
+
+    // Resolve ambiguous words from the pre-fetched cache / set-phrase data
+    // (user cache > phrase > built-in cache > ai cache); unambiguous words
+    // need no resolution.
+    let mut selected_index = 0;
+    let mut resolution = None;
+    if results.len() > 1 {
+        if let Some(data) = resolution_data {
+            let word_key = gloss_cache_word_key(&original_word);
+            if let Some((idx, res)) = resolve_gloss_word_selection(
+                &word_key,
+                &normalized_context,
+                &context_hash,
+                &results,
+                data,
+            ) {
+                selected_index = idx;
+                resolution = Some(res);
+            }
+        }
+    }
+
     // Create the processed word result
     let processed_word = ProcessedWord {
-        original_word: clean_word_pali(&word_info.word),
+        original_word,
         results,
-        selected_index: 0,
+        selected_index,
         stem,
         example_sentence: word_info.sentence.clone(),
+        context_hash,
+        resolution,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -3306,6 +3985,521 @@ mod tests {
     fn test_consistent_niggahita() {
         assert_eq!(consistent_niggahita(Some("saṃsāra".to_string())), "saṁsāra");
         assert_eq!(consistent_niggahita(Some("dhammaṁ".to_string())), "dhammaṁ");
+    }
+
+    #[test]
+    fn test_strip_gloss_annotations_formats() {
+        // Leading uid, with and without parentheses.
+        assert_eq!(
+            strip_gloss_annotations("(sn56.11/pli/ms) Ekaṁ samayaṁ bhagavā."),
+            ("Ekaṁ samayaṁ bhagavā.".to_string(), vec!["sn56.11/pli/ms".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("mn8/en/bodhi Evaṁ me sutaṁ."),
+            ("Evaṁ me sutaṁ.".to_string(), vec!["mn8/en/bodhi".to_string()]),
+        );
+
+        // Leading sutta reference numbers: with/without parentheses, optional
+        // trailing punctuation, spaces inside the parens.
+        assert_eq!(
+            strip_gloss_annotations("SN 56.11 Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("SN 56.11. Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("( MN 8 ) Evaṁ me sutaṁ."),
+            ("Evaṁ me sutaṁ.".to_string(), vec!["MN 8".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Dhp 183-184: Sabbapāpassa akaraṇaṁ."),
+            ("Sabbapāpassa akaraṇaṁ.".to_string(), vec!["Dhp 183-184".to_string()]),
+        );
+        // Square brackets, and the colon chapter separator, in either delimiter.
+        assert_eq!(
+            strip_gloss_annotations("[SN 48.10] Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48.10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("[SN 48:10] Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("(SN 48:10) Katamañca, bhikkhave, samādhindriyaṁ?"),
+            ("Katamañca, bhikkhave, samādhindriyaṁ?".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("SN 48:10 Katamañca, bhikkhave."),
+            ("Katamañca, bhikkhave.".to_string(), vec!["SN 48:10".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ [mn8/en/bodhi] ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["mn8/en/bodhi".to_string()]),
+        );
+        // Uid without slash segments.
+        assert_eq!(
+            strip_gloss_annotations("an10.60 Ekaṁ samayaṁ."),
+            ("Ekaṁ samayaṁ.".to_string(), vec!["an10.60".to_string()]),
+        );
+        // A reference that is the whole input.
+        assert_eq!(
+            strip_gloss_annotations("(SN 56.11)"),
+            ("".to_string(), vec!["SN 56.11".to_string()]),
+        );
+
+        // Trailing references (with and without parens / punctuation).
+        assert_eq!(
+            strip_gloss_annotations("Anāthapiṇḍikassa ārāme. (SN 56.11)"),
+            ("Anāthapiṇḍikassa ārāme.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Anāthapiṇḍikassa ārāme. sn56.11/pli/ms"),
+            ("Anāthapiṇḍikassa ārāme.".to_string(), vec!["sn56.11/pli/ms".to_string()]),
+        );
+
+        // Mid-text references.
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ (MN 8) ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["MN 8".to_string()]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Evaṁ me sutaṁ SN 56.11 ekaṁ samayaṁ."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(), vec!["SN 56.11".to_string()]),
+        );
+
+        // Several references in one paragraph, including consecutive bare
+        // ones (they share a whitespace boundary).
+        assert_eq!(
+            strip_gloss_annotations("(SN 56.11) Evaṁ me sutaṁ mn8/en/bodhi ekaṁ samayaṁ. SN 22.59 SN 35.28"),
+            (
+                "Evaṁ me sutaṁ ekaṁ samayaṁ.".to_string(),
+                vec![
+                    "SN 56.11".to_string(),
+                    "mn8/en/bodhi".to_string(),
+                    "SN 22.59".to_string(),
+                    "SN 35.28".to_string(),
+                ],
+            ),
+        );
+
+        // Numeric annotations: digits are not used in Pāli text, so verse
+        // numbers, PTS pages and other bare/parenthesized/bracketed numbers
+        // are always annotations. Removed, but not reported as references.
+        assert_eq!(
+            strip_gloss_annotations("183. Sabbapāpassa akaraṇaṁ."),
+            ("Sabbapāpassa akaraṇaṁ.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("(48.50) samādhi."),
+            ("samādhi.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Sabbapāpassa akaraṇaṁ, kusalassa upasampadā. 183"),
+            ("Sabbapāpassa akaraṇaṁ, kusalassa upasampadā.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("Manopubbaṅgamā dhammā [12] manoseṭṭhā manomayā."),
+            ("Manopubbaṅgamā dhammā manoseṭṭhā manomayā.".to_string(), vec![]),
+        );
+        assert_eq!(
+            strip_gloss_annotations("1.2.3 Evaṁ me sutaṁ 56.11 ekaṁ samayaṁ (183-184)."),
+            ("Evaṁ me sutaṁ ekaṁ samayaṁ .".to_string(), vec![]),
+        );
+
+        // NOT stripped: plain Pāli text — no digits, and words with
+        // diacritics fall outside [a-z].
+        for text in [
+            "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati.",
+            "Gāthā dve honti.",
+        ] {
+            assert_eq!(strip_gloss_annotations(text), (text.to_string(), vec![]), "must not strip: {}", text);
+        }
+
+        // A word must never be truncated when the boundary is missing.
+        assert_eq!(strip_gloss_annotations("Sn56xyz abc."), ("Sn56xyz abc.".to_string(), vec![]));
+        assert_eq!(strip_gloss_annotations("abc xSN 56.11x def."), ("abc xSN 56.11x def.".to_string(), vec![]));
+    }
+
+    #[test]
+    fn test_gloss_annotations_do_not_pollute_contexts() {
+        // The PRD test sentence, with the phrase-relevant word ārāme near the
+        // start-side window: uid / reference / numeric annotations must
+        // produce the identical word list, context windows and cache hashes
+        // as the bare passage.
+        let bare = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme.";
+        let words_bare = extract_words_with_context(bare);
+        assert!(!words_bare.is_empty());
+
+        // Leading, trailing and mid-text placements; sutta references and
+        // numeric annotations (verse numbers, PTS pages).
+        let mid_split = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati";
+        let mid_rest = "jetavane anāthapiṇḍikassa ārāme.";
+        for prefixed in [
+            format!("(sn56.11/pli/ms) {}", bare),
+            format!("sn56.11/pli/ms {}", bare),
+            format!("(SN 56.11) {}", bare),
+            format!("SN 56.11. {}", bare),
+            format!("{} (SN 56.11)", bare),
+            format!("{} sn56.11/pli/ms", bare),
+            format!("{} (SN 56.11) {}", mid_split, mid_rest),
+            format!("{} SN 56.11 {}", mid_split, mid_rest),
+            format!("183. {}", bare),
+            format!("(48.50) {}", bare),
+            format!("{} 183", bare),
+            format!("{} [12] {}", mid_split, mid_rest),
+        ] {
+            let words_prefixed = extract_words_with_context(&prefixed);
+            assert_eq!(
+                words_bare.len(),
+                words_prefixed.len(),
+                "word count differs for: {}", prefixed,
+            );
+            for (a, b) in words_bare.iter().zip(words_prefixed.iter()) {
+                assert_eq!(a.clean_word, b.clean_word, "clean_word differs for: {}", prefixed);
+                assert_eq!(
+                    a.context_snippet, b.context_snippet,
+                    "context window of '{}' polluted by the prefix in: {}", a.clean_word, prefixed,
+                );
+                assert_eq!(
+                    gloss_context_hash(&normalize_gloss_context(&a.context_snippet)),
+                    gloss_context_hash(&normalize_gloss_context(&b.context_snippet)),
+                    "cache hash of '{}' differs for: {}", a.clean_word, prefixed,
+                );
+            }
+        }
+
+        // The first word of the bare passage is the first glossed word — the
+        // reference itself must not appear as a word.
+        assert_eq!(words_bare[0].clean_word, extract_words_with_context("(MN 8) Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme.")[0].clean_word);
+        // A mid-text "(SN 56.11)" between viharati and jetavane must not leak
+        // into either neighbour's context window: the bare-text windows span
+        // the removal point and would differ if anything was left behind.
+        let mid = extract_words_with_context(
+            "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati (SN 56.11) jetavane anāthapiṇḍikassa ārāme.");
+        assert!(mid.iter().zip(words_bare.iter()).all(|(a, b)| a.context_snippet == b.context_snippet));
+    }
+
+    #[test]
+    fn test_normalize_gloss_context() {
+        // PRD test sentence 1, with the <b> target marker as delivered in
+        // ProcessedWord.example_sentence.
+        let s1 = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa <b>ārāme</b>.";
+        assert_eq!(
+            normalize_gloss_context(s1),
+            "ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa ārāme",
+        );
+
+        // PRD test sentence 2.
+        let s2 = "Paṭisallīnā manobhāvanīyā <b>bhikkhū</b>.";
+        assert_eq!(
+            normalize_gloss_context(s2),
+            "paṭisallīnā manobhāvanīyā bhikkhū",
+        );
+
+        // A curated set phrase normalizes with the same pipeline.
+        assert_eq!(
+            normalize_gloss_context("anāthapiṇḍikassa ārāme"),
+            "anāthapiṇḍikassa ārāme",
+        );
+    }
+
+    #[test]
+    fn test_gloss_context_hash_whitespace_and_niggahita_invariance() {
+        // Line-wrapped verse variant: newlines and indentation collapse to
+        // single spaces, so different pasted wrappings hash identically.
+        let wrapped = "Manopubbaṅgamā dhammā,\n  manoseṭṭhā <b>manomayā</b>;";
+        let unwrapped = "Manopubbaṅgamā dhammā, manoseṭṭhā <b>manomayā</b>;";
+        assert_eq!(
+            gloss_context_hash(&normalize_gloss_context(wrapped)),
+            gloss_context_hash(&normalize_gloss_context(unwrapped)),
+        );
+
+        // ṃ (PTS/DPD) and ṁ (CST/MS) variants hash identically.
+        let with_m1 = "Ekaṁ samayaṁ bhagavā <b>dhammaṁ</b> deseti.";
+        let with_m2 = "Ekaṃ samayaṃ bhagavā <b>dhammaṃ</b> deseti.";
+        assert_eq!(
+            gloss_context_hash(&normalize_gloss_context(with_m1)),
+            gloss_context_hash(&normalize_gloss_context(with_m2)),
+        );
+
+        // The digest is a stable 64-char hex string.
+        let h = gloss_context_hash(&normalize_gloss_context(with_m1));
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_gloss_context_iti_sandhi_and_punctuation_invariance() {
+        // Editions differ in iti-sandhi quote marks — smart (cittan”ti),
+        // straight (cittan'ti) or missing (cittanti) — and in comma
+        // placement. All variants must normalize to the same canonical form
+        // (the rejoined bare -nti spelling, punctuation stripped) so the
+        // context hash hits the same cache row.
+        let smart = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma <b>cittan”ti</b>?";
+        let straight = "Diṭṭhaṁ vo, bhikkhave, caraṇaṁ nāma cittan'ti?";
+        let bare = "Diṭṭhaṁ vo bhikkhave caraṇaṁ nāma cittanti?";
+        let commas_changed = "Diṭṭhaṁ vo bhikkhave, caraṇaṁ nāma cittan”ti.";
+
+        let canonical = "diṭṭhaṁ vo bhikkhave caraṇaṁ nāma cittanti";
+        for variant in [smart, straight, bare, commas_changed] {
+            assert_eq!(
+                normalize_gloss_context(variant),
+                canonical,
+                "variant does not normalize to the canonical form: {}", variant,
+            );
+        }
+
+        let h = gloss_context_hash(canonical);
+        for variant in [smart, straight, bare, commas_changed] {
+            assert_eq!(
+                gloss_context_hash(&normalize_gloss_context(variant)),
+                h,
+                "hash differs for variant: {}", variant,
+            );
+        }
+
+        // The -unti round trip: the bare spelling and the quoted forms of
+        // gantuṁ + ti canonicalize identically.
+        assert_eq!(
+            normalize_gloss_context("na dāni sukaraṁ gantunti."),
+            normalize_gloss_context("na dāni sukaraṁ gantun’ti."),
+        );
+
+        // Vowel-sandhi variants (quoted and bare) already unify via
+        // normalize_iti_sandhi.
+        assert_eq!(
+            normalize_gloss_context("evaṁ dhārayāmī’ti."),
+            normalize_gloss_context("evaṁ dhārayāmīti."),
+        );
+    }
+
+    #[test]
+    fn test_gloss_cache_word_key() {
+        // clean_word_pali output is not lowercased; the key must be.
+        assert_eq!(gloss_cache_word_key("Dhammaṁ"), "dhammaṁ");
+        // ṁ/ṃ surface forms produce the same key.
+        assert_eq!(gloss_cache_word_key("dhammaṃ"), gloss_cache_word_key("dhammaṁ"));
+        assert_eq!(gloss_cache_word_key("ārāme"), "ārāme");
+    }
+
+    fn word_selection_items_json() -> &'static str {
+        r#"[
+            {"id": "p0w4", "word": "ārāme",
+             "context": "jetavane anāthapiṇḍikassa <b>ārāme</b>.",
+             "options": [
+                {"uid": "ārāma-1/dpd", "word": "ārāma 1", "summary": "(adj) enjoying"},
+                {"uid": "ārāma-4/dpd", "word": "ārāma 4", "summary": "(masc) monastery; park"}
+             ]},
+            {"id": "p1w2", "word": "bhikkhū",
+             "context": "manobhāvanīyā <b>bhikkhū</b>",
+             "options": [
+                {"uid": "bhikkhu/dpd", "word": "bhikkhu", "summary": "(masc) monk"},
+                {"uid": "bhikkhū/dpd", "word": "bhikkhū", "summary": "(masc) monks"}
+             ]}
+        ]"#
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_plain_and_fenced() {
+        let items = word_selection_items_json();
+
+        // Plain JSON.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w4", "uid": "ārāma-4/dpd"}]}"#, items).unwrap();
+        assert_eq!(r, vec![("p0w4".to_string(), "ārāma-4/dpd".to_string())]);
+
+        // Fenced JSON with prose around it.
+        let fenced = "Here are the selections:\n```json\n{\"selections\": [\n  {\"id\": \"p0w4\", \"uid\": \"ārāma-4/dpd\"},\n  {\"id\": \"p1w2\", \"uid\": \"bhikkhu/dpd\"}\n]}\n```\nLet me know if you need anything else.";
+        let r = parse_word_selection_response(fenced, items).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[1], ("p1w2".to_string(), "bhikkhu/dpd".to_string()));
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_invalid_entries_skipped() {
+        let items = word_selection_items_json();
+
+        // Unknown id and a uid that is not among the item's options are
+        // skipped; the valid entry survives.
+        let mixed = r#"{"selections": [
+            {"id": "p9w9", "uid": "ārāma-4/dpd"},
+            {"id": "p0w4", "uid": "bhikkhu/dpd"},
+            {"id": "p1w2", "uid": "bhikkhu/dpd"}
+        ]}"#;
+        let r = parse_word_selection_response(mixed, items).unwrap();
+        assert_eq!(r, vec![("p1w2".to_string(), "bhikkhu/dpd".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_errors() {
+        let items = word_selection_items_json();
+
+        // In-band provider error.
+        assert!(parse_word_selection_response("Error: Provider Gemini is disabled", items).is_err());
+        // Garbage input without a JSON object.
+        assert!(parse_word_selection_response("I could not decide.", items).is_err());
+        // A JSON object without a selections array.
+        assert!(parse_word_selection_response(r#"{"answers": []}"#, items).is_err());
+        // Empty response.
+        assert!(parse_word_selection_response("   ", items).is_err());
+    }
+
+    #[test]
+    fn test_parse_gloss_session_export_validation() {
+        // Valid minimal envelope.
+        let valid = r#"{
+            "format": "simsapa-gloss-session",
+            "format_version": 1,
+            "session": {"text": "Ekaṁ samayaṁ", "paragraphs": []},
+            "word_cache": [
+                {"word": "ārāme", "context_hash": "h1", "context_snippet": "c",
+                 "selected_uid": "ārāma-4/dpd", "origin": "user"}
+            ]
+        }"#;
+        let (session, word_cache) = parse_gloss_session_export(valid).unwrap();
+        assert_eq!(session.get("text").unwrap().as_str().unwrap(), "Ekaṁ samayaṁ");
+        assert_eq!(word_cache.len(), 1);
+        assert_eq!(word_cache[0].origin, "user");
+
+        // Missing word_cache is tolerated (empty).
+        let no_cache = r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}}"#;
+        let (_, word_cache) = parse_gloss_session_export(no_cache).unwrap();
+        assert!(word_cache.is_empty());
+
+        // Rejections: not JSON, wrong format, wrong version, missing session,
+        // malformed word_cache entries.
+        assert!(parse_gloss_session_export("not json").is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "other", "format_version": 1, "session": {}}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 99, "session": {}}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 1}"#).is_err());
+        assert!(parse_gloss_session_export(r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}, "word_cache": [{"word": 42}]}"#).is_err());
+    }
+
+    #[test]
+    fn test_gloss_session_cache_pairs_derivation() {
+        // The pair's hash is recomputed from example_sentence (word-key
+        // normalized word), with the stored context_hash as fallback; words
+        // without either are skipped.
+        let sentence = "anāthapiṇḍikassa <b>ārāme</b>";
+        let expected_hash = gloss_context_hash(&normalize_gloss_context(sentence));
+        let session = serde_json::json!({
+            "paragraphs": [
+                {"words": [
+                    {"original_word": "Ārāme", "example_sentence": sentence},
+                    {"original_word": "dhammaṁ", "context_hash": "stored-hash"},
+                    {"original_word": "skipped-no-hash"},
+                    {"example_sentence": "no original_word"}
+                ]},
+                // Duplicate pair in another paragraph collapses.
+                {"words": [{"original_word": "ārāme", "example_sentence": sentence}]}
+            ]
+        });
+        let pairs = gloss_session_cache_pairs(&session);
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs.contains(&("ārāme".to_string(), expected_hash)));
+        assert!(pairs.contains(&(gloss_cache_word_key("dhammaṁ"), "stored-hash".to_string())));
+    }
+
+    fn lookup_results(uids: &[&str]) -> Vec<crate::db::dpd::LookupResult> {
+        uids.iter()
+            .map(|uid| crate::db::dpd::LookupResult {
+                uid: uid.to_string(),
+                word: uid.trim_end_matches("/dpd").to_string(),
+                summary: String::new(),
+            })
+            .collect()
+    }
+
+    fn resolution_data_with(
+        cache: &[(&str, &str, &str, &str)],
+        phrases: &[(&str, &str, &str)],
+    ) -> GlossResolutionData {
+        GlossResolutionData {
+            phrases: phrases
+                .iter()
+                .map(|(p, w, u)| (p.to_string(), w.to_string(), u.to_string()))
+                .collect(),
+            cache: cache
+                .iter()
+                .map(|(w, h, u, o)| ((w.to_string(), h.to_string()), (u.to_string(), o.to_string())))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_resolve_gloss_word_selection_precedence() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+        let hash = "h1";
+
+        // user cache beats a phrase match pointing elsewhere.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "user")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user".to_string())),
+        );
+
+        // phrase beats built-in and ai cache rows.
+        for origin in ["built-in", "ai"] {
+            let data = resolution_data_with(
+                &[("ārāme", "h1", "ārāma-1/dpd", origin)],
+                &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+            );
+            assert_eq!(
+                resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+                Some((1, "phrase".to_string())),
+                "phrase must beat a {} cache row", origin,
+            );
+        }
+
+        // Without a phrase match, built-in and ai rows resolve with their origin.
+        for origin in ["built-in", "ai"] {
+            let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", origin)], &[]);
+            assert_eq!(
+                resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+                Some((1, origin.to_string())),
+            );
+        }
+
+        // No cache row, no phrase → unresolved.
+        let data = resolution_data_with(&[], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data), None);
+    }
+
+    #[test]
+    fn test_resolve_gloss_word_selection_misses_and_stale_uids() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+
+        // A different context hash is a cache miss.
+        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user")], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+
+        // A phrase rule only fires when the normalized phrase occurs in the
+        // context on word boundaries.
+        let data = resolution_data_with(&[], &[("gahapatissa ārāme", "ārāme", "ārāma-4/dpd")]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+
+        // A stale uid (dictionary data changed) is ignored and resolution
+        // falls through to the next precedence level.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "gone-uid/dpd", "user")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
+            Some((1, "phrase".to_string())),
+            "stale user uid falls through to the phrase match",
+        );
+
+        // Stale uid everywhere → unresolved.
+        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai")], &[]);
+        assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
     }
 
     #[test]

@@ -11,6 +11,21 @@ use crate::logger::{info, error};
 
 static COMMON_WORDS_JSON: &str = include_str!("../../../assets/common-words.json");
 
+/// Curated set-phrase selections for the Gloss tab, seeded at bootstrap into
+/// `gloss_phrase_selections` (see `seed_gloss_phrase_selections`).
+static GLOSS_PHRASE_SELECTIONS_JSON: &str = include_str!("../../../assets/gloss-phrase-selections.json");
+
+/// Precedence rank of a `gloss_word_context_cache.origin` value:
+/// user > built-in > ai. Unknown origins rank lowest.
+pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
+    match origin {
+        "user" => 3,
+        "built-in" => 2,
+        "ai" => 1,
+        _ => 0,
+    }
+}
+
 pub type AppdataDbHandle = DatabaseHandle;
 
 impl AppdataDbHandle {
@@ -413,9 +428,13 @@ impl AppdataDbHandle {
         match json {
             Ok(None) => AppSettings::default(),
             Ok(Some(setting)) => {
-                setting.value
+                let mut settings: AppSettings = setting.value
                        .map(|val| serde_json::from_str(&val).expect("Can't decode JSON"))
-                       .unwrap_or_default()
+                       .unwrap_or_default();
+                // Existing user settings gain newly added default prompt keys
+                // without overwriting edits to existing keys.
+                settings.merge_default_system_prompts();
+                settings
             },
             Err(e) => {
                 error(&format!("{}", e));
@@ -1982,6 +2001,356 @@ impl AppdataDbHandle {
                 .map(|_| ())
         })
     }
+
+    // Gloss word-context cache CRUD (AI word selection feature).
+    //
+    // NOTE: intentionally NO per-write `ANALYZE` here, same rationale as the
+    // history CRUD above — the queries are single-table equality lookups fully
+    // served by the UNIQUE `(word, context_hash)` index. See
+    // docs/user-data-and-sqlite-analyze.md.
+    //
+    // Callers pass `word` already normalized via `gloss_cache_word_key` and
+    // `context_hash` via `gloss_context_hash(normalize_gloss_context(...))`.
+
+    pub fn get_gloss_word_cache(&self, word_param: &str, context_hash_param: &str) -> Option<GlossWordContextCache> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(word.eq(word_param))
+                .filter(context_hash.eq(context_hash_param))
+                .select(GlossWordContextCache::as_select())
+                .first(db_conn)
+                .optional()
+        });
+
+        match result {
+            Ok(row) => row,
+            Err(e) => {
+                error(&format!("get_gloss_word_cache(): {}", e));
+                None
+            }
+        }
+    }
+
+    /// Fetch all cache rows matching the given `(word, context_hash)` pairs in
+    /// one query (used to pre-fetch a paragraph's rows before gloss processing).
+    pub fn get_gloss_word_cache_batch(&self, pairs: &[(String, String)]) -> Vec<GlossWordContextCache> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        if pairs.is_empty() {
+            return Vec::new();
+        }
+
+        let words: Vec<&str> = pairs.iter().map(|(w, _)| w.as_str()).collect();
+        let hashes: Vec<&str> = pairs.iter().map(|(_, h)| h.as_str()).collect();
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(word.eq_any(&words))
+                .filter(context_hash.eq_any(&hashes))
+                .select(GlossWordContextCache::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => {
+                // The two eq_any filters form a cross product; keep only the
+                // rows whose (word, context_hash) pair was actually requested.
+                rows.into_iter()
+                    .filter(|r| pairs.iter().any(|(w, h)| *w == r.word && *h == r.context_hash))
+                    .collect()
+            }
+            Err(e) => {
+                error(&format!("get_gloss_word_cache_batch(): {}", e));
+                Vec::new()
+            }
+        }
+    }
+
+    /// Insert or update a cache row, respecting origin precedence
+    /// (user > built-in > ai):
+    /// - `user` overwrites anything;
+    /// - `built-in` overwrites `built-in` and `ai`, never `user`;
+    /// - `ai` only overwrites `ai`.
+    ///
+    /// Returns true when a row was written (inserted or updated).
+    pub fn upsert_gloss_word_cache(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        context_snippet_param: &str,
+        selected_uid_param: &str,
+        origin_param: &str,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let existing = self.get_gloss_word_cache(word_param, context_hash_param);
+        let now = chrono::Utc::now().naive_utc();
+
+        match existing {
+            None => {
+                let new_row = NewGlossWordContextCache {
+                    word: word_param,
+                    context_hash: context_hash_param,
+                    context_snippet: context_snippet_param,
+                    selected_uid: selected_uid_param,
+                    origin: origin_param,
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                };
+                self.do_write(|db_conn| {
+                    diesel::insert_into(gloss_word_context_cache)
+                        .values(&new_row)
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+            Some(row) => {
+                let new_rank = gloss_cache_origin_rank(origin_param);
+                let old_rank = gloss_cache_origin_rank(&row.origin);
+                // A lower-precedence origin never overwrites a higher one; an
+                // equal-precedence write updates the row (e.g. a fresh AI
+                // response refreshes an ai row, a user re-save refreshes a
+                // user row).
+                if new_rank < old_rank {
+                    return Ok(false);
+                }
+                self.do_write(|db_conn| {
+                    diesel::update(gloss_word_context_cache.find(row.id))
+                        .set((
+                            context_snippet.eq(context_snippet_param),
+                            selected_uid.eq(selected_uid_param),
+                            origin.eq(origin_param),
+                            updated_at.eq(Some(now)),
+                        ))
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+        }
+    }
+
+    /// Import a cache row from an exported gloss session with the
+    /// **strictly-higher** precedence rule (PRD req 40): write only when there
+    /// is no local row for `(word, context_hash)` or the imported origin
+    /// outranks the local one (`user > built-in > ai`). Equal precedence is a
+    /// no-op — unlike `upsert_gloss_word_cache` — so the local user's own
+    /// `user` rows are never overwritten and an imported `ai` row never churns
+    /// an existing local `ai` row.
+    ///
+    /// Returns true when a row was written (inserted or updated).
+    pub fn import_gloss_word_cache_row(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        context_snippet_param: &str,
+        selected_uid_param: &str,
+        origin_param: &str,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let existing = self.get_gloss_word_cache(word_param, context_hash_param);
+        let now = chrono::Utc::now().naive_utc();
+
+        match existing {
+            None => {
+                let new_row = NewGlossWordContextCache {
+                    word: word_param,
+                    context_hash: context_hash_param,
+                    context_snippet: context_snippet_param,
+                    selected_uid: selected_uid_param,
+                    origin: origin_param,
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                };
+                self.do_write(|db_conn| {
+                    diesel::insert_into(gloss_word_context_cache)
+                        .values(&new_row)
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+            Some(row) => {
+                if gloss_cache_origin_rank(origin_param) <= gloss_cache_origin_rank(&row.origin) {
+                    return Ok(false);
+                }
+                self.do_write(|db_conn| {
+                    diesel::update(gloss_word_context_cache.find(row.id))
+                        .set((
+                            context_snippet.eq(context_snippet_param),
+                            selected_uid.eq(selected_uid_param),
+                            origin.eq(origin_param),
+                            updated_at.eq(Some(now)),
+                        ))
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+        }
+    }
+
+    pub fn delete_gloss_word_cache(&self, word_param: &str, context_hash_param: &str) -> Result<()> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        self.do_write(|db_conn| {
+            diesel::delete(
+                gloss_word_context_cache
+                    .filter(word.eq(word_param))
+                    .filter(context_hash.eq(context_hash_param)),
+            )
+            .execute(db_conn)
+            .map(|_| ())
+        })
+    }
+
+    /// Count of user-clearable cache rows (`ai` + `user` origins; `built-in`
+    /// rows are bootstrap-shipped and excluded).
+    pub fn count_gloss_word_cache(&self) -> i64 {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(origin.eq_any(["ai", "user"]))
+                .count()
+                .get_result::<i64>(db_conn)
+        });
+
+        match result {
+            Ok(n) => n,
+            Err(e) => {
+                error(&format!("count_gloss_word_cache(): {}", e));
+                0
+            }
+        }
+    }
+
+    /// Bulk clear of the word-selection cache: deletes `ai` and `user` rows
+    /// only. `built-in` rows and the phrase table are untouched.
+    pub fn clear_gloss_word_cache(&self) -> Result<()> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        self.do_write(|db_conn| {
+            diesel::delete(gloss_word_context_cache.filter(origin.eq_any(["ai", "user"])))
+                .execute(db_conn)
+                .map(|_| ())
+        })
+    }
+
+    // Gloss set-phrase selections.
+
+    /// Phrase rules for one word key (`gloss_cache_word_key` form).
+    pub fn get_gloss_phrase_selections(&self, word_param: &str) -> Vec<GlossPhraseSelection> {
+        use crate::db::appdata_schema::gloss_phrase_selections::dsl::*;
+
+        let result = self.do_read(|db_conn| {
+            gloss_phrase_selections
+                .filter(word.eq(word_param))
+                .select(GlossPhraseSelection::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => rows,
+            Err(e) => {
+                error(&format!("get_gloss_phrase_selections(): {}", e));
+                Vec::new()
+            }
+        }
+    }
+
+    /// The whole phrase table (it is tiny; pre-fetched before gloss processing).
+    pub fn get_all_gloss_phrase_selections(&self) -> Vec<GlossPhraseSelection> {
+        use crate::db::appdata_schema::gloss_phrase_selections::dsl::*;
+
+        let result = self.do_read(|db_conn| {
+            gloss_phrase_selections
+                .select(GlossPhraseSelection::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => rows,
+            Err(e) => {
+                error(&format!("get_all_gloss_phrase_selections(): {}", e));
+                Vec::new()
+            }
+        }
+    }
+
+    /// Seed `gloss_phrase_selections` from the embedded curated JSON
+    /// (`assets/gloss-phrase-selections.json`). Idempotent upsert keyed on the
+    /// normalized `(phrase, word)`: existing rows get their `selected_uid`
+    /// updated, new rows are inserted. Called from the appdata bootstrap.
+    ///
+    /// The JSON stores the human-readable phrase; it is normalized here with
+    /// the same `normalize_gloss_context` pipeline used for context windows,
+    /// so phrase rows and window normalization cannot drift.
+    pub fn seed_gloss_phrase_selections(&self) -> Result<usize> {
+        use crate::db::appdata_schema::gloss_phrase_selections::dsl::*;
+        use crate::helpers::{gloss_cache_word_key, normalize_gloss_context};
+
+        #[derive(serde::Deserialize)]
+        struct PhraseEntry {
+            phrase: String,
+            word: String,
+            selected_uid: String,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct PhraseFile {
+            phrases: Vec<PhraseEntry>,
+        }
+
+        let data: PhraseFile = serde_json::from_str(GLOSS_PHRASE_SELECTIONS_JSON)
+            .context("Failed to parse gloss-phrase-selections.json")?;
+
+        let mut written = 0;
+        for entry in &data.phrases {
+            let norm_phrase = normalize_gloss_context(&entry.phrase);
+            let word_key = gloss_cache_word_key(&entry.word);
+            if norm_phrase.is_empty() || word_key.is_empty() {
+                continue;
+            }
+
+            let existing: Option<GlossPhraseSelection> = self.do_read(|db_conn| {
+                gloss_phrase_selections
+                    .filter(phrase.eq(&norm_phrase))
+                    .filter(word.eq(&word_key))
+                    .select(GlossPhraseSelection::as_select())
+                    .first(db_conn)
+                    .optional()
+            })?;
+
+            match existing {
+                Some(row) => {
+                    if row.selected_uid != entry.selected_uid {
+                        self.do_write(|db_conn| {
+                            diesel::update(gloss_phrase_selections.find(row.id))
+                                .set(selected_uid.eq(&entry.selected_uid))
+                                .execute(db_conn)
+                        })?;
+                        written += 1;
+                    }
+                }
+                None => {
+                    let new_row = NewGlossPhraseSelection {
+                        phrase: &norm_phrase,
+                        word: &word_key,
+                        selected_uid: &entry.selected_uid,
+                    };
+                    self.do_write(|db_conn| {
+                        diesel::insert_into(gloss_phrase_selections)
+                            .values(&new_row)
+                            .execute(db_conn)
+                    })?;
+                    written += 1;
+                }
+            }
+        }
+
+        Ok(written)
+    }
 }
 
 #[cfg(test)]
@@ -2105,6 +2474,216 @@ mod history_tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, new_id);
         assert_eq!(rows[0].data_json, "{\"v\":2}");
+    }
+}
+
+#[cfg(test)]
+mod gloss_word_selection_tests {
+    use super::AppdataDbHandle;
+    use crate::db::{DatabaseHandle, APPDATA_MIGRATIONS};
+    use crate::helpers::{gloss_cache_word_key, gloss_context_hash, gloss_phrase_occurs, normalize_gloss_context};
+    use diesel_migrations::MigrationHarness;
+
+    // Same throwaway temp-DB pattern as history_tests: never touch the real
+    // appdata DB (clear here would be destructive against it).
+    fn setup() -> AppdataDbHandle {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "simsapa_gloss_cache_test_{}_{}.sqlite3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = path.to_string_lossy().to_string();
+        let handle = DatabaseHandle::new(&url).expect("create temp appdata handle");
+        let mut conn = handle.get_conn().expect("get temp appdata conn");
+        conn.run_pending_migrations(APPDATA_MIGRATIONS)
+            .expect("run appdata migrations on temp db");
+        handle
+    }
+
+    #[test]
+    fn upsert_and_get_round_trip() {
+        let db = setup();
+        assert!(db.upsert_gloss_word_cache("ārāme", "hash1", "anāthapiṇḍikassa ārāme", "ārāma-4/dpd", "ai").unwrap());
+        let row = db.get_gloss_word_cache("ārāme", "hash1").expect("row exists");
+        assert_eq!(row.selected_uid, "ārāma-4/dpd");
+        assert_eq!(row.origin, "ai");
+        // Different context hash for the same word is a miss.
+        assert!(db.get_gloss_word_cache("ārāme", "hash2").is_none());
+    }
+
+    #[test]
+    fn ai_never_downgrades_user_or_built_in() {
+        let db = setup();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-user/dpd", "user").unwrap();
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-builtin/dpd", "built-in").unwrap();
+
+        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-ai/dpd", "ai").unwrap());
+        assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai").unwrap());
+
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-builtin/dpd");
+    }
+
+    #[test]
+    fn ai_refreshes_ai_and_user_overwrites_anything() {
+        let db = setup();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-a/dpd", "ai").unwrap();
+        // A fresh AI response updates an existing ai row.
+        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-b/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-b/dpd");
+
+        // user overwrites ai...
+        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-c/dpd", "user").unwrap());
+        let row = db.get_gloss_word_cache("w1", "h1").unwrap();
+        assert_eq!(row.selected_uid, "uid-c/dpd");
+        assert_eq!(row.origin, "user");
+
+        // ...and built-in.
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in").unwrap();
+        assert!(db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-u/dpd", "user").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user");
+
+        // built-in never overwrites user.
+        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-c/dpd");
+    }
+
+    // Session-export import: strictly-higher precedence only (PRD req 40).
+    #[test]
+    fn import_row_strict_precedence() {
+        let db = setup();
+
+        // No local row: any valid origin inserts.
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai");
+
+        // Imported ai vs local ai: equal precedence is a no-op (no churn).
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-imported/dpd");
+
+        // Imported user beats local ai.
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user").unwrap());
+        let row = db.get_gloss_word_cache("w1", "h1").unwrap();
+        assert_eq!(row.origin, "user");
+        assert_eq!(row.selected_uid, "uid-user/dpd");
+
+        // Local user row survives an imported user row (equal precedence).
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
+
+        // built-in untouched by imported ai; overwritten by imported user.
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in").unwrap();
+        assert!(!db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user");
+    }
+
+    #[test]
+    fn count_and_clear_exclude_built_in() {
+        let db = setup();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai").unwrap();
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "u2/dpd", "user").unwrap();
+        db.upsert_gloss_word_cache("w3", "h3", "ctx", "u3/dpd", "built-in").unwrap();
+
+        assert_eq!(db.count_gloss_word_cache(), 2);
+
+        db.clear_gloss_word_cache().unwrap();
+        assert_eq!(db.count_gloss_word_cache(), 0);
+        // built-in row survives the bulk clear.
+        assert!(db.get_gloss_word_cache("w3", "h3").is_some());
+        assert!(db.get_gloss_word_cache("w1", "h1").is_none());
+        assert!(db.get_gloss_word_cache("w2", "h2").is_none());
+    }
+
+    #[test]
+    fn delete_removes_single_row() {
+        let db = setup();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "user").unwrap();
+        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u1/dpd", "user").unwrap();
+        db.delete_gloss_word_cache("w1", "h1").unwrap();
+        assert!(db.get_gloss_word_cache("w1", "h1").is_none());
+        assert!(db.get_gloss_word_cache("w1", "h2").is_some());
+    }
+
+    #[test]
+    fn batch_fetch_returns_only_requested_pairs() {
+        let db = setup();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai").unwrap();
+        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u2/dpd", "ai").unwrap();
+        db.upsert_gloss_word_cache("w2", "h3", "ctx", "u3/dpd", "ai").unwrap();
+        // w2+h2 exists only as a cross-product combination, not as a row pair
+        // we request — and w1+h2 is a real row we do not request.
+        let rows = db.get_gloss_word_cache_batch(&[
+            ("w1".to_string(), "h1".to_string()),
+            ("w2".to_string(), "h3".to_string()),
+            ("missing".to_string(), "h9".to_string()),
+        ]);
+        let mut got: Vec<(String, String)> = rows.iter().map(|r| (r.word.clone(), r.context_hash.clone())).collect();
+        got.sort();
+        assert_eq!(got, vec![
+            ("w1".to_string(), "h1".to_string()),
+            ("w2".to_string(), "h3".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn seed_phrases_is_idempotent_and_lookup_matches() {
+        let db = setup();
+        let first = db.seed_gloss_phrase_selections().unwrap();
+        assert_eq!(first, 2, "both curated phrases are inserted");
+        // Re-run: nothing changes.
+        let second = db.seed_gloss_phrase_selections().unwrap();
+        assert_eq!(second, 0);
+
+        // Lookup by the word key.
+        let rows = db.get_gloss_phrase_selections("ārāme");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].selected_uid, "ārāma-4/dpd");
+        assert_eq!(rows[0].phrase, "anāthapiṇḍikassa ārāme");
+
+        let rows = db.get_gloss_phrase_selections("bhikkhū");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].selected_uid, "bhikkhu/dpd");
+
+        assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
+    }
+
+    #[test]
+    fn phrase_occurs_in_normalized_window() {
+        let db = setup();
+        db.seed_gloss_phrase_selections().unwrap();
+
+        // PRD test case 1: the seeded phrase matches inside the normalized
+        // context window of `ārāme`.
+        let window = "Ekaṁ samayaṁ bhagavā sāvatthiyaṁ viharati jetavane anāthapiṇḍikassa <b>ārāme</b>.";
+        let norm_window = normalize_gloss_context(window);
+        let rows = db.get_gloss_phrase_selections(&gloss_cache_word_key("ārāme"));
+        assert!(gloss_phrase_occurs(&rows[0].phrase, &norm_window));
+
+        // PRD test case 2: `bhikkhū` via *manobhāvanīyā bhikkhū*.
+        let window2 = "Paṭisallīnā manobhāvanīyā <b>bhikkhū</b>.";
+        let norm_window2 = normalize_gloss_context(window2);
+        let rows2 = db.get_gloss_phrase_selections(&gloss_cache_word_key("bhikkhū"));
+        assert!(gloss_phrase_occurs(&rows2[0].phrase, &norm_window2));
+
+        // Non-matching window: same word, different context.
+        let other = normalize_gloss_context("gacchati <b>ārāme</b> ramati.");
+        assert!(!gloss_phrase_occurs(&rows[0].phrase, &other));
+
+        // The niggahīta variant of the window still matches.
+        let pts_window = normalize_gloss_context("jetavane anāthapiṇḍikassa <b>ārāme</b> viharati; taṃ suṇātha.");
+        assert!(gloss_phrase_occurs(&rows[0].phrase, &pts_window));
+
+        // Hash parity across ṁ/ṃ window variants.
+        assert_eq!(
+            gloss_context_hash(&normalize_gloss_context("anāthapiṇḍikassa ārāme viharati taṁ")),
+            gloss_context_hash(&normalize_gloss_context("anāthapiṇḍikassa ārāme viharati taṃ")),
+        );
     }
 }
 

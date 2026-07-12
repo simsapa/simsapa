@@ -427,6 +427,45 @@ RELEASE_CHANNEL=development
     // `suttas_lang_*.sqlite3` files (not the main appdata), so they don't
     // affect these caches.
     if !skip_appdata {
+        // Seed the Gloss tab's curated set-phrase selections before archiving.
+        // Bootstrap-only: a new database version ships new built-in data, there
+        // is no app-init re-seeding (see docs/gloss-ai-word-selection.md).
+        logger::info("=== Seed gloss phrase selections ===");
+        {
+            let app_data = simsapa_backend::get_app_data();
+            match app_data.dbm.appdata.seed_gloss_phrase_selections() {
+                Ok(n) => logger::info(&format!("Seeded {} gloss phrase selection rows", n)),
+                Err(e) => logger::warn(&format!("Failed to seed gloss phrase selections: {}", e)),
+            }
+        }
+
+        // Import the confirmed gloss data bank (exported session JSONs in
+        // gloss-data-cache/) as built-in word-selection cache rows, so the
+        // shipped appdata.tar.bz2 carries them. Same code path as the
+        // `import-gloss-data` CLI subcommand; the candidates/ subfolder is
+        // not scanned (directory inputs are non-recursive).
+        logger::info("=== Import gloss data bank (gloss-data-cache/) ===");
+        {
+            let gloss_data_cache_dir = bootstrap_assets_dir.join("gloss-data-cache");
+            let has_session_files = std::fs::read_dir(&gloss_data_cache_dir)
+                .map(|entries| {
+                    entries.flatten().any(|e| {
+                        let p = e.path();
+                        p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case("json")).unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if has_session_files {
+                let appdata_db_path = assets_dir.join("appdata.sqlite3");
+                match crate::import_gloss_data::import_gloss_data(&appdata_db_path, &[gloss_data_cache_dir]) {
+                    Ok(()) => {}
+                    Err(e) => logger::warn(&format!("Gloss data bank import failed: {}", e)),
+                }
+            } else {
+                logger::info("No gloss session JSON files in gloss-data-cache/, skipping.");
+            }
+        }
+
         logger::info("=== Warm AppSettings caches ===");
         simsapa_backend::app_data::warm_caches_into_appdata();
 

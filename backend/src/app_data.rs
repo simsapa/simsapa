@@ -1327,6 +1327,45 @@ impl AppData {
         serde_json::to_string(&app_settings.system_prompts).unwrap_or_default()
     }
 
+    /// The Gloss tab's AI word-selection settings as
+    /// `{"enabled": bool, "provider": "...", "model": "..."}`.
+    pub fn get_gloss_word_selection_settings_json(&self) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        serde_json::json!({
+            "enabled": app_settings.gloss_word_selection_enabled,
+            "provider": app_settings.gloss_word_selection_provider,
+            "model": app_settings.gloss_word_selection_model,
+        }).to_string()
+    }
+
+    /// Update the Gloss tab's AI word-selection settings from the same JSON
+    /// shape `get_gloss_word_selection_settings_json` returns.
+    pub fn set_gloss_word_selection_settings_json(&self, settings_json: &str) {
+        #[derive(serde::Deserialize)]
+        struct WordSelectionSettings {
+            enabled: bool,
+            provider: String,
+            model: String,
+        }
+
+        let parsed: WordSelectionSettings = match serde_json::from_str(settings_json) {
+            Ok(s) => s,
+            Err(e) => {
+                error(&format!("Failed to parse gloss word selection settings JSON: {}", e));
+                return;
+            }
+        };
+
+        let snapshot = {
+            let mut s = self.app_settings_cache.write().expect("Failed to write app settings");
+            s.gloss_word_selection_enabled = parsed.enabled;
+            s.gloss_word_selection_provider = parsed.provider;
+            s.gloss_word_selection_model = parsed.model;
+            s.clone()
+        };
+        self.persist_app_settings(&snapshot);
+    }
+
     pub fn get_providers_json(&self) -> String {
         let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
         serde_json::to_string(&app_settings.providers).unwrap_or_default()

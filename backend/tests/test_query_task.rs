@@ -79,11 +79,19 @@ fn test_sutta_search_contains_match() {
     // println!("{:#?}", results);
 
     assert!(!results.is_empty());
-    // Verify the query term appears in the snippet
-    assert!(results[1].snippet.contains("<span class='match'>satipaṭṭhāna</span>"));
 
-    assert_eq!(results[1].uid, "mn10/en/horner");
-    assert!(results[1].snippet.starts_with("... nikāya the middle length sayings <span class='match'>satipaṭṭhāna</span> suttaṁ"));
+    // Results are ordered by row id, which shifts whenever the DB bootstrap
+    // changes. Locate the expected entry by uid instead of a fixed index.
+    let expected_uid = "mn10/en/thanissaro";
+    let result = results.iter()
+        .find(|r| r.uid == expected_uid)
+        .unwrap_or_else(|| panic!("Expected uid '{}' not found in results for query '{}'", expected_uid, query));
+
+    // Verify the query term appears in the snippet, highlighted
+    assert!(result.snippet.contains("<span class='match'>satipaṭṭhāna</span>"),
+            "Snippet for '{}' is not highlighted: {}", expected_uid, result.snippet);
+
+    assert!(result.snippet.starts_with("... establishing of mindfulness discourse <span class='match'>satipaṭṭhāna</span> sutta\u{a0}\u{a0}(mn\u{a0}10) introduction <span class='match'>satipaṭṭhāna</span> the establishing (upaṭṭhāna) of mindfulness (sati) is a meditative technique for training the mind"));
 
     // Verify all results are English
     for result in &results {

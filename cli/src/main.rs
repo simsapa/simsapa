@@ -1,5 +1,8 @@
 pub mod bootstrap;
 pub mod bootstrap_old;
+pub mod gloss_corpus_explore;
+pub mod gloss_ngrams;
+pub mod import_gloss_data;
 pub mod update_provider_models;
 pub mod update_releases_fallback;
 
@@ -1176,6 +1179,55 @@ enum Commands {
         dpd_output_path: Option<PathBuf>,
     },
 
+    /// Import confirmed gloss word-selection data from exported gloss session
+    /// JSON files as built-in cache rows into the given appdata database.
+    /// Directory inputs are scanned non-recursively for *.json files.
+    #[command(arg_required_else_help = true)]
+    ImportGlossData {
+        /// Path to the target appdata.sqlite3 database
+        #[arg(value_name = "APPDATA_DB_PATH")]
+        db_path: PathBuf,
+
+        /// Session JSON files or directories to scan (default: the
+        /// bootstrap-assets-resources/gloss-data-cache/ data bank)
+        #[arg(value_name = "DIR_OR_FILES", default_value = "../../bootstrap-assets-resources/gloss-data-cache")]
+        inputs: Vec<PathBuf>,
+    },
+
+    /// Explore the sutta corpus for the most common ambiguous words and
+    /// phrases worth glossing; generate candidate gloss session files for
+    /// review in the Gloss UI plus a frequency/coverage report. Read-only
+    /// over the databases; writes only to the output directory.
+    GlossCorpusExplore {
+        /// Output directory for the candidate session files and reports
+        #[arg(long, value_name = "DIR", default_value = "../../bootstrap-assets-resources/gloss-data-cache/candidates")]
+        output_dir: PathBuf,
+
+        /// Comma-separated nikāya allowlist override (default: dn,mn,sn,an,kp,dhp,ud,iti,snp)
+        #[arg(long, value_name = "NIKAYAS")]
+        nikayas: Option<String>,
+
+        /// Edition to scan (suttas.source_uid), avoids double-counting overlapping editions
+        #[arg(long, value_name = "SOURCE", default_value = "ms")]
+        source: String,
+
+        /// Number of top ambiguous words to collect contexts for
+        #[arg(long, value_name = "N", default_value_t = 500)]
+        top_words: usize,
+
+        /// Distinct context windows to keep per word
+        #[arg(long, value_name = "N", default_value_t = 5)]
+        contexts_per_word: usize,
+
+        /// Minimum corpus frequency for a word to be ambiguity-checked
+        #[arg(long, value_name = "N", default_value_t = 10)]
+        min_frequency: usize,
+
+        /// Maximum paragraphs per generated candidate session file
+        #[arg(long, value_name = "N", default_value_t = 25)]
+        paragraphs_per_file: usize,
+    },
+
     /// Rebuild the application database from local assets and create asset release archives (new modular implementation).
     Bootstrap {
         /// Write a new .env file even if one already exists
@@ -1543,6 +1595,17 @@ fn main() {
              } else {
                  db::dpd::import_migrate_dpd(&dpd_input_path, dpd_output_path, None)
              }
+        }
+
+        Commands::ImportGlossData { db_path, inputs } => {
+            import_gloss_data::import_gloss_data(&db_path, &inputs)
+        }
+
+        Commands::GlossCorpusExplore { output_dir, nikayas, source, top_words, contexts_per_word, min_frequency, paragraphs_per_file } => {
+            let params = gloss_corpus_explore::ExploreParams {
+                output_dir, nikayas, source, top_words, contexts_per_word, min_frequency, paragraphs_per_file,
+            };
+            gloss_corpus_explore::gloss_corpus_explore(&params)
         }
 
         Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit } => {

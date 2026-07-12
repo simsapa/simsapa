@@ -562,6 +562,47 @@ fn qurl_to_local_path(url: &QUrl) -> String {
     path_str
 }
 
+/// Write bytes to a file in a user-chosen folder, shared by the text
+/// (`save_file`) and binary (`export_gloss_docx`) export paths.
+///
+/// Android: FolderDialog returns a SAF content:// tree URI (not a path);
+/// scoped storage forbids std::fs writes there. Route through the
+/// ContentResolver. Pass the *fully-encoded* URI (to_encoded) — .path()
+/// drops scheme/authority and toString() pretty-decodes %3A/%2F.
+fn save_bytes_to_folder(folder_url: &QUrl, filename: &str, bytes: &[u8]) -> bool {
+    #[cfg(target_os = "android")]
+    {
+        if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
+            let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
+            let mime = simsapa_backend::android_saf::mime_from_filename(filename);
+            return match simsapa_backend::android_saf::write_to_tree_uri(
+                &tree_uri, filename, mime, bytes) {
+                Ok(_) => true,
+                Err(e) => {
+                    error(&format!("save_bytes_to_folder SAF write failed for {}: {}", filename, e));
+                    false
+                }
+            };
+        }
+    }
+
+    let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
+    let output_path = folder_path.join(filename);
+    match output_path.to_str() {
+        Some(p) => match save_to_file_checked(bytes, p) {
+            Ok(_) => true,
+            Err(e) => {
+                error(&format!("save_bytes_to_folder failed to write {}: {}", p, e));
+                false
+            }
+        },
+        None => {
+            error(&format!("save_bytes_to_folder: output path is not valid UTF-8: {:?}", output_path));
+            false
+        }
+    }
+}
+
 /// Shared INSERT/UPDATE logic for a history session, used by both the async and
 /// the blocking (app-close) save paths. `session_id` is the QML-side string:
 /// empty means INSERT a new row, otherwise UPDATE the row with that parsed id.
@@ -882,10 +923,46 @@ pub mod qobject {
         fn get_system_prompt(self: &SuttaBridge, prompt_name: &QString) -> QString;
 
         #[qinvokable]
+        fn get_default_system_prompt(self: &SuttaBridge, prompt_name: &QString) -> QString;
+
+        #[qinvokable]
         fn set_system_prompts_json(self: Pin<&mut SuttaBridge>, prompts_json: &QString);
 
         #[qinvokable]
         fn get_system_prompts_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn get_gloss_word_selection_settings_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_word_selection_settings_json(self: Pin<&mut SuttaBridge>, settings_json: &QString);
+
+        #[qinvokable]
+        fn save_gloss_word_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool;
+
+        #[qinvokable]
+        fn delete_gloss_word_cache(self: &SuttaBridge, word: &QString, context_hash: &QString) -> bool;
+
+        #[qinvokable]
+        fn gloss_word_cache_count(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn clear_gloss_word_cache(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn parse_word_selection_response(self: &SuttaBridge, response: &QString, expected_items_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn export_gloss_session_json(self: &SuttaBridge, session_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn import_gloss_word_cache(self: &SuttaBridge, entries_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn open_gloss_session_export(self: &SuttaBridge, file_path: &QString) -> QString;
 
         #[qinvokable]
         fn get_providers_json(self: &SuttaBridge) -> QString;
@@ -1074,6 +1151,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn save_file(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, content: &QString) -> bool;
+
+        #[qinvokable]
+        fn export_gloss_docx(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, gloss_json: &QString) -> bool;
 
         #[qinvokable]
         fn check_file_exists_in_folder(self: &SuttaBridge, folder_url: &QUrl, filename: &QString) -> bool;
@@ -2382,6 +2462,14 @@ impl qobject::SuttaBridge {
         QString::from(prompt)
     }
 
+    /// Get the built-in default text of a system prompt by name.
+    /// Returns an empty string when the key has no built-in default.
+    pub fn get_default_system_prompt(&self, prompt_name: &QString) -> QString {
+        let prompts = simsapa_backend::app_settings::default_system_prompts();
+        let prompt = prompts.get(&prompt_name.to_string()).cloned().unwrap_or_default();
+        QString::from(prompt)
+    }
+
     /// Save system prompts in the db as JSON
     pub fn set_system_prompts_json(self: Pin<&mut Self>, prompts_json: &QString) {
         let app_data = get_app_data();
@@ -2393,6 +2481,189 @@ impl qobject::SuttaBridge {
         let app_data = get_app_data();
         let prompts_json = app_data.get_system_prompts_json();
         QString::from(prompts_json)
+    }
+
+    /// Get the Gloss tab's AI word-selection settings as JSON
+    /// (`{"enabled": bool, "provider": "...", "model": "..."}`).
+    pub fn get_gloss_word_selection_settings_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_gloss_word_selection_settings_json())
+    }
+
+    /// Save the Gloss tab's AI word-selection settings from JSON.
+    pub fn set_gloss_word_selection_settings_json(self: Pin<&mut Self>, settings_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_gloss_word_selection_settings_json(&settings_json.to_string());
+    }
+
+    /// Save (upsert) a gloss word-selection cache row. `word` is the glossed
+    /// surface form (`ProcessedWord.original_word`), `context_snippet` the
+    /// word's context window (`example_sentence`, `<b>` markers allowed);
+    /// key normalization and hashing happen here. Respects origin precedence
+    /// (an `ai` write never downgrades a `user` or `built-in` row).
+    pub fn save_gloss_word_cache(&self, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool {
+        use simsapa_backend::helpers::{gloss_cache_word_key, gloss_context_hash, normalize_gloss_context};
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        let snippet = context_snippet.to_string();
+        let hash = gloss_context_hash(&normalize_gloss_context(&snippet));
+        match app_data.dbm.appdata.upsert_gloss_word_cache(
+            &word_key,
+            &hash,
+            &snippet,
+            &selected_uid.to_string(),
+            &origin.to_string(),
+        ) {
+            Ok(written) => written,
+            Err(e) => {
+                error(&format!("save_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Delete the cache row for (word, context_hash). `word` may be the raw
+    /// surface form (key-normalized here); `context_hash` is the stored hash.
+    pub fn delete_gloss_word_cache(&self, word: &QString, context_hash: &QString) -> bool {
+        use simsapa_backend::helpers::gloss_cache_word_key;
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        match app_data.dbm.appdata.delete_gloss_word_cache(&word_key, &context_hash.to_string()) {
+            Ok(()) => true,
+            Err(e) => {
+                error(&format!("delete_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Count of user-clearable (`ai` + `user`) word-selection cache rows.
+    pub fn gloss_word_cache_count(&self) -> i32 {
+        let app_data = get_app_data();
+        app_data.dbm.appdata.count_gloss_word_cache() as i32
+    }
+
+    /// Bulk clear of `ai` + `user` cache rows (`built-in` rows and the phrase
+    /// table are untouched).
+    pub fn clear_gloss_word_cache(&self) -> bool {
+        let app_data = get_app_data();
+        match app_data.dbm.appdata.clear_gloss_word_cache() {
+            Ok(()) => true,
+            Err(e) => {
+                error(&format!("clear_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Re-derive `resolution` / `selected_index` / `context_hash` for a
+    /// restored session's words_data JSON from the current cache and phrase
+    /// tables (see `simsapa_backend::helpers::annotate_gloss_words_json`).
+    /// Returns the input unchanged when annotation fails.
+    pub fn annotate_gloss_words_json(&self, words_data_json: &QString) -> QString {
+        let app_data = get_app_data();
+        let words_json = words_data_json.to_string();
+        match simsapa_backend::helpers::annotate_gloss_words_json(&app_data.dbm.appdata, &words_json) {
+            Ok(annotated) => QString::from(annotated),
+            Err(e) => {
+                error(&format!("annotate_gloss_words_json(): {}", e));
+                words_data_json.clone()
+            }
+        }
+    }
+
+    /// Build the gloss session JSON export envelope (PRD §4.9 req 38): the
+    /// session serialization the Gloss history saves, plus the word-selection
+    /// cache rows referenced by the session's words. Returns an empty string
+    /// on failure.
+    pub fn export_gloss_session_json(&self, session_json: &QString) -> QString {
+        let app_data = get_app_data();
+        match simsapa_backend::helpers::build_gloss_session_export_json(
+            &app_data.dbm.appdata,
+            &session_json.to_string(),
+        ) {
+            Ok(json) => QString::from(json),
+            Err(e) => {
+                error(&format!("export_gloss_session_json(): {}", e));
+                QString::from("")
+            }
+        }
+    }
+
+    /// Import word-selection cache entries (a session export's `word_cache`
+    /// array) with the strictly-higher precedence rule (`user > built-in >
+    /// ai`; equal precedence is a no-op). Returns
+    /// `{"imported": n, "skipped": m}` or `{"error": "..."}`.
+    pub fn import_gloss_word_cache(&self, entries_json: &QString) -> QString {
+        use simsapa_backend::helpers::{import_gloss_word_cache_entries, GlossWordCacheExportEntry};
+        let entries: Vec<GlossWordCacheExportEntry> =
+            match serde_json::from_str(&entries_json.to_string()) {
+                Ok(v) => v,
+                Err(e) => {
+                    return QString::from(
+                        serde_json::json!({"error": format!("Invalid entries JSON: {}", e)}).to_string(),
+                    );
+                }
+            };
+        let app_data = get_app_data();
+        let (imported, skipped) = import_gloss_word_cache_entries(&app_data.dbm.appdata, &entries);
+        QString::from(serde_json::json!({"imported": imported, "skipped": skipped}).to_string())
+    }
+
+    /// Open a gloss session JSON export from a local file path ("Open JSON",
+    /// PRD §4.9 reqs 39-41): validate the envelope, import its `word_cache`
+    /// with the strict-precedence upsert, and return
+    /// `{"ok": true, "session": {...}, "imported": n, "skipped": m}` or
+    /// `{"error": "..."}`. A malformed or wrong-format file imports nothing.
+    /// On Android the caller converts a `content://` URI to a temp file first
+    /// (`copy_content_uri_to_temp`).
+    pub fn open_gloss_session_export(&self, file_path: &QString) -> QString {
+        let err_json =
+            |msg: String| QString::from(serde_json::json!({"error": msg}).to_string());
+
+        let path = file_path.to_string();
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => return err_json(format!("Failed to read the file: {}", e)),
+        };
+
+        let (session, word_cache) =
+            match simsapa_backend::helpers::parse_gloss_session_export(&content) {
+                Ok(v) => v,
+                Err(e) => return err_json(e),
+            };
+
+        let app_data = get_app_data();
+        let (imported, skipped) = simsapa_backend::helpers::import_gloss_word_cache_entries(
+            &app_data.dbm.appdata,
+            &word_cache,
+        );
+
+        QString::from(
+            serde_json::json!({
+                "ok": true,
+                "session": session,
+                "imported": imported,
+                "skipped": skipped,
+            })
+            .to_string(),
+        )
+    }
+
+    /// Parse and validate an AI word-selection response against the request's
+    /// items array (see `simsapa_backend::helpers::parse_word_selection_response`).
+    /// Returns `{"selections": [{"id": "...", "uid": "..."}]}` on success or
+    /// `{"error": "..."}` on failure (incl. in-band `Error:` responses).
+    pub fn parse_word_selection_response(&self, response: &QString, expected_items_json: &QString) -> QString {
+        match simsapa_backend::helpers::parse_word_selection_response(&response.to_string(), &expected_items_json.to_string()) {
+            Ok(pairs) => {
+                let selections: Vec<serde_json::Value> = pairs.iter()
+                    .map(|(id, uid)| serde_json::json!({"id": id, "uid": uid}))
+                    .collect();
+                QString::from(serde_json::json!({"selections": selections}).to_string())
+            }
+            Err(e) => QString::from(serde_json::json!({"error": e}).to_string()),
+        }
     }
 
     /// Get all providers as JSON
@@ -2756,42 +3027,23 @@ impl qobject::SuttaBridge {
                      folder_url: &QUrl,
                      filename: &QString,
                      content: &QString) -> bool {
-        // Android: FolderDialog returns a SAF content:// tree URI (not a path);
-        // scoped storage forbids std::fs writes there. Route through the
-        // ContentResolver. Pass the *fully-encoded* URI (to_encoded) — .path()
-        // drops scheme/authority and toString() pretty-decodes %3A/%2F.
-        #[cfg(target_os = "android")]
-        {
-            if folder_url.scheme().map(|s| s.to_string()).as_deref() == Some("content") {
-                let tree_uri = String::from_utf8_lossy(folder_url.to_encoded().as_slice()).to_string();
-                let fname = filename.to_string();
-                let mime = simsapa_backend::android_saf::mime_from_filename(&fname);
-                return match simsapa_backend::android_saf::write_to_tree_uri(
-                    &tree_uri, &fname, mime, content.to_string().as_bytes()) {
-                    Ok(_) => true,
-                    Err(e) => {
-                        error(&format!("save_file SAF write failed for {}: {}", fname, e));
-                        false
-                    }
-                };
-            }
-        }
+        save_bytes_to_folder(folder_url, &filename.to_string(), content.to_string().as_bytes())
+    }
 
-        let folder_path = PathBuf::from(qurl_to_local_path(folder_url));
-        let output_path = folder_path.join(filename.to_string());
-        match output_path.to_str() {
-            Some(p) => match save_to_file_checked(content.to_string().as_bytes(), p) {
-                Ok(_) => true,
-                Err(e) => {
-                    error(&format!("save_file failed to write {}: {}", p, e));
-                    false
-                }
-            },
-            None => {
-                error(&format!("save_file: output path is not valid UTF-8: {:?}", output_path));
-                false
+    /// Generate a DOCX from the gloss export JSON and write it to the chosen
+    /// folder (desktop path or Android SAF, same dispatch as `save_file`).
+    pub fn export_gloss_docx(&self,
+                             folder_url: &QUrl,
+                             filename: &QString,
+                             gloss_json: &QString) -> bool {
+        let bytes = match simsapa_backend::docx_export::generate_gloss_docx(&gloss_json.to_string()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error(&format!("export_gloss_docx failed to generate the document: {}", e));
+                return false;
             }
-        }
+        };
+        save_bytes_to_folder(folder_url, &filename.to_string(), &bytes)
     }
 
     pub fn check_file_exists_in_folder(&self,
@@ -3425,6 +3677,12 @@ impl qobject::SuttaBridge {
 
                 // Extract words with context from paragraph
                 let words_with_context = simsapa_backend::helpers::extract_words_with_context(paragraph_text);
+                // Pre-fetch the word-selection cache rows + set-phrase table for
+                // this paragraph (process_word_for_glossing takes no appdata handle).
+                let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
+                    &app_data.dbm.appdata,
+                    &words_with_context,
+                );
                 let mut paragraph_shown_stems = std::collections::HashMap::new();
                 let mut processed_words = Vec::new();
 
@@ -3442,6 +3700,7 @@ impl qobject::SuttaBridge {
                         input_data.options.no_duplicates_globally,
                         &input_data.options,
                         &app_data.dbm.dpd,
+                        Some(&resolution_data),
                     ) {
                         Ok(result) => processed_words.push(result),
                         Err(e) => {
@@ -3534,6 +3793,12 @@ impl qobject::SuttaBridge {
 
             // Extract words with context from paragraph
             let words_with_context = simsapa_backend::helpers::extract_words_with_context(&input_data.paragraph_text);
+            // Pre-fetch the word-selection cache rows + set-phrase table for
+            // this paragraph (process_word_for_glossing takes no appdata handle).
+            let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
+                &app_data.dbm.appdata,
+                &words_with_context,
+            );
             let mut paragraph_shown_stems = std::collections::HashMap::new();
             let mut global_stems = input_data.options.existing_global_stems.clone();
             let mut processed_words = Vec::new();
@@ -3552,6 +3817,7 @@ impl qobject::SuttaBridge {
                     input_data.options.no_duplicates_globally,
                     &input_data.options,
                     &app_data.dbm.dpd,
+                    Some(&resolution_data),
                 ) {
                     Ok(result) => processed_words.push(result),
                     Err(e) => {

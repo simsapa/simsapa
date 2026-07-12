@@ -94,14 +94,7 @@ impl From<simsapa_backend::db::appdata_models::SuttaVariant> for SerializableSut
     }
 }
 
-// Get database connection to legacy database
-fn get_legacy_db() -> SqliteConnection {
-    let db_path = "../../bootstrap-assets-resources/appdata-db-for-bootstrap/current/appdata.sqlite3";
-    SqliteConnection::establish(db_path)
-        .unwrap_or_else(|_| panic!("Error connecting to legacy database at {}", db_path))
-}
-
-// Get database connection to new database
+// Get database connection to the bootstrapped database
 fn get_new_db() -> SqliteConnection {
     let db_path = "../../bootstrap-assets-resources/dist/simsapa-ng/app-assets/appdata.sqlite3";
     SqliteConnection::establish(db_path)
@@ -137,13 +130,40 @@ fn get_test_data_dir() -> PathBuf {
     PathBuf::from("tests/data")
 }
 
-// Generate expected JSON from legacy database
+// The <header> text (nikāya / vagga / division names) of each sutta, which the
+// bootstrap must NOT carry into content_plain: sutta_html_to_plain_text replaces
+// a <header> with just its <h1> title, so collection names do not pollute the
+// fulltext index. The comparison below asserts this text is absent — the length
+// tolerance alone would not catch it (a heading is only ~1-2% of a short sutta,
+// and well under the threshold for a long one).
+const REMOVED_HEADINGS: &[(&str, &str)] = &[
+    ("sn56.11/pli/ms", "saṁyutta nikāya 56 11 2 dhammacakkappavattanavagga"),
+    ("mn1/pli/ms", "majjhima nikāya 1"),
+    ("dn22/pli/ms", "dīgha nikāya 22"),
+    ("dhp290-305/pli/ms", "khuddakanikāya dhammapada"),
+    ("snp1.8/pli/ms", "sutta nipāta 1 8"),
+    ("pli-tv-bu-vb-pj4/pli/ms", "theravāda vinaya mahāvibhaṅga pārājikakaṇḍa"),
+    ("mn1/en/sujato", "middle discourses 1"),
+    ("dn22/en/sujato", "long discourses 22"),
+    ("dhp290-305/en/sujato", "minor collection sayings of the dhamma 290–305"),
+    ("snp1.8/en/sujato", "anthology of discourses 1 8"),
+    ("pli-tv-bu-vb-pj4/en/brahmali", "theravāda collection on monastic law the great analysis the chapter on offenses entailing expulsion"),
+];
+
+fn removed_heading(uid_value: &str) -> Option<&'static str> {
+    REMOVED_HEADINGS
+        .iter()
+        .find(|(uid, _)| *uid == uid_value)
+        .map(|(_, heading)| *heading)
+}
+
+// Generate expected JSON from the bootstrapped database
 fn generate_expected_json_for_uid(uid_value: &str) {
-    let mut legacy_conn = get_legacy_db();
+    let mut conn = get_new_db();
     let test_data_dir = get_test_data_dir();
 
     // Query sutta
-    let sutta = query_sutta_by_uid(&mut legacy_conn, uid_value);
+    let sutta = query_sutta_by_uid(&mut conn, uid_value);
     let sutta_filename = format!("{}_sutta.json", uid_value.replace('/', "_"));
     let sutta_path = test_data_dir.join(&sutta_filename);
 
@@ -160,13 +180,13 @@ fn generate_expected_json_for_uid(uid_value: &str) {
     }
 }
 
-// Generate expected JSON for sutta_variant from legacy database
+// Generate expected JSON for sutta_variant from the bootstrapped database
 fn generate_expected_json_for_variant(uid_value: &str) {
-    let mut legacy_conn = get_legacy_db();
+    let mut conn = get_new_db();
     let test_data_dir = get_test_data_dir();
 
     // Query sutta_variant
-    let variant = query_sutta_variant_by_uid(&mut legacy_conn, uid_value);
+    let variant = query_sutta_variant_by_uid(&mut conn, uid_value);
     let variant_filename = format!("{}_sutta_variant.json", uid_value.replace('/', "_"));
     let variant_path = test_data_dir.join(&variant_filename);
 
@@ -228,6 +248,24 @@ fn test_sutta_comparison(uid_value: &str) {
         assert_eq!(new_sutta.message, expected_sutta.message, "message mismatch for {}", uid_value);
         assert_eq!(new_sutta.copyright, expected_sutta.copyright, "copyright mismatch for {}", uid_value);
         assert_eq!(new_sutta.license, expected_sutta.license, "license mismatch for {}", uid_value);
+
+        // The nikāya / vagga / division names of the <header> must not reach
+        // content_plain (sutta_html_to_plain_text keeps only the <h1> title), so
+        // the fulltext index is not polluted with collection names.
+        if let Some(heading) = removed_heading(uid_value) {
+            if let Some(new_content) = &new_sutta.content_plain {
+                assert!(!new_content.contains(heading),
+                    "content_plain of {} contains the heading text {:?}, which sutta_html_to_plain_text should have removed with the <header>",
+                    uid_value, heading);
+            }
+            // The fixtures are generated from the same database, so a heading
+            // here means the database had it when they were last regenerated.
+            if let Some(expected_content) = &expected_sutta.content_plain {
+                assert!(!expected_content.contains(heading),
+                    "expected {} contains the heading text {:?} — it was generated from a database that still had headings in content_plain",
+                    sutta_filename, heading);
+            }
+        }
 
         // Compare content fields - allow small differences (< 1%) due to whitespace/punctuation normalization
         // The new database may have slightly different text processing that results in minor differences

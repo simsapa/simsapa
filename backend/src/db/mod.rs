@@ -289,6 +289,10 @@ pub fn upgrade_appdata_schema(db_conn: &mut SqliteConnection) {
         include_str!("../../migrations/appdata/2026-04-14-000000_add_is_user_added/up.sql"),
         // 2026-04-14: is_user_added on chanting_recordings
         include_str!("../../migrations/appdata/2026-04-14-000002_add_recordings_is_user_added/up.sql"),
+        // 2026-06-27: gloss / prompts session history
+        include_str!("../../migrations/appdata/2026-06-27-131935_create_gloss_prompts_history/up.sql"),
+        // 2026-07-09: gloss word context cache and phrase selections
+        include_str!("../../migrations/appdata/2026-07-09-160000_create_gloss_word_selection/up.sql"),
     ];
 
     for sql in &statements {

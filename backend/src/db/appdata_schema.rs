@@ -235,6 +235,28 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    gloss_word_context_cache (id) {
+        id -> Integer,
+        word -> Text,
+        context_hash -> Text,
+        context_snippet -> Text,
+        selected_uid -> Text,
+        origin -> Text,
+        created_at -> Nullable<Timestamp>,
+        updated_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    gloss_phrase_selections (id) {
+        id -> Integer,
+        phrase -> Text,
+        word -> Text,
+        selected_uid -> Text,
+    }
+}
+
 diesel::joinable!(sutta_variants -> suttas (sutta_id));
 diesel::joinable!(sutta_comments -> suttas (sutta_id));
 diesel::joinable!(sutta_glosses -> suttas (sutta_id));
@@ -258,4 +280,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     bookmark_folders,
     bookmark_items,
     gloss_prompts_history,
+    gloss_word_context_cache,
+    gloss_phrase_selections,
 );

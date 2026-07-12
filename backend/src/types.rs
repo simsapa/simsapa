@@ -373,6 +373,19 @@ pub struct ProcessedWord {
     pub selected_index: i32,
     pub stem: String,
     pub example_sentence: String,
+    /// Hex digest of the normalized `example_sentence` window
+    /// (`gloss_context_hash(normalize_gloss_context(...))`), the cache key for
+    /// `gloss_word_context_cache`. `#[serde(default)]` so pre-existing
+    /// `gloss_prompts_history` sessions without the field still deserialize.
+    #[serde(default)]
+    pub context_hash: String,
+    /// How `selected_index` was resolved from the word-selection cache /
+    /// set-phrase tables: `"user"`, `"phrase"`, `"built-in"` or `"ai"`;
+    /// `None` = unresolved (fresh AI request candidate). Precedence:
+    /// user cache > phrase > built-in cache > ai cache. `#[serde(default)]`
+    /// for pre-existing history sessions (see `context_hash` above).
+    #[serde(default)]
+    pub resolution: Option<String>,
 }
 
 /// Result indicating an unrecognized word

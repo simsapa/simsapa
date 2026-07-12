@@ -187,6 +187,17 @@ pub struct AppSettings {
     /// tasks/2026-07-01-192905-prd---side-by-side-translation-view.md.
     #[serde(default)]
     pub sutta_display: SuttaDisplayDefaults,
+
+    // --- Gloss tab: AI word selection ---
+    /// Whether AI word selection is enabled in the Gloss tab (a model is selected).
+    #[serde(default)]
+    pub gloss_word_selection_enabled: bool,
+    /// Provider name of the selected word-selection model (empty = none).
+    #[serde(default)]
+    pub gloss_word_selection_provider: String,
+    /// Model name used for word selection (empty = none).
+    #[serde(default)]
+    pub gloss_word_selection_model: String,
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -340,6 +351,74 @@ impl Default for SuttaDisplayDefaults {
     }
 }
 
+/// The built-in default system prompts, keyed as shown in the System Prompts
+/// window. Used for `AppSettings::default()`, for merging newly added default
+/// keys into existing users' settings on load
+/// (`merge_default_system_prompts()`), and for serving individual defaults to
+/// the "Reset to Default" button (`SuttaBridge::get_default_system_prompt`).
+pub fn default_system_prompts() -> IndexMap<String, String> {
+    let mut prompts = IndexMap::new();
+    prompts.insert("Gloss Tab: System Prompt".to_string(),
+        r#"
+You are a helpful assistant for studying the suttas of the Theravāda Pāli Tipitaka and the Pāli language.
+Respond with concise answers and respond only with the information requested in the task.
+Respond with GFM-Markdown formatted text.
+"#.trim().to_string());
+
+    prompts.insert("Gloss Tab: AI Translation with Vocabulary".to_string(),
+        r#"
+Translate the following Pāli passage to English, keeping in mind the provided dictionary definitions.
+
+Pāli passage:
+
+<<PALI_PASSAGE>>
+
+Dictionary definitions:
+
+<<DICTIONARY_DEFINITIONS>>
+
+Respond with only the translation of the Pāli passage.
+Respond with GFM-Markdown formatted text.
+"#.trim().to_string());
+
+    prompts.insert("Gloss Tab: AI Translation without Vocabulary".to_string(),
+        r#"
+Translate the following Pāli passage to English.
+
+Pāli passage:
+
+<<PALI_PASSAGE>>
+
+Respond with only the translation of the Pāli passage.
+Respond with GFM-Markdown formatted text.
+"#.trim().to_string());
+
+    prompts.insert("Gloss Tab: Word Selection System Prompt".to_string(),
+        r#"
+You are an expert in Pāli grammar and vocabulary, assisting with the word-by-word glossing of Theravāda Pāli texts. For each listed word, choose the dictionary entry whose meaning fits the word as used in its context. Respond with JSON only — no explanations, no markdown code fences.
+"#.trim().to_string());
+
+    prompts.insert("Gloss Tab: Word Selection Request".to_string(),
+        r#"
+Each item below is a Pāli word in its context, with candidate dictionary entries. For each item, select the entry whose meaning fits the context, and return its "uid".
+
+<<WORD_SELECTION_JSON>>
+
+Respond with JSON in exactly this format, one selection per item:
+
+{"selections": [{"id": "<item id>", "uid": "<chosen option uid>"}]}
+"#.trim().to_string());
+
+    prompts.insert("Prompts Tab: System Prompt".to_string(),
+        r#"
+You are a helpful assistant for studying the suttas of the Theravāda Pāli Tipitaka and the Pāli language.
+Respond with concise answers and respond only with the information requested in the task.
+Respond with GFM-Markdown formatted text.
+"#.trim().to_string());
+
+    prompts
+}
+
 fn default_true() -> bool {
     true
 }
@@ -376,52 +455,7 @@ impl Default for AppSettings {
             show_glosses: false,
             theme_name: ThemeName::Light,
             api_keys: IndexMap::new(),
-            system_prompts: {
-                let mut prompts = IndexMap::new();
-                prompts.insert("Gloss Tab: System Prompt".to_string(),
-                    r#"
-You are a helpful assistant for studying the suttas of the Theravāda Pāli Tipitaka and the Pāli language.
-Respond with concise answers and respond only with the information requested in the task.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-                prompts.insert("Gloss Tab: AI Translation with Vocabulary".to_string(),
-                    r#"
-Translate the following Pāli passage to English, keeping in mind the provided dictionary definitions.
-
-Pāli passage:
-
-<<PALI_PASSAGE>>
-
-Dictionary definitions:
-
-<<DICTIONARY_DEFINITIONS>>
-
-Respond with only the translation of the Pāli passage.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-                prompts.insert("Gloss Tab: AI Translation without Vocabulary".to_string(),
-                    r#"
-Translate the following Pāli passage to English.
-
-Pāli passage:
-
-<<PALI_PASSAGE>>
-
-Respond with only the translation of the Pāli passage.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-                prompts.insert("Prompts Tab: System Prompt".to_string(),
-                    r#"
-You are a helpful assistant for studying the suttas of the Theravāda Pāli Tipitaka and the Pāli language.
-Respond with concise answers and respond only with the information requested in the task.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-                prompts
-            },
+            system_prompts: default_system_prompts(),
             providers: {
                 match serde_json::from_str::<Vec<Provider>>(PROVIDERS_JSON) {
                     Ok(providers) => providers,
@@ -522,11 +556,28 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             item_height_use_default: true,
             item_height_fixed: 100,
             sutta_display: SuttaDisplayDefaults::default(),
+            gloss_word_selection_enabled: false,
+            gloss_word_selection_provider: String::new(),
+            gloss_word_selection_model: String::new(),
         }
     }
 }
 
 impl AppSettings {
+    /// Insert any missing built-in default `system_prompts` keys, so existing
+    /// users' settings gain newly added prompts without overwriting their
+    /// edits to existing keys. Returns true if any key was added.
+    pub fn merge_default_system_prompts(&mut self) -> bool {
+        let mut changed = false;
+        for (prompt_key, prompt_text) in default_system_prompts() {
+            if !self.system_prompts.contains_key(&prompt_key) {
+                self.system_prompts.insert(prompt_key, prompt_text);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     pub fn theme_name_as_string(&self) -> String {
         match self.theme_name {
             ThemeName::Light => "light".to_string(),

@@ -55,6 +55,7 @@ fn main() {
         "../assets/qml/WordSummary.qml",
         "../assets/qml/StorageDialog.qml",
         "../assets/qml/GlossTab.qml",
+        "../assets/qml/GlossWordSelectionDialog.qml",
         "../assets/qml/PromptsTab.qml",
         "../assets/qml/AssistantResponses.qml",
         "../assets/qml/ResponseTabButton.qml",

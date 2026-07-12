@@ -325,12 +325,60 @@ Item {
         return 'prompt_value';
     }
 
+    function get_default_system_prompt(prompt_name: string): string {
+        return 'prompt_value';
+    }
+
     function set_system_prompts_json(prompts_json: string) {
         console.log("set_system_prompts_json()");
     }
 
     function get_system_prompts_json(): string {
         return '{}';
+    }
+
+    function get_gloss_word_selection_settings_json(): string {
+        return '{"enabled": false, "provider": "", "model": ""}';
+    }
+
+    function set_gloss_word_selection_settings_json(settings_json: string) {
+        console.log("set_gloss_word_selection_settings_json()");
+    }
+
+    function save_gloss_word_cache(word: string, context_snippet: string, selected_uid: string, origin: string): bool {
+        return true;
+    }
+
+    function delete_gloss_word_cache(word: string, context_hash: string): bool {
+        return true;
+    }
+
+    function gloss_word_cache_count(): int {
+        return 0;
+    }
+
+    function clear_gloss_word_cache(): bool {
+        return true;
+    }
+
+    function parse_word_selection_response(response: string, expected_items_json: string): string {
+        return '{"selections": []}';
+    }
+
+    function annotate_gloss_words_json(words_data_json: string): string {
+        return words_data_json;
+    }
+
+    function export_gloss_session_json(session_json: string): string {
+        return '{"format": "simsapa-gloss-session", "format_version": 1}';
+    }
+
+    function import_gloss_word_cache(entries_json: string): string {
+        return '{"imported": 0, "skipped": 0}';
+    }
+
+    function open_gloss_session_export(file_path: string): string {
+        return '{"ok": true, "session": {}, "imported": 0, "skipped": 0}';
     }
 
     function get_providers_json(): string {
@@ -452,6 +500,11 @@ Item {
 
     function save_file(folder_url: url, filename: string, content: string): bool {
         console.log(`save_file(): ${folder_url}, ${filename}, ${content}`);
+        return true;
+    }
+
+    function export_gloss_docx(folder_url: url, filename: string, gloss_json: string): bool {
+        console.log(`export_gloss_docx(): ${folder_url}, ${filename}, ${gloss_json}`);
         return true;
     }
 

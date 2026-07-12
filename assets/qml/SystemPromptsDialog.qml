@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Window
+import QtQuick.Dialogs
 
 import com.profoundlabs.simsapa
 
@@ -26,6 +27,7 @@ ApplicationWindow {
 
     property var current_prompts: ({})
     property string selected_prompt_key: ""
+    readonly property string selected_prompt_default: root.selected_prompt_key ? SuttaBridge.get_default_system_prompt(root.selected_prompt_key) : ""
 
     property bool is_dark: theme_helper.is_dark
 
@@ -56,7 +58,7 @@ ApplicationWindow {
                 prompt_text_area.text = root.current_prompts[root.selected_prompt_key] || "";
             }
         } catch (e) {
-            logger.error("Failed to parse system prompts:", e);
+            logger.error("Failed to parse system prompts: " + e);
         }
     }
 
@@ -68,9 +70,26 @@ ApplicationWindow {
         }
     }
 
+    function reset_selected_prompt_to_default() {
+        if (!root.selected_prompt_key || root.selected_prompt_default === "") {
+            return;
+        }
+        // Setting the text triggers onTextChanged, which updates
+        // current_prompts[key] and saves via save_current_prompt_immediately().
+        prompt_text_area.text = root.selected_prompt_default;
+    }
+
     Component.onCompleted: {
         theme_helper.apply();
         load_prompts();
+    }
+
+    MessageDialog {
+        id: reset_confirm_dialog
+        title: "Reset to Default"
+        text: "Replace the current text of '" + root.selected_prompt_key + "' with the built-in default? Your edits to this prompt will be lost."
+        buttons: MessageDialog.Cancel | MessageDialog.Ok
+        onAccepted: root.reset_selected_prompt_to_default()
     }
 
     ListModel { id: prompt_names_model }
@@ -176,10 +195,24 @@ ApplicationWindow {
                         anchors.fill: parent
                         anchors.margins: 5
 
-                        Label {
-                            text: root.selected_prompt_key ? root.selected_prompt_key : "Select a prompt to edit"
-                            font.bold: true
-                            font.pointSize: root.pointSize
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.selected_prompt_key ? root.selected_prompt_key : "Select a prompt to edit"
+                                font.bold: true
+                                font.pointSize: root.pointSize
+                                elide: Text.ElideRight
+                            }
+
+                            Button {
+                                id: reset_to_default_btn
+                                text: "Reset to Default"
+                                enabled: root.selected_prompt_default !== ""
+                                onClicked: reset_confirm_dialog.open()
+                            }
                         }
 
                         GroupBox {
