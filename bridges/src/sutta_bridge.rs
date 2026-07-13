@@ -2682,38 +2682,13 @@ impl qobject::SuttaBridge {
     /// Get API key for a specific provider
     pub fn get_provider_api_key(&self, provider_name: &QString) -> QString {
         let app_data = get_app_data();
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-        // First check environment variable
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Check environment variable first
-            if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-                return QString::from(env_key);
-            }
-            // Fall back to stored value
-            if let Some(ref stored_key) = provider.api_key_value {
-                return QString::from(stored_key.clone());
-            }
-        }
-
-        QString::from("")
+        QString::from(app_data.get_provider_api_key(&provider_name.to_string()))
     }
 
     /// Set API key for a specific provider
     pub fn set_provider_api_key(self: Pin<&mut Self>, provider_name: &QString, api_key: &QString) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            provider.api_key_value = if api_key.is_empty() { None } else { Some(api_key.to_string()) };
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.set_provider_api_key(&provider_name.to_string(), &api_key.to_string());
     }
 
     /// Get the API URL for the localhost server
@@ -2732,98 +2707,31 @@ impl qobject::SuttaBridge {
     /// Enable or disable a provider
     pub fn set_provider_enabled(self: Pin<&mut Self>, provider_name: &QString, enabled: bool) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            provider.enabled = enabled;
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.set_provider_enabled(&provider_name.to_string(), enabled);
     }
 
-    /// Add a new model to a provider
+    /// Add a new model to a provider (origin `user`)
     pub fn add_provider_model(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString) {
-        use simsapa_backend::app_settings::ModelEntry;
-
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Check if model already exists
-            if !provider.models.iter().any(|m| m.model_name == model_name.to_string()) {
-                let new_model = ModelEntry {
-                    model_name: model_name.to_string(),
-                    enabled: true,
-                    removable: true,
-                };
-                // Add the new model to the top of the list, where the user can
-                // more easily see it.
-                provider.models.insert(0, new_model);
-
-                // Save via backend function
-                let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-                drop(app_settings); // Release the lock before saving
-                app_data.set_providers_json(&providers_json);
-            }
-        }
+        app_data.add_provider_model(&provider_name.to_string(), &model_name.to_string());
     }
 
-    /// Remove a model from a provider
+    /// Remove a user-added model from a provider
     pub fn remove_provider_model(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Only remove if the model is removable
-            provider.models.retain(|m| !(m.model_name == model_name.to_string() && m.removable));
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.remove_provider_model(&provider_name.to_string(), &model_name.to_string());
     }
 
     /// Set the enabled status of a specific model for a provider
     pub fn set_provider_model_enabled(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString, enabled: bool) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Find the model and update its enabled status
-            if let Some(model) = provider.models.iter_mut().find(|m| m.model_name == model_name.to_string()) {
-                model.enabled = enabled;
-
-                // Save via backend function
-                let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-                drop(app_settings); // Release the lock before saving
-                app_data.set_providers_json(&providers_json);
-            }
-        }
+        app_data.set_provider_model_enabled(&provider_name.to_string(), &model_name.to_string(), enabled);
     }
 
     /// Get the provider name for a given model name
     pub fn get_provider_for_model(&self, model_name: &QString) -> QString {
-        // NOTE: This matches model_name in any provider, so two providers should not have the model_name.
-        // However it shouldn't be a problem because model names are quite specific to the providers.
         let app_data = get_app_data();
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-        let model_name_str = model_name.to_string();
-        for provider in &app_settings.providers {
-            if provider.models.iter().any(|m| m.model_name == model_name_str) {
-                return QString::from(format!("{:?}", provider.name));
-            }
-        }
-
-        QString::from("")
+        QString::from(app_data.get_provider_for_model(&model_name.to_string()))
     }
 
     pub fn get_saved_theme(&self) -> QString {

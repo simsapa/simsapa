@@ -212,8 +212,7 @@ Item {
                         logger.info(`    [${j}] ${model.model_name}: enabled=${model.enabled}`);
                         available_models.append({
                             model_name: model.model_name,
-                            enabled: model.enabled,
-                            removable: model.removable
+                            enabled: model.enabled
                         });
                     }
                 } else {

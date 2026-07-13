@@ -59,33 +59,12 @@ pub struct PromptManagerRust;
 
 // Helper function to extract API keys with provider-based fallback
 fn get_provider_api_key(provider_name: &str) -> String {
-    let app_data = get_app_data();
-    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-    if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name) {
-        // First check environment variable
-        if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-            return env_key;
-        }
-        // Fall back to stored value
-        if let Some(ref stored_key) = provider.api_key_value {
-            return stored_key.clone();
-        }
-    }
-
-    String::new()
+    get_app_data().get_provider_api_key(provider_name)
 }
 
 // Helper function to check if a provider is enabled
 fn is_provider_enabled(provider_name: &str) -> bool {
-    let app_data = get_app_data();
-    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-    if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name) {
-        return provider.enabled;
-    }
-
-    false
+    get_app_data().is_provider_enabled(provider_name)
 }
 
 // Helper function to create HTTP client with timeout for async operations

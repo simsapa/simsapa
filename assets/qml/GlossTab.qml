@@ -207,8 +207,7 @@ Item {
                         logger.debug(`    [${j}] ${model.model_name}: enabled=${model.enabled}`);
                         translation_models.append({
                             model_name: model.model_name,
-                            enabled: model.enabled,
-                            removable: model.removable
+                            enabled: model.enabled
                         });
                     }
                 } else {

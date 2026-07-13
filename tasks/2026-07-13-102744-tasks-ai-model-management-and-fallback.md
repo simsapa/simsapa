@@ -61,7 +61,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > these strings, so this must be fixed before they exist.
 > **Depends on:** nothing (first stage).
 
-- [ ] 1.1 In `backend/src/app_settings.rs` add `ModelOrigin` and replace
+- [x] 1.1 In `backend/src/app_settings.rs` add `ModelOrigin` and replace
       `removable: bool` on `ModelEntry` with `origin: ModelOrigin` and
       `stale: bool`, both `#[serde(default)]`; fix all Rust compile sites —
       they are in `bridges/src/sutta_bridge.rs` (`add_provider_model` ~line
@@ -70,27 +70,27 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
       2.0); the QML `model.removable` reads are in `ModelsDialog.qml`,
       `GlossTab.qml:211` and `PromptsTab.qml:216` (the latter two only copy the
       role into a ListModel — update them with 1.4).
-- [ ] 1.2 Move the add/remove/enable-model mutation logic from
+- [x] 1.2 Move the add/remove/enable-model mutation logic from
       `sutta_bridge.rs` into `backend/src/app_data.rs` (bridge fns become thin
       wrappers): the add-model function sets `origin: User, stale: false`; the
       remove-model function refuses to remove non-`user` models (updater owns
       those).
-- [ ] 1.3 Add a canonical string form for `ProviderName` (FR-C7:
+- [x] 1.3 Add a canonical string form for `ProviderName` (FR-C7:
       `Display`/`as_str()` returning the serde spelling, e.g. `"xAI"` not the
       Debug `"XAI"`) and replace the `format!("{:?}", …)` comparisons in
       `bridges/src/prompt_manager.rs` (`get_provider_api_key`,
       `is_provider_enabled`) and `bridges/src/sutta_bridge.rs`
       (`get_provider_for_model`); unit test the round-trip for every variant
       (serialize → canonical string → serde parse).
-- [ ] 1.4 Regenerate `assets/providers.json` into the new schema (serde
+- [x] 1.4 Regenerate `assets/providers.json` into the new schema (serde
       round-trip or jq): drop `removable`, all entries `origin: "fetched"`,
       `stale: false`.
-- [ ] 1.5 Update `ModelsDialog.qml`: replace `model_removable` roles with
+- [x] 1.5 Update `ModelsDialog.qml`: replace `model_removable` roles with
       `model_origin` + `model_stale`; trash button visible/enabled only for
       user-origin models; add the stale marker (small warning text
       "not found upstream" next to the model name); update the `removable`
       role copies in `GlossTab.qml` / `PromptsTab.qml`.
-- [ ] 1.6 Update qmllint stubs if any bridge signatures changed; `make build -B`
+- [x] 1.6 Update qmllint stubs if any bridge signatures changed; `make build -B`
       and fix fallout; run backend tests.
 
 ### 2.0 Shared model-list update procedure + CLI rewrite (FR-A1–A9)

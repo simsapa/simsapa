@@ -86,7 +86,8 @@ ApplicationWindow {
                 model_list_model.append({
                     model_name: model.model_name,
                     model_enabled: model.enabled,
-                    model_removable: model.removable,
+                    model_origin: model.origin,
+                    model_stale: model.stale === true,
                     model_index: i
                 });
             }
@@ -171,8 +172,8 @@ ApplicationWindow {
             let provider = root.current_providers[root.selected_provider_index];
             let model = provider.models[model_index];
 
-            if (!model.removable) {
-                return; // Can't remove non-removable models
+            if (model.origin !== "user") {
+                return; // Fetched models are owned by the model-list updater
             }
 
             confirmation_dialog.model_name = model.model_name;
@@ -505,8 +506,11 @@ ApplicationWindow {
                                                 required property int index
                                                 required property string model_name
                                                 required property bool model_enabled
-                                                required property bool model_removable
+                                                required property string model_origin
+                                                required property bool model_stale
                                                 required property int model_index
+
+                                                readonly property bool is_user_model: model_item.model_origin === "user"
 
                                                 width: model_list_view.width
                                                 height: root.is_wide ? 50 : 38
@@ -551,14 +555,26 @@ ApplicationWindow {
                                                         Layout.fillWidth: true
                                                     }
 
+                                                    Text {
+                                                        text: "not found upstream"
+                                                        visible: model_item.model_stale
+                                                        font.pointSize: root.pointSize - 2
+                                                        font.italic: true
+                                                        color: palette.placeholderText
+                                                        elide: Text.ElideRight
+                                                        ToolTip.visible: stale_hover.hovered
+                                                        ToolTip.text: "This model was added by hand and is no longer listed by the provider. Requests to it may fail.";
+                                                        HoverHandler { id: stale_hover }
+                                                    }
+
                                                     Button {
                                                         id: remove_btn
                                                         Layout.preferredHeight: remove_btn.height
                                                         Layout.preferredWidth: remove_btn.height
                                                         icon.source: "icons/32x32/ion--trash-outline.png"
                                                         font.pointSize: root.pointSize - 1
-                                                        enabled: model_item.model_removable
-                                                        visible: model_item.model_removable
+                                                        enabled: model_item.is_user_model
+                                                        visible: model_item.is_user_model
                                                         onClicked: root.remove_model_with_confirmation(model_item.model_index)
                                                         ToolTip.visible: hovered
                                                         ToolTip.text: "Remove this model"

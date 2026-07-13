@@ -15,11 +15,22 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelOrigin {
+    #[default]
+    Fetched,
+    User,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProviderModel {
     pub model_name: String,
     pub enabled: bool,
-    pub removable: bool,
+    #[serde(default)]
+    pub origin: ModelOrigin,
+    #[serde(default)]
+    pub stale: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -87,8 +98,8 @@ pub fn update_provider_models(input: &Path, output: &Path) -> Result<()> {
 }
 
 /// Merge fetched model names into the existing list:
-/// - non-removable (curated) existing entries are always kept, in order
-/// - fetched entries not already present are appended as `removable: true`,
+/// - `user` (manually added) entries are always kept, in order
+/// - fetched entries not already present are appended as `origin: fetched`,
 ///   `enabled: false`
 /// - if a previously-enabled model is still in the fetched list, its
 ///   `enabled` flag is preserved
@@ -96,7 +107,7 @@ fn merge_models(existing: &[ProviderModel], fetched: Vec<String>) -> Vec<Provide
     let mut out: Vec<ProviderModel> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    for m in existing.iter().filter(|m| !m.removable) {
+    for m in existing.iter().filter(|m| m.origin == ModelOrigin::User) {
         out.push(m.clone());
         seen.insert(m.model_name.clone());
     }
@@ -107,9 +118,13 @@ fn merge_models(existing: &[ProviderModel], fetched: Vec<String>) -> Vec<Provide
         }
         let prev = existing.iter().find(|m| m.model_name == name);
         let enabled = prev.map(|m| m.enabled).unwrap_or(false);
-        let removable = prev.map(|m| m.removable).unwrap_or(true);
         seen.insert(name.clone());
-        out.push(ProviderModel { model_name: name, enabled, removable });
+        out.push(ProviderModel {
+            model_name: name,
+            enabled,
+            origin: ModelOrigin::Fetched,
+            stale: false,
+        });
     }
 
     out

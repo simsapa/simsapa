@@ -13,7 +13,7 @@ use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
-use crate::app_settings::{AppSettings, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
+use crate::app_settings::{AppSettings, ModelEntry, ModelOrigin, Provider, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
 use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
@@ -1371,9 +1371,135 @@ impl AppData {
         serde_json::to_string(&app_settings.providers).unwrap_or_default()
     }
 
+    /// Mutate the providers configuration in the cache and persist the whole
+    /// settings row. The closure receives the providers vector; returning `false`
+    /// means "nothing changed", so nothing is written.
+    ///
+    /// All provider/model mutations go through here (the bridge fns in
+    /// `sutta_bridge.rs` are thin wrappers) so the model-usage list sync hooks
+    /// have one place to live.
+    fn mutate_providers<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Vec<Provider>) -> bool,
+    {
+        let snapshot = {
+            let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+            if !f(&mut app_settings.providers) {
+                return;
+            }
+            app_settings.clone()
+        };
+        self.persist_app_settings(&snapshot);
+    }
+
+    /// The API key for a provider: the environment variable named by the provider
+    /// config takes precedence over the value stored in the settings.
+    pub fn get_provider_api_key(&self, provider_name: &str) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        let Some(provider) = app_settings.providers.iter().find(|p| p.name.as_str() == provider_name) else {
+            return String::new();
+        };
+        if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
+            return env_key;
+        }
+        provider.api_key_value.clone().unwrap_or_default()
+    }
+
+    pub fn set_provider_api_key(&self, provider_name: &str, api_key: &str) {
+        self.mutate_providers(|providers| {
+            match providers.iter_mut().find(|p| p.name.as_str() == provider_name) {
+                Some(provider) => {
+                    provider.api_key_value = if api_key.is_empty() { None } else { Some(api_key.to_string()) };
+                    true
+                }
+                None => false,
+            }
+        });
+    }
+
+    pub fn set_provider_enabled(&self, provider_name: &str, enabled: bool) {
+        self.mutate_providers(|providers| {
+            match providers.iter_mut().find(|p| p.name.as_str() == provider_name) {
+                Some(provider) => {
+                    provider.enabled = enabled;
+                    true
+                }
+                None => false,
+            }
+        });
+    }
+
+    /// Add a model the user typed in the models dialog. It is enabled, has
+    /// `origin: user` and so is never removed by the model-list updater.
+    pub fn add_provider_model(&self, provider_name: &str, model_name: &str) {
+        self.mutate_providers(|providers| {
+            let Some(provider) = providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            if provider.models.iter().any(|m| m.model_name == model_name) {
+                return false;
+            }
+            // Add to the top of the list, where the user can more easily see it.
+            provider.models.insert(0, ModelEntry {
+                model_name: model_name.to_string(),
+                enabled: true,
+                origin: ModelOrigin::User,
+                stale: false,
+            });
+            true
+        });
+    }
+
+    /// Remove a user-added model. `fetched` models are owned by the model-list
+    /// updater and are not removable by hand.
+    pub fn remove_provider_model(&self, provider_name: &str, model_name: &str) {
+        self.mutate_providers(|providers| {
+            let Some(provider) = providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            let before = provider.models.len();
+            provider.models.retain(|m| {
+                !(m.model_name == model_name && m.origin == ModelOrigin::User)
+            });
+            provider.models.len() != before
+        });
+    }
+
+    pub fn set_provider_model_enabled(&self, provider_name: &str, model_name: &str, enabled: bool) {
+        self.mutate_providers(|providers| {
+            let Some(provider) = providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            match provider.models.iter_mut().find(|m| m.model_name == model_name) {
+                Some(model) => {
+                    model.enabled = enabled;
+                    true
+                }
+                None => false,
+            }
+        });
+    }
+
+    /// The provider owning a model id. Model ids are provider-specific enough in
+    /// practice that a first match is unambiguous.
+    pub fn get_provider_for_model(&self, model_name: &str) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .find(|p| p.models.iter().any(|m| m.model_name == model_name))
+            .map(|p| p.name.as_str().to_string())
+            .unwrap_or_default()
+    }
+
+    pub fn is_provider_enabled(&self, provider_name: &str) -> bool {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .find(|p| p.name.as_str() == provider_name)
+            .map(|p| p.enabled)
+            .unwrap_or(false)
+    }
+
     pub fn set_providers_json(&self, providers_json: &str) {
         use crate::db::appdata_schema::app_settings;
-        use crate::app_settings::Provider;
 
         let providers_vec: Vec<Provider> = match serde_json::from_str(providers_json) {
             Ok(providers) => providers,
