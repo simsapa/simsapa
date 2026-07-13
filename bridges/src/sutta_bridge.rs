@@ -17,6 +17,7 @@ use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_creat
 use simsapa_backend::dir_list::{generate_html_directory_listing, generate_plain_directory_listing};
 use simsapa_backend::helpers::{extract_words, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
 use simsapa_backend::prompt_utils::markdown_to_html;
+use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
 use simsapa_backend::update_checker;
@@ -969,6 +970,13 @@ pub mod qobject {
 
         #[qinvokable]
         fn set_providers_json(self: Pin<&mut SuttaBridge>, providers_json: &QString);
+
+        #[qinvokable]
+        fn update_model_lists(self: Pin<&mut SuttaBridge>);
+
+        #[qsignal]
+        #[cxx_name = "modelListsUpdated"]
+        fn model_lists_updated(self: Pin<&mut SuttaBridge>, success: bool, report_json: QString);
 
         #[qinvokable]
         fn get_provider_api_key(self: &SuttaBridge, provider_name: &QString) -> QString;
@@ -2677,6 +2685,35 @@ impl qobject::SuttaBridge {
     pub fn set_providers_json(self: Pin<&mut Self>, providers_json: &QString) {
         let app_data = get_app_data();
         app_data.set_providers_json(&providers_json.to_string());
+    }
+
+    /// Refresh every provider's model list from the keyless public sources on a
+    /// background thread, save the result, and report via `modelListsUpdated`.
+    ///
+    /// The user's enabled set is authoritative here, so the default-enable
+    /// heuristic is not applied (that is the CLI's job when regenerating the
+    /// bundled `assets/providers.json`). See
+    /// docs/ai-model-management-and-fallback.md.
+    pub fn update_model_lists(self: Pin<&mut Self>) {
+        info("SuttaBridge::update_model_lists() start");
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            let app_data = get_app_data();
+            let mut providers = app_data.get_providers();
+            let report = update_all_provider_models(&mut providers, false);
+
+            let success = !report.total_failure();
+            if success {
+                app_data.set_providers(providers);
+            }
+
+            let report_json = serde_json::to_string(&report).unwrap_or_default();
+            info(&format!("SuttaBridge::update_model_lists() end: {}", report.summary()));
+
+            let _ = qt_thread.queue(move |mut qo| {
+                qo.as_mut().model_lists_updated(success, QString::from(&report_json));
+            });
+        });
     }
 
     /// Get API key for a specific provider

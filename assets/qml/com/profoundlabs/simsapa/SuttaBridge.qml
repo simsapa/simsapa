@@ -28,6 +28,7 @@ Item {
     signal bookMetadataUpdated(success: bool, message: string);
     signal showBottomFootnotesChanged();
     signal appSettingsReset();
+    signal modelListsUpdated(success: bool, report_json: string);
     signal exportFailed(reason: string);
     signal exportSucceeded();
 
@@ -387,6 +388,10 @@ Item {
 
     function set_providers_json(providers_json: string) {
         console.log("set_providers_json()");
+    }
+
+    function update_model_lists() {
+        console.log("update_model_lists()");
     }
 
     function get_provider_api_key(provider_name: string): string {

@@ -1371,6 +1371,23 @@ impl AppData {
         serde_json::to_string(&app_settings.providers).unwrap_or_default()
     }
 
+    /// A copy of the providers configuration, for callers which work with the
+    /// typed structs (the model-list updater) rather than the QML JSON.
+    pub fn get_providers(&self) -> Vec<Provider> {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.clone()
+    }
+
+    /// Replace the whole providers configuration (the model-list updater's save
+    /// path). Bypasses the per-model sync hooks, so the model-usage lists are
+    /// reconciled separately by the caller.
+    pub fn set_providers(&self, providers: Vec<Provider>) {
+        self.mutate_providers(|current| {
+            *current = providers;
+            true
+        });
+    }
+
     /// Mutate the providers configuration in the cache and persist the whole
     /// settings row. The closure receives the providers vector; returning `false`
     /// means "nothing changed", so nothing is written.

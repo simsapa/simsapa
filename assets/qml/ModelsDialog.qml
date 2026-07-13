@@ -32,6 +32,10 @@ ApplicationWindow {
     property string selected_provider: ""
     property int selected_provider_index: -1
 
+    property bool update_in_progress: false
+    property string update_status: ""
+    property bool update_failed: false
+
     property alias auto_retry: auto_retry
 
     property bool is_dark: theme_helper.is_dark
@@ -59,8 +63,52 @@ ApplicationWindow {
                 });
             }
         } catch (e) {
-            logger.error("Failed to parse providers JSON:", e);
+            logger.error("Failed to parse providers JSON: " + e);
         }
+    }
+
+    function start_model_lists_update() {
+        root.update_in_progress = true;
+        root.update_failed = false;
+        root.update_status = "Updating model lists...";
+        SuttaBridge.update_model_lists();
+    }
+
+    // Turns the UpdateReport JSON into the one-line non-modal summary, e.g.
+    // "Updated 9 providers, 4 models added, 1 removed; Gemini failed: network error"
+    function format_update_report(report_json: string): string {
+        let report;
+        try {
+            report = JSON.parse(report_json);
+        } catch (e) {
+            logger.error("Failed to parse update report JSON: " + e);
+            return "Update finished, but the report could not be read.";
+        }
+
+        let updated = 0;
+        let added = 0;
+        let removed = 0;
+        let failures = [];
+
+        for (let i = 0; i < report.providers.length; i++) {
+            let p = report.providers[i];
+            if (p.skipped) {
+                continue;
+            }
+            if (p.error) {
+                failures.push(p.provider + " failed: " + p.error);
+                continue;
+            }
+            updated += 1;
+            added += p.added;
+            removed += p.removed;
+        }
+
+        let text = "Updated " + updated + " providers, " + added + " models added, " + removed + " removed";
+        if (failures.length > 0) {
+            text += "; " + failures.join("; ");
+        }
+        return text;
     }
 
     function select_first_provider() {
@@ -214,6 +262,35 @@ ApplicationWindow {
     ListModel { id: provider_list_model }
     ListModel { id: model_list_model }
 
+    Connections {
+        target: SuttaBridge
+
+        function onModelListsUpdated(success: bool, report_json: string) {
+            root.update_in_progress = false;
+            root.update_failed = !success;
+
+            if (!success) {
+                root.update_status = "Update failed, the model lists were not changed. " + root.format_update_report(report_json);
+                return;
+            }
+
+            root.update_status = root.format_update_report(report_json);
+
+            // Reload the lists in place, keeping the selected provider.
+            let selected_name = root.selected_provider;
+            root.load_providers();
+
+            for (let i = 0; i < root.current_providers.length; i++) {
+                if (root.current_providers[i].name === selected_name) {
+                    root.selected_provider_index = i;
+                    provider_list_view.currentIndex = i;
+                    break;
+                }
+            }
+            root.load_provider_details();
+        }
+    }
+
     Item {
         x: 10
         y: 10 + root.top_bar_margin
@@ -225,6 +302,7 @@ ApplicationWindow {
             anchors.fill: parent
 
             RowLayout {
+                Layout.fillWidth: true
                 spacing: 8
                 Image {
                     source: "icons/32x32/fa_gear-solid.png"
@@ -236,6 +314,33 @@ ApplicationWindow {
                     font.bold: true
                     font.pointSize: root.pointSize + 3
                 }
+
+                Item { Layout.fillWidth: true }
+
+                BusyIndicator {
+                    running: root.update_in_progress
+                    visible: root.update_in_progress
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                }
+
+                Button {
+                    id: update_model_lists_btn
+                    text: "Update Model Lists"
+                    enabled: !root.update_in_progress
+                    onClicked: root.start_model_lists_update()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Refresh each provider's model list from the published model data. Models you added by hand are kept."
+                }
+            }
+
+            Label {
+                visible: root.update_status !== ""
+                text: root.update_status
+                font.pointSize: root.pointSize - 1
+                color: root.update_failed ? "red" : palette.windowText
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
 
             RowLayout {
@@ -366,13 +471,20 @@ ApplicationWindow {
                     SplitView.fillHeight: true
 
                     ScrollView {
+                        id: details_scroll_view
                         anchors.fill: parent
                         anchors.margins: 5
                         clip: true
                         contentWidth: availableWidth
 
                         ColumnLayout {
+                            id: details_column
                             width: parent.width
+                            // Fill the viewport when there is room to spare, so
+                            // the Models list below grows with the window;
+                            // fall back to the content height (scrolling) when
+                            // the window is too short.
+                            height: Math.max(details_column.implicitHeight, details_scroll_view.availableHeight)
                             spacing: 15
 
                             Label {
@@ -448,7 +560,9 @@ ApplicationWindow {
                             GroupBox {
                                 title: "Models"
                                 Layout.fillWidth: true
+                                Layout.fillHeight: true
                                 Layout.preferredHeight: 400
+                                Layout.minimumHeight: 240
 
                                 background: Rectangle {
                                     anchors.fill: parent

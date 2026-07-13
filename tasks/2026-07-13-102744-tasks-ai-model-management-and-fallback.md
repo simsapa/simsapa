@@ -6,7 +6,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 
 - `backend/src/app_settings.rs` - `ModelEntry` / `Provider` / `AppSettings` structs; new `origin`/`stale` fields, new global-list and mode settings fields; canonical `ProviderName` string conversion (FR-C7).
 - `backend/src/provider_models_update.rs` - **New.** Shared model-list update procedure (models.dev + native fetchers, filters, merge, default heuristic).
-- `backend/src/app_data.rs` - providers `get/set_providers_json` and the `app_settings_cache`. The model add/remove/enable **mutation logic moves here** (from `sutta_bridge.rs`) so the global-list sync helpers live next to the cache and are testable without Qt.
+- `backend/src/app_data.rs` - providers `get/set_providers_json`, typed `get_providers()`/`set_providers()` (the updater's save path), and the `app_settings_cache`. The model add/remove/enable **mutation logic moves here** (from `sutta_bridge.rs`) so the global-list sync helpers live next to the cache and are testable without Qt.
 - `backend/tests/provider_models_update_tests.rs` - **New.** Merge semantics, heuristic, and filter tests against fixture snapshots.
 - `backend/tests/data/modelsdev-fixture.json` - **New.** Trimmed models.dev snapshot for tests (plus OpenRouter/SambaNova native fixtures).
 - `cli/src/update_provider_models.rs` - Rewritten to call the shared backend procedure; applies the default-enable heuristic (CLI mode).
@@ -170,17 +170,17 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > helper is built in 4.0 (sub-task 4.5) and wired into this fn there.
 > **Depends on:** 2.0.
 
-- [ ] 3.1 Add the bridge fn + signal in `bridges/src/sutta_bridge.rs`
+- [x] 3.1 Add the bridge fn + signal in `bridges/src/sutta_bridge.rs`
       (background thread, cache refresh after save so `get_providers_json`
       returns the new lists) and the qmllint stubs in
       `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`.
-- [ ] 3.2 In `ModelsDialog.qml` add the "Update Model Lists" button row (top,
+- [x] 3.2 In `ModelsDialog.qml` add the "Update Model Lists" button row (top,
       next to the title), busy state, `Connections` handler for
       `modelListsUpdated` that re-runs `load_providers()` +
       `load_provider_details()` preserving the current selection, and the
       status label rendering the report (per-provider failures listed,
       non-modal).
-- [ ] 3.3 Build; manually-verifiable behavior documented in the dialog (user
+- [x] 3.3 Build; manually-verifiable behavior documented in the dialog (user
       tests live); backend tests still green.
 
 ### 4.0 Global lists: "Fallback sequence" and "Parallel prompts" (FR-C1–C7)
