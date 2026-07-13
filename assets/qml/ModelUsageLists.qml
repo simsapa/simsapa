@@ -10,12 +10,16 @@ import com.profoundlabs.simsapa
 // mirror the usable models of the providers configuration (an enabled model of
 // an enabled provider); the toggles and the sequence order are the user's. See
 // docs/ai-model-management-and-fallback.md.
-ColumnLayout {
+GridLayout {
     id: root
 
     property int pointSize: 12
+    // Side-by-side lists on wide windows, stacked on narrow (mobile) ones.
+    property bool is_wide: false
 
-    spacing: 10
+    columns: root.is_wide ? 2 : 1
+    columnSpacing: 10
+    rowSpacing: 10
 
     Logger { id: logger }
 
@@ -93,6 +97,8 @@ ColumnLayout {
     GroupBox {
         title: "Fallback sequence"
         Layout.fillWidth: true
+        Layout.preferredWidth: 100
+        Layout.alignment: Qt.AlignTop
 
         background: Rectangle {
             anchors.fill: parent
@@ -105,7 +111,7 @@ ColumnLayout {
             spacing: 4
 
             Label {
-                text: "Models are tried in this order until one answers."
+                text: "Enabled models are tried in this order until one answers."
                 font.pointSize: root.pointSize - 2
                 opacity: 0.8
                 wrapMode: Text.WordWrap
@@ -125,7 +131,7 @@ ColumnLayout {
             Repeater {
                 model: sequence_model
 
-                RowLayout {
+                ItemDelegate {
                     id: sequence_item
 
                     required property int index
@@ -134,35 +140,55 @@ ColumnLayout {
                     required property bool item_enabled
 
                     Layout.fillWidth: true
-                    spacing: 5
 
-                    CheckBox {
-                        checked: sequence_item.item_enabled
-                        onToggled: root.set_sequence_item_enabled(sequence_item.index, checked)
+                    background: Rectangle {
+                        color: {
+                            if (!sequence_item.item_enabled) {
+                                return Qt.darker(palette.base, 1.1);
+                            }
+                            return sequence_item.hovered ? palette.alternateBase : palette.base;
+                        }
+                        border.width: 1
+                        border.color: palette.mid
                     }
 
-                    Label {
-                        text: sequence_item.provider + " / " + sequence_item.model_name
-                        font.pointSize: root.pointSize - 1
-                        opacity: sequence_item.item_enabled ? 1.0 : 0.6
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
+                    onClicked: root.set_sequence_item_enabled(sequence_item.index, !sequence_item.item_enabled)
 
-                    Button {
-                        text: "↑"
-                        enabled: sequence_item.index > 0
-                        onClicked: root.move_sequence_item(sequence_item.index, -1)
-                        ToolTip.visible: hovered
-                        ToolTip.text: "Try this model earlier"
-                    }
+                    contentItem: RowLayout {
+                        spacing: 5
 
-                    Button {
-                        text: "↓"
-                        enabled: sequence_item.index < sequence_model.count - 1
-                        onClicked: root.move_sequence_item(sequence_item.index, 1)
-                        ToolTip.visible: hovered
-                        ToolTip.text: "Try this model later"
+                        CheckBox {
+                            checked: sequence_item.item_enabled
+                            onToggled: root.set_sequence_item_enabled(sequence_item.index, checked)
+                        }
+
+                        Label {
+                            text: sequence_item.provider + " / " + sequence_item.model_name
+                            font.pointSize: root.pointSize - 1
+                            opacity: sequence_item.item_enabled ? 1.0 : 0.6
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Button {
+                            id: sequence_up_btn
+                            icon.source: "icons/32x32/fa_arrow-up-solid.png"
+                            Layout.preferredWidth: sequence_up_btn.height
+                            enabled: sequence_item.index > 0
+                            onClicked: root.move_sequence_item(sequence_item.index, -1)
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Try this model earlier"
+                        }
+
+                        Button {
+                            id: sequence_down_btn
+                            icon.source: "icons/32x32/fa_arrow-down-solid.png"
+                            Layout.preferredWidth: sequence_down_btn.height
+                            enabled: sequence_item.index < sequence_model.count - 1
+                            onClicked: root.move_sequence_item(sequence_item.index, 1)
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Try this model later"
+                        }
                     }
                 }
             }
@@ -172,6 +198,8 @@ ColumnLayout {
     GroupBox {
         title: "Parallel prompts"
         Layout.fillWidth: true
+        Layout.preferredWidth: 100
+        Layout.alignment: Qt.AlignTop
 
         background: Rectangle {
             anchors.fill: parent
@@ -184,7 +212,7 @@ ColumnLayout {
             spacing: 4
 
             Label {
-                text: "In parallel mode, all of these models are prompted at once."
+                text: "In parallel mode, all the enabled models are prompted at once."
                 font.pointSize: root.pointSize - 2
                 opacity: 0.8
                 wrapMode: Text.WordWrap
@@ -204,7 +232,7 @@ ColumnLayout {
             Repeater {
                 model: parallel_model
 
-                RowLayout {
+                ItemDelegate {
                     id: parallel_item
 
                     required property int index
@@ -213,19 +241,35 @@ ColumnLayout {
                     required property bool item_enabled
 
                     Layout.fillWidth: true
-                    spacing: 5
 
-                    CheckBox {
-                        checked: parallel_item.item_enabled
-                        onToggled: root.set_parallel_item_enabled(parallel_item.index, checked)
+                    background: Rectangle {
+                        color: {
+                            if (!parallel_item.item_enabled) {
+                                return Qt.darker(palette.base, 1.1);
+                            }
+                            return parallel_item.hovered ? palette.alternateBase : palette.base;
+                        }
+                        border.width: 1
+                        border.color: palette.mid
                     }
 
-                    Label {
-                        text: parallel_item.provider + " / " + parallel_item.model_name
-                        font.pointSize: root.pointSize - 1
-                        opacity: parallel_item.item_enabled ? 1.0 : 0.6
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+                    onClicked: root.set_parallel_item_enabled(parallel_item.index, !parallel_item.item_enabled)
+
+                    contentItem: RowLayout {
+                        spacing: 5
+
+                        CheckBox {
+                            checked: parallel_item.item_enabled
+                            onToggled: root.set_parallel_item_enabled(parallel_item.index, checked)
+                        }
+
+                        Label {
+                            text: parallel_item.provider + " / " + parallel_item.model_name
+                            font.pointSize: root.pointSize - 1
+                            opacity: parallel_item.item_enabled ? 1.0 : 0.6
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
                     }
                 }
             }

@@ -358,7 +358,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
             }
 
-            // Global options: the model-usage lists and the fallback/retry
+            // Global settings: the model-usage lists and the fallback/retry
             // settings, which apply across providers. Collapsible, so the
             // provider panes below still have room on narrow layouts.
             RowLayout {
@@ -366,13 +366,18 @@ ApplicationWindow {
                 spacing: 5
 
                 Button {
-                    text: root.global_options_expanded ? "▼" : "▶"
                     flat: true
+                    icon.source: root.global_options_expanded
+                        ? "icons/32x32/fa_chevron-down-solid.png"
+                        : "icons/32x32/fa_chevron-right-solid.png"
+                    icon.color: palette.text
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
                     onClicked: root.global_options_expanded = !root.global_options_expanded
                 }
 
                 Label {
-                    text: "Global Options"
+                    text: "Settings"
                     font.bold: true
                     font.pointSize: root.pointSize
                     Layout.fillWidth: true
@@ -396,12 +401,6 @@ ApplicationWindow {
                     width: global_options_scroll.availableWidth
                     spacing: 5
 
-                    ModelUsageLists {
-                        id: model_usage_lists
-                        pointSize: root.pointSize
-                        Layout.fillWidth: true
-                    }
-
                     CheckBox {
                         id: auto_retry
                         text: "Auto-retry AI Model Requests"
@@ -409,6 +408,13 @@ ApplicationWindow {
                         onCheckedChanged: {
                             SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
                         }
+                    }
+
+                    ModelUsageLists {
+                        id: model_usage_lists
+                        pointSize: root.pointSize
+                        is_wide: root.is_wide
+                        Layout.fillWidth: true
                     }
                 }
             }
