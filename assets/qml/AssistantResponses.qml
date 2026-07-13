@@ -127,7 +127,6 @@ ColumnLayout {
 
                         model_name: (modelData && modelData.model_name) ? modelData.model_name : ""
                         status: (modelData && modelData.status) ? modelData.status : "waiting"
-                        retry_count: (modelData && modelData.retry_count) ? modelData.retry_count : 0
 
                         onRetryRequested: {
                             var name = (modelData && modelData.model_name) ? modelData.model_name : ""
@@ -207,13 +206,16 @@ ColumnLayout {
 
                                 if (data.status === "waiting") {
                                     logger.info(`⏳ Showing waiting message for ${data.model_name}`);
+                                    // The Rust engine's progress messages ("Trying X…",
+                                    // "Rate limited by Y…") land in data.progress.
+                                    if (data.progress && data.progress.length > 0) {
+                                        return data.progress;
+                                    }
                                     return `Waiting for response from ${data.model_name} (3min timeout) ...`;
                                 } else if (data.status === "error") {
                                     logger.info(`❌ Showing error message`);
                                     var formatted = ai_error_utils.format_response_error(data.response)
-                                    var error_text = formatted || data.response || "Unknown error occurred"
-                                    var retry_text = data.retry_count > 0 ? `\n\nRetrying... (${data.retry_count}x)` : ""
-                                    return error_text + retry_text;
+                                    return formatted || data.response || "Unknown error occurred";
                                 } else if (data.status === "completed") {
                                     logger.info(`✅ Showing completed response, raw content: "${data.response}"`);
                                     var html_content = SuttaBridge.markdown_to_html(data.response || "");

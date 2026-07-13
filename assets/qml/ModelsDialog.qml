@@ -261,6 +261,7 @@ ApplicationWindow {
         // Select first provider by default
         select_first_provider();
         auto_retry.checked = SuttaBridge.get_ai_models_auto_retry();
+        auto_fallback.checked = SuttaBridge.get_ai_auto_fallback();
     }
 
     onVisibilityChanged: {
@@ -402,12 +403,39 @@ ApplicationWindow {
                     spacing: 5
 
                     CheckBox {
+                        id: auto_fallback
+                        text: "Auto-fallback to next model"
+                        checked: true
+                        onCheckedChanged: {
+                            SuttaBridge.set_ai_auto_fallback(auto_fallback.checked);
+                        }
+                    }
+
+                    Label {
+                        text: "Auto-fallback and retry with the next model on error such as when rate limited."
+                        font.pointSize: root.pointSize - 2
+                        opacity: 0.7
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 32
+                    }
+
+                    CheckBox {
                         id: auto_retry
                         text: "Auto-retry AI Model Requests"
                         checked: false
                         onCheckedChanged: {
                             SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
                         }
+                    }
+
+                    Label {
+                        text: "First we auto-fallback, then we re-try the model requests."
+                        font.pointSize: root.pointSize - 2
+                        opacity: 0.7
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 32
                     }
 
                     ModelUsageLists {

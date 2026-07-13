@@ -12,7 +12,6 @@ Item {
 
     required property string window_id
     required property bool is_dark
-    required property bool ai_models_auto_retry
 
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
@@ -55,6 +54,40 @@ Item {
             root.handle_word_selection_response(request_id, model_name, response);
         }
 
+        // Engine progress ("Trying X…", "Rate limited by Y…", retry-round
+        // notes) surfaced in the translation entry and Word Selection status.
+        function onSequentialProgress(context_json: string, model_name: string, status: string) {
+            let ctx;
+            try {
+                ctx = JSON.parse(context_json);
+            } catch (e) {
+                logger.error("onSequentialProgress: failed to parse context_json: " + e);
+                return;
+            }
+
+            if (ctx.request_id !== undefined) {
+                // Word-selection run: show on every paragraph the request covers.
+                let covered = root.ws_request_paragraphs["" + ctx.request_id];
+                if (covered === undefined) return; // stale / cancelled request
+                for (let pi of covered) {
+                    root.ws_set_status(pi, "busy", status);
+                }
+            } else if (ctx.paragraph_idx !== undefined && ctx.translation_idx !== undefined) {
+                // AI-translation run: show in the waiting translation entry.
+                let paragraph = paragraph_model.get(ctx.paragraph_idx);
+                if (!paragraph || !paragraph.translations_json) return;
+                try {
+                    let translations = JSON.parse(paragraph.translations_json);
+                    if (ctx.translation_idx < translations.length && translations[ctx.translation_idx].status === "waiting") {
+                        translations[ctx.translation_idx].progress = status;
+                        paragraph_model.setProperty(ctx.paragraph_idx, "translations_json", JSON.stringify(translations));
+                    }
+                } catch (e) {
+                    logger.error("onSequentialProgress: failed to update translations_json: " + e);
+                }
+            }
+        }
+
         function onPromptResponse (paragraph_idx: int, translation_idx: int, model_name: string, response: string) {
             logger.debug(`🤖 onPromptResponse received: paragraph_idx=${paragraph_idx}, translation_idx=${translation_idx}, model_name=${model_name}`);
             logger.debug(`📝 Response content: "${response.substring(0, 100)}..."`);
@@ -78,30 +111,19 @@ Item {
             }
 
             if (translation_idx < translations.length) {
+                // Retry and fallback are handled by the Rust engine (see
+                // docs/ai-model-management-and-fallback.md); an error response
+                // here is final for this request.
                 let is_error = root.is_error_response(response);
-                let current_retry_count = translations[translation_idx].retry_count || 0;
 
-                logger.debug(`🔄 Updating translation at index ${translation_idx}: is_error=${is_error}, retry_count=${current_retry_count}`);
+                logger.debug(`🔄 Updating translation at index ${translation_idx}: is_error=${is_error}`);
 
                 // Update the existing translation entry
                 translations[translation_idx].response = response;
                 translations[translation_idx].status = is_error ? "error" : "completed";
                 translations[translation_idx].last_updated = Date.now();
 
-                logger.debug(`✅ Updated translation data:`, JSON.stringify(translations[translation_idx]));
-
-                // Handle automatic retry for errors (up to 5 times)
-                if (is_error && current_retry_count < 5 && root.ai_models_auto_retry && !root.is_rate_limit_error(response)) {
-                    logger.debug(`🔁 Scheduling automatic retry for ${model_name}`);
-                    // Schedule automatic retry
-                    Qt.callLater(function() {
-                        root.handle_retry_request(paragraph_idx, model_name, root.generate_request_id());
-                    });
-                } else if (is_error && root.is_rate_limit_error(response)) {
-                    logger.debug(`⏸️  Skipping auto-retry for rate limit error: ${model_name}`);
-                } else if (is_error && !root.ai_models_auto_retry) {
-                    logger.debug(`⏸️  Auto-retry disabled, not retrying: ${model_name}`);
-                }
+                logger.debug(`✅ Updated translation data: ` + JSON.stringify(translations[translation_idx]));
 
                 let translations_json = JSON.stringify(translations);
                 paragraph_model.setProperty(paragraph_idx, "translations_json", translations_json);
@@ -323,6 +345,9 @@ Item {
     // request (its response arrives stale and is ignored — a batched request
     // is cancelled for all the paragraphs it covers).
     function ws_cancel_paragraph(paragraph_idx) {
+        // Stop any Rust-side fallback/retry walk still working for a dropped
+        // request; its response would arrive stale anyway.
+        pm.cancel_sequential_requests();
         root.ws_queue = root.ws_queue.filter(pi => pi !== paragraph_idx);
 
         let rp = root.ws_request_paragraphs;
@@ -351,6 +376,7 @@ Item {
     // Drop all pipeline state (queued requests, statuses, request maps). A
     // response for a dropped request id is ignored by the response handler.
     function ws_reset() {
+        pm.cancel_sequential_requests();
         ws_pacing_timer.stop();
         root.ws_queue = [];
         root.ws_status = ({});
@@ -477,7 +503,7 @@ Item {
         root.ws_request_items = ri;
 
         for (let pi of covered) {
-            root.ws_set_status(pi, "busy", `Selecting words with ${root.word_selection_model} (3min timeout)...`);
+            root.ws_set_status(pi, "busy", "Selecting words (3min timeout)...");
         }
 
         let prompt = root.build_word_selection_prompt(items);
@@ -674,6 +700,12 @@ Item {
         if (root.is_qml_preview) {
             qml_preview_state();
         }
+    }
+
+    Component.onDestruction: {
+        // Stop any Rust-side fallback/retry walks still running for this tab
+        // (FR-D8): an orphaned walk would keep making paid API calls.
+        pm.cancel_sequential_requests();
     }
 
     FolderDialog {
@@ -939,16 +971,16 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return ai_error_utils.is_error(response_text);
     }
 
-    function is_rate_limit_error(response_text) {
-        return ai_error_utils.is_error_kind(response_text, "rate_limited");
-    }
-
     ScrollableHelper {
         id: scroll_helper
         target_scroll_view: main_scroll_view
     }
 
-    function handle_retry_request(paragraph_idx, model_name, new_request_id) {
+    // Manual (user-clicked) re-send of one translation request. Automatic
+    // retry and fallback live in the Rust engine (see
+    // docs/ai-model-management-and-fallback.md), so this only resets the entry
+    // and sends a fresh request.
+    function resend_translation_request(paragraph_idx, model_name, new_request_id) {
         var paragraph = paragraph_model.get(paragraph_idx);
         if (!paragraph || !paragraph.translations_json) return;
 
@@ -956,17 +988,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             var translations = JSON.parse(paragraph.translations_json);
             for (var i = 0; i < translations.length; i++) {
                 if (translations[i].model_name === model_name) {
-                    // Update the translation entry for retry
                     translations[i].request_id = new_request_id;
                     translations[i].status = "waiting";
-                    translations[i].retry_count = (translations[i].retry_count || 0) + 1;
+                    translations[i].response = "";
+                    translations[i].progress = "";
                     translations[i].last_updated = Date.now();
-
-                    // Append retry message to response
-                    var retry_msg = `\n\nRetrying... (${translations[i].retry_count}x)`;
-                    if (translations[i].response && !translations[i].response.includes("Retrying...")) {
-                        translations[i].response += retry_msg;
-                    }
 
                     // Update the model
                     paragraph_model.setProperty(paragraph_idx, "translations_json", JSON.stringify(translations));
@@ -992,7 +1018,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 }
             }
         } catch (e) {
-            logger.error("Failed to handle retry request:", e);
+            logger.error("Failed to re-send translation request: " + e);
         }
     }
 
@@ -1043,8 +1069,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                     model_name: item.model_name,
                     status: "waiting",
                     response: "",
+                    progress: "",
                     request_id: request_id,
-                    retry_count: 0,
                     last_updated: Date.now(),
                     user_selected: translation_idx === 0,
                     with_vocab: with_vocab
@@ -2312,7 +2338,7 @@ ${main_text}
                                 text: {
                                     let n = root.ws_pending_count();
                                     let noun = n === 1 ? "paragraph" : "paragraphs";
-                                    return `Selecting words with ${root.word_selection_model} (3min timeout)... ${n} ${noun} remaining.`;
+                                    return `Selecting words (3min timeout)... ${n} ${noun} remaining.`;
                                 }
                             }
 
@@ -2705,7 +2731,7 @@ ${main_text}
                     selected_tab_index: paragraph_item.selected_ai_tab || 0
 
                     onRetryRequest: function(model_name, request_id) {
-                        root.handle_retry_request(paragraph_item.index, model_name, request_id);
+                        root.resend_translation_request(paragraph_item.index, model_name, request_id);
                     }
 
                     onTabSelectionChanged: function(tab_index, model_name) {

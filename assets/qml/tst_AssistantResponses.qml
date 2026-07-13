@@ -18,13 +18,13 @@ Item {
         translations_data: []
     }
 
-    // Sample test data for different scenarios
+    // Sample test data for different scenarios. A failed request's response is
+    // an {"ai_error": …} envelope (see AiErrorUtils.qml).
     property var sample_waiting_data: [{
         model_name: "deepseek/deepseek-r1-0528:free",
         status: "waiting",
         response: "",
         request_id: "test_request_1",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: true
     }, {
@@ -32,7 +32,6 @@ Item {
         status: "waiting",
         response: "",
         request_id: "test_request_2",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: false
     }]
@@ -42,7 +41,6 @@ Item {
         status: "completed",
         response: "This is the first **markdown** response with *emphasis* and [links](http://example.com).",
         request_id: "test_request_1",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: true
     }, {
@@ -50,7 +48,6 @@ Item {
         status: "completed",
         response: "Second model response with different content.\n\n- Bullet point\n- Another point",
         request_id: "test_request_2",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: false
     }]
@@ -58,9 +55,8 @@ Item {
     property var sample_error_data: [{
         model_name: "deepseek/deepseek-r1-0528:free",
         status: "error",
-        response: "API Error: Rate limit exceeded: free-models-per-day",
+        response: '{"ai_error": {"kind": "rate_limited", "http_status": 429, "provider": "OpenRouter", "model": "deepseek/deepseek-r1-0528:free", "message": "Rate limit exceeded: free-models-per-day", "raw": ""}}',
         request_id: "test_request_1",
-        retry_count: 2,
         last_updated: Date.now(),
         user_selected: true
     }, {
@@ -68,7 +64,6 @@ Item {
         status: "completed",
         response: "This model succeeded while the other failed.",
         request_id: "test_request_2",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: false
     }]
@@ -78,7 +73,6 @@ Item {
         status: "completed",
         response: "Completed response from first model",
         request_id: "test_request_1",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: true
     }, {
@@ -86,15 +80,13 @@ Item {
         status: "waiting",
         response: "",
         request_id: "test_request_2",
-        retry_count: 0,
         last_updated: Date.now(),
         user_selected: false
     }, {
         model_name: "tngtech/deepseek-r1t2-chimera:free",
         status: "error",
-        response: "API Error: Request timeout",
+        response: '{"ai_error": {"kind": "timeout", "http_status": null, "provider": "OpenRouter", "model": "tngtech/deepseek-r1t2-chimera:free", "message": "Request timeout", "raw": ""}}',
         request_id: "test_request_3",
-        retry_count: 1,
         last_updated: Date.now(),
         user_selected: false
     }]
@@ -152,11 +144,10 @@ Item {
 
             // First item should show error status
             compare(assistant_responses.translations_data[0].status, "error");
-            compare(assistant_responses.translations_data[0].retry_count, 2);
+            verify(assistant_responses.is_error_response(assistant_responses.translations_data[0].response));
 
             // Second item should be completed
             compare(assistant_responses.translations_data[1].status, "completed");
-            compare(assistant_responses.translations_data[1].retry_count, 0);
         }
 
         function test_tab_selection() {
@@ -240,11 +231,6 @@ Item {
             compare(assistant_responses.translations_data[0].status, "completed");
             compare(assistant_responses.translations_data[1].status, "waiting");
             compare(assistant_responses.translations_data[2].status, "error");
-
-            // Check retry counts
-            compare(assistant_responses.translations_data[0].retry_count, 0);
-            compare(assistant_responses.translations_data[1].retry_count, 0);
-            compare(assistant_responses.translations_data[2].retry_count, 1);
         }
 
         function test_response_content_display() {
@@ -262,9 +248,8 @@ Item {
 
             // Test error item
             var error_item = assistant_responses.translations_data[2];
-            verify(error_item.response.includes("API Error: Request timeout"));
+            verify(error_item.response.includes("Request timeout"));
             compare(error_item.status, "error");
-            compare(error_item.retry_count, 1);
         }
 
         function test_utility_functions() {
@@ -275,12 +260,20 @@ Item {
             verify(id1.length > 10);
             verify(id1.includes("_"));
 
-            // Test is_error_response
-            verify(assistant_responses.is_error_response("API Error: Something went wrong"));
-            verify(assistant_responses.is_error_response("Error: Connection failed"));
-            verify(assistant_responses.is_error_response("Failed: Timeout"));
+            // is_error_response: only an {"ai_error": …} envelope is an error.
+            var envelope = JSON.stringify({
+                ai_error: {
+                    kind: "network",
+                    http_status: null,
+                    provider: "OpenRouter",
+                    model: "test/model:free",
+                    message: "Connection failed",
+                    raw: "Connection failed"
+                }
+            });
+            verify(assistant_responses.is_error_response(envelope));
             verify(!assistant_responses.is_error_response("Success: All good"));
-            verify(!assistant_responses.is_error_response("Normal response text"));
+            verify(!assistant_responses.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_property_bindings() {

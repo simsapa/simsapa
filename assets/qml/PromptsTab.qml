@@ -69,31 +69,21 @@ Item {
                 }
             }
 
-            // Update the specific model's response
+            // Update the specific model's response. Retry and fallback are
+            // handled by the Rust engine (see
+            // docs/ai-model-management-and-fallback.md); an error response
+            // here is final for this request.
             for (var i = 0; i < responses.length; i++) {
                 if (responses[i].model_name === model_name) {
                     let is_error = root.is_error_response(response);
-                    let current_retry_count = responses[i].retry_count || 0;
 
-                    logger.info(`🔄 Updating response for ${model_name}: is_error=${is_error}, retry_count=${current_retry_count}`);
+                    logger.info(`🔄 Updating response for ${model_name}: is_error=${is_error}`);
 
                     responses[i].response = response;
                     responses[i].status = is_error ? "error" : "completed";
                     responses[i].last_updated = Date.now();
 
-                    // Handle automatic retry for errors (up to 5 times)
-                    if (is_error && current_retry_count < 5 && root.ai_models_auto_retry && !root.is_rate_limit_error(response)) {
-                        logger.info(`🔁 Scheduling automatic retry for ${model_name}`);
-                        Qt.callLater(function() {
-                            root.handle_retry_request(assistant_message_idx, model_name, root.generate_request_id());
-                        });
-                    } else if (is_error && root.is_rate_limit_error(response)) {
-                        logger.info(`⏸️  Skipping auto-retry for rate limit error: ${model_name}`);
-                    } else if (is_error && !root.ai_models_auto_retry) {
-                        logger.info(`⏸️  Auto-retry disabled, not retrying: ${model_name}`);
-                    }
-
-                    logger.info(`✅ Updated response data:`, JSON.stringify(responses[i]));
+                    logger.info(`✅ Updated response data: ` + JSON.stringify(responses[i]));
                     break;
                 }
             }
@@ -103,10 +93,40 @@ Item {
             logger.info(`💾 Saved responses_json to message model`);
             root.session_needs_saving = true;
         }
+
+        // Engine progress ("Trying X…", "Rate limited by Y…", retry-round
+        // notes) surfaced in the waiting response entry.
+        function onSequentialProgress(context_json: string, model_name: string, status: string) {
+            let ctx;
+            try {
+                ctx = JSON.parse(context_json);
+            } catch (e) {
+                logger.error("onSequentialProgress: failed to parse context_json: " + e);
+                return;
+            }
+            if (ctx.sender_message_idx === undefined) return;
+
+            let assistant_message_idx = ctx.sender_message_idx + 1;
+            if (assistant_message_idx >= messages_model.count) return;
+            let assistant_message = messages_model.get(assistant_message_idx);
+            if (!assistant_message || assistant_message.role !== "assistant" || !assistant_message.responses_json) return;
+
+            try {
+                let responses = JSON.parse(assistant_message.responses_json);
+                for (var i = 0; i < responses.length; i++) {
+                    // Parallel branches share one context; route by model name.
+                    if (responses[i].status === "waiting" && responses[i].model_name === model_name) {
+                        responses[i].progress = status;
+                    }
+                }
+                messages_model.setProperty(assistant_message_idx, "responses_json", JSON.stringify(responses));
+            } catch (e) {
+                logger.error("onSequentialProgress: failed to update responses_json: " + e);
+            }
+        }
     }
 
     property bool waiting_for_response: false
-    required property bool ai_models_auto_retry
 
     property alias messages_model: messages_model
     property alias available_models: available_models
@@ -236,11 +256,11 @@ Item {
         return ai_error_utils.is_error(response_text);
     }
 
-    function is_rate_limit_error(response_text) {
-        return ai_error_utils.is_error_kind(response_text, "rate_limited");
-    }
-
-    function handle_retry_request(message_idx, model_name, new_request_id) {
+    // Manual (user-clicked) re-send of one model's response. Automatic retry
+    // and fallback live in the Rust engine (see
+    // docs/ai-model-management-and-fallback.md), so this only resets the entry
+    // and sends a fresh request.
+    function resend_response_request(message_idx, model_name, new_request_id) {
         var message = messages_model.get(message_idx);
         if (!message || !message.responses_json) return;
 
@@ -248,17 +268,11 @@ Item {
             var responses = JSON.parse(message.responses_json);
             for (var i = 0; i < responses.length; i++) {
                 if (responses[i].model_name === model_name) {
-                    // Update the response entry for retry
                     responses[i].request_id = new_request_id;
                     responses[i].status = "waiting";
-                    responses[i].retry_count = (responses[i].retry_count || 0) + 1;
+                    responses[i].response = "";
+                    responses[i].progress = "";
                     responses[i].last_updated = Date.now();
-
-                    // Append retry message to response
-                    var retry_msg = `\n\nRetrying... (${responses[i].retry_count}x)`;
-                    if (responses[i].response && !responses[i].response.includes("Retrying...")) {
-                        responses[i].response += retry_msg;
-                    }
 
                     // Update the model
                     messages_model.setProperty(message_idx, "responses_json", JSON.stringify(responses));
@@ -302,7 +316,7 @@ Item {
                 }
             }
         } catch (e) {
-            logger.error("Failed to handle retry request:", e);
+            logger.error("Failed to re-send response request: " + e);
         }
     }
 
@@ -323,6 +337,12 @@ Item {
         Qt.callLater(function() {
             scroll_helper.initialize();
         });
+    }
+
+    Component.onDestruction: {
+        // Stop any Rust-side fallback/retry walks still running for this tab
+        // (FR-D8): an orphaned walk would keep making paid API calls.
+        pm.cancel_sequential_requests();
     }
 
     ScrollableHelper {
@@ -1217,7 +1237,7 @@ Item {
                                 selected_tab_index: message_item.selected_ai_tab || 0
 
                                 onRetryRequest: function(model_name, request_id) {
-                                    root.handle_retry_request(message_item.index, model_name, request_id);
+                                    root.resend_response_request(message_item.index, model_name, request_id);
                                 }
 
                                 onTabSelectionChanged: function(tab_index, model_name) {
@@ -1300,8 +1320,8 @@ Item {
                                                     model_name: model.model_name,
                                                     status: "waiting",
                                                     response: "",
+                                                    progress: "",
                                                     request_id: root.generate_request_id(),
-                                                    retry_count: 0,
                                                     last_updated: Date.now(),
                                                     user_selected: responses.length === 0  // First model selected by default
                                                 });

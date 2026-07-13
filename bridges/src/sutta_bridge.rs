@@ -915,6 +915,12 @@ pub mod qobject {
         fn set_ai_models_auto_retry(self: Pin<&mut SuttaBridge>, auto_retry: bool);
 
         #[qinvokable]
+        fn get_ai_auto_fallback(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_ai_auto_fallback(self: Pin<&mut SuttaBridge>, auto_fallback: bool);
+
+        #[qinvokable]
         fn get_api_key(self: &SuttaBridge, key_name: &QString) -> QString;
 
         #[qinvokable]
@@ -2460,6 +2466,19 @@ impl qobject::SuttaBridge {
     pub fn set_ai_models_auto_retry(self: Pin<&mut Self>, auto_retry: bool) {
         let app_data = get_app_data();
         app_data.set_ai_models_auto_retry(auto_retry);
+    }
+
+    /// Get the auto-fallback-to-next-model setting
+    pub fn get_ai_auto_fallback(&self) -> bool {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_auto_fallback
+    }
+
+    /// Save the auto-fallback-to-next-model setting in the db
+    pub fn set_ai_auto_fallback(self: Pin<&mut Self>, auto_fallback: bool) {
+        let app_data = get_app_data();
+        app_data.set_ai_auto_fallback(auto_fallback);
     }
 
     /// Get a specific API key by name

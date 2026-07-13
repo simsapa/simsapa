@@ -287,6 +287,11 @@ pub struct AppSettings {
     /// Models dispatched simultaneously in parallel-prompt mode. Unordered.
     #[serde(default)]
     pub ai_parallel_prompts: Vec<ModelUsageEntry>,
+    /// On a retryable error, fall back to the next enabled model in
+    /// `ai_fallback_sequence` (sequential engine). When off, only the first
+    /// enabled sequence model is used.
+    #[serde(default = "default_true")]
+    pub ai_auto_fallback: bool,
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -650,6 +655,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_word_selection_model: String::new(),
             ai_fallback_sequence: Vec::new(),
             ai_parallel_prompts: Vec::new(),
+            ai_auto_fallback: true,
         }
     }
 }

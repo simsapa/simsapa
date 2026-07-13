@@ -55,6 +55,8 @@ Item {
             return `Invalid request to ${where}: ${detail}`;
         case "model_not_found":
             return `Model not found on ${provider}: ${model}`;
+        case "invalid_response":
+            return `Incomplete or invalid response from ${where}: ${detail}`;
         case "network":
             return `Network error contacting ${where}: ${detail}`;
         case "timeout":

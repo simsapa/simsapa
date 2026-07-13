@@ -8,7 +8,6 @@ Item {
         id: prompts_tab
         window_id: "test_window_0"
         is_dark: false
-        ai_models_auto_retry: true
         anchors.centerIn: parent
         width: 600
         height: 500
@@ -30,7 +29,6 @@ Item {
             verify(prompts_tab.messages_model);
             verify(prompts_tab.available_models);
             compare(prompts_tab.waiting_for_response, false);
-            compare(prompts_tab.ai_models_auto_retry, true);
         }
 
         function test_utility_functions() {
@@ -41,15 +39,21 @@ Item {
             verify(id1.length > 10);
             verify(id1.includes("_"));
 
-            // Test error detection
-            verify(prompts_tab.is_error_response("API Error: Something failed"));
-            verify(prompts_tab.is_error_response("Error: Connection timeout"));
-            verify(prompts_tab.is_error_response("Failed: Authentication"));
+            // A failed request arrives as an {"ai_error": …} envelope
+            // (see AiErrorUtils.qml); plain text is never an error.
+            var envelope = JSON.stringify({
+                ai_error: {
+                    kind: "auth",
+                    http_status: 401,
+                    provider: "Mistral",
+                    model: "mistral-small-latest",
+                    message: "invalid api key",
+                    raw: "invalid api key"
+                }
+            });
+            verify(prompts_tab.is_error_response(envelope));
             verify(!prompts_tab.is_error_response("Normal response"));
-
-            // Test rate limit detection
-            verify(prompts_tab.is_rate_limit_error("API Error: Rate limit exceeded"));
-            verify(!prompts_tab.is_rate_limit_error("API Error: Other error"));
+            verify(!prompts_tab.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_model_loading() {
@@ -187,24 +191,34 @@ Item {
                 selected_ai_tab: 0
             });
 
-            // Simulate error response
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", "API Error: Request timeout");
+            // Simulate error response: an {"ai_error": …} envelope
+            var error_envelope = JSON.stringify({
+                ai_error: {
+                    kind: "timeout",
+                    http_status: null,
+                    provider: "OpenRouter",
+                    model: "test/model:free",
+                    message: "Request timeout",
+                    raw: "Request timeout"
+                }
+            });
+            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", error_envelope);
 
             var assistant_message = prompts_tab.messages_model.get(1);
             var updated_responses = JSON.parse(assistant_message.responses_json);
 
             compare(updated_responses[0].status, "error");
-            compare(updated_responses[0].response, "API Error: Request timeout");
+            compare(updated_responses[0].response, error_envelope);
         }
 
-        function test_retry_functionality() {
-            // Setup assistant message with error response
+        function test_resend_functionality() {
+            // Manual re-send resets the entry; automatic retry/fallback is
+            // handled by the Rust engine (docs/ai-model-management-and-fallback.md).
             var error_responses = [{
                 model_name: "test/model:free",
                 status: "error",
-                response: "API Error: Connection failed",
+                response: '{"ai_error": {"kind": "network", "provider": "OpenRouter", "model": "test/model:free", "message": "Connection failed", "raw": ""}}',
                 request_id: "test_req_1",
-                retry_count: 1,
                 last_updated: Date.now(),
                 user_selected: true
             }];
@@ -217,16 +231,16 @@ Item {
                 selected_ai_tab: 0
             });
 
-            // Test retry request handling
+            // Test manual re-send handling
             var new_request_id = prompts_tab.generate_request_id();
-            prompts_tab.handle_retry_request(0, "test/model:free", new_request_id);
+            prompts_tab.resend_response_request(0, "test/model:free", new_request_id);
 
             var message = prompts_tab.messages_model.get(0);
             var updated_responses = JSON.parse(message.responses_json);
 
             compare(updated_responses[0].status, "waiting");
             compare(updated_responses[0].request_id, new_request_id);
-            compare(updated_responses[0].retry_count, 2);
+            compare(updated_responses[0].response, "");
         }
 
         function test_tab_selection_update() {
@@ -337,44 +351,6 @@ Item {
             compare(responses[0].status, "completed");
         }
 
-        function test_rate_limit_error_no_retry() {
-            // Test that rate limit errors don't trigger auto-retry
-            prompts_tab.messages_model.append({
-                role: "user",
-                content: "Test question",
-                content_html: "",
-                responses_json: "[]",
-                selected_ai_tab: 0
-            });
-
-            var waiting_responses = [{
-                model_name: "test/model:free",
-                status: "waiting",
-                response: "",
-                request_id: "test_req_1",
-                retry_count: 0,
-                last_updated: Date.now(),
-                user_selected: true
-            }];
-
-            prompts_tab.messages_model.append({
-                role: "assistant",
-                content: "",
-                content_html: "",
-                responses_json: JSON.stringify(waiting_responses),
-                selected_ai_tab: 0
-            });
-
-            // Simulate rate limit error
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", "API Error: Rate limit exceeded");
-
-            var assistant_message = prompts_tab.messages_model.get(1);
-            var updated_responses = JSON.parse(assistant_message.responses_json);
-
-            compare(updated_responses[0].status, "error");
-            compare(updated_responses[0].retry_count, 0); // Should not increment on rate limit
-        }
-
         function test_assistant_responses_integration() {
             // Test integration with AssistantResponses component
             var sample_responses = [{
@@ -382,15 +358,13 @@ Item {
                 status: "completed",
                 response: "This is a **markdown** response with *emphasis*.",
                 request_id: "test_req_1",
-                retry_count: 0,
                 last_updated: Date.now(),
                 user_selected: true
             }, {
                 model_name: "google/gemma-3-12b-it:free",
                 status: "error",
-                response: "API Error: Service unavailable",
+                response: '{"ai_error": {"kind": "overloaded", "provider": "OpenRouter", "model": "google/gemma-3-12b-it:free", "message": "Service unavailable", "raw": ""}}',
                 request_id: "test_req_2",
-                retry_count: 2,
                 last_updated: Date.now(),
                 user_selected: false
             }];
@@ -414,9 +388,8 @@ Item {
             verify(responses[0].response.includes("**markdown**"));
             verify(responses[0].user_selected);
 
-            // Second response error with retry count
+            // Second response error
             compare(responses[1].status, "error");
-            compare(responses[1].retry_count, 2);
             verify(!responses[1].user_selected);
         }
 

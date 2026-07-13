@@ -3097,6 +3097,36 @@ fn extract_first_json_object(text: &str) -> Option<String> {
     None
 }
 
+/// Cheap structural check of an AI word-selection response, used by the
+/// request engine (`bridges/src/prompt_manager.rs`) to classify a truncated or
+/// malformed reply as a retryable `invalid_response` error *before* it is
+/// delivered as a success. Models sometimes stop mid-JSON (observed with
+/// Gemini), in which case no balanced JSON object can be extracted; without
+/// this check the truncation only surfaced later, in QML, as a final
+/// non-retried parse error.
+///
+/// Validates shape only (a parseable JSON object with a `selections` array) —
+/// the full per-item validation against the request payload stays in
+/// `parse_word_selection_response`.
+pub fn validate_word_selection_response_shape(response: &str) -> Result<(), String> {
+    let trimmed = response.trim();
+    if trimmed.is_empty() {
+        return Err("Empty response".to_string());
+    }
+    let json_text = extract_first_json_object(trimmed).ok_or_else(|| {
+        format!(
+            "No complete JSON object in response (truncated?): {}",
+            &trimmed.chars().take(200).collect::<String>()
+        )
+    })?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_text)
+        .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
+    if parsed.get("selections").and_then(|v| v.as_array()).is_none() {
+        return Err("Response JSON has no 'selections' array".to_string());
+    }
+    Ok(())
+}
+
 /// Parse and validate an AI word-selection response (PRD: Gloss Tab AI word
 /// selection, `docs/gloss-ai-word-selection.md`).
 ///
@@ -4330,6 +4360,39 @@ mod tests {
         ]}"#;
         let r = parse_word_selection_response(mixed, items).unwrap();
         assert_eq!(r, vec![("p1w2".to_string(), "bhikkhu/dpd".to_string())]);
+    }
+
+    #[test]
+    fn test_validate_word_selection_response_shape() {
+        // Complete reply (plain or fenced) passes.
+        assert!(validate_word_selection_response_shape(
+            r#"{"selections": [{"id": "p0w4", "uid": "ārāma-4/dpd"}]}"#
+        ).is_ok());
+        assert!(validate_word_selection_response_shape(
+            "```json\n{\"selections\": []}\n```"
+        ).is_ok());
+
+        // A reply truncated mid-JSON (observed with Gemini: the model stopped
+        // mid-array) has no balanced object and must be rejected so the
+        // engine re-tries it.
+        let truncated = r#"{
+  "selections": [
+    {
+      "id": "p0w3",
+      "uid": "8993/dpd"
+    },
+    {
+      "id": "p0w6",
+      "uid": "58733/dpd"
+    },
+    {"#;
+        let err = validate_word_selection_response_shape(truncated).unwrap_err();
+        assert!(err.contains("truncated"), "unexpected error: {}", err);
+
+        // Wrong shape and empty responses are rejected too.
+        assert!(validate_word_selection_response_shape(r#"{"answers": []}"#).is_err());
+        assert!(validate_word_selection_response_shape("   ").is_err());
+        assert!(validate_word_selection_response_shape("I could not decide.").is_err());
     }
 
     #[test]

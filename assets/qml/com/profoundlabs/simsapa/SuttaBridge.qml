@@ -491,6 +491,14 @@ Item {
         console.log("set_ai_models_auto_retry():", auto_retry);
     }
 
+    function get_ai_auto_fallback(): bool {
+        return true;
+    }
+
+    function set_ai_auto_fallback(auto_fallback: bool) {
+        console.log("set_ai_auto_fallback():", auto_fallback);
+    }
+
     function save_common_words_json(words_json: string) {
         return;
     }

@@ -10,7 +10,6 @@ Item {
     GlossTab {
         id: gloss_tab
         window_id: "window_0"
-        ai_models_auto_retry: false
         is_dark: false
         anchors.centerIn: parent
     }

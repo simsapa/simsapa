@@ -39,6 +39,10 @@ pub enum AiErrorKind {
     QuotaExceeded,
     Auth,
     InvalidRequest,
+    /// The HTTP request succeeded but the body is unusable for the caller —
+    /// e.g. a word-selection reply whose JSON was cut off mid-object (Gemini
+    /// truncation). Retryable: another attempt or model may answer completely.
+    InvalidResponse,
     ModelNotFound,
     Network,
     Timeout,
@@ -55,6 +59,7 @@ impl AiErrorKind {
                 | AiErrorKind::Overloaded
                 | AiErrorKind::Network
                 | AiErrorKind::Timeout
+                | AiErrorKind::InvalidResponse
         )
     }
 
@@ -65,7 +70,7 @@ impl AiErrorKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AiRequestError {
     pub kind: AiErrorKind,
     pub http_status: Option<u16>,
@@ -409,6 +414,22 @@ mod tests {
         assert_eq!(err.http_status, None);
         assert_eq!(err.raw, body);
         assert_eq!(err.message, body);
+    }
+
+    #[test]
+    fn invalid_response_is_retryable_and_does_not_skip_provider() {
+        // A truncated body (HTTP success, unusable content) must re-try /
+        // fall back rather than fail the run.
+        let err = AiRequestError::new(
+            AiErrorKind::InvalidResponse,
+            "Gemini",
+            "gemini-3-flash-preview",
+            "No JSON object found in response (truncated?)",
+        );
+        assert!(err.is_retryable());
+        assert!(!err.skips_provider());
+        let json = err.to_envelope_json();
+        assert!(json.contains("\"invalid_response\""));
     }
 
     #[test]

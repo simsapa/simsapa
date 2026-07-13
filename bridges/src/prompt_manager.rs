@@ -1,4 +1,7 @@
 use std::thread;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use core::pin::Pin;
 
 use cxx_qt_lib::QString;
@@ -14,9 +17,11 @@ use rig::http_client;
 
 use simsapa_backend::logger::error;
 use simsapa_backend::get_app_data;
-use simsapa_backend::app_settings::ProviderName;
+use simsapa_backend::app_settings::{ModelUsageEntry, ProviderName};
 use simsapa_backend::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
+use simsapa_backend::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
 use simsapa_backend::prompt_utils::{markdown_to_html, clean_prompt};
+use simsapa_backend::helpers::validate_word_selection_response_shape;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -44,6 +49,22 @@ pub mod qobject {
         #[qinvokable]
         fn word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString);
 
+        #[qinvokable]
+        fn sequential_prompt_request(self: Pin<&mut PromptManager>, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
+
+        #[qinvokable]
+        fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString);
+
+        #[qinvokable]
+        fn sequential_prompt_request_with_messages(self: Pin<&mut PromptManager>, sender_message_idx: usize, messages_json: &QString);
+
+        #[qinvokable]
+        fn cancel_sequential_requests(self: Pin<&mut PromptManager>);
+
+        #[qsignal]
+        #[cxx_name = "sequentialProgress"]
+        fn sequential_progress(self: Pin<&mut PromptManager>, context_json: QString, model_name: QString, status: QString);
+
         #[qsignal]
         #[cxx_name = "promptResponse"]
         fn prompt_response(self: Pin<&mut PromptManager>, paragraph_idx: usize, translation_idx: usize, model_name: QString, response: QString, response_html: QString);
@@ -58,8 +79,13 @@ pub mod qobject {
     }
 }
 
-#[derive(Default, Copy, Clone)]
-pub struct PromptManagerRust;
+#[derive(Default)]
+pub struct PromptManagerRust {
+    /// Cancellation token for this PromptManager instance (FR-D8): running
+    /// walks capture the value at start and exit silently once it no longer
+    /// matches. `cancel_sequential_requests()` bumps it.
+    generation: Arc<AtomicUsize>,
+}
 
 // Helper function to extract API keys with provider-based fallback
 fn get_provider_api_key(provider_name: &str) -> String {
@@ -190,9 +216,152 @@ fn extract_system_prompt(messages: &[ChatMessage]) -> Option<String> {
     None
 }
 
+/// The fallback-sequence entries and flags a sequential run walks with. The
+/// list read reconciles and seeds (see `app_data::refresh_model_usage_lists`),
+/// so every entry belongs to an enabled provider.
+fn fallback_walk_settings() -> (Vec<ModelUsageEntry>, bool, bool) {
+    let app_data = get_app_data();
+    let entries = app_data.get_ai_fallback_sequence();
+    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+    (entries, app_settings.ai_auto_fallback, app_settings.ai_models_auto_retry)
+}
+
+/// Render a walk progress event as `(model_name, status)` for the
+/// `sequentialProgress` signal (FR-D6, FR-F1-style wording).
+fn progress_display(progress: &WalkProgress) -> (String, String) {
+    match progress {
+        WalkProgress::Trying { provider, model } => (
+            model.clone(),
+            format!("Trying {} ({})…", provider, model),
+        ),
+        WalkProgress::AttemptFailed { error } => {
+            let text = match error.kind {
+                AiErrorKind::RateLimited => format!("Rate limited by {} ({}).", error.provider, error.model),
+                AiErrorKind::Overloaded => format!("{} ({}) is overloaded.", error.provider, error.model),
+                AiErrorKind::Timeout => format!("Request to {} ({}) timed out.", error.provider, error.model),
+                AiErrorKind::Network => format!("Network error for {} ({}).", error.provider, error.model),
+                AiErrorKind::Auth => format!("Invalid API key for {} — skipping its models.", error.provider),
+                AiErrorKind::QuotaExceeded => format!("Quota exceeded for {} — skipping its models.", error.provider),
+                AiErrorKind::ModelNotFound => format!("Model {} not found on {} — skipping.", error.model, error.provider),
+                AiErrorKind::InvalidResponse => format!("Incomplete response from {} ({}).", error.provider, error.model),
+                _ => error.message.clone(),
+            };
+            (error.model.clone(), text)
+        }
+        WalkProgress::RetryRound { round, delay_secs } => (
+            String::new(),
+            format!(
+                "Requests failed. Retrying in {} s (round {} of {})…",
+                delay_secs, round, MAX_RETRY_ROUNDS
+            ),
+        ),
+    }
+}
+
+/// Run the fallback walk on the current thread, with real requests, sleeps and
+/// the generation-token cancellation checks plugged in. `my_gen` is the token
+/// value captured when the run started; the walk exits silently once
+/// `cancel_sequential_requests()` bumps the counter — the sleep is sliced so a
+/// cancel during backoff takes effect within a second.
+///
+/// `validate` lets a caller reject an HTTP-successful but unusable body (e.g.
+/// a truncated word-selection JSON) as a retryable `invalid_response` error,
+/// so the walk re-tries instead of delivering it as a success.
+fn run_walk_blocking(
+    generation: &Arc<AtomicUsize>,
+    my_gen: usize,
+    entries: &[ModelUsageEntry],
+    auto_fallback: bool,
+    auto_retry: bool,
+    messages: &[ChatMessage],
+    validate: Option<&dyn Fn(&str) -> Result<(), String>>,
+    on_progress: &mut dyn FnMut(String, String),
+) -> WalkOutcome {
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return WalkOutcome::Failed(AiRequestError::new(
+                AiErrorKind::Unknown,
+                "",
+                "",
+                format!("Failed to create async runtime: {}", e),
+            ))
+        }
+    };
+
+    run_fallback_walk(
+        entries,
+        auto_fallback,
+        auto_retry,
+        &mut |provider, model| {
+            let response = rt.block_on(make_api_request(messages, model, provider))?;
+            if let Some(validate) = validate {
+                if let Err(msg) = validate(&response) {
+                    return Err(AiRequestError::new(
+                        AiErrorKind::InvalidResponse,
+                        provider,
+                        model,
+                        msg,
+                    ));
+                }
+            }
+            Ok(response)
+        },
+        &mut |p| {
+            let (model, status) = progress_display(&p);
+            on_progress(model, status);
+        },
+        &mut |secs| {
+            for _ in 0..secs {
+                thread::sleep(Duration::from_secs(1));
+                if generation.load(Ordering::SeqCst) != my_gen {
+                    return false;
+                }
+            }
+            true
+        },
+        &mut || generation.load(Ordering::SeqCst) != my_gen,
+    )
+}
+
+/// Single-model variant for the per-model request paths (FR-G2): the same
+/// retry schedule and cancellation as the sequence walk, but the branch never
+/// switches models.
+fn run_single_model_walk(
+    generation: &Arc<AtomicUsize>,
+    my_gen: usize,
+    provider: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    validate: Option<&dyn Fn(&str) -> Result<(), String>>,
+    on_progress: &mut dyn FnMut(String, String),
+) -> WalkOutcome {
+    let auto_retry = {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_models_auto_retry
+    };
+    let entries = vec![ModelUsageEntry {
+        provider: provider.to_string(),
+        model_name: model.to_string(),
+        enabled: true,
+    }];
+    // Retry-round progress events carry no model name; in a single-model walk
+    // the model is fixed, so stamp it in — QML routes progress by model name
+    // when several parallel branches share one context.
+    let model_owned = model.to_string();
+    let mut wrapped = |m: String, s: String| {
+        let m = if m.is_empty() { model_owned.clone() } else { m };
+        on_progress(m, s);
+    };
+    run_walk_blocking(generation, my_gen, &entries, false, auto_retry, messages, validate, &mut wrapped)
+}
+
 impl qobject::PromptManager {
     fn prompt_request(self: Pin<&mut Self>, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
         let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         let prompt_text = prompt.to_string();
         let model_name_text = model_name.to_string();
@@ -219,21 +388,37 @@ impl qobject::PromptManager {
                 content: prompt_text,
             }];
 
-            // A failed request travels as an `{"ai_error": …}` JSON envelope in both
-            // the plain and the HTML field; QML checks `AiErrorUtils.is_error()`
-            // before rendering either.
-            let (response_content, response_content_html) = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
-                    Ok(content) => {
-                        let html = markdown_to_html(&content);
-                        (content, html)
-                    }
-                    Err(e) => {
-                        let envelope = e.to_envelope_json();
-                        (envelope.clone(), envelope)
-                    }
+            let context_json = serde_json::json!({
+                "paragraph_idx": paragraph_idx,
+                "translation_idx": translation_idx,
+            }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            // Single-model walk: bounded auto-retry with backoff, never
+            // switches models. A failed request travels as an `{"ai_error": …}`
+            // JSON envelope in both the plain and the HTML field; QML checks
+            // `AiErrorUtils.is_error()` before rendering either.
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &single_message, None, &mut on_progress);
+
+            let (response_content, response_content_html) = match outcome {
+                WalkOutcome::Success { response, .. } => {
+                    let html = markdown_to_html(&response);
+                    (response, html)
                 }
+                WalkOutcome::Failed(e) => {
+                    let envelope = e.to_envelope_json();
+                    (envelope.clone(), envelope)
+                }
+                WalkOutcome::Cancelled => return,
             };
 
             // Emit signal with the prompt response
@@ -253,6 +438,8 @@ impl qobject::PromptManager {
     /// `request_id` which QML maps back to the covered paragraph indexes.
     fn word_selection_request(self: Pin<&mut Self>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
         let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         let prompt_text = prompt.to_string();
         let model_name_text = model_name.to_string();
@@ -278,12 +465,28 @@ impl qobject::PromptManager {
                 content: prompt_text,
             }];
 
-            let response_content = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => e.to_envelope_json(),
-                }
+            let context_json = serde_json::json!({ "request_id": request_id }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            // A word-selection reply must contain a complete selections JSON
+            // object; a truncated body re-tries as `invalid_response`.
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &single_message,
+                Some(&|response: &str| validate_word_selection_response_shape(response)),
+                &mut on_progress);
+
+            let response_content = match outcome {
+                WalkOutcome::Success { response, .. } => response,
+                WalkOutcome::Failed(e) => e.to_envelope_json(),
+                WalkOutcome::Cancelled => return,
             };
 
             qt_thread.queue(move |mut qo| {
@@ -307,6 +510,8 @@ impl qobject::PromptManager {
         };
         let model_name_text = model_name.to_string();
         let provider_name_text = provider_name.to_string();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
@@ -321,12 +526,25 @@ impl qobject::PromptManager {
                 }).unwrap();
                 return;
             }
-            let response_content = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&messages, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => e.to_envelope_json(),
-                }
+
+            let context_json = serde_json::json!({ "sender_message_idx": sender_message_idx }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &messages, None, &mut on_progress);
+
+            let response_content = match outcome {
+                WalkOutcome::Success { response, .. } => response,
+                WalkOutcome::Failed(e) => e.to_envelope_json(),
+                WalkOutcome::Cancelled => return,
             };
 
             // Emit signal with the prompt response (HTML conversion now done client-side)
@@ -338,6 +556,165 @@ impl qobject::PromptManager {
                 );
             }).unwrap();
         }); // end of thread
+    }
+
+    /// Sequential fallback run for a Gloss AI-translation paragraph: walks the
+    /// enabled Fallback-sequence models and delivers the one result through
+    /// `promptResponse` (the responding model's name in `model_name`).
+    fn sequential_prompt_request(self: Pin<&mut Self>, paragraph_idx: usize, translation_idx: usize, prompt: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+        let prompt_text = prompt.to_string();
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+            let single_message = vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt_text,
+            }];
+
+            let context_json = serde_json::json!({
+                "paragraph_idx": paragraph_idx,
+                "translation_idx": translation_idx,
+            }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &single_message, None, &mut on_progress);
+
+            let (model, response_content, response_content_html) = match outcome {
+                WalkOutcome::Success { model, response, .. } => {
+                    let html = markdown_to_html(&response);
+                    (model, response, html)
+                }
+                WalkOutcome::Failed(e) => {
+                    let envelope = e.to_envelope_json();
+                    (e.model.clone(), envelope.clone(), envelope)
+                }
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().prompt_response(
+                    paragraph_idx,
+                    translation_idx,
+                    QString::from(model),
+                    QString::from(response_content.trim()),
+                    QString::from(response_content_html.trim()));
+            }).unwrap();
+        });
+    }
+
+    /// Sequential fallback run for Gloss word selection; the result arrives on
+    /// `wordSelectionResponse` keyed by the caller's `request_id`.
+    fn sequential_word_selection_request(self: Pin<&mut Self>, request_id: usize, prompt: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+        let prompt_text = prompt.to_string();
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+            let single_message = vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt_text,
+            }];
+
+            let context_json = serde_json::json!({ "request_id": request_id }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            // A word-selection reply must contain a complete selections JSON
+            // object; a truncated body re-tries as `invalid_response`.
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &single_message,
+                Some(&|response: &str| validate_word_selection_response_shape(response)),
+                &mut on_progress);
+
+            let (model, response_content) = match outcome {
+                WalkOutcome::Success { model, response, .. } => (model, response),
+                WalkOutcome::Failed(e) => (e.model.clone(), e.to_envelope_json()),
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().word_selection_response(
+                    request_id,
+                    QString::from(model),
+                    QString::from(response_content.trim()));
+            }).unwrap();
+        });
+    }
+
+    /// Sequential fallback run for a Prompts-tab chat turn; the result arrives
+    /// on `promptResponseForMessages`.
+    fn sequential_prompt_request_with_messages(self: Pin<&mut Self>, sender_message_idx: usize, messages_json: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+
+        let messages: Vec<ChatMessage> = match serde_json::from_str(&messages_json.to_string()) {
+            Ok(r) => r,
+            Err(e) => {
+                error(&format!("{}", e));
+                return;
+            }
+        };
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+
+            let context_json = serde_json::json!({ "sender_message_idx": sender_message_idx }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &messages, None, &mut on_progress);
+
+            let (model, response_content) = match outcome {
+                WalkOutcome::Success { model, response, .. } => (model, response),
+                WalkOutcome::Failed(e) => (e.model.clone(), e.to_envelope_json()),
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().prompt_response_for_messages(
+                    sender_message_idx,
+                    QString::from(model),
+                    QString::from(response_content.trim()),
+                );
+            }).unwrap();
+        });
+    }
+
+    /// Bump the cancellation token (FR-D8): every running walk of this
+    /// PromptManager instance exits silently at its next check (before an
+    /// attempt, or within a second during a backoff sleep).
+    fn cancel_sequential_requests(self: Pin<&mut Self>) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -477,7 +854,11 @@ async fn handle_gemini_request(
         top_k: Some(1),
         top_p: Some(0.95),
         candidate_count: Some(1),
-        max_output_tokens: Some(4096),
+        // On Gemini "thinking" models (e.g. gemini-3-flash-preview) the
+        // internal thinking tokens count against max_output_tokens, so a
+        // 4096 cap truncated word-selection JSON replies mid-object. Keep
+        // enough headroom for thinking + a long structured answer.
+        max_output_tokens: Some(16384),
         ..Default::default()
     };
     let cfg = AdditionalParameters::default().with_config(gen_cfg);

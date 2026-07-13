@@ -9,7 +9,6 @@ Item {
     GlossTab {
         id: gloss_tab
         window_id: "window_0"
-        ai_models_auto_retry: false
         is_dark: false
         anchors.centerIn: parent
     }
@@ -289,17 +288,21 @@ Item {
         }
 
         function test_error_response_detection() {
-            // Test error detection functions
-            verify(gloss_tab.is_error_response("API Error: Rate limit exceeded"));
-            verify(gloss_tab.is_error_response("Error: Connection timeout"));
-            verify(gloss_tab.is_error_response("Failed: Authentication failed"));
+            // A failed request arrives as an {"ai_error": …} envelope
+            // (see AiErrorUtils.qml); plain text is never an error.
+            var envelope = JSON.stringify({
+                ai_error: {
+                    kind: "rate_limited",
+                    http_status: 429,
+                    provider: "Gemini",
+                    model: "gemini-flash-latest",
+                    message: "slow down",
+                    raw: "slow down"
+                }
+            });
+            verify(gloss_tab.is_error_response(envelope));
             verify(!gloss_tab.is_error_response("Normal translation response"));
-            verify(!gloss_tab.is_error_response("Successfully translated text"));
-
-            // Test rate limit specific detection
-            verify(gloss_tab.is_rate_limit_error("API Error: Rate limit exceeded"));
-            verify(!gloss_tab.is_rate_limit_error("API Error: Connection failed"));
-            verify(!gloss_tab.is_rate_limit_error("Normal response"));
+            verify(!gloss_tab.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_request_id_generation() {
@@ -387,14 +390,14 @@ Item {
             }
         }
 
-        function test_retry_request_handling() {
-            // Setup paragraph with error translation
+        function test_resend_translation_request() {
+            // Manual re-send resets the entry; automatic retry/fallback is
+            // handled by the Rust engine (docs/ai-model-management-and-fallback.md).
             var error_translations = [{
                 model_name: "test/model:free",
                 status: "error",
-                response: "API Error: Connection timeout",
+                response: '{"ai_error": {"kind": "timeout", "provider": "OpenRouter", "model": "test/model:free", "message": "timed out", "raw": ""}}',
                 request_id: "test_request_error",
-                retry_count: 1,
                 last_updated: Date.now(),
                 user_selected: true
             }];
@@ -409,16 +412,16 @@ Item {
             var paragraph_idx = gloss_tab.paragraph_model.count - 1;
             var paragraph = gloss_tab.paragraph_model.get(paragraph_idx);
 
-            // Test retry request handling
+            // Test manual re-send handling
             var new_request_id = gloss_tab.generate_request_id();
-            gloss_tab.handle_retry_request(paragraph_idx, "test/model:free", new_request_id);
+            gloss_tab.resend_translation_request(paragraph_idx, "test/model:free", new_request_id);
 
-            // Check that request ID was updated
+            // Check that the entry was reset for a fresh request
             paragraph = gloss_tab.paragraph_model.get(paragraph_idx);
             var updated_translations = JSON.parse(paragraph.translations_json);
             compare(updated_translations[0].request_id, new_request_id);
             compare(updated_translations[0].status, "waiting");
-            compare(updated_translations[0].retry_count, 2);
+            compare(updated_translations[0].response, "");
         }
 
         function test_assistant_responses_integration() {

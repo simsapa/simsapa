@@ -1233,6 +1233,27 @@ impl AppData {
         };
     }
 
+    pub fn set_ai_auto_fallback(&self, auto_fallback: bool) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.ai_auto_fallback = auto_fallback;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
     pub fn set_ai_models_auto_retry(&self, auto_retry: bool) {
         use crate::db::appdata_schema::app_settings;
 

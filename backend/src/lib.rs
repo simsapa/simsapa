@@ -19,6 +19,7 @@ pub mod logger;
 pub mod theme_colors;
 pub mod app_settings;
 pub mod ai_error;
+pub mod ai_fallback;
 pub mod lookup;
 pub mod html_format;
 pub mod prompt_utils;

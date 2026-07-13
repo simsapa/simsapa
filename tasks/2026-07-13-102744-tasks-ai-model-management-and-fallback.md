@@ -8,6 +8,11 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 - `backend/src/provider_models_update.rs` - **New.** Shared model-list update procedure (models.dev + native fetchers, filters, merge, default heuristic).
 - `backend/src/app_data.rs` - providers `get/set_providers_json`, typed `get_providers()`/`set_providers()` (the updater's save path), and the `app_settings_cache`. The model add/remove/enable **mutation logic moves here** (from `sutta_bridge.rs`) so the global-list sync helpers live next to the cache and are testable without Qt.
 - `backend/src/ai_error.rs` - **New.** `AiErrorKind` / `AiRequestError`, the rig-free classifier (`classify_provider_error`, `classify_transport_error`), the `{"ai_error": …}` envelope, and the retryable / skips-provider predicates. Unit tests against recorded provider error bodies live in the module.
+- `backend/src/ai_fallback.rs` - **New.** The pure sequence-walk engine (`run_fallback_walk`, `WalkOutcome`, `WalkProgress`, backoff constants): fallback order, provider/model skips, retry rounds, cancellation checks — all injected via closures, unit-tested without network/Qt.
+- `assets/qml/ResponseTabButton.qml` - Retry-count property/tooltip removed (manual retry button kept).
+- `assets/qml/AssistantResponses.qml` - Waiting display shows engine `progress` messages; retry-count display removed.
+- `assets/qml/SuttaSearchWindow.qml` - Dropped the `ai_models_auto_retry` bindings on the GlossTab / PromptsTab instantiations.
+- `assets/qml/tst_AssistantResponses.qml`, `assets/qml/tst_GlossTabBackgroundProcessing.qml` - Updated alongside the retry-machinery removal (envelope-based error fixtures, no retry counts).
 - `backend/tests/provider_models_update_tests.rs` - **New.** Merge semantics, heuristic, and filter tests against fixture snapshots.
 - `backend/tests/data/modelsdev-fixture.json` - **New.** Trimmed models.dev snapshot for tests (plus OpenRouter/SambaNova native fixtures).
 - `cli/src/update_provider_models.rs` - Rewritten to call the shared backend procedure; applies the default-enable heuristic (CLI mode).
@@ -350,28 +355,58 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > requests." next to the existing auto-retry checkbox (both in the global
 > options area from 4.0).
 > **Depends on:** 4.0 (lists), 5.0 (classification).
+>
+> **As built.** The pure walk lives in `backend/src/ai_fallback.rs`
+> (`run_fallback_walk` — attempts, progress, sleeps and cancellation injected
+> as closures; 15 unit tests). The Qt side (`prompt_manager.rs`) adds
+> `run_walk_blocking` (real requests + generation-token checks, backoff sleeps
+> sliced 1 s for fast cancel) and `run_single_model_walk` (single-entry walk;
+> stamps the model name into retry-round progress events). The cancel token is
+> a per-PromptManager-instance `Arc<AtomicUsize>`, so cancelling in one tab
+> does not stop the other tab's runs. The three *existing* per-model
+> qinvokables now route through the single-model walk (bounded same-model
+> retry, cancel-aware) and emit `sequentialProgress` with the same context
+> shapes as the sequential fns. The **manual** per-model retry button was
+> kept, simplified to a plain re-send (`resend_translation_request` /
+> `resend_response_request`) — only the *automatic* QML retry machinery was
+> removed. Progress lands in a transient `progress` field on the
+> translation/response entries (rendered while status is `waiting`) and in the
+> Word Selection per-paragraph status.
+>
+> **Post-test fix (truncated responses).** Live testing hit a Gemini reply cut
+> off mid-JSON ("No JSON object found in response: {…") which the engine saw as
+> a *success* — the parse failure only surfaced later in QML, unretried. Added
+> `AiErrorKind::InvalidResponse` (retryable, no provider skip), a shape
+> validator `validate_word_selection_response_shape()` in
+> `backend/src/helpers.rs` (balanced JSON object + `selections` array; full
+> item validation stays in `parse_word_selection_response`), and an optional
+> `validate` hook on the walk runners — wired into **both** word-selection
+> request paths, so a truncated body now re-tries/falls back like any
+> retryable error. Root cause: on Gemini thinking models the thinking tokens
+> count against `max_output_tokens`; the 4096 cap was raised to 16384 in
+> `handle_gemini_request`.
 
-- [ ] 6.1 Add `ai_auto_fallback` to `AppSettings` + SuttaBridge get/set +
+- [x] 6.1 Add `ai_auto_fallback` to `AppSettings` + SuttaBridge get/set +
       qmllint stubs; add the checkbox + description + ordering note to the
       ModelsDialog global options area.
-- [ ] 6.2 Implement the sequence-walk + provider-skip + retry-rounds logic as
+- [x] 6.2 Implement the sequence-walk + provider-skip + retry-rounds logic as
       a testable pure function (inputs: sequence entries, per-attempt result
       injector; outputs: attempt plan/final result) and unit-test the
       ordering, skipping, exhaustion, and backoff-round behavior without
       network.
-- [ ] 6.3 Implement the cancellation token (FR-D8): generation counter +
+- [x] 6.3 Implement the cancellation token (FR-D8): generation counter +
       `cancel_sequential_requests()` qinvokable, checked before each attempt
       and after each backoff sleep; unit-test that a bumped generation stops
       the walk and suppresses further attempts.
-- [ ] 6.4 Wire it into the three new qinvokables + progress signal in
+- [x] 6.4 Wire it into the three new qinvokables + progress signal in
       `prompt_manager.rs` (thread + `qt_thread().queue`, existing response
       signals for final results); qmllint stubs for PromptManager; call
       `cancel_sequential_requests()` from the QML cancel paths (Gloss
       `ws_reset` / `ws_cancel_paragraph`, tab/window close).
-- [ ] 6.5 Implement `run_single_model_request` (same-model retry schedule,
+- [x] 6.5 Implement `run_single_model_request` (same-model retry schedule,
       cancel-aware) and route the *existing* per-model request fns through it
       so parallel branches gain bounded auto-retry with backoff.
-- [ ] 6.6 Remove the QML retry machinery from **both** `GlossTab.qml` and
+- [x] 6.6 Remove the QML retry machinery from **both** `GlossTab.qml` and
       `PromptsTab.qml` (each has its own copy: `handle_retry_request`,
       `is_error_response` / `is_rate_limit_error` where not already replaced
       in 5.4, retry counters, rate-limit skip logic — leaving either copy
@@ -382,7 +417,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
       messages in the translation status / Word Selection status displays
       (reword the initial "Selecting words with X…" message — the model is
       only known from the first progress signal).
-- [ ] 6.7 Build + backend tests.
+- [x] 6.7 Build + backend tests.
 
 ### 7.0 Feature integration and docs (FR-G1–G5)
 
