@@ -103,6 +103,9 @@ pub struct FetchedModel {
     pub release: Option<String>,
     /// Context window size in tokens.
     pub context: Option<u64>,
+    /// Whether the source marks this as a reasoning/thinking model.
+    /// `None` when the source doesn't say (SambaNova).
+    pub reasoning: Option<bool>,
 }
 
 /// The chat-model filter: modality check (when the source publishes
@@ -151,6 +154,8 @@ struct ModelsDevModel {
     release_date: Option<String>,
     #[serde(default)]
     last_updated: Option<String>,
+    #[serde(default)]
+    reasoning: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,6 +229,7 @@ impl ModelsDevData {
                 cost_out: m.cost.as_ref().and_then(|c| c.output),
                 release: m.release_date.or(m.last_updated),
                 context: m.limit.as_ref().and_then(|l| l.context),
+                reasoning: m.reasoning,
             });
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -259,6 +265,8 @@ struct OpenRouterModel {
     pricing: Option<OpenRouterPricing>,
     #[serde(default)]
     architecture: Option<OpenRouterArchitecture>,
+    #[serde(default)]
+    supported_parameters: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -299,12 +307,14 @@ pub fn parse_openrouter_json(json: &str) -> Result<Vec<FetchedModel>> {
         let release = m.created.and_then(|ts| {
             chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.format("%Y-%m-%d").to_string())
         });
+        let reasoning = Some(m.supported_parameters.iter().any(|p| p == "reasoning"));
         out.push(FetchedModel {
             id: m.id,
             cost_in: m.pricing.as_ref().and_then(|p| p.prompt.as_deref()).and_then(|s| s.parse().ok()),
             cost_out: m.pricing.as_ref().and_then(|p| p.completion.as_deref()).and_then(|s| s.parse().ok()),
             release,
             context: m.context_length,
+            reasoning,
         });
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -348,6 +358,7 @@ pub fn parse_sambanova_json(json: &str) -> Result<Vec<FetchedModel>> {
             cost_out: None,
             release: None,
             context: None,
+            reasoning: None,
         })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -387,27 +398,32 @@ pub fn merge_provider_models(
     existing: &[ModelEntry],
     fetched: &[FetchedModel],
 ) -> (Vec<ModelEntry>, MergeStats) {
-    let upstream: std::collections::HashSet<&str> =
-        fetched.iter().map(|m| m.id.as_str()).collect();
+    let upstream: std::collections::HashMap<&str, &FetchedModel> =
+        fetched.iter().map(|m| (m.id.as_str(), m)).collect();
 
     let mut out: Vec<ModelEntry> = Vec::new();
     let mut stats = MergeStats::default();
 
     for m in existing {
-        let found = upstream.contains(m.model_name.as_str());
+        let found = upstream.get(m.model_name.as_str());
+        // Refresh the reasoning flag from the source when it says something;
+        // keep whatever we knew when it doesn't (or the model is absent).
+        let reasoning = found
+            .and_then(|f| f.reasoning)
+            .map_or(m.reasoning, Some);
         match m.origin {
             ModelOrigin::Fetched => {
-                if found {
-                    out.push(ModelEntry { stale: false, ..m.clone() });
+                if found.is_some() {
+                    out.push(ModelEntry { stale: false, reasoning, ..m.clone() });
                 } else {
                     stats.removed += 1;
                 }
             }
             ModelOrigin::User => {
-                if !found && !m.stale {
+                if found.is_none() && !m.stale {
                     stats.staled += 1;
                 }
-                out.push(ModelEntry { stale: !found, ..m.clone() });
+                out.push(ModelEntry { stale: found.is_none(), reasoning, ..m.clone() });
             }
         }
     }
@@ -424,6 +440,7 @@ pub fn merge_provider_models(
             enabled: false,
             origin: ModelOrigin::Fetched,
             stale: false,
+            reasoning: f.reasoning,
         });
     }
 

@@ -1495,6 +1495,7 @@ impl AppData {
                 enabled: true,
                 origin: ModelOrigin::User,
                 stale: false,
+                reasoning: None,
             });
             add_to_model_usage_lists(settings, provider_name, model_name);
             true
@@ -5478,6 +5479,7 @@ mod model_usage_lists_tests {
             enabled,
             origin: ModelOrigin::Fetched,
             stale: false,
+            reasoning: None,
         }
     }
 

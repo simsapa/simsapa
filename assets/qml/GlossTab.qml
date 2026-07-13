@@ -503,7 +503,7 @@ Item {
         root.ws_request_items = ri;
 
         for (let pi of covered) {
-            root.ws_set_status(pi, "busy", "Selecting words (3min timeout)...");
+            root.ws_set_status(pi, "busy", "Selecting words...");
         }
 
         let prompt = root.build_word_selection_prompt(items);
@@ -2338,7 +2338,7 @@ ${main_text}
                                 text: {
                                     let n = root.ws_pending_count();
                                     let noun = n === 1 ? "paragraph" : "paragraphs";
-                                    return `Selecting words (3min timeout)... ${n} ${noun} remaining.`;
+                                    return `Selecting words... ${n} ${noun} remaining.`;
                                 }
                             }
 

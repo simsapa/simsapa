@@ -22,6 +22,7 @@ fn fetched(id: &str) -> FetchedModel {
         cost_out: None,
         release: None,
         context: None,
+        reasoning: None,
     }
 }
 
@@ -31,6 +32,7 @@ fn entry(name: &str, enabled: bool, origin: ModelOrigin, stale: bool) -> ModelEn
         enabled,
         origin,
         stale,
+        reasoning: None,
     }
 }
 
@@ -81,6 +83,12 @@ fn models_dev_provider_models_filters_and_normalizes() {
     assert_eq!(flash.cost_out, Some(2.5));
     assert_eq!(flash.release.as_deref(), Some("2025-09-25"));
     assert_eq!(flash.context, Some(1048576));
+
+    // The reasoning flag is carried through when published.
+    let pro = google.iter().find(|m| m.id == "gemini-2.5-pro").unwrap();
+    assert_eq!(pro.reasoning, Some(true));
+    let flash25 = google.iter().find(|m| m.id == "gemini-2.5-flash").unwrap();
+    assert_eq!(flash25.reasoning, Some(false));
 }
 
 #[test]
@@ -108,6 +116,11 @@ fn openrouter_parse_keeps_free_chat_models_only() {
     assert_eq!(qwen.release.as_deref(), Some("2025-06-15"));
     assert_eq!(qwen.cost_in, Some(0.0));
     assert_eq!(qwen.context, Some(262144));
+
+    // "reasoning" in supported_parameters marks a reasoning model.
+    assert_eq!(qwen.reasoning, Some(true));
+    let llama = models.iter().find(|m| m.id == "meta-llama/llama-3.3-70b-instruct:free").unwrap();
+    assert_eq!(llama.reasoning, Some(false));
 }
 
 #[test]
@@ -125,6 +138,30 @@ fn sambanova_parse_is_bare_ids_with_no_metadata() {
 }
 
 // ---- merge semantics (FR-A6) -----------------------------------------------
+
+#[test]
+fn merge_refreshes_and_seeds_the_reasoning_flag() {
+    let existing = vec![
+        entry("model-a", true, ModelOrigin::Fetched, false),
+        entry("user-c", true, ModelOrigin::User, false),
+    ];
+    let mut a = fetched("model-a");
+    a.reasoning = Some(true);
+    let mut e = fetched("model-e");
+    e.reasoning = Some(false);
+    // user-c is absent upstream; a source with no reasoning data (None) must
+    // not erase a previously known value either.
+    let upstream = vec![a, e];
+
+    let (merged, _stats) = merge_provider_models(&existing, &upstream);
+    let get = |n: &str| merged.iter().find(|m| m.model_name == n).unwrap();
+
+    // Surviving model refreshed from the source; new model seeded from it.
+    assert_eq!(get("model-a").reasoning, Some(true));
+    assert_eq!(get("model-e").reasoning, Some(false));
+    // Absent upstream: keeps what was known (here: unknown).
+    assert_eq!(get("user-c").reasoning, None);
+}
 
 #[test]
 fn merge_add_remove_stale_and_enabled_preserved() {
@@ -220,6 +257,7 @@ fn heuristic_zero_cost_from_models_dev_costs() {
             cost_out: Some(5.0),
             release: Some("2026-01-01".into()),
             context: Some(100_000),
+            reasoning: None,
         },
         FetchedModel {
             id: "gratis-model".into(),
@@ -227,6 +265,7 @@ fn heuristic_zero_cost_from_models_dev_costs() {
             cost_out: Some(0.0),
             release: Some("2025-01-01".into()),
             context: Some(8_192),
+            reasoning: None,
         },
     ];
     // Zero-cost beats budget-family/newer paid models.
@@ -242,6 +281,7 @@ fn heuristic_context_breaks_release_ties() {
             cost_out: Some(0.0),
             release: Some("2026-01-01".into()),
             context: Some(32_000),
+            reasoning: None,
         },
         FetchedModel {
             id: "b:free".into(),
@@ -249,6 +289,7 @@ fn heuristic_context_breaks_release_ties() {
             cost_out: Some(0.0),
             release: Some("2026-01-01".into()),
             context: Some(128_000),
+            reasoning: None,
         },
     ];
     assert_eq!(pick_default_model(&candidates).as_deref(), Some("b:free"));

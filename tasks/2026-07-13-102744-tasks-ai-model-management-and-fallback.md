@@ -385,6 +385,19 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > retryable error. Root cause: on Gemini thinking models the thinking tokens
 > count against `max_output_tokens`; the 4096 cap was raised to 16384 in
 > `handle_gemini_request`.
+>
+> **Post-test polish (wording + reasoning flag).** Dropped the stale
+> "(3min timeout)" from the Gloss/AssistantResponses waiting texts (the 180 s
+> HTTP timeout is per attempt; a walk with retries runs longer). Progress
+> wording: "Trying X…" → "Request sent to X…"; `WalkProgress::RetryRound` now
+> carries `last_error` so the retry-round status includes the reason
+> ("Rate limited by … Retrying in 10 s (round 1 of 5)…"). New
+> `ModelEntry.reasoning: Option<bool>` (`skip_serializing_if` none) collected
+> from models.dev `reasoning` and OpenRouter `supported_parameters`
+> ("reasoning"); SambaNova/hand-added stay `None`. Merge refreshes the flag on
+> surviving models without erasing a known value when the source is silent.
+> ModelsDialog shows a subdued italic "reasoning" tag (tooltip) next to the
+> model name; `assets/providers.json` regenerated with the flags.
 
 - [x] 6.1 Add `ai_auto_fallback` to `AppSettings` + SuttaBridge get/set +
       qmllint stubs; add the checkbox + description + ordering note to the

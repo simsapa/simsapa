@@ -232,29 +232,39 @@ fn progress_display(progress: &WalkProgress) -> (String, String) {
     match progress {
         WalkProgress::Trying { provider, model } => (
             model.clone(),
-            format!("Trying {} ({})…", provider, model),
+            format!("Request sent to {} ({})…", provider, model),
         ),
         WalkProgress::AttemptFailed { error } => {
-            let text = match error.kind {
-                AiErrorKind::RateLimited => format!("Rate limited by {} ({}).", error.provider, error.model),
-                AiErrorKind::Overloaded => format!("{} ({}) is overloaded.", error.provider, error.model),
-                AiErrorKind::Timeout => format!("Request to {} ({}) timed out.", error.provider, error.model),
-                AiErrorKind::Network => format!("Network error for {} ({}).", error.provider, error.model),
-                AiErrorKind::Auth => format!("Invalid API key for {} — skipping its models.", error.provider),
-                AiErrorKind::QuotaExceeded => format!("Quota exceeded for {} — skipping its models.", error.provider),
-                AiErrorKind::ModelNotFound => format!("Model {} not found on {} — skipping.", error.model, error.provider),
-                AiErrorKind::InvalidResponse => format!("Incomplete response from {} ({}).", error.provider, error.model),
-                _ => error.message.clone(),
-            };
-            (error.model.clone(), text)
+            (error.model.clone(), attempt_failed_text(error))
         }
-        WalkProgress::RetryRound { round, delay_secs } => (
-            String::new(),
-            format!(
-                "Requests failed. Retrying in {} s (round {} of {})…",
-                delay_secs, round, MAX_RETRY_ROUNDS
-            ),
-        ),
+        WalkProgress::RetryRound { round, delay_secs, last_error } => {
+            let reason = match last_error {
+                Some(error) => attempt_failed_text(error),
+                None => "Requests failed.".to_string(),
+            };
+            (
+                String::new(),
+                format!(
+                    "{} Retrying in {} s (round {} of {})…",
+                    reason, delay_secs, round, MAX_RETRY_ROUNDS
+                ),
+            )
+        }
+    }
+}
+
+/// One-line reason for a failed attempt (also the reason shown on retry rounds).
+fn attempt_failed_text(error: &AiRequestError) -> String {
+    match error.kind {
+        AiErrorKind::RateLimited => format!("Rate limited by {} ({}).", error.provider, error.model),
+        AiErrorKind::Overloaded => format!("{} ({}) is overloaded.", error.provider, error.model),
+        AiErrorKind::Timeout => format!("Request to {} ({}) timed out.", error.provider, error.model),
+        AiErrorKind::Network => format!("Network error for {} ({}).", error.provider, error.model),
+        AiErrorKind::Auth => format!("Invalid API key for {} — skipping its models.", error.provider),
+        AiErrorKind::QuotaExceeded => format!("Quota exceeded for {} — skipping its models.", error.provider),
+        AiErrorKind::ModelNotFound => format!("Model {} not found on {} — skipping.", error.model, error.provider),
+        AiErrorKind::InvalidResponse => format!("Incomplete response from {} ({}).", error.provider, error.model),
+        _ => error.message.clone(),
     }
 }
 

@@ -62,7 +62,13 @@ pub enum WalkProgress {
     /// as [`WalkOutcome::Failed`].
     AttemptFailed { error: AiRequestError },
     /// Sleeping `delay_secs` before retry round `round` (1-based).
-    RetryRound { round: usize, delay_secs: u64 },
+    /// `last_error` is the failure that exhausted the previous round, so the
+    /// caller can report *why* the requests are being retried.
+    RetryRound {
+        round: usize,
+        delay_secs: u64,
+        last_error: Option<AiRequestError>,
+    },
 }
 
 /// Walk the fallback sequence until a model answers, the walk is cancelled,
@@ -121,7 +127,11 @@ pub fn run_fallback_walk(
                 break;
             }
             let delay_secs = RETRY_DELAYS_SECS[round - 1];
-            on_progress(WalkProgress::RetryRound { round, delay_secs });
+            on_progress(WalkProgress::RetryRound {
+                round,
+                delay_secs,
+                last_error: last_error.clone(),
+            });
             if !sleep(delay_secs) {
                 return WalkOutcome::Cancelled;
             }
@@ -497,9 +507,13 @@ mod tests {
             kinds,
             ["trying", "failed", "trying", "failed", "retry", "trying"]
         );
-        assert!(matches!(
-            s.progress[4],
-            WalkProgress::RetryRound { round: 1, delay_secs: 10 }
-        ));
+        match &s.progress[4] {
+            WalkProgress::RetryRound { round: 1, delay_secs: 10, last_error: Some(e) } => {
+                // The reason for the retry round is carried along.
+                assert_eq!(e.kind, AiErrorKind::RateLimited);
+                assert_eq!(e.provider, "Mistral");
+            }
+            other => panic!("expected RetryRound with last_error, got {:?}", other),
+        }
     }
 }

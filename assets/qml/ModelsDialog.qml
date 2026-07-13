@@ -138,6 +138,8 @@ ApplicationWindow {
                     model_enabled: model.enabled,
                     model_origin: model.origin,
                     model_stale: model.stale === true,
+                    // true / false / unknown (absent in the source data)
+                    model_reasoning: model.reasoning === true,
                     model_index: i
                 });
             }
@@ -715,6 +717,7 @@ ApplicationWindow {
                                                 required property bool model_enabled
                                                 required property string model_origin
                                                 required property bool model_stale
+                                                required property bool model_reasoning
                                                 required property int model_index
 
                                                 readonly property bool is_user_model: model_item.model_origin === "user"
@@ -760,6 +763,17 @@ ApplicationWindow {
                                                         color: palette.text
                                                         elide: Text.ElideRight
                                                         Layout.fillWidth: true
+                                                    }
+
+                                                    Text {
+                                                        text: "reasoning"
+                                                        visible: model_item.model_reasoning
+                                                        font.pointSize: root.pointSize - 2
+                                                        font.italic: true
+                                                        color: palette.placeholderText
+                                                        ToolTip.visible: reasoning_hover.hovered
+                                                        ToolTip.text: "A reasoning/thinking model: it spends output tokens on internal reasoning before answering, so responses take longer.";
+                                                        HoverHandler { id: reasoning_hover }
                                                     }
 
                                                     Text {

@@ -201,7 +201,7 @@ ColumnLayout {
                                 // Handle empty or invalid data
                                 if (!data || Object.keys(data).length === 0) {
                                     logger.info(`⚠️  Empty or invalid data, showing waiting message`);
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 }
 
                                 if (data.status === "waiting") {
@@ -211,7 +211,7 @@ ColumnLayout {
                                     if (data.progress && data.progress.length > 0) {
                                         return data.progress;
                                     }
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 } else if (data.status === "error") {
                                     logger.info(`❌ Showing error message`);
                                     var formatted = ai_error_utils.format_response_error(data.response)
@@ -223,7 +223,7 @@ ColumnLayout {
                                     return html_content;
                                 } else {
                                     logger.info(`❓ Unknown status: "${data.status}", showing waiting message for ${data.model_name}`);
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 }
                             }
                             font.pointSize: root.vocab_font_point_size

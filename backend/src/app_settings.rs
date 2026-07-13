@@ -30,6 +30,11 @@ pub struct ModelEntry {
     /// "not found upstream" marker; never auto-removed.
     #[serde(default)]
     pub stale: bool,
+    /// Whether this is a reasoning/thinking model, when the source publishes
+    /// it (models.dev `reasoning`, OpenRouter `supported_parameters`).
+    /// `None` = unknown (SambaNova's bare id list, hand-added models).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
 }
 
 /// One entry of a global model-usage list ("Fallback sequence" or "Parallel
