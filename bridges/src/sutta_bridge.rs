@@ -1078,6 +1078,18 @@ pub mod qobject {
         fn get_provider_for_model(self: &SuttaBridge, model_name: &QString) -> QString;
 
         #[qinvokable]
+        fn get_ai_fallback_sequence_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_ai_fallback_sequence_json(self: Pin<&mut SuttaBridge>, entries_json: &QString);
+
+        #[qinvokable]
+        fn get_ai_parallel_prompts_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_ai_parallel_prompts_json(self: Pin<&mut SuttaBridge>, entries_json: &QString);
+
+        #[qinvokable]
         fn get_anki_template_front(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -2769,6 +2781,30 @@ impl qobject::SuttaBridge {
     pub fn get_provider_for_model(&self, model_name: &QString) -> QString {
         let app_data = get_app_data();
         QString::from(app_data.get_provider_for_model(&model_name.to_string()))
+    }
+
+    /// The ordered "Fallback sequence" list. Seeded from the enabled models on
+    /// first access. See docs/ai-model-management-and-fallback.md.
+    pub fn get_ai_fallback_sequence_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_ai_fallback_sequence_json())
+    }
+
+    /// Whole-list set, covering both reordering and the per-item toggles.
+    pub fn set_ai_fallback_sequence_json(self: Pin<&mut Self>, entries_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_ai_fallback_sequence_json(&entries_json.to_string());
+    }
+
+    /// The unordered "Parallel prompts" list.
+    pub fn get_ai_parallel_prompts_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_ai_parallel_prompts_json())
+    }
+
+    pub fn set_ai_parallel_prompts_json(self: Pin<&mut Self>, entries_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_ai_parallel_prompts_json(&entries_json.to_string());
     }
 
     pub fn get_saved_theme(&self) -> QString {

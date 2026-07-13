@@ -451,6 +451,22 @@ Item {
         return "OpenRouter";
     }
 
+    function get_ai_fallback_sequence_json(): string {
+        return '[{"provider": "OpenRouter", "model_name": "some/model:free", "enabled": true}]';
+    }
+
+    function set_ai_fallback_sequence_json(entries_json: string) {
+        console.log("set_ai_fallback_sequence_json():", entries_json);
+    }
+
+    function get_ai_parallel_prompts_json(): string {
+        return '[{"provider": "OpenRouter", "model_name": "some/model:free", "enabled": true}]';
+    }
+
+    function set_ai_parallel_prompts_json(entries_json: string) {
+        console.log("set_ai_parallel_prompts_json():", entries_json);
+    }
+
     function get_theme_name(): string {
         return 'dark';
     }

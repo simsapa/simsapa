@@ -183,7 +183,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 - [x] 3.3 Build; manually-verifiable behavior documented in the dialog (user
       tests live); backend tests still green.
 
-### 4.0 Global lists: "Fallback sequence" and "Parallel prompts" (FR-C1–C7)
+### [x] 4.0 Global lists: "Fallback sequence" and "Parallel prompts" (FR-C1–C7)
 
 > **Specs.** New `AppSettings` fields (all `#[serde(default)]`):
 > `ai_fallback_sequence: Vec<ModelUsageEntry>`, `ai_parallel_prompts:
@@ -209,29 +209,38 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > `set_ai_fallback_sequence_json(json)` (whole-list set covers reorder +
 > toggles), `get_ai_parallel_prompts_json()`, `set_ai_parallel_prompts_json(json)`.
 > **Depends on:** 1.0.
+>
+> **As built (decision on the provider-enabled question).** The lists hold only
+> *usable* models: an enabled model of an **enabled** provider. Enabling a model
+> whose provider is off adds nothing; enabling a provider brings its enabled
+> models in; disabling it drops them
+> (`sync_provider_enabled_in_model_usage_lists`). Reconcile prunes on the same
+> rule and also runs on every list read, so lists written by a path which skipped
+> the hooks self-heal. Consequently the engine (6.0) does **not** need its own
+> `provider.enabled` filter when walking the sequence.
 
-- [ ] 4.1 Add `ModelUsageEntry` + the two fields to `AppSettings`; implement
+- [x] 4.1 Add `ModelUsageEntry` + the two fields to `AppSettings`; implement
       the sync helpers + seeding in `backend/src/app_data.rs`; unit tests for
       sync (enable appends once, disable removes, seed puts word-selection
       model first only when the feature is enabled, seed normalizes a legacy
       Debug-form provider name, order preserved on re-enable).
-- [ ] 4.2 Add the four bridge fns + qmllint stubs; make
+- [x] 4.2 Add the four bridge fns + qmllint stubs; make
       `set_provider_model_enabled` / `remove_provider_model` call the sync
       helpers.
-- [ ] 4.3 Create `assets/qml/ModelUsageLists.qml`: two GroupBoxes —
+- [x] 4.3 Create `assets/qml/ModelUsageLists.qml`: two GroupBoxes —
       "Fallback sequence" (each row: enable checkbox, `Provider / model-id`
       label, up/down buttons) and "Parallel prompts" (checkbox + label);
       loads/saves via the JSON bridge fns; register in `bridges/build.rs`.
-- [ ] 4.4 Embed `ModelUsageLists` in the new global options area at the top of
+- [x] 4.4 Embed `ModelUsageLists` in the new global options area at the top of
       `ModelsDialog.qml` (collapsible to save vertical space on
       mobile/narrow layouts); refresh it when models are toggled in the
       provider pane and after "Update Model Lists" completes.
-- [ ] 4.5 Implement `reconcile_model_usage_lists()` in `app_data.rs` (prune
+- [x] 4.5 Implement `reconcile_model_usage_lists()` in `app_data.rs` (prune
       entries whose `(provider, model_name)` is gone from the providers
       config) and call it from the 3.1 `update_model_lists` save path before
       emitting `modelListsUpdated`; unit test: an update run that removes an
       enabled fetched model also drops its sequence/parallel entries.
-- [ ] 4.6 Build + backend tests.
+- [x] 4.6 Build + backend tests.
 
 ### 5.0 Error classification and display (FR-E1–E3, FR-F1–F3)
 

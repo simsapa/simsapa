@@ -32,6 +32,16 @@ pub struct ModelEntry {
     pub stale: bool,
 }
 
+/// One entry of a global model-usage list ("Fallback sequence" or "Parallel
+/// prompts"). The provider is stored as its canonical string form
+/// (`ProviderName::as_str()`), the model as the provider's model id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelUsageEntry {
+    pub provider: String,
+    pub model_name: String,
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provider {
     pub name: ProviderName,
@@ -267,6 +277,16 @@ pub struct AppSettings {
     /// Model name used for word selection (empty = none).
     #[serde(default)]
     pub gloss_word_selection_model: String,
+
+    // --- Global model-usage lists (ModelsDialog global options) ---
+    /// Models tried one after another by the sequential fallback engine. The
+    /// vector order is the fallback order. See
+    /// docs/ai-model-management-and-fallback.md.
+    #[serde(default)]
+    pub ai_fallback_sequence: Vec<ModelUsageEntry>,
+    /// Models dispatched simultaneously in parallel-prompt mode. Unordered.
+    #[serde(default)]
+    pub ai_parallel_prompts: Vec<ModelUsageEntry>,
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -628,6 +648,8 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_word_selection_enabled: false,
             gloss_word_selection_provider: String::new(),
             gloss_word_selection_model: String::new(),
+            ai_fallback_sequence: Vec::new(),
+            ai_parallel_prompts: Vec::new(),
         }
     }
 }

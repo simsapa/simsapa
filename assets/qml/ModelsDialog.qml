@@ -32,6 +32,8 @@ ApplicationWindow {
     property string selected_provider: ""
     property int selected_provider_index: -1
 
+    property bool global_options_expanded: true
+
     property bool update_in_progress: false
     property string update_status: ""
     property bool update_failed: false
@@ -168,6 +170,10 @@ ApplicationWindow {
 
         // Update the list model
         provider_list_model.setProperty(provider_index, "provider_enabled", enabled);
+
+        // Enabling a provider brings its enabled models into the usage lists,
+        // disabling it drops them.
+        model_usage_lists.reload();
         return enabled;
     }
 
@@ -194,6 +200,7 @@ ApplicationWindow {
             load_providers();
             provider_list_view.currentIndex = root.selected_provider_index;
             load_provider_details();
+            model_usage_lists.reload();
 
             new_model_input.text = "";
         }
@@ -212,6 +219,9 @@ ApplicationWindow {
 
             // Update the model list display
             model_list_model.setProperty(model_index, "model_enabled", enabled);
+
+            // Enabling a model appends it to both usage lists, disabling drops it.
+            model_usage_lists.reload();
         }
     }
 
@@ -241,6 +251,7 @@ ApplicationWindow {
             load_providers();
             provider_list_view.currentIndex = root.selected_provider_index;
             load_provider_details();
+            model_usage_lists.reload();
         }
     }
 
@@ -288,6 +299,10 @@ ApplicationWindow {
                 }
             }
             root.load_provider_details();
+
+            // The updater saves the whole providers config, so the usage lists
+            // were reconciled in Rust; pick up the pruned lists.
+            model_usage_lists.reload();
         }
     }
 
@@ -343,13 +358,57 @@ ApplicationWindow {
                 Layout.fillWidth: true
             }
 
+            // Global options: the model-usage lists and the fallback/retry
+            // settings, which apply across providers. Collapsible, so the
+            // provider panes below still have room on narrow layouts.
             RowLayout {
-                CheckBox {
-                    id: auto_retry
-                    text: "Auto-retry AI Model Requests"
-                    checked: false
-                    onCheckedChanged: {
-                        SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
+                Layout.fillWidth: true
+                spacing: 5
+
+                Button {
+                    text: root.global_options_expanded ? "▼" : "▶"
+                    flat: true
+                    onClicked: root.global_options_expanded = !root.global_options_expanded
+                }
+
+                Label {
+                    text: "Global Options"
+                    font.bold: true
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+
+                    TapHandler {
+                        onTapped: root.global_options_expanded = !root.global_options_expanded
+                    }
+                }
+            }
+
+            ScrollView {
+                id: global_options_scroll
+                visible: root.global_options_expanded
+                clip: true
+                contentWidth: availableWidth
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(global_options_column.implicitHeight, root.height * 0.4)
+
+                ColumnLayout {
+                    id: global_options_column
+                    width: global_options_scroll.availableWidth
+                    spacing: 5
+
+                    ModelUsageLists {
+                        id: model_usage_lists
+                        pointSize: root.pointSize
+                        Layout.fillWidth: true
+                    }
+
+                    CheckBox {
+                        id: auto_retry
+                        text: "Auto-retry AI Model Requests"
+                        checked: false
+                        onCheckedChanged: {
+                            SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
+                        }
                     }
                 }
             }
