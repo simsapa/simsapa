@@ -28,6 +28,8 @@ ColumnLayout {
 
     Logger { id: logger }
 
+    AiErrorUtils { id: ai_error_utils }
+
     // Debug logging when translations_data changes
     onTranslations_dataChanged: {
         /* logger.info(`AssistantResponses: translations_data changed for paragraph ${paragraph_index}`); */
@@ -59,10 +61,9 @@ ColumnLayout {
         return Date.now().toString() + "_" + Math.random().toString(36)
     }
 
+    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
-        return response_text.includes("API Error:") ||
-               response_text.includes("Error:") ||
-               response_text.includes("Failed:")
+        return ai_error_utils.is_error(response_text)
     }
 
     spacing: 10
@@ -209,7 +210,8 @@ ColumnLayout {
                                     return `Waiting for response from ${data.model_name} (3min timeout) ...`;
                                 } else if (data.status === "error") {
                                     logger.info(`❌ Showing error message`);
-                                    var error_text = data.response || "Unknown error occurred"
+                                    var formatted = ai_error_utils.format_response_error(data.response)
+                                    var error_text = formatted || data.response || "Unknown error occurred"
                                     var retry_text = data.retry_count > 0 ? `\n\nRetrying... (${data.retry_count}x)` : ""
                                     return error_text + retry_text;
                                 } else if (data.status === "completed") {

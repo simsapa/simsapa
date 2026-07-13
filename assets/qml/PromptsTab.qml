@@ -26,6 +26,8 @@ Item {
     property string border_color: root.is_dark ? "#0a0a0a" : "#ccc"
 
     Logger { id: logger }
+
+    AiErrorUtils { id: ai_error_utils }
     PromptManager { id: pm }
     ClipboardManager { id: clipboard_manager }
 
@@ -229,14 +231,13 @@ Item {
         return Date.now().toString() + "_" + Math.random().toString(36);
     }
 
+    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
-        return response_text.includes("API Error:") ||
-               response_text.includes("Error:") ||
-               response_text.includes("Failed:");
+        return ai_error_utils.is_error(response_text);
     }
 
     function is_rate_limit_error(response_text) {
-        return response_text.includes("API Error: Rate limit exceeded");
+        return ai_error_utils.is_error_kind(response_text, "rate_limited");
     }
 
     function handle_retry_request(message_idx, model_name, new_request_id) {

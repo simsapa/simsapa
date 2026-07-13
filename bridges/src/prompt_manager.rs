@@ -9,9 +9,13 @@ use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, pr
 use rig::providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig};
 use tokio::runtime::Runtime;
 
+use rig::completion::request::{CompletionError, PromptError};
+use rig::http_client;
+
 use simsapa_backend::logger::error;
 use simsapa_backend::get_app_data;
 use simsapa_backend::app_settings::ProviderName;
+use simsapa_backend::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
 use simsapa_backend::prompt_utils::{markdown_to_html, clean_prompt};
 
 #[cxx_qt::bridge]
@@ -75,9 +79,66 @@ fn create_http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
+/// Translate a `rig` error into a classified `AiRequestError`.
+///
+/// `rig` discards the HTTP status on provider errors and hands us the raw
+/// response body instead, so most of the work happens in the body-parsing
+/// classifier in `simsapa_backend::ai_error` (see its module docs). Transport
+/// failures are the exception: the original `reqwest::Error` survives inside
+/// `http_client::Error::Instance` and still knows whether it timed out.
+fn classify_rig_error(provider: &str, model: &str, err: PromptError) -> AiRequestError {
+    let completion_error = match err {
+        PromptError::CompletionError(e) => e,
+        other => return AiRequestError::new(AiErrorKind::Unknown, provider, model, other.to_string()),
+    };
+
+    match completion_error {
+        // The body of a non-2xx provider response, with the status dropped.
+        CompletionError::ProviderError(body) | CompletionError::ResponseError(body) => {
+            classify_provider_error(provider, model, None, &body)
+        }
+
+        CompletionError::HttpError(http_err) => match http_err {
+            http_client::Error::InvalidStatusCode(status) => {
+                classify_provider_error(provider, model, Some(status.as_u16()), "")
+            }
+            http_client::Error::InvalidStatusCodeWithMessage(status, body) => {
+                classify_provider_error(provider, model, Some(status.as_u16()), &body)
+            }
+            http_client::Error::Instance(boxed) => {
+                let is_timeout = boxed
+                    .downcast_ref::<reqwest::Error>()
+                    .map(|e| e.is_timeout())
+                    .unwrap_or(false);
+                classify_transport_error(provider, model, is_timeout, &boxed.to_string())
+            }
+            other => classify_transport_error(provider, model, false, &other.to_string()),
+        },
+
+        other => AiRequestError::new(AiErrorKind::Unknown, provider, model, other.to_string()),
+    }
+}
+
+/// The request failed before it could be sent (client build, malformed messages).
+fn request_setup_error(provider: &str, model: &str, message: impl Into<String>) -> AiRequestError {
+    AiRequestError::new(AiErrorKind::InvalidRequest, provider, model, message)
+}
+
+/// The model's provider is switched off in the AI Models settings. Not retryable and
+/// not a provider skip: the usage lists only ever hold models of enabled providers,
+/// so the fallback engine cannot reach this — it is a direct-call guard.
+fn provider_disabled_error(provider: &str, model: &str) -> AiRequestError {
+    AiRequestError::new(
+        AiErrorKind::InvalidRequest,
+        provider,
+        model,
+        format!("Provider {} is disabled", provider),
+    )
+}
+
 // Macro to generate response handling code
 macro_rules! get_response {
-    ($agent:expr, $messages:expr, $model:expr) => {{
+    ($agent:expr, $messages:expr, $model:expr, $provider:expr) => {{
         let response = if $messages.len() == 1 {
             // Single message - handle as prompt.
             // In the single message case (GlossTab.qml) the system prompt is already prepended to the message content.
@@ -85,7 +146,7 @@ macro_rules! get_response {
             $agent
                 .prompt(prompt_content)
                 .await
-                .map_err(|e| format!("Failed to prompt {}: {}", $model, e))?
+                .map_err(|e| classify_rig_error($provider, $model, e))?
         } else {
             // Multiple messages - handle as chat.
             //
@@ -103,13 +164,13 @@ macro_rules! get_response {
             let (chat_history, current_prompt) = if let Some((last, rest)) = rig_messages.split_last() {
                 (rest.to_vec(), last.clone())
             } else {
-                return Err("No messages provided".to_string());
+                return Err(request_setup_error($provider, $model, "No messages provided"));
             };
 
             $agent
                 .chat(current_prompt, chat_history)
                 .await
-                .map_err(|e| format!("Failed to prompt {}: {}", $model, e))?
+                .map_err(|e| classify_rig_error($provider, $model, e))?
         };
 
         clean_prompt(&response)
@@ -141,7 +202,7 @@ impl qobject::PromptManager {
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().prompt_response(
                         paragraph_idx,
@@ -158,15 +219,22 @@ impl qobject::PromptManager {
                 content: prompt_text,
             }];
 
-            let response_content = {
+            // A failed request travels as an `{"ai_error": …}` JSON envelope in both
+            // the plain and the HTML field; QML checks `AiErrorUtils.is_error()`
+            // before rendering either.
+            let (response_content, response_content_html) = {
                 let rt = Runtime::new().unwrap();
                 match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
+                    Ok(content) => {
+                        let html = markdown_to_html(&content);
+                        (content, html)
+                    }
+                    Err(e) => {
+                        let envelope = e.to_envelope_json();
+                        (envelope.clone(), envelope)
+                    }
                 }
             };
-
-            let response_content_html = markdown_to_html(&response_content);
 
             // Emit signal with the prompt response
             qt_thread.queue(move |mut qo| {
@@ -194,7 +262,7 @@ impl qobject::PromptManager {
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Error: Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().word_selection_response(
                         request_id,
@@ -214,7 +282,7 @@ impl qobject::PromptManager {
                 let rt = Runtime::new().unwrap();
                 match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
                     Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
+                    Err(e) => e.to_envelope_json(),
                 }
             };
 
@@ -244,7 +312,7 @@ impl qobject::PromptManager {
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().prompt_response_for_messages(
                         sender_message_idx,
@@ -257,7 +325,7 @@ impl qobject::PromptManager {
                 let rt = Runtime::new().unwrap();
                 match rt.block_on(make_api_request(&messages, &model_name_text, &provider_name_text)) {
                     Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
+                    Err(e) => e.to_envelope_json(),
                 }
             };
 
@@ -279,35 +347,41 @@ struct ChatMessage {
     content: String,
 }
 
-async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: &str) -> Result<String, String> {
+async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: &str) -> Result<String, AiRequestError> {
     let api_key = get_provider_api_key(provider_name);
     if api_key.is_empty() {
-        return Err(format!("No API key found for provider: {}", provider_name));
+        return Err(AiRequestError::new(
+            AiErrorKind::Auth,
+            provider_name,
+            model,
+            format!("No API key found for provider: {}", provider_name),
+        ));
     }
 
     // Deserialize provider_name string to ProviderName enum
     let provider_enum: ProviderName = serde_json::from_str(&format!("\"{}\"", provider_name))
-        .map_err(|e| format!("Invalid provider name '{}': {}", provider_name, e))?;
+        .map_err(|e| request_setup_error(provider_name, model, format!("Invalid provider name '{}': {}", provider_name, e)))?;
 
-    let http_client = create_http_client()?;
+    let http_client = create_http_client()
+        .map_err(|e| request_setup_error(provider_name, model, e))?;
 
     // Match on the ProviderName enum to handle all possible values
     match provider_enum {
-        ProviderName::DeepSeek => handle_deepseek_request(messages, model, &api_key, http_client).await,
-        ProviderName::Gemini => handle_gemini_request(messages, model, &api_key, http_client).await,
-        ProviderName::XAI => handle_xai_request(messages, model, &api_key, http_client).await,
-        ProviderName::Anthropic => handle_anthropic_request(messages, model, &api_key, http_client).await,
-        ProviderName::OpenAI => handle_openai_request(messages, model, &api_key, http_client).await,
-        ProviderName::OpenRouter => handle_openrouter_request(messages, model, &api_key, http_client).await,
-        ProviderName::Mistral => handle_mistral_request(messages, model, &api_key, http_client).await,
-        ProviderName::HuggingFace => handle_huggingface_request(messages, model, &api_key, http_client).await,
-        ProviderName::Perplexity => handle_perplexity_request(messages, model, &api_key, http_client).await,
+        ProviderName::DeepSeek => handle_deepseek_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Gemini => handle_gemini_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::XAI => handle_xai_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Anthropic => handle_anthropic_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::OpenAI => handle_openai_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::OpenRouter => handle_openrouter_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Mistral => handle_mistral_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::HuggingFace => handle_huggingface_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Perplexity => handle_perplexity_request(messages, model, provider_name, &api_key, http_client).await,
         ProviderName::NvidiaNim => handle_openai_compatible_request(
-            messages, model, &api_key, http_client,
+            messages, model, provider_name, &api_key, http_client,
             "NVIDIA NIM", "https://integrate.api.nvidia.com/v1",
         ).await,
         ProviderName::SambaNova => handle_openai_compatible_request(
-            messages, model, &api_key, http_client,
+            messages, model, provider_name, &api_key, http_client,
             "SambaNova", "https://api.sambanova.ai/v1",
         ).await,
     }
@@ -316,11 +390,12 @@ async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: 
 async fn handle_openai_compatible_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
     label: &str,
     base_url: &str,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     // NVIDIA NIM, SambaNova and similar OpenAI-compatible endpoints expose
     // the traditional `/chat/completions` path but not OpenAI's newer
     // `/responses` one, so switch away from the default Responses API.
@@ -329,7 +404,7 @@ async fn handle_openai_compatible_request(
         .api_key(api_key)
         .base_url(base_url)
         .build()
-        .map_err(|e| format!("Failed to build {} client: {}", label, e))?
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build {} client: {}", label, e)))?
         .completions_api();
 
     let system_prompt = extract_system_prompt(messages);
@@ -348,20 +423,21 @@ async fn handle_openai_compatible_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_deepseek_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = deepseek::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build DeepSeek client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build DeepSeek client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -379,20 +455,21 @@ async fn handle_deepseek_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_gemini_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = gemini::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Gemini client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Gemini client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -410,31 +487,32 @@ async fn handle_gemini_request(
             client.agent(model)
                   .preamble(&system_prompt)
                   .temperature(0.7)
-                  .additional_params(serde_json::to_value(cfg).map_err(|e| format!("Failed to serialize config: {}", e))?)
+                  .additional_params(serde_json::to_value(cfg).map_err(|e| request_setup_error(provider, model, format!("Failed to serialize config: {}", e)))?)
                   .build()
         }
         None => {
             client.agent(model)
                   .temperature(0.7)
-                  .additional_params(serde_json::to_value(cfg).map_err(|e| format!("Failed to serialize config: {}", e))?)
+                  .additional_params(serde_json::to_value(cfg).map_err(|e| request_setup_error(provider, model, format!("Failed to serialize config: {}", e)))?)
                   .build()
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_xai_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = xai::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build xAI client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build xAI client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -452,20 +530,21 @@ async fn handle_xai_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_anthropic_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = anthropic::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Anthropic client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Anthropic client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -483,20 +562,21 @@ async fn handle_anthropic_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_openai_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = openai::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build OpenAI client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenAI client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -514,20 +594,21 @@ async fn handle_openai_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_openrouter_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = openrouter::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build OpenRouter client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenRouter client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -545,20 +626,21 @@ async fn handle_openrouter_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_mistral_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = mistral::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Mistral client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Mistral client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -576,20 +658,21 @@ async fn handle_mistral_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_huggingface_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = huggingface::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build HuggingFace client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build HuggingFace client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -607,20 +690,21 @@ async fn handle_huggingface_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_perplexity_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = perplexity::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Perplexity client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Perplexity client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -638,5 +722,5 @@ async fn handle_perplexity_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }

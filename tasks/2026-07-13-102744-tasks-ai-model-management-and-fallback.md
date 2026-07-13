@@ -7,6 +7,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 - `backend/src/app_settings.rs` - `ModelEntry` / `Provider` / `AppSettings` structs; new `origin`/`stale` fields, new global-list and mode settings fields; canonical `ProviderName` string conversion (FR-C7).
 - `backend/src/provider_models_update.rs` - **New.** Shared model-list update procedure (models.dev + native fetchers, filters, merge, default heuristic).
 - `backend/src/app_data.rs` - providers `get/set_providers_json`, typed `get_providers()`/`set_providers()` (the updater's save path), and the `app_settings_cache`. The model add/remove/enable **mutation logic moves here** (from `sutta_bridge.rs`) so the global-list sync helpers live next to the cache and are testable without Qt.
+- `backend/src/ai_error.rs` - **New.** `AiErrorKind` / `AiRequestError`, the rig-free classifier (`classify_provider_error`, `classify_transport_error`), the `{"ai_error": …}` envelope, and the retryable / skips-provider predicates. Unit tests against recorded provider error bodies live in the module.
 - `backend/tests/provider_models_update_tests.rs` - **New.** Merge semantics, heuristic, and filter tests against fixture snapshots.
 - `backend/tests/data/modelsdev-fixture.json` - **New.** Trimmed models.dev snapshot for tests (plus OpenRouter/SambaNova native fixtures).
 - `cli/src/update_provider_models.rs` - Rewritten to call the shared backend procedure; applies the default-enable heuristic (CLI mode).
@@ -242,7 +243,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
       enabled fetched model also drops its sequence/parallel entries.
 - [x] 4.6 Build + backend tests.
 
-### 5.0 Error classification and display (FR-E1–E3, FR-F1–F3)
+### [x] 5.0 Error classification and display (FR-E1–E3, FR-F1–F3)
 
 > **Specs.** Rust type (in `backend` or `bridges`, reachable from
 > `prompt_manager.rs`): `AiRequestError {kind, http_status: Option<u16>,
@@ -269,26 +270,46 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > **Depends on:** none structurally (parallel to 3.0/4.0), but engine (6.0)
 > requires it.
 
-- [ ] 5.1 Audit the provider handlers in `bridges/src/prompt_manager.rs` for
+- [x] 5.1 Audit the provider handlers in `bridges/src/prompt_manager.rs` for
       what error detail `rig` exposes (status code availability per provider
       client); note findings as comments/doc.
-- [ ] 5.2 Implement `AiRequestError` + `classify_ai_error(provider, model,
+      **Finding:** rig-core 0.30 **drops the HTTP status** on provider errors —
+      every non-streaming provider path collapses a non-2xx response to
+      `CompletionError::ProviderError(body_text)`. The status must therefore be
+      recovered by **parsing the body** (Gemini/OpenRouter carry a numeric
+      `error.code`; Anthropic/OpenAI a symbolic `error.type`/`error.code`).
+      `http_client::Error::InvalidStatusCode{,WithMessage}` does carry a status
+      but is never produced by these paths. Transport errors keep their detail:
+      the `reqwest::Error` survives inside `http_client::Error::Instance` and
+      still answers `is_timeout()`. Recorded in the `backend/src/ai_error.rs`
+      module docs.
+- [x] 5.2 Implement `AiRequestError` + `classify_ai_error(provider, model,
       rig_error) -> AiRequestError` taking the `CompletionError` value from
       `get_response!`'s `map_err` (not the formatted string), with unit tests
       over sample provider error bodies (Gemini 429 RESOURCE_EXHAUSTED,
       Gemini 503/500 overloaded, OpenRouter 429, invalid key 401, model 404,
       reqwest timeout).
-- [ ] 5.3 Change `make_api_request` error path to return the classified error;
+      **As built:** split in two — the rig-free classifier core lives in
+      `backend/src/ai_error.rs` (`classify_provider_error` /
+      `classify_transport_error`, unit-tested against recorded provider bodies
+      without any network or rig types), and the rig-shaped adapter
+      `classify_rig_error()` lives in `prompt_manager.rs`.
+      **Gotcha pinned by a test:** Gemini's *rate-limit* body reads "You exceeded
+      your current quota, please check your plan and billing details", so neither
+      "quota" nor "billing" can mark a hard quota — an explicit rate-limit signal
+      outranks the quota markers, or a per-minute limit would wrongly skip the
+      whole provider.
+- [x] 5.3 Change `make_api_request` error path to return the classified error;
       emit the `{"ai_error": …}` JSON envelope through the existing response
       signals instead of bare `"Error: …"` strings.
-- [ ] 5.4 Create `assets/qml/AiErrorUtils.qml` (register in `build.rs`) with
+- [x] 5.4 Create `assets/qml/AiErrorUtils.qml` (register in `build.rs`) with
       `is_error(response)`, `parse_error(response)`, `format_error(err)`;
       replace the string-matching `is_error_response` /
       `is_rate_limit_error` checks in `GlossTab.qml` and the error display
       paths in GlossTab translations, Word Selection status
       (`ws_set_status`), and PromptsTab/AssistantResponses with the helper
       (raw JSON fallback for `unknown`).
-- [ ] 5.5 Build + backend tests.
+- [x] 5.5 Build + backend tests.
 
 ### 6.0 Sequential fallback/retry engine in Rust (FR-D1–D8)
 

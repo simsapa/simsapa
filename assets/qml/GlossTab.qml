@@ -42,6 +42,8 @@ Item {
     signal requestWordSummary(string word)
 
     Logger { id: logger }
+
+    AiErrorUtils { id: ai_error_utils }
     PromptManager { id: pm }
     ClipboardManager { id: clipboard_manager }
 
@@ -526,10 +528,16 @@ Item {
         root.ws_request_items = ri;
 
         let parsed;
-        try {
-            parsed = JSON.parse(SuttaBridge.parse_word_selection_response(response, items_json));
-        } catch (e) {
-            parsed = { error: "Failed to parse word selection response: " + e };
+        let request_error = ai_error_utils.parse_error(response);
+        if (request_error !== null) {
+            // The request itself failed; the response carries no selections to parse.
+            parsed = { error: ai_error_utils.format_error(request_error) };
+        } else {
+            try {
+                parsed = JSON.parse(SuttaBridge.parse_word_selection_response(response, items_json));
+            } catch (e) {
+                parsed = { error: "Failed to parse word selection response: " + e };
+            }
         }
 
         if (parsed.error !== undefined) {
@@ -926,14 +934,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return Date.now().toString() + "_" + Math.random().toString(36);
     }
 
+    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
-        return response_text.includes("API Error:") ||
-               response_text.includes("Error:") ||
-               response_text.includes("Failed:");
+        return ai_error_utils.is_error(response_text);
     }
 
     function is_rate_limit_error(response_text) {
-        return response_text.includes("API Error: Rate limit exceeded");
+        return ai_error_utils.is_error_kind(response_text, "rate_limited");
     }
 
     ScrollableHelper {
