@@ -1,449 +1,1331 @@
 [
-    {
-        "name": "Gemini",
-        "description": "<p>Links: <a href='https://aistudio.google.com/app/apikey'>API Keys</a>, <a href='https://ai.google.dev/gemini-api/docs/pricing'>Pricing</a> (free)</p>",
+  {
+    "name": "Gemini",
+    "description": "<p>Links: <a href='https://aistudio.google.com/app/apikey'>API Keys</a>, <a href='https://ai.google.dev/gemini-api/docs/pricing'>Pricing</a> (free)</p>",
+    "enabled": false,
+    "api_key_env_var_name": "GEMINI_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "gemini-flash-latest",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3.1-pro-preview",
         "enabled": false,
-        "api_key_env_var_name": "GEMINI_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "gemini-flash-latest",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-3.1-pro-preview",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-3-pro-preview",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-pro-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-2.5-pro",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-3-flash-preview",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-2.5-flash",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-2.0-flash",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-2.5-flash-lite",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-flash-lite-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemini-2.0-flash-lite",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemma-3-27b-it",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gemma-3-12b-it",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "OpenRouter",
-        "description": "<p>Links: <a href='https://openrouter.ai/keys'>API Keys</a>, <a href='https://openrouter.ai/models'>Models</a> (some models are free)</p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3-pro-preview",
         "enabled": false,
-        "api_key_env_var_name": "OPENROUTER_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "openai/gpt-oss-120b:free",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "nousresearch/hermes-3-llama-3.1-405b:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "nvidia/nemotron-3-super-120b-a12b:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "qwen/qwen3-next-80b-a3b-instruct:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "meta-llama/llama-3.3-70b-instruct:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "minimax/minimax-m2.5:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "z-ai/glm-4.5-air:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "arcee-ai/trinity-large-preview:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "google/gemma-3-27b-it:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "google/gemma-3-12b-it:free",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "Mistral",
-        "description": "<p>Links: <a href='https://console.mistral.ai/api-keys'>API Keys</a> (free)</p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-2.5-pro",
         "enabled": false,
-        "api_key_env_var_name": "MISTRAL_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "mistral-medium-latest",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "mistral-large-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "magistral-medium-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "magistral-small-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "mistral-small-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "ministral-14b-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "ministral-8b-latest",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "open-mistral-nemo",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "SambaNova",
-        "description": "<p>Links: <a href='https://cloud.sambanova.ai/apis'>API Keys</a>, <a href='https://docs.sambanova.ai/cloud/docs/get-started/supported-models'>Models</a> (free tier)</p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3-flash-preview",
         "enabled": false,
-        "api_key_env_var_name": "SAMBANOVA_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "DeepSeek-V3-0324",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "Meta-Llama-3.3-70B-Instruct",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "Llama-4-Scout-17B-16E-Instruct",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "Qwen3-32B",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "NvidiaNim",
-        "description": "<p>Links: <a href='https://build.nvidia.com/settings/api-keys'>API Keys</a>, <a href='https://build.nvidia.com/models'>Models</a> (free tier)</p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-2.5-flash",
         "enabled": false,
-        "api_key_env_var_name": "NVIDIA_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "meta/llama-3.3-70b-instruct",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "qwen/qwen3-next-80b-a3b-instruct",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "deepseek-ai/deepseek-r1",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "moonshotai/kimi-k2.5",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "Anthropic",
-        "description": "<p>Links: <a href='https://console.anthropic.com/settings/keys'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-2.0-flash",
         "enabled": false,
-        "api_key_env_var_name": "ANTHROPIC_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "claude-sonnet-4-6",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-opus-4-6",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-opus-4-5-20251101",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-opus-4-1-20250805",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-opus-4-0",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-sonnet-4-5-20250929",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-sonnet-4-0",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "claude-haiku-4-5-20251001",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "OpenAI",
-        "description": "<p>Links: <a href='https://platform.openai.com/api-keys'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-2.5-flash-lite",
         "enabled": false,
-        "api_key_env_var_name": "OPENAI_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "gpt-4o",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "gpt-4",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "DeepSeek",
-        "description": "<p>Links: <a href='https://platform.deepseek.com/api_keys'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-flash-lite-latest",
         "enabled": false,
-        "api_key_env_var_name": "DEEPSEEK_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "deepseek-reasoner",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "deepseek-chat",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "xAI",
-        "description": "<p>Links: <a href='https://console.x.ai/team/default/api-keys'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-2.0-flash-lite",
         "enabled": false,
-        "api_key_env_var_name": "XAI_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "grok-4",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "HuggingFace",
-        "description": "<p>Links: <a href='https://huggingface.co/settings/tokens'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3.1-flash-lite",
         "enabled": false,
-        "api_key_env_var_name": "HUGGINGFACE_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    },
-    {
-        "name": "Perplexity",
-        "description": "<p>Links: <a href='https://www.perplexity.ai/settings/api'>API Keys</a></p>",
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3.1-flash-lite-preview",
         "enabled": false,
-        "api_key_env_var_name": "PERPLEXITY_API_KEY",
-        "api_key_value": null,
-        "models": [
-            {
-                "model_name": "sonar-deep-research",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "sonar-reasoning-pro",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "sonar-reasoning",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "sonar-pro",
-                "enabled": false,
-                "origin": "fetched",
-                "stale": false
-            },
-            {
-                "model_name": "sonar",
-                "enabled": true,
-                "origin": "fetched",
-                "stale": false
-            }
-        ]
-    }
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3.1-pro-preview-customtools",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemini-3.5-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemma-4-26b-a4b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemma-4-31b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "OpenRouter",
+    "description": "<p>Links: <a href='https://openrouter.ai/keys'>API Keys</a>, <a href='https://openrouter.ai/models'>Models</a> (some models are free)</p>",
+    "enabled": false,
+    "api_key_env_var_name": "OPENROUTER_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "openai/gpt-oss-120b:free",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nousresearch/hermes-3-llama-3.1-405b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-super-120b-a12b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3-next-80b-a3b-instruct:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta-llama/llama-3.3-70b-instruct:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "cohere/north-mini-code:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-4-26b-a4b-it:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-4-31b-it:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "liquid/lfm-2.5-1.2b-instruct:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "liquid/lfm-2.5-1.2b-thinking:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta-llama/llama-3.2-3b-instruct:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-nano-30b-a3b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-nano-12b-v2-vl:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-nano-9b-v2:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "openai/gpt-oss-20b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "poolside/laguna-m.1:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "poolside/laguna-xs-2.1:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3-coder:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "tencent/hy3:free",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "Mistral",
+    "description": "<p>Links: <a href='https://console.mistral.ai/api-keys'>API Keys</a> (free)</p>",
+    "enabled": false,
+    "api_key_env_var_name": "MISTRAL_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "mistral-medium-latest",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-large-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "magistral-medium-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-small-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "ministral-8b-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "open-mistral-nemo",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "codestral-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-medium-2507",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-medium-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-small-2505",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "devstral-small-2507",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "labs-devstral-small-2512",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "magistral-small",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "ministral-3b-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-large-2411",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-large-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-medium-2505",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-medium-2508",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-medium-2604",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-nemo",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-small-2506",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistral-small-2603",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "open-mistral-7b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "open-mixtral-8x22b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "open-mixtral-8x7b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "pixtral-12b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "pixtral-large-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "SambaNova",
+    "description": "<p>Links: <a href='https://cloud.sambanova.ai/apis'>API Keys</a>, <a href='https://docs.sambanova.ai/cloud/docs/get-started/supported-models'>Models</a> (free tier)</p>",
+    "enabled": false,
+    "api_key_env_var_name": "SAMBANOVA_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "Meta-Llama-3.3-70B-Instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "DeepSeek-V3.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "DeepSeek-V3.2",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "MiniMax-M2.7",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gemma-4-31B-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-oss-120b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "NvidiaNim",
+    "description": "<p>Links: <a href='https://build.nvidia.com/settings/api-keys'>API Keys</a>, <a href='https://build.nvidia.com/models'>Models</a> (free tier)</p>",
+    "enabled": false,
+    "api_key_env_var_name": "NVIDIA_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "meta/llama-3.3-70b-instruct",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3-next-80b-a3b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "abacusai/dracarys-llama-3_1-70b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "baai/bge-m3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "bytedance/seed-oss-36b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "deepseek-ai/deepseek-v4-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "deepseek-ai/deepseek-v4-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-2-2b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-3n-e2b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-3n-e4b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/gemma-4-31b-it",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "google/google-paligemma",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/esm2-650m",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/esmfold",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/llama-3.1-70b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/llama-3.1-8b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/llama-3.2-1b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/llama-3.2-3b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "meta/llama-4-maverick-17b-128e-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "microsoft/phi-4-mini-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "microsoft/phi-4-multimodal-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "minimaxai/minimax-m2.7",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "minimaxai/minimax-m3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/magistral-small-2506",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mistral-7b-instruct-v03",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mistral-large-3-675b-instruct-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mistral-medium-3-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mistral-nemotron",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mistral-small-4-119b-2603",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mixtral-8x22b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "mistralai/mixtral-8x7b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "moonshotai/kimi-k2-instruct-0905",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "moonshotai/kimi-k2.6",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/gliner-pii",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-nano-30b-a3b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-super-120b-a12b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-3-ultra-550b-a55b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-mini-4b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nemotron-voicechat",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/nvidia-nemotron-nano-9b-v2",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/riva-translate-4b-instruct-v1_1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/studiovoice",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/usdcode",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "nvidia/usdvalidate",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "openai/gpt-oss-120b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "openai/gpt-oss-20b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen2.5-coder-32b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3-coder-480b-a35b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3.5-122b-a10b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "qwen/qwen3.5-397b-a17b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "sarvamai/sarvam-m",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "stepfun-ai/step-3.5-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "stepfun-ai/step-3.7-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "upstage/solar-10_7b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "z-ai/glm-5.2",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "Anthropic",
+    "description": "<p>Links: <a href='https://console.anthropic.com/settings/keys'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "ANTHROPIC_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "claude-sonnet-4-6",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-6",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-5-20251101",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-1-20250805",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-sonnet-4-5-20250929",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-haiku-4-5-20251001",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-fable-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-haiku-4-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-7",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-opus-4-8",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-sonnet-4-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "claude-sonnet-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "OpenAI",
+    "description": "<p>Links: <a href='https://platform.openai.com/api-keys'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "OPENAI_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "gpt-4o",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-3.5-turbo",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4-turbo",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4.1-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4.1-nano",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4o-2024-05-13",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4o-2024-08-06",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4o-2024-11-20",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-4o-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5-chat-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5-codex",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5-nano",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.1-chat-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.1-codex",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.1-codex-max",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.1-codex-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.2",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.2-chat-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.2-codex",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.2-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.3-chat-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.3-codex",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.3-codex-spark",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.4",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.4-mini",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.4-nano",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.4-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.5-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.6",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.6-luna",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.6-sol",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "gpt-5.6-terra",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o1-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o3-deep-research",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o3-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o3-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o4-mini",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "o4-mini-deep-research",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "DeepSeek",
+    "description": "<p>Links: <a href='https://platform.deepseek.com/api_keys'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "DEEPSEEK_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "deepseek-reasoner",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "deepseek-chat",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "deepseek-v4-flash",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "deepseek-v4-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "xAI",
+    "description": "<p>Links: <a href='https://console.x.ai/team/default/api-keys'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "XAI_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "grok-4.20-0309-non-reasoning",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "grok-4.20-0309-reasoning",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "grok-4.20-multi-agent-0309",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "grok-4.3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "grok-4.5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "grok-build-0.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "HuggingFace",
+    "description": "<p>Links: <a href='https://huggingface.co/settings/tokens'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "HUGGINGFACE_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  },
+  {
+    "name": "Perplexity",
+    "description": "<p>Links: <a href='https://www.perplexity.ai/settings/api'>API Keys</a></p>",
+    "enabled": false,
+    "api_key_env_var_name": "PERPLEXITY_API_KEY",
+    "api_key_value": null,
+    "models": [
+      {
+        "model_name": "sonar-deep-research",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "sonar-reasoning-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "sonar-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "sonar",
+        "enabled": true,
+        "origin": "fetched",
+        "stale": false
+      }
+    ]
+  }
 ]

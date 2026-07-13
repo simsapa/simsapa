@@ -123,32 +123,32 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > (per-provider: added/removed/staled counts or error) serializable to JSON.
 > **Depends on:** 1.0 (new schema).
 
-- [ ] 2.1 Create `backend/src/provider_models_update.rs` with the source
+- [x] 2.1 Create `backend/src/provider_models_update.rs` with the source
       fetchers: `fetch_models_dev()`, `fetch_openrouter_native()`,
       `fetch_sambanova_native()`, each returning normalized
       `Vec<FetchedModel> {id, cost_in, cost_out, release, context, modalities}`
       (native entries have `None` metadata); wire the provider-key map and the
       chat-model filter/denylist. Add module + any new deps to
       `backend/src/lib.rs` / `Cargo.toml`.
-- [ ] 2.2 Implement `merge_provider_models(existing: &[ModelEntry], fetched:
+- [x] 2.2 Implement `merge_provider_models(existing: &[ModelEntry], fetched:
       &[FetchedModel]) -> (Vec<ModelEntry>, MergeStats)` per FR-A6, and the
       per-provider orchestration `update_all_provider_models(providers: &mut
       Vec<Provider>, apply_defaults: bool) -> UpdateReport`.
-- [ ] 2.3 Implement the default-free-model heuristic incl. alias-id preference
+- [x] 2.3 Implement the default-free-model heuristic incl. alias-id preference
       (only when `apply_defaults`, enables exactly one model per provider,
       never disables anything the user enabled).
-- [ ] 2.4 Add fixture files (trimmed models.dev JSON with google/openrouter
+- [x] 2.4 Add fixture files (trimmed models.dev JSON with google/openrouter
       entries incl. zero-cost, alias, non-text, denylisted models; small
       native-endpoint fixtures) and Rust tests covering: filtering, merge
       add/remove/stale/enabled-preserved, fetch-failure-keeps-list, heuristic
       picks (OpenRouter `:free` newest; Gemini budget-family alias; Anthropic
       none).
-- [ ] 2.5 Rewrite `cli/src/update_provider_models.rs` as a thin wrapper:
+- [x] 2.5 Rewrite `cli/src/update_provider_models.rs` as a thin wrapper:
       read input JSON → `update_all_provider_models(…, apply_defaults=true)` →
       validate + write output (follow `update-releases-fallback`'s
       validate-before-write pattern); keep the `main.rs` subcommand interface;
       delete the old key-gated fetchers.
-- [ ] 2.6 Run the CLI against the live sources to regenerate
+- [x] 2.6 Run the CLI against the live sources to regenerate
       `assets/providers.json`; sanity-check the diff (defaults enabled per
       FR-A8, no denylisted models); build + backend tests.
 
