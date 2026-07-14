@@ -98,7 +98,7 @@ PRD: [2026-07-14-101329-prd---ai-response-flow-refactor.md](./2026-07-14-101329-
 
 **Specs / dependencies:** Depends on all previous stages. Pure cleanup + verification + docs; no functional additions.
 
-- [ ] 5.0 Cleanups, tests, and documentation (FR-E1–E3, FR-E5, FR-E6; success metrics)
+- [x] 5.0 Cleanups, tests, and documentation (FR-E1–E3, FR-E5, FR-E6; success metrics)
   - [x] 5.1 Remove the per-render logging inside the response TextArea `text` binding in `AssistantResponses.qml` (FR-E1) and fix the "Waiting for response from undefined …" placeholder: generic waiting text when the entry has no model name yet (FR-E3).
   - [x] 5.2 Fix console-style multi-argument logger calls to single concatenated strings: `AssistantResponses.qml`, `PromptsTab.qml` (parse-failure and copy-error sites), and any remaining in `GlossTab.qml` (FR-E2).
   - [x] 5.3 Single-parse GlossTab's `AssistantResponses.title`: derive the `with_vocab` title from the same parsed entries used for `translations_data` (FR-E5); remove the dead `model_name` parameter from `update_tab_selection` in both tabs (FR-E6).
