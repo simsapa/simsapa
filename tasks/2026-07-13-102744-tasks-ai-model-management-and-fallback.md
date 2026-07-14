@@ -25,7 +25,8 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 - `assets/qml/ModelUsageLists.qml` - **New.** The "Fallback sequence" + "Parallel prompts" lists component (toggles, reordering).
 - `assets/qml/GlossTab.qml` - Remove QML retry logic; sequential/parallel combobox; repoint model loading; error display; word-selection status rewording.
 - `assets/qml/PromptsTab.qml` - Remove its **copy** of the QML retry logic (`is_error_response` / `is_rate_limit_error` / `handle_retry_request` / `retry_count`); sequential/parallel combobox; sequential request path; error display.
-- `assets/qml/GlossWordSelectionDialog.qml` - Remove the model picker.
+- `assets/qml/GlossWordSelectionDialog.qml` - Model picker removed; now an on/off checkbox ("Use AI word selection") + the cache-clear button, with a warning when the Fallback sequence has no enabled model. Emits `selection_saved(bool)`.
+- `docs/gloss-ai-word-selection.md` - Updated: the dialog no longer picks a model; requests go through `sequential_word_selection_request`; errors arrive as the `{"ai_error": …}` envelope.
 - `assets/qml/AiErrorUtils.qml` - **New.** Shared helper formatting classified error JSON into display text.
 - `assets/qml/tst_GlossTab.qml`, `assets/qml/tst_PromptsTab.qml` - Tests exercising the removed retry fns (`is_error_response`, `is_rate_limit_error`, `handle_retry_request`) — update alongside the removal or they break silently (QML tests are not run routinely).
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - qmllint stubs for new bridge fns.
@@ -432,7 +433,7 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
       only known from the first progress signal).
 - [x] 6.7 Build + backend tests.
 
-### 7.0 Feature integration and docs (FR-G1–G5)
+### [x] 7.0 Feature integration and docs (FR-G1–G5)
 
 > **Specs.** New `AppSettings` fields `gloss_ai_translate_mode` and
 > `prompts_request_mode`, enum `AiRequestMode { SequentialRetry (default),
@@ -449,26 +450,41 @@ PRD: [2026-07-13-102744-prd---ai-model-management-and-fallback.md](./2026-07-13-
 > `gloss_word_selection_provider/model` settings stop being written (kept
 > only for the 4.x seeding).
 > **Depends on:** 4.0, 5.0, 6.0.
+>
+> **As built (Word Selection on/off).** Dropping the picker also dropped the only
+> way to turn the feature *off* (it was "model = Disabled"), so the dialog keeps a
+> **"Use AI word selection" checkbox** persisting the existing
+> `gloss_word_selection_enabled` flag; `is_word_selection_enabled()` is now
+> "checkbox on **and** the Fallback sequence has an enabled model" (the dialog
+> shows a warning in the second case). `gloss_word_selection_provider/model` are
+> written back unchanged so the one-time list seeding still has its source.
+>
+> **As built (sequential entries learn their model).** In sequential mode the
+> translation / response entry is created with an empty `model_name` — the model
+> is only known once the engine reports it. Both tabs stamp it in from the first
+> `sequentialProgress` event and from the final response, and their manual re-send
+> falls back to the single entry when no name is set yet (a run that failed before
+> any model answered).
 
-- [ ] 7.1 Add the two mode settings + bridge get/set + qmllint stubs.
-- [ ] 7.2 GlossTab: add the "AI translation" combobox (persisted); sequential
+- [x] 7.1 Add the two mode settings + bridge get/set + qmllint stubs.
+- [x] 7.2 GlossTab: add the "AI translation" combobox (persisted); sequential
       path calls the engine; parallel path iterates
       `ai_parallel_prompts` (replacing `load_translation_models`'s
       all-enabled-models source); keep per-model result tabs working in both
       modes.
-- [ ] 7.3 PromptsTab: add the "Prompts" combobox (persisted); sequential mode
+- [x] 7.3 PromptsTab: add the "Prompts" combobox (persisted); sequential mode
       requests one assistant response via
       `sequential_prompt_request_with_messages`; parallel mode iterates
       `ai_parallel_prompts`; verify Prompts history save/restore still round-
       trips responses (docs/gloss-prompts-history.md gotchas).
-- [ ] 7.4 Word Selection: remove the model ComboBox from
+- [x] 7.4 Word Selection: remove the model ComboBox from
       `GlossWordSelectionDialog.qml` and the provider/model plumbing in
       `GlossTab.qml` (`word_selection_model` checks become "sequence has an
       enabled item" via a bridge query); route through the sequential engine.
-- [ ] 7.5 Write `docs/ai-model-management-and-fallback.md` (update procedure +
+- [x] 7.5 Write `docs/ai-model-management-and-fallback.md` (update procedure +
       sources, schema/origin semantics, lists + sync rules, engine semantics
       incl. the fallback-then-retry order and parallel same-model rule, error
       classification table); add the doc to the AGENTS.md notable-docs list
       and update `PROJECT_MAP.md`.
-- [ ] 7.6 Final pass: `make build -B`, full `cd backend && cargo test`; fix
+- [x] 7.6 Final pass: `make build -B`, full `cd backend && cargo test`; fix
       regressions (ignore pre-existing unrelated failures).

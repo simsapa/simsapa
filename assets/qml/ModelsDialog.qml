@@ -12,8 +12,8 @@ ApplicationWindow {
     id: root
 
     title: "AI Models"
-    width: is_mobile ? Screen.desktopAvailableWidth : 800
-    height: is_mobile ? Screen.desktopAvailableHeight : 600
+    width: is_mobile ? Screen.desktopAvailableWidth : 900
+    height: is_mobile ? Screen.desktopAvailableHeight : 800
     visible: false
     /* visible: true // for qml preview */
     color: palette.window

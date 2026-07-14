@@ -80,6 +80,11 @@ Item {
                     let translations = JSON.parse(paragraph.translations_json);
                     if (ctx.translation_idx < translations.length && translations[ctx.translation_idx].status === "waiting") {
                         translations[ctx.translation_idx].progress = status;
+                        // Sequential entries start with no model name; the engine
+                        // reports which model it is trying.
+                        if (model_name !== "") {
+                            translations[ctx.translation_idx].model_name = model_name;
+                        }
                         paragraph_model.setProperty(ctx.paragraph_idx, "translations_json", JSON.stringify(translations));
                     }
                 } catch (e) {
@@ -122,6 +127,10 @@ Item {
                 translations[translation_idx].response = response;
                 translations[translation_idx].status = is_error ? "error" : "completed";
                 translations[translation_idx].last_updated = Date.now();
+                // Sequential mode: the entry learns its model from the response.
+                if (model_name !== "") {
+                    translations[translation_idx].model_name = model_name;
+                }
 
                 logger.debug(`✅ Updated translation data: ` + JSON.stringify(translations[translation_idx]));
 
@@ -212,62 +221,65 @@ Item {
 
     ListModel { id: translation_models }
 
-    function load_translation_models() {
-        logger.debug(`🔄 Loading translation models from all providers...`);
-        translation_models.clear();
-        let providers_json = SuttaBridge.get_providers_json();
-        logger.debug(`📥 Raw providers JSON: "${providers_json}"`);
-        try {
-            let providers_array = JSON.parse(providers_json);
-            logger.debug(`📊 Parsing ${providers_array.length} providers`);
-            for (var i = 0; i < providers_array.length; i++) {
-                var provider = providers_array[i];
-                logger.debug(`  Provider ${provider.name}: enabled=${provider.enabled}`);
+    // How AI translation requests are dispatched: "sequential_retry" (one
+    // request walking the Fallback sequence) or "parallel" (one request per
+    // enabled Parallel-prompts model). See
+    // docs/ai-model-management-and-fallback.md.
+    property string ai_translate_mode: "sequential_retry"
 
-                // Only load models from enabled providers
-                if (provider.enabled) {
-                    for (var j = 0; j < provider.models.length; j++) {
-                        var model = provider.models[j];
-                        logger.debug(`    [${j}] ${model.model_name}: enabled=${model.enabled}`);
-                        translation_models.append({
-                            model_name: model.model_name,
-                            enabled: model.enabled
-                        });
-                    }
-                } else {
-                    logger.debug(`    Skipping disabled provider ${provider.name}`);
-                }
+    function load_ai_translate_mode() {
+        root.ai_translate_mode = SuttaBridge.get_gloss_ai_translate_mode();
+    }
+
+    // Parallel-mode models: the enabled entries of the global "Parallel
+    // prompts" list (reconciled in Rust, so every entry is usable).
+    function load_translation_models() {
+        translation_models.clear();
+        try {
+            let entries = JSON.parse(SuttaBridge.get_ai_parallel_prompts_json());
+            for (var i = 0; i < entries.length; i++) {
+                translation_models.append({
+                    model_name: entries[i].model_name,
+                    provider: entries[i].provider,
+                    enabled: entries[i].enabled
+                });
             }
-            logger.debug(`🎯 Total models loaded: ${translation_models.count}`);
+            logger.debug(`Loaded ${translation_models.count} parallel-prompt models`);
         } catch (e) {
-            logger.error("Failed to parse providers JSON:", e);
+            logger.error("Failed to parse parallel prompts JSON: " + e);
         }
     }
 
-    // AI word-selection settings, mirrored from the Word Selection dialog.
-    // Empty model = feature disabled (also the stale provider/model fallback).
-    property string word_selection_provider: ""
-    property string word_selection_model: ""
+    // Whether the Fallback sequence has at least one enabled model (the
+    // sequential engine has something to try).
+    function has_enabled_sequence_model(): bool {
+        try {
+            let entries = JSON.parse(SuttaBridge.get_ai_fallback_sequence_json());
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].enabled) return true;
+            }
+        } catch (e) {
+            logger.error("Failed to parse fallback sequence JSON: " + e);
+        }
+        return false;
+    }
 
+    // AI word-selection on/off, mirrored from the Word Selection dialog. The
+    // model is no longer chosen here: requests walk the Fallback sequence.
+    property bool word_selection_setting_enabled: false
+
+    // The feature is usable when it is turned on and the sequence has a model.
     function is_word_selection_enabled(): bool {
-        return root.word_selection_model !== "";
+        return root.word_selection_setting_enabled && root.has_enabled_sequence_model();
     }
 
     function load_word_selection_settings() {
         try {
             let s = JSON.parse(SuttaBridge.get_gloss_word_selection_settings_json());
-            let model_name = (s.enabled && s.model) ? s.model : "";
-            if (model_name !== "" && word_selection_dialog.enabled_model_names().indexOf(model_name) < 0) {
-                // The saved provider/model is no longer enabled: behave as
-                // disabled without rewriting the stored settings.
-                model_name = "";
-            }
-            root.word_selection_model = model_name;
-            root.word_selection_provider = model_name !== "" ? SuttaBridge.get_provider_for_model(model_name) : "";
+            root.word_selection_setting_enabled = s.enabled === true;
         } catch (e) {
             logger.error("Failed to parse word selection settings: " + e);
-            root.word_selection_model = "";
-            root.word_selection_provider = "";
+            root.word_selection_setting_enabled = false;
         }
     }
 
@@ -508,8 +520,10 @@ Item {
 
         let prompt = root.build_word_selection_prompt(items);
         root.ws_last_start_time = Date.now();
-        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}], model ${root.word_selection_model}`);
-        pm.word_selection_request(request_id, root.word_selection_provider, root.word_selection_model, prompt);
+        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}]`);
+        // The engine walks the Fallback sequence; the model which answered is
+        // reported in the progress events and the response signal.
+        pm.sequential_word_selection_request(request_id, prompt);
         return true;
     }
 
@@ -697,6 +711,7 @@ Item {
         load_history();
         load_common_words();
         load_word_selection_settings();
+        load_ai_translate_mode();
         if (root.is_qml_preview) {
             qml_preview_state();
         }
@@ -976,6 +991,22 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         target_scroll_view: main_scroll_view
     }
 
+    // The full AI-translation prompt (system prompt + substituted template) for
+    // one paragraph.
+    function translation_prompt_for(paragraph, with_vocab): string {
+        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: System Prompt");
+        let template_key = with_vocab ? "Gloss Tab: AI Translation with Vocabulary" : "Gloss Tab: AI Translation without Vocabulary";
+        let template = SuttaBridge.get_system_prompt(template_key);
+        let user_prompt = template
+            .replace("<<PALI_PASSAGE>>", paragraph.text)
+            .replace("<<DICTIONARY_DEFINITIONS>>", root.dictionary_definitions_from_paragraph(paragraph));
+
+        if (system_prompt && system_prompt.trim() !== "") {
+            return system_prompt + "\n\n" + user_prompt;
+        }
+        return user_prompt;
+    }
+
     // Manual (user-clicked) re-send of one translation request. Automatic
     // retry and fallback live in the Rust engine (see
     // docs/ai-model-management-and-fallback.md), so this only resets the entry
@@ -986,36 +1017,35 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         try {
             var translations = JSON.parse(paragraph.translations_json);
+            var idx = -1;
             for (var i = 0; i < translations.length; i++) {
                 if (translations[i].model_name === model_name) {
-                    translations[i].request_id = new_request_id;
-                    translations[i].status = "waiting";
-                    translations[i].response = "";
-                    translations[i].progress = "";
-                    translations[i].last_updated = Date.now();
-
-                    // Update the model
-                    paragraph_model.setProperty(paragraph_idx, "translations_json", JSON.stringify(translations));
-
-                    // Send new request with system prompt
-                    let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: System Prompt");
-                    // Determine the correct prompt template based on the original request
-                    var template_key = translations[i].with_vocab ? "Gloss Tab: AI Translation with Vocabulary" : "Gloss Tab: AI Translation without Vocabulary";
-                    var template = SuttaBridge.get_system_prompt(template_key);
-                    var user_prompt = template
-                        .replace("<<PALI_PASSAGE>>", paragraph.text)
-                        .replace("<<DICTIONARY_DEFINITIONS>>", root.dictionary_definitions_from_paragraph(paragraph));
-
-                    // Combine system prompt with user prompt
-                    var combined_prompt = user_prompt;
-                    if (system_prompt && system_prompt.trim() !== "") {
-                        combined_prompt = system_prompt + "\n\n" + user_prompt;
-                    }
-
-                    let provider_name = SuttaBridge.get_provider_for_model(model_name);
-                    pm.prompt_request(paragraph_idx, i, provider_name, model_name, combined_prompt);
+                    idx = i;
                     break;
                 }
+            }
+            // A sequential entry which failed before any model answered has no
+            // model name yet; there is only one entry to re-send in that case.
+            if (idx < 0 && root.ai_translate_mode === "sequential_retry" && translations.length === 1) {
+                idx = 0;
+            }
+            if (idx < 0) return;
+
+            translations[idx].request_id = new_request_id;
+            translations[idx].status = "waiting";
+            translations[idx].response = "";
+            translations[idx].progress = "";
+            translations[idx].last_updated = Date.now();
+
+            paragraph_model.setProperty(paragraph_idx, "translations_json", JSON.stringify(translations));
+
+            let combined_prompt = root.translation_prompt_for(paragraph, translations[idx].with_vocab);
+
+            if (root.ai_translate_mode === "sequential_retry") {
+                pm.sequential_prompt_request(paragraph_idx, idx, combined_prompt);
+            } else {
+                let provider_name = SuttaBridge.get_provider_for_model(translations[idx].model_name);
+                pm.prompt_request(paragraph_idx, idx, provider_name, translations[idx].model_name, combined_prompt);
             }
         } catch (e) {
             logger.error("Failed to re-send translation request: " + e);
@@ -1023,15 +1053,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     }
 
     function handle_ai_translate_request(paragraph_index: int, with_vocab = true) {
-        logger.info(`🚀 AI Translate button clicked for paragraph ${paragraph_index}, with_vocab=${with_vocab}`);
-
-        root.load_translation_models();
-        logger.info(`📋 Loaded ${translation_models.count} translation models`);
-
-        if (translation_models.count === 0) {
-            no_models_dialog.open();
-            return;
-        }
+        logger.info(`AI Translate requested for paragraph ${paragraph_index}, with_vocab=${with_vocab}, mode=${root.ai_translate_mode}`);
 
         let paragraph = paragraph_model.get(paragraph_index);
         if (!paragraph) {
@@ -1039,50 +1061,71 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             return;
         }
 
-        // Load system prompt and translation template
-        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: System Prompt");
-        let template_key = with_vocab ? "Gloss Tab: AI Translation with Vocabulary" : "Gloss Tab: AI Translation without Vocabulary";
-        let template = SuttaBridge.get_system_prompt(template_key);
-        let user_prompt = template
-            .replace("<<PALI_PASSAGE>>", paragraph.text)
-            .replace("<<DICTIONARY_DEFINITIONS>>", root.dictionary_definitions_from_paragraph(paragraph));
+        if (root.ai_translate_mode === "sequential_retry") {
+            if (!root.has_enabled_sequence_model()) {
+                no_models_dialog.open();
+                return;
+            }
 
-        // Combine system prompt with user prompt (simple approach)
-        let combined_prompt = user_prompt;
-        if (system_prompt && system_prompt.trim() !== "") {
-            combined_prompt = system_prompt + "\n\n" + user_prompt;
+            let combined_prompt = root.translation_prompt_for(paragraph, with_vocab);
+
+            // One entry; the responding model's name arrives with the first
+            // progress event and with the final response.
+            let translations = [{
+                model_name: "",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: root.generate_request_id(),
+                last_updated: Date.now(),
+                user_selected: true,
+                with_vocab: with_vocab
+            }];
+            paragraph_model.setProperty(paragraph_index, "translations_json", JSON.stringify(translations));
+            root.session_needs_saving = true;
+
+            pm.sequential_prompt_request(paragraph_index, 0, combined_prompt);
+            return;
         }
 
-        logger.info(`📝 Generated prompt with system context: "${combined_prompt.substring(0, 200)}..."`);
+        // Parallel mode: one request per enabled Parallel-prompts model.
+        root.load_translation_models();
 
+        let has_enabled = false;
+        for (var k = 0; k < translation_models.count; k++) {
+            if (translation_models.get(k).enabled) {
+                has_enabled = true;
+                break;
+            }
+        }
+        if (!has_enabled) {
+            no_models_dialog.open();
+            return;
+        }
+
+        let combined_prompt = root.translation_prompt_for(paragraph, with_vocab);
         let translations = [];
 
         for (var i = 0; i < translation_models.count; i++) {
             var item = translation_models.get(i);
-            if (item.enabled) {
-                let request_id = root.generate_request_id();
-                let translation_idx = translations.length; // Use the current translations array length as index
-                logger.info(`🎯 Sending request to ${item.model_name} (model_idx=${i}, translation_idx=${translation_idx}, request_id=${request_id})`);
-                let provider_name = SuttaBridge.get_provider_for_model(item.model_name);
-                pm.prompt_request(paragraph_index, translation_idx, provider_name, item.model_name, combined_prompt);
-                translations.push({
-                    model_name: item.model_name,
-                    status: "waiting",
-                    response: "",
-                    progress: "",
-                    request_id: request_id,
-                    last_updated: Date.now(),
-                    user_selected: translation_idx === 0,
-                    with_vocab: with_vocab
-                });
-            } else {
-                logger.info(`⏭️  Skipping disabled model ${item.model_name}`);
-            }
+            if (!item.enabled) continue;
+
+            let translation_idx = translations.length;
+            pm.prompt_request(paragraph_index, translation_idx, item.provider, item.model_name, combined_prompt);
+            translations.push({
+                model_name: item.model_name,
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: root.generate_request_id(),
+                last_updated: Date.now(),
+                user_selected: translation_idx === 0,
+                with_vocab: with_vocab
+            });
         }
 
-        logger.info(`📊 Created ${translations.length} translation entries`);
-        let translations_json = JSON.stringify(translations);
-        paragraph_model.setProperty(paragraph_index, "translations_json", translations_json);
+        logger.info(`Created ${translations.length} translation entries`);
+        paragraph_model.setProperty(paragraph_index, "translations_json", JSON.stringify(translations));
         root.session_needs_saving = true;
     }
 
@@ -2402,6 +2445,26 @@ ${main_text}
                                 onClicked: root.open_json_session()
                             }
 
+                            RowLayout {
+                                spacing: 5
+
+                                Text {
+                                    text: "AI translation:"
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                }
+
+                                ComboBox {
+                                    id: ai_translate_mode_combo
+                                    model: ["Sequential retry", "Parallel"]
+                                    currentIndex: root.ai_translate_mode === "parallel" ? 1 : 0
+                                    onActivated: function(index) {
+                                        root.ai_translate_mode = index === 1 ? "parallel" : "sequential_retry";
+                                        SuttaBridge.set_gloss_ai_translate_mode(root.ai_translate_mode);
+                                    }
+                                }
+                            }
+
                             Button {
                                 text: "Word Selection..."
                                 onClicked: word_selection_dialog.open()
@@ -3092,9 +3155,8 @@ ${main_text}
     GlossWordSelectionDialog {
         id: word_selection_dialog
         anchors.centerIn: parent
-        onSelection_saved: function(provider_name, model_name) {
-            root.word_selection_provider = provider_name;
-            root.word_selection_model = model_name;
+        onSelection_saved: function(is_enabled) {
+            root.word_selection_setting_enabled = is_enabled;
         }
     }
 

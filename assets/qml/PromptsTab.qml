@@ -73,19 +73,27 @@ Item {
             // handled by the Rust engine (see
             // docs/ai-model-management-and-fallback.md); an error response
             // here is final for this request.
+            var idx = -1;
             for (var i = 0; i < responses.length; i++) {
                 if (responses[i].model_name === model_name) {
-                    let is_error = root.is_error_response(response);
-
-                    logger.info(`🔄 Updating response for ${model_name}: is_error=${is_error}`);
-
-                    responses[i].response = response;
-                    responses[i].status = is_error ? "error" : "completed";
-                    responses[i].last_updated = Date.now();
-
-                    logger.info(`✅ Updated response data: ` + JSON.stringify(responses[i]));
+                    idx = i;
                     break;
                 }
+            }
+            // Sequential mode: the single entry has no model name until now.
+            if (idx < 0 && root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
+                idx = 0;
+            }
+
+            if (idx >= 0) {
+                let is_error = root.is_error_response(response);
+
+                logger.info(`🔄 Updating response for ${model_name}: is_error=${is_error}`);
+
+                responses[idx].model_name = model_name;
+                responses[idx].response = response;
+                responses[idx].status = is_error ? "error" : "completed";
+                responses[idx].last_updated = Date.now();
             }
 
             // Update the assistant message with new responses
@@ -113,10 +121,20 @@ Item {
 
             try {
                 let responses = JSON.parse(assistant_message.responses_json);
-                for (var i = 0; i < responses.length; i++) {
-                    // Parallel branches share one context; route by model name.
-                    if (responses[i].status === "waiting" && responses[i].model_name === model_name) {
-                        responses[i].progress = status;
+                if (root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
+                    // One entry; it learns the model the engine is trying.
+                    if (responses[0].status === "waiting") {
+                        responses[0].progress = status;
+                        if (model_name !== "") {
+                            responses[0].model_name = model_name;
+                        }
+                    }
+                } else {
+                    for (var i = 0; i < responses.length; i++) {
+                        // Parallel branches share one context; route by model name.
+                        if (responses[i].status === "waiting" && responses[i].model_name === model_name) {
+                            responses[i].progress = status;
+                        }
                     }
                 }
                 messages_model.setProperty(assistant_message_idx, "responses_json", JSON.stringify(responses));
@@ -215,36 +233,77 @@ Item {
         }
     }
 
-    function load_available_models() {
-        logger.info(`🔄 Loading available models from all providers...`);
-        available_models.clear();
-        let providers_json = SuttaBridge.get_providers_json();
-        logger.info(`📥 Raw providers JSON: "${providers_json}"`);
-        try {
-            let providers_array = JSON.parse(providers_json);
-            logger.info(`📊 Parsing ${providers_array.length} providers`);
-            for (var i = 0; i < providers_array.length; i++) {
-                var provider = providers_array[i];
-                logger.info(`  Provider ${provider.name}: enabled=${provider.enabled}`);
+    // How the next assistant response is requested: "sequential_retry" (one
+    // request walking the Fallback sequence) or "parallel" (one request per
+    // enabled Parallel-prompts model). See
+    // docs/ai-model-management-and-fallback.md.
+    property string prompts_request_mode: "sequential_retry"
 
-                // Only load models from enabled providers
-                if (provider.enabled) {
-                    for (var j = 0; j < provider.models.length; j++) {
-                        var model = provider.models[j];
-                        logger.info(`    [${j}] ${model.model_name}: enabled=${model.enabled}`);
-                        available_models.append({
-                            model_name: model.model_name,
-                            enabled: model.enabled
+    function load_prompts_request_mode() {
+        root.prompts_request_mode = SuttaBridge.get_prompts_request_mode();
+    }
+
+    // Parallel-mode models: the enabled entries of the global "Parallel
+    // prompts" list (reconciled in Rust, so every entry is usable).
+    function load_available_models() {
+        available_models.clear();
+        try {
+            let entries = JSON.parse(SuttaBridge.get_ai_parallel_prompts_json());
+            for (var i = 0; i < entries.length; i++) {
+                available_models.append({
+                    model_name: entries[i].model_name,
+                    provider: entries[i].provider,
+                    enabled: entries[i].enabled
+                });
+            }
+            logger.debug(`Loaded ${available_models.count} parallel-prompt models`);
+        } catch (e) {
+            logger.error("Failed to parse parallel prompts JSON: " + e);
+        }
+    }
+
+    // Whether the Fallback sequence has at least one enabled model (the
+    // sequential engine has something to try).
+    function has_enabled_sequence_model(): bool {
+        try {
+            let entries = JSON.parse(SuttaBridge.get_ai_fallback_sequence_json());
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].enabled) return true;
+            }
+        } catch (e) {
+            logger.error("Failed to parse fallback sequence JSON: " + e);
+        }
+        return false;
+    }
+
+    // The chat history sent with a request: every message up to and including
+    // `up_to_idx`, with each assistant turn contributing its selected response.
+    function compose_messages_json(up_to_idx): string {
+        let messages = [];
+        for (var i = 0; i <= up_to_idx; i++) {
+            let msg = messages_model.get(i);
+            if (msg.role === "assistant" && msg.responses_json) {
+                try {
+                    let assistant_responses = JSON.parse(msg.responses_json);
+                    let selected_idx = msg.selected_ai_tab || 0;
+                    if (selected_idx < assistant_responses.length && assistant_responses[selected_idx].status === "completed") {
+                        messages.push({
+                            role: "assistant",
+                            content: assistant_responses[selected_idx].response
                         });
                     }
-                } else {
-                    logger.info(`    Skipping disabled provider ${provider.name}`);
+                    // Assistant turns without a completed selected response are skipped.
+                } catch (e) {
+                    logger.error("Failed to parse assistant responses_json: " + e);
                 }
+            } else {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                });
             }
-            logger.info(`🎯 Total models loaded: ${available_models.count}`);
-        } catch (e) {
-            logger.error("Failed to parse providers JSON:", e);
         }
+        return JSON.stringify(messages);
     }
 
     function generate_request_id() {
@@ -254,6 +313,89 @@ Item {
     // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
         return ai_error_utils.is_error(response_text);
+    }
+
+    // Send the user message at `message_idx` and create the assistant message
+    // which will receive the response(s): one entry in sequential mode (the
+    // engine picks the model), one per enabled Parallel-prompts model otherwise.
+    function send_user_message(message_idx) {
+        let sender = messages_model.get(message_idx);
+        if (!sender) return;
+
+        let responses = [];
+
+        if (root.prompts_request_mode === "sequential_retry") {
+            if (!root.has_enabled_sequence_model()) {
+                no_models_dialog.open();
+                return;
+            }
+            // The responding model's name arrives with the first progress event
+            // and with the final response.
+            responses.push({
+                model_name: "",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: root.generate_request_id(),
+                last_updated: Date.now(),
+                user_selected: true
+            });
+        } else {
+            root.load_available_models();
+            for (var i = 0; i < available_models.count; i++) {
+                var model = available_models.get(i);
+                if (!model.enabled) continue;
+                responses.push({
+                    model_name: model.model_name,
+                    provider: model.provider,
+                    status: "waiting",
+                    response: "",
+                    progress: "",
+                    request_id: root.generate_request_id(),
+                    last_updated: Date.now(),
+                    user_selected: responses.length === 0
+                });
+            }
+            if (responses.length === 0) {
+                no_models_dialog.open();
+                return;
+            }
+        }
+
+        // Remove chat items after the sender message.
+        for (var j = messages_model.count - 1; j > message_idx; j--) {
+            messages_model.remove(j);
+        }
+
+        messages_model.append({
+            role: "assistant",
+            content: "",
+            content_html: "",
+            responses_json: JSON.stringify(responses),
+            selected_ai_tab: 0
+        });
+
+        // Empty user message for the next turn.
+        messages_model.append({
+            role: "user",
+            content: "",
+            content_html: ""
+        });
+
+        let messages_json = root.compose_messages_json(message_idx);
+
+        if (root.prompts_request_mode === "sequential_retry") {
+            pm.sequential_prompt_request_with_messages(message_idx, messages_json);
+        } else {
+            for (var k = 0; k < responses.length; k++) {
+                pm.prompt_request_with_messages(message_idx, responses[k].provider, responses[k].model_name, messages_json);
+            }
+        }
+
+        root.waiting_for_response = true;
+        root.session_needs_saving = true;
+
+        scroll_helper.scroll_to_bottom();
     }
 
     // Manual (user-clicked) re-send of one model's response. Automatic retry
@@ -266,54 +408,40 @@ Item {
 
         try {
             var responses = JSON.parse(message.responses_json);
+            var idx = -1;
             for (var i = 0; i < responses.length; i++) {
                 if (responses[i].model_name === model_name) {
-                    responses[i].request_id = new_request_id;
-                    responses[i].status = "waiting";
-                    responses[i].response = "";
-                    responses[i].progress = "";
-                    responses[i].last_updated = Date.now();
-
-                    // Update the model
-                    messages_model.setProperty(message_idx, "responses_json", JSON.stringify(responses));
-                    root.session_needs_saving = true;
-
-                    // Compose message history up to the user message that triggered the original request
-                    let user_message_idx = message_idx - 1; // Assistant message is after user message
-                    if (user_message_idx >= 0) {
-                        let messages = [];
-                        for (var j = 0; j <= user_message_idx; j++) {
-                            let msg = messages_model.get(j);
-                            if (msg.role === "assistant" && msg.responses_json) {
-                                // For multi-response assistant messages, use the currently selected response
-                                try {
-                                    let assistant_responses = JSON.parse(msg.responses_json);
-                                    let selected_idx = msg.selected_ai_tab || 0;
-                                    if (selected_idx < assistant_responses.length && assistant_responses[selected_idx].status === "completed") {
-                                        messages.push({
-                                            role: "assistant",
-                                            content: assistant_responses[selected_idx].response
-                                        });
-                                    }
-                                } catch (e) {
-                                    logger.error("Failed to parse assistant responses_json:", e);
-                                }
-                            } else {
-                                // For user/system messages
-                                messages.push({
-                                    role: msg.role,
-                                    content: msg.content
-                                });
-                            }
-                        }
-                        let messages_json = JSON.stringify(messages);
-
-                        // Send new request
-                        let provider_name = SuttaBridge.get_provider_for_model(model_name);
-                        pm.prompt_request_with_messages(user_message_idx, provider_name, model_name, messages_json);
-                    }
+                    idx = i;
                     break;
                 }
+            }
+            // A sequential entry which failed before any model answered has no
+            // model name yet; there is only one entry to re-send in that case.
+            if (idx < 0 && root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
+                idx = 0;
+            }
+            if (idx < 0) return;
+
+            responses[idx].request_id = new_request_id;
+            responses[idx].status = "waiting";
+            responses[idx].response = "";
+            responses[idx].progress = "";
+            responses[idx].last_updated = Date.now();
+
+            messages_model.setProperty(message_idx, "responses_json", JSON.stringify(responses));
+            root.session_needs_saving = true;
+
+            // The assistant message follows the user message that triggered it.
+            let user_message_idx = message_idx - 1;
+            if (user_message_idx < 0) return;
+
+            let messages_json = root.compose_messages_json(user_message_idx);
+
+            if (root.prompts_request_mode === "sequential_retry") {
+                pm.sequential_prompt_request_with_messages(user_message_idx, messages_json);
+            } else {
+                let provider_name = SuttaBridge.get_provider_for_model(responses[idx].model_name);
+                pm.prompt_request_with_messages(user_message_idx, provider_name, responses[idx].model_name, messages_json);
             }
         } catch (e) {
             logger.error("Failed to re-send response request: " + e);
@@ -330,6 +458,7 @@ Item {
     }
 
     Component.onCompleted: {
+        root.load_prompts_request_mode();
         root.init_messages("");
         root.load_history();
 
@@ -927,6 +1056,7 @@ Item {
                     Layout.topMargin: 10
                     Layout.leftMargin: 10
                     Layout.fillWidth: true
+                    spacing: 10
 
                     ComboBox {
                         id: export_btn
@@ -938,6 +1068,24 @@ Item {
                             }
                         }
                     }
+
+                    Label {
+                        text: "Prompts:"
+                        color: root.text_color
+                        font.pointSize: 10
+                    }
+
+                    ComboBox {
+                        id: prompts_mode_combo
+                        model: ["Sequential retry", "Parallel"]
+                        currentIndex: root.prompts_request_mode === "parallel" ? 1 : 0
+                        onActivated: function(index) {
+                            root.prompts_request_mode = index === 1 ? "parallel" : "sequential_retry";
+                            SuttaBridge.set_prompts_request_mode(root.prompts_request_mode);
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
                 }
 
                 Repeater {
@@ -1299,115 +1447,7 @@ Item {
                                             return;
                                         }
 
-                                        logger.info(`🚀 Send button clicked for message ${message_item.index}`);
-
-                                        // Load enabled models
-                                        root.load_available_models();
-                                        logger.info(`📋 Loaded ${available_models.count} available models`);
-
-                                        if (available_models.count === 0) {
-                                            no_models_dialog.open();
-                                            return;
-                                        }
-
-                                        // Create responses array for each enabled model
-                                        let responses = [];
-                                        for (var i = 0; i < available_models.count; i++) {
-                                            var model = available_models.get(i);
-                                            if (model.enabled) {
-                                                logger.info(`✅ Adding enabled model: ${model.model_name}`);
-                                                responses.push({
-                                                    model_name: model.model_name,
-                                                    status: "waiting",
-                                                    response: "",
-                                                    progress: "",
-                                                    request_id: root.generate_request_id(),
-                                                    last_updated: Date.now(),
-                                                    user_selected: responses.length === 0  // First model selected by default
-                                                });
-                                            } else {
-                                                logger.info(`⏭️  Skipping disabled model: ${model.model_name}`);
-                                            }
-                                        }
-
-                                        logger.info(`📊 Created ${responses.length} response entries`);
-
-                                        if (responses.length === 0) {
-                                            msg_dialog_ok.text = "No AI models are enabled. Please enable at least one model in settings.";
-                                            msg_dialog_ok.open();
-                                            return;
-                                        }
-
-                                        // Remove chat items after the sender message.
-                                        for (var i=messages_model.count-1; i > message_item.index; i--) {
-                                            messages_model.remove(i);
-                                        }
-
-                                        // Add assistant message with responses_json
-                                        messages_model.append({
-                                            role: "assistant",
-                                            content: "",
-                                            content_html: "",
-                                            responses_json: JSON.stringify(responses),
-                                            selected_ai_tab: 0
-                                        });
-
-                                        // Add new empty user message for next turn
-                                        messages_model.append({
-                                            role: "user",
-                                            content: "",
-                                            content_html: ""
-                                        });
-
-                                        // Compose chat message list from conversation history
-                                        let messages = [];
-                                        for (var i = 0; i <= message_item.index; i++) {
-                                            let msg = messages_model.get(i);
-                                            if (msg.role === "assistant" && msg.responses_json) {
-                                                // For multi-response assistant messages, use the currently selected response
-                                                try {
-                                                    let assistant_responses = JSON.parse(msg.responses_json);
-                                                    let selected_idx = msg.selected_ai_tab || 0;
-                                                    if (selected_idx < assistant_responses.length && assistant_responses[selected_idx].status === "completed") {
-                                                        messages.push({
-                                                            role: "assistant",
-                                                            content: assistant_responses[selected_idx].response
-                                                        });
-                                                        logger.info(`📝 Added assistant message from ${assistant_responses[selected_idx].model_name}`);
-                                                    }
-                                                    // Skip assistant messages that don't have completed selected responses
-                                                } catch (e) {
-                                                    logger.error("Failed to parse assistant responses_json:", e);
-                                                }
-                                            } else {
-                                                // For user/system messages
-                                                messages.push({
-                                                    role: msg.role,
-                                                    content: msg.content
-                                                });
-                                                logger.info(`📝 Added ${msg.role} message`);
-                                            }
-                                        }
-                                        let messages_json = JSON.stringify(messages);
-                                        logger.info(`📤 Composed message history with ${messages.length} messages`);
-
-                                        // Send requests to all enabled models using the same message history
-                                        for (var j = 0; j < responses.length; j++) {
-                                            logger.info(`🎯 Sending request to ${responses[j].model_name}`);
-                                            let provider_name = SuttaBridge.get_provider_for_model(responses[j].model_name);
-                                            pm.prompt_request_with_messages(
-                                                message_item.index, // sender message index (user message that triggered this)
-                                                provider_name,
-                                                responses[j].model_name,
-                                                messages_json
-                                            );
-                                        }
-
-                                        root.waiting_for_response = true;
-                                        root.session_needs_saving = true;
-
-                                        // Scroll to bottom to show waiting message
-                                        scroll_helper.scroll_to_bottom();
+                                        root.send_user_message(message_item.index);
                                     }
                                 }
                             }

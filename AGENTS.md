@@ -246,6 +246,30 @@ Notable feature docs:
   (`gloss-corpus-explore` → candidate sessions → curate in the UI →
   `gloss-data-cache/` → `import-gloss-data` → bootstrap), incl. the
   Rust-vs-Python-API decision.
+- [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
+  how the provider/model lists keep themselves current and how a model is chosen
+  per request. The **shared update procedure**
+  (`backend/src/provider_models_update.rs`: models.dev + OpenRouter/SambaNova
+  native endpoints, all keyless; chat-model filter/denylist; merge semantics;
+  the zero-cost/budget-family **default-enable heuristic** applied by the CLI but
+  not in-app), the `ModelEntry` schema (`origin: fetched|user` replacing
+  `removable`, `stale`, `reasoning`) and the canonical `ProviderName` string form
+  (never `format!("{:?}")` — the lists and engine key on it). The two **global
+  usage lists** (ordered "Fallback sequence" + "Parallel prompts") and their
+  invariant — *only enabled models of enabled providers* — kept by the sync
+  helpers in `app_data.rs` plus `reconcile_model_usage_lists()` (which also runs
+  on every read, so whole-config writes like the updater self-heal), and the
+  one-time seeding from `gloss_word_selection_model`. **Error classification**
+  (`backend/src/ai_error.rs`; rig-core 0.30 **drops the HTTP status**, so it is
+  recovered by parsing the body; the `{"ai_error": …}` envelope + `AiErrorUtils.qml`;
+  the Gemini "quota" wording gotcha). The **sequential engine**
+  (`backend/src/ai_fallback.rs` pure walk + `prompt_manager.rs` Qt side): fallback
+  first, then 5 retry rounds at 10/20/30/40/50 s, provider-skip on `auth`/
+  `quota_exceeded`, the `invalid_response` validate hook for truncated bodies, and
+  the generation-counter cancellation. Parallel branches use the single-model walk
+  and **never switch models**. Feature wiring: the Gloss "AI translation" and
+  Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
+  dialog.
 
 ## Specific coding procedures
 

@@ -13,7 +13,7 @@ use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
-use crate::app_settings::{AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
+use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
 use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
@@ -1238,6 +1238,48 @@ impl AppData {
 
         let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
         app_settings.ai_auto_fallback = auto_fallback;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
+    pub fn set_gloss_ai_translate_mode(&self, mode: AiRequestMode) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.gloss_ai_translate_mode = mode;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
+    pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.prompts_request_mode = mode;
 
         let a = app_settings.clone();
         let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");

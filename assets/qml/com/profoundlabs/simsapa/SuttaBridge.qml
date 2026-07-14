@@ -499,6 +499,22 @@ Item {
         console.log("set_ai_auto_fallback():", auto_fallback);
     }
 
+    function get_gloss_ai_translate_mode(): string {
+        return 'sequential_retry';
+    }
+
+    function set_gloss_ai_translate_mode(mode: string) {
+        console.log("set_gloss_ai_translate_mode():", mode);
+    }
+
+    function get_prompts_request_mode(): string {
+        return 'sequential_retry';
+    }
+
+    function set_prompts_request_mode(mode: string) {
+        console.log("set_prompts_request_mode():", mode);
+    }
+
     function save_common_words_json(words_json: string) {
         return;
     }

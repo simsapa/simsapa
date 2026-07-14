@@ -10,6 +10,7 @@ use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use cxx_qt::Threading;
 
+use simsapa_backend::app_settings::AiRequestMode;
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
 use simsapa_backend::theme_colors::ThemeColors;
@@ -919,6 +920,18 @@ pub mod qobject {
 
         #[qinvokable]
         fn set_ai_auto_fallback(self: Pin<&mut SuttaBridge>, auto_fallback: bool);
+
+        #[qinvokable]
+        fn get_gloss_ai_translate_mode(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_ai_translate_mode(self: Pin<&mut SuttaBridge>, mode: &QString);
+
+        #[qinvokable]
+        fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_prompts_request_mode(self: Pin<&mut SuttaBridge>, mode: &QString);
 
         #[qinvokable]
         fn get_api_key(self: &SuttaBridge, key_name: &QString) -> QString;
@@ -2479,6 +2492,32 @@ impl qobject::SuttaBridge {
     pub fn set_ai_auto_fallback(self: Pin<&mut Self>, auto_fallback: bool) {
         let app_data = get_app_data();
         app_data.set_ai_auto_fallback(auto_fallback);
+    }
+
+    /// Get the Gloss tab AI translation mode ("sequential_retry" | "parallel")
+    pub fn get_gloss_ai_translate_mode(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(app_settings.gloss_ai_translate_mode.as_str())
+    }
+
+    /// Save the Gloss tab AI translation mode in the db
+    pub fn set_gloss_ai_translate_mode(self: Pin<&mut Self>, mode: &QString) {
+        let app_data = get_app_data();
+        app_data.set_gloss_ai_translate_mode(AiRequestMode::from_str_or_default(&mode.to_string()));
+    }
+
+    /// Get the Prompts tab request mode ("sequential_retry" | "parallel")
+    pub fn get_prompts_request_mode(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(app_settings.prompts_request_mode.as_str())
+    }
+
+    /// Save the Prompts tab request mode in the db
+    pub fn set_prompts_request_mode(self: Pin<&mut Self>, mode: &QString) {
+        let app_data = get_app_data();
+        app_data.set_prompts_request_mode(AiRequestMode::from_str_or_default(&mode.to_string()));
     }
 
     /// Get a specific API key by name

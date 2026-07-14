@@ -47,6 +47,36 @@ pub struct ModelUsageEntry {
     pub enabled: bool,
 }
 
+/// How an AI feature dispatches its requests. `SequentialRetry` walks the
+/// "Fallback sequence" list and produces one result; `Parallel` fans out to
+/// every enabled "Parallel prompts" model (each branch stays on its own
+/// model). See docs/ai-model-management-and-fallback.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AiRequestMode {
+    #[default]
+    #[serde(rename = "sequential_retry")]
+    SequentialRetry,
+    #[serde(rename = "parallel")]
+    Parallel,
+}
+
+impl AiRequestMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AiRequestMode::SequentialRetry => "sequential_retry",
+            AiRequestMode::Parallel => "parallel",
+        }
+    }
+
+    /// Parse the canonical string form; unknown values fall back to the default.
+    pub fn from_str_or_default(s: &str) -> Self {
+        match s {
+            "parallel" => AiRequestMode::Parallel,
+            _ => AiRequestMode::SequentialRetry,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provider {
     pub name: ProviderName,
@@ -297,6 +327,12 @@ pub struct AppSettings {
     /// enabled sequence model is used.
     #[serde(default = "default_true")]
     pub ai_auto_fallback: bool,
+    /// Gloss tab: how AI translation requests are dispatched.
+    #[serde(default)]
+    pub gloss_ai_translate_mode: AiRequestMode,
+    /// Prompts tab: how the next assistant response is requested.
+    #[serde(default)]
+    pub prompts_request_mode: AiRequestMode,
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -661,6 +697,8 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             ai_fallback_sequence: Vec::new(),
             ai_parallel_prompts: Vec::new(),
             ai_auto_fallback: true,
+            gloss_ai_translate_mode: AiRequestMode::default(),
+            prompts_request_mode: AiRequestMode::default(),
         }
     }
 }
