@@ -32,8 +32,8 @@ Item {
 
         function test_utility_functions() {
             // Test generate_request_id
-            var id1 = prompts_tab.generate_request_id();
-            var id2 = prompts_tab.generate_request_id();
+            var id1 = prompts_tab.ai_coordinator.generate_request_id();
+            var id2 = prompts_tab.ai_coordinator.generate_request_id();
             verify(id1 !== id2);
             verify(id1.length > 10);
             verify(id1.includes("_"));
@@ -50,9 +50,9 @@ Item {
                     raw: "invalid api key"
                 }
             });
-            verify(prompts_tab.is_error_response(envelope));
-            verify(!prompts_tab.is_error_response("Normal response"));
-            verify(!prompts_tab.is_error_response("API Error: legacy plain-text error"));
+            verify(prompts_tab.ai_coordinator.is_error_response(envelope));
+            verify(!prompts_tab.ai_coordinator.is_error_response("Normal response"));
+            verify(!prompts_tab.ai_coordinator.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_model_loading() {
@@ -269,7 +269,7 @@ Item {
             var assistant_message_idx = prompts_tab.messages_model.count - 1;
 
             // Update tab selection
-            prompts_tab.update_tab_selection(assistant_message_idx, 1, "model2:free");
+            prompts_tab.update_tab_selection(assistant_message_idx, 1);
 
             var message = prompts_tab.messages_model.get(assistant_message_idx);
             compare(message.selected_ai_tab, 1);

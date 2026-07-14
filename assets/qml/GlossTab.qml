@@ -145,7 +145,7 @@ Item {
                     // TODO: Show user-friendly error message
                 }
             } catch (e) {
-                logger.error("Failed to parse background processing results:", e);
+                logger.error("Failed to parse background processing results: " + e);
                 // TODO: Show user-friendly error message
             }
         }
@@ -165,7 +165,7 @@ Item {
                     // TODO: Show user-friendly error message
                 }
             } catch (e) {
-                logger.error("Failed to parse background processing results:", e);
+                logger.error("Failed to parse background processing results: " + e);
                 // TODO: Show user-friendly error message
             }
         }
@@ -186,7 +186,7 @@ Item {
                     msg_dialog_ok.open();
                 }
             } catch (e) {
-                logger.error("Failed to parse Anki export results:", e);
+                logger.error("Failed to parse Anki export results: " + e);
                 msg_dialog_ok.text = `Export failed: ${e}`;
                 msg_dialog_ok.open();
             }
@@ -915,22 +915,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             try {
                 root.common_words = JSON.parse(saved_words);
             } catch (e) {
-                logger.error("Failed to parse common words:", e);
+                logger.error("Failed to parse common words: " + e);
             }
         }
     }
 
     function save_common_words() {
         SuttaBridge.save_common_words_json(JSON.stringify(root.common_words));
-    }
-
-    function generate_request_id() {
-        return coordinator.generate_request_id();
-    }
-
-    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
-    function is_error_response(response_text) {
-        return coordinator.is_error_response(response_text);
     }
 
     ScrollableHelper {
@@ -995,7 +986,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         logger.info(`Created ${entries.length} translation entries`);
     }
 
-    function update_tab_selection(paragraph_idx, tab_index, model_name) {
+    function update_tab_selection(paragraph_idx, tab_index) {
         // Just update the selected tab index without modifying translations_json to avoid binding loop
         var paragraph = paragraph_model.get(paragraph_idx);
         if (paragraph) {
@@ -1236,7 +1227,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         try {
             results = JSON.parse(lookup_results_json);
         } catch (e) {
-            logger.error("Failed to parse lookup result:", e);
+            logger.error("Failed to parse lookup result: " + e);
             return null;
         }
 
@@ -1295,7 +1286,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         previous_stems[root.gloss_dedup_key(word_item.results)] = true;
                     }
                 } catch (e) {
-                    logger.error("Failed to parse words_data_json:", e);
+                    logger.error("Failed to parse words_data_json: " + e);
                 }
             }
         }
@@ -1322,7 +1313,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             }
             return out;
         } catch (e) {
-            logger.error("Failed to parse words_data_json:", e);
+            logger.error("Failed to parse words_data_json: " + e);
             return "";
         }
     }
@@ -1883,7 +1874,7 @@ ${table_rows}
                         para_data.vocabulary.push(vocab_item);
                     }
                 } catch (e) {
-                    logger.error("Failed to parse words_data_json:", e);
+                    logger.error("Failed to parse words_data_json: " + e);
                 }
             }
 
@@ -1922,7 +1913,7 @@ ${table_rows}
                     para_data.ai_translations = para_data.ai_translations.concat(other_translations);
 
                 } catch (e) {
-                    logger.error("Failed to parse translations_json:", e);
+                    logger.error("Failed to parse translations_json: " + e);
                 }
             }
 
@@ -2001,13 +1992,13 @@ ${main_text}
 
     function paragraph_gloss_as_html(paragraph_index: int): string {
         if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index:", paragraph_index);
+            logger.error("Invalid paragraph index: " + paragraph_index);
             return "";
         }
 
         let gloss_data = root.gloss_export_data();
         if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range:", paragraph_index);
+            logger.error("Paragraph index out of range: " + paragraph_index);
             return "";
         }
 
@@ -2017,13 +2008,13 @@ ${main_text}
 
     function paragraph_gloss_as_markdown(paragraph_index: int): string {
         if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index:", paragraph_index);
+            logger.error("Invalid paragraph index: " + paragraph_index);
             return "";
         }
 
         let gloss_data = root.gloss_export_data();
         if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range:", paragraph_index);
+            logger.error("Paragraph index out of range: " + paragraph_index);
             return "";
         }
 
@@ -2033,13 +2024,13 @@ ${main_text}
 
     function paragraph_gloss_as_orgmode(paragraph_index: int): string {
         if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index:", paragraph_index);
+            logger.error("Invalid paragraph index: " + paragraph_index);
             return "";
         }
 
         let gloss_data = root.gloss_export_data();
         if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range:", paragraph_index);
+            logger.error("Paragraph index out of range: " + paragraph_index);
             return "";
         }
 
@@ -2631,19 +2622,15 @@ ${main_text}
 
                 AssistantResponses {
                     id: assistant_responses_component
+                    // Derived from the already-parsed translations_data below
+                    // (single parse of translations_json per change).
                     title: {
-                        try {
-                            let translations = JSON.parse(paragraph_item.translations_json);
-                            if (translations && translations.length > 0) {
-                                // Check the first translation to determine if it was with or without vocab
-                                let with_vocab = translations[0].with_vocab;
-                                return with_vocab ? "AI Translations w/ Vocab:" : "AI Translations w/o Vocab:";
-                            }
-                            return "AI Translations:";
-                        } catch (e) {
-                            logger.error(`❌ Error parsing translations_json for title in paragraph ${paragraph_item.index}:`, e);
-                            return "AI Translations:";
+                        let translations = assistant_responses_component.translations_data;
+                        if (translations && translations.length > 0) {
+                            // The first translation determines whether the run was with or without vocab.
+                            return translations[0].with_vocab ? "AI Translations w/ Vocab:" : "AI Translations w/o Vocab:";
                         }
+                        return "AI Translations:";
                     }
                     is_dark: root.is_dark
                     Layout.fillWidth: true
@@ -2651,7 +2638,7 @@ ${main_text}
                         try {
                             return JSON.parse(paragraph_item.translations_json);
                         } catch (e) {
-                            logger.error(`❌ Error parsing translations_json for paragraph ${paragraph_item.index}:`, e);
+                            logger.error(`Error parsing translations_json for paragraph ${paragraph_item.index}: ` + e);
                             return [];
                         }
                     }
@@ -2664,7 +2651,7 @@ ${main_text}
                     }
 
                     onTabSelectionChanged: function(tab_index, model_name) {
-                        root.update_tab_selection(paragraph_item.index, tab_index, model_name);
+                        root.update_tab_selection(paragraph_item.index, tab_index);
                     }
                 }
 
@@ -3084,7 +3071,7 @@ ${main_text}
                                 commonWordsTextArea.text = words.join('\n');
                                 root.start_background_all_glosses();
                             } catch (e) {
-                                logger.error("Failed to parse common words:", e);
+                                logger.error("Failed to parse common words: " + e);
                             }
                         }
                     }

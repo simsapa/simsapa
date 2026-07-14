@@ -26,8 +26,6 @@ ColumnLayout {
     property string bg_color_darker: root.is_dark ? "#1C2025" : "#F8DA8E"
     property string border_color: root.is_dark ? "#0a0a0a" : "#ccc"
 
-    Logger { id: logger }
-
     AiErrorUtils { id: ai_error_utils }
 
     // Internal hooks for the QML tests (delegate identity / currentIndex
@@ -282,35 +280,23 @@ ColumnLayout {
                             })
 
                             text: {
-                                logger.info(`🎨 TextArea rendering for item:`, JSON.stringify(data));
-
-                                // Handle empty or invalid data
-                                if (!data || Object.keys(data).length === 0) {
-                                    logger.info(`⚠️  Empty or invalid data, showing waiting message`);
-                                    return `Waiting for response from ${data.model_name} ...`;
-                                }
-
-                                if (data.status === "waiting") {
-                                    logger.info(`⏳ Showing waiting message for ${data.model_name}`);
-                                    // The Rust engine's progress messages ("Trying X…",
-                                    // "Rate limited by Y…") land in data.progress.
-                                    if (data.progress && data.progress.length > 0) {
-                                        return data.progress;
-                                    }
-                                    return `Waiting for response from ${data.model_name} ...`;
-                                } else if (data.status === "error") {
-                                    logger.info(`❌ Showing error message`);
+                                if (data.status === "error") {
                                     var formatted = ai_error_utils.format_response_error(data.response)
                                     return formatted || data.response || "Unknown error occurred";
                                 } else if (data.status === "completed") {
-                                    logger.info(`✅ Showing completed response, raw content: "${data.response}"`);
-                                    var html_content = SuttaBridge.markdown_to_html(data.response || "");
-                                    logger.info(`🎨 Converted HTML: "${html_content}"`);
-                                    return html_content;
-                                } else {
-                                    logger.info(`❓ Unknown status: "${data.status}", showing waiting message for ${data.model_name}`);
-                                    return `Waiting for response from ${data.model_name} ...`;
+                                    return SuttaBridge.markdown_to_html(data.response || "");
                                 }
+                                // "waiting" (and any unknown status). The Rust
+                                // engine's progress messages ("Trying X…",
+                                // "Rate limited by Y…") land in data.progress.
+                                if (data.progress && data.progress.length > 0) {
+                                    return data.progress;
+                                }
+                                // Sequential mode has no model name until the
+                                // first progress event arrives.
+                                return data.model_name
+                                    ? `Waiting for response from ${data.model_name} ...`
+                                    : "Waiting for response ...";
                             }
                             font.pointSize: root.vocab_font_point_size
                             selectByMouse: true

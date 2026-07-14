@@ -300,14 +300,14 @@ Item {
                     raw: "slow down"
                 }
             });
-            verify(gloss_tab.is_error_response(envelope));
-            verify(!gloss_tab.is_error_response("Normal translation response"));
-            verify(!gloss_tab.is_error_response("API Error: legacy plain-text error"));
+            verify(gloss_tab.ai_coordinator.is_error_response(envelope));
+            verify(!gloss_tab.ai_coordinator.is_error_response("Normal translation response"));
+            verify(!gloss_tab.ai_coordinator.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_request_id_generation() {
-            var id1 = gloss_tab.generate_request_id();
-            var id2 = gloss_tab.generate_request_id();
+            var id1 = gloss_tab.ai_coordinator.generate_request_id();
+            var id2 = gloss_tab.ai_coordinator.generate_request_id();
 
             // IDs should be unique
             verify(id1 !== id2);
@@ -463,7 +463,7 @@ Item {
             compare(parsed_translations[1].status, "error");
 
             // Test tab selection update
-            gloss_tab.update_tab_selection(gloss_tab.paragraph_model.count - 1, 1, "google/gemma-3-12b-it:free");
+            gloss_tab.update_tab_selection(gloss_tab.paragraph_model.count - 1, 1);
 
             // Verify selection was updated via selected_ai_tab property
             paragraph_data = gloss_tab.paragraph_model.get(gloss_tab.paragraph_model.count - 1);

@@ -251,15 +251,6 @@ Item {
         return JSON.stringify(messages);
     }
 
-    function generate_request_id() {
-        return coordinator.generate_request_id();
-    }
-
-    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
-    function is_error_response(response_text) {
-        return coordinator.is_error_response(response_text);
-    }
-
     // Send the user message at `message_idx` and create the assistant message
     // which will receive the response(s): one entry in sequential mode (the
     // engine picks the model), one per enabled Parallel-prompts model otherwise.
@@ -328,7 +319,7 @@ Item {
         coordinator.resend({ assistant_message_idx: message_idx }, entry_idx, root.prompts_request_mode);
     }
 
-    function update_tab_selection(message_idx, tab_index, model_name) {
+    function update_tab_selection(message_idx, tab_index) {
         // Update the selected tab index for this message
         var message = messages_model.get(message_idx);
         if (message) {
@@ -722,7 +713,7 @@ Item {
                     msg_data.responses = msg_data.responses.concat(other_responses);
 
                 } catch (e) {
-                    logger.error("Failed to parse responses_json:", e);
+                    logger.error("Failed to parse responses_json: " + e);
                 }
             }
 
@@ -1218,7 +1209,7 @@ Item {
                                 }
 
                             } catch (e) {
-                                logger.error("Error copying message:", e);
+                                logger.error("Error copying message: " + e);
                             }
 
                             copy_combobox.currentIndex = 0;
@@ -1253,11 +1244,8 @@ Item {
 
 
                                 translations_data: {
-                                    /* logger.info(`AssistantResponses for message ${message_item.index}: role=${message_item.role}, responses_json="${message_item.responses_json}"`); */
                                     try {
-                                        let data = JSON.parse(message_item.responses_json || "[]");
-                                        /* logger.info(`Parsed translations_data:`, JSON.stringify(data)); */
-                                        return data;
+                                        return JSON.parse(message_item.responses_json || "[]");
                                     } catch (e) {
                                         logger.error(`Error parsing responses_json for message ${message_item.index}:` + e);
                                         return [];
@@ -1272,7 +1260,7 @@ Item {
                                 }
 
                                 onTabSelectionChanged: function(tab_index, model_name) {
-                                    root.update_tab_selection(message_item.index, tab_index, model_name);
+                                    root.update_tab_selection(message_item.index, tab_index);
                                 }
                             }
 
