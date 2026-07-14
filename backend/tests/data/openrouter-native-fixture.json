@@ -1,0 +1,104 @@
+{
+  "data": [
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct:free",
+      "name": "Meta: Llama 3.3 70B Instruct (free)",
+      "created": 1733437000,
+      "context_length": 131072,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "supported_parameters": [
+        "temperature",
+        "top_p"
+      ]
+    },
+    {
+      "id": "qwen/qwen3-coder:free",
+      "name": "Qwen: Qwen3 Coder (free)",
+      "created": 1750000000,
+      "context_length": 262144,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "supported_parameters": [
+        "temperature",
+        "reasoning",
+        "include_reasoning"
+      ]
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "OpenAI: GPT-4o",
+      "created": 1715558400,
+      "context_length": 128000,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.00001"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      }
+    },
+    {
+      "id": "acme/legal-embedder:free",
+      "name": "Acme: Legal Embedder (free)",
+      "created": 1751000000,
+      "context_length": 8192,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      }
+    },
+    {
+      "id": "acme/pixel-painter:free",
+      "name": "Acme: Pixel Painter (free)",
+      "created": 1752000000,
+      "context_length": 4096,
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      },
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      }
+    }
+  ]
+}

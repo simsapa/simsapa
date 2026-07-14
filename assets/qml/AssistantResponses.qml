@@ -28,6 +28,8 @@ ColumnLayout {
 
     Logger { id: logger }
 
+    AiErrorUtils { id: ai_error_utils }
+
     // Debug logging when translations_data changes
     onTranslations_dataChanged: {
         /* logger.info(`AssistantResponses: translations_data changed for paragraph ${paragraph_index}`); */
@@ -59,10 +61,9 @@ ColumnLayout {
         return Date.now().toString() + "_" + Math.random().toString(36)
     }
 
+    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
-        return response_text.includes("API Error:") ||
-               response_text.includes("Error:") ||
-               response_text.includes("Failed:")
+        return ai_error_utils.is_error(response_text)
     }
 
     spacing: 10
@@ -126,7 +127,6 @@ ColumnLayout {
 
                         model_name: (modelData && modelData.model_name) ? modelData.model_name : ""
                         status: (modelData && modelData.status) ? modelData.status : "waiting"
-                        retry_count: (modelData && modelData.retry_count) ? modelData.retry_count : 0
 
                         onRetryRequested: {
                             var name = (modelData && modelData.model_name) ? modelData.model_name : ""
@@ -201,17 +201,21 @@ ColumnLayout {
                                 // Handle empty or invalid data
                                 if (!data || Object.keys(data).length === 0) {
                                     logger.info(`⚠️  Empty or invalid data, showing waiting message`);
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 }
 
                                 if (data.status === "waiting") {
                                     logger.info(`⏳ Showing waiting message for ${data.model_name}`);
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    // The Rust engine's progress messages ("Trying X…",
+                                    // "Rate limited by Y…") land in data.progress.
+                                    if (data.progress && data.progress.length > 0) {
+                                        return data.progress;
+                                    }
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 } else if (data.status === "error") {
                                     logger.info(`❌ Showing error message`);
-                                    var error_text = data.response || "Unknown error occurred"
-                                    var retry_text = data.retry_count > 0 ? `\n\nRetrying... (${data.retry_count}x)` : ""
-                                    return error_text + retry_text;
+                                    var formatted = ai_error_utils.format_response_error(data.response)
+                                    return formatted || data.response || "Unknown error occurred";
                                 } else if (data.status === "completed") {
                                     logger.info(`✅ Showing completed response, raw content: "${data.response}"`);
                                     var html_content = SuttaBridge.markdown_to_html(data.response || "");
@@ -219,7 +223,7 @@ ColumnLayout {
                                     return html_content;
                                 } else {
                                     logger.info(`❓ Unknown status: "${data.status}", showing waiting message for ${data.model_name}`);
-                                    return `Waiting for response from ${data.model_name} (3min timeout) ...`;
+                                    return `Waiting for response from ${data.model_name} ...`;
                                 }
                             }
                             font.pointSize: root.vocab_font_point_size

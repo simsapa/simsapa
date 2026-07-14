@@ -10,6 +10,7 @@ use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use cxx_qt::Threading;
 
+use simsapa_backend::app_settings::AiRequestMode;
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
 use simsapa_backend::theme_colors::ThemeColors;
@@ -17,6 +18,7 @@ use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_creat
 use simsapa_backend::dir_list::{generate_html_directory_listing, generate_plain_directory_listing};
 use simsapa_backend::helpers::{extract_words, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
 use simsapa_backend::prompt_utils::markdown_to_html;
+use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
 use simsapa_backend::update_checker;
@@ -914,6 +916,24 @@ pub mod qobject {
         fn set_ai_models_auto_retry(self: Pin<&mut SuttaBridge>, auto_retry: bool);
 
         #[qinvokable]
+        fn get_ai_auto_fallback(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_ai_auto_fallback(self: Pin<&mut SuttaBridge>, auto_fallback: bool);
+
+        #[qinvokable]
+        fn get_gloss_ai_translate_mode(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_ai_translate_mode(self: Pin<&mut SuttaBridge>, mode: &QString);
+
+        #[qinvokable]
+        fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_prompts_request_mode(self: Pin<&mut SuttaBridge>, mode: &QString);
+
+        #[qinvokable]
         fn get_api_key(self: &SuttaBridge, key_name: &QString) -> QString;
 
         #[qinvokable]
@@ -969,6 +989,13 @@ pub mod qobject {
 
         #[qinvokable]
         fn set_providers_json(self: Pin<&mut SuttaBridge>, providers_json: &QString);
+
+        #[qinvokable]
+        fn update_model_lists(self: Pin<&mut SuttaBridge>);
+
+        #[qsignal]
+        #[cxx_name = "modelListsUpdated"]
+        fn model_lists_updated(self: Pin<&mut SuttaBridge>, success: bool, report_json: QString);
 
         #[qinvokable]
         fn get_provider_api_key(self: &SuttaBridge, provider_name: &QString) -> QString;
@@ -1068,6 +1095,18 @@ pub mod qobject {
 
         #[qinvokable]
         fn get_provider_for_model(self: &SuttaBridge, model_name: &QString) -> QString;
+
+        #[qinvokable]
+        fn get_ai_fallback_sequence_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_ai_fallback_sequence_json(self: Pin<&mut SuttaBridge>, entries_json: &QString);
+
+        #[qinvokable]
+        fn get_ai_parallel_prompts_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_ai_parallel_prompts_json(self: Pin<&mut SuttaBridge>, entries_json: &QString);
 
         #[qinvokable]
         fn get_anki_template_front(self: &SuttaBridge) -> QString;
@@ -2442,6 +2481,45 @@ impl qobject::SuttaBridge {
         app_data.set_ai_models_auto_retry(auto_retry);
     }
 
+    /// Get the auto-fallback-to-next-model setting
+    pub fn get_ai_auto_fallback(&self) -> bool {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_auto_fallback
+    }
+
+    /// Save the auto-fallback-to-next-model setting in the db
+    pub fn set_ai_auto_fallback(self: Pin<&mut Self>, auto_fallback: bool) {
+        let app_data = get_app_data();
+        app_data.set_ai_auto_fallback(auto_fallback);
+    }
+
+    /// Get the Gloss tab AI translation mode ("sequential_retry" | "parallel")
+    pub fn get_gloss_ai_translate_mode(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(app_settings.gloss_ai_translate_mode.as_str())
+    }
+
+    /// Save the Gloss tab AI translation mode in the db
+    pub fn set_gloss_ai_translate_mode(self: Pin<&mut Self>, mode: &QString) {
+        let app_data = get_app_data();
+        app_data.set_gloss_ai_translate_mode(AiRequestMode::from_str_or_default(&mode.to_string()));
+    }
+
+    /// Get the Prompts tab request mode ("sequential_retry" | "parallel")
+    pub fn get_prompts_request_mode(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(app_settings.prompts_request_mode.as_str())
+    }
+
+    /// Save the Prompts tab request mode in the db
+    pub fn set_prompts_request_mode(self: Pin<&mut Self>, mode: &QString) {
+        let app_data = get_app_data();
+        app_data.set_prompts_request_mode(AiRequestMode::from_str_or_default(&mode.to_string()));
+    }
+
     /// Get a specific API key by name
     pub fn get_api_key(&self, key_name: &QString) -> QString {
         let app_data = get_app_data();
@@ -2679,41 +2757,45 @@ impl qobject::SuttaBridge {
         app_data.set_providers_json(&providers_json.to_string());
     }
 
+    /// Refresh every provider's model list from the keyless public sources on a
+    /// background thread, save the result, and report via `modelListsUpdated`.
+    ///
+    /// The user's enabled set is authoritative here, so the default-enable
+    /// heuristic is not applied (that is the CLI's job when regenerating the
+    /// bundled `assets/providers.json`). See
+    /// docs/ai-model-management-and-fallback.md.
+    pub fn update_model_lists(self: Pin<&mut Self>) {
+        info("SuttaBridge::update_model_lists() start");
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            let app_data = get_app_data();
+            let mut providers = app_data.get_providers();
+            let report = update_all_provider_models(&mut providers, false);
+
+            let success = !report.total_failure();
+            if success {
+                app_data.set_providers(providers);
+            }
+
+            let report_json = serde_json::to_string(&report).unwrap_or_default();
+            info(&format!("SuttaBridge::update_model_lists() end: {}", report.summary()));
+
+            let _ = qt_thread.queue(move |mut qo| {
+                qo.as_mut().model_lists_updated(success, QString::from(&report_json));
+            });
+        });
+    }
+
     /// Get API key for a specific provider
     pub fn get_provider_api_key(&self, provider_name: &QString) -> QString {
         let app_data = get_app_data();
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-        // First check environment variable
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Check environment variable first
-            if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-                return QString::from(env_key);
-            }
-            // Fall back to stored value
-            if let Some(ref stored_key) = provider.api_key_value {
-                return QString::from(stored_key.clone());
-            }
-        }
-
-        QString::from("")
+        QString::from(app_data.get_provider_api_key(&provider_name.to_string()))
     }
 
     /// Set API key for a specific provider
     pub fn set_provider_api_key(self: Pin<&mut Self>, provider_name: &QString, api_key: &QString) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            provider.api_key_value = if api_key.is_empty() { None } else { Some(api_key.to_string()) };
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.set_provider_api_key(&provider_name.to_string(), &api_key.to_string());
     }
 
     /// Get the API URL for the localhost server
@@ -2732,98 +2814,55 @@ impl qobject::SuttaBridge {
     /// Enable or disable a provider
     pub fn set_provider_enabled(self: Pin<&mut Self>, provider_name: &QString, enabled: bool) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            provider.enabled = enabled;
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.set_provider_enabled(&provider_name.to_string(), enabled);
     }
 
-    /// Add a new model to a provider
+    /// Add a new model to a provider (origin `user`)
     pub fn add_provider_model(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString) {
-        use simsapa_backend::app_settings::ModelEntry;
-
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Check if model already exists
-            if !provider.models.iter().any(|m| m.model_name == model_name.to_string()) {
-                let new_model = ModelEntry {
-                    model_name: model_name.to_string(),
-                    enabled: true,
-                    removable: true,
-                };
-                // Add the new model to the top of the list, where the user can
-                // more easily see it.
-                provider.models.insert(0, new_model);
-
-                // Save via backend function
-                let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-                drop(app_settings); // Release the lock before saving
-                app_data.set_providers_json(&providers_json);
-            }
-        }
+        app_data.add_provider_model(&provider_name.to_string(), &model_name.to_string());
     }
 
-    /// Remove a model from a provider
+    /// Remove a user-added model from a provider
     pub fn remove_provider_model(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Only remove if the model is removable
-            provider.models.retain(|m| !(m.model_name == model_name.to_string() && m.removable));
-
-            // Save via backend function
-            let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-            drop(app_settings); // Release the lock before saving
-            app_data.set_providers_json(&providers_json);
-        }
+        app_data.remove_provider_model(&provider_name.to_string(), &model_name.to_string());
     }
 
     /// Set the enabled status of a specific model for a provider
     pub fn set_provider_model_enabled(self: Pin<&mut Self>, provider_name: &QString, model_name: &QString, enabled: bool) {
         let app_data = get_app_data();
-        let mut app_settings = app_data.app_settings_cache.write().expect("Failed to write app settings");
-
-        let provider_name_str = provider_name.to_string();
-        if let Some(provider) = app_settings.providers.iter_mut().find(|p| format!("{:?}", p.name) == provider_name_str) {
-            // Find the model and update its enabled status
-            if let Some(model) = provider.models.iter_mut().find(|m| m.model_name == model_name.to_string()) {
-                model.enabled = enabled;
-
-                // Save via backend function
-                let providers_json = serde_json::to_string(&app_settings.providers).expect("Can't encode providers JSON");
-                drop(app_settings); // Release the lock before saving
-                app_data.set_providers_json(&providers_json);
-            }
-        }
+        app_data.set_provider_model_enabled(&provider_name.to_string(), &model_name.to_string(), enabled);
     }
 
     /// Get the provider name for a given model name
     pub fn get_provider_for_model(&self, model_name: &QString) -> QString {
-        // NOTE: This matches model_name in any provider, so two providers should not have the model_name.
-        // However it shouldn't be a problem because model names are quite specific to the providers.
         let app_data = get_app_data();
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(app_data.get_provider_for_model(&model_name.to_string()))
+    }
 
-        let model_name_str = model_name.to_string();
-        for provider in &app_settings.providers {
-            if provider.models.iter().any(|m| m.model_name == model_name_str) {
-                return QString::from(format!("{:?}", provider.name));
-            }
-        }
+    /// The ordered "Fallback sequence" list. Seeded from the enabled models on
+    /// first access. See docs/ai-model-management-and-fallback.md.
+    pub fn get_ai_fallback_sequence_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_ai_fallback_sequence_json())
+    }
 
-        QString::from("")
+    /// Whole-list set, covering both reordering and the per-item toggles.
+    pub fn set_ai_fallback_sequence_json(self: Pin<&mut Self>, entries_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_ai_fallback_sequence_json(&entries_json.to_string());
+    }
+
+    /// The unordered "Parallel prompts" list.
+    pub fn get_ai_parallel_prompts_json(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_ai_parallel_prompts_json())
+    }
+
+    pub fn set_ai_parallel_prompts_json(self: Pin<&mut Self>, entries_json: &QString) {
+        let app_data = get_app_data();
+        app_data.set_ai_parallel_prompts_json(&entries_json.to_string());
     }
 
     pub fn get_saved_theme(&self) -> QString {

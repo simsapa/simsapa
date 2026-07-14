@@ -12,8 +12,8 @@ ApplicationWindow {
     id: root
 
     title: "AI Models"
-    width: is_mobile ? Screen.desktopAvailableWidth : 800
-    height: is_mobile ? Screen.desktopAvailableHeight : 600
+    width: is_mobile ? Screen.desktopAvailableWidth : 900
+    height: is_mobile ? Screen.desktopAvailableHeight : 800
     visible: false
     /* visible: true // for qml preview */
     color: palette.window
@@ -31,6 +31,12 @@ ApplicationWindow {
     property var current_providers: []
     property string selected_provider: ""
     property int selected_provider_index: -1
+
+    property bool global_options_expanded: true
+
+    property bool update_in_progress: false
+    property string update_status: ""
+    property bool update_failed: false
 
     property alias auto_retry: auto_retry
 
@@ -59,8 +65,52 @@ ApplicationWindow {
                 });
             }
         } catch (e) {
-            logger.error("Failed to parse providers JSON:", e);
+            logger.error("Failed to parse providers JSON: " + e);
         }
+    }
+
+    function start_model_lists_update() {
+        root.update_in_progress = true;
+        root.update_failed = false;
+        root.update_status = "Updating model lists...";
+        SuttaBridge.update_model_lists();
+    }
+
+    // Turns the UpdateReport JSON into the one-line non-modal summary, e.g.
+    // "Updated 9 providers, 4 models added, 1 removed; Gemini failed: network error"
+    function format_update_report(report_json: string): string {
+        let report;
+        try {
+            report = JSON.parse(report_json);
+        } catch (e) {
+            logger.error("Failed to parse update report JSON: " + e);
+            return "Update finished, but the report could not be read.";
+        }
+
+        let updated = 0;
+        let added = 0;
+        let removed = 0;
+        let failures = [];
+
+        for (let i = 0; i < report.providers.length; i++) {
+            let p = report.providers[i];
+            if (p.skipped) {
+                continue;
+            }
+            if (p.error) {
+                failures.push(p.provider + " failed: " + p.error);
+                continue;
+            }
+            updated += 1;
+            added += p.added;
+            removed += p.removed;
+        }
+
+        let text = "Updated " + updated + " providers, " + added + " models added, " + removed + " removed";
+        if (failures.length > 0) {
+            text += "; " + failures.join("; ");
+        }
+        return text;
     }
 
     function select_first_provider() {
@@ -86,7 +136,10 @@ ApplicationWindow {
                 model_list_model.append({
                     model_name: model.model_name,
                     model_enabled: model.enabled,
-                    model_removable: model.removable,
+                    model_origin: model.origin,
+                    model_stale: model.stale === true,
+                    // true / false / unknown (absent in the source data)
+                    model_reasoning: model.reasoning === true,
                     model_index: i
                 });
             }
@@ -119,6 +172,10 @@ ApplicationWindow {
 
         // Update the list model
         provider_list_model.setProperty(provider_index, "provider_enabled", enabled);
+
+        // Enabling a provider brings its enabled models into the usage lists,
+        // disabling it drops them.
+        model_usage_lists.reload();
         return enabled;
     }
 
@@ -145,6 +202,7 @@ ApplicationWindow {
             load_providers();
             provider_list_view.currentIndex = root.selected_provider_index;
             load_provider_details();
+            model_usage_lists.reload();
 
             new_model_input.text = "";
         }
@@ -163,6 +221,9 @@ ApplicationWindow {
 
             // Update the model list display
             model_list_model.setProperty(model_index, "model_enabled", enabled);
+
+            // Enabling a model appends it to both usage lists, disabling drops it.
+            model_usage_lists.reload();
         }
     }
 
@@ -171,8 +232,8 @@ ApplicationWindow {
             let provider = root.current_providers[root.selected_provider_index];
             let model = provider.models[model_index];
 
-            if (!model.removable) {
-                return; // Can't remove non-removable models
+            if (model.origin !== "user") {
+                return; // Fetched models are owned by the model-list updater
             }
 
             confirmation_dialog.model_name = model.model_name;
@@ -192,6 +253,7 @@ ApplicationWindow {
             load_providers();
             provider_list_view.currentIndex = root.selected_provider_index;
             load_provider_details();
+            model_usage_lists.reload();
         }
     }
 
@@ -201,6 +263,7 @@ ApplicationWindow {
         // Select first provider by default
         select_first_provider();
         auto_retry.checked = SuttaBridge.get_ai_models_auto_retry();
+        auto_fallback.checked = SuttaBridge.get_ai_auto_fallback();
     }
 
     onVisibilityChanged: {
@@ -213,6 +276,39 @@ ApplicationWindow {
     ListModel { id: provider_list_model }
     ListModel { id: model_list_model }
 
+    Connections {
+        target: SuttaBridge
+
+        function onModelListsUpdated(success: bool, report_json: string) {
+            root.update_in_progress = false;
+            root.update_failed = !success;
+
+            if (!success) {
+                root.update_status = "Update failed, the model lists were not changed. " + root.format_update_report(report_json);
+                return;
+            }
+
+            root.update_status = root.format_update_report(report_json);
+
+            // Reload the lists in place, keeping the selected provider.
+            let selected_name = root.selected_provider;
+            root.load_providers();
+
+            for (let i = 0; i < root.current_providers.length; i++) {
+                if (root.current_providers[i].name === selected_name) {
+                    root.selected_provider_index = i;
+                    provider_list_view.currentIndex = i;
+                    break;
+                }
+            }
+            root.load_provider_details();
+
+            // The updater saves the whole providers config, so the usage lists
+            // were reconciled in Rust; pick up the pruned lists.
+            model_usage_lists.reload();
+        }
+    }
+
     Item {
         x: 10
         y: 10 + root.top_bar_margin
@@ -224,6 +320,7 @@ ApplicationWindow {
             anchors.fill: parent
 
             RowLayout {
+                Layout.fillWidth: true
                 spacing: 8
                 Image {
                     source: "icons/32x32/fa_gear-solid.png"
@@ -235,15 +332,119 @@ ApplicationWindow {
                     font.bold: true
                     font.pointSize: root.pointSize + 3
                 }
+
+                Item { Layout.fillWidth: true }
+
+                BusyIndicator {
+                    running: root.update_in_progress
+                    visible: root.update_in_progress
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                }
+
+                Button {
+                    id: update_model_lists_btn
+                    text: "Update Model Lists"
+                    enabled: !root.update_in_progress
+                    onClicked: root.start_model_lists_update()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Refresh each provider's model list from the published model data. Models you added by hand are kept."
+                }
             }
 
+            Label {
+                visible: root.update_status !== ""
+                text: root.update_status
+                font.pointSize: root.pointSize - 1
+                color: root.update_failed ? "red" : palette.windowText
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            // Global settings: the model-usage lists and the fallback/retry
+            // settings, which apply across providers. Collapsible, so the
+            // provider panes below still have room on narrow layouts.
             RowLayout {
-                CheckBox {
-                    id: auto_retry
-                    text: "Auto-retry AI Model Requests"
-                    checked: false
-                    onCheckedChanged: {
-                        SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
+                Layout.fillWidth: true
+                spacing: 5
+
+                Button {
+                    flat: true
+                    icon.source: root.global_options_expanded
+                        ? "icons/32x32/fa_chevron-down-solid.png"
+                        : "icons/32x32/fa_chevron-right-solid.png"
+                    icon.color: palette.text
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    onClicked: root.global_options_expanded = !root.global_options_expanded
+                }
+
+                Label {
+                    text: "Settings"
+                    font.bold: true
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+
+                    TapHandler {
+                        onTapped: root.global_options_expanded = !root.global_options_expanded
+                    }
+                }
+            }
+
+            ScrollView {
+                id: global_options_scroll
+                visible: root.global_options_expanded
+                clip: true
+                contentWidth: availableWidth
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(global_options_column.implicitHeight, root.height * 0.4)
+
+                ColumnLayout {
+                    id: global_options_column
+                    width: global_options_scroll.availableWidth
+                    spacing: 5
+
+                    CheckBox {
+                        id: auto_fallback
+                        text: "Auto-fallback to next model"
+                        checked: true
+                        onCheckedChanged: {
+                            SuttaBridge.set_ai_auto_fallback(auto_fallback.checked);
+                        }
+                    }
+
+                    Label {
+                        text: "Auto-fallback and retry with the next model on error such as when rate limited."
+                        font.pointSize: root.pointSize - 2
+                        opacity: 0.7
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 32
+                    }
+
+                    CheckBox {
+                        id: auto_retry
+                        text: "Auto-retry AI Model Requests"
+                        checked: false
+                        onCheckedChanged: {
+                            SuttaBridge.set_ai_models_auto_retry(auto_retry.checked);
+                        }
+                    }
+
+                    Label {
+                        text: "First we auto-fallback, then we re-try the model requests."
+                        font.pointSize: root.pointSize - 2
+                        opacity: 0.7
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 32
+                    }
+
+                    ModelUsageLists {
+                        id: model_usage_lists
+                        pointSize: root.pointSize
+                        is_wide: root.is_wide
+                        Layout.fillWidth: true
                     }
                 }
             }
@@ -365,13 +566,20 @@ ApplicationWindow {
                     SplitView.fillHeight: true
 
                     ScrollView {
+                        id: details_scroll_view
                         anchors.fill: parent
                         anchors.margins: 5
                         clip: true
                         contentWidth: availableWidth
 
                         ColumnLayout {
+                            id: details_column
                             width: parent.width
+                            // Fill the viewport when there is room to spare, so
+                            // the Models list below grows with the window;
+                            // fall back to the content height (scrolling) when
+                            // the window is too short.
+                            height: Math.max(details_column.implicitHeight, details_scroll_view.availableHeight)
                             spacing: 15
 
                             Label {
@@ -447,7 +655,9 @@ ApplicationWindow {
                             GroupBox {
                                 title: "Models"
                                 Layout.fillWidth: true
+                                Layout.fillHeight: true
                                 Layout.preferredHeight: 400
+                                Layout.minimumHeight: 240
 
                                 background: Rectangle {
                                     anchors.fill: parent
@@ -505,8 +715,12 @@ ApplicationWindow {
                                                 required property int index
                                                 required property string model_name
                                                 required property bool model_enabled
-                                                required property bool model_removable
+                                                required property string model_origin
+                                                required property bool model_stale
+                                                required property bool model_reasoning
                                                 required property int model_index
+
+                                                readonly property bool is_user_model: model_item.model_origin === "user"
 
                                                 width: model_list_view.width
                                                 height: root.is_wide ? 50 : 38
@@ -551,14 +765,37 @@ ApplicationWindow {
                                                         Layout.fillWidth: true
                                                     }
 
+                                                    Text {
+                                                        text: "reasoning"
+                                                        visible: model_item.model_reasoning
+                                                        font.pointSize: root.pointSize - 2
+                                                        font.italic: true
+                                                        color: palette.placeholderText
+                                                        ToolTip.visible: reasoning_hover.hovered
+                                                        ToolTip.text: "A reasoning/thinking model: it spends output tokens on internal reasoning before answering, so responses take longer.";
+                                                        HoverHandler { id: reasoning_hover }
+                                                    }
+
+                                                    Text {
+                                                        text: "not found upstream"
+                                                        visible: model_item.model_stale
+                                                        font.pointSize: root.pointSize - 2
+                                                        font.italic: true
+                                                        color: palette.placeholderText
+                                                        elide: Text.ElideRight
+                                                        ToolTip.visible: stale_hover.hovered
+                                                        ToolTip.text: "This model was added by hand and is no longer listed by the provider. Requests to it may fail.";
+                                                        HoverHandler { id: stale_hover }
+                                                    }
+
                                                     Button {
                                                         id: remove_btn
                                                         Layout.preferredHeight: remove_btn.height
                                                         Layout.preferredWidth: remove_btn.height
                                                         icon.source: "icons/32x32/ion--trash-outline.png"
                                                         font.pointSize: root.pointSize - 1
-                                                        enabled: model_item.model_removable
-                                                        visible: model_item.model_removable
+                                                        enabled: model_item.is_user_model
+                                                        visible: model_item.is_user_model
                                                         onClicked: root.remove_model_with_confirmation(model_item.model_index)
                                                         ToolTip.visible: hovered
                                                         ToolTip.text: "Remove this model"

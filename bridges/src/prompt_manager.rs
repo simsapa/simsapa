@@ -1,4 +1,7 @@
 use std::thread;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use core::pin::Pin;
 
 use cxx_qt_lib::QString;
@@ -9,10 +12,16 @@ use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, pr
 use rig::providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig};
 use tokio::runtime::Runtime;
 
+use rig::completion::request::{CompletionError, PromptError};
+use rig::http_client;
+
 use simsapa_backend::logger::error;
 use simsapa_backend::get_app_data;
-use simsapa_backend::app_settings::ProviderName;
+use simsapa_backend::app_settings::{ModelUsageEntry, ProviderName};
+use simsapa_backend::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
+use simsapa_backend::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
 use simsapa_backend::prompt_utils::{markdown_to_html, clean_prompt};
+use simsapa_backend::helpers::validate_word_selection_response_shape;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -40,6 +49,22 @@ pub mod qobject {
         #[qinvokable]
         fn word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString);
 
+        #[qinvokable]
+        fn sequential_prompt_request(self: Pin<&mut PromptManager>, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
+
+        #[qinvokable]
+        fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString);
+
+        #[qinvokable]
+        fn sequential_prompt_request_with_messages(self: Pin<&mut PromptManager>, sender_message_idx: usize, messages_json: &QString);
+
+        #[qinvokable]
+        fn cancel_sequential_requests(self: Pin<&mut PromptManager>);
+
+        #[qsignal]
+        #[cxx_name = "sequentialProgress"]
+        fn sequential_progress(self: Pin<&mut PromptManager>, context_json: QString, model_name: QString, status: QString);
+
         #[qsignal]
         #[cxx_name = "promptResponse"]
         fn prompt_response(self: Pin<&mut PromptManager>, paragraph_idx: usize, translation_idx: usize, model_name: QString, response: QString, response_html: QString);
@@ -54,38 +79,22 @@ pub mod qobject {
     }
 }
 
-#[derive(Default, Copy, Clone)]
-pub struct PromptManagerRust;
+#[derive(Default)]
+pub struct PromptManagerRust {
+    /// Cancellation token for this PromptManager instance (FR-D8): running
+    /// walks capture the value at start and exit silently once it no longer
+    /// matches. `cancel_sequential_requests()` bumps it.
+    generation: Arc<AtomicUsize>,
+}
 
 // Helper function to extract API keys with provider-based fallback
 fn get_provider_api_key(provider_name: &str) -> String {
-    let app_data = get_app_data();
-    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-    if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name) {
-        // First check environment variable
-        if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-            return env_key;
-        }
-        // Fall back to stored value
-        if let Some(ref stored_key) = provider.api_key_value {
-            return stored_key.clone();
-        }
-    }
-
-    String::new()
+    get_app_data().get_provider_api_key(provider_name)
 }
 
 // Helper function to check if a provider is enabled
 fn is_provider_enabled(provider_name: &str) -> bool {
-    let app_data = get_app_data();
-    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-    if let Some(provider) = app_settings.providers.iter().find(|p| format!("{:?}", p.name) == provider_name) {
-        return provider.enabled;
-    }
-
-    false
+    get_app_data().is_provider_enabled(provider_name)
 }
 
 // Helper function to create HTTP client with timeout for async operations
@@ -96,9 +105,66 @@ fn create_http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
+/// Translate a `rig` error into a classified `AiRequestError`.
+///
+/// `rig` discards the HTTP status on provider errors and hands us the raw
+/// response body instead, so most of the work happens in the body-parsing
+/// classifier in `simsapa_backend::ai_error` (see its module docs). Transport
+/// failures are the exception: the original `reqwest::Error` survives inside
+/// `http_client::Error::Instance` and still knows whether it timed out.
+fn classify_rig_error(provider: &str, model: &str, err: PromptError) -> AiRequestError {
+    let completion_error = match err {
+        PromptError::CompletionError(e) => e,
+        other => return AiRequestError::new(AiErrorKind::Unknown, provider, model, other.to_string()),
+    };
+
+    match completion_error {
+        // The body of a non-2xx provider response, with the status dropped.
+        CompletionError::ProviderError(body) | CompletionError::ResponseError(body) => {
+            classify_provider_error(provider, model, None, &body)
+        }
+
+        CompletionError::HttpError(http_err) => match http_err {
+            http_client::Error::InvalidStatusCode(status) => {
+                classify_provider_error(provider, model, Some(status.as_u16()), "")
+            }
+            http_client::Error::InvalidStatusCodeWithMessage(status, body) => {
+                classify_provider_error(provider, model, Some(status.as_u16()), &body)
+            }
+            http_client::Error::Instance(boxed) => {
+                let is_timeout = boxed
+                    .downcast_ref::<reqwest::Error>()
+                    .map(|e| e.is_timeout())
+                    .unwrap_or(false);
+                classify_transport_error(provider, model, is_timeout, &boxed.to_string())
+            }
+            other => classify_transport_error(provider, model, false, &other.to_string()),
+        },
+
+        other => AiRequestError::new(AiErrorKind::Unknown, provider, model, other.to_string()),
+    }
+}
+
+/// The request failed before it could be sent (client build, malformed messages).
+fn request_setup_error(provider: &str, model: &str, message: impl Into<String>) -> AiRequestError {
+    AiRequestError::new(AiErrorKind::InvalidRequest, provider, model, message)
+}
+
+/// The model's provider is switched off in the AI Models settings. Not retryable and
+/// not a provider skip: the usage lists only ever hold models of enabled providers,
+/// so the fallback engine cannot reach this — it is a direct-call guard.
+fn provider_disabled_error(provider: &str, model: &str) -> AiRequestError {
+    AiRequestError::new(
+        AiErrorKind::InvalidRequest,
+        provider,
+        model,
+        format!("Provider {} is disabled", provider),
+    )
+}
+
 // Macro to generate response handling code
 macro_rules! get_response {
-    ($agent:expr, $messages:expr, $model:expr) => {{
+    ($agent:expr, $messages:expr, $model:expr, $provider:expr) => {{
         let response = if $messages.len() == 1 {
             // Single message - handle as prompt.
             // In the single message case (GlossTab.qml) the system prompt is already prepended to the message content.
@@ -106,7 +172,7 @@ macro_rules! get_response {
             $agent
                 .prompt(prompt_content)
                 .await
-                .map_err(|e| format!("Failed to prompt {}: {}", $model, e))?
+                .map_err(|e| classify_rig_error($provider, $model, e))?
         } else {
             // Multiple messages - handle as chat.
             //
@@ -124,13 +190,13 @@ macro_rules! get_response {
             let (chat_history, current_prompt) = if let Some((last, rest)) = rig_messages.split_last() {
                 (rest.to_vec(), last.clone())
             } else {
-                return Err("No messages provided".to_string());
+                return Err(request_setup_error($provider, $model, "No messages provided"));
             };
 
             $agent
                 .chat(current_prompt, chat_history)
                 .await
-                .map_err(|e| format!("Failed to prompt {}: {}", $model, e))?
+                .map_err(|e| classify_rig_error($provider, $model, e))?
         };
 
         clean_prompt(&response)
@@ -150,9 +216,162 @@ fn extract_system_prompt(messages: &[ChatMessage]) -> Option<String> {
     None
 }
 
+/// The fallback-sequence entries and flags a sequential run walks with. The
+/// list read reconciles and seeds (see `app_data::refresh_model_usage_lists`),
+/// so every entry belongs to an enabled provider.
+fn fallback_walk_settings() -> (Vec<ModelUsageEntry>, bool, bool) {
+    let app_data = get_app_data();
+    let entries = app_data.get_ai_fallback_sequence();
+    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+    (entries, app_settings.ai_auto_fallback, app_settings.ai_models_auto_retry)
+}
+
+/// Render a walk progress event as `(model_name, status)` for the
+/// `sequentialProgress` signal (FR-D6, FR-F1-style wording).
+fn progress_display(progress: &WalkProgress) -> (String, String) {
+    match progress {
+        WalkProgress::Trying { provider, model } => (
+            model.clone(),
+            format!("Request sent to {} ({})…", provider, model),
+        ),
+        WalkProgress::AttemptFailed { error } => {
+            (error.model.clone(), attempt_failed_text(error))
+        }
+        WalkProgress::RetryRound { round, delay_secs, last_error } => {
+            let reason = match last_error {
+                Some(error) => attempt_failed_text(error),
+                None => "Requests failed.".to_string(),
+            };
+            (
+                String::new(),
+                format!(
+                    "{} Retrying in {} s (round {} of {})…",
+                    reason, delay_secs, round, MAX_RETRY_ROUNDS
+                ),
+            )
+        }
+    }
+}
+
+/// One-line reason for a failed attempt (also the reason shown on retry rounds).
+fn attempt_failed_text(error: &AiRequestError) -> String {
+    match error.kind {
+        AiErrorKind::RateLimited => format!("Rate limited by {} ({}).", error.provider, error.model),
+        AiErrorKind::Overloaded => format!("{} ({}) is overloaded.", error.provider, error.model),
+        AiErrorKind::Timeout => format!("Request to {} ({}) timed out.", error.provider, error.model),
+        AiErrorKind::Network => format!("Network error for {} ({}).", error.provider, error.model),
+        AiErrorKind::Auth => format!("Invalid API key for {} — skipping its models.", error.provider),
+        AiErrorKind::QuotaExceeded => format!("Quota exceeded for {} — skipping its models.", error.provider),
+        AiErrorKind::ModelNotFound => format!("Model {} not found on {} — skipping.", error.model, error.provider),
+        AiErrorKind::InvalidResponse => format!("Incomplete response from {} ({}).", error.provider, error.model),
+        _ => error.message.clone(),
+    }
+}
+
+/// Run the fallback walk on the current thread, with real requests, sleeps and
+/// the generation-token cancellation checks plugged in. `my_gen` is the token
+/// value captured when the run started; the walk exits silently once
+/// `cancel_sequential_requests()` bumps the counter — the sleep is sliced so a
+/// cancel during backoff takes effect within a second.
+///
+/// `validate` lets a caller reject an HTTP-successful but unusable body (e.g.
+/// a truncated word-selection JSON) as a retryable `invalid_response` error,
+/// so the walk re-tries instead of delivering it as a success.
+fn run_walk_blocking(
+    generation: &Arc<AtomicUsize>,
+    my_gen: usize,
+    entries: &[ModelUsageEntry],
+    auto_fallback: bool,
+    auto_retry: bool,
+    messages: &[ChatMessage],
+    validate: Option<&dyn Fn(&str) -> Result<(), String>>,
+    on_progress: &mut dyn FnMut(String, String),
+) -> WalkOutcome {
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return WalkOutcome::Failed(AiRequestError::new(
+                AiErrorKind::Unknown,
+                "",
+                "",
+                format!("Failed to create async runtime: {}", e),
+            ))
+        }
+    };
+
+    run_fallback_walk(
+        entries,
+        auto_fallback,
+        auto_retry,
+        &mut |provider, model| {
+            let response = rt.block_on(make_api_request(messages, model, provider))?;
+            if let Some(validate) = validate {
+                if let Err(msg) = validate(&response) {
+                    return Err(AiRequestError::new(
+                        AiErrorKind::InvalidResponse,
+                        provider,
+                        model,
+                        msg,
+                    ));
+                }
+            }
+            Ok(response)
+        },
+        &mut |p| {
+            let (model, status) = progress_display(&p);
+            on_progress(model, status);
+        },
+        &mut |secs| {
+            for _ in 0..secs {
+                thread::sleep(Duration::from_secs(1));
+                if generation.load(Ordering::SeqCst) != my_gen {
+                    return false;
+                }
+            }
+            true
+        },
+        &mut || generation.load(Ordering::SeqCst) != my_gen,
+    )
+}
+
+/// Single-model variant for the per-model request paths (FR-G2): the same
+/// retry schedule and cancellation as the sequence walk, but the branch never
+/// switches models.
+fn run_single_model_walk(
+    generation: &Arc<AtomicUsize>,
+    my_gen: usize,
+    provider: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    validate: Option<&dyn Fn(&str) -> Result<(), String>>,
+    on_progress: &mut dyn FnMut(String, String),
+) -> WalkOutcome {
+    let auto_retry = {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_models_auto_retry
+    };
+    let entries = vec![ModelUsageEntry {
+        provider: provider.to_string(),
+        model_name: model.to_string(),
+        enabled: true,
+    }];
+    // Retry-round progress events carry no model name; in a single-model walk
+    // the model is fixed, so stamp it in — QML routes progress by model name
+    // when several parallel branches share one context.
+    let model_owned = model.to_string();
+    let mut wrapped = |m: String, s: String| {
+        let m = if m.is_empty() { model_owned.clone() } else { m };
+        on_progress(m, s);
+    };
+    run_walk_blocking(generation, my_gen, &entries, false, auto_retry, messages, validate, &mut wrapped)
+}
+
 impl qobject::PromptManager {
     fn prompt_request(self: Pin<&mut Self>, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
         let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         let prompt_text = prompt.to_string();
         let model_name_text = model_name.to_string();
@@ -162,7 +381,7 @@ impl qobject::PromptManager {
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().prompt_response(
                         paragraph_idx,
@@ -179,15 +398,38 @@ impl qobject::PromptManager {
                 content: prompt_text,
             }];
 
-            let response_content = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
-                }
+            let context_json = serde_json::json!({
+                "paragraph_idx": paragraph_idx,
+                "translation_idx": translation_idx,
+            }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
             };
 
-            let response_content_html = markdown_to_html(&response_content);
+            // Single-model walk: bounded auto-retry with backoff, never
+            // switches models. A failed request travels as an `{"ai_error": …}`
+            // JSON envelope in both the plain and the HTML field; QML checks
+            // `AiErrorUtils.is_error()` before rendering either.
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &single_message, None, &mut on_progress);
+
+            let (response_content, response_content_html) = match outcome {
+                WalkOutcome::Success { response, .. } => {
+                    let html = markdown_to_html(&response);
+                    (response, html)
+                }
+                WalkOutcome::Failed(e) => {
+                    let envelope = e.to_envelope_json();
+                    (envelope.clone(), envelope)
+                }
+                WalkOutcome::Cancelled => return,
+            };
 
             // Emit signal with the prompt response
             qt_thread.queue(move |mut qo| {
@@ -206,6 +448,8 @@ impl qobject::PromptManager {
     /// `request_id` which QML maps back to the covered paragraph indexes.
     fn word_selection_request(self: Pin<&mut Self>, request_id: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
         let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         let prompt_text = prompt.to_string();
         let model_name_text = model_name.to_string();
@@ -215,7 +459,7 @@ impl qobject::PromptManager {
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Error: Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().word_selection_response(
                         request_id,
@@ -231,12 +475,28 @@ impl qobject::PromptManager {
                 content: prompt_text,
             }];
 
-            let response_content = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&single_message, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
-                }
+            let context_json = serde_json::json!({ "request_id": request_id }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            // A word-selection reply must contain a complete selections JSON
+            // object; a truncated body re-tries as `invalid_response`.
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &single_message,
+                Some(&|response: &str| validate_word_selection_response_shape(response)),
+                &mut on_progress);
+
+            let response_content = match outcome {
+                WalkOutcome::Success { response, .. } => response,
+                WalkOutcome::Failed(e) => e.to_envelope_json(),
+                WalkOutcome::Cancelled => return,
             };
 
             qt_thread.queue(move |mut qo| {
@@ -260,12 +520,14 @@ impl qobject::PromptManager {
         };
         let model_name_text = model_name.to_string();
         let provider_name_text = provider_name.to_string();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
 
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
-                let error_msg = format!("Provider {} is disabled", provider_name_text);
+                let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 qt_thread.queue(move |mut qo| {
                     qo.as_mut().prompt_response_for_messages(
                         sender_message_idx,
@@ -274,12 +536,25 @@ impl qobject::PromptManager {
                 }).unwrap();
                 return;
             }
-            let response_content = {
-                let rt = Runtime::new().unwrap();
-                match rt.block_on(make_api_request(&messages, &model_name_text, &provider_name_text)) {
-                    Ok(content) => content,
-                    Err(e) => format!("Error: {}", e),
-                }
+
+            let context_json = serde_json::json!({ "sender_message_idx": sender_message_idx }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_single_model_walk(
+                &generation, my_gen,
+                &provider_name_text, &model_name_text,
+                &messages, None, &mut on_progress);
+
+            let response_content = match outcome {
+                WalkOutcome::Success { response, .. } => response,
+                WalkOutcome::Failed(e) => e.to_envelope_json(),
+                WalkOutcome::Cancelled => return,
             };
 
             // Emit signal with the prompt response (HTML conversion now done client-side)
@@ -292,6 +567,165 @@ impl qobject::PromptManager {
             }).unwrap();
         }); // end of thread
     }
+
+    /// Sequential fallback run for a Gloss AI-translation paragraph: walks the
+    /// enabled Fallback-sequence models and delivers the one result through
+    /// `promptResponse` (the responding model's name in `model_name`).
+    fn sequential_prompt_request(self: Pin<&mut Self>, paragraph_idx: usize, translation_idx: usize, prompt: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+        let prompt_text = prompt.to_string();
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+            let single_message = vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt_text,
+            }];
+
+            let context_json = serde_json::json!({
+                "paragraph_idx": paragraph_idx,
+                "translation_idx": translation_idx,
+            }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &single_message, None, &mut on_progress);
+
+            let (model, response_content, response_content_html) = match outcome {
+                WalkOutcome::Success { model, response, .. } => {
+                    let html = markdown_to_html(&response);
+                    (model, response, html)
+                }
+                WalkOutcome::Failed(e) => {
+                    let envelope = e.to_envelope_json();
+                    (e.model.clone(), envelope.clone(), envelope)
+                }
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().prompt_response(
+                    paragraph_idx,
+                    translation_idx,
+                    QString::from(model),
+                    QString::from(response_content.trim()),
+                    QString::from(response_content_html.trim()));
+            }).unwrap();
+        });
+    }
+
+    /// Sequential fallback run for Gloss word selection; the result arrives on
+    /// `wordSelectionResponse` keyed by the caller's `request_id`.
+    fn sequential_word_selection_request(self: Pin<&mut Self>, request_id: usize, prompt: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+        let prompt_text = prompt.to_string();
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+            let single_message = vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt_text,
+            }];
+
+            let context_json = serde_json::json!({ "request_id": request_id }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            // A word-selection reply must contain a complete selections JSON
+            // object; a truncated body re-tries as `invalid_response`.
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &single_message,
+                Some(&|response: &str| validate_word_selection_response_shape(response)),
+                &mut on_progress);
+
+            let (model, response_content) = match outcome {
+                WalkOutcome::Success { model, response, .. } => (model, response),
+                WalkOutcome::Failed(e) => (e.model.clone(), e.to_envelope_json()),
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().word_selection_response(
+                    request_id,
+                    QString::from(model),
+                    QString::from(response_content.trim()));
+            }).unwrap();
+        });
+    }
+
+    /// Sequential fallback run for a Prompts-tab chat turn; the result arrives
+    /// on `promptResponseForMessages`.
+    fn sequential_prompt_request_with_messages(self: Pin<&mut Self>, sender_message_idx: usize, messages_json: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+
+        let messages: Vec<ChatMessage> = match serde_json::from_str(&messages_json.to_string()) {
+            Ok(r) => r,
+            Err(e) => {
+                error(&format!("{}", e));
+                return;
+            }
+        };
+
+        thread::spawn(move || {
+            let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+
+            let context_json = serde_json::json!({ "sender_message_idx": sender_message_idx }).to_string();
+            let progress_thread = qt_thread.clone();
+            let mut on_progress = move |model: String, status: String| {
+                let ctx = context_json.clone();
+                let _ = progress_thread.queue(move |mut qo| {
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                });
+            };
+
+            let outcome = run_walk_blocking(
+                &generation, my_gen,
+                &entries, auto_fallback, auto_retry,
+                &messages, None, &mut on_progress);
+
+            let (model, response_content) = match outcome {
+                WalkOutcome::Success { model, response, .. } => (model, response),
+                WalkOutcome::Failed(e) => (e.model.clone(), e.to_envelope_json()),
+                WalkOutcome::Cancelled => return,
+            };
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().prompt_response_for_messages(
+                    sender_message_idx,
+                    QString::from(model),
+                    QString::from(response_content.trim()),
+                );
+            }).unwrap();
+        });
+    }
+
+    /// Bump the cancellation token (FR-D8): every running walk of this
+    /// PromptManager instance exits silently at its next check (before an
+    /// attempt, or within a second during a backoff sleep).
+    fn cancel_sequential_requests(self: Pin<&mut Self>) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -300,35 +734,41 @@ struct ChatMessage {
     content: String,
 }
 
-async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: &str) -> Result<String, String> {
+async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: &str) -> Result<String, AiRequestError> {
     let api_key = get_provider_api_key(provider_name);
     if api_key.is_empty() {
-        return Err(format!("No API key found for provider: {}", provider_name));
+        return Err(AiRequestError::new(
+            AiErrorKind::Auth,
+            provider_name,
+            model,
+            format!("No API key found for provider: {}", provider_name),
+        ));
     }
 
     // Deserialize provider_name string to ProviderName enum
     let provider_enum: ProviderName = serde_json::from_str(&format!("\"{}\"", provider_name))
-        .map_err(|e| format!("Invalid provider name '{}': {}", provider_name, e))?;
+        .map_err(|e| request_setup_error(provider_name, model, format!("Invalid provider name '{}': {}", provider_name, e)))?;
 
-    let http_client = create_http_client()?;
+    let http_client = create_http_client()
+        .map_err(|e| request_setup_error(provider_name, model, e))?;
 
     // Match on the ProviderName enum to handle all possible values
     match provider_enum {
-        ProviderName::DeepSeek => handle_deepseek_request(messages, model, &api_key, http_client).await,
-        ProviderName::Gemini => handle_gemini_request(messages, model, &api_key, http_client).await,
-        ProviderName::XAI => handle_xai_request(messages, model, &api_key, http_client).await,
-        ProviderName::Anthropic => handle_anthropic_request(messages, model, &api_key, http_client).await,
-        ProviderName::OpenAI => handle_openai_request(messages, model, &api_key, http_client).await,
-        ProviderName::OpenRouter => handle_openrouter_request(messages, model, &api_key, http_client).await,
-        ProviderName::Mistral => handle_mistral_request(messages, model, &api_key, http_client).await,
-        ProviderName::HuggingFace => handle_huggingface_request(messages, model, &api_key, http_client).await,
-        ProviderName::Perplexity => handle_perplexity_request(messages, model, &api_key, http_client).await,
+        ProviderName::DeepSeek => handle_deepseek_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Gemini => handle_gemini_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::XAI => handle_xai_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Anthropic => handle_anthropic_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::OpenAI => handle_openai_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::OpenRouter => handle_openrouter_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Mistral => handle_mistral_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::HuggingFace => handle_huggingface_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::Perplexity => handle_perplexity_request(messages, model, provider_name, &api_key, http_client).await,
         ProviderName::NvidiaNim => handle_openai_compatible_request(
-            messages, model, &api_key, http_client,
+            messages, model, provider_name, &api_key, http_client,
             "NVIDIA NIM", "https://integrate.api.nvidia.com/v1",
         ).await,
         ProviderName::SambaNova => handle_openai_compatible_request(
-            messages, model, &api_key, http_client,
+            messages, model, provider_name, &api_key, http_client,
             "SambaNova", "https://api.sambanova.ai/v1",
         ).await,
     }
@@ -337,11 +777,12 @@ async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: 
 async fn handle_openai_compatible_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
     label: &str,
     base_url: &str,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     // NVIDIA NIM, SambaNova and similar OpenAI-compatible endpoints expose
     // the traditional `/chat/completions` path but not OpenAI's newer
     // `/responses` one, so switch away from the default Responses API.
@@ -350,7 +791,7 @@ async fn handle_openai_compatible_request(
         .api_key(api_key)
         .base_url(base_url)
         .build()
-        .map_err(|e| format!("Failed to build {} client: {}", label, e))?
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build {} client: {}", label, e)))?
         .completions_api();
 
     let system_prompt = extract_system_prompt(messages);
@@ -369,20 +810,21 @@ async fn handle_openai_compatible_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_deepseek_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = deepseek::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build DeepSeek client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build DeepSeek client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -400,20 +842,21 @@ async fn handle_deepseek_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_gemini_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = gemini::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Gemini client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Gemini client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -421,7 +864,11 @@ async fn handle_gemini_request(
         top_k: Some(1),
         top_p: Some(0.95),
         candidate_count: Some(1),
-        max_output_tokens: Some(4096),
+        // On Gemini "thinking" models (e.g. gemini-3-flash-preview) the
+        // internal thinking tokens count against max_output_tokens, so a
+        // 4096 cap truncated word-selection JSON replies mid-object. Keep
+        // enough headroom for thinking + a long structured answer.
+        max_output_tokens: Some(16384),
         ..Default::default()
     };
     let cfg = AdditionalParameters::default().with_config(gen_cfg);
@@ -431,31 +878,32 @@ async fn handle_gemini_request(
             client.agent(model)
                   .preamble(&system_prompt)
                   .temperature(0.7)
-                  .additional_params(serde_json::to_value(cfg).map_err(|e| format!("Failed to serialize config: {}", e))?)
+                  .additional_params(serde_json::to_value(cfg).map_err(|e| request_setup_error(provider, model, format!("Failed to serialize config: {}", e)))?)
                   .build()
         }
         None => {
             client.agent(model)
                   .temperature(0.7)
-                  .additional_params(serde_json::to_value(cfg).map_err(|e| format!("Failed to serialize config: {}", e))?)
+                  .additional_params(serde_json::to_value(cfg).map_err(|e| request_setup_error(provider, model, format!("Failed to serialize config: {}", e)))?)
                   .build()
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_xai_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = xai::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build xAI client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build xAI client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -473,20 +921,21 @@ async fn handle_xai_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_anthropic_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = anthropic::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Anthropic client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Anthropic client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -504,20 +953,21 @@ async fn handle_anthropic_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_openai_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = openai::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build OpenAI client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenAI client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -535,20 +985,21 @@ async fn handle_openai_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_openrouter_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = openrouter::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build OpenRouter client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenRouter client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -566,20 +1017,21 @@ async fn handle_openrouter_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_mistral_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = mistral::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Mistral client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Mistral client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -597,20 +1049,21 @@ async fn handle_mistral_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_huggingface_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = huggingface::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build HuggingFace client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build HuggingFace client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -628,20 +1081,21 @@ async fn handle_huggingface_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }
 
 async fn handle_perplexity_request(
     messages: &[ChatMessage],
     model: &str,
+    provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
-) -> Result<String, String> {
+) -> Result<String, AiRequestError> {
     let client = perplexity::Client::<reqwest::Client>::builder()
         .http_client(http_client)
         .api_key(api_key)
         .build()
-        .map_err(|e| format!("Failed to build Perplexity client: {}", e))?;
+        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Perplexity client: {}", e)))?;
 
     let system_prompt = extract_system_prompt(messages);
 
@@ -659,5 +1113,5 @@ async fn handle_perplexity_request(
         }
     };
 
-    Ok(get_response!(agent, messages, model))
+    Ok(get_response!(agent, messages, model, provider))
 }

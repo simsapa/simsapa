@@ -9,11 +9,72 @@ pub static SUTTA_REFERENCE_CONVERTER_JSON: &str = include_str!("../../assets/sut
 pub static CIPS_GENERAL_INDEX_JSON: &str = include_str!("../../assets/general-index.json");
 static KEYBINDINGS_JSON: &str = include_str!("../../assets/keybindings.json");
 
+/// Where a model entry came from. `Fetched` entries are owned by the model-list
+/// updater (it adds and removes them); `User` entries were added by hand in the
+/// models dialog and are never removed by the updater, only flagged `stale`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelOrigin {
+    #[default]
+    Fetched,
+    User,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelEntry {
     pub model_name: String,
     pub enabled: bool,
-    pub removable: bool,
+    #[serde(default)]
+    pub origin: ModelOrigin,
+    /// A `User` model which the updater no longer finds upstream. Shown with a
+    /// "not found upstream" marker; never auto-removed.
+    #[serde(default)]
+    pub stale: bool,
+    /// Whether this is a reasoning/thinking model, when the source publishes
+    /// it (models.dev `reasoning`, OpenRouter `supported_parameters`).
+    /// `None` = unknown (SambaNova's bare id list, hand-added models).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
+}
+
+/// One entry of a global model-usage list ("Fallback sequence" or "Parallel
+/// prompts"). The provider is stored as its canonical string form
+/// (`ProviderName::as_str()`), the model as the provider's model id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelUsageEntry {
+    pub provider: String,
+    pub model_name: String,
+    pub enabled: bool,
+}
+
+/// How an AI feature dispatches its requests. `SequentialRetry` walks the
+/// "Fallback sequence" list and produces one result; `Parallel` fans out to
+/// every enabled "Parallel prompts" model (each branch stays on its own
+/// model). See docs/ai-model-management-and-fallback.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AiRequestMode {
+    #[default]
+    #[serde(rename = "sequential_retry")]
+    SequentialRetry,
+    #[serde(rename = "parallel")]
+    Parallel,
+}
+
+impl AiRequestMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AiRequestMode::SequentialRetry => "sequential_retry",
+            AiRequestMode::Parallel => "parallel",
+        }
+    }
+
+    /// Parse the canonical string form; unknown values fall back to the default.
+    pub fn from_str_or_default(s: &str) -> Self {
+        match s {
+            "parallel" => AiRequestMode::Parallel,
+            _ => AiRequestMode::SequentialRetry,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,7 +88,7 @@ pub struct Provider {
     pub models: Vec<ModelEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProviderName {
     Gemini,
     OpenRouter,
@@ -41,6 +102,59 @@ pub enum ProviderName {
     Perplexity,
     NvidiaNim,
     SambaNova,
+}
+
+impl ProviderName {
+    /// The canonical string form of a provider name: the serde spelling, which is
+    /// what `providers.json` carries and what QML passes back to the bridge.
+    ///
+    /// Note this is *not* the `Debug` form for every variant (`XAI` debugs as
+    /// `"XAI"` but is canonically `"xAI"`), so never produce a provider name with
+    /// `format!("{:?}", …)`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProviderName::Gemini => "Gemini",
+            ProviderName::OpenRouter => "OpenRouter",
+            ProviderName::Anthropic => "Anthropic",
+            ProviderName::OpenAI => "OpenAI",
+            ProviderName::DeepSeek => "DeepSeek",
+            ProviderName::XAI => "xAI",
+            ProviderName::Mistral => "Mistral",
+            ProviderName::HuggingFace => "HuggingFace",
+            ProviderName::Perplexity => "Perplexity",
+            ProviderName::NvidiaNim => "NvidiaNim",
+            ProviderName::SambaNova => "SambaNova",
+        }
+    }
+
+    pub const ALL: [ProviderName; 11] = [
+        ProviderName::Gemini,
+        ProviderName::OpenRouter,
+        ProviderName::Anthropic,
+        ProviderName::OpenAI,
+        ProviderName::DeepSeek,
+        ProviderName::XAI,
+        ProviderName::Mistral,
+        ProviderName::HuggingFace,
+        ProviderName::Perplexity,
+        ProviderName::NvidiaNim,
+        ProviderName::SambaNova,
+    ];
+
+    /// Parse a canonical (or legacy `Debug`-form) provider name. Legacy settings
+    /// may carry `"XAI"`, produced by the old `format!("{:?}")` call sites.
+    pub fn from_canonical_or_legacy(s: &str) -> Option<ProviderName> {
+        ProviderName::ALL
+            .iter()
+            .find(|p| p.as_str() == s || format!("{:?}", p) == s)
+            .copied()
+    }
+}
+
+impl std::fmt::Display for ProviderName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +312,27 @@ pub struct AppSettings {
     /// Model name used for word selection (empty = none).
     #[serde(default)]
     pub gloss_word_selection_model: String,
+
+    // --- Global model-usage lists (ModelsDialog global options) ---
+    /// Models tried one after another by the sequential fallback engine. The
+    /// vector order is the fallback order. See
+    /// docs/ai-model-management-and-fallback.md.
+    #[serde(default)]
+    pub ai_fallback_sequence: Vec<ModelUsageEntry>,
+    /// Models dispatched simultaneously in parallel-prompt mode. Unordered.
+    #[serde(default)]
+    pub ai_parallel_prompts: Vec<ModelUsageEntry>,
+    /// On a retryable error, fall back to the next enabled model in
+    /// `ai_fallback_sequence` (sequential engine). When off, only the first
+    /// enabled sequence model is used.
+    #[serde(default = "default_true")]
+    pub ai_auto_fallback: bool,
+    /// Gloss tab: how AI translation requests are dispatched.
+    #[serde(default)]
+    pub gloss_ai_translate_mode: AiRequestMode,
+    /// Prompts tab: how the next assistant response is requested.
+    #[serde(default)]
+    pub prompts_request_mode: AiRequestMode,
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -559,6 +694,11 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_word_selection_enabled: false,
             gloss_word_selection_provider: String::new(),
             gloss_word_selection_model: String::new(),
+            ai_fallback_sequence: Vec::new(),
+            ai_parallel_prompts: Vec::new(),
+            ai_auto_fallback: true,
+            gloss_ai_translate_mode: AiRequestMode::default(),
+            prompts_request_mode: AiRequestMode::default(),
         }
     }
 }
@@ -712,5 +852,49 @@ impl AppKeybindings {
         }
 
         descriptions
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The canonical string must be the serde spelling for every variant, so that
+    /// a provider name persisted in the model-usage lists (or passed from QML)
+    /// parses back to the same variant. `xAI` is the one where the `Debug` form
+    /// differs, and that mismatch used to silently break provider lookups.
+    #[test]
+    fn provider_name_canonical_string_round_trip() {
+        for provider in ProviderName::ALL {
+            let canonical = provider.as_str();
+            let serialized = serde_json::to_string(&provider).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", canonical));
+
+            let parsed: ProviderName = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(parsed, provider);
+
+            assert_eq!(ProviderName::from_canonical_or_legacy(canonical), Some(provider));
+        }
+
+        assert_eq!(ProviderName::XAI.as_str(), "xAI");
+        // Legacy Debug-form values persisted by the old `format!("{:?}")` call sites.
+        assert_eq!(ProviderName::from_canonical_or_legacy("XAI"), Some(ProviderName::XAI));
+        assert_eq!(ProviderName::from_canonical_or_legacy("Nonsense"), None);
+    }
+
+    /// FR-A7 migration: stored settings and the old bundled JSON carry
+    /// `removable`, which serde ignores; origin/stale take their defaults.
+    #[test]
+    fn model_entry_deserializes_legacy_removable_schema() {
+        let legacy = r#"{"model_name": "gemini-flash-latest", "enabled": true, "removable": false}"#;
+        let entry: ModelEntry = serde_json::from_str(legacy).unwrap();
+        assert_eq!(entry.model_name, "gemini-flash-latest");
+        assert!(entry.enabled);
+        assert_eq!(entry.origin, ModelOrigin::Fetched);
+        assert!(!entry.stale);
+
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"origin\":\"fetched\""), "{}", json);
+        assert!(!json.contains("removable"), "{}", json);
     }
 }

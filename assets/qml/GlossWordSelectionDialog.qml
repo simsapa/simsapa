@@ -8,10 +8,10 @@ import QtQuick.Dialogs
 import com.profoundlabs.simsapa
 
 // Settings dialog for the Gloss tab's AI word-selection feature.
-// Lists the enabled models of enabled providers with a leading "Disabled"
-// entry, persists the choice via SuttaBridge's gloss word-selection settings
-// accessors, and offers a maintenance button to clear the ai/user rows of the
-// word-selection cache.
+// The model is no longer chosen here: requests walk the global Fallback
+// sequence (Settings > AI Models). This dialog only turns the feature on/off
+// and offers a maintenance button to clear the ai/user rows of the
+// word-selection cache. See docs/ai-model-management-and-fallback.md.
 Dialog {
     id: root
 
@@ -20,95 +20,62 @@ Dialog {
     width: 500
     standardButtons: Dialog.Close
 
-    readonly property string disabled_entry: "Disabled"
+    // Current persisted on/off state.
+    property bool selection_enabled: false
 
-    // Current persisted selection ("" = disabled). Kept in sync with the
-    // settings JSON; GlossTab mirrors these via the selection_saved signal.
-    property string selected_provider: ""
-    property string selected_model: ""
-
-    // Emitted after a change is persisted. Empty strings = disabled.
-    signal selection_saved(string provider_name, string model_name)
+    // Emitted after a change is persisted.
+    signal selection_saved(bool is_enabled)
 
     Logger { id: logger }
 
-    ListModel { id: model_options }
-
-    // Names of enabled models of enabled providers, in provider order.
-    function enabled_model_names(): var {
-        let names = [];
+    // Whether the Fallback sequence has at least one enabled model, i.e. the
+    // engine has something to send the request to.
+    function has_enabled_sequence_model(): bool {
         try {
-            let providers_array = JSON.parse(SuttaBridge.get_providers_json());
-            for (var i = 0; i < providers_array.length; i++) {
-                var provider = providers_array[i];
-                if (!provider.enabled) continue;
-                for (var j = 0; j < provider.models.length; j++) {
-                    var model = provider.models[j];
-                    if (model.enabled) {
-                        names.push(model.model_name);
-                    }
-                }
+            let entries = JSON.parse(SuttaBridge.get_ai_fallback_sequence_json());
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].enabled) return true;
             }
         } catch (e) {
-            logger.error("enabled_model_names(): Failed to parse providers JSON: " + e);
+            logger.error("Failed to parse fallback sequence JSON: " + e);
         }
-        return names;
+        return false;
     }
 
-    // Rebuild the dropdown and select the persisted model, falling back to
-    // "Disabled" when the saved model is stale (provider or model no longer
-    // enabled). The stored settings are not rewritten on a stale fallback, so
-    // re-enabling the provider revives the previous selection.
-    function load_models_and_selection() {
-        let names = root.enabled_model_names();
-        model_options.clear();
-        model_options.append({ model_name: root.disabled_entry });
-        for (var i = 0; i < names.length; i++) {
-            model_options.append({ model_name: names[i] });
-        }
-
-        let saved_model = "";
+    function load_selection() {
         try {
             let s = JSON.parse(SuttaBridge.get_gloss_word_selection_settings_json());
-            if (s.enabled && s.model) {
-                saved_model = s.model;
-            }
+            root.selection_enabled = s.enabled === true;
         } catch (e) {
-            logger.error("load_models_and_selection(): Failed to parse settings JSON: " + e);
+            logger.error("load_selection(): Failed to parse settings JSON: " + e);
+            root.selection_enabled = false;
         }
-
-        let idx = 0;
-        if (saved_model !== "") {
-            let name_idx = names.indexOf(saved_model);
-            if (name_idx >= 0) {
-                idx = name_idx + 1; // offset for the "Disabled" entry
-            }
-        }
-        model_combo.currentIndex = idx;
-
-        if (idx > 0) {
-            root.selected_model = saved_model;
-            root.selected_provider = SuttaBridge.get_provider_for_model(saved_model);
-        } else {
-            root.selected_model = "";
-            root.selected_provider = "";
-        }
+        enabled_check.checked = root.selection_enabled;
     }
 
-    function persist_selection(model_name: string) {
-        let is_enabled = model_name !== "";
-        root.selected_model = model_name;
-        root.selected_provider = is_enabled ? SuttaBridge.get_provider_for_model(model_name) : "";
+    function persist_selection(is_enabled: bool) {
+        root.selection_enabled = is_enabled;
+        // The saved provider/model are written back unchanged: they no longer
+        // pick a model, they only seed the Fallback sequence on first migration.
+        let provider = "";
+        let model = "";
+        try {
+            let s = JSON.parse(SuttaBridge.get_gloss_word_selection_settings_json());
+            provider = s.provider || "";
+            model = s.model || "";
+        } catch (e) {
+            logger.error("persist_selection(): Failed to parse settings JSON: " + e);
+        }
         let settings = {
             enabled: is_enabled,
-            provider: root.selected_provider,
-            model: model_name,
+            provider: provider,
+            model: model,
         };
         SuttaBridge.set_gloss_word_selection_settings_json(JSON.stringify(settings));
-        root.selection_saved(root.selected_provider, root.selected_model);
+        root.selection_saved(is_enabled);
     }
 
-    onOpened: load_models_and_selection()
+    onOpened: load_selection()
 
     ColumnLayout {
         anchors.fill: parent
@@ -117,26 +84,22 @@ Dialog {
         Label {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: "When a gloss finds multiple dictionary options for a word, the selected AI model is asked to pick the correct one based on the sentence context."
+            text: "When a gloss finds multiple dictionary options for a word, an AI model is asked to pick the correct one based on the sentence context. The request uses the Fallback sequence in Settings > AI Models."
         }
 
-        RowLayout {
-            spacing: 10
+        CheckBox {
+            id: enabled_check
+            text: "Use AI word selection"
+            checked: root.selection_enabled
+            onToggled: root.persist_selection(enabled_check.checked)
+        }
 
-            Label {
-                text: "Model:"
-            }
-
-            ComboBox {
-                id: model_combo
-                Layout.fillWidth: true
-                model: model_options
-                textRole: "model_name"
-                onActivated: {
-                    let model_name = model_combo.currentIndex === 0 ? "" : model_combo.currentText;
-                    root.persist_selection(model_name);
-                }
-            }
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            visible: enabled_check.checked && !root.has_enabled_sequence_model()
+            color: "#E07B39"
+            text: "No models are enabled in the Fallback sequence, so no requests can be sent."
         }
 
         Button {

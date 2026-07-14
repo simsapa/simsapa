@@ -166,14 +166,21 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 `SuttaBridge.get_gloss_word_selection_settings_json()` /
 `set_gloss_word_selection_settings_json()`.
 
+> **The model is no longer chosen here.** Requests walk the global **Fallback
+> sequence** (Settings > AI Models), so `_provider` / `_model` are now inert: they
+> are kept only as the one-time seed for the sequence. See
+> [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).
+
 **Word Selection...** in the Gloss toolbar (before "Common Words...") opens
-`assets/qml/GlossWordSelectionDialog.qml`: an explanation, a dropdown of the
-enabled models of enabled providers with a leading **"Disabled"** entry, and a
+`assets/qml/GlossWordSelectionDialog.qml`: an explanation, a **"Use AI word
+selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
+the Fallback sequence has no enabled model, and a
 **Clear Word-Selection Cache...** button (confirm dialog shows the row count).
 The clear deletes `ai` and `user` rows only — `built-in` rows and the phrase
-table survive, since they are shipped data, not user state. If the persisted
-provider/model is no longer enabled at startup, the dialog shows "Disabled" and
-the feature is off (no error).
+table survive, since they are shipped data, not user state. The feature is active
+when the checkbox is on **and** the sequence has an enabled model
+(`GlossTab.is_word_selection_enabled()`); an empty sequence turns it off with no
+error.
 
 Two new keys in `AppSettings.system_prompts`, editable in **Prompts > System
 Prompts...** like any other:
@@ -191,12 +198,18 @@ disabled, e.g. for user-created keys).
 
 ## 4. The request
 
-Assembled in `GlossTab.qml` and sent through `PromptManager.word_selection_request(request_id, provider, model, prompt)`
+Assembled in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
 → `word_selection_response(request_id, model, response)` — a dedicated
 invokable/signal pair mirroring `prompt_request`, so it never collides with AI
-Translate's indices. It reuses `make_api_request`, so the same conventions apply:
-system prompt and request template are **concatenated into one user message**, and
-provider errors arrive **in-band** as a response body starting with `Error:`.
+Translate's indices. The engine picks the model by walking the Fallback sequence
+and reports progress on `sequentialProgress`. It reuses `make_api_request`, so the
+same conventions apply: system prompt and request template are **concatenated into
+one user message**, and provider errors arrive **in-band** — now as an
+`{"ai_error": …}` JSON envelope (see
+[ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md)),
+not the old `Error: …` prefix. A reply truncated mid-JSON is caught by
+`validate_word_selection_response_shape()` and re-tried by the engine as
+`invalid_response`.
 
 Payload (substituted for `<<WORD_SELECTION_JSON>>`):
 

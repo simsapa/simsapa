@@ -3628,7 +3628,6 @@ ${query_text}`;
                                 id: gloss_tab
                                 window_id: root.window_id
                                 is_dark: root.is_dark
-                                ai_models_auto_retry: models_dialog.auto_retry.checked
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 handle_open_dict_tab_fn: root.open_dict_tab
@@ -3648,7 +3647,6 @@ ${query_text}`;
                                 id: prompts_tab
                                 window_id: root.window_id
                                 is_dark: root.is_dark
-                                ai_models_auto_retry: models_dialog.auto_retry.checked
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 // Backstop flush for teardown paths that bypass

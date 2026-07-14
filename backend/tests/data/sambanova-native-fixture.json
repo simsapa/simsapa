@@ -1,0 +1,8 @@
+{
+  "object": "list",
+  "data": [
+    { "id": "Meta-Llama-3.3-70B-Instruct", "object": "model" },
+    { "id": "DeepSeek-V3-0324", "object": "model" },
+    { "id": "Whisper-Large-v3", "object": "model" }
+  ]
+}

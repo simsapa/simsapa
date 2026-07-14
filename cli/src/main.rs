@@ -1424,13 +1424,13 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
-    /// Refresh model names in a providers.json by querying each provider's
-    /// public models API (Gemini, OpenRouter, Mistral, Anthropic, OpenAI,
-    /// DeepSeek, xAI, Perplexity). HuggingFace is skipped.
+    /// Refresh model names in a providers.json from keyless public sources:
+    /// models.dev for most providers, plus OpenRouter's and SambaNova's own
+    /// /models endpoints. HuggingFace is skipped. No API keys are used.
     ///
-    /// API keys are read from the env var named in each provider entry's
-    /// `api_key_env_var_name` field. Providers whose key is missing or whose
-    /// fetch fails keep their existing model list.
+    /// Applies the default free-model heuristic (auto-enables one free model
+    /// per provider) — this is the bundled-list regeneration mode. Providers
+    /// whose fetch fails keep their existing model list.
     #[command(arg_required_else_help = true)]
     UpdateProviderModels {
         /// Path to the existing providers.json to read

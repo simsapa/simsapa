@@ -9,7 +9,6 @@ TabButton {
 
     property string model_name: ""
     property string status: "waiting"  // "waiting", "completed", "error"
-    property int retry_count: 0
 
     property alias retry_btn: retry_btn
 
@@ -60,7 +59,7 @@ TabButton {
             onClicked: control.retryRequested()
 
             ToolTip.visible: hovered
-            ToolTip.text: `Retry request (attempted ${control.retry_count}x)`
+            ToolTip.text: "Retry request"
         }
     }
 }

@@ -28,6 +28,7 @@ Item {
     signal bookMetadataUpdated(success: bool, message: string);
     signal showBottomFootnotesChanged();
     signal appSettingsReset();
+    signal modelListsUpdated(success: bool, report_json: string);
     signal exportFailed(reason: string);
     signal exportSucceeded();
 
@@ -389,6 +390,10 @@ Item {
         console.log("set_providers_json()");
     }
 
+    function update_model_lists() {
+        console.log("update_model_lists()");
+    }
+
     function get_provider_api_key(provider_name: string): string {
         return 'api_key_value';
     }
@@ -446,6 +451,22 @@ Item {
         return "OpenRouter";
     }
 
+    function get_ai_fallback_sequence_json(): string {
+        return '[{"provider": "OpenRouter", "model_name": "some/model:free", "enabled": true}]';
+    }
+
+    function set_ai_fallback_sequence_json(entries_json: string) {
+        console.log("set_ai_fallback_sequence_json():", entries_json);
+    }
+
+    function get_ai_parallel_prompts_json(): string {
+        return '[{"provider": "OpenRouter", "model_name": "some/model:free", "enabled": true}]';
+    }
+
+    function set_ai_parallel_prompts_json(entries_json: string) {
+        console.log("set_ai_parallel_prompts_json():", entries_json);
+    }
+
     function get_theme_name(): string {
         return 'dark';
     }
@@ -468,6 +489,30 @@ Item {
 
     function set_ai_models_auto_retry(auto_retry: bool) {
         console.log("set_ai_models_auto_retry():", auto_retry);
+    }
+
+    function get_ai_auto_fallback(): bool {
+        return true;
+    }
+
+    function set_ai_auto_fallback(auto_fallback: bool) {
+        console.log("set_ai_auto_fallback():", auto_fallback);
+    }
+
+    function get_gloss_ai_translate_mode(): string {
+        return 'sequential_retry';
+    }
+
+    function set_gloss_ai_translate_mode(mode: string) {
+        console.log("set_gloss_ai_translate_mode():", mode);
+    }
+
+    function get_prompts_request_mode(): string {
+        return 'sequential_retry';
+    }
+
+    function set_prompts_request_mode(mode: string) {
+        console.log("set_prompts_request_mode():", mode);
     }
 
     function save_common_words_json(words_json: string) {

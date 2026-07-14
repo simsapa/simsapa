@@ -13,7 +13,7 @@ use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
-use crate::app_settings::{AppSettings, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
+use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
 use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
@@ -1233,6 +1233,69 @@ impl AppData {
         };
     }
 
+    pub fn set_ai_auto_fallback(&self, auto_fallback: bool) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.ai_auto_fallback = auto_fallback;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
+    pub fn set_gloss_ai_translate_mode(&self, mode: AiRequestMode) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.gloss_ai_translate_mode = mode;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
+    pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.prompts_request_mode = mode;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => {}
+            Err(e) => error(&format!("{}", e))
+        };
+    }
+
     pub fn set_ai_models_auto_retry(&self, auto_retry: bool) {
         use crate::db::appdata_schema::app_settings;
 
@@ -1371,10 +1434,238 @@ impl AppData {
         serde_json::to_string(&app_settings.providers).unwrap_or_default()
     }
 
-    pub fn set_providers_json(&self, providers_json: &str) {
-        use crate::db::appdata_schema::app_settings;
-        use crate::app_settings::Provider;
+    /// A copy of the providers configuration, for callers which work with the
+    /// typed structs (the model-list updater) rather than the QML JSON.
+    pub fn get_providers(&self) -> Vec<Provider> {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.clone()
+    }
 
+    /// Replace the whole providers configuration (the model-list updater's save
+    /// path). This bypasses the per-model sync hooks, so the model-usage lists
+    /// are reconciled here (FR-C2).
+    pub fn set_providers(&self, providers: Vec<Provider>) {
+        self.mutate_settings(|settings| {
+            settings.providers = providers;
+            reconcile_model_usage_lists(settings);
+            true
+        });
+    }
+
+    /// Mutate the providers configuration in the cache and persist the whole
+    /// settings row. The closure receives the providers vector; returning `false`
+    /// means "nothing changed", so nothing is written.
+    ///
+    /// All provider/model mutations go through here (the bridge fns in
+    /// `sutta_bridge.rs` are thin wrappers) so the model-usage list sync hooks
+    /// have one place to live.
+    fn mutate_providers<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Vec<Provider>) -> bool,
+    {
+        self.mutate_settings(|settings| f(&mut settings.providers));
+    }
+
+    /// Like `mutate_providers`, but the closure sees the whole settings, so a
+    /// provider/model change can keep the model-usage lists in sync in the same
+    /// write lock (and one persist).
+    fn mutate_settings<F>(&self, f: F)
+    where
+        F: FnOnce(&mut AppSettings) -> bool,
+    {
+        let snapshot = {
+            let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+            if !f(&mut app_settings) {
+                return;
+            }
+            app_settings.clone()
+        };
+        self.persist_app_settings(&snapshot);
+    }
+
+    /// The API key for a provider: the environment variable named by the provider
+    /// config takes precedence over the value stored in the settings.
+    pub fn get_provider_api_key(&self, provider_name: &str) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        let Some(provider) = app_settings.providers.iter().find(|p| p.name.as_str() == provider_name) else {
+            return String::new();
+        };
+        if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
+            return env_key;
+        }
+        provider.api_key_value.clone().unwrap_or_default()
+    }
+
+    pub fn set_provider_api_key(&self, provider_name: &str, api_key: &str) {
+        self.mutate_providers(|providers| {
+            match providers.iter_mut().find(|p| p.name.as_str() == provider_name) {
+                Some(provider) => {
+                    provider.api_key_value = if api_key.is_empty() { None } else { Some(api_key.to_string()) };
+                    true
+                }
+                None => false,
+            }
+        });
+    }
+
+    /// Enabling a provider brings its enabled models into the model-usage lists;
+    /// disabling it drops them, so the lists only ever hold usable models.
+    pub fn set_provider_enabled(&self, provider_name: &str, enabled: bool) {
+        self.mutate_settings(|settings| {
+            match settings.providers.iter_mut().find(|p| p.name.as_str() == provider_name) {
+                Some(provider) => provider.enabled = enabled,
+                None => return false,
+            }
+            sync_provider_enabled_in_model_usage_lists(settings, provider_name);
+            true
+        });
+    }
+
+    /// Add a model the user typed in the models dialog. It is enabled, has
+    /// `origin: user` and so is never removed by the model-list updater.
+    pub fn add_provider_model(&self, provider_name: &str, model_name: &str) {
+        self.mutate_settings(|settings| {
+            let Some(provider) = settings.providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            if provider.models.iter().any(|m| m.model_name == model_name) {
+                return false;
+            }
+            // Add to the top of the list, where the user can more easily see it.
+            provider.models.insert(0, ModelEntry {
+                model_name: model_name.to_string(),
+                enabled: true,
+                origin: ModelOrigin::User,
+                stale: false,
+                reasoning: None,
+            });
+            add_to_model_usage_lists(settings, provider_name, model_name);
+            true
+        });
+    }
+
+    /// Remove a user-added model. `fetched` models are owned by the model-list
+    /// updater and are not removable by hand.
+    pub fn remove_provider_model(&self, provider_name: &str, model_name: &str) {
+        self.mutate_settings(|settings| {
+            let Some(provider) = settings.providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            let before = provider.models.len();
+            provider.models.retain(|m| {
+                !(m.model_name == model_name && m.origin == ModelOrigin::User)
+            });
+            if provider.models.len() == before {
+                return false;
+            }
+            remove_from_model_usage_lists(settings, provider_name, model_name);
+            true
+        });
+    }
+
+    pub fn set_provider_model_enabled(&self, provider_name: &str, model_name: &str, enabled: bool) {
+        self.mutate_settings(|settings| {
+            let Some(provider) = settings.providers.iter_mut().find(|p| p.name.as_str() == provider_name) else {
+                return false;
+            };
+            match provider.models.iter_mut().find(|m| m.model_name == model_name) {
+                Some(model) => {
+                    model.enabled = enabled;
+                }
+                None => return false,
+            }
+            if enabled {
+                add_to_model_usage_lists(settings, provider_name, model_name);
+            } else {
+                remove_from_model_usage_lists(settings, provider_name, model_name);
+            }
+            true
+        });
+    }
+
+    /// Reconcile away any entry which is no longer a usable model, then seed the
+    /// lists if they are still empty. Called on every read, so a list written by
+    /// a path which did not run the sync hooks cannot go on holding a model of a
+    /// disabled provider.
+    fn refresh_model_usage_lists(&self) {
+        self.mutate_settings(|settings| {
+            let reconciled = reconcile_model_usage_lists(settings);
+            let seeded = seed_model_usage_lists(settings);
+            reconciled || seeded
+        });
+    }
+
+    /// The "Fallback sequence" list, seeding it from the usable models on first
+    /// access (see `seed_model_usage_lists`).
+    pub fn get_ai_fallback_sequence(&self) -> Vec<ModelUsageEntry> {
+        self.refresh_model_usage_lists();
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_fallback_sequence.clone()
+    }
+
+    pub fn get_ai_fallback_sequence_json(&self) -> String {
+        serde_json::to_string(&self.get_ai_fallback_sequence()).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// The "Parallel prompts" list, reconciled and seeded like the sequence.
+    pub fn get_ai_parallel_prompts(&self) -> Vec<ModelUsageEntry> {
+        self.refresh_model_usage_lists();
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.ai_parallel_prompts.clone()
+    }
+
+    pub fn get_ai_parallel_prompts_json(&self) -> String {
+        serde_json::to_string(&self.get_ai_parallel_prompts()).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Whole-list set from the dialog: covers reordering and the per-item toggles.
+    pub fn set_ai_fallback_sequence_json(&self, json: &str) {
+        let entries: Vec<ModelUsageEntry> = match serde_json::from_str(json) {
+            Ok(entries) => entries,
+            Err(e) => {
+                error(&format!("Failed to parse ai_fallback_sequence JSON: {}", e));
+                return;
+            }
+        };
+        self.mutate_settings(|settings| {
+            settings.ai_fallback_sequence = entries;
+            true
+        });
+    }
+
+    pub fn set_ai_parallel_prompts_json(&self, json: &str) {
+        let entries: Vec<ModelUsageEntry> = match serde_json::from_str(json) {
+            Ok(entries) => entries,
+            Err(e) => {
+                error(&format!("Failed to parse ai_parallel_prompts JSON: {}", e));
+                return;
+            }
+        };
+        self.mutate_settings(|settings| {
+            settings.ai_parallel_prompts = entries;
+            true
+        });
+    }
+
+    /// The provider owning a model id. Model ids are provider-specific enough in
+    /// practice that a first match is unambiguous.
+    pub fn get_provider_for_model(&self, model_name: &str) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .find(|p| p.models.iter().any(|m| m.model_name == model_name))
+            .map(|p| p.name.as_str().to_string())
+            .unwrap_or_default()
+    }
+
+    pub fn is_provider_enabled(&self, provider_name: &str) -> bool {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .find(|p| p.name.as_str() == provider_name)
+            .map(|p| p.enabled)
+            .unwrap_or(false)
+    }
+
+    pub fn set_providers_json(&self, providers_json: &str) {
         let providers_vec: Vec<Provider> = match serde_json::from_str(providers_json) {
             Ok(providers) => providers,
             Err(e) => {
@@ -1383,22 +1674,7 @@ impl AppData {
             }
         };
 
-        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
-        app_settings.providers = providers_vec;
-
-        let a = app_settings.clone();
-        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
-
-        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
-
-        match diesel::update(app_settings::table)
-            .filter(app_settings::key.eq("app_settings"))
-            .set(app_settings::value.eq(Some(settings_json)))
-            .execute(db_conn)
-        {
-            Ok(_) => (),
-            Err(e) => error(&format!("Failed to update app settings: {}", e)),
-        }
+        self.set_providers(providers_vec);
     }
 
     /// Resolve any tolerated word-uid form onto the one canonical word, returning
@@ -5058,4 +5334,410 @@ pub fn warm_caches_into_appdata() {
     app_data.refresh_dict_source_uid_caches();
     app_data.refresh_language_caches();
     crate::logger::info("warm_caches_into_appdata: done");
+}
+
+// --- Global model-usage lists ("Fallback sequence" / "Parallel prompts") ---
+//
+// The two lists mirror the *usable* models of the providers configuration: an
+// enabled model of an enabled provider. A model of a disabled provider is never
+// listed, and enabling one while its provider is off adds nothing — turning the
+// provider on later brings its enabled models in. The helpers below are pure so
+// they can be unit tested without a database; the `AppData` methods call them
+// inside the settings write lock. See
+// docs/ai-model-management-and-fallback.md.
+
+/// Provider names are persisted in their canonical (serde) spelling. Legacy
+/// settings may carry the `Debug` form (`"XAI"`), so normalize before comparing.
+fn canonical_provider_name(name: &str) -> String {
+    ProviderName::from_canonical_or_legacy(name)
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn provider_is_enabled(providers: &[Provider], provider_name: &str) -> bool {
+    let provider_name = canonical_provider_name(provider_name);
+    providers.iter()
+        .find(|p| p.name.as_str() == provider_name)
+        .map(|p| p.enabled)
+        .unwrap_or(false)
+}
+
+fn usage_list_add(list: &mut Vec<ModelUsageEntry>, provider: &str, model_name: &str) -> bool {
+    let provider = canonical_provider_name(provider);
+    let present = list.iter()
+        .any(|e| canonical_provider_name(&e.provider) == provider && e.model_name == model_name);
+    if present {
+        return false;
+    }
+    list.push(ModelUsageEntry {
+        provider,
+        model_name: model_name.to_string(),
+        enabled: true,
+    });
+    true
+}
+
+fn usage_list_remove(list: &mut Vec<ModelUsageEntry>, provider: &str, model_name: &str) -> bool {
+    let provider = canonical_provider_name(provider);
+    let before = list.len();
+    list.retain(|e| {
+        !(canonical_provider_name(&e.provider) == provider && e.model_name == model_name)
+    });
+    list.len() != before
+}
+
+/// Enabling (or adding) a model appends it, enabled, to both lists — unless its
+/// provider is disabled, in which case the model is not usable and stays out of
+/// the lists until the provider is enabled.
+pub fn add_to_model_usage_lists(settings: &mut AppSettings, provider: &str, model_name: &str) -> bool {
+    if !provider_is_enabled(&settings.providers, provider) {
+        return false;
+    }
+    let in_sequence = usage_list_add(&mut settings.ai_fallback_sequence, provider, model_name);
+    let in_parallel = usage_list_add(&mut settings.ai_parallel_prompts, provider, model_name);
+    in_sequence || in_parallel
+}
+
+/// Enabling a provider brings its enabled models into both lists; disabling it
+/// drops all of its entries.
+pub fn sync_provider_enabled_in_model_usage_lists(settings: &mut AppSettings, provider_name: &str) -> bool {
+    let provider_name = canonical_provider_name(provider_name);
+
+    if !provider_is_enabled(&settings.providers, &provider_name) {
+        let before = settings.ai_fallback_sequence.len() + settings.ai_parallel_prompts.len();
+        let keep = |e: &ModelUsageEntry| canonical_provider_name(&e.provider) != provider_name;
+        settings.ai_fallback_sequence.retain(keep);
+        settings.ai_parallel_prompts.retain(keep);
+        return settings.ai_fallback_sequence.len() + settings.ai_parallel_prompts.len() != before;
+    }
+
+    let model_names: Vec<String> = settings.providers.iter()
+        .find(|p| p.name.as_str() == provider_name)
+        .map(|p| p.models.iter().filter(|m| m.enabled).map(|m| m.model_name.clone()).collect())
+        .unwrap_or_default();
+
+    let mut changed = false;
+    for model_name in model_names {
+        changed |= add_to_model_usage_lists(settings, &provider_name, &model_name);
+    }
+    changed
+}
+
+/// Disabling or removing a model drops it from both lists.
+pub fn remove_from_model_usage_lists(settings: &mut AppSettings, provider: &str, model_name: &str) -> bool {
+    let from_sequence = usage_list_remove(&mut settings.ai_fallback_sequence, provider, model_name);
+    let from_parallel = usage_list_remove(&mut settings.ai_parallel_prompts, provider, model_name);
+    from_sequence || from_parallel
+}
+
+/// Drop every list entry which is not a usable model: gone from the providers
+/// configuration, disabled, or belonging to a disabled provider.
+///
+/// The per-model hooks above cover the models dialog, but the model-list updater
+/// (in-app and CLI) saves the whole providers configuration in one step and so
+/// bypasses them (FR-C2).
+pub fn reconcile_model_usage_lists(settings: &mut AppSettings) -> bool {
+    let live = enabled_model_usage_entries(&settings.providers);
+    let is_live = |entry: &ModelUsageEntry| {
+        let provider = canonical_provider_name(&entry.provider);
+        live.iter().any(|l| l.provider == provider && l.model_name == entry.model_name)
+    };
+
+    let before = settings.ai_fallback_sequence.len() + settings.ai_parallel_prompts.len();
+    settings.ai_fallback_sequence.retain(is_live);
+    settings.ai_parallel_prompts.retain(is_live);
+
+    settings.ai_fallback_sequence.len() + settings.ai_parallel_prompts.len() != before
+}
+
+/// The usable models: enabled models of enabled providers.
+fn enabled_model_usage_entries(providers: &[Provider]) -> Vec<ModelUsageEntry> {
+    providers.iter()
+        .filter(|p| p.enabled)
+        .flat_map(|p| {
+            p.models.iter()
+                .filter(|m| m.enabled)
+                .map(|m| ModelUsageEntry {
+                    provider: p.name.as_str().to_string(),
+                    model_name: m.model_name.clone(),
+                    enabled: true,
+                })
+        })
+        .collect()
+}
+
+/// One-time seeding of the lists from the currently enabled models, for users
+/// upgrading from before the lists existed. The Gloss word-selection model moves
+/// to the front of the fallback sequence (FR-G1 continuity), but only when that
+/// feature is enabled. Each list is seeded independently, only while empty.
+pub fn seed_model_usage_lists(settings: &mut AppSettings) -> bool {
+    if !settings.ai_fallback_sequence.is_empty() && !settings.ai_parallel_prompts.is_empty() {
+        return false;
+    }
+
+    let entries = enabled_model_usage_entries(&settings.providers);
+    if entries.is_empty() {
+        return false;
+    }
+
+    let mut changed = false;
+
+    if settings.ai_fallback_sequence.is_empty() {
+        let mut sequence = entries.clone();
+        if settings.gloss_word_selection_enabled && !settings.gloss_word_selection_model.is_empty() {
+            // The saved provider may hold the legacy Debug spelling.
+            let provider = canonical_provider_name(&settings.gloss_word_selection_provider);
+            let model = &settings.gloss_word_selection_model;
+            let found = sequence.iter().position(|e| {
+                e.model_name == *model
+                    && (provider.is_empty() || canonical_provider_name(&e.provider) == provider)
+            });
+            if let Some(idx) = found {
+                let entry = sequence.remove(idx);
+                sequence.insert(0, entry);
+            }
+        }
+        settings.ai_fallback_sequence = sequence;
+        changed = true;
+    }
+
+    if settings.ai_parallel_prompts.is_empty() {
+        settings.ai_parallel_prompts = entries;
+        changed = true;
+    }
+
+    changed
+}
+
+
+#[cfg(test)]
+mod model_usage_lists_tests {
+    use super::*;
+    use crate::app_settings::ModelOrigin;
+
+    fn model(name: &str, enabled: bool) -> ModelEntry {
+        ModelEntry {
+            model_name: name.to_string(),
+            enabled,
+            origin: ModelOrigin::Fetched,
+            stale: false,
+            reasoning: None,
+        }
+    }
+
+    fn provider(name: ProviderName, enabled: bool, models: Vec<ModelEntry>) -> Provider {
+        Provider {
+            name,
+            description: String::new(),
+            enabled,
+            api_key_env_var_name: String::new(),
+            api_key_value: None,
+            models,
+        }
+    }
+
+    fn settings_with(providers: Vec<Provider>) -> AppSettings {
+        AppSettings {
+            providers,
+            ..Default::default()
+        }
+    }
+
+    fn names(list: &[ModelUsageEntry]) -> Vec<String> {
+        list.iter().map(|e| format!("{}/{}", e.provider, e.model_name)).collect()
+    }
+
+    #[test]
+    fn enabling_a_model_appends_it_once_to_both_lists() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-flash-latest", true)]),
+        ]);
+
+        assert!(add_to_model_usage_lists(&mut settings, "Gemini", "gemini-flash-latest"));
+        assert!(!add_to_model_usage_lists(&mut settings, "Gemini", "gemini-flash-latest"));
+
+        assert_eq!(names(&settings.ai_fallback_sequence), vec!["Gemini/gemini-flash-latest"]);
+        assert_eq!(names(&settings.ai_parallel_prompts), vec!["Gemini/gemini-flash-latest"]);
+        assert!(settings.ai_fallback_sequence[0].enabled);
+    }
+
+    #[test]
+    fn disabling_a_model_removes_it_from_both_lists() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-flash-latest", true)]),
+            provider(ProviderName::OpenRouter, true, vec![model("some/model:free", true)]),
+        ]);
+        add_to_model_usage_lists(&mut settings, "Gemini", "gemini-flash-latest");
+        add_to_model_usage_lists(&mut settings, "OpenRouter", "some/model:free");
+
+        assert!(remove_from_model_usage_lists(&mut settings, "Gemini", "gemini-flash-latest"));
+
+        assert_eq!(names(&settings.ai_fallback_sequence), vec!["OpenRouter/some/model:free"]);
+        assert_eq!(names(&settings.ai_parallel_prompts), vec!["OpenRouter/some/model:free"]);
+    }
+
+    /// Re-enabling appends at the end; the existing order is never rewritten.
+    #[test]
+    fn re_enabling_a_model_appends_at_the_end() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("a", true), model("b", true)]),
+        ]);
+        add_to_model_usage_lists(&mut settings, "Gemini", "a");
+        add_to_model_usage_lists(&mut settings, "Gemini", "b");
+        remove_from_model_usage_lists(&mut settings, "Gemini", "a");
+        add_to_model_usage_lists(&mut settings, "Gemini", "a");
+
+        assert_eq!(names(&settings.ai_fallback_sequence), vec!["Gemini/b", "Gemini/a"]);
+    }
+
+    /// The legacy `Debug` spelling ("XAI") must match the canonical entry ("xAI").
+    #[test]
+    fn provider_name_comparison_tolerates_the_legacy_debug_spelling() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::XAI, true, vec![model("grok-4-fast", true)]),
+        ]);
+        add_to_model_usage_lists(&mut settings, "xAI", "grok-4-fast");
+
+        assert!(remove_from_model_usage_lists(&mut settings, "XAI", "grok-4-fast"));
+        assert!(settings.ai_fallback_sequence.is_empty());
+    }
+
+    /// A model of a disabled provider is not usable, so enabling it must not put
+    /// it on the lists.
+    #[test]
+    fn enabling_a_model_of_a_disabled_provider_adds_nothing() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, false, vec![model("gemini-flash-latest", true)]),
+        ]);
+
+        assert!(!add_to_model_usage_lists(&mut settings, "Gemini", "gemini-flash-latest"));
+        assert!(settings.ai_fallback_sequence.is_empty());
+        assert!(settings.ai_parallel_prompts.is_empty());
+    }
+
+    /// Enabling a provider brings in the models already enabled in its list;
+    /// disabling it takes all of its entries back out.
+    #[test]
+    fn toggling_a_provider_adds_and_drops_its_models() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, false, vec![model("gemini-flash-latest", true), model("gemini-pro", false)]),
+            provider(ProviderName::OpenRouter, true, vec![model("some/model:free", true)]),
+        ]);
+        add_to_model_usage_lists(&mut settings, "OpenRouter", "some/model:free");
+
+        settings.providers[0].enabled = true;
+        assert!(sync_provider_enabled_in_model_usage_lists(&mut settings, "Gemini"));
+        assert_eq!(
+            names(&settings.ai_fallback_sequence),
+            vec!["OpenRouter/some/model:free", "Gemini/gemini-flash-latest"],
+        );
+
+        settings.providers[0].enabled = false;
+        assert!(sync_provider_enabled_in_model_usage_lists(&mut settings, "Gemini"));
+        assert_eq!(names(&settings.ai_fallback_sequence), vec!["OpenRouter/some/model:free"]);
+        assert_eq!(names(&settings.ai_parallel_prompts), vec!["OpenRouter/some/model:free"]);
+    }
+
+    #[test]
+    fn seeding_takes_the_enabled_models_of_enabled_providers() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-flash-latest", true), model("gemini-pro", false)]),
+            provider(ProviderName::OpenRouter, true, vec![model("some/model:free", true)]),
+            provider(ProviderName::Anthropic, false, vec![model("claude-sonnet-5", true)]),
+        ]);
+
+        assert!(seed_model_usage_lists(&mut settings));
+        assert_eq!(
+            names(&settings.ai_fallback_sequence),
+            vec!["Gemini/gemini-flash-latest", "OpenRouter/some/model:free"],
+        );
+        assert_eq!(names(&settings.ai_parallel_prompts), names(&settings.ai_fallback_sequence));
+
+        // A second access does not re-seed (and so does not undo a user's edits).
+        settings.ai_fallback_sequence.reverse();
+        assert!(!seed_model_usage_lists(&mut settings));
+        assert_eq!(
+            names(&settings.ai_fallback_sequence),
+            vec!["OpenRouter/some/model:free", "Gemini/gemini-flash-latest"],
+        );
+    }
+
+    /// FR-G1 continuity: the model that used to do Gloss word selection leads the
+    /// fallback sequence — but only while that feature is enabled, and matching a
+    /// provider name saved in the legacy Debug spelling.
+    #[test]
+    fn seeding_puts_the_word_selection_model_first_when_enabled() {
+        let providers = vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-flash-latest", true)]),
+            provider(ProviderName::XAI, true, vec![model("grok-4-fast", true)]),
+        ];
+
+        let mut settings = settings_with(providers.clone());
+        settings.gloss_word_selection_enabled = true;
+        settings.gloss_word_selection_provider = "XAI".to_string();
+        settings.gloss_word_selection_model = "grok-4-fast".to_string();
+
+        seed_model_usage_lists(&mut settings);
+        assert_eq!(
+            names(&settings.ai_fallback_sequence),
+            vec!["xAI/grok-4-fast", "Gemini/gemini-flash-latest"],
+        );
+        // The parallel list is unordered, so it keeps the providers order.
+        assert_eq!(
+            names(&settings.ai_parallel_prompts),
+            vec!["Gemini/gemini-flash-latest", "xAI/grok-4-fast"],
+        );
+
+        let mut disabled = settings_with(providers);
+        disabled.gloss_word_selection_enabled = false;
+        disabled.gloss_word_selection_provider = "XAI".to_string();
+        disabled.gloss_word_selection_model = "grok-4-fast".to_string();
+
+        seed_model_usage_lists(&mut disabled);
+        assert_eq!(
+            names(&disabled.ai_fallback_sequence),
+            vec!["Gemini/gemini-flash-latest", "xAI/grok-4-fast"],
+        );
+    }
+
+    /// FR-C2: the model-list updater saves the whole providers config in one
+    /// step, so an enabled model it removed (gone upstream) must also disappear
+    /// from the two lists. Same for a model whose provider was turned off by a
+    /// whole-config save.
+    #[test]
+    fn reconciling_prunes_entries_which_are_no_longer_usable() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-flash-latest", true), model("gemini-pro", false)]),
+            provider(ProviderName::Anthropic, false, vec![model("claude-sonnet-5", true)]),
+        ]);
+        settings.ai_fallback_sequence = vec![
+            ModelUsageEntry { provider: "Gemini".to_string(), model_name: "gemini-flash-latest".to_string(), enabled: true },
+            // Removed by an update run: no longer in the providers config.
+            ModelUsageEntry { provider: "Gemini".to_string(), model_name: "gemini-1.0-pro".to_string(), enabled: true },
+            // Still in the config, but disabled.
+            ModelUsageEntry { provider: "Gemini".to_string(), model_name: "gemini-pro".to_string(), enabled: true },
+            // Enabled model, but its provider is disabled.
+            ModelUsageEntry { provider: "Anthropic".to_string(), model_name: "claude-sonnet-5".to_string(), enabled: true },
+        ];
+        settings.ai_parallel_prompts = settings.ai_fallback_sequence.clone();
+
+        assert!(reconcile_model_usage_lists(&mut settings));
+        assert_eq!(names(&settings.ai_fallback_sequence), vec!["Gemini/gemini-flash-latest"]);
+        assert_eq!(names(&settings.ai_parallel_prompts), vec!["Gemini/gemini-flash-latest"]);
+
+        // Idempotent: a second run changes nothing.
+        assert!(!reconcile_model_usage_lists(&mut settings));
+    }
+
+    #[test]
+    fn seeding_with_no_usable_models_leaves_the_lists_empty() {
+        let mut settings = settings_with(vec![
+            provider(ProviderName::Gemini, true, vec![model("gemini-pro", false)]),
+            provider(ProviderName::Anthropic, false, vec![model("claude-sonnet-5", true)]),
+        ]);
+
+        assert!(!seed_model_usage_lists(&mut settings));
+        assert!(settings.ai_fallback_sequence.is_empty());
+        assert!(settings.ai_parallel_prompts.is_empty());
+    }
 }
