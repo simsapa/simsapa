@@ -20,21 +20,20 @@ Item {
         function cleanup() {
             // Reset tab state after each test
             prompts_tab.messages_model.clear();
-            prompts_tab.available_models.clear();
             prompts_tab.waiting_for_response = false;
         }
 
         function test_initial_state() {
             // Test initial component state
             verify(prompts_tab.messages_model);
-            verify(prompts_tab.available_models);
+            verify(prompts_tab.ai_coordinator);
             compare(prompts_tab.waiting_for_response, false);
         }
 
         function test_utility_functions() {
             // Test generate_request_id
-            var id1 = prompts_tab.generate_request_id();
-            var id2 = prompts_tab.generate_request_id();
+            var id1 = prompts_tab.ai_coordinator.generate_request_id();
+            var id2 = prompts_tab.ai_coordinator.generate_request_id();
             verify(id1 !== id2);
             verify(id1.length > 10);
             verify(id1.includes("_"));
@@ -51,22 +50,21 @@ Item {
                     raw: "invalid api key"
                 }
             });
-            verify(prompts_tab.is_error_response(envelope));
-            verify(!prompts_tab.is_error_response("Normal response"));
-            verify(!prompts_tab.is_error_response("API Error: legacy plain-text error"));
+            verify(prompts_tab.ai_coordinator.is_error_response(envelope));
+            verify(!prompts_tab.ai_coordinator.is_error_response("Normal response"));
+            verify(!prompts_tab.ai_coordinator.is_error_response("API Error: legacy plain-text error"));
         }
 
         function test_model_loading() {
-            // Test available models loading
-            prompts_tab.load_available_models();
+            // Parallel-mode models load through the shared coordinator.
+            var models = prompts_tab.ai_coordinator.enabled_parallel_models();
 
-            verify(prompts_tab.available_models.count >= 0);
+            verify(Array.isArray(models));
 
             // If models exist, they should have required properties
-            if (prompts_tab.available_models.count > 0) {
-                var model = prompts_tab.available_models.get(0);
-                verify(model.hasOwnProperty("model_name"));
-                verify(model.hasOwnProperty("enabled"));
+            if (models.length > 0) {
+                verify(models[0].hasOwnProperty("model_name"));
+                verify(models[0].hasOwnProperty("provider"));
             }
         }
 
@@ -152,7 +150,7 @@ Item {
             });
 
             // Simulate response from PromptManager
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", "Meditation is a practice of mindfulness...");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "test/model:free", "Meditation is a practice of mindfulness...");
 
             // Check that response was processed correctly
             var assistant_message = prompts_tab.messages_model.get(1);
@@ -202,7 +200,7 @@ Item {
                     raw: "Request timeout"
                 }
             });
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", error_envelope);
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "test/model:free", error_envelope);
 
             var assistant_message = prompts_tab.messages_model.get(1);
             var updated_responses = JSON.parse(assistant_message.responses_json);
@@ -231,15 +229,16 @@ Item {
                 selected_ai_tab: 0
             });
 
-            // Test manual re-send handling
-            var new_request_id = prompts_tab.generate_request_id();
-            prompts_tab.resend_response_request(0, "test/model:free", new_request_id);
+            // Test manual re-send handling. The entry is identified by its
+            // index; the coordinator assigns the fresh request_id itself.
+            prompts_tab.resend_response_request(0, 0);
 
             var message = prompts_tab.messages_model.get(0);
             var updated_responses = JSON.parse(message.responses_json);
 
             compare(updated_responses[0].status, "waiting");
-            compare(updated_responses[0].request_id, new_request_id);
+            verify(updated_responses[0].request_id !== "test_req_1");
+            verify(updated_responses[0].request_id.length > 10);
             compare(updated_responses[0].response, "");
         }
 
@@ -270,7 +269,7 @@ Item {
             var assistant_message_idx = prompts_tab.messages_model.count - 1;
 
             // Update tab selection
-            prompts_tab.update_tab_selection(assistant_message_idx, 1, "model2:free");
+            prompts_tab.update_tab_selection(assistant_message_idx, 1);
 
             var message = prompts_tab.messages_model.get(assistant_message_idx);
             compare(message.selected_ai_tab, 1);
@@ -437,10 +436,21 @@ Item {
                 selected_ai_tab: 0
             });
 
-            // Simulate responses arriving from different models
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model1:free", "Model 1 response about mindfulness");
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model3:free", "Model 3 different perspective");
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model2:free", "API Error: Timeout");
+            // Simulate responses arriving from different models; a failed
+            // request arrives as an {"ai_error": …} envelope.
+            var timeout_envelope = JSON.stringify({
+                ai_error: {
+                    kind: "timeout",
+                    http_status: null,
+                    provider: "OpenRouter",
+                    model: "model2:free",
+                    message: "Request timeout",
+                    raw: "Request timeout"
+                }
+            });
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "model1:free", "Model 1 response about mindfulness");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_3", 0, "model3:free", "Model 3 different perspective");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_2", 0, "model2:free", timeout_envelope);
 
             var assistant_message = prompts_tab.messages_model.get(1);
             var final_responses = JSON.parse(assistant_message.responses_json);
@@ -450,10 +460,176 @@ Item {
             compare(final_responses[0].response, "Model 1 response about mindfulness");
 
             compare(final_responses[1].status, "error");
-            compare(final_responses[1].response, "API Error: Timeout");
+            compare(final_responses[1].response, timeout_envelope);
 
             compare(final_responses[2].status, "completed");
             compare(final_responses[2].response, "Model 3 different perspective");
+        }
+
+        function test_stale_response_discarded() {
+            // A response carrying a superseded request_id (e.g. the user
+            // clicked Retry while the old walk was mid-backoff) must be
+            // discarded, not applied to the entry.
+            prompts_tab.messages_model.append({
+                role: "user",
+                content: "Test question",
+                content_html: "",
+                responses_json: "[]",
+                selected_ai_tab: 0
+            });
+
+            var waiting_responses = [{
+                model_name: "test/model:free",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: "current_req",
+                last_updated: Date.now(),
+                user_selected: true
+            }];
+
+            prompts_tab.messages_model.append({
+                role: "assistant",
+                content: "",
+                content_html: "",
+                responses_json: JSON.stringify(waiting_responses),
+                selected_ai_tab: 0
+            });
+
+            // Stale id: no entry matches, the event is discarded.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("superseded_req", 0, "test/model:free", "Stale answer");
+
+            var responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
+            compare(responses[0].status, "waiting");
+            compare(responses[0].response, "");
+
+            // Stale progress is discarded too.
+            var ctx = JSON.stringify({ request_id: "superseded_req", sender_message_idx: 0 });
+            prompts_tab.prompt_connections.onSequentialProgress(ctx, "test/model:free", "Trying test/model:free ...");
+            responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
+            compare(responses[0].progress, "");
+
+            // The current id still lands normally.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("current_req", 0, "test/model:free", "Fresh answer");
+            responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
+            compare(responses[0].status, "completed");
+            compare(responses[0].response, "Fresh answer");
+        }
+
+        function test_truncated_turn_response_discarded() {
+            // Re-sending an earlier chat message truncates the following
+            // turns; a late response for a removed turn must not land in the
+            // new same-index assistant message (request_id fencing).
+            prompts_tab.messages_model.append({
+                role: "user",
+                content: "First question",
+                content_html: "",
+                responses_json: "[]",
+                selected_ai_tab: 0
+            });
+
+            var old_turn_responses = [{
+                model_name: "test/model:free",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: "old_turn_req",
+                last_updated: Date.now(),
+                user_selected: true
+            }];
+
+            prompts_tab.messages_model.append({
+                role: "assistant",
+                content: "",
+                content_html: "",
+                responses_json: JSON.stringify(old_turn_responses),
+                selected_ai_tab: 0
+            });
+
+            // Simulate the truncation done by send_user_message: the old
+            // assistant row is removed and a new one with a fresh request id
+            // takes the same model index.
+            prompts_tab.messages_model.remove(1);
+            var new_turn_responses = [{
+                model_name: "",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: "new_turn_req",
+                last_updated: Date.now(),
+                user_selected: true,
+                send_mode: "sequential_retry"
+            }];
+            prompts_tab.messages_model.append({
+                role: "assistant",
+                content: "",
+                content_html: "",
+                responses_json: JSON.stringify(new_turn_responses),
+                selected_ai_tab: 0
+            });
+
+            // The removed turn's response arrives late; it must be discarded.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("old_turn_req", 0, "test/model:free", "Answer for the removed turn");
+
+            var responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
+            compare(responses[0].status, "waiting");
+            compare(responses[0].response, "");
+
+            // The new turn's response lands normally.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("new_turn_req", 0, "test/model:free", "Answer for the new turn");
+            responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
+            compare(responses[0].status, "completed");
+            compare(responses[0].response, "Answer for the new turn");
+        }
+
+        function test_waiting_for_response_whole_turn() {
+            // waiting_for_response reflects the whole turn: it stays true
+            // until ALL entries of the latest assistant row have left the
+            // "waiting" state.
+            prompts_tab.messages_model.append({
+                role: "user",
+                content: "Parallel question",
+                content_html: "",
+                responses_json: "[]",
+                selected_ai_tab: 0
+            });
+
+            var parallel_responses = [{
+                model_name: "model1:free",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: "par_req_1",
+                last_updated: Date.now(),
+                user_selected: true
+            }, {
+                model_name: "model2:free",
+                status: "waiting",
+                response: "",
+                progress: "",
+                request_id: "par_req_2",
+                last_updated: Date.now(),
+                user_selected: false
+            }];
+
+            prompts_tab.messages_model.append({
+                role: "assistant",
+                content: "",
+                content_html: "",
+                responses_json: JSON.stringify(parallel_responses),
+                selected_ai_tab: 0
+            });
+
+            prompts_tab.update_waiting_state();
+            compare(prompts_tab.waiting_for_response, true);
+
+            // First response arrives; the second entry is still waiting.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("par_req_1", 0, "model1:free", "First answer");
+            compare(prompts_tab.waiting_for_response, true);
+
+            // Last response arrives; the turn is complete.
+            prompts_tab.prompt_connections.onPromptResponseForMessages("par_req_2", 0, "model2:free", "Second answer");
+            compare(prompts_tab.waiting_for_response, false);
         }
 
         function setup_export_test_data() {

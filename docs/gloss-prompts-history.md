@@ -140,7 +140,8 @@ conversation never shows a "zombie spinner" for a request that will never finish
 - **Blocking flush while an async autosave is in flight** (Open/New within ~ms of
   a tick): at worst one duplicate row + transiently wrong `current_session_id`;
   self-corrects on the next save/load.
-- The AI-translations tab-select on restore does **not** mark dirty — the
-  `AssistantResponses` `TabBar.onCurrentIndexChanged` guards
-  `if (currentIndex !== root.selected_tab_index)`, so the programmatic restore
-  emits nothing.
+- The AI-translations tab-select on restore does **not** mark dirty —
+  `AssistantResponses` emits `tabSelectionChanged` only from a real tab-button
+  click (never from programmatic `TabBar.currentIndex` sync or model-reset
+  churn), so the restore emits nothing. See
+  [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).

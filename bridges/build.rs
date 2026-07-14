@@ -49,6 +49,7 @@ fn main() {
         "../assets/qml/ModelsDialog.qml",
         "../assets/qml/ModelUsageLists.qml",
         "../assets/qml/AiErrorUtils.qml",
+        "../assets/qml/AiResponseCoordinator.qml",
         "../assets/qml/AnkiExportDialog.qml",
         "../assets/qml/AppSettingsWindow.qml",
         "../assets/qml/DrawerMenu.qml",

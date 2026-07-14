@@ -27,79 +27,53 @@ Item {
 
     Logger { id: logger }
 
-    AiErrorUtils { id: ai_error_utils }
     PromptManager { id: pm }
     ClipboardManager { id: clipboard_manager }
 
     property alias prompt_connections: prompt_connections
+    property alias ai_coordinator: coordinator
+
+    // Shared chat request/response bookkeeping (entry construction,
+    // request_id fencing, retry, cancellation).
+    // See docs/ai-model-management-and-fallback.md.
+    AiResponseCoordinator {
+        id: coordinator
+        pm: pm
+        get_entries_json: function(ctx) {
+            let m = messages_model.get(ctx.assistant_message_idx);
+            return (m && m.responses_json) ? m.responses_json : "[]";
+        }
+        set_entries_json: function(ctx, json) {
+            if (ctx.assistant_message_idx < 0 || ctx.assistant_message_idx >= messages_model.count) return;
+            messages_model.setProperty(ctx.assistant_message_idx, "responses_json", json);
+            root.session_needs_saving = true;
+            root.update_waiting_state();
+        }
+        send_request: function(ctx, entry_idx, entry, payload) {
+            // The assistant row follows the user message that triggered it.
+            let sender_message_idx = ctx.assistant_message_idx - 1;
+            if (sender_message_idx < 0) return;
+            if (entry.send_mode === "parallel") {
+                pm.prompt_request_with_messages(entry.request_id, sender_message_idx, entry.provider, entry.model_name, payload);
+            } else {
+                pm.sequential_prompt_request_with_messages(entry.request_id, sender_message_idx, payload);
+            }
+        }
+        build_payload: function(ctx, entry) {
+            return root.compose_messages_json(ctx.assistant_message_idx - 1);
+        }
+    }
 
     Connections {
         id: prompt_connections
         target: pm
 
-        function onPromptResponseForMessages(sender_message_idx: int, model_name: string, response: string) {
-            logger.info(`🤖 onPromptResponseForMessages received: sender_message_idx=${sender_message_idx}, model_name=${model_name}`);
-            logger.info(`📝 Response content: "${response.substring(0, 100)}..."`);
-
-            root.waiting_for_response = false;
-
-            // Find the assistant message that should receive this response
-            // The assistant message will be after the sender message
-            let assistant_message_idx = sender_message_idx + 1;
-            if (assistant_message_idx >= messages_model.count) {
-                logger.error(`❌ Assistant message index ${assistant_message_idx} is out of bounds (count: ${messages_model.count})`);
-                return;
-            }
-
-            let assistant_message = messages_model.get(assistant_message_idx);
-            if (!assistant_message || assistant_message.role !== "assistant") {
-                logger.error(`❌ No assistant message found at index ${assistant_message_idx}`);
-                return;
-            }
-
-            // Parse current responses
-            let responses = [];
-            if (assistant_message.responses_json) {
-                try {
-                    responses = JSON.parse(assistant_message.responses_json);
-                    logger.info(`📚 Parsed ${responses.length} existing responses`);
-                } catch (e) {
-                    logger.error("Failed to parse responses_json:", e);
-                    return;
-                }
-            }
-
-            // Update the specific model's response. Retry and fallback are
-            // handled by the Rust engine (see
-            // docs/ai-model-management-and-fallback.md); an error response
-            // here is final for this request.
-            var idx = -1;
-            for (var i = 0; i < responses.length; i++) {
-                if (responses[i].model_name === model_name) {
-                    idx = i;
-                    break;
-                }
-            }
-            // Sequential mode: the single entry has no model name until now.
-            if (idx < 0 && root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
-                idx = 0;
-            }
-
-            if (idx >= 0) {
-                let is_error = root.is_error_response(response);
-
-                logger.info(`🔄 Updating response for ${model_name}: is_error=${is_error}`);
-
-                responses[idx].model_name = model_name;
-                responses[idx].response = response;
-                responses[idx].status = is_error ? "error" : "completed";
-                responses[idx].last_updated = Date.now();
-            }
-
-            // Update the assistant message with new responses
-            messages_model.setProperty(assistant_message_idx, "responses_json", JSON.stringify(responses));
-            logger.info(`💾 Saved responses_json to message model`);
-            root.session_needs_saving = true;
+        function onPromptResponseForMessages(request_id: string, sender_message_idx: int, model_name: string, response: string) {
+            logger.info(`onPromptResponseForMessages received: sender_message_idx=${sender_message_idx}, model_name=${model_name}`);
+            // The assistant message follows the sender message. Routed to the
+            // entry by the echoed request_id; stale responses (superseded by a
+            // retry, or from a truncated turn) are discarded by the coordinator.
+            coordinator.handle_response({ assistant_message_idx: sender_message_idx + 1 }, request_id, model_name, response);
         }
 
         // Engine progress ("Trying X…", "Rate limited by Y…", retry-round
@@ -113,44 +87,42 @@ Item {
                 return;
             }
             if (ctx.sender_message_idx === undefined) return;
-
-            let assistant_message_idx = ctx.sender_message_idx + 1;
-            if (assistant_message_idx >= messages_model.count) return;
-            let assistant_message = messages_model.get(assistant_message_idx);
-            if (!assistant_message || assistant_message.role !== "assistant" || !assistant_message.responses_json) return;
-
-            try {
-                let responses = JSON.parse(assistant_message.responses_json);
-                if (root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
-                    // One entry; it learns the model the engine is trying.
-                    if (responses[0].status === "waiting") {
-                        responses[0].progress = status;
-                        if (model_name !== "") {
-                            responses[0].model_name = model_name;
-                        }
-                    }
-                } else {
-                    for (var i = 0; i < responses.length; i++) {
-                        // Parallel branches share one context; route by model name.
-                        if (responses[i].status === "waiting" && responses[i].model_name === model_name) {
-                            responses[i].progress = status;
-                        }
-                    }
-                }
-                messages_model.setProperty(assistant_message_idx, "responses_json", JSON.stringify(responses));
-            } catch (e) {
-                logger.error("onSequentialProgress: failed to update responses_json: " + e);
-            }
+            coordinator.handle_progress({ assistant_message_idx: ctx.sender_message_idx + 1 }, ctx.request_id, model_name, status);
         }
     }
 
+    // Whole-turn waiting state: true while the latest assistant row has any
+    // entry still in the "waiting" state. ListModel row writes are not
+    // reactive in JS expressions, so this is recomputed explicitly by
+    // update_waiting_state() — every entry write flows through the
+    // coordinator's set_entries_json accessor, which calls it.
     property bool waiting_for_response: false
 
+    function update_waiting_state() {
+        let waiting = false;
+        // The latest assistant row is the current turn.
+        for (var i = messages_model.count - 1; i >= 0; i--) {
+            let m = messages_model.get(i);
+            if (m.role !== "assistant") continue;
+            try {
+                let responses = JSON.parse(m.responses_json || "[]");
+                for (var j = 0; j < responses.length; j++) {
+                    if (responses[j].status === "waiting") {
+                        waiting = true;
+                        break;
+                    }
+                }
+            } catch (e) {
+                logger.error("update_waiting_state: failed to parse responses_json: " + e);
+            }
+            break;
+        }
+        root.waiting_for_response = waiting;
+    }
+
     property alias messages_model: messages_model
-    property alias available_models: available_models
 
     ListModel { id: messages_model }
-    ListModel { id: available_models }
 
     // Current session id ("" = no DB row yet).
     property string current_session_id: ""
@@ -243,37 +215,10 @@ Item {
         root.prompts_request_mode = SuttaBridge.get_prompts_request_mode();
     }
 
-    // Parallel-mode models: the enabled entries of the global "Parallel
-    // prompts" list (reconciled in Rust, so every entry is usable).
-    function load_available_models() {
-        available_models.clear();
-        try {
-            let entries = JSON.parse(SuttaBridge.get_ai_parallel_prompts_json());
-            for (var i = 0; i < entries.length; i++) {
-                available_models.append({
-                    model_name: entries[i].model_name,
-                    provider: entries[i].provider,
-                    enabled: entries[i].enabled
-                });
-            }
-            logger.debug(`Loaded ${available_models.count} parallel-prompt models`);
-        } catch (e) {
-            logger.error("Failed to parse parallel prompts JSON: " + e);
-        }
-    }
-
     // Whether the Fallback sequence has at least one enabled model (the
     // sequential engine has something to try).
     function has_enabled_sequence_model(): bool {
-        try {
-            let entries = JSON.parse(SuttaBridge.get_ai_fallback_sequence_json());
-            for (var i = 0; i < entries.length; i++) {
-                if (entries[i].enabled) return true;
-            }
-        } catch (e) {
-            logger.error("Failed to parse fallback sequence JSON: " + e);
-        }
-        return false;
+        return coordinator.has_enabled_sequence_model();
     }
 
     // The chat history sent with a request: every message up to and including
@@ -306,15 +251,6 @@ Item {
         return JSON.stringify(messages);
     }
 
-    function generate_request_id() {
-        return Date.now().toString() + "_" + Math.random().toString(36);
-    }
-
-    // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
-    function is_error_response(response_text) {
-        return ai_error_utils.is_error(response_text);
-    }
-
     // Send the user message at `message_idx` and create the assistant message
     // which will receive the response(s): one entry in sequential mode (the
     // engine picks the model), one per enabled Parallel-prompts model otherwise.
@@ -322,48 +258,30 @@ Item {
         let sender = messages_model.get(message_idx);
         if (!sender) return;
 
-        let responses = [];
-
-        if (root.prompts_request_mode === "sequential_retry") {
-            if (!root.has_enabled_sequence_model()) {
+        let mode = root.prompts_request_mode;
+        let enabled_models = [];
+        if (mode === "sequential_retry") {
+            if (!coordinator.has_enabled_sequence_model()) {
                 no_models_dialog.open();
                 return;
             }
-            // The responding model's name arrives with the first progress event
-            // and with the final response.
-            responses.push({
-                model_name: "",
-                status: "waiting",
-                response: "",
-                progress: "",
-                request_id: root.generate_request_id(),
-                last_updated: Date.now(),
-                user_selected: true
-            });
         } else {
-            root.load_available_models();
-            for (var i = 0; i < available_models.count; i++) {
-                var model = available_models.get(i);
-                if (!model.enabled) continue;
-                responses.push({
-                    model_name: model.model_name,
-                    provider: model.provider,
-                    status: "waiting",
-                    response: "",
-                    progress: "",
-                    request_id: root.generate_request_id(),
-                    last_updated: Date.now(),
-                    user_selected: responses.length === 0
-                });
-            }
-            if (responses.length === 0) {
+            enabled_models = coordinator.enabled_parallel_models();
+            if (enabled_models.length === 0) {
                 no_models_dialog.open();
                 return;
             }
         }
 
-        // Remove chat items after the sender message.
+        // Remove chat items after the sender message. Requests still in
+        // flight for the removed turns are cancelled; a late response for a
+        // removed turn then finds no matching request_id anywhere and is
+        // discarded by the coordinator's fencing.
         for (var j = messages_model.count - 1; j > message_idx; j--) {
+            let removed = messages_model.get(j);
+            if (removed.role === "assistant" && removed.responses_json) {
+                coordinator.cancel_entries(removed.responses_json);
+            }
             messages_model.remove(j);
         }
 
@@ -371,7 +289,7 @@ Item {
             role: "assistant",
             content: "",
             content_html: "",
-            responses_json: JSON.stringify(responses),
+            responses_json: "[]",
             selected_ai_tab: 0
         });
 
@@ -383,16 +301,8 @@ Item {
         });
 
         let messages_json = root.compose_messages_json(message_idx);
+        coordinator.send_new({ assistant_message_idx: message_idx + 1 }, mode, enabled_models, messages_json, {});
 
-        if (root.prompts_request_mode === "sequential_retry") {
-            pm.sequential_prompt_request_with_messages(message_idx, messages_json);
-        } else {
-            for (var k = 0; k < responses.length; k++) {
-                pm.prompt_request_with_messages(message_idx, responses[k].provider, responses[k].model_name, messages_json);
-            }
-        }
-
-        root.waiting_for_response = true;
         root.session_needs_saving = true;
 
         scroll_helper.scroll_to_bottom();
@@ -400,55 +310,16 @@ Item {
 
     // Manual (user-clicked) re-send of one model's response. Automatic retry
     // and fallback live in the Rust engine (see
-    // docs/ai-model-management-and-fallback.md), so this only resets the entry
-    // and sends a fresh request.
-    function resend_response_request(message_idx, model_name, new_request_id) {
-        var message = messages_model.get(message_idx);
-        if (!message || !message.responses_json) return;
-
-        try {
-            var responses = JSON.parse(message.responses_json);
-            var idx = -1;
-            for (var i = 0; i < responses.length; i++) {
-                if (responses[i].model_name === model_name) {
-                    idx = i;
-                    break;
-                }
-            }
-            // A sequential entry which failed before any model answered has no
-            // model name yet; there is only one entry to re-send in that case.
-            if (idx < 0 && root.prompts_request_mode === "sequential_retry" && responses.length === 1) {
-                idx = 0;
-            }
-            if (idx < 0) return;
-
-            responses[idx].request_id = new_request_id;
-            responses[idx].status = "waiting";
-            responses[idx].response = "";
-            responses[idx].progress = "";
-            responses[idx].last_updated = Date.now();
-
-            messages_model.setProperty(message_idx, "responses_json", JSON.stringify(responses));
-            root.session_needs_saving = true;
-
-            // The assistant message follows the user message that triggered it.
-            let user_message_idx = message_idx - 1;
-            if (user_message_idx < 0) return;
-
-            let messages_json = root.compose_messages_json(user_message_idx);
-
-            if (root.prompts_request_mode === "sequential_retry") {
-                pm.sequential_prompt_request_with_messages(user_message_idx, messages_json);
-            } else {
-                let provider_name = SuttaBridge.get_provider_for_model(responses[idx].model_name);
-                pm.prompt_request_with_messages(user_message_idx, provider_name, responses[idx].model_name, messages_json);
-            }
-        } catch (e) {
-            logger.error("Failed to re-send response request: " + e);
-        }
+    // docs/ai-model-management-and-fallback.md). The coordinator cancels the
+    // superseded request (waiting entries only), assigns a fresh request_id,
+    // and re-sends under the entry's stored send_mode.
+    function resend_response_request(message_idx, entry_idx) {
+        // The entry is identified by its index in the entry list; id
+        // generation and bounds checking live in the coordinator.
+        coordinator.resend({ assistant_message_idx: message_idx }, entry_idx, root.prompts_request_mode);
     }
 
-    function update_tab_selection(message_idx, tab_index, model_name) {
+    function update_tab_selection(message_idx, tab_index) {
         // Update the selected tab index for this message
         var message = messages_model.get(message_idx);
         if (message) {
@@ -502,6 +373,8 @@ Item {
             responses_json: "[]",
             selected_ai_tab: 0
         });
+
+        root.update_waiting_state();
     }
 
     // External entry (e.g. the sutta HTML menu's "Prompt with Selection"). Mirrors
@@ -712,6 +585,7 @@ Item {
                 });
             }
             root.current_session_id = db_id;
+            root.update_waiting_state();
             root.session_needs_saving = false;
         } catch (e) {
             logger.error("Failed to load prompts session: " + e);
@@ -839,7 +713,7 @@ Item {
                     msg_data.responses = msg_data.responses.concat(other_responses);
 
                 } catch (e) {
-                    logger.error("Failed to parse responses_json:", e);
+                    logger.error("Failed to parse responses_json: " + e);
                 }
             }
 
@@ -1335,7 +1209,7 @@ Item {
                                 }
 
                             } catch (e) {
-                                logger.error("Error copying message:", e);
+                                logger.error("Error copying message: " + e);
                             }
 
                             copy_combobox.currentIndex = 0;
@@ -1370,11 +1244,8 @@ Item {
 
 
                                 translations_data: {
-                                    /* logger.info(`AssistantResponses for message ${message_item.index}: role=${message_item.role}, responses_json="${message_item.responses_json}"`); */
                                     try {
-                                        let data = JSON.parse(message_item.responses_json || "[]");
-                                        /* logger.info(`Parsed translations_data:`, JSON.stringify(data)); */
-                                        return data;
+                                        return JSON.parse(message_item.responses_json || "[]");
                                     } catch (e) {
                                         logger.error(`Error parsing responses_json for message ${message_item.index}:` + e);
                                         return [];
@@ -1384,12 +1255,12 @@ Item {
                                 paragraph_index: message_item.index
                                 selected_tab_index: message_item.selected_ai_tab || 0
 
-                                onRetryRequest: function(model_name, request_id) {
-                                    root.resend_response_request(message_item.index, model_name, request_id);
+                                onRetryRequest: function(entry_idx) {
+                                    root.resend_response_request(message_item.index, entry_idx);
                                 }
 
                                 onTabSelectionChanged: function(tab_index, model_name) {
-                                    root.update_tab_selection(message_item.index, tab_index, model_name);
+                                    root.update_tab_selection(message_item.index, tab_index);
                                 }
                             }
 

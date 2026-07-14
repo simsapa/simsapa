@@ -210,15 +210,34 @@ progress or response signals. QML calls it from the Gloss cancel paths
 (`ws_reset`, `ws_cancel_paragraph`) and on tab/window destruction. The token is
 per-instance, so cancelling in one tab does not stop the other tab's runs.
 
-**Bridge API** (`PromptManager`):
+**Per-request cancellation.** In addition to the instance-wide generation
+counter, `cancel_request(request_id)` inserts the id into a size-capped
+`HashSet` (pruned above ~64 entries) that the walk helpers consult at the same
+cancellation points via their `cancel_key: Option<&str>` parameter (the
+word-selection call sites pass `None`). The id is removed from the set on every
+walk exit. This Rust-side cancel is a **best-effort cost-saver** (stops paid API
+calls for a superseded retry or a truncated chat turn); the authoritative
+correctness guard is the QML `request_id` fencing in `AiResponseCoordinator.qml`
+— a response whose id matches no entry is debug-logged and discarded. QML only
+cancels entries still in the `waiting` state (a finished entry's walk has
+already exited; cancelling it would leak the id into the set).
 
-- `sequential_prompt_request(paragraph_idx, translation_idx, prompt)` — Gloss AI translation
-- `sequential_word_selection_request(request_id, prompt)` — Gloss word selection
-- `sequential_prompt_request_with_messages(sender_message_idx, messages_json)` — Prompts chat
-- `cancel_sequential_requests()`
+**Bridge API** (`PromptManager`). The Gloss/Prompts invokables take a
+QML-generated `request_id` string (`Date.now() + "_" + random`, minted by the
+coordinator) as their first parameter, and the response signals echo it back;
+it is also included in the `context_json` of `sequentialProgress`:
+
+- `sequential_prompt_request(request_id, paragraph_idx, translation_idx, prompt)` — Gloss AI translation
+- `sequential_word_selection_request(request_id, prompt)` — Gloss word selection (numeric id, unchanged)
+- `sequential_prompt_request_with_messages(request_id, sender_message_idx, messages_json)` — Prompts chat
+- `cancel_sequential_requests()` — instance-wide (generation counter)
+- `cancel_request(request_id)` — per-request (cancelled-id set)
 - signal `sequentialProgress(context_json, model_name, status)` — "Request sent to
   X…", "Rate limited by X… Retrying in 10 s (round 1 of 5)…". Final results come
-  through the existing response signals, which already carry `model_name`.
+  through the response signals (`promptResponse` / `promptResponseForMessages`),
+  which carry `request_id` and `model_name`. A messages-JSON parse failure emits
+  an `{"ai_error": …}` envelope with the `request_id` instead of returning
+  silently, so an entry can never stay `waiting` forever.
 
 The three *per-model* qinvokables (`prompt_request`, `word_selection_request`,
 `prompt_request_with_messages`) are still there and now route through
@@ -232,6 +251,41 @@ machinery was removed from QML.
 
 ## 6. Feature integration
 
+**Shared coordinator — `assets/qml/AiResponseCoordinator.qml`.** Both tabs'
+send/receive/retry bookkeeping lives in one non-visual component, instantiated
+once per tab. The coordinator does **not** own the storage: each tab keeps its
+entries as a JSON string on its own ListModel row (Gloss `translations_json`
+per paragraph, Prompts `responses_json` per assistant message) and passes
+accessor callbacks (`get_entries_json` / `set_entries_json` — the latter also
+marks the session dirty and is the hook for tab-side derived state such as
+PromptsTab's whole-turn `waiting_for_response`), plus `send_request` (the
+tab-specific `pm.*` call) and `build_payload` (payload reconstruction for a
+resend). `ctx` is the tab's routing context: `{paragraph_idx}` for Gloss,
+`{assistant_message_idx}` for Prompts. Key semantics:
+
+- `send_new(ctx, mode, enabled_models, payload, extra_fields)` builds the
+  waiting entries (one in sequential mode, one per enabled Parallel-prompts
+  model in parallel mode), mints each entry's `request_id`, stamps
+  `send_mode` at send time, persists, then dispatches.
+- `handle_response` / `handle_progress` locate the entry **by the echoed
+  `request_id`**; no match → debug-log and discard (stale-request fencing).
+  Sequential entries start with an empty `model_name` and learn it from the
+  first progress event / the response.
+- `resend(ctx, entry_idx, fallback_mode)` identifies the entry by **index**
+  (model names can collide, old sessions may lack `request_id`), cancels the
+  old id only if the entry is still `waiting`, assigns a fresh id and re-sends
+  under the entry's stored `send_mode` (`fallback_mode` covers pre-`send_mode`
+  sessions).
+- `cancel_entries(entries_json)` cancels every still-waiting entry's id —
+  used by PromptsTab turn truncation (rows removed after an edited message)
+  and tab teardown.
+
+Entry rendering is `AssistantResponses.qml`, which diffs each incoming entries
+array against an internal `ListModel` (per-row `setProperty` patches; a full
+reset only on a length / id-sequence change) so delegates are never rebuilt by
+a response landing, and emits `tabSelectionChanged` only from a real tab-button
+click — never from `TabBar.currentIndex` churn.
+
 **Gloss tab — "AI translation:" combobox** (`gloss_ai_translate_mode`, default
 *Sequential retry*):
 
@@ -239,15 +293,17 @@ machinery was removed from QML.
   The entry starts with an empty `model_name` and learns which model answered
   from the first progress event and from the response.
 - *Parallel* → one `prompt_request` per **enabled Parallel-prompts entry**
-  (`load_translation_models()` now reads that list, not "all enabled models of
-  all enabled providers" — FR-G5), results shown side by side as before.
+  (the coordinator's `enabled_parallel_models()` reads that list, not "all
+  enabled models of all enabled providers" — FR-G5), results shown side by
+  side as before.
 
 **Prompts tab — "Prompts:" combobox** (`prompts_request_mode`, default
 *Sequential retry*): the same split for the next assistant response —
 `sequential_prompt_request_with_messages` (one response entry) vs. one
 `prompt_request_with_messages` per enabled Parallel-prompts entry. Session
-save/restore is unaffected: the response entries keep their shape (see
-[gloss-prompts-history.md](./gloss-prompts-history.md)).
+save/restore is unaffected: the response entries keep their shape, with the
+additive `request_id` / `send_mode` fields tolerated as absent in old sessions
+(see [gloss-prompts-history.md](./gloss-prompts-history.md)).
 
 **Gloss Word Selection** (`GlossWordSelectionDialog.qml`): the model picker is
 gone. The dialog is now an on/off checkbox (`gloss_word_selection_enabled`) plus

@@ -175,14 +175,14 @@ Item {
                 signalName: "retryRequest"
             });
 
-            // Test manual retry function
-            assistant_responses.retry_request("deepseek/deepseek-r1-0528:free");
+            // The retry signal carries the entry's index; request_id
+            // generation lives in the coordinator, not here.
+            assistant_responses.retry_request(0);
             wait(100);
 
             compare(retry_signal_spy.count, 1);
             var signal_args = retry_signal_spy.signalArguments[0];
-            compare(signal_args[0], "deepseek/deepseek-r1-0528:free"); // model_name
-            verify(signal_args[1].length > 0); // request_id should be non-empty
+            compare(signal_args[0], 0); // entry_idx
         }
 
         function test_tab_selection_signal() {
@@ -253,13 +253,6 @@ Item {
         }
 
         function test_utility_functions() {
-            // Test generate_request_id
-            var id1 = assistant_responses.generate_request_id();
-            var id2 = assistant_responses.generate_request_id();
-            verify(id1 !== id2);
-            verify(id1.length > 10);
-            verify(id1.includes("_"));
-
             // is_error_response: only an {"ai_error": …} envelope is an error.
             var envelope = JSON.stringify({
                 ai_error: {
@@ -274,6 +267,130 @@ Item {
             verify(assistant_responses.is_error_response(envelope));
             verify(!assistant_responses.is_error_response("Success: All good"));
             verify(!assistant_responses.is_error_response("API Error: legacy plain-text error"));
+        }
+
+        // FR-A2 / FR-B1: an in-place update of one entry (same length, same
+        // request_id sequence) must not move the selected tab, must not emit
+        // tabSelectionChanged, and must not recreate the other entries'
+        // delegates. Delegate identity is asserted on entries OTHER than the
+        // updated one (the updated entry's own text legitimately re-renders,
+        // but its delegate object also persists).
+        function test_in_place_update_keeps_delegates_and_selection() {
+            assistant_responses.translations_data = root.sample_waiting_data;
+            wait(50);
+
+            // Focus tab 1 while both entries are still waiting.
+            assistant_responses.selected_tab_index = 1;
+            wait(50);
+            compare(assistant_responses.tab_bar_item.currentIndex, 1);
+
+            var tab_signal_spy = signalSpy.createObject(assistant_responses, {
+                target: assistant_responses,
+                signalName: "tabSelectionChanged"
+            });
+
+            var content_0 = assistant_responses.content_repeater_item.itemAt(0);
+            var content_1 = assistant_responses.content_repeater_item.itemAt(1);
+            var tab_0 = assistant_responses.tab_repeater_item.itemAt(0);
+            var tab_1 = assistant_responses.tab_repeater_item.itemAt(1);
+            verify(content_0 !== null);
+            verify(tab_1 !== null);
+
+            // A response arrives for entry 0 (same request_id sequence).
+            var updated = JSON.parse(JSON.stringify(root.sample_waiting_data));
+            updated[0].status = "completed";
+            updated[0].response = "First model finished.";
+            assistant_responses.translations_data = updated;
+            wait(50);
+
+            // Selection untouched, no user-selection signal.
+            compare(assistant_responses.tab_bar_item.currentIndex, 1);
+            compare(assistant_responses.selected_tab_index, 1);
+            compare(tab_signal_spy.count, 0);
+
+            // Delegates were patched in place, not recreated.
+            verify(assistant_responses.content_repeater_item.itemAt(0) === content_0);
+            verify(assistant_responses.content_repeater_item.itemAt(1) === content_1);
+            verify(assistant_responses.tab_repeater_item.itemAt(0) === tab_0);
+            verify(assistant_responses.tab_repeater_item.itemAt(1) === tab_1);
+
+            // FR-B4: the unfocused tab's status icon updated live.
+            compare(assistant_responses.tab_repeater_item.itemAt(0).status, "completed");
+            compare(assistant_responses.tab_repeater_item.itemAt(1).status, "waiting");
+        }
+
+        // FR-A1: a real user click on a tab button emits exactly one
+        // tabSelectionChanged with that tab's index and model name.
+        function test_click_emits_single_selection() {
+            assistant_responses.translations_data = root.sample_completed_data;
+            wait(50);
+            compare(assistant_responses.tab_bar_item.currentIndex, 0);
+
+            var tab_signal_spy = signalSpy.createObject(assistant_responses, {
+                target: assistant_responses,
+                signalName: "tabSelectionChanged"
+            });
+
+            var tab_1 = assistant_responses.tab_repeater_item.itemAt(1);
+            verify(tab_1 !== null);
+            mouseClick(tab_1);
+            wait(50);
+
+            compare(tab_signal_spy.count, 1);
+            var signal_args = tab_signal_spy.signalArguments[0];
+            compare(signal_args[0], 1); // tab_index
+            compare(signal_args[1], "google/gemma-3-12b-it:free"); // model_name
+            compare(assistant_responses.tab_bar_item.currentIndex, 1);
+        }
+
+        // FR-A3: a length-changing reset (new send, session restore) clamps
+        // the effective tab index into the new range without emitting a
+        // selection event.
+        function test_reset_clamps_without_emitting() {
+            assistant_responses.translations_data = root.sample_mixed_data; // 3 entries
+            assistant_responses.selected_tab_index = 2;
+            wait(50);
+            compare(assistant_responses.tab_bar_item.currentIndex, 2);
+
+            var tab_signal_spy = signalSpy.createObject(assistant_responses, {
+                target: assistant_responses,
+                signalName: "tabSelectionChanged"
+            });
+
+            assistant_responses.translations_data = root.sample_completed_data; // 2 entries
+            wait(50);
+
+            compare(assistant_responses.tab_bar_item.currentIndex, 1); // clamped from 2
+            compare(tab_signal_spy.count, 0);
+        }
+
+        // Regression: parallel send → entry 0 errored, entry 1 completed →
+        // user clicks tab 0 (focuses it) → clicks entry 0's retry button.
+        // The resend resets entry 0 with a fresh request_id, which forces a
+        // full model reset; the focus must stay on tab 0.
+        function test_retry_reset_keeps_selected_tab() {
+            assistant_responses.translations_data = root.sample_error_data;
+            wait(50);
+
+            // User clicks tab 0 (this breaks the TabBar's declarative
+            // currentIndex binding, as a real click does).
+            var tab_0 = assistant_responses.tab_repeater_item.itemAt(0);
+            verify(tab_0 !== null);
+            mouseClick(tab_0);
+            wait(50);
+            compare(assistant_responses.tab_bar_item.currentIndex, 0);
+            compare(assistant_responses.selected_tab_index, 0);
+
+            // Retry of entry 0: fresh request_id, back to waiting (what the
+            // coordinator's resend writes back).
+            var updated = JSON.parse(JSON.stringify(root.sample_error_data));
+            updated[0].request_id = "test_request_retry_1";
+            updated[0].status = "waiting";
+            updated[0].response = "";
+            assistant_responses.translations_data = updated;
+            wait(50);
+
+            compare(assistant_responses.tab_bar_item.currentIndex, 0);
         }
 
         function test_property_bindings() {
