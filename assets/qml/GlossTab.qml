@@ -959,31 +959,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // docs/ai-model-management-and-fallback.md). The coordinator cancels the
     // superseded request (waiting entries only), assigns a fresh request_id,
     // and re-sends under the entry's stored send_mode.
-    function resend_translation_request(paragraph_idx, model_name, new_request_id) {
-        // new_request_id is unused: id generation lives in the coordinator.
-        var paragraph = paragraph_model.get(paragraph_idx);
-        if (!paragraph || !paragraph.translations_json) return;
-
-        try {
-            var translations = JSON.parse(paragraph.translations_json);
-            var idx = -1;
-            for (var i = 0; i < translations.length; i++) {
-                if (translations[i].model_name === model_name) {
-                    idx = i;
-                    break;
-                }
-            }
-            // A sequential entry which failed before any model answered has no
-            // model name yet; there is only one entry to re-send in that case.
-            if (idx < 0 && translations.length === 1) {
-                idx = 0;
-            }
-            if (idx < 0) return;
-
-            coordinator.resend({ paragraph_idx: paragraph_idx }, idx, root.ai_translate_mode);
-        } catch (e) {
-            logger.error("Failed to re-send translation request: " + e);
-        }
+    function resend_translation_request(paragraph_idx, entry_idx) {
+        // The entry is identified by its index in the entry list; id
+        // generation and bounds checking live in the coordinator.
+        coordinator.resend({ paragraph_idx: paragraph_idx }, entry_idx, root.ai_translate_mode);
     }
 
     function handle_ai_translate_request(paragraph_index: int, with_vocab = true) {
@@ -2680,8 +2659,8 @@ ${main_text}
                     paragraph_index: paragraph_item.index
                     selected_tab_index: paragraph_item.selected_ai_tab || 0
 
-                    onRetryRequest: function(model_name, request_id) {
-                        root.resend_translation_request(paragraph_item.index, model_name, request_id);
+                    onRetryRequest: function(entry_idx) {
+                        root.resend_translation_request(paragraph_item.index, entry_idx);
                     }
 
                     onTabSelectionChanged: function(tab_index, model_name) {

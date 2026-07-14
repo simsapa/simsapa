@@ -322,31 +322,10 @@ Item {
     // docs/ai-model-management-and-fallback.md). The coordinator cancels the
     // superseded request (waiting entries only), assigns a fresh request_id,
     // and re-sends under the entry's stored send_mode.
-    function resend_response_request(message_idx, model_name, new_request_id) {
-        // new_request_id is unused: id generation lives in the coordinator.
-        var message = messages_model.get(message_idx);
-        if (!message || !message.responses_json) return;
-
-        try {
-            var responses = JSON.parse(message.responses_json);
-            var idx = -1;
-            for (var i = 0; i < responses.length; i++) {
-                if (responses[i].model_name === model_name) {
-                    idx = i;
-                    break;
-                }
-            }
-            // A sequential entry which failed before any model answered has no
-            // model name yet; there is only one entry to re-send in that case.
-            if (idx < 0 && responses.length === 1) {
-                idx = 0;
-            }
-            if (idx < 0) return;
-
-            coordinator.resend({ assistant_message_idx: message_idx }, idx, root.prompts_request_mode);
-        } catch (e) {
-            logger.error("Failed to re-send response request: " + e);
-        }
+    function resend_response_request(message_idx, entry_idx) {
+        // The entry is identified by its index in the entry list; id
+        // generation and bounds checking live in the coordinator.
+        coordinator.resend({ assistant_message_idx: message_idx }, entry_idx, root.prompts_request_mode);
     }
 
     function update_tab_selection(message_idx, tab_index, model_name) {
@@ -1288,8 +1267,8 @@ Item {
                                 paragraph_index: message_item.index
                                 selected_tab_index: message_item.selected_ai_tab || 0
 
-                                onRetryRequest: function(model_name, request_id) {
-                                    root.resend_response_request(message_item.index, model_name, request_id);
+                                onRetryRequest: function(entry_idx) {
+                                    root.resend_response_request(message_item.index, entry_idx);
                                 }
 
                                 onTabSelectionChanged: function(tab_index, model_name) {

@@ -69,7 +69,7 @@ PRD: [2026-07-14-101329-prd---ai-response-flow-refactor.md](./2026-07-14-101329-
 
 **Specs / dependencies:** Depends on 2.0. `ctx = {assistant_message_idx}`; the response signal still carries `sender_message_idx`, and the existing `+1` mapping stays in the thin wrapper (assistant row follows the sender row). Turn truncation (FR-C4): before `send_user_message` removes rows after `message_idx`, every waiting entry in the removed assistant rows gets `pm.cancel_request(entry.request_id)`; a late response for a removed turn then finds no matching `request_id` anywhere and is discarded by fencing.
 
-- [ ] 3.0 PromptsTab migration to the coordinator (FR-D1/D2 completion, FR-C2–C5 for Prompts, FR-E4)
+- [x] 3.0 PromptsTab migration to the coordinator (FR-D1/D2 completion, FR-C2–C5 for Prompts, FR-E4)
   - [x] 3.1 Instantiate the coordinator in `PromptsTab.qml` with chat accessors (`responses_json` on the assistant row, `session_needs_saving` marking) and a `send_request` callback wrapping `pm.sequential_prompt_request_with_messages` / `pm.prompt_request_with_messages`.
   - [x] 3.2 Rewrite `send_user_message`: entry construction via `coordinator.send_new` (FR-D5); before truncating rows after `message_idx`, call `coordinator.cancel_entries` on each removed assistant row's `responses_json` (FR-C3/C4).
   - [x] 3.3 Replace `onPromptResponseForMessages` and `onSequentialProgress` bodies with delegation to `coordinator.handle_response` / `handle_progress` (fencing by echoed `request_id`; drop the `length === 1` sequential fallback matching).
@@ -86,13 +86,13 @@ PRD: [2026-07-14-101329-prd---ai-response-flow-refactor.md](./2026-07-14-101329-
 - Both `Repeater`s bind to the internal ListModel. `TabBar.onCurrentIndexChanged` no longer emits `tabSelectionChanged`; instead the emission moves to an explicit user-interaction path (`ResponseTabButton` click → signal → root emits with that tab's index/model) (FR-A1/A2).
 - The `content_height` push-up mechanism (documented in `docs/gloss-prompts-history.md`) must survive; delegates now persist, so verify the restore-truncation scenario still passes (FR-B5).
 
-- [ ] 4.0 AssistantResponses in-place model and tab-selection stability (FR-A1–A3, FR-B1–B5)
-  - [ ] 4.1 Add the internal `ListModel` and the diff-and-patch function in `AssistantResponses.qml`; rebind both `Repeater`s to it; keep the external `translations_data` property as the declarative input feeding the diff.
-  - [ ] 4.2 Move selection emission to real clicks: add a click signal in `ResponseTabButton.qml` (or use `onClicked` of the TabButton), emit `tabSelectionChanged` only from that path, and delete the emission from `TabBar.onCurrentIndexChanged`; keep the external `selected_tab_index` → `currentIndex` sync. Also change the retry path to identify the entry by **index**: `retryRequest` carries the delegate's `index` instead of `model_name` + a self-generated `request_id`, and `retry_request()`'s id generation is deleted (FR-C5, FR-D6).
-  - [ ] 4.3 Implement reset-path clamping (FR-A3): on full model reset, clamp `selected_tab_index` into the new range silently.
-  - [ ] 4.4 Verify `ResponseTabButton` status icons update live via the per-row `setProperty` updates (FR-B4), and that the `content_height` mechanism still handles late RichText height updates and session restore (FR-B5).
-  - [ ] 4.5 Extend `tst_AssistantResponses.qml`: (a) updating one entry's status leaves `TabBar.currentIndex` and the persisted selection untouched and does not recreate the other delegates (assert delegate object identity — and any selection-persistence check — on an entry **other than** the one updated; the updated entry's own text legitimately re-renders), (b) a click on a tab emits exactly one `tabSelectionChanged`, (c) length-change reset clamps without emitting.
-  - [ ] 4.6 Re-check both tabs end-to-end against the bug scenario (parallel send, focus tab 2, deliver a response for tab 1 → focus and `selected_ai_tab` stay on tab 2). Build; run Rust tests.
+- [x] 4.0 AssistantResponses in-place model and tab-selection stability (FR-A1–A3, FR-B1–B5)
+  - [x] 4.1 Add the internal `ListModel` and the diff-and-patch function in `AssistantResponses.qml`; rebind both `Repeater`s to it; keep the external `translations_data` property as the declarative input feeding the diff.
+  - [x] 4.2 Move selection emission to real clicks: add a click signal in `ResponseTabButton.qml` (or use `onClicked` of the TabButton), emit `tabSelectionChanged` only from that path, and delete the emission from `TabBar.onCurrentIndexChanged`; keep the external `selected_tab_index` → `currentIndex` sync. Also change the retry path to identify the entry by **index**: `retryRequest` carries the delegate's `index` instead of `model_name` + a self-generated `request_id`, and `retry_request()`'s id generation is deleted (FR-C5, FR-D6).
+  - [x] 4.3 Implement reset-path clamping (FR-A3): on full model reset, clamp `selected_tab_index` into the new range silently.
+  - [x] 4.4 Verify `ResponseTabButton` status icons update live via the per-row `setProperty` updates (FR-B4), and that the `content_height` mechanism still handles late RichText height updates and session restore (FR-B5).
+  - [x] 4.5 Extend `tst_AssistantResponses.qml`: (a) updating one entry's status leaves `TabBar.currentIndex` and the persisted selection untouched and does not recreate the other delegates (assert delegate object identity — and any selection-persistence check — on an entry **other than** the one updated; the updated entry's own text legitimately re-renders), (b) a click on a tab emits exactly one `tabSelectionChanged`, (c) length-change reset clamps without emitting.
+  - [x] 4.6 Re-check both tabs end-to-end against the bug scenario (parallel send, focus tab 2, deliver a response for tab 1 → focus and `selected_ai_tab` stay on tab 2). Build; run Rust tests.
 
 ### 5.0 Cleanups, tests, and documentation
 

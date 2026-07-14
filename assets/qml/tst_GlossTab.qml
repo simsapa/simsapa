@@ -411,9 +411,9 @@ Item {
             var paragraph_idx = gloss_tab.paragraph_model.count - 1;
             var paragraph = gloss_tab.paragraph_model.get(paragraph_idx);
 
-            // Test manual re-send handling. The coordinator assigns the fresh
-            // request_id itself (id generation lives in one place).
-            gloss_tab.resend_translation_request(paragraph_idx, "test/model:free", "");
+            // Test manual re-send handling. The entry is identified by its
+            // index; the coordinator assigns the fresh request_id itself.
+            gloss_tab.resend_translation_request(paragraph_idx, 0);
 
             // Check that the entry was reset for a fresh request
             paragraph = gloss_tab.paragraph_model.get(paragraph_idx);

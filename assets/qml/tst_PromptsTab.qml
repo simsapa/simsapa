@@ -229,9 +229,9 @@ Item {
                 selected_ai_tab: 0
             });
 
-            // Test manual re-send handling. The coordinator assigns the fresh
-            // request_id itself (id generation lives in one place).
-            prompts_tab.resend_response_request(0, "test/model:free", "");
+            // Test manual re-send handling. The entry is identified by its
+            // index; the coordinator assigns the fresh request_id itself.
+            prompts_tab.resend_response_request(0, 0);
 
             var message = prompts_tab.messages_model.get(0);
             var updated_responses = JSON.parse(message.responses_json);
