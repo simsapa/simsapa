@@ -37,7 +37,7 @@ Item {
         id: prompt_connections
         target: pm
 
-        function onPromptResponseForMessages(sender_message_idx: int, model_name: string, response: string) {
+        function onPromptResponseForMessages(request_id: string, sender_message_idx: int, model_name: string, response: string) {
             logger.info(`🤖 onPromptResponseForMessages received: sender_message_idx=${sender_message_idx}, model_name=${model_name}`);
             logger.info(`📝 Response content: "${response.substring(0, 100)}..."`);
 
@@ -385,10 +385,10 @@ Item {
         let messages_json = root.compose_messages_json(message_idx);
 
         if (root.prompts_request_mode === "sequential_retry") {
-            pm.sequential_prompt_request_with_messages(message_idx, messages_json);
+            pm.sequential_prompt_request_with_messages(responses[0].request_id, message_idx, messages_json);
         } else {
             for (var k = 0; k < responses.length; k++) {
-                pm.prompt_request_with_messages(message_idx, responses[k].provider, responses[k].model_name, messages_json);
+                pm.prompt_request_with_messages(responses[k].request_id, message_idx, responses[k].provider, responses[k].model_name, messages_json);
             }
         }
 
@@ -438,10 +438,10 @@ Item {
             let messages_json = root.compose_messages_json(user_message_idx);
 
             if (root.prompts_request_mode === "sequential_retry") {
-                pm.sequential_prompt_request_with_messages(user_message_idx, messages_json);
+                pm.sequential_prompt_request_with_messages(new_request_id, user_message_idx, messages_json);
             } else {
                 let provider_name = SuttaBridge.get_provider_for_model(responses[idx].model_name);
-                pm.prompt_request_with_messages(user_message_idx, provider_name, responses[idx].model_name, messages_json);
+                pm.prompt_request_with_messages(new_request_id, user_message_idx, provider_name, responses[idx].model_name, messages_json);
             }
         } catch (e) {
             logger.error("Failed to re-send response request: " + e);

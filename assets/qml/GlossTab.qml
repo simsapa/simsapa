@@ -65,14 +65,11 @@ Item {
                 return;
             }
 
-            if (ctx.request_id !== undefined) {
-                // Word-selection run: show on every paragraph the request covers.
-                let covered = root.ws_request_paragraphs["" + ctx.request_id];
-                if (covered === undefined) return; // stale / cancelled request
-                for (let pi of covered) {
-                    root.ws_set_status(pi, "busy", status);
-                }
-            } else if (ctx.paragraph_idx !== undefined && ctx.translation_idx !== undefined) {
+            // The AI-translation branch is checked first: its context also
+            // carries a `request_id` key (a QML-generated string, unlike the
+            // word-selection numeric id), so testing that key first would
+            // misroute translation progress into the word-selection branch.
+            if (ctx.paragraph_idx !== undefined && ctx.translation_idx !== undefined) {
                 // AI-translation run: show in the waiting translation entry.
                 let paragraph = paragraph_model.get(ctx.paragraph_idx);
                 if (!paragraph || !paragraph.translations_json) return;
@@ -90,10 +87,17 @@ Item {
                 } catch (e) {
                     logger.error("onSequentialProgress: failed to update translations_json: " + e);
                 }
+            } else if (ctx.request_id !== undefined) {
+                // Word-selection run: show on every paragraph the request covers.
+                let covered = root.ws_request_paragraphs["" + ctx.request_id];
+                if (covered === undefined) return; // stale / cancelled request
+                for (let pi of covered) {
+                    root.ws_set_status(pi, "busy", status);
+                }
             }
         }
 
-        function onPromptResponse (paragraph_idx: int, translation_idx: int, model_name: string, response: string) {
+        function onPromptResponse (request_id: string, paragraph_idx: int, translation_idx: int, model_name: string, response: string) {
             logger.debug(`🤖 onPromptResponse received: paragraph_idx=${paragraph_idx}, translation_idx=${translation_idx}, model_name=${model_name}`);
             logger.debug(`📝 Response content: "${response.substring(0, 100)}..."`);
 
@@ -1042,10 +1046,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             let combined_prompt = root.translation_prompt_for(paragraph, translations[idx].with_vocab);
 
             if (root.ai_translate_mode === "sequential_retry") {
-                pm.sequential_prompt_request(paragraph_idx, idx, combined_prompt);
+                pm.sequential_prompt_request(new_request_id, paragraph_idx, idx, combined_prompt);
             } else {
                 let provider_name = SuttaBridge.get_provider_for_model(translations[idx].model_name);
-                pm.prompt_request(paragraph_idx, idx, provider_name, translations[idx].model_name, combined_prompt);
+                pm.prompt_request(new_request_id, paragraph_idx, idx, provider_name, translations[idx].model_name, combined_prompt);
             }
         } catch (e) {
             logger.error("Failed to re-send translation request: " + e);
@@ -1071,12 +1075,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
             // One entry; the responding model's name arrives with the first
             // progress event and with the final response.
+            let request_id = root.generate_request_id();
             let translations = [{
                 model_name: "",
                 status: "waiting",
                 response: "",
                 progress: "",
-                request_id: root.generate_request_id(),
+                request_id: request_id,
                 last_updated: Date.now(),
                 user_selected: true,
                 with_vocab: with_vocab
@@ -1084,7 +1089,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             paragraph_model.setProperty(paragraph_index, "translations_json", JSON.stringify(translations));
             root.session_needs_saving = true;
 
-            pm.sequential_prompt_request(paragraph_index, 0, combined_prompt);
+            pm.sequential_prompt_request(request_id, paragraph_index, 0, combined_prompt);
             return;
         }
 
@@ -1111,13 +1116,14 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (!item.enabled) continue;
 
             let translation_idx = translations.length;
-            pm.prompt_request(paragraph_index, translation_idx, item.provider, item.model_name, combined_prompt);
+            let request_id = root.generate_request_id();
+            pm.prompt_request(request_id, paragraph_index, translation_idx, item.provider, item.model_name, combined_prompt);
             translations.push({
                 model_name: item.model_name,
                 status: "waiting",
                 response: "",
                 progress: "",
-                request_id: root.generate_request_id(),
+                request_id: request_id,
                 last_updated: Date.now(),
                 user_selected: translation_idx === 0,
                 with_vocab: with_vocab

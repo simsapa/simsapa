@@ -152,7 +152,7 @@ Item {
             });
 
             // Simulate response from PromptManager
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", "Meditation is a practice of mindfulness...");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "test/model:free", "Meditation is a practice of mindfulness...");
 
             // Check that response was processed correctly
             var assistant_message = prompts_tab.messages_model.get(1);
@@ -202,7 +202,7 @@ Item {
                     raw: "Request timeout"
                 }
             });
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "test/model:free", error_envelope);
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "test/model:free", error_envelope);
 
             var assistant_message = prompts_tab.messages_model.get(1);
             var updated_responses = JSON.parse(assistant_message.responses_json);
@@ -438,9 +438,9 @@ Item {
             });
 
             // Simulate responses arriving from different models
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model1:free", "Model 1 response about mindfulness");
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model3:free", "Model 3 different perspective");
-            prompts_tab.prompt_connections.onPromptResponseForMessages(0, "model2:free", "API Error: Timeout");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_1", 0, "model1:free", "Model 1 response about mindfulness");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_3", 0, "model3:free", "Model 3 different perspective");
+            prompts_tab.prompt_connections.onPromptResponseForMessages("test_req_2", 0, "model2:free", "API Error: Timeout");
 
             var assistant_message = prompts_tab.messages_model.get(1);
             var final_responses = JSON.parse(assistant_message.responses_json);
