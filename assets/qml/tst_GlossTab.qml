@@ -376,17 +376,16 @@ Item {
         }
 
         function test_translation_model_loading() {
-            // Test model loading functionality
-            gloss_tab.load_translation_models();
+            // Parallel-mode models load through the shared coordinator.
+            var models = gloss_tab.ai_coordinator.enabled_parallel_models();
 
             // Should have loaded some models (depends on test environment)
-            verify(gloss_tab.translation_models.count >= 0);
+            verify(Array.isArray(models));
 
             // Check that models have required properties if any exist
-            if (gloss_tab.translation_models.count > 0) {
-                var first_model = gloss_tab.translation_models.get(0);
-                verify(first_model.hasOwnProperty("model_name"));
-                verify(first_model.hasOwnProperty("enabled"));
+            if (models.length > 0) {
+                verify(models[0].hasOwnProperty("model_name"));
+                verify(models[0].hasOwnProperty("provider"));
             }
         }
 
@@ -412,14 +411,15 @@ Item {
             var paragraph_idx = gloss_tab.paragraph_model.count - 1;
             var paragraph = gloss_tab.paragraph_model.get(paragraph_idx);
 
-            // Test manual re-send handling
-            var new_request_id = gloss_tab.generate_request_id();
-            gloss_tab.resend_translation_request(paragraph_idx, "test/model:free", new_request_id);
+            // Test manual re-send handling. The coordinator assigns the fresh
+            // request_id itself (id generation lives in one place).
+            gloss_tab.resend_translation_request(paragraph_idx, "test/model:free", "");
 
             // Check that the entry was reset for a fresh request
             paragraph = gloss_tab.paragraph_model.get(paragraph_idx);
             var updated_translations = JSON.parse(paragraph.translations_json);
-            compare(updated_translations[0].request_id, new_request_id);
+            verify(updated_translations[0].request_id !== "test_request_error");
+            verify(updated_translations[0].request_id.length > 10);
             compare(updated_translations[0].status, "waiting");
             compare(updated_translations[0].response, "");
         }

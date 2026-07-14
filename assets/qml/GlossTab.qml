@@ -46,6 +46,35 @@ Item {
     PromptManager { id: pm }
     ClipboardManager { id: clipboard_manager }
 
+    // Shared AI-translation request/response bookkeeping (entry construction,
+    // request_id fencing, retry, cancellation). The word-selection flow keeps
+    // its own pipeline below. See docs/ai-model-management-and-fallback.md.
+    AiResponseCoordinator {
+        id: coordinator
+        pm: pm
+        get_entries_json: function(ctx) {
+            let paragraph = paragraph_model.get(ctx.paragraph_idx);
+            return (paragraph && paragraph.translations_json) ? paragraph.translations_json : "[]";
+        }
+        set_entries_json: function(ctx, json) {
+            if (ctx.paragraph_idx < 0 || ctx.paragraph_idx >= paragraph_model.count) return;
+            paragraph_model.setProperty(ctx.paragraph_idx, "translations_json", json);
+            root.session_needs_saving = true;
+        }
+        send_request: function(ctx, entry_idx, entry, payload) {
+            if (entry.send_mode === "parallel") {
+                pm.prompt_request(entry.request_id, ctx.paragraph_idx, entry_idx, entry.provider, entry.model_name, payload);
+            } else {
+                pm.sequential_prompt_request(entry.request_id, ctx.paragraph_idx, entry_idx, payload);
+            }
+        }
+        build_payload: function(ctx, entry) {
+            let paragraph = paragraph_model.get(ctx.paragraph_idx);
+            if (!paragraph) return "";
+            return root.translation_prompt_for(paragraph, entry.with_vocab);
+        }
+    }
+
     Connections {
         target: pm
 
@@ -70,23 +99,9 @@ Item {
             // word-selection numeric id), so testing that key first would
             // misroute translation progress into the word-selection branch.
             if (ctx.paragraph_idx !== undefined && ctx.translation_idx !== undefined) {
-                // AI-translation run: show in the waiting translation entry.
-                let paragraph = paragraph_model.get(ctx.paragraph_idx);
-                if (!paragraph || !paragraph.translations_json) return;
-                try {
-                    let translations = JSON.parse(paragraph.translations_json);
-                    if (ctx.translation_idx < translations.length && translations[ctx.translation_idx].status === "waiting") {
-                        translations[ctx.translation_idx].progress = status;
-                        // Sequential entries start with no model name; the engine
-                        // reports which model it is trying.
-                        if (model_name !== "") {
-                            translations[ctx.translation_idx].model_name = model_name;
-                        }
-                        paragraph_model.setProperty(ctx.paragraph_idx, "translations_json", JSON.stringify(translations));
-                    }
-                } catch (e) {
-                    logger.error("onSequentialProgress: failed to update translations_json: " + e);
-                }
+                // AI-translation run: routed to the entry by the echoed
+                // request_id (stale events are discarded by the coordinator).
+                coordinator.handle_progress({ paragraph_idx: ctx.paragraph_idx }, ctx.request_id, model_name, status);
             } else if (ctx.request_id !== undefined) {
                 // Word-selection run: show on every paragraph the request covers.
                 let covered = root.ws_request_paragraphs["" + ctx.request_id];
@@ -98,53 +113,10 @@ Item {
         }
 
         function onPromptResponse (request_id: string, paragraph_idx: int, translation_idx: int, model_name: string, response: string) {
-            logger.debug(`🤖 onPromptResponse received: paragraph_idx=${paragraph_idx}, translation_idx=${translation_idx}, model_name=${model_name}`);
-            logger.debug(`📝 Response content: "${response.substring(0, 100)}..."`);
-
-            let paragraph = paragraph_model.get(paragraph_idx);
-            if (!paragraph) {
-                logger.error(`❌ No paragraph found at index ${paragraph_idx}`);
-                return;
-            }
-
-            let translations = [];
-            if (paragraph.translations_json) {
-                try {
-                    translations = JSON.parse(paragraph.translations_json);
-                    logger.debug(`📚 Parsed ${translations.length} existing translations`);
-                } catch (e) {
-                    logger.error("Failed to parse paragraph.translations_json:", e);
-                }
-            } else {
-                logger.error(`Missing paragraph.translations_json for paragraph_idx ${paragraph_idx}, translation_idx ${translation_idx}`);
-            }
-
-            if (translation_idx < translations.length) {
-                // Retry and fallback are handled by the Rust engine (see
-                // docs/ai-model-management-and-fallback.md); an error response
-                // here is final for this request.
-                let is_error = root.is_error_response(response);
-
-                logger.debug(`🔄 Updating translation at index ${translation_idx}: is_error=${is_error}`);
-
-                // Update the existing translation entry
-                translations[translation_idx].response = response;
-                translations[translation_idx].status = is_error ? "error" : "completed";
-                translations[translation_idx].last_updated = Date.now();
-                // Sequential mode: the entry learns its model from the response.
-                if (model_name !== "") {
-                    translations[translation_idx].model_name = model_name;
-                }
-
-                logger.debug(`✅ Updated translation data: ` + JSON.stringify(translations[translation_idx]));
-
-                let translations_json = JSON.stringify(translations);
-                paragraph_model.setProperty(paragraph_idx, "translations_json", translations_json);
-                logger.debug(`💾 Saved translations_json to paragraph model`);
-                root.session_needs_saving = true;
-            } else {
-                logger.error(`❌ translation_idx ${translation_idx} is out of bounds for ${translations.length} translations`);
-            }
+            logger.debug(`onPromptResponse received: paragraph_idx=${paragraph_idx}, translation_idx=${translation_idx}, model_name=${model_name}`);
+            // Routed to the entry by the echoed request_id (stale responses
+            // superseded by a retry are discarded by the coordinator).
+            coordinator.handle_response({ paragraph_idx: paragraph_idx }, request_id, model_name, response);
         }
     }
 
@@ -221,9 +193,7 @@ Item {
         }
     }
 
-    property alias translation_models: translation_models
-
-    ListModel { id: translation_models }
+    property alias ai_coordinator: coordinator
 
     // How AI translation requests are dispatched: "sequential_retry" (one
     // request walking the Fallback sequence) or "parallel" (one request per
@@ -235,37 +205,10 @@ Item {
         root.ai_translate_mode = SuttaBridge.get_gloss_ai_translate_mode();
     }
 
-    // Parallel-mode models: the enabled entries of the global "Parallel
-    // prompts" list (reconciled in Rust, so every entry is usable).
-    function load_translation_models() {
-        translation_models.clear();
-        try {
-            let entries = JSON.parse(SuttaBridge.get_ai_parallel_prompts_json());
-            for (var i = 0; i < entries.length; i++) {
-                translation_models.append({
-                    model_name: entries[i].model_name,
-                    provider: entries[i].provider,
-                    enabled: entries[i].enabled
-                });
-            }
-            logger.debug(`Loaded ${translation_models.count} parallel-prompt models`);
-        } catch (e) {
-            logger.error("Failed to parse parallel prompts JSON: " + e);
-        }
-    }
-
     // Whether the Fallback sequence has at least one enabled model (the
     // sequential engine has something to try).
     function has_enabled_sequence_model(): bool {
-        try {
-            let entries = JSON.parse(SuttaBridge.get_ai_fallback_sequence_json());
-            for (var i = 0; i < entries.length; i++) {
-                if (entries[i].enabled) return true;
-            }
-        } catch (e) {
-            logger.error("Failed to parse fallback sequence JSON: " + e);
-        }
-        return false;
+        return coordinator.has_enabled_sequence_model();
     }
 
     // AI word-selection on/off, mirrored from the Word Selection dialog. The
@@ -982,12 +925,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     }
 
     function generate_request_id() {
-        return Date.now().toString() + "_" + Math.random().toString(36);
+        return coordinator.generate_request_id();
     }
 
     // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
     function is_error_response(response_text) {
-        return ai_error_utils.is_error(response_text);
+        return coordinator.is_error_response(response_text);
     }
 
     ScrollableHelper {
@@ -1013,9 +956,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
     // Manual (user-clicked) re-send of one translation request. Automatic
     // retry and fallback live in the Rust engine (see
-    // docs/ai-model-management-and-fallback.md), so this only resets the entry
-    // and sends a fresh request.
+    // docs/ai-model-management-and-fallback.md). The coordinator cancels the
+    // superseded request (waiting entries only), assigns a fresh request_id,
+    // and re-sends under the entry's stored send_mode.
     function resend_translation_request(paragraph_idx, model_name, new_request_id) {
+        // new_request_id is unused: id generation lives in the coordinator.
         var paragraph = paragraph_model.get(paragraph_idx);
         if (!paragraph || !paragraph.translations_json) return;
 
@@ -1030,27 +975,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             }
             // A sequential entry which failed before any model answered has no
             // model name yet; there is only one entry to re-send in that case.
-            if (idx < 0 && root.ai_translate_mode === "sequential_retry" && translations.length === 1) {
+            if (idx < 0 && translations.length === 1) {
                 idx = 0;
             }
             if (idx < 0) return;
 
-            translations[idx].request_id = new_request_id;
-            translations[idx].status = "waiting";
-            translations[idx].response = "";
-            translations[idx].progress = "";
-            translations[idx].last_updated = Date.now();
-
-            paragraph_model.setProperty(paragraph_idx, "translations_json", JSON.stringify(translations));
-
-            let combined_prompt = root.translation_prompt_for(paragraph, translations[idx].with_vocab);
-
-            if (root.ai_translate_mode === "sequential_retry") {
-                pm.sequential_prompt_request(new_request_id, paragraph_idx, idx, combined_prompt);
-            } else {
-                let provider_name = SuttaBridge.get_provider_for_model(translations[idx].model_name);
-                pm.prompt_request(new_request_id, paragraph_idx, idx, provider_name, translations[idx].model_name, combined_prompt);
-            }
+            coordinator.resend({ paragraph_idx: paragraph_idx }, idx, root.ai_translate_mode);
         } catch (e) {
             logger.error("Failed to re-send translation request: " + e);
         }
@@ -1065,74 +995,25 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             return;
         }
 
-        if (root.ai_translate_mode === "sequential_retry") {
-            if (!root.has_enabled_sequence_model()) {
+        let mode = root.ai_translate_mode;
+        let enabled_models = [];
+        if (mode === "sequential_retry") {
+            if (!coordinator.has_enabled_sequence_model()) {
                 no_models_dialog.open();
                 return;
             }
-
-            let combined_prompt = root.translation_prompt_for(paragraph, with_vocab);
-
-            // One entry; the responding model's name arrives with the first
-            // progress event and with the final response.
-            let request_id = root.generate_request_id();
-            let translations = [{
-                model_name: "",
-                status: "waiting",
-                response: "",
-                progress: "",
-                request_id: request_id,
-                last_updated: Date.now(),
-                user_selected: true,
-                with_vocab: with_vocab
-            }];
-            paragraph_model.setProperty(paragraph_index, "translations_json", JSON.stringify(translations));
-            root.session_needs_saving = true;
-
-            pm.sequential_prompt_request(request_id, paragraph_index, 0, combined_prompt);
-            return;
-        }
-
-        // Parallel mode: one request per enabled Parallel-prompts model.
-        root.load_translation_models();
-
-        let has_enabled = false;
-        for (var k = 0; k < translation_models.count; k++) {
-            if (translation_models.get(k).enabled) {
-                has_enabled = true;
-                break;
+        } else {
+            // Parallel mode: one request per enabled Parallel-prompts model.
+            enabled_models = coordinator.enabled_parallel_models();
+            if (enabled_models.length === 0) {
+                no_models_dialog.open();
+                return;
             }
-        }
-        if (!has_enabled) {
-            no_models_dialog.open();
-            return;
         }
 
         let combined_prompt = root.translation_prompt_for(paragraph, with_vocab);
-        let translations = [];
-
-        for (var i = 0; i < translation_models.count; i++) {
-            var item = translation_models.get(i);
-            if (!item.enabled) continue;
-
-            let translation_idx = translations.length;
-            let request_id = root.generate_request_id();
-            pm.prompt_request(request_id, paragraph_index, translation_idx, item.provider, item.model_name, combined_prompt);
-            translations.push({
-                model_name: item.model_name,
-                status: "waiting",
-                response: "",
-                progress: "",
-                request_id: request_id,
-                last_updated: Date.now(),
-                user_selected: translation_idx === 0,
-                with_vocab: with_vocab
-            });
-        }
-
-        logger.info(`Created ${translations.length} translation entries`);
-        paragraph_model.setProperty(paragraph_index, "translations_json", JSON.stringify(translations));
-        root.session_needs_saving = true;
+        let entries = coordinator.send_new({ paragraph_idx: paragraph_index }, mode, enabled_models, combined_prompt, { with_vocab: with_vocab });
+        logger.info(`Created ${entries.length} translation entries`);
     }
 
     function update_tab_selection(paragraph_idx, tab_index, model_name) {
