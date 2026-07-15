@@ -2688,6 +2688,15 @@ ${main_text}
                         spacing: 10
                         Layout.fillWidth: true
 
+                        Button {
+                            id: vocab_collapse_btn
+                            checkable: true
+                            checked: false
+                            icon.source: checked ? "icons/32x32/material-symbols--expand-all.png" : "icons/32x32/material-symbols--collapse-all.png"
+                            Layout.alignment: Qt.AlignLeft
+                            Layout.preferredWidth: vocab_collapse_btn.height
+                        }
+
                         Text {
                             text: "Dictionary definitions from DPD:"
                             color: root.text_color
@@ -2783,6 +2792,7 @@ ${main_text}
                         id: vocabulary_gloss
                         Layout.fillWidth: true
                         spacing: 5
+                        visible: !vocab_collapse_btn.checked
 
                         property int paragraph_index: paragraph_item.index
 
