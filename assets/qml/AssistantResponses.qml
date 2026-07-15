@@ -106,6 +106,17 @@ ColumnLayout {
         if (tab_bar.currentIndex !== idx) {
             tab_bar.currentIndex = idx;
         }
+        // currentIndex can already equal idx while no button carries the
+        // checked state: on first appearance the currentIndex binding
+        // evaluates to 0 before any tab button exists, so when the buttons
+        // are appended the index never *changes* and the TabBar's
+        // update-current-item pass never runs — the content pane (bound to
+        // currentIndex) shows, but no tab renders as active. Re-assert
+        // checked on the current button; autoExclusive unchecks the rest.
+        var it = tab_bar.itemAt(idx);
+        if (it && !it.checked) {
+            it.checked = true;
+        }
     }
 
     // Carries the entry's index in the entry list (stable and always present,
