@@ -46,7 +46,13 @@ ColumnLayout {
     // The parent keeps binding the parsed entries array declaratively; each
     // change is diffed against the internal model here.
     onTranslations_dataChanged: sync_entries()
-    Component.onCompleted: sync_entries()
+    Logger { id: startup_trace_logger }
+
+    Component.onCompleted: {
+        startup_trace_logger.info("STARTUP-TRACE: AssistantResponses onCompleted start");
+        sync_entries();
+        startup_trace_logger.info("STARTUP-TRACE: AssistantResponses onCompleted end");
+    }
 
     function entry_row(item) {
         return {

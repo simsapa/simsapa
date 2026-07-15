@@ -34,8 +34,18 @@ Notable feature docs:
   the five `AppSettings` caches and their refresh hooks, why background warming
   lives in `init_app_data()` (not `AppData::new()`), the
   `Loader` vs. `Component + createObject` rule for QML wrapping based on root
-  element type (`Dialog`/`Popup` vs `ApplicationWindow`), and the eager-binding
-  pre-flight required before deferring components.
+  element type (`Dialog`/`Popup` vs `ApplicationWindow`), the eager-binding
+  pre-flight required before deferring components, and the **pre-exec stall
+  forensics (§6)**: the window paints nothing until `app.exec()`, and every
+  eager child's `Component.onCompleted` runs inside the engine load — a ~9 s
+  invisible-window stall turned out to be per-dictionary `count(*)` scans
+  missing the `dict_words.dictionary_id` index (fixed by a dictionaries
+  migration), NOT the plausible-looking WebEngineView/Chromium bring-up.
+  Bracket silent stalls with `STARTUP-TRACE` logs before blaming. The webview
+  deferrals are kept as structural hygiene: blank tab `Qt.callLater`-deferred,
+  session restore `singleShot(0)`-posted (ordering is load-bearing), webview
+  `Loader`s `asynchronous` on desktop only — never create a webview before
+  `app.exec()`.
 - [Why `appdata` has two migration mechanisms](./docs/appdata-migration-mechanisms.md) —
   `dictionaries.sqlite3` is migrated at runtime by Diesel, but `appdata.sqlite3`
   is upgraded in place by `upgrade_appdata_schema()`, a **hand-maintained array**

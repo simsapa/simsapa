@@ -52,8 +52,13 @@ process start
 │   └─ WindowManager::create_sutta_search_window
 │       └─ QML parse of SuttaSearchWindow.qml + its directly-instantiated children
 │
-└─ SuttaSearchWindow.qml::Component.onCompleted
-    └─ apply_theme()  ← critical-path target reached
+├─ SuttaSearchWindow.qml::Component.onCompleted
+│   ├─ apply_theme()  ← critical-path target reached
+│   └─ Qt.callLater(add blank tab)             [DEFERRED past app.exec(), see §6]
+│
+├─ QTimer::singleShot(0, restore_last_session)  [DEFERRED past app.exec(), see §6]
+│
+└─ app.exec()  ← first frame can only paint after this
 ```
 
 The two-window orchestration (`DictionaryIndexProgressWindow` →
@@ -187,7 +192,142 @@ reads, `models_dialog.auto_retry.checked` cross-component reads, the
 `.show()` triggers) are the gotchas to handle first — see the original
 PRD §5.5.0 for the full catalogue.
 
-## 6. Design implications (rules to add new code by)
+## 6. First paint and the pre-exec stall (2026-07 forensics)
+
+### The symptom and the two wrong suspects
+
+On desktop the main window did not appear until ~9.5 s after launch, with
+no "Loading..." placeholders ever visible — while on Android the window
+appeared quickly and showed the placeholders for a couple of seconds.
+
+**Wrong suspect #1 — "the window waits for the DB."** Log timings showed
+`init_app_data()` takes ~8 ms and the desktop fulltext searcher ~10 ms.
+`SuttaBridge.load_db()` doesn't even open anything — it just flips
+`db_loaded` from a thread.
+
+**Wrong suspect #2 — "the first WebEngineView boots Chromium."** The
+call-chain reading (`Component.onCompleted` → `add_results_tab` →
+`SuttaStackLayout.add_item()` → synchronous `Loader` →
+`SuttaHtmlView_Desktop.qml` → `WebEngineView`) was plausible enough that
+the first round of fixes deferred all webview creation past `app.exec()`
+(see below). The stall did not move. **Lesson: a plausible heavyweight on
+the silent stretch is not a diagnosis** — bracket the stretch with
+timestamped logs before attributing it.
+
+### The measured cause
+
+A QML window's first frame can only be painted once the event loop runs
+(`app.exec()`), and everything in `gui.cpp::start()` before that call is
+synchronous on the GUI thread — including the whole
+`QQmlApplicationEngine` load. `STARTUP-TRACE` log lines (still in the
+code, in the `Component.onCompleted` of the window's major children)
+bracketed the silent ~7–9 s to a single handler:
+
+```
+STARTUP-TRACE: DictionarySearchDictionariesPanel onCompleted start   43.246
+STARTUP-TRACE: DictionarySearchDictionariesPanel onCompleted end     51.984
+```
+
+`DictionarySearchDictionariesPanel.refresh_state()` →
+`DictionaryManager.list_dictionaries_without_dpd_and_bold()` →
+`count_words_for_dictionary(d.id)` **per dictionary**, and
+`SELECT count(*) FROM dict_words WHERE dictionary_id = ?` had **no index
+on `dictionary_id`** — a full scan of `dict_words` (~190k rows carrying
+large HTML blobs, ~0.15 s each). With 40+ imported dictionaries that is
+~7–9 s of GUI-thread SQLite scans *inside the QML load*, before the
+window could ever paint. (Note the finalize order: `Component.onCompleted`
+handlers of the root window's children run *after* the root's own handler,
+so the stall sat between the root's logs and `app.exec()` with nothing in
+between — invisible until the children were instrumented.)
+
+By the time the first frame appeared, `db_loaded && searcher_ready` had
+been true for seconds, so the `!db_ready` placeholders never showed.
+Android never had the visible-stall problem: the platform maps the
+activity surface early, and the searcher on slow flash storage genuinely
+takes seconds — so the placeholders are visible there, as designed.
+
+### Fix 1 — the index (the actual cure)
+
+`backend/migrations/dictionaries/2026-07-15-120000_add_dict_words_dictionary_id_index`
+adds `dict_words_dictionary_id_idx ON dict_words (dictionary_id)`. Since
+`dictionaries.sqlite3` uses **real runtime Diesel migrations** (unlike
+`appdata.sqlite3` — see
+[appdata-migration-mechanisms.md](./appdata-migration-mechanisms.md)),
+the dated folder is the complete job: existing installs get the index on
+next launch. Measured effect: the panel's `refresh_state()` went from
+8.7 s to 62 ms; launch → `app.exec()` from ~9.5 s to ~2.0 s.
+
+Gotcha hit while verifying: adding a migration folder does **not** make
+cargo recompile the backend crate (`embed_migrations!` doesn't reliably
+track new subfolders), so the freshly built app ran *without* the new
+migration. If a new migration doesn't apply, `touch backend/src/db/mod.rs`
+and rebuild, then check `__diesel_schema_migrations`.
+
+This is design-implication #1 below in action: the per-dictionary counts
+are an O(rows) startup scan and must be O(log n). (They are also computed
+for a panel that doesn't display counts — if this ever grows again, drop
+`entry_count` from `list_dictionaries_without_dpd_and_bold` instead of
+caching it.)
+
+### Fix 2 — keep webviews off the pre-paint path (kept, structural)
+
+The first-round webview deferral was the wrong cure for *this* stall, but
+it is kept because it removes a real class of pre-paint work (Chromium
+bring-up on the GUI thread) and makes the invariant structural:
+
+1. **Blank-tab creation is deferred with `Qt.callLater`**
+   (`SuttaSearchWindow.qml::Component.onCompleted`) — it runs on the
+   first event-loop iteration, not inside the synchronous engine load.
+
+2. **Session restore is posted with `QTimer::singleShot(0, …)`**
+   (`gui.cpp`) instead of being called before `app.exec()`. **Ordering is
+   load-bearing:** the `Qt.callLater` from `Component.onCompleted` is
+   queued during `engine.load()`, i.e. *before* the `singleShot(0)` is
+   registered, so the blank placeholder tab exists by the time restore
+   runs and the "first restored tab replaces the blank tab"
+   (`restore_blank_results_pending`) semantics are preserved. Both guards
+   are belt-and-braces against reordering: the blank-tab callback checks
+   `tabs_results_model.count == 0`, and `replace_blank` in
+   `open_bookmark_in_tab_group` checks the model is non-empty and slot 0
+   is actually blank.
+
+3. **The webview `Loader`s are `asynchronous: true` on desktop only**
+   (`SuttaHtmlView.qml`, `DictionaryHtmlView.qml`), so tab/webview
+   creation never blocks the frame it was requested in. Mobile keeps the
+   synchronous default deliberately: the native WebView is cheap, and the
+   mobile visibility-management code
+   (`docs/mobile-webview-visibility-management.md`) was written against
+   synchronous creation order.
+
+**Consequence of async loading:** `SuttaHtmlView.item` /
+`DictionaryHtmlView.item` can briefly be `null` after tab creation.
+Loader-level members (`data_json`, `get_data_value()`, `page_loaded`) are
+always safe; direct `.item.web` access must either be user-driven (item
+exists long before a human can click) or run from a `page_loaded`
+handler. All call sites were audited against this rule when the change
+was made — keep new call sites to it.
+
+### Rules
+
+1. **The window paints nothing until `app.exec()` runs.** Everything in
+   `gui.cpp::start()` and everything inside the `QQmlApplicationEngine`
+   load — including every child component's bindings and
+   `Component.onCompleted` — is time the user stares at no window.
+   `Component.onCompleted` of an eagerly-instantiated child is **on the
+   critical path**, even for a dialog the user may never open.
+
+2. **Bracket before blaming.** For a silent pre-exec stall, add
+   `STARTUP-TRACE` log lines (grep for existing ones) around the
+   `Component.onCompleted` handlers and re-run; don't attribute the gap
+   to the most plausible heavyweight on the path.
+
+3. **Never instantiate a webview (or anything comparably heavy) before
+   `app.exec()`.** Defer the trigger past the first event-loop iteration
+   (`Qt.callLater` / `QTimer::singleShot(0, …)`) *and* make the
+   instantiation itself asynchronous, or the deferral just moves the
+   freeze.
+
+## 7. Design implications (rules to add new code by)
 
 1. **Anything that runs an O(rows) DB scan at startup needs a cached
    value in `app_settings`.** Source-of-truth queries stay in the DB
@@ -221,7 +361,7 @@ PRD §5.5.0 for the full catalogue.
    doesn't, it goes on a background thread spawned from
    `init_app_data()`.
 
-## 7. References
+## 8. References
 
 - PRD: [`tasks/prd-startup-and-search-area-switch-perf.md`](../tasks/prd-startup-and-search-area-switch-perf.md)
 - Task list: [`tasks/tasks-prd-startup-and-search-area-switch-perf.md`](../tasks/tasks-prd-startup-and-search-area-switch-perf.md)

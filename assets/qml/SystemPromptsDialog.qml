@@ -80,8 +80,10 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: SystemPromptsDialog onCompleted start");
         theme_helper.apply();
         load_prompts();
+        logger.info("STARTUP-TRACE: SystemPromptsDialog onCompleted end");
     }
 
     MessageDialog {

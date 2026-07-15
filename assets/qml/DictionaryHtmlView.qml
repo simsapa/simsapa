@@ -16,6 +16,14 @@ Loader {
         }
     }
 
+    // Desktop: asynchronous for the same reason as SuttaHtmlView — the
+    // DictionaryTab (and its webview) is instantiated eagerly during the
+    // SuttaSearchWindow QML parse, and a synchronous WebEngineView creation
+    // there runs before the window can paint its first frame. See
+    // docs/startup-sequence-and-caches.md §"First paint and the pre-exec
+    // stall".
+    asynchronous: Qt.platform.os !== "android" && Qt.platform.os !== "ios"
+
     onLoaded: {
         loader.item.window_id = Qt.binding(() => window_id);
         loader.item.word_uid = Qt.binding(() => word_uid);

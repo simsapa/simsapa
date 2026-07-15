@@ -351,7 +351,11 @@ Dialog {
                         }
                     }
 
-                    Component.onCompleted: control.populate_model()
+                    Component.onCompleted: {
+                        logger.info("STARTUP-TRACE: TabListDialog populate_model start");
+                        control.populate_model();
+                        logger.info("STARTUP-TRACE: TabListDialog populate_model end");
+                    }
                 }
             }
         }

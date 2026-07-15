@@ -98,6 +98,19 @@ Loader {
         }
     }
 
+    // Desktop: load the WebEngineView through the incubator instead of
+    // synchronously, so creating a tab's webview doesn't block the frame it
+    // was requested in (the first WebEngineView carries the Chromium
+    // bring-up on the GUI thread). Callers must tolerate a briefly-null
+    // `item`; all programmatic `.item` accesses are user-driven or run from
+    // page_loaded, by which time the item exists. Mobile keeps the
+    // synchronous default — the native WebView is cheap and the mobile
+    // visibility-management code
+    // (docs/mobile-webview-visibility-management.md) was written against
+    // synchronous creation order. See docs/startup-sequence-and-caches.md
+    // §"First paint and the pre-exec stall".
+    asynchronous: Qt.platform.os !== "android" && Qt.platform.os !== "ios"
+
     onLoaded: {
         loader.item.window_id = Qt.binding(() => window_id);
         loader.item.is_dark = Qt.binding(() => is_dark);

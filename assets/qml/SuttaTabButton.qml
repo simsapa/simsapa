@@ -73,9 +73,13 @@ TabButton {
         }
     }
 
+    Logger { id: startup_trace_logger }
+
     Component.onCompleted: {
+        startup_trace_logger.info("STARTUP-TRACE: SuttaTabButton onCompleted start, focus_on_new=" + control.focus_on_new);
         if (control.focus_on_new) {
             control.click();
         }
+        startup_trace_logger.info("STARTUP-TRACE: SuttaTabButton onCompleted end");
     }
 }

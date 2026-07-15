@@ -92,7 +92,11 @@ GridLayout {
         root.save_sequence();
     }
 
-    Component.onCompleted: root.reload()
+    Component.onCompleted: {
+        logger.info("STARTUP-TRACE: ModelUsageLists onCompleted start");
+        root.reload();
+        logger.info("STARTUP-TRACE: ModelUsageLists onCompleted end");
+    }
 
     GroupBox {
         title: "Fallback sequence"

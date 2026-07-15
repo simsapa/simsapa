@@ -334,9 +334,11 @@ Item {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: PromptsTab onCompleted start");
         root.load_prompts_request_mode();
         root.init_messages("");
         root.load_history();
+        logger.info("STARTUP-TRACE: PromptsTab onCompleted history loaded");
 
         // Initialize ScrollableHelper after initial messages
         Qt.callLater(function() {

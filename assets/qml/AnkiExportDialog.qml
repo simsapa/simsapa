@@ -110,6 +110,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: AnkiExportDialog onCompleted start");
         theme_helper.apply();
         load_templates();
         render_preview();

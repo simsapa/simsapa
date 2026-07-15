@@ -655,6 +655,7 @@ Item {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: GlossTab onCompleted start");
         load_history();
         load_common_words();
         load_word_selection_settings();
@@ -662,6 +663,7 @@ Item {
         if (root.is_qml_preview) {
             qml_preview_state();
         }
+        logger.info("STARTUP-TRACE: GlossTab onCompleted end");
     }
 
     Component.onDestruction: {
