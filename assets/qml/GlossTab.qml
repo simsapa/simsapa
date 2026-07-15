@@ -2625,18 +2625,50 @@ ${main_text}
                     }
                 }
 
+                // Collapse button + header for the AI Translations block. The
+                // collapse button lives outside AssistantResponses (as in
+                // PromptsTab.qml), so AssistantResponses' own title is left
+                // empty and the header is rendered here.
+                RowLayout {
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
+                    visible: assistant_responses_component.translations_data.length > 0
+
+                    Button {
+                        id: ai_translations_collapse_btn
+                        checkable: true
+                        checked: false
+                        icon.source: checked ? "icons/32x32/material-symbols--expand-all.png" : "icons/32x32/material-symbols--collapse-all.png"
+                        Layout.alignment: Qt.AlignLeft
+                        Layout.preferredWidth: ai_translations_collapse_btn.height
+                    }
+
+                    Text {
+                        text: {
+                            let translations = assistant_responses_component.translations_data;
+                            if (translations && translations.length > 0) {
+                                // The first translation determines whether the run was with or without vocab.
+                                return translations[0].with_vocab ? "AI Translations w/ Vocab:" : "AI Translations w/o Vocab:";
+                            }
+                            return "AI Translations:";
+                        }
+                        color: root.text_color
+                        font.bold: true
+                        font.pointSize: root.vocab_font_point_size
+                        Layout.alignment: Qt.AlignLeft
+                    }
+
+                    Item { Layout.fillWidth: true }
+                }
+
                 AssistantResponses {
                     id: assistant_responses_component
                     // Derived from the already-parsed translations_data below
                     // (single parse of translations_json per change).
-                    title: {
-                        let translations = assistant_responses_component.translations_data;
-                        if (translations && translations.length > 0) {
-                            // The first translation determines whether the run was with or without vocab.
-                            return translations[0].with_vocab ? "AI Translations w/ Vocab:" : "AI Translations w/o Vocab:";
-                        }
-                        return "AI Translations:";
-                    }
+                    // The header/title is rendered by the RowLayout above (with
+                    // the collapse button), so no internal title here.
+                    title: ""
+                    visible: !ai_translations_collapse_btn.checked
                     is_dark: root.is_dark
                     Layout.fillWidth: true
                     translations_data: {
