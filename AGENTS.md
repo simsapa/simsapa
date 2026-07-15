@@ -224,8 +224,9 @@ Notable feature docs:
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
-  **resolution chain** (user cache row → built-in row → set phrase → AI row → AI
-  request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
+  **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
+  → set phrase (`built-in-phrase-match`) → `ai-selected` row → AI request →
+  unresolved) and the **uid two-lane gotcha** (gloss options carry the
   numeric `12463/dpd` headword uid, curated data stores the lemma form
   `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The **cache key** is
   `(word, context_hash)` over the *existing* ±50-char gloss context window
@@ -233,13 +234,14 @@ Notable feature docs:
   covers why each step is there (verse line-wrap `\s+` collapse, ṁ/ṃ, the
   **iti-sandhi quote-variant** rejoin `ṁ ti` → `nti` so smart/straight/bare
   editions share one hash) and the **annotation stripping** that runs before word
-  extraction. Tables `gloss_word_context_cache` (origins `ai` / `user` /
-  `built-in`, precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
+  extraction. Tables `gloss_word_context_cache` (origins `ai-selected` /
+  `user-selected` / `built-in-human-checked` / `built-in-agent-checked`,
+  precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
   settings/dialog + the two editable system prompts, the request format,
   **batching/pacing constants** (char limit, ≥ 6.5 s sequential spacing, 180 s
   timeout, client-side cancel), the three load-bearing rules when applying
   selections (ComboBox `onActivated` not `onCurrentIndexChanged`; a manual change
-  auto-saves a `user` row; late AI responses must not clobber a fresh user
+  auto-saves a `user-selected` row; late AI responses must not clobber a fresh user
   choice), the **JSON session export / Open JSON** round-trip and its
   strictly-higher-precedence import, **DOCX export** (hand-built OOXML around an
   embedded template), and the **built-in data-bank pipeline**

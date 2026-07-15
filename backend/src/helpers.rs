@@ -2861,7 +2861,8 @@ pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_
 /// cache. An entry whose `selected_uid` matches none of the word's lookup
 /// results (dictionary data changed) is ignored, falling through to the next
 /// level. Returns the matching option index and the resolution origin
-/// (`"user"` / `"phrase"` / `"built-in"` / `"ai"`).
+/// (`"user-selected"` / `"built-in-phrase-match"` / `"built-in-human-checked"`
+/// / `"ai-selected"`).
 pub fn resolve_gloss_word_selection(
     word_key: &str,
     normalized_context: &str,
@@ -2876,7 +2877,7 @@ pub fn resolve_gloss_word_selection(
         .get(&(word_key.to_string(), context_hash.to_string()));
 
     if let Some((uid, origin)) = cached {
-        if origin == "user" {
+        if origin == "user-selected" {
             if let Some(idx) = option_index(uid) {
                 return Some((idx as i32, origin.clone()));
             }
@@ -2886,13 +2887,13 @@ pub fn resolve_gloss_word_selection(
     for (phrase, word, uid) in &data.phrases {
         if word == word_key && gloss_phrase_occurs(phrase, normalized_context) {
             if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, "phrase".to_string()));
+                return Some((idx as i32, "built-in-phrase-match".to_string()));
             }
         }
     }
 
     if let Some((uid, origin)) = cached {
-        if origin == "built-in" || origin == "ai" {
+        if origin == "built-in-human-checked" || origin == "ai-selected" {
             if let Some(idx) = option_index(uid) {
                 return Some((idx as i32, origin.clone()));
             }
@@ -3036,7 +3037,10 @@ pub fn import_gloss_word_cache_entries(
     let mut skipped = 0;
     for e in entries {
         let word_key = gloss_cache_word_key(&e.word);
-        let valid_origin = matches!(e.origin.as_str(), "ai" | "user" | "built-in");
+        let valid_origin = matches!(
+            e.origin.as_str(),
+            "ai-selected" | "user-selected" | "built-in-human-checked"
+        );
         if word_key.is_empty()
             || e.context_hash.is_empty()
             || e.selected_uid.is_empty()
@@ -4418,13 +4422,13 @@ mod tests {
             "session": {"text": "Ekaṁ samayaṁ", "paragraphs": []},
             "word_cache": [
                 {"word": "ārāme", "context_hash": "h1", "context_snippet": "c",
-                 "selected_uid": "ārāma-4/dpd", "origin": "user"}
+                 "selected_uid": "ārāma-4/dpd", "origin": "user-selected"}
             ]
         }"#;
         let (session, word_cache) = parse_gloss_session_export(valid).unwrap();
         assert_eq!(session.get("text").unwrap().as_str().unwrap(), "Ekaṁ samayaṁ");
         assert_eq!(word_cache.len(), 1);
-        assert_eq!(word_cache[0].origin, "user");
+        assert_eq!(word_cache[0].origin, "user-selected");
 
         // Missing word_cache is tolerated (empty).
         let no_cache = r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}}"#;
@@ -4499,29 +4503,29 @@ mod tests {
 
         // user cache beats a phrase match pointing elsewhere.
         let data = resolution_data_with(
-            &[("ārāme", "h1", "ārāma-1/dpd", "user")],
+            &[("ārāme", "h1", "ārāma-1/dpd", "user-selected")],
             &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
         );
         assert_eq!(
             resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
-            Some((0, "user".to_string())),
+            Some((0, "user-selected".to_string())),
         );
 
         // phrase beats built-in and ai cache rows.
-        for origin in ["built-in", "ai"] {
+        for origin in ["built-in-human-checked", "ai-selected"] {
             let data = resolution_data_with(
                 &[("ārāme", "h1", "ārāma-1/dpd", origin)],
                 &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
             );
             assert_eq!(
                 resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
-                Some((1, "phrase".to_string())),
+                Some((1, "built-in-phrase-match".to_string())),
                 "phrase must beat a {} cache row", origin,
             );
         }
 
         // Without a phrase match, built-in and ai rows resolve with their origin.
-        for origin in ["built-in", "ai"] {
+        for origin in ["built-in-human-checked", "ai-selected"] {
             let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", origin)], &[]);
             assert_eq!(
                 resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
@@ -4540,7 +4544,7 @@ mod tests {
         let ctx = "jetavane anāthapiṇḍikassa ārāme";
 
         // A different context hash is a cache miss.
-        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user")], &[]);
+        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user-selected")], &[]);
         assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
 
         // A phrase rule only fires when the normalized phrase occurs in the
@@ -4551,17 +4555,17 @@ mod tests {
         // A stale uid (dictionary data changed) is ignored and resolution
         // falls through to the next precedence level.
         let data = resolution_data_with(
-            &[("ārāme", "h1", "gone-uid/dpd", "user")],
+            &[("ārāme", "h1", "gone-uid/dpd", "user-selected")],
             &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
         );
         assert_eq!(
             resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
-            Some((1, "phrase".to_string())),
+            Some((1, "built-in-phrase-match".to_string())),
             "stale user uid falls through to the phrase match",
         );
 
         // Stale uid everywhere → unresolved.
-        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai")], &[]);
+        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai-selected")], &[]);
         assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
     }
 

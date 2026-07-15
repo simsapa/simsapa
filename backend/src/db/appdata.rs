@@ -16,12 +16,13 @@ static COMMON_WORDS_JSON: &str = include_str!("../../../assets/common-words.json
 static GLOSS_PHRASE_SELECTIONS_JSON: &str = include_str!("../../../assets/gloss-phrase-selections.json");
 
 /// Precedence rank of a `gloss_word_context_cache.origin` value:
-/// user > built-in > ai. Unknown origins rank lowest.
+/// user-selected > built-in-human-checked > ai-selected. Unknown origins rank
+/// lowest.
 pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
     match origin {
-        "user" => 3,
-        "built-in" => 2,
-        "ai" => 1,
+        "user-selected" => 3,
+        "built-in-human-checked" => 2,
+        "ai-selected" => 1,
         _ => 0,
     }
 }
@@ -2218,14 +2219,14 @@ impl AppdataDbHandle {
         })
     }
 
-    /// Count of user-clearable cache rows (`ai` + `user` origins; `built-in`
-    /// rows are bootstrap-shipped and excluded).
+    /// Count of user-clearable cache rows (`ai-selected` + `user-selected`
+    /// origins; `built-in-*` rows are bootstrap-shipped and excluded).
     pub fn count_gloss_word_cache(&self) -> i64 {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
         let result = self.do_read(|db_conn| {
             gloss_word_context_cache
-                .filter(origin.eq_any(["ai", "user"]))
+                .filter(origin.eq_any(["ai-selected", "user-selected"]))
                 .count()
                 .get_result::<i64>(db_conn)
         });
@@ -2239,13 +2240,14 @@ impl AppdataDbHandle {
         }
     }
 
-    /// Bulk clear of the word-selection cache: deletes `ai` and `user` rows
-    /// only. `built-in` rows and the phrase table are untouched.
+    /// Bulk clear of the word-selection cache: deletes `ai-selected` and
+    /// `user-selected` rows only. `built-in-*` rows and the phrase table are
+    /// untouched.
     pub fn clear_gloss_word_cache(&self) -> Result<()> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
         self.do_write(|db_conn| {
-            diesel::delete(gloss_word_context_cache.filter(origin.eq_any(["ai", "user"])))
+            diesel::delete(gloss_word_context_cache.filter(origin.eq_any(["ai-selected", "user-selected"])))
                 .execute(db_conn)
                 .map(|_| ())
         })
@@ -2521,10 +2523,10 @@ mod gloss_word_selection_tests {
     #[test]
     fn upsert_and_get_round_trip() {
         let db = setup();
-        assert!(db.upsert_gloss_word_cache("ārāme", "hash1", "anāthapiṇḍikassa ārāme", "ārāma-4/dpd", "ai").unwrap());
+        assert!(db.upsert_gloss_word_cache("ārāme", "hash1", "anāthapiṇḍikassa ārāme", "ārāma-4/dpd", "ai-selected").unwrap());
         let row = db.get_gloss_word_cache("ārāme", "hash1").expect("row exists");
         assert_eq!(row.selected_uid, "ārāma-4/dpd");
-        assert_eq!(row.origin, "ai");
+        assert_eq!(row.origin, "ai-selected");
         // Different context hash for the same word is a miss.
         assert!(db.get_gloss_word_cache("ārāme", "hash2").is_none());
     }
@@ -2532,11 +2534,11 @@ mod gloss_word_selection_tests {
     #[test]
     fn ai_never_downgrades_user_or_built_in() {
         let db = setup();
-        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-user/dpd", "user").unwrap();
-        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-builtin/dpd", "built-in").unwrap();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap();
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-builtin/dpd", "built-in-human-checked").unwrap();
 
-        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-ai/dpd", "ai").unwrap());
-        assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai").unwrap());
+        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
 
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-builtin/dpd");
@@ -2545,24 +2547,24 @@ mod gloss_word_selection_tests {
     #[test]
     fn ai_refreshes_ai_and_user_overwrites_anything() {
         let db = setup();
-        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-a/dpd", "ai").unwrap();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-a/dpd", "ai-selected").unwrap();
         // A fresh AI response updates an existing ai row.
-        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-b/dpd", "ai").unwrap());
+        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-b/dpd", "ai-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-b/dpd");
 
         // user overwrites ai...
-        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-c/dpd", "user").unwrap());
+        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-c/dpd", "user-selected").unwrap());
         let row = db.get_gloss_word_cache("w1", "h1").unwrap();
         assert_eq!(row.selected_uid, "uid-c/dpd");
-        assert_eq!(row.origin, "user");
+        assert_eq!(row.origin, "user-selected");
 
         // ...and built-in.
-        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in").unwrap();
-        assert!(db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-u/dpd", "user").unwrap());
-        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user");
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
+        assert!(db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
 
         // built-in never overwrites user.
-        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in").unwrap());
+        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in-human-checked").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-c/dpd");
     }
 
@@ -2572,37 +2574,37 @@ mod gloss_word_selection_tests {
         let db = setup();
 
         // No local row: any valid origin inserts.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai").unwrap());
-        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai");
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai-selected").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai-selected");
 
         // Imported ai vs local ai: equal precedence is a no-op (no churn).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-imported/dpd");
 
         // Imported user beats local ai.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user").unwrap());
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap());
         let row = db.get_gloss_word_cache("w1", "h1").unwrap();
-        assert_eq!(row.origin, "user");
+        assert_eq!(row.origin, "user-selected");
         assert_eq!(row.selected_uid, "uid-user/dpd");
 
         // Local user row survives an imported user row (equal precedence).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
 
         // built-in untouched by imported ai; overwritten by imported user.
-        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in").unwrap();
-        assert!(!db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai").unwrap());
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
+        assert!(!db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
-        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user").unwrap());
-        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user");
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
     }
 
     #[test]
     fn count_and_clear_exclude_built_in() {
         let db = setup();
-        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai").unwrap();
-        db.upsert_gloss_word_cache("w2", "h2", "ctx", "u2/dpd", "user").unwrap();
-        db.upsert_gloss_word_cache("w3", "h3", "ctx", "u3/dpd", "built-in").unwrap();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai-selected").unwrap();
+        db.upsert_gloss_word_cache("w2", "h2", "ctx", "u2/dpd", "user-selected").unwrap();
+        db.upsert_gloss_word_cache("w3", "h3", "ctx", "u3/dpd", "built-in-human-checked").unwrap();
 
         assert_eq!(db.count_gloss_word_cache(), 2);
 
@@ -2617,8 +2619,8 @@ mod gloss_word_selection_tests {
     #[test]
     fn delete_removes_single_row() {
         let db = setup();
-        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "user").unwrap();
-        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u1/dpd", "user").unwrap();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "user-selected").unwrap();
+        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u1/dpd", "user-selected").unwrap();
         db.delete_gloss_word_cache("w1", "h1").unwrap();
         assert!(db.get_gloss_word_cache("w1", "h1").is_none());
         assert!(db.get_gloss_word_cache("w1", "h2").is_some());
@@ -2627,9 +2629,9 @@ mod gloss_word_selection_tests {
     #[test]
     fn batch_fetch_returns_only_requested_pairs() {
         let db = setup();
-        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai").unwrap();
-        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u2/dpd", "ai").unwrap();
-        db.upsert_gloss_word_cache("w2", "h3", "ctx", "u3/dpd", "ai").unwrap();
+        db.upsert_gloss_word_cache("w1", "h1", "ctx", "u1/dpd", "ai-selected").unwrap();
+        db.upsert_gloss_word_cache("w1", "h2", "ctx", "u2/dpd", "ai-selected").unwrap();
+        db.upsert_gloss_word_cache("w2", "h3", "ctx", "u3/dpd", "ai-selected").unwrap();
         // w2+h2 exists only as a cross-product combination, not as a row pair
         // we request — and w1+h2 is a real row we do not request.
         let rows = db.get_gloss_word_cache_batch(&[

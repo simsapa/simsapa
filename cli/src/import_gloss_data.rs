@@ -2,9 +2,10 @@
 // "Built-in data bank"): scans gloss session JSON exports (the
 // `bootstrap-assets-resources/gloss-data-cache/` data bank by default),
 // collects the confirmed word-selection entries (`word_cache` rows with
-// origin `user` or `built-in`), validates every `selected_uid` against the
-// dictionaries / DPD databases, and imports them as `origin = "built-in"`
-// rows into the given appdata database. Prints a coverage summary: how many
+// origin `user-selected` or `built-in-human-checked`), validates every
+// `selected_uid` against the dictionaries / DPD databases, and imports them as
+// `origin = "built-in-human-checked"` rows into the given appdata database.
+// Prints a coverage summary: how many
 // of the scanned sessions' ambiguous occurrences resolve without an AI
 // request against the target database.
 //
@@ -86,8 +87,9 @@ fn selected_uid_is_valid(uid: &str) -> bool {
 
 /// Count the ambiguous occurrences of the scanned sessions and how many of
 /// them resolve against the target appdata DB without an AI request
-/// (`resolution` of `user` / `phrase` / `built-in`). Returns per-origin
-/// counts keyed by resolution name, plus the ambiguous total.
+/// (`resolution` of `user-selected` / `built-in-phrase-match` /
+/// `built-in-human-checked`). Returns per-origin counts keyed by resolution
+/// name, plus the ambiguous total.
 fn coverage_summary(
     appdata: &AppdataDbHandle,
     sessions: &[ScannedSession],
@@ -121,7 +123,7 @@ fn coverage_summary(
             }
             ambiguous_total += 1;
             if let Some(res) = w.get("resolution").and_then(|v| v.as_str()) {
-                if matches!(res, "user" | "phrase" | "built-in") {
+                if matches!(res, "user-selected" | "built-in-phrase-match" | "built-in-human-checked") {
                     *resolved.entry(res.to_string()).or_insert(0) += 1;
                 }
             }
@@ -225,7 +227,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
 
         let mut file_confirmed: usize = 0;
         for entry in word_cache {
-            if !matches!(entry.origin.as_str(), "user" | "built-in") {
+            if !matches!(entry.origin.as_str(), "user-selected" | "built-in-human-checked") {
                 continue;
             }
             let word_key = gloss_cache_word_key(&entry.word);
@@ -275,7 +277,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         }
     }
 
-    // Import into the target appdata DB as built-in rows.
+    // Import into the target appdata DB as built-in-human-checked rows.
     let url = appdata_db_path.to_string_lossy().to_string();
     let appdata = DatabaseHandle::new(&url)
         .map_err(|e| format!("Cannot open appdata database {}: {}", url, e))?;
@@ -289,7 +291,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
             &entry.context_hash,
             &entry.context_snippet,
             &entry.selected_uid,
-            "built-in",
+            "built-in-human-checked",
         ) {
             Ok(true) => imported += 1,
             Ok(false) => already_present += 1,

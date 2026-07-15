@@ -599,7 +599,8 @@ pub struct GlossWordContextCache {
     pub context_hash: String,
     pub context_snippet: String,
     pub selected_uid: String,
-    /// "ai", "user" or "built-in"
+    /// "ai-selected", "user-selected", "built-in-human-checked" or
+    /// "built-in-agent-checked"
     pub origin: String,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,

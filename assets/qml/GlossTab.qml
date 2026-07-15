@@ -347,8 +347,8 @@ Item {
     // ambiguous words only (results.length > 1), summaries HTML-stripped and
     // truncated to 200 chars. Words already resolved from the cache or the
     // phrase table (resolution set by the Rust gloss processing) are excluded;
-    // the forced pass re-includes "ai"-resolved words but never
-    // "user"/"phrase"/"built-in".
+    // the forced pass re-includes "ai-selected"-resolved words but never
+    // "user-selected"/"built-in-phrase-match"/"built-in-human-checked".
     function build_word_selection_items(paragraph_indexes, forced) {
         let items = [];
         for (let pi of paragraph_indexes) {
@@ -366,7 +366,7 @@ Item {
                 let w = words_data[wi];
                 if (!w || !w.results || w.results.length <= 1) continue;
                 let resolution = w.resolution || null;
-                if (resolution !== null && !(forced && resolution === "ai")) continue;
+                if (resolution !== null && !(forced && resolution === "ai-selected")) continue;
                 let options = [];
                 for (let r of w.results) {
                     options.push({
@@ -403,7 +403,7 @@ Item {
     // Entry point: run AI word selection for the given paragraphs. Batched
     // (one request) when the combined prompt is under the char limit, else
     // sequential per-paragraph requests spaced by the pacing Timer. forced =
-    // re-ask for "ai"-resolved words (per-paragraph "Update Selections").
+    // re-ask for "ai-selected"-resolved words (per-paragraph "Update Selections").
     function start_word_selection(paragraph_indexes, forced) {
         if (!root.is_word_selection_enabled()) return;
 
@@ -1550,18 +1550,18 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         words_data[word_idx].stem = word_item.results[selected_idx].word;
 
         // A manual ComboBox choice is the user's decision: persist it as a
-        // "user" cache row (overwrites any ai/built-in row for this context)
-        // so it survives re-glossing and session restore, and is never
-        // re-asked from the AI. Only ambiguous words are cached; the caller
-        // must be a real user interaction (ComboBox onActivated).
+        // "user-selected" cache row (overwrites any ai-selected/built-in-* row
+        // for this context) so it survives re-glossing and session restore, and
+        // is never re-asked from the AI. Only ambiguous words are cached; the
+        // caller must be a real user interaction (ComboBox onActivated).
         if (word_item.results.length > 1) {
             let saved = SuttaBridge.save_gloss_word_cache(
                 word_item.original_word,
                 word_item.example_sentence || "",
                 word_item.results[selected_idx].uid,
-                "user");
+                "user-selected");
             if (saved) {
-                words_data[word_idx].resolution = "user";
+                words_data[word_idx].resolution = "user-selected";
             } else {
                 logger.error("update_word_selection: failed to save user selection for '" + word_item.original_word + "'");
             }
@@ -1600,10 +1600,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (!w || !w.results) continue;
             // The word may have been resolved while the request was in
             // flight (e.g. the user corrected the ComboBox, which now saves
-            // a "user" row): never let a late AI response override anything
-            // but an earlier AI resolution.
+            // a "user-selected" row): never let a late AI response override
+            // anything but an earlier AI resolution.
             let resolution = w.resolution || null;
-            if (resolution !== null && resolution !== "ai") continue;
+            if (resolution !== null && resolution !== "ai-selected") continue;
             let opt_idx = -1;
             for (var i = 0; i < w.results.length; i++) {
                 if (w.results[i].uid === sel.uid) {
@@ -1614,17 +1614,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (opt_idx < 0) continue;
             words_data[wi].selected_index = opt_idx;
             words_data[wi].stem = w.results[opt_idx].word;
-            // Persist the AI choice (origin "ai" never downgrades a "user" or
-            // "built-in" row); mark the word ai-resolved only when the row was
-            // actually written, so the robot icon / checked state stays true
-            // to the cache table.
+            // Persist the AI choice (origin "ai-selected" never downgrades a
+            // "user-selected" or "built-in-*" row); mark the word ai-resolved
+            // only when the row was actually written, so the shield / checked
+            // state stays true to the cache table.
             let saved = SuttaBridge.save_gloss_word_cache(
                 w.original_word,
                 w.example_sentence || "",
                 sel.uid,
-                "ai");
+                "ai-selected");
             if (saved) {
-                words_data[wi].resolution = "ai";
+                words_data[wi].resolution = "ai-selected";
             }
             applied += 1;
         }
@@ -2883,8 +2883,8 @@ ${main_text}
                                         font.pointSize: root.vocab_font_point_size
                                         currentIndex: wordItem.modelData.selected_index || 0
                                         // onActivated fires only on real user interaction —
-                                        // update_word_selection() now writes a "user" cache
-                                        // row, so programmatic currentIndex churn (delegate
+                                        // update_word_selection() now writes a "user-selected"
+                                        // cache row, so programmatic currentIndex churn (delegate
                                         // rebuilds) must never reach it.
                                         onActivated: (index) => {
                                             if (index !== wordItem.modelData.selected_index) {
@@ -2928,18 +2928,19 @@ ${main_text}
                                         sourceSize.height: word_select.height
                                         fillMode: Image.PreserveAspectFit
                                         visible: word_select.visible &&
-                                                 (wordItem.modelData.resolution || null) === "ai"
+                                                 (wordItem.modelData.resolution || null) === "ai-selected"
                                     }
 
                                     // Saved toggle: checked = a cache row exists for this
-                                    // (word, context) — origin "user", "ai" or "built-in".
-                                    // Phrase matches have no cache row and show unchecked.
+                                    // (word, context) — origin "user-selected", "ai-selected"
+                                    // or "built-in-human-checked". Phrase matches have no cache
+                                    // row and show unchecked.
                                     Button {
                                         id: saved_toggle
                                         visible: word_select.visible
                                         property bool is_saved: {
                                             let r = wordItem.modelData.resolution || null;
-                                            return r === "user" || r === "ai" || r === "built-in";
+                                            return r === "user-selected" || r === "ai-selected" || r === "built-in-human-checked";
                                         }
                                         icon.source: is_saved ? "icons/32x32/fa_square-check-solid.png"
                                                               : "icons/32x32/fa_square-check-regular.png"
@@ -2966,9 +2967,9 @@ ${main_text}
                                                     wordItem.modelData.original_word,
                                                     wordItem.modelData.example_sentence || "",
                                                     uid,
-                                                    "user");
+                                                    "user-selected");
                                                 if (ok) {
-                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user");
+                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user-selected");
                                                 } else {
                                                     logger.error("Failed to save word selection for '" + wordItem.modelData.original_word + "'");
                                                 }
@@ -3028,8 +3029,9 @@ ${main_text}
     }
 
     // Confirm removing a saved word-selection cache row (unchecking the saved
-    // toggle) — covers "user", "ai" and "built-in" rows alike. Cancel keeps
-    // the row and the checked state.
+    // toggle) — covers "user-selected", "ai-selected" and
+    // "built-in-human-checked" rows alike. Cancel keeps the row and the checked
+    // state.
     Dialog {
         id: unsave_word_dialog
         title: "Remove Saved Selection"

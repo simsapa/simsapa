@@ -38,14 +38,15 @@ user cache  >  set phrase  >  built-in cache  >  ai cache  >  fresh AI request
 - **set phrase** — a curated rule ("in `anāthapiṇḍikassa ārāme`, `ārāme` is
   always `ārāma-4/dpd`"). Phrase matches write **no** cache row; they are
   re-derived on every gloss.
-- **built-in cache** — a `built-in`-origin row shipped in the bootstrapped
-  appdata DB (§7).
-- **ai cache** — an `ai`-origin row written by an earlier AI response.
+- **built-in cache** — a `built-in-human-checked`-origin row shipped in the
+  bootstrapped appdata DB (§7).
+- **ai cache** — an `ai-selected`-origin row written by an earlier AI response.
 - otherwise the word is **eligible** and goes into an AI request.
 
 The resolved index is written to `ProcessedWord.selected_index` and the origin to
-`ProcessedWord.resolution` (`"user"` / `"phrase"` / `"built-in"` / `"ai"`, or
-`None` when unresolved). Both fields are `#[serde(default)]` — pre-feature
+`ProcessedWord.resolution` (`"user-selected"` / `"built-in-phrase-match"` /
+`"built-in-human-checked"` / `"ai-selected"`, or `None` when unresolved). Both
+fields are `#[serde(default)]` — pre-feature
 `gloss_prompts_history` sessions have neither and must still deserialize.
 
 An entry whose `selected_uid` matches none of the word's current lookup options
@@ -75,7 +76,7 @@ Two appdata tables (migration
 | `context_hash` | SHA-256 hex of the normalized context window |
 | `context_snippet` | the window text, for display/debugging |
 | `selected_uid` | the chosen option's uid |
-| `origin` | `"ai"` \| `"user"` \| `"built-in"` |
+| `origin` | `"ai-selected"` \| `"user-selected"` \| `"built-in-human-checked"` \| `"built-in-agent-checked"` |
 | | UNIQUE `(word, context_hash)` |
 
 | `gloss_phrase_selections` | |
@@ -176,8 +177,9 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
 the Fallback sequence has no enabled model, and a
 **Clear Word-Selection Cache...** button (confirm dialog shows the row count).
-The clear deletes `ai` and `user` rows only — `built-in` rows and the phrase
-table survive, since they are shipped data, not user state. The feature is active
+The clear deletes `ai-selected` and `user-selected` rows only — `built-in-*` rows
+and the phrase table survive, since they are shipped data, not user state. The
+feature is active
 when the checkbox is on **and** the sequence has an enabled model
 (`GlossTab.is_word_selection_enabled()`); an empty sequence turns it off with no
 error.
@@ -269,7 +271,8 @@ still sent as one request (no intra-paragraph splitting).
 Triggers: automatically after **Update Gloss** (that paragraph) and after **Update
 All Glosses** (all glossed paragraphs), when a model is enabled; and manually via
 the per-paragraph **Update Selections** button, which forces a fresh pass —
-re-asking `ai`-resolved words but never `user`- or phrase-resolved ones.
+re-asking `ai-selected`-resolved words but never `user-selected`- or
+phrase-resolved ones.
 
 ### Status UI and cancelling
 
@@ -295,21 +298,22 @@ Each ambiguous word row is `[ComboBox] [robot icon] [saved toggle] [summary]
 [dict button]`:
 
 - **saved toggle checked** = a cache row exists for this (word, context) — any
-  origin, including `built-in`. A *phrase* match has no cache row and shows
-  **unchecked**; checking it saves a `user` row on top as usual.
-- **robot icon** — only for `ai`-origin rows.
-- **checking** writes a `user` row; **unchecking** asks for confirmation and
-  deletes the row.
+  origin, including `built-in-human-checked`. A *phrase* match has no cache row
+  and shows **unchecked**; checking it saves a `user-selected` row on top as usual.
+- **robot icon** — only for `ai-selected`-origin rows.
+- **checking** writes a `user-selected` row; **unchecking** asks for confirmation
+  and deletes the row.
 
 Three behaviours that are easy to get wrong and are deliberate:
 
-- **A manual ComboBox change is a user decision and is auto-saved** as a `user`
-  row (`resolution: "user"`, toggle on). Without this, the stale `ai` row would
-  win on the next gloss and a session restore would revert the correction.
+- **A manual ComboBox change is a user decision and is auto-saved** as a
+  `user-selected` row (`resolution: "user-selected"`, toggle on). Without this,
+  the stale `ai-selected` row would win on the next gloss and a session restore
+  would revert the correction.
 - The handler is `onActivated`, **not** `onCurrentIndexChanged` — the delegate
   rebuilds churn `currentIndex` programmatically, and that must never write cache
   rows.
-- A late AI response **skips** words whose `resolution` became non-`ai` while the
+- A late AI response **skips** words whose `resolution` became non-`ai-selected` while the
   request was in flight, so it cannot clobber a fresh user choice in the
   in-memory `words_data` (the DB upsert already refuses the downgrade — this is
   the QML-side half of the same rule).
@@ -319,9 +323,10 @@ state **from the cache table**, not from the serialized session, via
 `SuttaBridge.annotate_gloss_words_json()`.
 
 Write precedence is enforced in the DB layer by `gloss_cache_origin_rank()`
-(`user` 3 > `built-in` 2 > `ai` 1): `upsert_gloss_word_cache()` refuses a
-*lower*-ranked write (an `ai` response never downgrades a `user` or `built-in`
-row) but allows an equal one (a re-save refreshes the row).
+(`user-selected` 3 > `built-in-human-checked` 2 > `ai-selected` 1):
+`upsert_gloss_word_cache()` refuses a *lower*-ranked write (an `ai-selected`
+response never downgrades a `user-selected` or `built-in-human-checked` row) but
+allows an equal one (a re-save refreshes the row).
 
 ## 6. Exports
 
@@ -343,7 +348,7 @@ format:
                   example_sentence, context_hash), translations, tab options */ },
   "word_cache": [
     { "word": "ārāme", "context_hash": "…", "context_snippet": "…",
-      "selected_uid": "ārāma-4/dpd", "origin": "user" }
+      "selected_uid": "ārāma-4/dpd", "origin": "user-selected" }
   ]
 }
 ```
@@ -365,8 +370,9 @@ nothing. Android `content://` inputs go through the existing
 The cache import (`import_gloss_word_cache_row`) uses a **strictly-higher**
 precedence rule — *not* the same rule as a local upsert: an imported row is
 written only if it outranks the local row for that key. Equal precedence is a
-no-op, so your own `user` rows are never overwritten by someone else's `user` row,
-and an imported `ai` row never churns a local `ai` row. The import runs **before**
+no-op, so your own `user-selected` rows are never overwritten by someone else's
+`user-selected` row, and an imported `ai-selected` row never churns a local
+`ai-selected` row. The import runs **before**
 `load_session()`, so the annotate pass re-derives the toggles from the freshly
 imported rows.
 
@@ -451,10 +457,11 @@ Gotchas found while building it:
 
 **`import-gloss-data <appdata.sqlite3> [dir-or-files]`**
 (`cli/src/import_gloss_data.rs`, default input `gloss-data-cache/`) scans the
-committed session exports, takes the **confirmed** entries (origins `user` and
-`built-in`), validates every `selected_uid` against the dictionaries DB
-(`AppData::resolve_word_uid`), dedupes by (word, context_hash) and writes them as
-`origin = "built-in"`. It also prints a **phrase-candidates report** (recurring
+committed session exports, takes the **confirmed** entries (origins
+`user-selected` and `built-in-human-checked`), validates every `selected_uid`
+against the dictionaries DB (`AppData::resolve_word_uid`), dedupes by
+(word, context_hash) and writes them as `origin = "built-in-human-checked"`. It
+also prints a **phrase-candidates report** (recurring
 2–4-word n-grams containing a confirmed word, one consistent uid, ≥ 3 distinct
 contexts) as ready-to-merge `assets/gloss-phrase-selections.json` lines — one
 phrase rule replaces many context rows *and* covers unseen suttas — and a
