@@ -87,11 +87,21 @@ Dialog {
             text: "When a gloss finds multiple dictionary options for a word, an AI model is asked to pick the correct one based on the sentence context. The request uses the Fallback sequence in Settings > AI Models."
         }
 
-        CheckBox {
-            id: enabled_check
-            text: "Use AI word selection"
-            checked: root.selection_enabled
-            onToggled: root.persist_selection(enabled_check.checked)
+        RowLayout {
+            spacing: 8
+            Image {
+                source: "icons/32x32/famicons--shield-half-outline.png"
+                sourceSize.width: 24
+                sourceSize.height: 24
+                fillMode: Image.PreserveAspectFit
+                Layout.alignment: Qt.AlignVCenter
+            }
+            CheckBox {
+                id: enabled_check
+                text: "Use AI word selection"
+                checked: root.selection_enabled
+                onToggled: root.persist_selection(enabled_check.checked)
+            }
         }
 
         Label {
@@ -100,6 +110,67 @@ Dialog {
             visible: enabled_check.checked && !root.has_enabled_sequence_model()
             color: "#E07B39"
             text: "No models are enabled in the Fallback sequence, so no requests can be sent."
+        }
+
+        // Shield legend: this dialog is where users learn the confidence
+        // system. The vocabulary list shows one shield per ambiguous word;
+        // clicking it cycles the state.
+        GroupBox {
+            Layout.fillWidth: true
+            title: "Selection confidence — the shield icon"
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 10
+
+                GridLayout {
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 8
+
+                    Image {
+                        source: "icons/32x32/famicons--shield-outline.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "Not checked — a plain dictionary lookup with no saved selection."
+                    }
+
+                    Image {
+                        source: "icons/32x32/famicons--shield-half-outline.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "AI-checked — a machine (runtime AI or the built-in agent pipeline) picked this sense."
+                    }
+
+                    Image {
+                        source: "icons/32x32/famicons--shield.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "Human-checked — a person confirmed this sense."
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Click a word's shield to cycle its state: Not checked → AI-checked → Human-checked, then wrapping back to Not checked. Wrapping from Human-checked asks for confirmation before the saved selection is removed."
+                }
+            }
         }
 
         Button {
