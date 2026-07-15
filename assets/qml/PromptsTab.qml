@@ -78,7 +78,7 @@ Item {
 
         // Engine progress ("Trying X…", "Rate limited by Y…", retry-round
         // notes) surfaced in the waiting response entry.
-        function onSequentialProgress(context_json: string, model_name: string, status: string) {
+        function onSequentialProgress(context_json: string, model_name: string, status: string, kind: string) {
             let ctx;
             try {
                 ctx = JSON.parse(context_json);
@@ -87,7 +87,7 @@ Item {
                 return;
             }
             if (ctx.sender_message_idx === undefined) return;
-            coordinator.handle_progress({ assistant_message_idx: ctx.sender_message_idx + 1 }, ctx.request_id, model_name, status);
+            coordinator.handle_progress({ assistant_message_idx: ctx.sender_message_idx + 1 }, ctx.request_id, model_name, status, kind);
         }
     }
 
@@ -317,6 +317,11 @@ Item {
         // The entry is identified by its index in the entry list; id
         // generation and bounds checking live in the coordinator.
         coordinator.resend({ assistant_message_idx: message_idx }, entry_idx, root.prompts_request_mode);
+    }
+
+    // User clicked Cancel on a still-waiting response entry.
+    function cancel_response_request(message_idx, entry_idx) {
+        coordinator.cancel({ assistant_message_idx: message_idx }, entry_idx);
     }
 
     function update_tab_selection(message_idx, tab_index) {
@@ -1257,6 +1262,10 @@ Item {
 
                                 onRetryRequest: function(entry_idx) {
                                     root.resend_response_request(message_item.index, entry_idx);
+                                }
+
+                                onCancelRequest: function(entry_idx) {
+                                    root.cancel_response_request(message_item.index, entry_idx);
                                 }
 
                                 onTabSelectionChanged: function(tab_index, model_name) {

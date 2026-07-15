@@ -232,12 +232,18 @@ it is also included in the `context_json` of `sequentialProgress`:
 - `sequential_prompt_request_with_messages(request_id, sender_message_idx, messages_json)` — Prompts chat
 - `cancel_sequential_requests()` — instance-wide (generation counter)
 - `cancel_request(request_id)` — per-request (cancelled-id set)
-- signal `sequentialProgress(context_json, model_name, status)` — "Request sent to
-  X…", "Rate limited by X… Retrying in 10 s (round 1 of 5)…". Final results come
-  through the response signals (`promptResponse` / `promptResponseForMessages`),
-  which carry `request_id` and `model_name`. A messages-JSON parse failure emits
-  an `{"ai_error": …}` envelope with the `request_id` instead of returning
-  silently, so an entry can never stay `waiting` forever.
+- signal `sequentialProgress(context_json, model_name, status, kind)` — "Request
+  sent to X…", "Rate limited by X… Retrying in 10 s (round 1 of 5)…". `kind` is a
+  machine-readable tag (`"trying"` | `"failed"` | `"retry"`) emitted alongside the
+  human-readable `status` (from `progress_display` in `prompt_manager.rs`), so QML
+  keys on it instead of parsing the display text — used to latch the entry's
+  `continuing` flag when an attempt fails and the engine continues to the next
+  fallback model or an auto-retry round (see the Cancel button below). Final
+  results come through the response signals (`promptResponse` /
+  `promptResponseForMessages`), which carry `request_id` and `model_name`. A
+  messages-JSON parse failure emits an `{"ai_error": …}` envelope with the
+  `request_id` instead of returning silently, so an entry can never stay `waiting`
+  forever.
 
 The three *per-model* qinvokables (`prompt_request`, `word_selection_request`,
 `prompt_request_with_messages`) are still there and now route through
@@ -248,6 +254,28 @@ models** (the user asked for that model's answer).
 The **manual** per-model retry button is kept and is now a plain re-send
 (`resend_translation_request` / `resend_response_request`); all *automatic* retry
 machinery was removed from QML.
+
+**Cancel button on a continuing response (`AssistantResponses.qml`).** The initial
+in-flight request needs no Cancel — a success/error response arrives either way.
+But once an attempt fails and the engine keeps going — falling back to the next
+model or entering an auto-retry round — it can keep firing requests for minutes (5
+rounds × N models × up to 180 s + backoff sleeps), so each response tab shows a
+**Cancel** button *only after the engine has moved past the first attempt*. The
+coordinator latches a per-entry `continuing: true` flag in `handle_progress` when
+the progress `kind` is `"failed"` (fallback continuation) or `"retry"` (retry
+round) — never by string-matching the display text. A `"failed"` event is emitted
+only when the walk continues (a terminal, non-retryable failure returns the final
+error response instead of a `"failed"` progress), so the flag never latches on the
+first in-flight request. It persists for the rest of the waiting phase — including
+the in-flight fallback/retry attempts, not just the brief backoff windows — and is
+reset on `send_new` / `resend`. Cancel routes through
+`AssistantResponses.cancelRequest` →
+`cancel_translation_request` / `cancel_response_request` →
+`AiResponseCoordinator.cancel(ctx, entry_idx)`, which calls
+`pm.cancel_request(request_id)` (best-effort, stops paid calls) and moves the
+entry to a terminal `error` state carrying "Request cancelled." — so the busy UI
+clears, the manual retry affordance appears, and any late response for the
+cancelled id is dropped by the `request_id` fencing.
 
 ## 6. Feature integration
 

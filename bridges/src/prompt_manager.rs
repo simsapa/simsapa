@@ -67,7 +67,7 @@ pub mod qobject {
 
         #[qsignal]
         #[cxx_name = "sequentialProgress"]
-        fn sequential_progress(self: Pin<&mut PromptManager>, context_json: QString, model_name: QString, status: QString);
+        fn sequential_progress(self: Pin<&mut PromptManager>, context_json: QString, model_name: QString, status: QString, kind: QString);
 
         #[qsignal]
         #[cxx_name = "promptResponse"]
@@ -273,16 +273,19 @@ fn fallback_walk_settings() -> (Vec<ModelUsageEntry>, bool, bool) {
     (entries, app_settings.ai_auto_fallback, app_settings.ai_models_auto_retry)
 }
 
-/// Render a walk progress event as `(model_name, status)` for the
-/// `sequentialProgress` signal (FR-D6, FR-F1-style wording).
-fn progress_display(progress: &WalkProgress) -> (String, String) {
+/// Render a walk progress event as `(model_name, status, kind)` for the
+/// `sequentialProgress` signal (FR-D6, FR-F1-style wording). `kind` is a
+/// machine-readable tag ("trying" | "failed" | "retry") the QML side keys on,
+/// so it never has to parse the human-readable `status` text.
+fn progress_display(progress: &WalkProgress) -> (String, String, &'static str) {
     match progress {
         WalkProgress::Trying { provider, model } => (
             model.clone(),
             format!("Request sent to {} ({})…", provider, model),
+            "trying",
         ),
         WalkProgress::AttemptFailed { error } => {
-            (error.model.clone(), attempt_failed_text(error))
+            (error.model.clone(), attempt_failed_text(error), "failed")
         }
         WalkProgress::RetryRound { round, delay_secs, last_error } => {
             let reason = match last_error {
@@ -295,6 +298,7 @@ fn progress_display(progress: &WalkProgress) -> (String, String) {
                     "{} Retrying in {} s (round {} of {})…",
                     reason, delay_secs, round, MAX_RETRY_ROUNDS
                 ),
+                "retry",
             )
         }
     }
@@ -331,7 +335,7 @@ fn run_walk_blocking(
     auto_retry: bool,
     messages: &[ChatMessage],
     validate: Option<&dyn Fn(&str) -> Result<(), String>>,
-    on_progress: &mut dyn FnMut(String, String),
+    on_progress: &mut dyn FnMut(String, String, String),
 ) -> WalkOutcome {
     let rt = match Runtime::new() {
         Ok(rt) => rt,
@@ -364,8 +368,8 @@ fn run_walk_blocking(
             Ok(response)
         },
         &mut |p| {
-            let (model, status) = progress_display(&p);
-            on_progress(model, status);
+            let (model, status, kind) = progress_display(&p);
+            on_progress(model, status, kind.to_string());
         },
         &mut |secs| {
             for _ in 0..secs {
@@ -389,7 +393,7 @@ fn run_single_model_walk(
     model: &str,
     messages: &[ChatMessage],
     validate: Option<&dyn Fn(&str) -> Result<(), String>>,
-    on_progress: &mut dyn FnMut(String, String),
+    on_progress: &mut dyn FnMut(String, String, String),
 ) -> WalkOutcome {
     let auto_retry = {
         let app_data = get_app_data();
@@ -405,9 +409,9 @@ fn run_single_model_walk(
     // the model is fixed, so stamp it in — QML routes progress by model name
     // when several parallel branches share one context.
     let model_owned = model.to_string();
-    let mut wrapped = |m: String, s: String| {
+    let mut wrapped = |m: String, s: String, k: String| {
         let m = if m.is_empty() { model_owned.clone() } else { m };
-        on_progress(m, s);
+        on_progress(m, s, k);
     };
     run_walk_blocking(cancel, &entries, false, auto_retry, messages, validate, &mut wrapped)
 }
@@ -465,10 +469,10 @@ impl qobject::PromptManager {
                 "translation_idx": translation_idx,
             }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
@@ -543,10 +547,10 @@ impl qobject::PromptManager {
 
             let context_json = serde_json::json!({ "request_id": request_id }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
@@ -618,10 +622,10 @@ impl qobject::PromptManager {
                 "sender_message_idx": sender_message_idx,
             }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
@@ -674,10 +678,10 @@ impl qobject::PromptManager {
                 "translation_idx": translation_idx,
             }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
@@ -730,10 +734,10 @@ impl qobject::PromptManager {
 
             let context_json = serde_json::json!({ "request_id": request_id }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
@@ -792,10 +796,10 @@ impl qobject::PromptManager {
                 "sender_message_idx": sender_message_idx,
             }).to_string();
             let progress_thread = qt_thread.clone();
-            let mut on_progress = move |model: String, status: String| {
+            let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
                 let _ = progress_thread.queue(move |mut qo| {
-                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status));
+                    qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 

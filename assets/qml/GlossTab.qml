@@ -85,7 +85,7 @@ Item {
 
         // Engine progress ("Trying X…", "Rate limited by Y…", retry-round
         // notes) surfaced in the translation entry and Word Selection status.
-        function onSequentialProgress(context_json: string, model_name: string, status: string) {
+        function onSequentialProgress(context_json: string, model_name: string, status: string, kind: string) {
             let ctx;
             try {
                 ctx = JSON.parse(context_json);
@@ -101,7 +101,7 @@ Item {
             if (ctx.paragraph_idx !== undefined && ctx.translation_idx !== undefined) {
                 // AI-translation run: routed to the entry by the echoed
                 // request_id (stale events are discarded by the coordinator).
-                coordinator.handle_progress({ paragraph_idx: ctx.paragraph_idx }, ctx.request_id, model_name, status);
+                coordinator.handle_progress({ paragraph_idx: ctx.paragraph_idx }, ctx.request_id, model_name, status, kind);
             } else if (ctx.request_id !== undefined) {
                 // Word-selection run: show on every paragraph the request covers.
                 let covered = root.ws_request_paragraphs["" + ctx.request_id];
@@ -954,6 +954,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         // The entry is identified by its index in the entry list; id
         // generation and bounds checking live in the coordinator.
         coordinator.resend({ paragraph_idx: paragraph_idx }, entry_idx, root.ai_translate_mode);
+    }
+
+    // User clicked Cancel on a still-waiting translation response entry.
+    function cancel_translation_request(paragraph_idx, entry_idx) {
+        coordinator.cancel({ paragraph_idx: paragraph_idx }, entry_idx);
     }
 
     function handle_ai_translate_request(paragraph_index: int, with_vocab = true) {
@@ -2648,6 +2653,10 @@ ${main_text}
 
                     onRetryRequest: function(entry_idx) {
                         root.resend_translation_request(paragraph_item.index, entry_idx);
+                    }
+
+                    onCancelRequest: function(entry_idx) {
+                        root.cancel_translation_request(paragraph_item.index, entry_idx);
                     }
 
                     onTabSelectionChanged: function(tab_index, model_name) {

@@ -74,6 +74,7 @@ Item {
         return ai_error_utils.is_error(response_text);
     }
 
+
     // Whether the Fallback sequence has at least one enabled model (the
     // sequential engine has something to try). Tabs use this to keep their
     // "no models" dialog behavior.
@@ -141,6 +142,7 @@ Item {
                 status: "waiting",
                 response: "",
                 progress: "",
+                continuing: false,
                 request_id: root.generate_request_id(),
                 last_updated: Date.now(),
                 user_selected: true,
@@ -154,6 +156,7 @@ Item {
                     status: "waiting",
                     response: "",
                     progress: "",
+                    continuing: false,
                     request_id: root.generate_request_id(),
                     last_updated: Date.now(),
                     user_selected: entries.length === 0,
@@ -211,6 +214,7 @@ Item {
         entry.status = "waiting";
         entry.response = "";
         entry.progress = "";
+        entry.continuing = false;
         entry.last_updated = Date.now();
         // Parallel entries saved by previous versions carry no provider.
         if (mode !== "sequential_retry" && !entry.provider) {
@@ -221,6 +225,36 @@ Item {
 
         let payload = root.build_payload(ctx, entry);
         root.send_request(ctx, entry_idx, entry, payload);
+    }
+
+    // Cancel one still-waiting entry (user clicked the Cancel button on the
+    // response tab). The Rust walk is cancelled (best-effort cost saver) and
+    // the entry is moved to a terminal "error" state carrying a plain
+    // "Request cancelled." message, so it stops showing the busy/waiting UI
+    // and offers the retry affordance (retry appears on status === "error").
+    // A late response for the cancelled request_id is discarded by the
+    // stale-request fencing in handle_response / handle_progress.
+    function cancel(ctx, entry_idx) {
+        let entries = root.parse_entries(ctx);
+        if (entries === null) return;
+        if (entry_idx < 0 || entry_idx >= entries.length) {
+            logger.error("AiResponseCoordinator.cancel: entry_idx " + entry_idx + " out of bounds for " + entries.length + " entries");
+            return;
+        }
+
+        let entry = entries[entry_idx];
+        if (entry.status !== "waiting") return;
+
+        if (entry.request_id) {
+            root.pm.cancel_request(entry.request_id);
+        }
+
+        entry.status = "error";
+        entry.response = "Request cancelled.";
+        entry.progress = "";
+        entry.last_updated = Date.now();
+
+        root.write_entries(ctx, entries);
     }
 
     // --- Response / progress delivery (stale-request fencing) ---
@@ -257,8 +291,10 @@ Item {
     }
 
     // Engine progress ("Trying X…", "Rate limited by Y…", retry-round notes)
-    // surfaced in the waiting entry.
-    function handle_progress(ctx, request_id, model_name, status) {
+    // surfaced in the waiting entry. `kind` is the machine-readable tag emitted
+    // alongside the display text ("trying" | "failed" | "retry"; see
+    // progress_display in prompt_manager.rs).
+    function handle_progress(ctx, request_id, model_name, status, kind) {
         let entries = root.parse_entries(ctx);
         if (entries === null) return;
 
@@ -270,6 +306,17 @@ Item {
         if (entries[idx].status !== "waiting") return;
 
         entries[idx].progress = status;
+        // Once an attempt fails and the engine continues — to the next fallback
+        // model ("failed") or a retry round ("retry") — further requests are
+        // coming; latch the flag so the Cancel button stays available for the
+        // rest of the waiting phase (the in-flight fallback/retry attempts, not
+        // just the brief backoff windows). A "failed" event is only emitted
+        // when the walk continues (a terminal failure arrives as the final
+        // error response instead), so this never latches on the initial
+        // in-flight request.
+        if (kind === "failed" || kind === "retry") {
+            entries[idx].continuing = true;
+        }
         // Sequential entries start with no model name; the engine reports
         // which model it is trying.
         if (model_name !== "") {

@@ -41,5 +41,5 @@ Item {
 
     signal wordSelectionResponse(request_id: int, model_name: string, response: string);
 
-    signal sequentialProgress(context_json: string, model_name: string, status: string);
+    signal sequentialProgress(context_json: string, model_name: string, status: string, kind: string);
 }

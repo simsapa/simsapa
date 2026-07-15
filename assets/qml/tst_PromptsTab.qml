@@ -505,7 +505,7 @@ Item {
 
             // Stale progress is discarded too.
             var ctx = JSON.stringify({ request_id: "superseded_req", sender_message_idx: 0 });
-            prompts_tab.prompt_connections.onSequentialProgress(ctx, "test/model:free", "Trying test/model:free ...");
+            prompts_tab.prompt_connections.onSequentialProgress(ctx, "test/model:free", "Trying test/model:free ...", "trying");
             responses = JSON.parse(prompts_tab.messages_model.get(1).responses_json);
             compare(responses[0].progress, "");
 

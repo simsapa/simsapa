@@ -54,6 +54,7 @@ ColumnLayout {
             status: (item && item.status) ? item.status : "waiting",
             response: (item && item.response) ? item.response : "",
             progress: (item && item.progress) ? item.progress : "",
+            continuing: (item && item.continuing) ? true : false,
             request_id: (item && item.request_id) ? item.request_id : ""
         };
     }
@@ -76,6 +77,7 @@ ColumnLayout {
             if (row.status !== fresh.status) entries_model.setProperty(i, "status", fresh.status);
             if (row.response !== fresh.response) entries_model.setProperty(i, "response", fresh.response);
             if (row.progress !== fresh.progress) entries_model.setProperty(i, "progress", fresh.progress);
+            if (row.continuing !== fresh.continuing) entries_model.setProperty(i, "continuing", fresh.continuing);
             if (row.model_name !== fresh.model_name) entries_model.setProperty(i, "model_name", fresh.model_name);
         }
         for (var j = entries_model.count; j < data.length; j++) {
@@ -113,7 +115,7 @@ ColumnLayout {
         // update-current-item pass never runs — the content pane (bound to
         // currentIndex) shows, but no tab renders as active. Re-assert
         // checked on the current button; autoExclusive unchecks the rest.
-        var it = tab_bar.itemAt(idx);
+        var it = tab_bar.itemAt(idx) as ResponseTabButton;
         if (it && !it.checked) {
             it.checked = true;
         }
@@ -127,9 +129,16 @@ ColumnLayout {
     // Emitted only from a real user click on a tab button, never from
     // TabBar.currentIndex churn (rebuilds, programmatic sync).
     signal tabSelectionChanged(int tab_index, string model_name)
+    // The user clicked Cancel on a still-waiting response entry; the owning
+    // tab routes this to the coordinator's cancel().
+    signal cancelRequest(int entry_idx)
 
     function retry_request(entry_idx) {
         root.retryRequest(entry_idx)
+    }
+
+    function cancel_request(entry_idx) {
+        root.cancelRequest(entry_idx)
     }
 
     // A failed request arrives as an `{"ai_error": …}` envelope; see AiErrorUtils.qml.
@@ -319,6 +328,26 @@ ColumnLayout {
                             background: Rectangle {
                                 color: "transparent"
                             }
+                        }
+
+                        // Cancel button — shown only once the engine has moved
+                        // past the initial attempt and is continuing to fire
+                        // further requests (model.continuing: fallback to the
+                        // next model, or an auto-retry round). The initial
+                        // in-flight request needs no Cancel: a success/error
+                        // response will arrive regardless. This lets the user
+                        // stop the fallback/retry sequence instead of waiting
+                        // out every step. Overlaid at the top-right of the
+                        // progress text.
+                        Button {
+                            text: "Cancel"
+                            visible: response_content_item.model.status === "waiting"
+                                     && response_content_item.model.continuing === true
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            anchors.margins: 4
+                            z: 1
+                            onClicked: root.cancel_request(response_content_item.index)
                         }
                     }
                 }
