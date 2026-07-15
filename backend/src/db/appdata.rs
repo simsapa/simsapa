@@ -1594,6 +1594,20 @@ impl AppdataDbHandle {
                         any_deleted = true;
                     }
                     info(&format!("Successfully removed language {}", lang_code));
+
+                    // Record the code in the marker file so the next app start
+                    // removes the now-orphaned fulltext index folder
+                    // (index/suttas/<lang>). It cannot be removed here: the
+                    // open fulltext searcher still holds the Tantivy files,
+                    // which Windows may not release yet. Without the cleanup
+                    // the searcher would keep returning results for suttas
+                    // that no longer exist in the database.
+                    if let Err(e) = crate::append_remove_lang_index_marker(lang_code) {
+                        error(&format!(
+                            "Failed to record language {} for index cleanup: {}",
+                            lang_code, e
+                        ));
+                    }
                 },
                 Err(e) => {
                     error(&format!("Failed to remove language {}: {}", lang_code, e));

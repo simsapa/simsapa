@@ -46,6 +46,7 @@ extern "C" void shutdown_webserver();
 extern "C" bool appdata_db_exists();
 extern "C" void ensure_no_empty_db_files();
 extern "C" void check_delete_files_for_upgrade();
+extern "C" void check_remove_lang_index_dirs();
 extern "C" void remove_download_temp_folder();
 extern "C" void init_app_globals();
 extern "C" void init_app_data();
@@ -350,6 +351,12 @@ int start(int argc, char* argv[]) {
   // This is triggered by the delete_files_for_upgrade.txt marker file
   // created by prepare_for_database_upgrade().
   check_delete_files_for_upgrade();
+
+  // Remove per-language fulltext index folders orphaned by an in-app
+  // language removal. This is triggered by the remove_lang_index_dirs.txt
+  // marker file written by remove_sutta_languages(). Must run before any
+  // fulltext searcher is opened so no Tantivy files are held open.
+  check_remove_lang_index_dirs();
 
   QString os(QSysInfo::productType());
 

@@ -435,6 +435,11 @@ pub struct AppGlobalPaths {
     pub auto_start_download_marker: PathBuf,
     pub delete_files_for_upgrade_marker: PathBuf,
     pub download_select_sanskrit_bundle_marker: PathBuf,
+
+    // Marker file listing language codes whose fulltext index folder
+    // (index/suttas/<lang>) should be removed on the next app start,
+    // written by the Sutta Languages window's language removal.
+    pub remove_lang_index_dirs_marker: PathBuf,
 }
 
 impl AppGlobals {
@@ -575,6 +580,7 @@ impl AppGlobalPaths {
         let auto_start_download_marker = app_assets_dir.join("auto_start_download.txt");
         let delete_files_for_upgrade_marker = app_assets_dir.join("delete_files_for_upgrade.txt");
         let download_select_sanskrit_bundle_marker = app_assets_dir.join("download_select_sanskrit_bundle.txt");
+        let remove_lang_index_dirs_marker = app_assets_dir.join("remove_lang_index_dirs.txt");
 
         AppGlobalPaths {
             simsapa_dir,
@@ -604,6 +610,7 @@ impl AppGlobalPaths {
             auto_start_download_marker,
             delete_files_for_upgrade_marker,
             download_select_sanskrit_bundle_marker,
+            remove_lang_index_dirs_marker,
         }
     }
 }
@@ -999,6 +1006,118 @@ pub extern "C" fn check_delete_files_for_upgrade() {
         Err(e) => {
             error(&format!("Failed to check for upgrade marker file {:?}: {}", marker_path, e));
         }
+    }
+}
+
+/// Append a language code to the remove_lang_index_dirs.txt marker file.
+///
+/// Called after the Sutta Languages window removes a language's suttas from
+/// appdata. The language's fulltext index folder (index/suttas/<lang>) cannot
+/// be removed right away: the open fulltext searcher still holds the Tantivy
+/// files, and on Windows deleting them would fail (or worse, partially
+/// succeed). Instead the code is recorded here and the folder is removed by
+/// `check_remove_lang_index_dirs()` on the next app start, before any
+/// searcher is opened. Without this cleanup the searcher would re-open the
+/// orphaned index and fulltext search would return results for suttas that
+/// are no longer in the database.
+pub fn append_remove_lang_index_marker(lang: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let g = get_app_globals();
+    let marker_path = &g.paths.remove_lang_index_dirs_marker;
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(marker_path)?;
+    writeln!(file, "{}", lang)?;
+
+    info(&format!(
+        "Recorded language '{}' in {} for index cleanup on next start",
+        lang, marker_path.display()
+    ));
+    Ok(())
+}
+
+/// Check for the remove_lang_index_dirs.txt marker file and remove the listed
+/// per-language fulltext index folders (index/suttas/<lang>).
+///
+/// This is called during app startup, before the fulltext searcher is opened,
+/// so no Tantivy readers hold the files (safe on Windows). The marker is
+/// written by the Sutta Languages window's language removal — see
+/// `append_remove_lang_index_marker()`.
+///
+/// The marker file is removed only when every listed folder was removed (or
+/// was already absent); on partial failure it is kept so the cleanup is
+/// retried on the next start.
+#[unsafe(no_mangle)]
+pub extern "C" fn check_remove_lang_index_dirs() {
+    let g = get_app_globals();
+    let marker_path = &g.paths.remove_lang_index_dirs_marker;
+
+    match marker_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => {
+            error(&format!("Failed to check for marker file {:?}: {}", marker_path, e));
+            return;
+        }
+    }
+
+    info(&format!("Found language index cleanup marker file: {}", marker_path.display()));
+
+    let content = match fs::read_to_string(marker_path) {
+        Ok(c) => c,
+        Err(e) => {
+            error(&format!("Failed to read marker file {:?}: {}", marker_path, e));
+            return;
+        }
+    };
+
+    let mut all_ok = true;
+
+    for lang in content.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        // Only accept plain language codes so a corrupted marker file cannot
+        // name a path outside index/suttas/.
+        if !lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            warn(&format!("Ignoring invalid language code in marker file: {}", lang));
+            continue;
+        }
+
+        let lang_index_dir = g.paths.suttas_index_dir.join(lang);
+        match lang_index_dir.try_exists() {
+            Ok(true) => {
+                if let Err(e) = fs::remove_dir_all(&lang_index_dir) {
+                    error(&format!(
+                        "Failed to remove language index directory {}: {}",
+                        lang_index_dir.display(), e
+                    ));
+                    all_ok = false;
+                } else {
+                    info(&format!("Removed language index directory: {}", lang_index_dir.display()));
+                }
+            }
+            Ok(false) => {
+                // Already gone, nothing to do
+            }
+            Err(e) => {
+                error(&format!(
+                    "Failed to check language index directory {}: {}",
+                    lang_index_dir.display(), e
+                ));
+                all_ok = false;
+            }
+        }
+    }
+
+    if all_ok {
+        if let Err(e) = fs::remove_file(marker_path) {
+            error(&format!("Failed to remove marker file {:?}: {}", marker_path, e));
+        } else {
+            info("Removed remove_lang_index_dirs.txt marker file");
+        }
+    } else {
+        warn("Keeping remove_lang_index_dirs.txt marker file for retry on next start");
     }
 }
 
