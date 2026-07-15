@@ -53,12 +53,12 @@ Update the file after completing each sub-task, not just after completing an ent
 > Own commit, before all feature work.
 > **Depends on:** nothing.
 
-- [ ] 1.0 Rename/establish `human-checked` naming
-  - [ ] 1.1 Sweep for any remaining references to a bare `checked` gloss folder or "checked" human-review naming in `cli/src/` (esp. `gloss_corpus_explore.rs`, `import_gloss_data.rs` doc comments/help), `backend/src/helpers.rs` doc comments, `docs/gloss-ai-word-selection.md`, and any existing skill/command text; rename each to `human-checked`.
-  - [ ] 1.2 Create `../bootstrap-assets-resources/gloss-data-cache/human-checked/` (with a `.gitkeep` if that repo tracks empty dirs) and move any human-reviewed session files into it (currently none expected).
-  - [ ] 1.3 Update `docs/gloss-ai-word-selection.md` pipeline wording to name the `human-checked/` folder explicitly.
-  - [ ] 1.4 Remove the duplicate snapshot folder `../bootstrap-assets-resources/gloss-data-cache/candidates-2026-07-10/` (verify first that it is still byte-identical to `candidates/`, e.g. `diff -r`; if it has diverged, stop and ask) so the agent workflow can never process the same files twice.
-  - [ ] 1.5 Commit as its own preparatory commit.
+- [x] 1.0 Rename/establish `human-checked` naming
+  - [x] 1.1 Sweep for any remaining references to a bare `checked` gloss folder or "checked" human-review naming in `cli/src/` (esp. `gloss_corpus_explore.rs`, `import_gloss_data.rs` doc comments/help), `backend/src/helpers.rs` doc comments, `docs/gloss-ai-word-selection.md`, and any existing skill/command text; rename each to `human-checked`. — No live bare `checked/` references found; the "checked" hits are UI checkbox wording (`saved toggle checked`, handled later) + unrelated "ambiguity/frequency-checked".
+  - [x] 1.2 Create `../bootstrap-assets-resources/gloss-data-cache/human-checked/` (with a `.gitkeep` if that repo tracks empty dirs) and move any human-reviewed session files into it (currently none expected). — Created with `.gitkeep` (bootstrap-assets-resources is not a git repo; kept for future-proofing).
+  - [x] 1.3 Update `docs/gloss-ai-word-selection.md` pipeline wording to name the `human-checked/` folder explicitly.
+  - [x] 1.4 Remove the duplicate snapshot folder `../bootstrap-assets-resources/gloss-data-cache/candidates-2026-07-10/` (verify first that it is still byte-identical to `candidates/`, e.g. `diff -r`; if it has diverged, stop and ask) so the agent workflow can never process the same files twice. — Had DIVERGED (older Jul-10 run); user confirmed delete; removed.
+  - [x] 1.5 Commit as its own preparatory commit. — (user commits)
 
 ### 2.0 Preparation 2 — unified origin/resolution value rename
 

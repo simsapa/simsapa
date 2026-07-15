@@ -397,10 +397,13 @@ The bank is what makes common suttas resolve with no AI at all. The Gloss UI
 ```
 gloss-corpus-explore  →  candidates/*.json  →  [Open JSON → AI select → correct → confirm → Export As JSON]
                                                         ↓
-                                          gloss-data-cache/*.json   (committed to the repo)
+                            gloss-data-cache/human-checked/*.json   (committed to the repo)
                                                         ↓
                           import-gloss-data  →  built-in rows in appdata.sqlite3  (run by the bootstrap)
 ```
+
+Human-reviewed session files are committed under
+`gloss-data-cache/human-checked/`.
 
 **`gloss-corpus-explore`** (`cli/src/gloss_corpus_explore.rs`) is a read-only
 frequency/n-gram scan of the shipped suttas that generates review-ready candidate
