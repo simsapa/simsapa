@@ -559,6 +559,7 @@ RELEASE_CHANNEL=development
                                             match create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir) {
                                                 Ok(_) => {
                                                     logger::info(&format!("Successfully created archive for language: {}", lang));
+                                                    cleanup_language_index_dir(&lang_index_dir, lang);
                                                 }
                                                 Err(e) => {
                                                     logger::error(&format!("Failed to create archive for language {}: {}", lang, e));
@@ -639,6 +640,7 @@ RELEASE_CHANNEL=development
                 // Create archive with database and index directory
                 let lang_index_dir = globals.paths.suttas_index_dir.join(lang);
                 create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir)?;
+                cleanup_language_index_dir(&lang_index_dir, lang);
             } else {
                 logger::warn(&format!("Buddha Ujja database not found: {:?}", bu_db_path));
                 logger::warn("Skipping Hungarian sutta import");
@@ -945,6 +947,43 @@ pub fn create_language_archive(
     logger::info(&format!("Created and moved {} to {:?}", tar_name, release_databases_dir));
 
     Ok(())
+}
+
+/// Remove a per-language fulltext index folder after the language's deliverable
+/// tarball has been created.
+///
+/// The index data already travels inside `suttas_lang_<lang>.tar.bz2`, and the
+/// shipped `index.tar.bz2` / `appdata.tar.bz2` were archived earlier with only
+/// the base languages, so the folder left in `index/suttas/<lang>/` serves no
+/// deliverable. Leaving it behind is actively harmful when running the app
+/// against the bootstrapped dist dir: the fulltext searcher opens every
+/// subdirectory of `index/suttas/`, so search returns results for suttas that
+/// are not in the dist `appdata.sqlite3`, and opening them silently falls back
+/// to the `/pli/ms` text.
+///
+/// Only call this for a language that was imported into a separate
+/// `suttas_lang_*.sqlite3` file — never for the base languages (en, pli, san),
+/// whose suttas live in appdata and whose index dirs must stay.
+pub fn cleanup_language_index_dir(lang_index_dir: &Path, lang: &str) {
+    match lang_index_dir.try_exists() {
+        Ok(true) => {
+            match fs::remove_dir_all(lang_index_dir) {
+                Ok(_) => logger::info(&format!(
+                    "Removed leftover fulltext index dir for {}: {}",
+                    lang, lang_index_dir.display()
+                )),
+                Err(e) => logger::error(&format!(
+                    "Failed to remove fulltext index dir for {}: {}",
+                    lang, e
+                )),
+            }
+        }
+        Ok(false) => {}
+        Err(e) => logger::error(&format!(
+            "Failed to check fulltext index dir for {}: {}",
+            lang, e
+        )),
+    }
 }
 
 /// Language information with sutta count
