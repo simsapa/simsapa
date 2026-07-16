@@ -602,6 +602,10 @@ pub struct GlossWordContextCache {
     /// "ai-selected", "user-selected", "built-in-human-checked" or
     /// "built-in-agent-checked"
     pub origin: String,
+    /// 1 for the bootstrap-shipped rows (`built-in-*` origins), 0 for the rows
+    /// this install created. Part of the unique key with `(word, context_hash)`,
+    /// so a local row shadows the shipped one rather than replacing it.
+    pub built_in: i32,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -614,6 +618,7 @@ pub struct NewGlossWordContextCache<'a> {
     pub context_snippet: &'a str,
     pub selected_uid: &'a str,
     pub origin: &'a str,
+    pub built_in: i32,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }

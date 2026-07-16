@@ -1,6 +1,7 @@
 -- Cache of resolved gloss word choices, keyed by the normalized surface form
 -- and the hash of the normalized context window.
--- origin: "ai", "user" or "built-in" (bootstrap-shipped rows).
+-- origin: "ai-selected" / "user-selected" (rows this install created) or
+-- "built-in-human-checked" / "built-in-agent-checked" (bootstrap-shipped rows).
 CREATE TABLE gloss_word_context_cache (
     id INTEGER NOT NULL,
     word VARCHAR NOT NULL,

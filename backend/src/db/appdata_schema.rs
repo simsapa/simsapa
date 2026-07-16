@@ -243,6 +243,7 @@ diesel::table! {
         context_snippet -> Text,
         selected_uid -> Text,
         origin -> Text,
+        built_in -> Integer,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
     }

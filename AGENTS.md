@@ -238,7 +238,13 @@ Notable feature docs:
   → set phrase (`built-in-phrase-match`) → `built-in-agent-checked` row →
   `ai-selected` row → AI request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
   numeric `12463/dpd` headword uid, curated data stores the lemma form
-  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The **cache key** is
+  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The chain walks **two
+  coexisting rows** per key — `gloss_word_context_cache` is keyed
+  `(word, context_hash, built_in)`, so a local `-selected` row *shadows* the
+  shipped `built-in-*` row instead of overwriting it; deleting the local row
+  (shield click, Clear Word-Selection Cache) hands the word back to the curated
+  selection, and the rank guards in the upsert/import apply **within a tier**
+  only. The **cache key** is
   `(word, context_hash)` over the *existing* ±50-char gloss context window
   (`ProcessedWord.example_sentence`), normalized by `normalize_gloss_context()` —
   covers why each step is there (verse line-wrap `\s+` collapse, ṁ/ṃ, the

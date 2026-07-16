@@ -161,14 +161,20 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "Human-checked — a person confirmed this sense."
+                        text: "Human-checked — a person confirmed this sense: you, or a curator whose selection ships with the app (including its set-phrase rules)."
                     }
                 }
 
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: "Click a word's shield to cycle its state: Not checked → AI-checked → Human-checked, then wrapping back to Not checked. Wrapping from Human-checked asks for confirmation before the saved selection is removed."
+                    text: "Click a word's shield to confirm the shown sense as Human-checked — choosing it yourself is human confidence, so the click never stops at AI-checked. Clicking a Human-checked shield returns the word to Not checked; if the selection was your own, it asks for confirmation before removing it."
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Built-in selections are never deleted. Clicking one only sets the word aside for the current session, and it applies again next time you gloss the passage."
                 }
             }
         }

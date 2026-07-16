@@ -33,8 +33,8 @@ skips are never involved) goes through one precedence chain, implemented once in
 user cache  >  built-in human-checked cache  >  set phrase  >  built-in agent-checked cache  >  ai cache  >  fresh AI request
 ```
 
-- **user cache** — the reader confirmed this choice for this context (the saved
-  toggle, or a manual ComboBox change, see §5).
+- **user cache** — the reader confirmed this choice for this context (the shield
+  click, or a manual ComboBox change, see §5).
 - **built-in human-checked cache** — a `built-in-human-checked`-origin row
   shipped in the bootstrapped appdata DB (§7).
 - **set phrase** — a curated rule ("in `anāthapiṇḍikassa ārāme`, `ārāme` is
@@ -67,6 +67,29 @@ An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.
 
+### The two cache tiers coexist
+
+The chain is a walk over **two rows**, not a lookup of one. `gloss_word_context_cache`
+is keyed `(word, context_hash, built_in)`, so for one (word, context) the shipped
+row (`built_in = 1`, the `built-in-*` origins) and this install's row
+(`built_in = 0`, `user-selected` / `ai-selected`) exist side by side.
+`GlossResolutionData.cache` therefore maps each key to a `GlossCacheEntry`
+holding `{ local, built_in }`, and the chain checks the tier each step names.
+
+**Why the tiers are separate rows.** A user's selection **shadows** the shipped
+one instead of replacing it. That matters because shipped rows are curated data
+that stays relevant for a later word selection: deleting the user's row (the
+shield, Clear Word-Selection Cache) hands the word straight back to the built-in
+selection, with no re-download needed. It is also what lets the shield's
+"not checked" state be pure session UI state — see §5.
+
+The consequence for the write paths: `upsert_gloss_word_cache` and
+`import_gloss_word_cache_row` compare origin ranks **within one tier** only. An
+`ai-selected` write for a word that has a shipped row is no longer *refused* (as
+it was when one row per key had to serve both); it is written to the local tier
+and simply loses the chain to the higher-ranked shipped row. The resolved
+outcome is identical — only the stored rows differ.
+
 ### The uid two-lane gotcha
 
 Gloss options carry the **numeric** DPD headword uid (`12463/dpd`), while
@@ -79,10 +102,11 @@ both: a direct `uid` match, or `word_uid_sanitize(option.word) == <uid minus
 (numeric); curated rows keep their lemma form. Anything comparing a selected uid
 to an option must go through this helper.
 
-## 2. The cache key: word + normalized context window
+## 2. The cache key: word + normalized context window + tier
 
-Two appdata tables (migration
-`backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/`):
+Two appdata tables (migrations
+`backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` and
+`…/2026-07-16-120000_gloss_cache_built_in_tier/`):
 
 | `gloss_word_context_cache` | |
 |---|---|
@@ -91,7 +115,13 @@ Two appdata tables (migration
 | `context_snippet` | the window text, for display/debugging |
 | `selected_uid` | the chosen option's uid |
 | `origin` | `"ai-selected"` \| `"user-selected"` \| `"built-in-human-checked"` \| `"built-in-agent-checked"` |
-| | UNIQUE `(word, context_hash)` |
+| `built_in` | `1` for the bootstrap-shipped rows (`built-in-*` origins), `0` for the rows this install created |
+| | UNIQUE `(word, context_hash, built_in)` |
+
+`built_in` is part of the unique key, so the two tiers coexist for one
+(word, context) and a local row shadows the shipped one rather than replacing it
+(§1). It is derived from the origin, never passed separately —
+`gloss_cache_origin_is_built_in()` is the single decision point.
 
 | `gloss_phrase_selections` | |
 |---|---|
@@ -198,8 +228,10 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
 the Fallback sequence has no enabled model, and a
 **Clear Word-Selection Cache...** button (confirm dialog shows the row count).
-The clear deletes `ai-selected` and `user-selected` rows only — `built-in-*` rows
-and the phrase table survive, since they are shipped data, not user state. The
+The clear deletes the **local tier** only (`built_in = 0`, i.e. the
+`ai-selected` / `user-selected` rows) — the shipped rows and the phrase table
+survive, since they are shipped data, not user state. Every built-in selection
+the user had shadowed therefore applies again afterwards (§1). The
 feature is active
 when the checkbox is on **and** the sequence has an enabled model
 (`GlossTab.is_word_selection_enabled()`); an empty sequence turns it off with no
@@ -338,7 +370,7 @@ the HTTP request is not aborted; its response simply arrives stale and is ignore
 In batched mode only the paragraphs that actually **contributed items** show a
 status (derived from the item ids), not every paragraph in the request.
 
-## 5. Applying selections, and the saved toggle
+## 5. Applying selections, and the shield indicator
 
 Applying an AI response uses a **batch variant** of `update_word_selection()`:
 all of a paragraph's selections are written in one `words_data_json` rewrite with
@@ -346,20 +378,82 @@ a single `setProperty`, marking the session dirty once. The per-word function
 rewrites the whole JSON and rebuilds the word-row Repeater on every call — using
 it in a loop is visibly slow.
 
-Each ambiguous word row is `[ComboBox] [robot icon] [saved toggle] [summary]
-[dict button]`:
+Each ambiguous word row is `[ComboBox] [shield] [summary] [dict button]`. The
+shield (`root.shield_state()` in `GlossTab.qml`) replaced an earlier
+`[robot icon] [saved toggle]` pair: one control, three states. Unambiguous words
+(no ComboBox) show no shield — there is nothing to decide.
 
-- **saved toggle checked** = a cache row exists for this (word, context) — any
-  origin, including `built-in-human-checked`. A *phrase* match has no cache row
-  and shows **unchecked**; checking it saves a `user-selected` row on top as usual.
-- **robot icon** — only for `ai-selected`-origin rows.
-- **checking** writes a `user-selected` row; **unchecking** asks for confirmation
-  and deletes the row.
+### The three states
 
-Three behaviours that are easy to get wrong and are deliberate:
+The levels are a **confidence** scale, not a provenance log — *who vouched for
+this sense*, not *where the row came from*. That is why each icon covers two
+origins:
+
+| icon | state | resolution values | meaning |
+|---|---|---|---|
+| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it — a plain dictionary lookup |
+| `famicons--shield-half-outline.png` | AI-checked | `ai-selected`, `built-in-agent-checked` | a machine chose it: a runtime AI response, or the shipped agent pipeline (§7) |
+| `famicons--shield.png` | Human-checked | `user-selected`, `built-in-human-checked`, `built-in-phrase-match` | a person confirmed it: the reader here, or a curator |
+
+`built-in-phrase-match` is **full**, not outline: phrase rules are distilled from
+confirmed rows and manually reviewed before they ship (§7), so they carry human
+confidence even though they resolve no cache row.
+
+### The click cycle
+
+```
+outline ──click──▶ full          (save "user-selected")
+half    ──click──▶ full          (save "user-selected")
+full    ──click──▶ outline       (own row: confirm, then delete it)
+                                 (built-in row / phrase: session view only)
+```
+
+**A click never writes `ai-selected` and never stops at the half shield.** The
+half shield means "a machine chose this", which is only ever true of an AI
+response or the shipped agent pipeline. A click *is* the user making the
+selection, and that is human confidence — so outline goes straight to full. The
+ComboBox's `currentIndex` of −1 means nothing was explicitly picked, and the
+visible option is index 0, so index 0 is the user's visible intent and stays the
+fallback.
+
+**A click never deletes a built-in row.** `delete_gloss_word_cache` filters on
+`built_in = 0`; the shipped tier is untouched. Two reasons: the user may just be
+trying the button out, and the curated row stays relevant for a later word
+selection. Clicking a full shield that came from shipped data therefore has no
+row of the user's to remove, so it only sets `resolution = null` in the
+in-memory `words_data` — no DB write, and no confirm dialog, because nothing is
+lost. The dialog appears exactly when a real deletion happens: on a
+`user-selected` row (`shield_state().owned`).
+
+### Why the cleared state is session-only
+
+`resolution` is never persisted — the annotate pass re-derives it from the DB on
+every load (see the end of this section). So an outline shield over a surviving
+built-in row lasts **only as long as the session view**: reopen the passage and
+the built-in selection resolves it to full again. That is the intended reading of
+"set this aside" — a new session may well want the built-in data again, e.g. to
+recognise a set phrase. Making it persist would require either destroying the
+shipped row or inventing a stored "cleared" marker, and both defeat the point of
+keeping curated data available.
+
+The full sequence over a word that ships with a `built-in-human-checked` row (or
+a phrase rule), showing what is actually stored at each step:
+
+| click | action | local row (`built_in = 0`) | shipped row | shield |
+|---|---|---|---|---|
+| — | initial | none | intact | full |
+| 1 | set aside for the session | none | intact | outline |
+| 2 | confirm the shown sense | `user-selected` | intact | full |
+| 3 | remove own row (confirmed) | none | intact | outline |
+| 4 | confirm again | `user-selected` | intact | full |
+
+The shipped row is never touched. After click 3 the word shows outline for the
+rest of the session and resolves to the built-in selection again in the next one.
+
+### Deliberate behaviours that are easy to get wrong
 
 - **A manual ComboBox change is a user decision and is auto-saved** as a
-  `user-selected` row (`resolution: "user-selected"`, toggle on). Without this,
+  `user-selected` row (`resolution: "user-selected"`, full shield). Without this,
   the stale `ai-selected` row would win on the next gloss and a session restore
   would revert the correction.
 - The handler is `onActivated`, **not** `onCurrentIndexChanged` — the delegate
@@ -370,16 +464,19 @@ Three behaviours that are easy to get wrong and are deliberate:
   in-memory `words_data` (the DB upsert already refuses the downgrade — this is
   the QML-side half of the same rule).
 
-Restoring a history session re-derives `resolution` / `selected_index` / toggle
+Restoring a history session re-derives `resolution` / `selected_index` / shield
 state **from the cache table**, not from the serialized session, via
-`SuttaBridge.annotate_gloss_words_json()`.
+`SuttaBridge.annotate_gloss_words_json()`. This is why the shield's cleared state
+does not survive a reload, and why the rename of the resolution values needed no
+data migration.
 
 Write precedence is enforced in the DB layer by `gloss_cache_origin_rank()`
 (`user-selected` 4 > `built-in-human-checked` 3 > `built-in-agent-checked` 2 >
-`ai-selected` 1, unknown 0):
-`upsert_gloss_word_cache()` refuses a *lower*-ranked write (an `ai-selected`
-response never downgrades a `user-selected` or `built-in-human-checked` row) but
-allows an equal one (a re-save refreshes the row).
+`ai-selected` 1, unknown 0), applied **within a tier** (§1):
+`upsert_gloss_word_cache()` refuses a *lower*-ranked write in the same tier (an
+`ai-selected` response never downgrades a `user-selected` row) but allows an
+equal one (a re-save refreshes the row). Across tiers there is no contest — the
+rows coexist and the chain ranks them.
 
 ## 6. Exports
 
@@ -426,7 +523,7 @@ written only if it outranks the local row for that key. Equal precedence is a
 no-op, so your own `user-selected` rows are never overwritten by someone else's
 `user-selected` row, and an imported `ai-selected` row never churns a local
 `ai-selected` row. The import runs **before**
-`load_session()`, so the annotate pass re-derives the toggles from the freshly
+`load_session()`, so the annotate pass re-derives the shield states from the freshly
 imported rows.
 
 ### DOCX

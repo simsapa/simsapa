@@ -111,13 +111,16 @@ I checked the released tags:
   (2026-05-22). So every 0.4.x DB in the wild was bootstrapped with all nine
   stamped.
 - The only migrations added after `v0.4.3` (2026-06-10) are
-  `2026-06-27-131935_create_gloss_prompts_history` and
-  `2026-07-09-160000_create_gloss_word_selection` — both currently **unreleased**.
+  `2026-06-27-131935_create_gloss_prompts_history`,
+  `2026-07-09-160000_create_gloss_word_selection` and
+  `2026-07-16-120000_gloss_cache_built_in_tier` — all three currently
+  **unreleased**.
 
 So **today**, switching `upgrade_appdata_schema()` → `run_pending_migrations()`
-would be safe: a v0.4.3 user's ledger has exactly the nine rows, both new
-migrations are pure `CREATE TABLE` of tables that don't exist yet, and they'd
-apply cleanly.
+would be safe: a v0.4.3 user's ledger has exactly the nine rows; the first two
+new migrations are pure `CREATE TABLE` of tables that don't exist yet, and the
+third only alters the table the second just created (`ALTER TABLE … ADD COLUMN`
+plus an index swap, all replayable). They'd apply cleanly.
 
 **The moment 0.4.4 ships with `upgrade_appdata_schema()` doing that work, the
 window closes.** Those users get the tables without the stamps, and a later switch

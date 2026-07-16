@@ -1648,37 +1648,58 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     }
 
     // Map a word's resolution value to its shield confidence indicator: the
-    // returned { state, icon, tooltip } drives the shield ToolButton in the
-    // vocabulary list. The three levels are a confidence scale, not a
-    // provenance log (see docs/gloss-ai-word-selection.md):
-    //   - "none"  (outline): no saved row — plain dictionary lookup or a set
-    //             phrase match; also where a JSON `confidence: "review"` entry
-    //             lands, since the import skips it so no cache row is derived.
+    // returned { state, icon, tooltip, owned } drives the shield ToolButton in
+    // the vocabulary list. The three levels are a confidence scale, not a
+    // provenance log (see docs/gloss-ai-word-selection.md §5):
+    //   - "none"  (outline): nothing resolved this word — a plain dictionary
+    //             lookup. Also where a JSON `confidence: "review"` entry lands,
+    //             since the import skips it so no cache row is derived.
     //   - "ai"    (half):    a machine checked this — runtime AI ("ai-selected")
     //             or the shipped agent pipeline ("built-in-agent-checked").
-    //   - "human" (full):    a human confirmed this — local "user-selected" or
-    //             shipped "built-in-human-checked".
+    //   - "human" (full):    a human confirmed this — the user here
+    //             ("user-selected"), a curator ("built-in-human-checked"), or a
+    //             curated set phrase ("built-in-phrase-match": the phrase rules
+    //             are human-reviewed before they ship, so they carry human
+    //             confidence even though they resolve no cache row).
+    //
+    // `owned` marks the one state backed by a row this install created, i.e. the
+    // only state whose click deletes anything. Clicking any other full shield
+    // just drops the word out of the session's view (see the shield ToolButton).
     function shield_state(resolution) {
         let r = resolution || null;
-        if (r === "user-selected" || r === "built-in-human-checked") {
+        if (r === "user-selected") {
             return {
-                state: "human",
+                state: "human", owned: true,
                 icon: "icons/32x32/famicons--shield.png",
-                tooltip: "Human-checked (saved). Click to remove the saved selection."
+                tooltip: "Human-checked (your selection). Click to remove it."
+            };
+        }
+        if (r === "built-in-human-checked") {
+            return {
+                state: "human", owned: false,
+                icon: "icons/32x32/famicons--shield.png",
+                tooltip: "Human-checked (built-in selection). Click to ignore it for this session."
+            };
+        }
+        if (r === "built-in-phrase-match") {
+            return {
+                state: "human", owned: false,
+                icon: "icons/32x32/famicons--shield.png",
+                tooltip: "Human-checked (built-in set phrase). Click to ignore it for this session."
             };
         }
         if (r === "ai-selected" || r === "built-in-agent-checked") {
             return {
-                state: "ai",
+                state: "ai", owned: r === "ai-selected",
                 icon: "icons/32x32/famicons--shield-half-outline.png",
-                tooltip: "AI-checked (saved, machine confidence). Click to confirm as Human-checked."
+                tooltip: "AI-checked (machine confidence). Click to confirm as Human-checked."
             };
         }
-        // null and "built-in-phrase-match" (and any unexpected value) → outline.
+        // null (and any unexpected value) → outline.
         return {
-            state: "none",
+            state: "none", owned: false,
             icon: "icons/32x32/famicons--shield-outline.png",
-            tooltip: "Not checked — plain dictionary lookup. Click to mark as AI-checked."
+            tooltip: "Not checked — plain dictionary lookup. Click to confirm the shown sense as Human-checked."
         };
     }
 
@@ -2948,9 +2969,17 @@ ${main_text}
 
                                     // Shield confidence indicator (replaces the old
                                     // robot_icon + saved_toggle pair). Only ambiguous words
-                                    // (ComboBox shown) get a shield. Click cycles the
-                                    // confidence state; see root.shield_state() and
-                                    // docs/gloss-ai-word-selection.md.
+                                    // (ComboBox shown) get a shield. Clicking it toggles
+                                    // between "not checked" and the user's own confirmed
+                                    // selection; see root.shield_state() and
+                                    // docs/gloss-ai-word-selection.md §5 for the full cycle.
+                                    //
+                                    // A click never writes "ai-selected" and never deletes a
+                                    // built-in row: the half shield means "a machine chose
+                                    // this", which is only ever true of an AI response or the
+                                    // shipped agent pipeline, and clicking is the user making
+                                    // the selection — that is human confidence, so it goes
+                                    // straight to the full shield.
                                     ToolButton {
                                         id: shield_toggle
                                         visible: word_select.visible
@@ -2965,40 +2994,39 @@ ${main_text}
                                         ToolTip.text: shield.tooltip
                                         onClicked: {
                                             let r = wordItem.modelData.resolution || null;
-                                            let st = root.shield_state(r).state;
-                                            if (st === "human") {
-                                                // full → outline (wrap): confirm, then delete the row.
-                                                unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
-                                                unsave_word_dialog.word_idx = wordItem.index;
-                                                unsave_word_dialog.word = wordItem.modelData.original_word;
-                                                unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
-                                                unsave_word_dialog.open();
+                                            let sh = root.shield_state(r);
+                                            if (sh.state === "human") {
+                                                if (sh.owned) {
+                                                    // The user's own row: confirm, then delete it.
+                                                    unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
+                                                    unsave_word_dialog.word_idx = wordItem.index;
+                                                    unsave_word_dialog.word = wordItem.modelData.original_word;
+                                                    unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
+                                                    unsave_word_dialog.open();
+                                                } else {
+                                                    // Built-in row or set phrase: nothing of the
+                                                    // user's to delete, and the curated data must
+                                                    // stay for a later word selection. Drop it out
+                                                    // of this session's view only — no DB write, no
+                                                    // confirm (an idle click costs nothing), and a
+                                                    // new session resolves it from the built-in
+                                                    // data again.
+                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, null);
+                                                }
                                                 return;
                                             }
-                                            // currentIndex can be -1 (no selection); the default
-                                            // visible option is index 0, the user's visible intent.
+                                            // outline / half → full. currentIndex can be -1 (no
+                                            // selection); the default visible option is index 0,
+                                            // the user's visible intent.
                                             var idx = word_select.currentIndex >= 0 ? word_select.currentIndex : 0;
                                             let uid = wordItem.modelData.results[idx].uid;
-                                            var origin;
-                                            if (st === "ai") {
-                                                // half → full: confirm as a human choice.
-                                                origin = "user-selected";
-                                            } else if (r === "built-in-phrase-match") {
-                                                // Phrase-resolved: outline → full directly. An
-                                                // "ai-selected" row is outranked by the phrase tier,
-                                                // so the half state would not survive a reload.
-                                                origin = "user-selected";
-                                            } else {
-                                                // outline → half: machine-confidence save.
-                                                origin = "ai-selected";
-                                            }
                                             let ok = SuttaBridge.save_gloss_word_cache(
                                                 wordItem.modelData.original_word,
                                                 wordItem.modelData.example_sentence || "",
                                                 uid,
-                                                origin);
+                                                "user-selected");
                                             if (ok) {
-                                                root.set_word_resolution(wordItem.paragraph_index, wordItem.index, origin);
+                                                root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user-selected");
                                             } else {
                                                 logger.error("Failed to save word selection for '" + wordItem.modelData.original_word + "'");
                                             }
@@ -3056,8 +3084,11 @@ ${main_text}
         }
     }
 
-    // Confirm removing a saved word-selection cache row (the shield wrapping
-    // from full → outline). Cancel keeps the row and the full-shield state.
+    // Confirm removing the user's own word-selection cache row (the shield's
+    // full → outline click on a "user-selected" word). Cancel keeps the row and
+    // the full-shield state. Only the local row is deleted; a built-in row for
+    // the same (word, context) survives and applies again on the next annotate
+    // pass, which is what the wording promises.
     Dialog {
         id: unsave_word_dialog
         title: "Remove Saved Selection"
@@ -3071,7 +3102,7 @@ ${main_text}
         property string word_context_hash: ""
 
         Label {
-            text: "Remove the saved selection for '" + unsave_word_dialog.word + "' in this context? The word returns to the unchecked state."
+            text: "Remove your saved selection for '" + unsave_word_dialog.word + "' in this context? The word returns to the unchecked state. Any built-in selection for it is kept and applies again in a new session."
             wrapMode: Text.WordWrap
         }
 

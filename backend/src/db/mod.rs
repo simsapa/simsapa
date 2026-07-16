@@ -293,6 +293,9 @@ pub fn upgrade_appdata_schema(db_conn: &mut SqliteConnection) {
         include_str!("../../migrations/appdata/2026-06-27-131935_create_gloss_prompts_history/up.sql"),
         // 2026-07-09: gloss word context cache and phrase selections
         include_str!("../../migrations/appdata/2026-07-09-160000_create_gloss_word_selection/up.sql"),
+        // 2026-07-16: built_in tier column, so a local row shadows the shipped
+        // row for the same (word, context_hash) instead of overwriting it
+        include_str!("../../migrations/appdata/2026-07-16-120000_gloss_cache_built_in_tier/up.sql"),
     ];
 
     for sql in &statements {

@@ -147,14 +147,27 @@ when `built-in-agent-checked` rows appear.
 
    | icon | UI state label | resolution values |
    |---|---|---|
-   | `icons/32x32/famicons--shield-outline.png` | Not checked — plain dictionary lookup, no saved row | `null` / `built-in-phrase-match` (no cache row, as today) |
+   | `icons/32x32/famicons--shield-outline.png` | Not checked — plain dictionary lookup, no saved row | `null` |
    | `icons/32x32/famicons--shield-half-outline.png` | AI-checked (saved, machine confidence) | `ai-selected`, `built-in-agent-checked` |
-   | `icons/32x32/famicons--shield.png` | Human-checked (saved, human confidence) | `user-selected`, `built-in-human-checked` |
+   | `icons/32x32/famicons--shield.png` | Human-checked (human confidence) | `user-selected`, `built-in-human-checked`, `built-in-phrase-match` |
+
+   **Amended during implementation (2026-07-16):** `built-in-phrase-match` shows
+   the **full** shield, not the outline. The phrase rules are distilled from
+   confirmed rows and manually reviewed before they ship (§7), so they carry
+   human confidence even though they resolve no cache row.
 
 3. The `robot_icon` (`pixel--robot-solid.png`) and the `saved_toggle`
    checkbox-style button are removed; the shield replaces both (the robot's
    "AI-resolved" signal becomes the half shield).
-4. **Clicking the shield cycles the states**, wrapping around:
+4. **Clicking the shield cycles the states**, wrapping around.
+
+   > **Superseded during implementation (2026-07-16).** The cycle below is the
+   > original design; the shipped behaviour is simpler and is specified in
+   > req. 4a. Two things drove the change: a click is *the user making the
+   > selection*, which is human confidence and has no business stopping at the
+   > machine-confidence half state; and the original wrap deleted the cache row
+   > whatever its origin, destroying shipped curated data on an idle click. Kept
+   > here because the rejected alternatives explain req. 4a's shape.
    - **outline → half:** save the currently selected option for this
      (word, context) as a machine-confidence row (origin `ai-selected` — see
      Technical Considerations for why in-app clicks write the local origins).
@@ -176,6 +189,59 @@ when `built-in-agent-checked` rows appear.
      must be adjusted from the "saved toggle" phrasing to the shield/confidence
      phrasing (e.g. "Remove the saved selection for this word and context?
      The word returns to the unchecked state.").
+4a. **The shipped click cycle (supersedes req. 4).** The shield toggles between
+    "not checked" and the user's own confirmed selection:
+
+    ```
+    outline ──click──▶ full          (save "user-selected")
+    half    ──click──▶ full          (save "user-selected")
+    full    ──click──▶ outline       (own row: confirm, then delete it)
+                                     (built-in row / phrase: session view only)
+    ```
+
+    - **A click never writes `ai-selected`, and never stops at half.** The half
+      shield means "a machine chose this" — only ever true of an AI response or
+      the shipped agent pipeline. Clicking *is* the user selecting, i.e. human
+      confidence, so outline goes straight to full. The `currentIndex` −1 →
+      index-0 fallback of req. 4 stays: the visible option is the user's visible
+      intent.
+    - **A click never deletes a built-in row.** `delete_gloss_word_cache` filters
+      on `built_in = 0`. Rationale: the user may just be trying the button out,
+      and the curated row stays relevant for a later word selection (e.g.
+      recognising a set phrase in another session). Clicking a full shield that
+      came from shipped data has no row of the user's to remove, so it only sets
+      `resolution = null` in the in-memory `words_data` — no DB write, and **no
+      confirm dialog**, because nothing is lost. The dialog appears exactly when
+      a real deletion happens (a `user-selected` row).
+    - **The cleared state is session-only.** `resolution` is re-derived from the
+      DB by the annotate pass on every load, so an outline shield over a
+      surviving built-in row lasts only as long as the session view; a new
+      session resolves it from the built-in data again. That is the intended
+      reading of "set this aside". Persisting it would need either the shipped
+      row destroyed or a stored "cleared" marker, both of which defeat keeping
+      curated data available.
+
+    This requires `gloss_word_context_cache` to be keyed
+    `(word, context_hash, built_in)` so the local and shipped rows **coexist**
+    (migration `2026-07-16-120000_gloss_cache_built_in_tier`): a `user-selected`
+    write shadows the shipped row instead of overwriting it — one row per key
+    could not express "the user chose X here" and "the curators chose Y here" at
+    once, so click 2 of the sequence would have destroyed the shipped data
+    regardless of what the delete did. Consequently the rank guards in
+    `upsert_gloss_word_cache` / `import_gloss_word_cache_row` apply **within a
+    tier**; cross-tier precedence is the resolution chain's job (req. 40).
+
+    Worked sequence over a word shipping a `built-in-human-checked` row (or
+    matching a phrase rule):
+
+    | click | action | local row | shipped row | shield |
+    |---|---|---|---|---|
+    | — | initial | none | intact | full |
+    | 1 | set aside for the session | none | intact | outline |
+    | 2 | confirm the shown sense | `user-selected` | intact | full |
+    | 3 | remove own row (confirmed) | none | intact | outline |
+    | 4 | confirm again | `user-selected` | intact | full |
+
 5. Cancelling the confirm dialog must leave the state at full shield
    (unchanged).
 6. The shield must have a hover tooltip naming the current state and the
@@ -187,8 +253,11 @@ when `built-in-agent-checked` rows appear.
 8. The **Word Selection... dialog** (`GlossWordSelectionDialog.qml`) must:
    - include the `famicons--shield-half-outline.png` icon in its buttons;
    - list all three shield icons with their UI state labels ("Not checked" /
-     "AI-checked" / "Human-checked") and explain the click-to-cycle behavior
-     (including the confirm-on-wrap), serving as the feature's legend.
+     "AI-checked" / "Human-checked") and explain the click behavior (req. 4a:
+     a click confirms the shown sense as Human-checked; clicking a Human-checked
+     shield returns the word to Not checked, confirming first when the selection
+     is the user's own; built-in selections are never deleted and apply again in
+     a new session), serving as the feature's legend.
 9. The `resolution` values are renamed to be self-describing and to match
    the (equally renamed, req. 35) origin values:
    `user` → `user-selected`, `ai` → `ai-selected`, `built-in` →
@@ -408,9 +477,11 @@ when `built-in-agent-checked` rows appear.
     `ai-selected` 1, unknown 0 — `gloss_cache_origin_rank` in
     `backend/src/db/appdata.rs`).
 41. **Clear Word-Selection Cache** keeps deleting the local rows only (now
-    `ai-selected` and `user-selected`); `built-in-agent-checked` rows are
-    shipped data and survive, like `built-in-human-checked` rows. The
-    dialog's row-count/wording must reflect this.
+    expressed as the `built_in = 0` tier, i.e. `ai-selected` and
+    `user-selected`); `built-in-agent-checked` rows are shipped data and
+    survive, like `built-in-human-checked` rows. The dialog's row-count/wording
+    must reflect this. Since the tiers coexist (req. 4a), every built-in
+    selection the user had shadowed applies again after a clear.
 42. The bootstrap (`cli/src/bootstrap/mod.rs`) passes the
     `gloss-data-cache/` directory, so req. 34's subdirectory scans take
     effect there — but its **`has_session_files` gate (~line 450) checks

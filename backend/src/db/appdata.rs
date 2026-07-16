@@ -28,6 +28,15 @@ pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
     }
 }
 
+/// Which tier of `gloss_word_context_cache` an origin belongs to: the shipped
+/// rows imported at bootstrap (`built-in-*`), or the rows this install created.
+/// The tier is the `built_in` column, part of the unique key with
+/// `(word, context_hash)` — the two tiers coexist for one key so that a user's
+/// selection shadows the shipped one instead of destroying it.
+pub fn gloss_cache_origin_is_built_in(origin: &str) -> bool {
+    origin.starts_with("built-in-")
+}
+
 pub type AppdataDbHandle = DatabaseHandle;
 
 impl AppdataDbHandle {
@@ -2086,6 +2095,11 @@ impl AppdataDbHandle {
     // Callers pass `word` already normalized via `gloss_cache_word_key` and
     // `context_hash` via `gloss_context_hash(normalize_gloss_context(...))`.
 
+    /// The cache row that *wins* for this key, across both tiers: a local row
+    /// and a shipped row can coexist for one `(word, context_hash)`, and the
+    /// higher `gloss_cache_origin_rank` is the one the resolution chain uses
+    /// (the chain's phrase tier sits between them but has no cache row).
+    /// Use `get_gloss_word_cache_tier` when a specific tier's row is meant.
     pub fn get_gloss_word_cache(&self, word_param: &str, context_hash_param: &str) -> Option<GlossWordContextCache> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
@@ -2094,6 +2108,38 @@ impl AppdataDbHandle {
                 .filter(word.eq(word_param))
                 .filter(context_hash.eq(context_hash_param))
                 .select(GlossWordContextCache::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => rows
+                .into_iter()
+                .max_by_key(|r| gloss_cache_origin_rank(&r.origin)),
+            Err(e) => {
+                error(&format!("get_gloss_word_cache(): {}", e));
+                None
+            }
+        }
+    }
+
+    /// The row of one tier for this key: `built_in = false` is the row this
+    /// install created (`user-selected` / `ai-selected`), `true` the shipped
+    /// one (`built-in-*`). The unique index is `(word, context_hash, built_in)`,
+    /// so this is at most one row.
+    pub fn get_gloss_word_cache_tier(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        built_in_param: bool,
+    ) -> Option<GlossWordContextCache> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(word.eq(word_param))
+                .filter(context_hash.eq(context_hash_param))
+                .filter(built_in.eq(if built_in_param { 1 } else { 0 }))
+                .select(GlossWordContextCache::as_select())
                 .first(db_conn)
                 .optional()
         });
@@ -2101,7 +2147,7 @@ impl AppdataDbHandle {
         match result {
             Ok(row) => row,
             Err(e) => {
-                error(&format!("get_gloss_word_cache(): {}", e));
+                error(&format!("get_gloss_word_cache_tier(): {}", e));
                 None
             }
         }
@@ -2142,11 +2188,17 @@ impl AppdataDbHandle {
         }
     }
 
-    /// Insert or update a cache row, respecting origin precedence
-    /// (user > built-in > ai):
-    /// - `user` overwrites anything;
-    /// - `built-in` overwrites `built-in` and `ai`, never `user`;
-    /// - `ai` only overwrites `ai`.
+    /// Insert or update a cache row **in the origin's own tier**
+    /// (`gloss_cache_origin_is_built_in`), respecting origin precedence within
+    /// that tier: a lower-ranked origin never overwrites a higher-ranked one
+    /// (`ai-selected` never downgrades a `user-selected` row), an equal one
+    /// refreshes the row (a fresh AI response, a user re-save).
+    ///
+    /// Precedence **across** tiers is not enforced here — it is the resolution
+    /// chain's job (`resolve_gloss_word_selection`). A `user-selected` write for
+    /// a word that has a shipped `built-in-*` row inserts a second, local row
+    /// that shadows the shipped one; deleting the local row later lets the
+    /// shipped selection apply again.
     ///
     /// Returns true when a row was written (inserted or updated).
     pub fn upsert_gloss_word_cache(
@@ -2159,7 +2211,8 @@ impl AppdataDbHandle {
     ) -> Result<bool> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
-        let existing = self.get_gloss_word_cache(word_param, context_hash_param);
+        let tier = gloss_cache_origin_is_built_in(origin_param);
+        let existing = self.get_gloss_word_cache_tier(word_param, context_hash_param, tier);
         let now = chrono::Utc::now().naive_utc();
 
         match existing {
@@ -2170,6 +2223,7 @@ impl AppdataDbHandle {
                     context_snippet: context_snippet_param,
                     selected_uid: selected_uid_param,
                     origin: origin_param,
+                    built_in: if tier { 1 } else { 0 },
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2183,10 +2237,6 @@ impl AppdataDbHandle {
             Some(row) => {
                 let new_rank = gloss_cache_origin_rank(origin_param);
                 let old_rank = gloss_cache_origin_rank(&row.origin);
-                // A lower-precedence origin never overwrites a higher one; an
-                // equal-precedence write updates the row (e.g. a fresh AI
-                // response refreshes an ai row, a user re-save refreshes a
-                // user row).
                 if new_rank < old_rank {
                     return Ok(false);
                 }
@@ -2206,12 +2256,18 @@ impl AppdataDbHandle {
     }
 
     /// Import a cache row from an exported gloss session with the
-    /// **strictly-higher** precedence rule (PRD req 40): write only when there
-    /// is no local row for `(word, context_hash)` or the imported origin
-    /// outranks the local one (`user > built-in > ai`). Equal precedence is a
-    /// no-op — unlike `upsert_gloss_word_cache` — so the local user's own
-    /// `user` rows are never overwritten and an imported `ai` row never churns
-    /// an existing local `ai` row.
+    /// **strictly-higher** precedence rule (PRD req 40), applied **within the
+    /// origin's own tier** (`gloss_cache_origin_is_built_in`): write only when
+    /// that tier has no row for `(word, context_hash)` or the imported origin
+    /// outranks the one there. Equal precedence is a no-op — unlike
+    /// `upsert_gloss_word_cache` — so the local user's own `user-selected` rows
+    /// are never overwritten and an imported `ai-selected` row never churns an
+    /// existing local one. Within the shipped tier this is what makes
+    /// `built-in-human-checked` beat `built-in-agent-checked` regardless of
+    /// import order.
+    ///
+    /// A shipped row and a local row for the same key never compete here; they
+    /// coexist, and the resolution chain ranks them.
     ///
     /// Returns true when a row was written (inserted or updated).
     pub fn import_gloss_word_cache_row(
@@ -2224,7 +2280,8 @@ impl AppdataDbHandle {
     ) -> Result<bool> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
-        let existing = self.get_gloss_word_cache(word_param, context_hash_param);
+        let tier = gloss_cache_origin_is_built_in(origin_param);
+        let existing = self.get_gloss_word_cache_tier(word_param, context_hash_param, tier);
         let now = chrono::Utc::now().naive_utc();
 
         match existing {
@@ -2235,6 +2292,7 @@ impl AppdataDbHandle {
                     context_snippet: context_snippet_param,
                     selected_uid: selected_uid_param,
                     origin: origin_param,
+                    built_in: if tier { 1 } else { 0 },
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2264,6 +2322,14 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Delete this install's own row for `(word, context_hash)` — the shield's
+    /// "remove the saved selection" click.
+    ///
+    /// **Only the local tier.** A shipped `built-in-*` row for the same key is
+    /// left in place: it is curated data that stays relevant for a later word
+    /// selection, and the user may just be trying the button out. Once the local
+    /// row is gone the shipped selection applies again on the next annotate pass
+    /// (`resolve_gloss_word_selection`).
     pub fn delete_gloss_word_cache(&self, word_param: &str, context_hash_param: &str) -> Result<()> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
@@ -2271,21 +2337,22 @@ impl AppdataDbHandle {
             diesel::delete(
                 gloss_word_context_cache
                     .filter(word.eq(word_param))
-                    .filter(context_hash.eq(context_hash_param)),
+                    .filter(context_hash.eq(context_hash_param))
+                    .filter(built_in.eq(0)),
             )
             .execute(db_conn)
             .map(|_| ())
         })
     }
 
-    /// Count of user-clearable cache rows (`ai-selected` + `user-selected`
-    /// origins; `built-in-*` rows are bootstrap-shipped and excluded).
+    /// Count of user-clearable cache rows (the local tier; `built-in-*` rows are
+    /// bootstrap-shipped and excluded).
     pub fn count_gloss_word_cache(&self) -> i64 {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
         let result = self.do_read(|db_conn| {
             gloss_word_context_cache
-                .filter(origin.eq_any(["ai-selected", "user-selected"]))
+                .filter(built_in.eq(0))
                 .count()
                 .get_result::<i64>(db_conn)
         });
@@ -2299,29 +2366,29 @@ impl AppdataDbHandle {
         }
     }
 
-    /// The locally-produced cache rows (`ai-selected` + `user-selected`), i.e.
-    /// everything that did not arrive with the shipped DB. Used by the appdata
-    /// upgrade export so a re-download does not lose the user's own choices.
+    /// The locally-produced cache rows (the local tier), i.e. everything that did
+    /// not arrive with the shipped DB. Used by the appdata upgrade export so a
+    /// re-download does not lose the user's own choices.
     /// Ordered by `(word, context_hash)` for deterministic export output.
     pub fn get_local_gloss_word_cache_rows(&self) -> Result<Vec<GlossWordContextCache>> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
         self.do_read(|db_conn| {
             gloss_word_context_cache
-                .filter(origin.eq_any(["ai-selected", "user-selected"]))
+                .filter(built_in.eq(0))
                 .order((word.asc(), context_hash.asc()))
                 .load::<GlossWordContextCache>(db_conn)
         })
     }
 
-    /// Bulk clear of the word-selection cache: deletes `ai-selected` and
-    /// `user-selected` rows only. `built-in-*` rows and the phrase table are
-    /// untouched.
+    /// Bulk clear of the word-selection cache: deletes the local tier only.
+    /// `built-in-*` rows and the phrase table are untouched, so every shipped
+    /// selection the user had shadowed applies again afterwards.
     pub fn clear_gloss_word_cache(&self) -> Result<()> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
         self.do_write(|db_conn| {
-            diesel::delete(gloss_word_context_cache.filter(origin.eq_any(["ai-selected", "user-selected"])))
+            diesel::delete(gloss_word_context_cache.filter(built_in.eq(0)))
                 .execute(db_conn)
                 .map(|_| ())
         })
@@ -2616,48 +2683,77 @@ mod gloss_word_selection_tests {
     }
 
     #[test]
-    fn ai_never_downgrades_user_or_built_in() {
+    fn ai_never_downgrades_a_user_row_and_never_touches_the_shipped_tier() {
         let db = setup();
         db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap();
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-builtin/dpd", "built-in-human-checked").unwrap();
         db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-agent/dpd", "built-in-agent-checked").unwrap();
 
+        // Same tier: an ai write never downgrades the user's own row.
         assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
-        assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
-        assert!(!db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+
+        // Different tier: the ai row is written *alongside* the shipped row
+        // rather than refused, and the shipped row is left intact. The shipped
+        // row still outranks it, so the winner is unchanged either way.
+        assert!(db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
 
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-builtin/dpd");
         assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().selected_uid, "uid-agent/dpd");
+        assert_eq!(
+            db.get_gloss_word_cache_tier("w2", "h2", true).unwrap().selected_uid,
+            "uid-builtin/dpd"
+        );
+        assert_eq!(
+            db.get_gloss_word_cache_tier("w2", "h2", false).unwrap().selected_uid,
+            "uid-ai/dpd"
+        );
 
-        // Agent never downgrades human-checked; human-checked overwrites agent.
+        // Within the shipped tier: agent never downgrades human-checked;
+        // human-checked overwrites agent (import order must not matter).
         assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
         assert!(db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-hu/dpd", "built-in-human-checked").unwrap());
         assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().origin, "built-in-human-checked");
     }
 
     #[test]
-    fn ai_refreshes_ai_and_user_overwrites_anything() {
+    fn a_user_row_shadows_the_shipped_row_instead_of_replacing_it() {
         let db = setup();
         db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-a/dpd", "ai-selected").unwrap();
         // A fresh AI response updates an existing ai row.
         assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-b/dpd", "ai-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-b/dpd");
 
-        // user overwrites ai...
+        // user overwrites ai — same tier, higher rank.
         assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-c/dpd", "user-selected").unwrap());
         let row = db.get_gloss_word_cache("w1", "h1").unwrap();
         assert_eq!(row.selected_uid, "uid-c/dpd");
         assert_eq!(row.origin, "user-selected");
+        assert!(db.get_gloss_word_cache_tier("w1", "h1", true).is_none());
 
-        // ...and built-in.
+        // A user selection over a shipped row inserts a second, local row: the
+        // user wins, and the curated row survives for a later word selection.
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
         assert!(db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
+        assert_eq!(
+            db.get_gloss_word_cache_tier("w2", "h2", true).unwrap().selected_uid,
+            "uid-bi/dpd"
+        );
 
-        // built-in never overwrites user.
-        assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in-human-checked").unwrap());
+        // Deleting the local row (the shield's remove click) leaves the shipped
+        // row, which then applies again.
+        db.delete_gloss_word_cache("w2", "h2").unwrap();
+        assert!(db.get_gloss_word_cache_tier("w2", "h2", false).is_none());
+        let row = db.get_gloss_word_cache("w2", "h2").expect("shipped row survives the delete");
+        assert_eq!(row.origin, "built-in-human-checked");
+        assert_eq!(row.selected_uid, "uid-bi/dpd");
+
+        // An import writing the shipped tier does not disturb a local user row.
+        assert!(db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-d/dpd", "built-in-human-checked").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-c/dpd");
+        assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "user-selected");
     }
 
     // Session-export import: strictly-higher precedence only (PRD req 40).
@@ -2683,12 +2779,17 @@ mod gloss_word_selection_tests {
         assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
 
-        // built-in untouched by imported ai; overwritten by imported user.
+        // An imported ai row lands in the local tier beside the shipped row,
+        // which keeps winning; an imported user row then outranks both.
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
-        assert!(!db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
         assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
+        assert_eq!(
+            db.get_gloss_word_cache_tier("w2", "h2", true).unwrap().selected_uid,
+            "uid-bi/dpd"
+        );
 
         // Imported agent-checked beats a local ai row, but never a human tier.
         db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap();

@@ -2695,8 +2695,40 @@ pub fn gloss_cache_word_key(word: &str) -> String {
 pub struct GlossResolutionData {
     /// Set-phrase rules as stored: (normalized phrase, word key, selected_uid).
     pub phrases: Vec<(String, String, String)>,
-    /// Cache rows keyed by `(word_key, context_hash)` → `(selected_uid, origin)`.
-    pub cache: HashMap<(String, String), (String, String)>,
+    /// Cache rows keyed by `(word_key, context_hash)`.
+    pub cache: HashMap<(String, String), GlossCacheEntry>,
+}
+
+/// The cache rows for one `(word_key, context_hash)`. The two tiers coexist —
+/// the unique key is `(word, context_hash, built_in)` — so a user's own
+/// selection shadows the shipped one in `resolve_gloss_word_selection` without
+/// destroying it, and removing the local row lets the shipped one apply again.
+#[derive(Debug, Clone, Default)]
+pub struct GlossCacheEntry {
+    /// `(selected_uid, origin)` of this install's row: `user-selected` or
+    /// `ai-selected`.
+    pub local: Option<(String, String)>,
+    /// `(selected_uid, origin)` of the bootstrap-shipped row:
+    /// `built-in-human-checked` or `built-in-agent-checked`.
+    pub built_in: Option<(String, String)>,
+}
+
+impl GlossCacheEntry {
+    /// The local row's uid when its origin is one of `origins`.
+    fn local_uid_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.local {
+            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            _ => None,
+        }
+    }
+
+    /// The shipped row's uid when its origin is one of `origins`.
+    fn built_in_uid_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.built_in {
+            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            _ => None,
+        }
+    }
 }
 
 impl GlossResolutionData {
@@ -2729,11 +2761,12 @@ impl GlossResolutionData {
         appdata: &crate::db::appdata::AppdataDbHandle,
         pairs: &[(String, String)],
     ) -> Self {
-        let cache = appdata
-            .get_gloss_word_cache_batch(pairs)
-            .into_iter()
-            .map(|r| ((r.word, r.context_hash), (r.selected_uid, r.origin)))
-            .collect();
+        let mut cache: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
+        for r in appdata.get_gloss_word_cache_batch(pairs) {
+            let entry = cache.entry((r.word, r.context_hash)).or_default();
+            let slot = if r.built_in != 0 { &mut entry.built_in } else { &mut entry.local };
+            *slot = Some((r.selected_uid, r.origin));
+        }
 
         let phrases = appdata
             .get_all_gloss_phrase_selections()
@@ -2865,6 +2898,14 @@ pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_
 /// masked a curator's per-context exception. The agent tier stays below
 /// phrase: a phrase rule carries multi-context human evidence, an agent row a
 /// single-context machine judgment (docs/gloss-ai-word-selection.md §1).
+///
+/// The local and shipped rows for one key **coexist** (`GlossCacheEntry`), so
+/// this is a walk over both tiers rather than a lookup of one row: a
+/// `user-selected` row shadows the shipped one here, and deleting it (shield
+/// click, Clear Word-Selection Cache) makes the shipped selection apply again
+/// on the next annotate pass. That is what lets the shield's outline state be
+/// pure UI state for the session — nothing has to be destroyed to show it.
+///
 /// An entry whose `selected_uid` matches none of the word's lookup results
 /// (dictionary data changed) is ignored, falling through to the next level.
 /// Returns the matching option index and the resolution origin
@@ -2879,18 +2920,27 @@ pub fn resolve_gloss_word_selection(
 ) -> Option<(i32, String)> {
     let option_index = |uid: &str| results.iter().position(|r| gloss_option_uid_matches(r, uid));
 
+    let empty = GlossCacheEntry::default();
     let cached = data
         .cache
-        .get(&(word_key.to_string(), context_hash.to_string()));
+        .get(&(word_key.to_string(), context_hash.to_string()))
+        .unwrap_or(&empty);
 
-    if let Some((uid, origin)) = cached {
-        if origin == "user-selected" || origin == "built-in-human-checked" {
-            if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, origin.clone()));
-            }
+    // 1. This install's own choice for this exact (word, context).
+    if let Some(uid) = cached.local_uid_of(&["user-selected"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "user-selected".to_string()));
         }
     }
 
+    // 2. The shipped human-checked row for this exact (word, context).
+    if let Some(uid) = cached.built_in_uid_of(&["built-in-human-checked"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "built-in-human-checked".to_string()));
+        }
+    }
+
+    // 3. The general set-phrase rule.
     for (phrase, word, uid) in &data.phrases {
         if word == word_key && gloss_phrase_occurs(phrase, normalized_context) {
             if let Some(idx) = option_index(uid) {
@@ -2899,11 +2949,18 @@ pub fn resolve_gloss_word_selection(
         }
     }
 
-    if let Some((uid, origin)) = cached {
-        if origin == "built-in-agent-checked" || origin == "ai-selected" {
-            if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, origin.clone()));
-            }
+    // 4. The shipped agent-checked row: single-context machine judgment, so it
+    //    ranks below the multi-context human evidence of a phrase rule.
+    if let Some(uid) = cached.built_in_uid_of(&["built-in-agent-checked"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "built-in-agent-checked".to_string()));
+        }
+    }
+
+    // 5. A runtime AI response saved on this install.
+    if let Some(uid) = cached.local_uid_of(&["ai-selected"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "ai-selected".to_string()));
         }
     }
 
@@ -2995,7 +3052,11 @@ pub fn build_gloss_session_export_json(
             note: None,
         })
         .collect();
-    word_cache.sort_by(|a, b| (&a.word, &a.context_hash).cmp(&(&b.word, &b.context_hash)));
+    // A key can carry both a local and a shipped row, so `origin` is part of the
+    // sort key to keep the export deterministic.
+    word_cache.sort_by(|a, b| {
+        (&a.word, &a.context_hash, &a.origin).cmp(&(&b.word, &b.context_hash, &b.origin))
+    });
 
     let envelope = serde_json::json!({
         "format": GLOSS_SESSION_EXPORT_FORMAT,
@@ -5001,19 +5062,30 @@ mod tests {
             .collect()
     }
 
+    /// Build resolution data from `(word_key, context_hash, uid, origin)` rows.
+    /// Each row lands in the tier its origin implies, so a key may carry both a
+    /// local and a shipped row — exactly as the DB stores them.
     fn resolution_data_with(
         cache: &[(&str, &str, &str, &str)],
         phrases: &[(&str, &str, &str)],
     ) -> GlossResolutionData {
+        let mut cache_map: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
+        for (w, h, u, o) in cache {
+            let entry = cache_map.entry((w.to_string(), h.to_string())).or_default();
+            let slot = if crate::db::appdata::gloss_cache_origin_is_built_in(o) {
+                &mut entry.built_in
+            } else {
+                &mut entry.local
+            };
+            *slot = Some((u.to_string(), o.to_string()));
+        }
+
         GlossResolutionData {
             phrases: phrases
                 .iter()
                 .map(|(p, w, u)| (p.to_string(), w.to_string(), u.to_string()))
                 .collect(),
-            cache: cache
-                .iter()
-                .map(|(w, h, u, o)| ((w.to_string(), h.to_string()), (u.to_string(), o.to_string())))
-                .collect(),
+            cache: cache_map,
         }
     }
 
@@ -5111,6 +5183,76 @@ mod tests {
         // Stale uid everywhere → unresolved.
         let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai-selected")], &[]);
         assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+    }
+
+    /// The local and shipped rows for one key coexist, so the chain walks both
+    /// tiers. This is what lets the shield's outline state be UI-only: removing
+    /// the local row is enough to hand the word back to the shipped selection,
+    /// and no curated data has to be destroyed on the way.
+    #[test]
+    fn test_resolve_gloss_word_selection_local_row_shadows_shipped_row() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+        let hash = "h1";
+
+        // A user row and a shipped human-checked row for the same key: the
+        // user's own choice wins.
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "user-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-human-checked"),
+            ],
+            &[],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user-selected".to_string())),
+        );
+
+        // Remove just the local row (delete_gloss_word_cache never touches the
+        // shipped tier) and the shipped selection applies again.
+        let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", "built-in-human-checked")], &[]);
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-human-checked".to_string())),
+        );
+
+        // Same for a shipped row shadowed by a local ai row: the shipped row
+        // outranks it, so a coexisting ai row changes nothing.
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "ai-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-agent-checked"),
+            ],
+            &[],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-agent-checked".to_string())),
+        );
+
+        // A phrase rule sits between the two shipped tiers: it beats a shipped
+        // agent row, but a local user row still beats the phrase.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "built-in-agent-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-phrase-match".to_string())),
+        );
+
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "user-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-agent-checked"),
+            ],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user-selected".to_string())),
+        );
     }
 
     #[test]
