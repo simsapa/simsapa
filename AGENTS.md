@@ -261,9 +261,12 @@ Notable feature docs:
   choice), the **JSON session export / Open JSON** round-trip and its
   strictly-higher-precedence import, **DOCX export** (hand-built OOXML around an
   embedded template), and the **built-in data-bank pipeline**
-  (`gloss-corpus-explore` → candidate sessions → curate in the UI →
-  `gloss-data-cache/` → `import-gloss-data` → bootstrap), incl. the
-  Rust-vs-Python-API decision.
+  (`gloss-corpus-explore` → `candidates/` → reviewed on two paths: human in the
+  Gloss UI → `human-checked/`, or the **`gloss-agent-check` agent workflow**
+  (CLI `prepare`/`apply`/`status` + the `/gloss-agent-check` project skill) →
+  `agent-checked/` → `import-gloss-data` → bootstrap), the review-skip +
+  human-over-agent import precedence, the naming scheme (folders / `confidence`
+  / origins / shield), and the Rust-vs-Python-API decision.
 - [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
   how the provider/model lists keep themselves current and how a model is chosen
   per request. The **shared update procedure**

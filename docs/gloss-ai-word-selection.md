@@ -578,19 +578,63 @@ nothing references history rows by id across the upgrade.
 
 ## 7. The built-in data bank (curation pipeline)
 
-The bank is what makes common suttas resolve with no AI at all. The Gloss UI
-**is** the review tool; the pipeline is:
+The bank is what makes common suttas resolve with no AI at all. Candidate
+session files can be reviewed on two paths — by a human in the Gloss UI, or by
+a Claude Code agent through the `gloss-agent-check` CLI:
 
 ```
-gloss-corpus-explore  →  candidates/*.json  →  [Open JSON → AI select → correct → confirm → Export As JSON]
-                                                        ↓
-                            gloss-data-cache/human-checked/*.json   (committed to the repo)
-                                                        ↓
-                          import-gloss-data  →  built-in rows in appdata.sqlite3  (run by the bootstrap)
+gloss-corpus-explore  →  gloss-data-cache/candidates/*.json
+                              │
+              ┌───────────────┴─────────────────────────────┐
+   human path │                                             │ agent path
+              ▼                                             ▼
+  [Gloss UI: Open JSON → AI select →          gloss-agent-check prepare → agent
+   correct → confirm → Export As JSON]        decides → answers file in
+              │                               agent-answers/ → gloss-agent-check apply
+              ▼                                             │
+  human-checked/*.json  (committed)           agent-checked/*.json  (committed)
+              │                                             │
+              └───────────────┬─────────────────────────────┘
+                              ▼
+        import-gloss-data  →  built-in rows in appdata.sqlite3
+                              (run by the bootstrap)
 ```
 
-Human-reviewed session files are committed under
-`gloss-data-cache/human-checked/`.
+Folder conventions under `bootstrap-assets-resources/gloss-data-cache/`:
+
+| folder | role |
+|---|---|
+| `candidates/` | generated, unreviewed candidate sessions (`candidates-*.json`; the generator's `report.json`/`report.md` live here too and are filtered out) |
+| `agent-answers/` | transient answers files written by the reviewing agent (git-ignored; deleted on a successful `apply`, kept on failure for correction) |
+| `agent-checked/` | finished sessions whose `word_cache` entries carry origin `built-in-agent-checked` |
+| `human-checked/` | sessions reviewed by a human in the Gloss UI (origin `user-selected` / `built-in-human-checked` entries) |
+
+Promotion from `agent-checked/` to `human-checked/` is a deliberate manual act
+— nothing moves files automatically.
+
+### Naming scheme
+
+The states live on two orthogonal axes — *confidence tier* (human / machine /
+none) and *provenance* (local rows created on this install vs shipped rows
+imported at bootstrap) — and each layer names only the axis it cares about:
+
+| layer | function | names |
+|---|---|---|
+| pipeline folders | who reviewed the file | `candidates/`, `agent-answers/`, `agent-checked/`, `human-checked/` |
+| answer entries | agent's self-assessment | `confidence`: `confident` \| `review` (+ `note`) |
+| cache `origin` (DB + JSON) | provenance | local: `user-selected`, `ai-selected`; shipped: `built-in-human-checked`, `built-in-agent-checked` |
+| `resolution` values | which tier resolved the word | the same four values plus `built-in-phrase-match` and `null` (which have no cache rows) |
+| shield UI | confidence tier | "Not checked", "AI-checked", "Human-checked" |
+
+Rules: origins and resolution values are **one unified value set** — no parallel
+vocabularies. The word **agent** is reserved for the Claude Code agent workflow
+(the CLI subcommands, the folders, and `built-in-agent-checked` — data *produced
+by* that workflow). The `built-in-` prefix marks shipped rows/tiers that survive
+Clear Word-Selection Cache; the `-selected` suffix marks local rows created on
+this install. The UI says **AI-checked** (not "agent-checked") for the half
+shield because it covers both runtime AI selections (`ai-selected`) and shipped
+agent rows (`built-in-agent-checked`). Flagged answers are a `confidence` field
+on the entry, never a pseudo-origin.
 
 **`gloss-corpus-explore`** (`cli/src/gloss_corpus_explore.rs`) is a read-only
 frequency/n-gram scan of the shipped suttas that generates review-ready candidate
@@ -636,27 +680,111 @@ Gotchas found while building it:
   chars).
 - Generated envelopes carry no `exported_at`, so regenerated files diff cleanly.
 
+### The agent review stage: `gloss-agent-check`
+
+**`gloss-agent-check {prepare|apply|status}`** (`cli/src/gloss_agent_check.rs`;
+`--data-cache` defaults to `../../bootstrap-assets-resources/gloss-data-cache`,
+run from `cli/`; `SIMSAPA_DIR` must point at the dist assets because `apply`
+validates uids against the real dictionaries):
+
+- **`prepare <candidate.json> [--out FILE]`** emits the shared
+  `pali_word_selection` request payload (§4) for one candidate file — every
+  ambiguous occurrence in **include-resolved mode** (`WordSelectionBuildMode::IncludeResolved`:
+  stale baked-in `resolution` values must not silently exclude occurrences from
+  review), each item enriched with its paragraph's `source_uid` so the agent can
+  use sutta-level knowledge (standard formulas). Output is deterministic
+  (sorted object keys), pretty-printed, to stdout or `--out`.
+- **`apply <candidate.json> <answers.json>`** parses the answers with the
+  **strict** parser mode (§4: every ambiguous occurrence answered, lemmas
+  resolved within each item's options, no disagreeing duplicates), validates
+  every selected uid via `AppData::resolve_word_uid`, then writes the finished
+  session to `agent-checked/<candidate-name>`: `selected_index` set per answer,
+  `word_cache` entries appended with origin `built-in-agent-checked`
+  (+ `confidence: "review"` / `note` carried onto flagged entries — optional
+  fields on `GlossWordCacheExportEntry`, absent = confident), the session
+  envelope preserved and `exported_at` removed. Any validation failure is a
+  hard error: non-zero exit, no output written, answers file kept for
+  correction. On success the answers file is deleted and a per-file summary is
+  printed (total ambiguous / confirmed / flagged for review).
+- **`status`** lists pending candidates (`candidates-*.json` not yet in
+  `agent-checked/` or `human-checked/`), agent-checked files with their review
+  counts, human-checked files, and totals. Missing folders scan as empty.
+
+The working procedure for the reviewing agent (one file per apply cycle, the
+selection guidance, the never-edit-JSON-directly rule) is packaged as the
+project skill `/gloss-agent-check`
+(`.claude/skills/gloss-agent-check/SKILL.md`). The answers file in
+`agent-answers/` is the agent's **entire write surface** — candidate and
+agent-checked files are never edited by hand, which preserves the
+identical-by-construction guarantee of options, uids and context hashes.
+
 **`import-gloss-data <appdata.sqlite3> [dir-or-files]`**
 (`cli/src/import_gloss_data.rs`, default input `gloss-data-cache/`) scans the
-committed session exports, takes the **confirmed** entries (origins
-`user-selected` and `built-in-human-checked`), validates every `selected_uid`
-against the dictionaries DB (`AppData::resolve_word_uid`), dedupes by
-(word, context_hash) and writes them as `origin = "built-in-human-checked"`. It
-also prints a **phrase-candidates report** (recurring
-2–4-word n-grams containing a confirmed word, one consistent uid, ≥ 3 distinct
-contexts) as ready-to-merge `assets/gloss-phrase-selections.json` lines — one
-phrase rule replaces many context rows *and* covers unseen suttas — and a
-**coverage summary** (share of ambiguous occurrences resolving without AI), which
-is the metric to watch as the bank grows.
+committed session exports and writes the confirmed entries into the target DB.
+For a directory input it scans the top level **plus the `human-checked/` and
+`agent-checked/` subdirs explicitly** (otherwise non-recursive — which is what
+keeps `candidates/` (unreviewed, empty `word_cache`) and `agent-answers/` out
+of the import). Each entry is tiered by its origin: **human** = origins
+`user-selected` / `built-in-human-checked` (imported as
+`built-in-human-checked`), **agent** = origin `built-in-agent-checked`
+(imported as itself). Entries with `confidence: "review"` are **skipped** and
+counted as "pending human review" — an agent's flagged guesses never become
+confirmed rows (the in-app Open JSON import applies the same skip). Every
+`selected_uid` is validated against the dictionaries DB
+(`AppData::resolve_word_uid`); dedup is by (word, context_hash) with
+**human-over-agent precedence** independent of scan order (entries are
+collected first, conflicts listed), and the summary reports human and agent
+counts separately.
 
-Directory inputs are scanned **non-recursively**, which is what keeps the
-`candidates/` subfolder (unreviewed, empty `word_cache`) out of the import.
+It also prints:
+
+- a **phrase-candidates report** (recurring 2–4-word n-grams containing a
+  confirmed word, one consistent uid, ≥ 3 distinct contexts) as ready-to-merge
+  `assets/gloss-phrase-selections.json` lines — one phrase rule replaces many
+  context rows *and* covers unseen suttas. Non-review agent entries count
+  toward the ≥ 3 contexts rule (they are confirmed input);
+- a **phrase-vs-row conflict report**: confirmed entries whose `selected_uid`
+  disagrees with a seeded phrase rule matching the entry's normalized context
+  (the same `gloss_phrase_occurs` test the resolution chain uses). With
+  built-in-human ranked above phrase (§1), a disagreeing **human** entry wins
+  at runtime — flagged "deliberate exception or curation error?"; a
+  disagreeing **agent** entry is masked by the phrase — flagged informational.
+  Report only, no import behavior change;
+- a **coverage summary** (share of ambiguous occurrences resolving without AI,
+  counting both `built-in-human-checked` and `built-in-agent-checked` tiers),
+  which is the metric to watch as the bank grows.
 
 The **bootstrap** runs the same import into the freshly built appdata DB *before*
 `appdata.tar.bz2` is created (`cli/src/bootstrap/mod.rs`), after the phrase-table
-seeding. So: **a new database version ships new built-in data** — there is no
-in-app re-seeding or version guard. An import failure warns; it does not abort the
-bootstrap.
+seeding; its `has_session_files` gate checks the top level **and** the
+`human-checked/` / `agent-checked/` subdirs. So: **a new database version ships
+new built-in data** — there is no in-app re-seeding or version guard. An import
+failure warns; it does not abort the bootstrap.
+
+### The two shipped word-selection sources
+
+How each shipped source is generated, and its function in the resolution
+pipeline (§1):
+
+- **Built-in cache rows** (`built-in-human-checked` / `built-in-agent-checked`)
+  are produced from the `gloss-data-cache/` session files — human review in the
+  Gloss UI → `human-checked/`; the agent workflow → `agent-checked/` — and
+  imported by `import-gloss-data` at bootstrap. They are the **exact-match
+  layer**: keyed on `(word_key, context_hash)`, a row hits only when the same
+  normalized context window recurs verbatim.
+- **Set phrase rules** (`built-in-phrase-match`) are *distilled from* the
+  confirmed rows by the phrase-candidates report (recurring 2–4-word n-grams,
+  ≥ 3 distinct contexts, one consistent uid), then **manually reviewed and
+  merged** into `assets/gloss-phrase-selections.json` and seeded at bootstrap.
+  They are the **generalization layer**: a substring occurrence test against
+  the normalized context, so one rule replaces many context rows and covers
+  unseen suttas.
+
+The chain orders them human rows > phrase > agent rows: a human-confirmed row
+for the exact context overrides the general rule, while an agent row (a
+single-context machine judgment) stays below the multi-context human evidence a
+phrase rule carries — the full rationale is in §1, and the phrase-vs-row
+conflict report above keeps disagreements visible at curation time.
 
 The set-phrase list is `assets/gloss-phrase-selections.json` (`include_str!`,
 versioned, seeded idempotently at bootstrap). It stores the **human-readable**
@@ -674,9 +802,10 @@ as the context windows, so the two sides cannot drift.
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml` |
-| CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs` |
+| CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |
+| Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
-| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs` |
+| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs`, `backend/tests/test_gloss_upgrade_export.rs`, in-module tests in `cli/src/gloss_agent_check.rs` |
 
 No per-write `ANALYZE` for the two new tables (same rationale as
 `gloss_prompts_history`; see
