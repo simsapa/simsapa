@@ -45,6 +45,14 @@ its own serialization shape:
   ORDER BY updated_at DESC`. There is **no per-save `ANALYZE`** — see
   [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md).
 - **No retention cap.** Sessions persist until Delete / Clear.
+- Sessions **survive an appdata re-download**: the upgrade export/import cycle in
+  `backend/src/app_data.rs` writes the whole table to
+  `import-me/gloss_prompts_history.json` (`export_gloss_prompts_history`) and
+  restores it with the original timestamps afterwards (`import_history_row`,
+  deduplicated on `(item_type, created_at, data_json)`; source ids are not
+  carried over). Both tabs' sessions ride in that one file — it keys on nothing
+  but `item_type`. See
+  [gloss-ai-word-selection.md](./gloss-ai-word-selection.md) §6.
 
 ## The shared state machine
 

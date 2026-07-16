@@ -87,11 +87,21 @@ Dialog {
             text: "When a gloss finds multiple dictionary options for a word, an AI model is asked to pick the correct one based on the sentence context. The request uses the Fallback sequence in Settings > AI Models."
         }
 
-        CheckBox {
-            id: enabled_check
-            text: "Use AI word selection"
-            checked: root.selection_enabled
-            onToggled: root.persist_selection(enabled_check.checked)
+        RowLayout {
+            spacing: 8
+            Image {
+                source: "icons/32x32/famicons--shield-half-outline.png"
+                sourceSize.width: 24
+                sourceSize.height: 24
+                fillMode: Image.PreserveAspectFit
+                Layout.alignment: Qt.AlignVCenter
+            }
+            CheckBox {
+                id: enabled_check
+                text: "Use AI word selection"
+                checked: root.selection_enabled
+                onToggled: root.persist_selection(enabled_check.checked)
+            }
         }
 
         Label {
@@ -100,6 +110,73 @@ Dialog {
             visible: enabled_check.checked && !root.has_enabled_sequence_model()
             color: "#E07B39"
             text: "No models are enabled in the Fallback sequence, so no requests can be sent."
+        }
+
+        // Shield legend: this dialog is where users learn the confidence
+        // system. The vocabulary list shows one shield per ambiguous word;
+        // clicking it cycles the state.
+        GroupBox {
+            Layout.fillWidth: true
+            title: "Selection confidence — the shield icon"
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 10
+
+                GridLayout {
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 8
+
+                    Image {
+                        source: "icons/32x32/famicons--shield-outline.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "Not checked — a plain dictionary lookup with no saved selection."
+                    }
+
+                    Image {
+                        source: "icons/32x32/famicons--shield-half-outline.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "AI-checked — a machine (runtime AI or the built-in agent pipeline) picked this sense."
+                    }
+
+                    Image {
+                        source: "icons/32x32/famicons--shield.png"
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        fillMode: Image.PreserveAspectFit
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: "Human-checked — a person confirmed this sense: you, or a curator whose selection ships with the app (including its set-phrase rules)."
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Click a word's shield to confirm the shown sense as Human-checked — choosing it yourself is human confidence, so the click never stops at AI-checked. Clicking a Human-checked shield returns the word to Not checked; if the selection was your own, it asks for confirmation before removing it."
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: "Built-in selections are never deleted. Clicking one only sets the word aside for the current session, and it applies again next time you gloss the passage."
+                }
+            }
         }
 
         Button {

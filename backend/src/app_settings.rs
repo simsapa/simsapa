@@ -535,13 +535,15 @@ You are an expert in Pāli grammar and vocabulary, assisting with the word-by-wo
 
     prompts.insert("Gloss Tab: Word Selection Request".to_string(),
         r#"
-Each item below is a Pāli word in its context, with candidate dictionary entries. For each item, select the entry whose meaning fits the context, and return its "uid".
+Each item below is a Pāli word in its context, with candidate dictionary entries. For each item, select the entry whose meaning fits the context, and return its "word" lemma copied verbatim (including sense numbers and diacritics).
 
 <<WORD_SELECTION_JSON>>
 
 Respond with JSON in exactly this format, one selection per item:
 
-{"selections": [{"id": "<item id>", "uid": "<chosen option uid>"}]}
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>"}]}
+
+A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
 "#.trim().to_string());
 
     prompts.insert("Prompts Tab: System Prompt".to_string(),

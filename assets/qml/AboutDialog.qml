@@ -46,6 +46,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: AboutDialog onCompleted");
         theme_helper.apply();
     }
 

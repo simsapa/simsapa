@@ -89,7 +89,13 @@ ColumnLayout {
         root.selection_changed();
     }
 
-    Component.onCompleted: refresh_state()
+    Component.onCompleted: {
+        startup_trace_logger.info("STARTUP-TRACE: DictionarySearchDictionariesPanel onCompleted start");
+        refresh_state();
+        startup_trace_logger.info("STARTUP-TRACE: DictionarySearchDictionariesPanel onCompleted end");
+    }
+
+    Logger { id: startup_trace_logger }
 
     DictionaryManager { id: dict_manager }
 

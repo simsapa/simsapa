@@ -380,7 +380,8 @@ pub struct ProcessedWord {
     #[serde(default)]
     pub context_hash: String,
     /// How `selected_index` was resolved from the word-selection cache /
-    /// set-phrase tables: `"user"`, `"phrase"`, `"built-in"` or `"ai"`;
+    /// set-phrase tables: `"user-selected"`, `"built-in-phrase-match"`,
+    /// `"built-in-human-checked"` or `"ai-selected"`;
     /// `None` = unresolved (fresh AI request candidate). Precedence:
     /// user cache > phrase > built-in cache > ai cache. `#[serde(default)]`
     /// for pre-existing history sessions (see `context_hash` above).

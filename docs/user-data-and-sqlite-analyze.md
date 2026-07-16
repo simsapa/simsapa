@@ -95,6 +95,16 @@ Notes:
   multi-table join. `DatabaseHandle::analyze` also runs a full-DB `ANALYZE` over
   *all* appdata tables, so calling it on every 60 s save would be wasteful. (The
   decision is also recorded as a code comment above the CRUD helpers.)
+- **Gloss word selections (`gloss_word_context_cache`).** Rows accumulate at
+  runtime (AI responses, manual ComboBox changes, the shield toggle) and arrive
+  in bulk when `import_gloss_selections` restores the user's own rows after an
+  appdata re-download (see [gloss-ai-word-selection.md](./gloss-ai-word-selection.md)),
+  but no path calls `ANALYZE`. Every query on the table is single-table and
+  served by the `(word, context_hash)` unique index — the per-word lookup, its
+  batch `eq_any` variant, and the origin-filtered count/clear — so the planner
+  has nothing to get wrong; there is no join for bad stats to wreck. The bulk
+  re-import is also bounded by what one user personally selected (hundreds of
+  rows), against a freshly downloaded DB that bootstrap already `ANALYZE`d.
 - Schema migrations / startup schema upgrades (`run_dictionaries_migrations`,
   `upgrade_appdata_schema`): we don't `ANALYZE` after these because we ship a
   new shipped DB on any change large enough to shift selectivity — migrations

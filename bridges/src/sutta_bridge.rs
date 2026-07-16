@@ -973,6 +973,9 @@ pub mod qobject {
         fn parse_word_selection_response(self: &SuttaBridge, response: &QString, expected_items_json: &QString) -> QString;
 
         #[qinvokable]
+        fn build_word_selection_items_json(self: &SuttaBridge, paragraphs_json: &QString, forced: bool) -> QString;
+
+        #[qinvokable]
         fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
 
         #[qinvokable]
@@ -2729,18 +2732,45 @@ impl qobject::SuttaBridge {
     }
 
     /// Parse and validate an AI word-selection response against the request's
-    /// items array (see `simsapa_backend::helpers::parse_word_selection_response`).
-    /// Returns `{"selections": [{"id": "...", "uid": "..."}]}` on success or
+    /// items array (see `simsapa_backend::helpers::parse_word_selection_response`;
+    /// lenient mode — invalid entries are logged and skipped). Returns
+    /// `{"selections": [{"id", "uid", "confidence", "note"?}]}` on success or
     /// `{"error": "..."}` on failure (incl. in-band `Error:` responses).
     pub fn parse_word_selection_response(&self, response: &QString, expected_items_json: &QString) -> QString {
-        match simsapa_backend::helpers::parse_word_selection_response(&response.to_string(), &expected_items_json.to_string()) {
-            Ok(pairs) => {
-                let selections: Vec<serde_json::Value> = pairs.iter()
-                    .map(|(id, uid)| serde_json::json!({"id": id, "uid": uid}))
-                    .collect();
-                QString::from(serde_json::json!({"selections": selections}).to_string())
+        use simsapa_backend::helpers::WordSelectionParseMode;
+        match simsapa_backend::helpers::parse_word_selection_response(
+            &response.to_string(),
+            &expected_items_json.to_string(),
+            WordSelectionParseMode::Lenient,
+        ) {
+            Ok(entries) => {
+                QString::from(serde_json::json!({"selections": entries}).to_string())
             }
             Err(e) => QString::from(serde_json::json!({"error": e}).to_string()),
+        }
+    }
+
+    /// Build the shared `pali_word_selection` request items for the GlossTab
+    /// network path (see `simsapa_backend::helpers::build_word_selection_items`).
+    /// `paragraphs_json` is an array of `{paragraph_index, words_json}`
+    /// objects; `forced` re-includes `ai-selected`-resolved words. Returns the
+    /// items JSON array, or `"[]"` on error (logged).
+    pub fn build_word_selection_items_json(&self, paragraphs_json: &QString, forced: bool) -> QString {
+        use simsapa_backend::helpers::{build_word_selection_items, WordSelectionBuildMode, WordSelectionParagraphInput};
+        let paragraphs: Vec<WordSelectionParagraphInput> =
+            match serde_json::from_str(&paragraphs_json.to_string()) {
+                Ok(p) => p,
+                Err(e) => {
+                    error(&format!("build_word_selection_items_json(): invalid paragraphs JSON: {}", e));
+                    return QString::from("[]");
+                }
+            };
+        match build_word_selection_items(&paragraphs, WordSelectionBuildMode::SkipResolved { forced }) {
+            Ok(items) => QString::from(serde_json::json!(items).to_string()),
+            Err(e) => {
+                error(&format!("build_word_selection_items_json(): {}", e));
+                QString::from("[]")
+            }
         }
     }
 

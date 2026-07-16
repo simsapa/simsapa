@@ -343,47 +343,31 @@ Item {
         root.ws_request_items = ({});
     }
 
-    // Build the AI request items for the given paragraphs from words_data_json:
-    // ambiguous words only (results.length > 1), summaries HTML-stripped and
-    // truncated to 200 chars. Words already resolved from the cache or the
-    // phrase table (resolution set by the Rust gloss processing) are excluded;
-    // the forced pass re-includes "ai"-resolved words but never
-    // "user"/"phrase"/"built-in".
+    // Build the AI request items for the given paragraphs via the shared
+    // backend builder (SuttaBridge.build_word_selection_items_json): ambiguous
+    // words only (results.length > 1), summaries HTML-stripped and truncated
+    // to 200 chars. Words already resolved from the cache or the phrase table
+    // (resolution set by the Rust gloss processing) are excluded; the forced
+    // pass re-includes "ai-selected"-resolved words but never
+    // "user-selected"/"built-in-phrase-match"/"built-in-human-checked".
     function build_word_selection_items(paragraph_indexes, forced) {
-        let items = [];
+        let paragraphs = [];
         for (let pi of paragraph_indexes) {
             if (pi >= paragraph_model.count) continue;
             let paragraph = paragraph_model.get(pi);
             if (!paragraph || !paragraph.words_data_json) continue;
-            let words_data;
-            try {
-                words_data = JSON.parse(paragraph.words_data_json);
-            } catch (e) {
-                logger.error("build_word_selection_items: failed to parse words_data_json: " + e);
-                continue;
-            }
-            for (let wi = 0; wi < words_data.length; wi++) {
-                let w = words_data[wi];
-                if (!w || !w.results || w.results.length <= 1) continue;
-                let resolution = w.resolution || null;
-                if (resolution !== null && !(forced && resolution === "ai")) continue;
-                let options = [];
-                for (let r of w.results) {
-                    options.push({
-                        uid: r.uid,
-                        word: r.word,
-                        summary: (r.summary || "").replace(/<[^>]*>/g, "").substring(0, 200),
-                    });
-                }
-                items.push({
-                    id: "p" + pi + "w" + wi,
-                    word: w.original_word,
-                    context: w.example_sentence || "",
-                    options: options,
-                });
-            }
+            paragraphs.push({
+                paragraph_index: pi,
+                words_json: paragraph.words_data_json,
+            });
         }
-        return items;
+        let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
+        try {
+            return JSON.parse(items_json);
+        } catch (e) {
+            logger.error("build_word_selection_items: failed to parse items JSON: " + e);
+            return [];
+        }
     }
 
     // Assemble the combined prompt following the AI Translate convention:
@@ -403,7 +387,7 @@ Item {
     // Entry point: run AI word selection for the given paragraphs. Batched
     // (one request) when the combined prompt is under the char limit, else
     // sequential per-paragraph requests spaced by the pacing Timer. forced =
-    // re-ask for "ai"-resolved words (per-paragraph "Update Selections").
+    // re-ask for "ai-selected"-resolved words (per-paragraph "Update Selections").
     function start_word_selection(paragraph_indexes, forced) {
         if (!root.is_word_selection_enabled()) return;
 
@@ -536,6 +520,11 @@ Item {
             // Group the valid selections by paragraph index (id = p<pi>w<wi>).
             let by_para = {};
             for (let sel of parsed.selections) {
+                // confidence/note are parsed but not displayed (logged only).
+                if (sel.confidence === "review" || sel.note) {
+                    logger.info("Word selection " + sel.id + ": confidence=" + (sel.confidence || "confident")
+                                + (sel.note ? ", note: " + sel.note : ""));
+                }
                 let m = sel.id.match(/^p(\d+)w(\d+)$/);
                 if (!m) continue;
                 let pi = parseInt(m[1], 10);
@@ -655,6 +644,7 @@ Item {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: GlossTab onCompleted start");
         load_history();
         load_common_words();
         load_word_selection_settings();
@@ -662,6 +652,7 @@ Item {
         if (root.is_qml_preview) {
             qml_preview_state();
         }
+        logger.info("STARTUP-TRACE: GlossTab onCompleted end");
     }
 
     Component.onDestruction: {
@@ -1550,18 +1541,18 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         words_data[word_idx].stem = word_item.results[selected_idx].word;
 
         // A manual ComboBox choice is the user's decision: persist it as a
-        // "user" cache row (overwrites any ai/built-in row for this context)
-        // so it survives re-glossing and session restore, and is never
-        // re-asked from the AI. Only ambiguous words are cached; the caller
-        // must be a real user interaction (ComboBox onActivated).
+        // "user-selected" cache row (overwrites any ai-selected/built-in-* row
+        // for this context) so it survives re-glossing and session restore, and
+        // is never re-asked from the AI. Only ambiguous words are cached; the
+        // caller must be a real user interaction (ComboBox onActivated).
         if (word_item.results.length > 1) {
             let saved = SuttaBridge.save_gloss_word_cache(
                 word_item.original_word,
                 word_item.example_sentence || "",
                 word_item.results[selected_idx].uid,
-                "user");
+                "user-selected");
             if (saved) {
-                words_data[word_idx].resolution = "user";
+                words_data[word_idx].resolution = "user-selected";
             } else {
                 logger.error("update_word_selection: failed to save user selection for '" + word_item.original_word + "'");
             }
@@ -1600,10 +1591,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (!w || !w.results) continue;
             // The word may have been resolved while the request was in
             // flight (e.g. the user corrected the ComboBox, which now saves
-            // a "user" row): never let a late AI response override anything
-            // but an earlier AI resolution.
+            // a "user-selected" row): never let a late AI response override
+            // anything but an earlier AI resolution.
             let resolution = w.resolution || null;
-            if (resolution !== null && resolution !== "ai") continue;
+            if (resolution !== null && resolution !== "ai-selected") continue;
             let opt_idx = -1;
             for (var i = 0; i < w.results.length; i++) {
                 if (w.results[i].uid === sel.uid) {
@@ -1614,17 +1605,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (opt_idx < 0) continue;
             words_data[wi].selected_index = opt_idx;
             words_data[wi].stem = w.results[opt_idx].word;
-            // Persist the AI choice (origin "ai" never downgrades a "user" or
-            // "built-in" row); mark the word ai-resolved only when the row was
-            // actually written, so the robot icon / checked state stays true
-            // to the cache table.
+            // Persist the AI choice (origin "ai-selected" never downgrades a
+            // "user-selected" or "built-in-*" row); mark the word ai-resolved
+            // only when the row was actually written, so the shield / checked
+            // state stays true to the cache table.
             let saved = SuttaBridge.save_gloss_word_cache(
                 w.original_word,
                 w.example_sentence || "",
                 sel.uid,
-                "ai");
+                "ai-selected");
             if (saved) {
-                words_data[wi].resolution = "ai";
+                words_data[wi].resolution = "ai-selected";
             }
             applied += 1;
         }
@@ -1654,6 +1645,62 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         words_data[word_idx].resolution = resolution;
         paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
         root.session_needs_saving = true;
+    }
+
+    // Map a word's resolution value to its shield confidence indicator: the
+    // returned { state, icon, tooltip, owned } drives the shield ToolButton in
+    // the vocabulary list. The three levels are a confidence scale, not a
+    // provenance log (see docs/gloss-ai-word-selection.md §5):
+    //   - "none"  (outline): nothing resolved this word — a plain dictionary
+    //             lookup. Also where a JSON `confidence: "review"` entry lands,
+    //             since the import skips it so no cache row is derived.
+    //   - "ai"    (half):    a machine checked this — runtime AI ("ai-selected")
+    //             or the shipped agent pipeline ("built-in-agent-checked").
+    //   - "human" (full):    a human confirmed this — the user here
+    //             ("user-selected"), a curator ("built-in-human-checked"), or a
+    //             curated set phrase ("built-in-phrase-match": the phrase rules
+    //             are human-reviewed before they ship, so they carry human
+    //             confidence even though they resolve no cache row).
+    //
+    // `owned` marks the one state backed by a row this install created, i.e. the
+    // only state whose click deletes anything. Clicking any other full shield
+    // just drops the word out of the session's view (see the shield ToolButton).
+    function shield_state(resolution) {
+        let r = resolution || null;
+        if (r === "user-selected") {
+            return {
+                state: "human", owned: true,
+                icon: "icons/32x32/famicons--shield.png",
+                tooltip: "Human-checked (your selection). Click to remove it."
+            };
+        }
+        if (r === "built-in-human-checked") {
+            return {
+                state: "human", owned: false,
+                icon: "icons/32x32/famicons--shield.png",
+                tooltip: "Human-checked (built-in selection). Click to ignore it for this session."
+            };
+        }
+        if (r === "built-in-phrase-match") {
+            return {
+                state: "human", owned: false,
+                icon: "icons/32x32/famicons--shield.png",
+                tooltip: "Human-checked (built-in set phrase). Click to ignore it for this session."
+            };
+        }
+        if (r === "ai-selected" || r === "built-in-agent-checked") {
+            return {
+                state: "ai", owned: r === "ai-selected",
+                icon: "icons/32x32/famicons--shield-half-outline.png",
+                tooltip: "AI-checked (machine confidence). Click to confirm as Human-checked."
+            };
+        }
+        // null (and any unexpected value) → outline.
+        return {
+            state: "none", owned: false,
+            icon: "icons/32x32/famicons--shield-outline.png",
+            tooltip: "Not checked — plain dictionary lookup. Click to confirm the shown sense as Human-checked."
+        };
     }
 
     function update_paragraph_text(index, new_text) {
@@ -2329,6 +2376,8 @@ ${main_text}
 
                             Button {
                                 text: "Word Selection..."
+                                icon.source: "icons/32x32/famicons--shield-half-outline.png"
+                                icon.color: "transparent"
                                 onClicked: word_selection_dialog.open()
                             }
 
@@ -2883,8 +2932,8 @@ ${main_text}
                                         font.pointSize: root.vocab_font_point_size
                                         currentIndex: wordItem.modelData.selected_index || 0
                                         // onActivated fires only on real user interaction —
-                                        // update_word_selection() now writes a "user" cache
-                                        // row, so programmatic currentIndex churn (delegate
+                                        // update_word_selection() now writes a "user-selected"
+                                        // cache row, so programmatic currentIndex churn (delegate
                                         // rebuilds) must never reach it.
                                         onActivated: (index) => {
                                             if (index !== wordItem.modelData.selected_index) {
@@ -2918,60 +2967,68 @@ ${main_text}
                                         wrapMode: TextEdit.WordWrap
                                     }
 
-                                    // AI-resolved indicator: the cached choice for this
-                                    // (word, context) came from an AI response.
-                                    Image {
-                                        id: robot_icon
-                                        source: "icons/32x32/pixel--robot-solid.png"
-                                        Layout.alignment: Qt.AlignTop
-                                        sourceSize.width: word_select.height
-                                        sourceSize.height: word_select.height
-                                        fillMode: Image.PreserveAspectFit
-                                        visible: word_select.visible &&
-                                                 (wordItem.modelData.resolution || null) === "ai"
-                                    }
-
-                                    // Saved toggle: checked = a cache row exists for this
-                                    // (word, context) — origin "user", "ai" or "built-in".
-                                    // Phrase matches have no cache row and show unchecked.
-                                    Button {
-                                        id: saved_toggle
+                                    // Shield confidence indicator (replaces the old
+                                    // robot_icon + saved_toggle pair). Only ambiguous words
+                                    // (ComboBox shown) get a shield. Clicking it toggles
+                                    // between "not checked" and the user's own confirmed
+                                    // selection; see root.shield_state() and
+                                    // docs/gloss-ai-word-selection.md §5 for the full cycle.
+                                    //
+                                    // A click never writes "ai-selected" and never deletes a
+                                    // built-in row: the half shield means "a machine chose
+                                    // this", which is only ever true of an AI response or the
+                                    // shipped agent pipeline, and clicking is the user making
+                                    // the selection — that is human confidence, so it goes
+                                    // straight to the full shield.
+                                    ToolButton {
+                                        id: shield_toggle
                                         visible: word_select.visible
-                                        property bool is_saved: {
-                                            let r = wordItem.modelData.resolution || null;
-                                            return r === "user" || r === "ai" || r === "built-in";
-                                        }
-                                        icon.source: is_saved ? "icons/32x32/fa_square-check-solid.png"
-                                                              : "icons/32x32/fa_square-check-regular.png"
+                                        property var shield: root.shield_state(wordItem.modelData.resolution || null)
+                                        icon.source: shield.icon
+                                        icon.color: "transparent"
                                         Layout.preferredHeight: word_select.height
                                         Layout.preferredWidth: word_select.height
                                         Layout.alignment: Qt.AlignTop
                                         ToolTip.visible: hovered
                                         ToolTip.delay: 500
-                                        ToolTip.text: is_saved ? "Selection saved for this context. Click to remove."
-                                                               : "Save this selection for this context"
+                                        ToolTip.text: shield.tooltip
                                         onClicked: {
-                                            if (is_saved) {
-                                                unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
-                                                unsave_word_dialog.word_idx = wordItem.index;
-                                                unsave_word_dialog.word = wordItem.modelData.original_word;
-                                                unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
-                                                unsave_word_dialog.open();
-                                            } else {
-                                                // currentIndex can be -1 (no selection); `|| 0` would
-                                                // keep -1 since it is truthy.
-                                                var idx = word_select.currentIndex >= 0 ? word_select.currentIndex : 0;
-                                                let uid = wordItem.modelData.results[idx].uid;
-                                                let ok = SuttaBridge.save_gloss_word_cache(
-                                                    wordItem.modelData.original_word,
-                                                    wordItem.modelData.example_sentence || "",
-                                                    uid,
-                                                    "user");
-                                                if (ok) {
-                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user");
+                                            let r = wordItem.modelData.resolution || null;
+                                            let sh = root.shield_state(r);
+                                            if (sh.state === "human") {
+                                                if (sh.owned) {
+                                                    // The user's own row: confirm, then delete it.
+                                                    unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
+                                                    unsave_word_dialog.word_idx = wordItem.index;
+                                                    unsave_word_dialog.word = wordItem.modelData.original_word;
+                                                    unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
+                                                    unsave_word_dialog.open();
                                                 } else {
-                                                    logger.error("Failed to save word selection for '" + wordItem.modelData.original_word + "'");
+                                                    // Built-in row or set phrase: nothing of the
+                                                    // user's to delete, and the curated data must
+                                                    // stay for a later word selection. Drop it out
+                                                    // of this session's view only — no DB write, no
+                                                    // confirm (an idle click costs nothing), and a
+                                                    // new session resolves it from the built-in
+                                                    // data again.
+                                                    root.set_word_resolution(wordItem.paragraph_index, wordItem.index, null);
                                                 }
+                                                return;
+                                            }
+                                            // outline / half → full. currentIndex can be -1 (no
+                                            // selection); the default visible option is index 0,
+                                            // the user's visible intent.
+                                            var idx = word_select.currentIndex >= 0 ? word_select.currentIndex : 0;
+                                            let uid = wordItem.modelData.results[idx].uid;
+                                            let ok = SuttaBridge.save_gloss_word_cache(
+                                                wordItem.modelData.original_word,
+                                                wordItem.modelData.example_sentence || "",
+                                                uid,
+                                                "user-selected");
+                                            if (ok) {
+                                                root.set_word_resolution(wordItem.paragraph_index, wordItem.index, "user-selected");
+                                            } else {
+                                                logger.error("Failed to save word selection for '" + wordItem.modelData.original_word + "'");
                                             }
                                         }
                                     }
@@ -3027,9 +3084,11 @@ ${main_text}
         }
     }
 
-    // Confirm removing a saved word-selection cache row (unchecking the saved
-    // toggle) — covers "user", "ai" and "built-in" rows alike. Cancel keeps
-    // the row and the checked state.
+    // Confirm removing the user's own word-selection cache row (the shield's
+    // full → outline click on a "user-selected" word). Cancel keeps the row and
+    // the full-shield state. Only the local row is deleted; a built-in row for
+    // the same (word, context) survives and applies again on the next annotate
+    // pass, which is what the wording promises.
     Dialog {
         id: unsave_word_dialog
         title: "Remove Saved Selection"
@@ -3043,7 +3102,7 @@ ${main_text}
         property string word_context_hash: ""
 
         Label {
-            text: "Remove the saved selection for '" + unsave_word_dialog.word + "' in this context?"
+            text: "Remove your saved selection for '" + unsave_word_dialog.word + "' in this context? The word returns to the unchecked state. Any built-in selection for it is kept and applies again in a new session."
             wrapMode: Text.WordWrap
         }
 

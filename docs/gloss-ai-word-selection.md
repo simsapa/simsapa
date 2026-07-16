@@ -30,27 +30,65 @@ skips are never involved) goes through one precedence chain, implemented once in
 `resolve_gloss_word_selection()` (`backend/src/helpers.rs`):
 
 ```
-user cache  >  set phrase  >  built-in cache  >  ai cache  >  fresh AI request
+user cache  >  built-in human-checked cache  >  set phrase  >  built-in agent-checked cache  >  ai cache  >  fresh AI request
 ```
 
-- **user cache** — the reader confirmed this choice for this context (the saved
-  toggle, or a manual ComboBox change, see §5).
+- **user cache** — the reader confirmed this choice for this context (the shield
+  click, or a manual ComboBox change, see §5).
+- **built-in human-checked cache** — a `built-in-human-checked`-origin row
+  shipped in the bootstrapped appdata DB (§7).
 - **set phrase** — a curated rule ("in `anāthapiṇḍikassa ārāme`, `ārāme` is
   always `ārāma-4/dpd`"). Phrase matches write **no** cache row; they are
   re-derived on every gloss.
-- **built-in cache** — a `built-in`-origin row shipped in the bootstrapped
-  appdata DB (§7).
-- **ai cache** — an `ai`-origin row written by an earlier AI response.
+- **built-in agent-checked cache** — a `built-in-agent-checked`-origin row
+  shipped in the bootstrapped appdata DB, produced by the `gloss-agent-check`
+  pipeline (§7).
+- **ai cache** — an `ai-selected`-origin row written by an earlier AI response.
 - otherwise the word is **eligible** and goes into an AI request.
 
+**Why the human tiers rank above the phrase rule:** a confirmed selection for
+this exact (word, context) must be able to override the general rule. Under the
+old phrase-over-built-in order, a shipped phrase rule permanently masked a
+curator's per-context exception (a `user` row that beat the phrase on the
+curator's machine imported as a built-in row and then *lost* to the phrase in
+every install). The agent tier stays *below* phrase: a phrase rule carries
+multi-context human evidence, an agent row a single-context machine judgment.
+The `import-gloss-data` phrase-vs-row conflict report keeps such disagreements
+visible at curation time (§7).
+
 The resolved index is written to `ProcessedWord.selected_index` and the origin to
-`ProcessedWord.resolution` (`"user"` / `"phrase"` / `"built-in"` / `"ai"`, or
-`None` when unresolved). Both fields are `#[serde(default)]` — pre-feature
+`ProcessedWord.resolution` (`"user-selected"` / `"built-in-human-checked"` /
+`"built-in-phrase-match"` / `"built-in-agent-checked"` / `"ai-selected"`, or
+`None` when unresolved). Both
+fields are `#[serde(default)]` — pre-feature
 `gloss_prompts_history` sessions have neither and must still deserialize.
 
 An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.
+
+### The two cache tiers coexist
+
+The chain is a walk over **two rows**, not a lookup of one. `gloss_word_context_cache`
+is keyed `(word, context_hash, built_in)`, so for one (word, context) the shipped
+row (`built_in = 1`, the `built-in-*` origins) and this install's row
+(`built_in = 0`, `user-selected` / `ai-selected`) exist side by side.
+`GlossResolutionData.cache` therefore maps each key to a `GlossCacheEntry`
+holding `{ local, built_in }`, and the chain checks the tier each step names.
+
+**Why the tiers are separate rows.** A user's selection **shadows** the shipped
+one instead of replacing it. That matters because shipped rows are curated data
+that stays relevant for a later word selection: deleting the user's row (the
+shield, Clear Word-Selection Cache) hands the word straight back to the built-in
+selection, with no re-download needed. It is also what lets the shield's
+"not checked" state be pure session UI state — see §5.
+
+The consequence for the write paths: `upsert_gloss_word_cache` and
+`import_gloss_word_cache_row` compare origin ranks **within one tier** only. An
+`ai-selected` write for a word that has a shipped row is no longer *refused* (as
+it was when one row per key had to serve both); it is written to the local tier
+and simply loses the chain to the higher-ranked shipped row. The resolved
+outcome is identical — only the stored rows differ.
 
 ### The uid two-lane gotcha
 
@@ -64,10 +102,11 @@ both: a direct `uid` match, or `word_uid_sanitize(option.word) == <uid minus
 (numeric); curated rows keep their lemma form. Anything comparing a selected uid
 to an option must go through this helper.
 
-## 2. The cache key: word + normalized context window
+## 2. The cache key: word + normalized context window + tier
 
-Two appdata tables (migration
-`backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/`):
+Two appdata tables (migrations
+`backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` and
+`…/2026-07-16-120000_gloss_cache_built_in_tier/`):
 
 | `gloss_word_context_cache` | |
 |---|---|
@@ -75,8 +114,14 @@ Two appdata tables (migration
 | `context_hash` | SHA-256 hex of the normalized context window |
 | `context_snippet` | the window text, for display/debugging |
 | `selected_uid` | the chosen option's uid |
-| `origin` | `"ai"` \| `"user"` \| `"built-in"` |
-| | UNIQUE `(word, context_hash)` |
+| `origin` | `"ai-selected"` \| `"user-selected"` \| `"built-in-human-checked"` \| `"built-in-agent-checked"` |
+| `built_in` | `1` for the bootstrap-shipped rows (`built-in-*` origins), `0` for the rows this install created |
+| | UNIQUE `(word, context_hash, built_in)` |
+
+`built_in` is part of the unique key, so the two tiers coexist for one
+(word, context) and a local row shadows the shipped one rather than replacing it
+(§1). It is derived from the origin, never passed separately —
+`gloss_cache_origin_is_built_in()` is the single decision point.
 
 | `gloss_phrase_selections` | |
 |---|---|
@@ -84,6 +129,13 @@ Two appdata tables (migration
 | `word` | the surface form the rule applies to |
 | `selected_uid` | the uid to select |
 | | UNIQUE `(phrase, word)` |
+
+`gloss_phrase_selections` is **bootstrap-seeded only** — it is written solely by
+`seed_gloss_phrase_selections()` from the embedded curated JSON, has no in-app or
+CLI write path, and carries no user-vs-shipped marker (its columns are just `id`,
+`phrase`, `word`, `selected_uid`). There is therefore nothing user-owned in it to
+preserve across an appdata re-download; the upgrade export/import cycle (§6)
+covers the local rows of `gloss_word_context_cache` only.
 
 The context window is **not new**: it is the ±50-char, sentence-bounded window
 `extract_words_with_context()` already computes per word and hands to QML as
@@ -176,8 +228,11 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
 the Fallback sequence has no enabled model, and a
 **Clear Word-Selection Cache...** button (confirm dialog shows the row count).
-The clear deletes `ai` and `user` rows only — `built-in` rows and the phrase
-table survive, since they are shipped data, not user state. The feature is active
+The clear deletes the **local tier** only (`built_in = 0`, i.e. the
+`ai-selected` / `user-selected` rows) — the shipped rows and the phrase table
+survive, since they are shipped data, not user state. Every built-in selection
+the user had shadowed therefore applies again afterwards (§1). The
+feature is active
 when the checkbox is on **and** the sequence has an enabled model
 (`GlossTab.is_word_selection_enabled()`); an empty sequence turns it off with no
 error.
@@ -198,7 +253,11 @@ disabled, e.g. for user-created keys).
 
 ## 4. The request
 
-Assembled in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
+The request items are built by the shared backend builder
+`build_word_selection_items()` in `backend/src/helpers.rs` (exposed to QML as
+`SuttaBridge.build_word_selection_items_json(paragraphs_json, forced)`; the CLI
+agent workflow calls the same builder in include-resolved mode), assembled into
+the prompt in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
 → `word_selection_response(request_id, model, response)` — a dedicated
 invokable/signal pair mirroring `prompt_request`, so it never collides with AI
 Translate's indices. The engine picks the model by walking the Fallback sequence
@@ -232,22 +291,49 @@ mis-aligned by position. `summary` is HTML-stripped and truncated to 200 chars.
 The `<b>` marker stays in the `context` (it pinpoints the target occurrence for
 the model; the hash strips it).
 
-Expected response:
+Expected response — a selection identifies the chosen option by its **`word`
+lemma**, with optional `confidence` (`confident` (default) | `review`) and
+`note`:
 
 ```json
-{ "selections": [ { "id": "p0w4", "uid": "ārāma-4/dpd" } ] }
+{ "selections": [
+    { "id": "p0w4", "word": "ārāma 4" },
+    { "id": "p1w2", "word": "suta 1.3", "confidence": "review",
+      "note": "formula 'evaṁ me sutaṁ' favours the nt sense" }
+] }
 ```
+
+The lemma is text the model has just reasoned about, so a copying error almost
+certainly fails validation instead of silently selecting a wrong sense (a
+numeric index or an opaque uid fails silently). An `{"id", "uid"}` entry form
+is also accepted as robustness (the response shape lives in the user-editable
+request prompt, so a model following an edited prompt may answer with uids);
+when both `word` and `uid` are present they must agree.
 
 JSON was chosen over table/CSV because every integrated provider emits it
 reliably for small schemas (several have native JSON modes), and column drift in
-a table is a *silent* misalignment. Parsing is **lenient but validating** —
-`parse_word_selection_response()` in Rust (exposed as a `SuttaBridge` invokable
-returning `{selections: [...]}` or `{error: "..."}`): strips code fences, extracts
-the first balanced top-level `{...}` from surrounding prose, treats a leading
-`Error:` as failure, drops entries with unknown `id`s or a `uid` that is not among
-*that item's* options, and leaves missing entries' ComboBoxes unchanged. A wholly
-unparseable response becomes a persistent error in the paragraph's status area and
-changes nothing.
+a table is a *silent* misalignment. Parsing is validating with two strictness
+modes — `parse_word_selection_response()` in Rust (exposed as a `SuttaBridge`
+invokable returning `{selections: [...]}` or `{error: "..."}`): strips code
+fences, extracts the first balanced top-level `{...}` from surrounding prose,
+treats a leading `Error:` as failure, resolves each entry's lemma to the uid
+*within that item's option list*, and rejects entries with unknown `id`s, a
+lemma/uid that is not among that item's options (or a lemma carried by more
+than one option), disagreeing `word`+`uid`, or an invalid `confidence` value.
+The **network path is lenient**: invalid entries are logged and skipped, and
+missing entries' ComboBoxes stay unchanged; `confidence`/`note` are logged,
+never displayed. The **CLI agent path is strict** (`gloss-agent-check apply`):
+any invalid entry, disagreeing duplicate, or unanswered item is a hard error.
+A wholly unparseable response becomes a persistent error in the paragraph's
+status area and changes nothing.
+
+> **Note — existing installs keep their stored prompt text.** The default
+> `"Gloss Tab: Word Selection Request"` prompt now instructs the lemma-based
+> response, but the prompts are user-editable settings: an install that already
+> has the old uid-based text keeps it (default-key merging never overwrites
+> user-visible values). The uid entry form remains accepted, so nothing breaks;
+> to get the new instructions, use **Reset to Default** on that prompt in
+> **Prompts > System Prompts...**.
 
 ### Batching, pacing, timeouts
 
@@ -269,7 +355,8 @@ still sent as one request (no intra-paragraph splitting).
 Triggers: automatically after **Update Gloss** (that paragraph) and after **Update
 All Glosses** (all glossed paragraphs), when a model is enabled; and manually via
 the per-paragraph **Update Selections** button, which forces a fresh pass —
-re-asking `ai`-resolved words but never `user`- or phrase-resolved ones.
+re-asking `ai-selected`-resolved words but never `user-selected`- or
+phrase-resolved ones.
 
 ### Status UI and cancelling
 
@@ -283,7 +370,7 @@ the HTTP request is not aborted; its response simply arrives stale and is ignore
 In batched mode only the paragraphs that actually **contributed items** show a
 status (derived from the item ids), not every paragraph in the request.
 
-## 5. Applying selections, and the saved toggle
+## 5. Applying selections, and the shield indicator
 
 Applying an AI response uses a **batch variant** of `update_word_selection()`:
 all of a paragraph's selections are written in one `words_data_json` rewrite with
@@ -291,37 +378,105 @@ a single `setProperty`, marking the session dirty once. The per-word function
 rewrites the whole JSON and rebuilds the word-row Repeater on every call — using
 it in a loop is visibly slow.
 
-Each ambiguous word row is `[ComboBox] [robot icon] [saved toggle] [summary]
-[dict button]`:
+Each ambiguous word row is `[ComboBox] [shield] [summary] [dict button]`. The
+shield (`root.shield_state()` in `GlossTab.qml`) replaced an earlier
+`[robot icon] [saved toggle]` pair: one control, three states. Unambiguous words
+(no ComboBox) show no shield — there is nothing to decide.
 
-- **saved toggle checked** = a cache row exists for this (word, context) — any
-  origin, including `built-in`. A *phrase* match has no cache row and shows
-  **unchecked**; checking it saves a `user` row on top as usual.
-- **robot icon** — only for `ai`-origin rows.
-- **checking** writes a `user` row; **unchecking** asks for confirmation and
-  deletes the row.
+### The three states
 
-Three behaviours that are easy to get wrong and are deliberate:
+The levels are a **confidence** scale, not a provenance log — *who vouched for
+this sense*, not *where the row came from*. That is why each icon covers two
+origins:
 
-- **A manual ComboBox change is a user decision and is auto-saved** as a `user`
-  row (`resolution: "user"`, toggle on). Without this, the stale `ai` row would
-  win on the next gloss and a session restore would revert the correction.
+| icon | state | resolution values | meaning |
+|---|---|---|---|
+| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it — a plain dictionary lookup |
+| `famicons--shield-half-outline.png` | AI-checked | `ai-selected`, `built-in-agent-checked` | a machine chose it: a runtime AI response, or the shipped agent pipeline (§7) |
+| `famicons--shield.png` | Human-checked | `user-selected`, `built-in-human-checked`, `built-in-phrase-match` | a person confirmed it: the reader here, or a curator |
+
+`built-in-phrase-match` is **full**, not outline: phrase rules are distilled from
+confirmed rows and manually reviewed before they ship (§7), so they carry human
+confidence even though they resolve no cache row.
+
+### The click cycle
+
+```
+outline ──click──▶ full          (save "user-selected")
+half    ──click──▶ full          (save "user-selected")
+full    ──click──▶ outline       (own row: confirm, then delete it)
+                                 (built-in row / phrase: session view only)
+```
+
+**A click never writes `ai-selected` and never stops at the half shield.** The
+half shield means "a machine chose this", which is only ever true of an AI
+response or the shipped agent pipeline. A click *is* the user making the
+selection, and that is human confidence — so outline goes straight to full. The
+ComboBox's `currentIndex` of −1 means nothing was explicitly picked, and the
+visible option is index 0, so index 0 is the user's visible intent and stays the
+fallback.
+
+**A click never deletes a built-in row.** `delete_gloss_word_cache` filters on
+`built_in = 0`; the shipped tier is untouched. Two reasons: the user may just be
+trying the button out, and the curated row stays relevant for a later word
+selection. Clicking a full shield that came from shipped data therefore has no
+row of the user's to remove, so it only sets `resolution = null` in the
+in-memory `words_data` — no DB write, and no confirm dialog, because nothing is
+lost. The dialog appears exactly when a real deletion happens: on a
+`user-selected` row (`shield_state().owned`).
+
+### Why the cleared state is session-only
+
+`resolution` is never persisted — the annotate pass re-derives it from the DB on
+every load (see the end of this section). So an outline shield over a surviving
+built-in row lasts **only as long as the session view**: reopen the passage and
+the built-in selection resolves it to full again. That is the intended reading of
+"set this aside" — a new session may well want the built-in data again, e.g. to
+recognise a set phrase. Making it persist would require either destroying the
+shipped row or inventing a stored "cleared" marker, and both defeat the point of
+keeping curated data available.
+
+The full sequence over a word that ships with a `built-in-human-checked` row (or
+a phrase rule), showing what is actually stored at each step:
+
+| click | action | local row (`built_in = 0`) | shipped row | shield |
+|---|---|---|---|---|
+| — | initial | none | intact | full |
+| 1 | set aside for the session | none | intact | outline |
+| 2 | confirm the shown sense | `user-selected` | intact | full |
+| 3 | remove own row (confirmed) | none | intact | outline |
+| 4 | confirm again | `user-selected` | intact | full |
+
+The shipped row is never touched. After click 3 the word shows outline for the
+rest of the session and resolves to the built-in selection again in the next one.
+
+### Deliberate behaviours that are easy to get wrong
+
+- **A manual ComboBox change is a user decision and is auto-saved** as a
+  `user-selected` row (`resolution: "user-selected"`, full shield). Without this,
+  the stale `ai-selected` row would win on the next gloss and a session restore
+  would revert the correction.
 - The handler is `onActivated`, **not** `onCurrentIndexChanged` — the delegate
   rebuilds churn `currentIndex` programmatically, and that must never write cache
   rows.
-- A late AI response **skips** words whose `resolution` became non-`ai` while the
+- A late AI response **skips** words whose `resolution` became non-`ai-selected` while the
   request was in flight, so it cannot clobber a fresh user choice in the
   in-memory `words_data` (the DB upsert already refuses the downgrade — this is
   the QML-side half of the same rule).
 
-Restoring a history session re-derives `resolution` / `selected_index` / toggle
+Restoring a history session re-derives `resolution` / `selected_index` / shield
 state **from the cache table**, not from the serialized session, via
-`SuttaBridge.annotate_gloss_words_json()`.
+`SuttaBridge.annotate_gloss_words_json()`. This is why the shield's cleared state
+does not survive a reload, and why the rename of the resolution values needed no
+data migration.
 
 Write precedence is enforced in the DB layer by `gloss_cache_origin_rank()`
-(`user` 3 > `built-in` 2 > `ai` 1): `upsert_gloss_word_cache()` refuses a
-*lower*-ranked write (an `ai` response never downgrades a `user` or `built-in`
-row) but allows an equal one (a re-save refreshes the row).
+(`user-selected` 4 > `built-in-human-checked` 3 > `built-in-agent-checked` 2 >
+`ai-selected` 1, unknown 0), applied **within a tier** (§1):
+`upsert_gloss_word_cache()` refuses a *lower*-ranked write in the same tier (an
+`ai-selected` response never downgrades a `user-selected` row) but allows an
+equal one (a re-save refreshes the row). Across tiers there is no contest — the
+rows coexist and the chain ranks them.
 
 ## 6. Exports
 
@@ -343,7 +498,7 @@ format:
                   example_sentence, context_hash), translations, tab options */ },
   "word_cache": [
     { "word": "ārāme", "context_hash": "…", "context_snippet": "…",
-      "selected_uid": "ārāma-4/dpd", "origin": "user" }
+      "selected_uid": "ārāma-4/dpd", "origin": "user-selected" }
   ]
 }
 ```
@@ -365,9 +520,10 @@ nothing. Android `content://` inputs go through the existing
 The cache import (`import_gloss_word_cache_row`) uses a **strictly-higher**
 precedence rule — *not* the same rule as a local upsert: an imported row is
 written only if it outranks the local row for that key. Equal precedence is a
-no-op, so your own `user` rows are never overwritten by someone else's `user` row,
-and an imported `ai` row never churns a local `ai` row. The import runs **before**
-`load_session()`, so the annotate pass re-derives the toggles from the freshly
+no-op, so your own `user-selected` rows are never overwritten by someone else's
+`user-selected` row, and an imported `ai-selected` row never churns a local
+`ai-selected` row. The import runs **before**
+`load_session()`, so the annotate pass re-derives the shield states from the freshly
 imported rows.
 
 ### DOCX
@@ -389,18 +545,96 @@ bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
 See [android-file-saving-saf.md](./android-file-saving-saf.md).
 
+### Surviving an appdata re-download (the upgrade export/import cycle)
+
+A DB-version bump makes the app re-download `appdata.sqlite3`, which would
+otherwise take the user's gloss data with it. Two categories of the upgrade cycle
+(`export_user_data_to_assets()` → `import-me/` → `import_user_data_from_assets()`
+in `backend/src/app_data.rs`) carry it across:
+
+| File in `import-me/` | Contents |
+|---|---|
+| `gloss_selections.json` (`simsapa-gloss-selections` v1) | the **local** `gloss_word_context_cache` rows — origins `user-selected` and `ai-selected` only |
+| `gloss_prompts_history.json` (`simsapa-gloss-prompts-history` v1) | every `gloss_prompts_history` row (Gloss **and** Prompts sessions), timestamps included |
+
+What is deliberately *not* exported:
+
+- **`built-in-*` cache rows.** They arrive with the newly downloaded DB, in a
+  newer curation state than the copy that was just discarded.
+- **`gloss_phrase_selections`.** Bootstrap-seeded only — nothing user-owned in
+  it (§2).
+
+Selections re-import through `upsert_gloss_word_cache` with each row's original
+origin preserved, so a restored `user-selected` row (rank 4) overrides a newly
+shipped `built-in-human-checked` row for the same key, while a restored
+`ai-selected` row (rank 1) yields to any shipped `built-in-*` row — the shipped
+curation is the better guess. The origin also restores the shield state (`full`
+vs `half`, §5).
+
+History rows re-import with their **original** timestamps (the list is ordered by
+`updated_at`, so stamping `now` would scramble it) and are deduplicated on
+`(item_type, created_at, data_json)`. The source `id` is not carried over —
+nothing references history rows by id across the upgrade.
+
 ## 7. The built-in data bank (curation pipeline)
 
-The bank is what makes common suttas resolve with no AI at all. The Gloss UI
-**is** the review tool; the pipeline is:
+The bank is what makes common suttas resolve with no AI at all. Candidate
+session files can be reviewed on two paths — by a human in the Gloss UI, or by
+a Claude Code agent through the `gloss-agent-check` CLI:
 
 ```
-gloss-corpus-explore  →  candidates/*.json  →  [Open JSON → AI select → correct → confirm → Export As JSON]
-                                                        ↓
-                                          gloss-data-cache/*.json   (committed to the repo)
-                                                        ↓
-                          import-gloss-data  →  built-in rows in appdata.sqlite3  (run by the bootstrap)
+gloss-corpus-explore  →  gloss-data-cache/candidates/*.json
+                              │
+              ┌───────────────┴─────────────────────────────┐
+   human path │                                             │ agent path
+              ▼                                             ▼
+  [Gloss UI: Open JSON → AI select →          gloss-agent-check prepare → agent
+   correct → confirm → Export As JSON]        decides → answers file in
+              │                               agent-answers/ → gloss-agent-check apply
+              ▼                                             │
+  human-checked/*.json  (committed)           agent-checked/*.json  (committed)
+              │                                             │
+              └───────────────┬─────────────────────────────┘
+                              ▼
+        import-gloss-data  →  built-in rows in appdata.sqlite3
+                              (run by the bootstrap)
 ```
+
+Folder conventions under `bootstrap-assets-resources/gloss-data-cache/`:
+
+| folder | role |
+|---|---|
+| `candidates/` | generated, unreviewed candidate sessions (`candidates-*.json`; the generator's `report.json`/`report.md` live here too and are filtered out) |
+| `agent-answers/` | transient answers files written by the reviewing agent (git-ignored; deleted on a successful `apply`, kept on failure for correction) |
+| `agent-checked/` | finished sessions whose `word_cache` entries carry origin `built-in-agent-checked` |
+| `human-checked/` | sessions reviewed by a human in the Gloss UI (origin `user-selected` / `built-in-human-checked` entries) |
+
+Promotion from `agent-checked/` to `human-checked/` is a deliberate manual act
+— nothing moves files automatically.
+
+### Naming scheme
+
+The states live on two orthogonal axes — *confidence tier* (human / machine /
+none) and *provenance* (local rows created on this install vs shipped rows
+imported at bootstrap) — and each layer names only the axis it cares about:
+
+| layer | function | names |
+|---|---|---|
+| pipeline folders | who reviewed the file | `candidates/`, `agent-answers/`, `agent-checked/`, `human-checked/` |
+| answer entries | agent's self-assessment | `confidence`: `confident` \| `review` (+ `note`) |
+| cache `origin` (DB + JSON) | provenance | local: `user-selected`, `ai-selected`; shipped: `built-in-human-checked`, `built-in-agent-checked` |
+| `resolution` values | which tier resolved the word | the same four values plus `built-in-phrase-match` and `null` (which have no cache rows) |
+| shield UI | confidence tier | "Not checked", "AI-checked", "Human-checked" |
+
+Rules: origins and resolution values are **one unified value set** — no parallel
+vocabularies. The word **agent** is reserved for the Claude Code agent workflow
+(the CLI subcommands, the folders, and `built-in-agent-checked` — data *produced
+by* that workflow). The `built-in-` prefix marks shipped rows/tiers that survive
+Clear Word-Selection Cache; the `-selected` suffix marks local rows created on
+this install. The UI says **AI-checked** (not "agent-checked") for the half
+shield because it covers both runtime AI selections (`ai-selected`) and shipped
+agent rows (`built-in-agent-checked`). Flagged answers are a `confidence` field
+on the entry, never a pseudo-origin.
 
 **`gloss-corpus-explore`** (`cli/src/gloss_corpus_explore.rs`) is a read-only
 frequency/n-gram scan of the shipped suttas that generates review-ready candidate
@@ -446,26 +680,111 @@ Gotchas found while building it:
   chars).
 - Generated envelopes carry no `exported_at`, so regenerated files diff cleanly.
 
+### The agent review stage: `gloss-agent-check`
+
+**`gloss-agent-check {prepare|apply|status}`** (`cli/src/gloss_agent_check.rs`;
+`--data-cache` defaults to `../../bootstrap-assets-resources/gloss-data-cache`,
+run from `cli/`; `SIMSAPA_DIR` must point at the dist assets because `apply`
+validates uids against the real dictionaries):
+
+- **`prepare <candidate.json> [--out FILE]`** emits the shared
+  `pali_word_selection` request payload (§4) for one candidate file — every
+  ambiguous occurrence in **include-resolved mode** (`WordSelectionBuildMode::IncludeResolved`:
+  stale baked-in `resolution` values must not silently exclude occurrences from
+  review), each item enriched with its paragraph's `source_uid` so the agent can
+  use sutta-level knowledge (standard formulas). Output is deterministic
+  (sorted object keys), pretty-printed, to stdout or `--out`.
+- **`apply <candidate.json> <answers.json>`** parses the answers with the
+  **strict** parser mode (§4: every ambiguous occurrence answered, lemmas
+  resolved within each item's options, no disagreeing duplicates), validates
+  every selected uid via `AppData::resolve_word_uid`, then writes the finished
+  session to `agent-checked/<candidate-name>`: `selected_index` set per answer,
+  `word_cache` entries appended with origin `built-in-agent-checked`
+  (+ `confidence: "review"` / `note` carried onto flagged entries — optional
+  fields on `GlossWordCacheExportEntry`, absent = confident), the session
+  envelope preserved and `exported_at` removed. Any validation failure is a
+  hard error: non-zero exit, no output written, answers file kept for
+  correction. On success the answers file is deleted and a per-file summary is
+  printed (total ambiguous / confirmed / flagged for review).
+- **`status`** lists pending candidates (`candidates-*.json` not yet in
+  `agent-checked/` or `human-checked/`), agent-checked files with their review
+  counts, human-checked files, and totals. Missing folders scan as empty.
+
+The working procedure for the reviewing agent (one file per apply cycle, the
+selection guidance, the never-edit-JSON-directly rule) is packaged as the
+project skill `/gloss-agent-check`
+(`.claude/skills/gloss-agent-check/SKILL.md`). The answers file in
+`agent-answers/` is the agent's **entire write surface** — candidate and
+agent-checked files are never edited by hand, which preserves the
+identical-by-construction guarantee of options, uids and context hashes.
+
 **`import-gloss-data <appdata.sqlite3> [dir-or-files]`**
 (`cli/src/import_gloss_data.rs`, default input `gloss-data-cache/`) scans the
-committed session exports, takes the **confirmed** entries (origins `user` and
-`built-in`), validates every `selected_uid` against the dictionaries DB
-(`AppData::resolve_word_uid`), dedupes by (word, context_hash) and writes them as
-`origin = "built-in"`. It also prints a **phrase-candidates report** (recurring
-2–4-word n-grams containing a confirmed word, one consistent uid, ≥ 3 distinct
-contexts) as ready-to-merge `assets/gloss-phrase-selections.json` lines — one
-phrase rule replaces many context rows *and* covers unseen suttas — and a
-**coverage summary** (share of ambiguous occurrences resolving without AI), which
-is the metric to watch as the bank grows.
+committed session exports and writes the confirmed entries into the target DB.
+For a directory input it scans the top level **plus the `human-checked/` and
+`agent-checked/` subdirs explicitly** (otherwise non-recursive — which is what
+keeps `candidates/` (unreviewed, empty `word_cache`) and `agent-answers/` out
+of the import). Each entry is tiered by its origin: **human** = origins
+`user-selected` / `built-in-human-checked` (imported as
+`built-in-human-checked`), **agent** = origin `built-in-agent-checked`
+(imported as itself). Entries with `confidence: "review"` are **skipped** and
+counted as "pending human review" — an agent's flagged guesses never become
+confirmed rows (the in-app Open JSON import applies the same skip). Every
+`selected_uid` is validated against the dictionaries DB
+(`AppData::resolve_word_uid`); dedup is by (word, context_hash) with
+**human-over-agent precedence** independent of scan order (entries are
+collected first, conflicts listed), and the summary reports human and agent
+counts separately.
 
-Directory inputs are scanned **non-recursively**, which is what keeps the
-`candidates/` subfolder (unreviewed, empty `word_cache`) out of the import.
+It also prints:
+
+- a **phrase-candidates report** (recurring 2–4-word n-grams containing a
+  confirmed word, one consistent uid, ≥ 3 distinct contexts) as ready-to-merge
+  `assets/gloss-phrase-selections.json` lines — one phrase rule replaces many
+  context rows *and* covers unseen suttas. Non-review agent entries count
+  toward the ≥ 3 contexts rule (they are confirmed input);
+- a **phrase-vs-row conflict report**: confirmed entries whose `selected_uid`
+  disagrees with a seeded phrase rule matching the entry's normalized context
+  (the same `gloss_phrase_occurs` test the resolution chain uses). With
+  built-in-human ranked above phrase (§1), a disagreeing **human** entry wins
+  at runtime — flagged "deliberate exception or curation error?"; a
+  disagreeing **agent** entry is masked by the phrase — flagged informational.
+  Report only, no import behavior change;
+- a **coverage summary** (share of ambiguous occurrences resolving without AI,
+  counting both `built-in-human-checked` and `built-in-agent-checked` tiers),
+  which is the metric to watch as the bank grows.
 
 The **bootstrap** runs the same import into the freshly built appdata DB *before*
 `appdata.tar.bz2` is created (`cli/src/bootstrap/mod.rs`), after the phrase-table
-seeding. So: **a new database version ships new built-in data** — there is no
-in-app re-seeding or version guard. An import failure warns; it does not abort the
-bootstrap.
+seeding; its `has_session_files` gate checks the top level **and** the
+`human-checked/` / `agent-checked/` subdirs. So: **a new database version ships
+new built-in data** — there is no in-app re-seeding or version guard. An import
+failure warns; it does not abort the bootstrap.
+
+### The two shipped word-selection sources
+
+How each shipped source is generated, and its function in the resolution
+pipeline (§1):
+
+- **Built-in cache rows** (`built-in-human-checked` / `built-in-agent-checked`)
+  are produced from the `gloss-data-cache/` session files — human review in the
+  Gloss UI → `human-checked/`; the agent workflow → `agent-checked/` — and
+  imported by `import-gloss-data` at bootstrap. They are the **exact-match
+  layer**: keyed on `(word_key, context_hash)`, a row hits only when the same
+  normalized context window recurs verbatim.
+- **Set phrase rules** (`built-in-phrase-match`) are *distilled from* the
+  confirmed rows by the phrase-candidates report (recurring 2–4-word n-grams,
+  ≥ 3 distinct contexts, one consistent uid), then **manually reviewed and
+  merged** into `assets/gloss-phrase-selections.json` and seeded at bootstrap.
+  They are the **generalization layer**: a substring occurrence test against
+  the normalized context, so one rule replaces many context rows and covers
+  unseen suttas.
+
+The chain orders them human rows > phrase > agent rows: a human-confirmed row
+for the exact context overrides the general rule, while an agent row (a
+single-context machine judgment) stays below the multi-context human evidence a
+phrase rule carries — the full rationale is in §1, and the phrase-vs-row
+conflict report above keeps disagreements visible at curation time.
 
 The set-phrase list is `assets/gloss-phrase-selections.json` (`include_str!`,
 versioned, seeded idempotently at bootstrap). It stores the **human-readable**
@@ -483,9 +802,10 @@ as the context windows, so the two sides cannot drift.
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml` |
-| CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs` |
+| CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |
+| Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
-| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs` |
+| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs`, `backend/tests/test_gloss_upgrade_export.rs`, in-module tests in `cli/src/gloss_agent_check.rs` |
 
 No per-write `ANALYZE` for the two new tables (same rationale as
 `gloss_prompts_history`; see

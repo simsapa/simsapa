@@ -2,18 +2,23 @@
 // "Built-in data bank"): scans gloss session JSON exports (the
 // `bootstrap-assets-resources/gloss-data-cache/` data bank by default),
 // collects the confirmed word-selection entries (`word_cache` rows with
-// origin `user` or `built-in`), validates every `selected_uid` against the
-// dictionaries / DPD databases, and imports them as `origin = "built-in"`
-// rows into the given appdata database. Prints a coverage summary: how many
-// of the scanned sessions' ambiguous occurrences resolve without an AI
-// request against the target database.
+// origin `user-selected`, `built-in-human-checked` or
+// `built-in-agent-checked`; entries flagged `confidence: "review"` are
+// skipped as pending human review), validates every `selected_uid` against
+// the dictionaries / DPD databases, and imports them into the given appdata
+// database — human-tier entries as `origin = "built-in-human-checked"`,
+// agent-tier entries as `origin = "built-in-agent-checked"`. Prints a
+// coverage summary: how many of the scanned sessions' ambiguous occurrences
+// resolve without an AI request against the target database.
 //
 // The same command serves development DBs and the bootstrap (the bootstrap
 // runs this import before `appdata.tar.bz2` is created).
 //
-// Directory inputs are scanned non-recursively for `*.json` files, so the
-// `gloss-data-cache/candidates/` subfolder (unreviewed generated candidates)
-// is never picked up by a default run.
+// Directory inputs are scanned for top-level `*.json` files plus the
+// `human-checked/` and `agent-checked/` subfolders (explicitly — not
+// recursively), so `gloss-data-cache/candidates/` (unreviewed generated
+// candidates) and `agent-answers/` (transient answer files) are never picked
+// up by a default run.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -22,7 +27,7 @@ use simsapa_backend::get_app_data;
 use simsapa_backend::db::appdata::AppdataDbHandle;
 use simsapa_backend::db::DatabaseHandle;
 use simsapa_backend::helpers::{
-    annotate_gloss_words_json, gloss_cache_word_key, gloss_context_hash,
+    annotate_gloss_words_json, gloss_cache_word_key, gloss_context_hash, gloss_phrase_occurs,
     normalize_gloss_context, parse_gloss_session_export, GlossWordCacheExportEntry,
 };
 
@@ -38,12 +43,51 @@ struct ScannedSession {
     session: serde_json::Value,
 }
 
+/// Confidence tier of a confirmed entry, derived from its origin: human
+/// (`user-selected` / `built-in-human-checked`) or agent
+/// (`built-in-agent-checked`). Human beats agent for the same
+/// `(word_key, context_hash)` regardless of scan order (PRD req 37). The
+/// `Ord` derive relies on the variant order: `Agent < Human`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum EntryTier {
+    Agent,
+    Human,
+}
+
+impl EntryTier {
+    /// The origin the entry is imported with (req 39).
+    fn import_origin(self) -> &'static str {
+        match self {
+            EntryTier::Human => "built-in-human-checked",
+            EntryTier::Agent => "built-in-agent-checked",
+        }
+    }
+}
+
 /// Collect the `*.json` files from the given inputs. A directory input is
-/// scanned non-recursively (subfolders like `candidates/` are excluded); a
-/// file input is taken as-is. The result is sorted by path for deterministic
-/// processing order.
+/// scanned non-recursively, plus its `human-checked/` and `agent-checked/`
+/// subfolders explicitly (other subfolders like `candidates/` and
+/// `agent-answers/` are excluded); a file input is taken as-is. The result is
+/// sorted by path for deterministic processing order.
 fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     let mut files: Vec<PathBuf> = Vec::new();
+
+    fn scan_dir(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| format!("Cannot read directory {}: {}", dir.display(), e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Cannot read directory entry: {}", e))?;
+            let path = entry.path();
+            let is_json = path
+                .extension()
+                .map(|ext| ext.eq_ignore_ascii_case("json"))
+                .unwrap_or(false);
+            if path.is_file() && is_json {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
 
     for input in inputs {
         match input.try_exists() {
@@ -53,17 +97,11 @@ fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
         }
 
         if input.is_dir() {
-            let entries = std::fs::read_dir(input)
-                .map_err(|e| format!("Cannot read directory {}: {}", input.display(), e))?;
-            for entry in entries {
-                let entry = entry.map_err(|e| format!("Cannot read directory entry: {}", e))?;
-                let path = entry.path();
-                let is_json = path
-                    .extension()
-                    .map(|ext| ext.eq_ignore_ascii_case("json"))
-                    .unwrap_or(false);
-                if path.is_file() && is_json {
-                    files.push(path);
+            scan_dir(input, &mut files)?;
+            for sub in ["human-checked", "agent-checked"] {
+                let sub_dir = input.join(sub);
+                if matches!(sub_dir.try_exists(), Ok(true)) && sub_dir.is_dir() {
+                    scan_dir(&sub_dir, &mut files)?;
                 }
             }
         } else {
@@ -86,7 +124,8 @@ fn selected_uid_is_valid(uid: &str) -> bool {
 
 /// Count the ambiguous occurrences of the scanned sessions and how many of
 /// them resolve against the target appdata DB without an AI request
-/// (`resolution` of `user` / `phrase` / `built-in`). Returns per-origin
+/// (`resolution` of `user-selected` / `built-in-phrase-match` /
+/// `built-in-human-checked` / `built-in-agent-checked`). Returns per-origin
 /// counts keyed by resolution name, plus the ambiguous total.
 fn coverage_summary(
     appdata: &AppdataDbHandle,
@@ -121,7 +160,13 @@ fn coverage_summary(
             }
             ambiguous_total += 1;
             if let Some(res) = w.get("resolution").and_then(|v| v.as_str()) {
-                if matches!(res, "user" | "phrase" | "built-in") {
+                if matches!(
+                    res,
+                    "user-selected"
+                        | "built-in-phrase-match"
+                        | "built-in-human-checked"
+                        | "built-in-agent-checked"
+                ) {
                     *resolved.entry(res.to_string()).or_insert(0) += 1;
                 }
             }
@@ -137,7 +182,7 @@ fn coverage_summary(
 /// context hash, so a pericope repeated verbatim counts once.
 fn collect_phrase_candidates(
     sessions: &[ScannedSession],
-    confirmed: &BTreeMap<(String, String), GlossWordCacheExportEntry>,
+    confirmed: &BTreeMap<(String, String), (GlossWordCacheExportEntry, EntryTier)>,
 ) -> Vec<crate::gloss_ngrams::PhraseCandidate> {
     let mut collector = PhraseCandidateCollector::new();
 
@@ -155,7 +200,7 @@ fn collect_phrase_candidates(
                 let normalized = normalize_gloss_context(sentence);
                 let hash = gloss_context_hash(&normalized);
                 let key = (word_key.clone(), hash.clone());
-                if let Some(entry) = confirmed.get(&key) {
+                if let Some((entry, _tier)) = confirmed.get(&key) {
                     collector.add_context(&normalized, &word_key, &hash, &entry.selected_uid);
                 }
             }
@@ -166,8 +211,8 @@ fn collect_phrase_candidates(
 }
 
 /// Run the import: scan the inputs, dedupe + validate the confirmed entries,
-/// import them as `built-in` rows into `appdata_db_path`, and print the
-/// report.
+/// import them as `built-in-human-checked` / `built-in-agent-checked` rows
+/// into `appdata_db_path`, and print the report.
 pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(), String> {
     match appdata_db_path.try_exists() {
         Ok(true) => {}
@@ -194,9 +239,11 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     // Parse the session files.
     let mut sessions: Vec<ScannedSession> = Vec::new();
     let mut skipped_files: usize = 0;
-    // Deduped confirmed entries: (word_key, context_hash) -> entry.
-    let mut confirmed: BTreeMap<(String, String), GlossWordCacheExportEntry> = BTreeMap::new();
+    // Deduped confirmed entries: (word_key, context_hash) -> (entry, tier).
+    let mut confirmed: BTreeMap<(String, String), (GlossWordCacheExportEntry, EntryTier)> =
+        BTreeMap::new();
     let mut confirmed_total: usize = 0;
+    let mut pending_review: usize = 0;
     let mut conflicts: usize = 0;
 
     for path in &files {
@@ -225,7 +272,15 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
 
         let mut file_confirmed: usize = 0;
         for entry in word_cache {
-            if !matches!(entry.origin.as_str(), "user" | "built-in") {
+            let tier = match entry.origin.as_str() {
+                "user-selected" | "built-in-human-checked" => EntryTier::Human,
+                "built-in-agent-checked" => EntryTier::Agent,
+                _ => continue,
+            };
+            // Agent best guesses flagged for human review are never imported
+            // as confirmed rows (PRD req 38).
+            if entry.confidence.as_deref() == Some("review") {
+                pending_review += 1;
                 continue;
             }
             let word_key = gloss_cache_word_key(&entry.word);
@@ -238,15 +293,30 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
             let key = (word_key, entry.context_hash.clone());
             match confirmed.get(&key) {
                 None => {
-                    confirmed.insert(key, entry);
+                    confirmed.insert(key, (entry, tier));
                 }
-                Some(existing) => {
+                Some((existing, existing_tier)) => {
                     if existing.selected_uid != entry.selected_uid {
                         conflicts += 1;
-                        eprintln!(
-                            "Conflict for ({}, {}): keeping '{}', ignoring '{}' from {}",
-                            key.0, key.1, existing.selected_uid, entry.selected_uid, file_name
-                        );
+                        // Human beats agent regardless of scan order (req 37);
+                        // within a tier the first-scanned entry is kept.
+                        if tier > *existing_tier {
+                            eprintln!(
+                                "Conflict for ({}, {}): human '{}' from {} overrides agent '{}'",
+                                key.0, key.1, entry.selected_uid, file_name, existing.selected_uid
+                            );
+                            confirmed.insert(key, (entry, tier));
+                        } else {
+                            let kind = if tier < *existing_tier { "agent (masked by human)" } else { "same tier" };
+                            eprintln!(
+                                "Conflict for ({}, {}): keeping '{}', ignoring {} '{}' from {}",
+                                key.0, key.1, existing.selected_uid, kind, entry.selected_uid, file_name
+                            );
+                        }
+                    } else if tier > *existing_tier {
+                        // Same selection at a higher tier: keep the human
+                        // provenance so the row imports as human-checked.
+                        confirmed.insert(key, (entry, tier));
                     }
                 }
             }
@@ -261,11 +331,11 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     }
 
     // Validate the selected uids against the dictionaries / DPD databases.
-    let mut valid: Vec<&GlossWordCacheExportEntry> = Vec::new();
+    let mut valid: Vec<(&GlossWordCacheExportEntry, EntryTier)> = Vec::new();
     let mut invalid_uids: usize = 0;
-    for entry in confirmed.values() {
+    for (entry, tier) in confirmed.values() {
         if selected_uid_is_valid(&entry.selected_uid) {
-            valid.push(entry);
+            valid.push((entry, *tier));
         } else {
             invalid_uids += 1;
             eprintln!(
@@ -275,23 +345,28 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         }
     }
 
-    // Import into the target appdata DB as built-in rows.
+    // Import into the target appdata DB: human-tier entries as
+    // built-in-human-checked rows, agent-tier as built-in-agent-checked.
     let url = appdata_db_path.to_string_lossy().to_string();
     let appdata = DatabaseHandle::new(&url)
         .map_err(|e| format!("Cannot open appdata database {}: {}", url, e))?;
 
-    let mut imported: usize = 0;
+    let mut imported_human: usize = 0;
+    let mut imported_agent: usize = 0;
     let mut already_present: usize = 0;
     let mut errors: usize = 0;
-    for entry in &valid {
+    for (entry, tier) in &valid {
         match appdata.import_gloss_word_cache_row(
             &gloss_cache_word_key(&entry.word),
             &entry.context_hash,
             &entry.context_snippet,
             &entry.selected_uid,
-            "built-in",
+            tier.import_origin(),
         ) {
-            Ok(true) => imported += 1,
+            Ok(true) => match tier {
+                EntryTier::Human => imported_human += 1,
+                EntryTier::Agent => imported_agent += 1,
+            },
             Ok(false) => already_present += 1,
             Err(e) => {
                 errors += 1;
@@ -301,6 +376,34 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     }
 
     let phrase_candidates = collect_phrase_candidates(&sessions, &confirmed);
+
+    // Phrase-vs-row conflict report (PRD req 43a): confirmed entries whose
+    // selection disagrees with a seeded phrase rule matching their normalized
+    // context. With built-in-human ranked above phrase in the resolution
+    // chain, a human entry silently *wins* over the rule at runtime
+    // (deliberate exception or curation error?); an agent entry is silently
+    // *masked* by the rule. Report only — the import itself is unchanged.
+    let phrase_rules = appdata.get_all_gloss_phrase_selections();
+    let mut phrase_row_conflicts: Vec<String> = Vec::new();
+    for (entry, tier) in &valid {
+        let word_key = gloss_cache_word_key(&entry.word);
+        let normalized_context = normalize_gloss_context(&entry.context_snippet);
+        for rule in &phrase_rules {
+            if rule.word == word_key
+                && gloss_phrase_occurs(&rule.phrase, &normalized_context)
+                && rule.selected_uid != entry.selected_uid
+            {
+                let verdict = match tier {
+                    EntryTier::Human => "human row wins at runtime — deliberate exception or curation error?",
+                    EntryTier::Agent => "masked by the phrase at runtime (informational)",
+                };
+                phrase_row_conflicts.push(format!(
+                    "  '{}' in \"{}\": row selects '{}', phrase rule \"{}\" selects '{}' — {}",
+                    word_key, entry.context_snippet, entry.selected_uid, rule.phrase, rule.selected_uid, verdict
+                ));
+            }
+        }
+    }
 
     let (resolved, ambiguous_total) = coverage_summary(&appdata, &sessions)?;
     let resolved_total: usize = resolved.values().sum();
@@ -315,10 +418,11 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         confirmed.len(),
         conflicts
     );
+    println!("Pending human review: {} entries skipped (confidence: \"review\")", pending_review);
     println!("Invalid uids skipped: {}", invalid_uids);
     println!(
-        "Imported as built-in: {} written, {} already present (equal or higher precedence)",
-        imported, already_present
+        "Imported as built-in: {} human-checked + {} agent-checked written, {} already present (equal or higher precedence)",
+        imported_human, imported_agent, already_present
     );
     if errors > 0 {
         println!("Import errors:        {}", errors);
@@ -360,6 +464,20 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
                 "  {:>3} contexts  {{\"phrase\": \"{}\", \"word\": \"{}\", \"selected_uid\": \"{}\"}}",
                 c.context_count, c.phrase, c.word, c.selected_uid
             );
+        }
+    }
+
+    println!();
+    println!("=== Phrase-vs-row conflicts ===");
+    if phrase_row_conflicts.is_empty() {
+        println!("No confirmed entries disagree with a matching seeded phrase rule.");
+    } else {
+        println!(
+            "{} confirmed entries disagree with a seeded phrase rule matching their context:",
+            phrase_row_conflicts.len()
+        );
+        for line in &phrase_row_conflicts {
+            println!("{}", line);
         }
     }
 

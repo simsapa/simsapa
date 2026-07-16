@@ -34,8 +34,18 @@ Notable feature docs:
   the five `AppSettings` caches and their refresh hooks, why background warming
   lives in `init_app_data()` (not `AppData::new()`), the
   `Loader` vs. `Component + createObject` rule for QML wrapping based on root
-  element type (`Dialog`/`Popup` vs `ApplicationWindow`), and the eager-binding
-  pre-flight required before deferring components.
+  element type (`Dialog`/`Popup` vs `ApplicationWindow`), the eager-binding
+  pre-flight required before deferring components, and the **pre-exec stall
+  forensics (§6)**: the window paints nothing until `app.exec()`, and every
+  eager child's `Component.onCompleted` runs inside the engine load — a ~9 s
+  invisible-window stall turned out to be per-dictionary `count(*)` scans
+  missing the `dict_words.dictionary_id` index (fixed by a dictionaries
+  migration), NOT the plausible-looking WebEngineView/Chromium bring-up.
+  Bracket silent stalls with `STARTUP-TRACE` logs before blaming. The webview
+  deferrals are kept as structural hygiene: blank tab `Qt.callLater`-deferred,
+  session restore `singleShot(0)`-posted (ordering is load-bearing), webview
+  `Loader`s `asynchronous` on desktop only — never create a webview before
+  `app.exec()`.
 - [Why `appdata` has two migration mechanisms](./docs/appdata-migration-mechanisms.md) —
   `dictionaries.sqlite3` is migrated at runtime by Diesel, but `appdata.sqlite3`
   is upgraded in place by `upgrade_appdata_schema()`, a **hand-maintained array**
@@ -224,28 +234,39 @@ Notable feature docs:
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
-  **resolution chain** (user cache row → built-in row → set phrase → AI row → AI
-  request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
+  **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
+  → set phrase (`built-in-phrase-match`) → `built-in-agent-checked` row →
+  `ai-selected` row → AI request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
   numeric `12463/dpd` headword uid, curated data stores the lemma form
-  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The **cache key** is
+  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The chain walks **two
+  coexisting rows** per key — `gloss_word_context_cache` is keyed
+  `(word, context_hash, built_in)`, so a local `-selected` row *shadows* the
+  shipped `built-in-*` row instead of overwriting it; deleting the local row
+  (shield click, Clear Word-Selection Cache) hands the word back to the curated
+  selection, and the rank guards in the upsert/import apply **within a tier**
+  only. The **cache key** is
   `(word, context_hash)` over the *existing* ±50-char gloss context window
   (`ProcessedWord.example_sentence`), normalized by `normalize_gloss_context()` —
   covers why each step is there (verse line-wrap `\s+` collapse, ṁ/ṃ, the
   **iti-sandhi quote-variant** rejoin `ṁ ti` → `nti` so smart/straight/bare
   editions share one hash) and the **annotation stripping** that runs before word
-  extraction. Tables `gloss_word_context_cache` (origins `ai` / `user` /
-  `built-in`, precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
+  extraction. Tables `gloss_word_context_cache` (origins `ai-selected` /
+  `user-selected` / `built-in-human-checked` / `built-in-agent-checked`,
+  precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
   settings/dialog + the two editable system prompts, the request format,
   **batching/pacing constants** (char limit, ≥ 6.5 s sequential spacing, 180 s
   timeout, client-side cancel), the three load-bearing rules when applying
   selections (ComboBox `onActivated` not `onCurrentIndexChanged`; a manual change
-  auto-saves a `user` row; late AI responses must not clobber a fresh user
+  auto-saves a `user-selected` row; late AI responses must not clobber a fresh user
   choice), the **JSON session export / Open JSON** round-trip and its
   strictly-higher-precedence import, **DOCX export** (hand-built OOXML around an
   embedded template), and the **built-in data-bank pipeline**
-  (`gloss-corpus-explore` → candidate sessions → curate in the UI →
-  `gloss-data-cache/` → `import-gloss-data` → bootstrap), incl. the
-  Rust-vs-Python-API decision.
+  (`gloss-corpus-explore` → `candidates/` → reviewed on two paths: human in the
+  Gloss UI → `human-checked/`, or the **`gloss-agent-check` agent workflow**
+  (CLI `prepare`/`apply`/`status` + the `/gloss-agent-check` project skill) →
+  `agent-checked/` → `import-gloss-data` → bootstrap), the review-skip +
+  human-over-agent import precedence, the naming scheme (folders / `confidence`
+  / origins / shield), and the Rust-vs-Python-API decision.
 - [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
   how the provider/model lists keep themselves current and how a model is chosen
   per request. The **shared update procedure**

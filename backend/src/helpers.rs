@@ -2695,8 +2695,40 @@ pub fn gloss_cache_word_key(word: &str) -> String {
 pub struct GlossResolutionData {
     /// Set-phrase rules as stored: (normalized phrase, word key, selected_uid).
     pub phrases: Vec<(String, String, String)>,
-    /// Cache rows keyed by `(word_key, context_hash)` → `(selected_uid, origin)`.
-    pub cache: HashMap<(String, String), (String, String)>,
+    /// Cache rows keyed by `(word_key, context_hash)`.
+    pub cache: HashMap<(String, String), GlossCacheEntry>,
+}
+
+/// The cache rows for one `(word_key, context_hash)`. The two tiers coexist —
+/// the unique key is `(word, context_hash, built_in)` — so a user's own
+/// selection shadows the shipped one in `resolve_gloss_word_selection` without
+/// destroying it, and removing the local row lets the shipped one apply again.
+#[derive(Debug, Clone, Default)]
+pub struct GlossCacheEntry {
+    /// `(selected_uid, origin)` of this install's row: `user-selected` or
+    /// `ai-selected`.
+    pub local: Option<(String, String)>,
+    /// `(selected_uid, origin)` of the bootstrap-shipped row:
+    /// `built-in-human-checked` or `built-in-agent-checked`.
+    pub built_in: Option<(String, String)>,
+}
+
+impl GlossCacheEntry {
+    /// The local row's uid when its origin is one of `origins`.
+    fn local_uid_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.local {
+            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            _ => None,
+        }
+    }
+
+    /// The shipped row's uid when its origin is one of `origins`.
+    fn built_in_uid_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.built_in {
+            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            _ => None,
+        }
+    }
 }
 
 impl GlossResolutionData {
@@ -2729,11 +2761,12 @@ impl GlossResolutionData {
         appdata: &crate::db::appdata::AppdataDbHandle,
         pairs: &[(String, String)],
     ) -> Self {
-        let cache = appdata
-            .get_gloss_word_cache_batch(pairs)
-            .into_iter()
-            .map(|r| ((r.word, r.context_hash), (r.selected_uid, r.origin)))
-            .collect();
+        let mut cache: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
+        for r in appdata.get_gloss_word_cache_batch(pairs) {
+            let entry = cache.entry((r.word, r.context_hash)).or_default();
+            let slot = if r.built_in != 0 { &mut entry.built_in } else { &mut entry.local };
+            *slot = Some((r.selected_uid, r.origin));
+        }
 
         let phrases = appdata
             .get_all_gloss_phrase_selections()
@@ -2857,11 +2890,27 @@ pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_
 }
 
 /// Resolve an ambiguous glossed word's selection from the pre-fetched cache /
-/// phrase data. Precedence: user cache > set phrase > built-in cache > ai
-/// cache. An entry whose `selected_uid` matches none of the word's lookup
-/// results (dictionary data changed) is ignored, falling through to the next
-/// level. Returns the matching option index and the resolution origin
-/// (`"user"` / `"phrase"` / `"built-in"` / `"ai"`).
+/// phrase data. Precedence: user cache > built-in-human-checked cache > set
+/// phrase > built-in-agent-checked cache > ai cache. The human-confirmed
+/// tiers rank *above* the general phrase rule because a confirmed selection
+/// for this exact (word, context) must be able to override the rule — under
+/// the old phrase-over-built-in order a shipped phrase rule permanently
+/// masked a curator's per-context exception. The agent tier stays below
+/// phrase: a phrase rule carries multi-context human evidence, an agent row a
+/// single-context machine judgment (docs/gloss-ai-word-selection.md §1).
+///
+/// The local and shipped rows for one key **coexist** (`GlossCacheEntry`), so
+/// this is a walk over both tiers rather than a lookup of one row: a
+/// `user-selected` row shadows the shipped one here, and deleting it (shield
+/// click, Clear Word-Selection Cache) makes the shipped selection apply again
+/// on the next annotate pass. That is what lets the shield's outline state be
+/// pure UI state for the session — nothing has to be destroyed to show it.
+///
+/// An entry whose `selected_uid` matches none of the word's lookup results
+/// (dictionary data changed) is ignored, falling through to the next level.
+/// Returns the matching option index and the resolution origin
+/// (`"user-selected"` / `"built-in-human-checked"` /
+/// `"built-in-phrase-match"` / `"built-in-agent-checked"` / `"ai-selected"`).
 pub fn resolve_gloss_word_selection(
     word_key: &str,
     normalized_context: &str,
@@ -2871,31 +2920,47 @@ pub fn resolve_gloss_word_selection(
 ) -> Option<(i32, String)> {
     let option_index = |uid: &str| results.iter().position(|r| gloss_option_uid_matches(r, uid));
 
+    let empty = GlossCacheEntry::default();
     let cached = data
         .cache
-        .get(&(word_key.to_string(), context_hash.to_string()));
+        .get(&(word_key.to_string(), context_hash.to_string()))
+        .unwrap_or(&empty);
 
-    if let Some((uid, origin)) = cached {
-        if origin == "user" {
-            if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, origin.clone()));
-            }
+    // 1. This install's own choice for this exact (word, context).
+    if let Some(uid) = cached.local_uid_of(&["user-selected"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "user-selected".to_string()));
         }
     }
 
+    // 2. The shipped human-checked row for this exact (word, context).
+    if let Some(uid) = cached.built_in_uid_of(&["built-in-human-checked"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "built-in-human-checked".to_string()));
+        }
+    }
+
+    // 3. The general set-phrase rule.
     for (phrase, word, uid) in &data.phrases {
         if word == word_key && gloss_phrase_occurs(phrase, normalized_context) {
             if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, "phrase".to_string()));
+                return Some((idx as i32, "built-in-phrase-match".to_string()));
             }
         }
     }
 
-    if let Some((uid, origin)) = cached {
-        if origin == "built-in" || origin == "ai" {
-            if let Some(idx) = option_index(uid) {
-                return Some((idx as i32, origin.clone()));
-            }
+    // 4. The shipped agent-checked row: single-context machine judgment, so it
+    //    ranks below the multi-context human evidence of a phrase rule.
+    if let Some(uid) = cached.built_in_uid_of(&["built-in-agent-checked"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "built-in-agent-checked".to_string()));
+        }
+    }
+
+    // 5. A runtime AI response saved on this install.
+    if let Some(uid) = cached.local_uid_of(&["ai-selected"]) {
+        if let Some(idx) = option_index(uid) {
+            return Some((idx as i32, "ai-selected".to_string()));
         }
     }
 
@@ -2911,7 +2976,13 @@ pub const GLOSS_SESSION_EXPORT_FORMAT_VERSION: u64 = 1;
 
 /// One `word_cache` entry of a gloss session export: a
 /// `gloss_word_context_cache` row without the local id / timestamps.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `confidence` / `note` are written by the agent-checked workflow
+/// (`gloss-agent-check apply`): `confidence: "review"` marks a best-guess
+/// entry flagged for human review (skipped by the imports), with the agent's
+/// reasoning in `note`. Absent means `confident`; entries exported by the app
+/// never carry these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlossWordCacheExportEntry {
     pub word: String,
     pub context_hash: String,
@@ -2919,6 +2990,10 @@ pub struct GlossWordCacheExportEntry {
     pub context_snippet: String,
     pub selected_uid: String,
     pub origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Collect the distinct `(word_key, context_hash)` pairs referenced by a
@@ -2973,9 +3048,15 @@ pub fn build_gloss_session_export_json(
             context_snippet: r.context_snippet,
             selected_uid: r.selected_uid,
             origin: r.origin,
+            confidence: None,
+            note: None,
         })
         .collect();
-    word_cache.sort_by(|a, b| (&a.word, &a.context_hash).cmp(&(&b.word, &b.context_hash)));
+    // A key can carry both a local and a shipped row, so `origin` is part of the
+    // sort key to keep the export deterministic.
+    word_cache.sort_by(|a, b| {
+        (&a.word, &a.context_hash, &a.origin).cmp(&(&b.word, &b.context_hash, &b.origin))
+    });
 
     let envelope = serde_json::json!({
         "format": GLOSS_SESSION_EXPORT_FORMAT,
@@ -3027,7 +3108,10 @@ pub fn parse_gloss_session_export(
 /// Import exported cache rows with the strictly-higher precedence rule
 /// (PRD req 40; `AppdataDbHandle::import_gloss_word_cache_row`). The word is
 /// key-normalized; entries with empty fields or an unknown origin count as
-/// skipped. Returns `(imported, skipped)`.
+/// skipped. Entries flagged `confidence: "review"` (agent-checked best
+/// guesses pending human review) are skipped too — opening an agent-checked
+/// session file must never write review guesses into the local DB as
+/// confirmed rows. Returns `(imported, skipped)`.
 pub fn import_gloss_word_cache_entries(
     appdata: &crate::db::appdata::AppdataDbHandle,
     entries: &[GlossWordCacheExportEntry],
@@ -3036,11 +3120,16 @@ pub fn import_gloss_word_cache_entries(
     let mut skipped = 0;
     for e in entries {
         let word_key = gloss_cache_word_key(&e.word);
-        let valid_origin = matches!(e.origin.as_str(), "ai" | "user" | "built-in");
+        let valid_origin = matches!(
+            e.origin.as_str(),
+            "ai-selected" | "user-selected" | "built-in-human-checked" | "built-in-agent-checked"
+        );
+        let pending_review = e.confidence.as_deref() == Some("review");
         if word_key.is_empty()
             || e.context_hash.is_empty()
             || e.selected_uid.is_empty()
             || !valid_origin
+            || pending_review
         {
             skipped += 1;
             continue;
@@ -3097,6 +3186,126 @@ fn extract_first_json_object(text: &str) -> Option<String> {
     None
 }
 
+/// One paragraph input for `build_word_selection_items`. `words_json` is the
+/// paragraph's serialized words_data array (the same JSON the GlossTab stores
+/// per paragraph); the item ids embed `paragraph_index` (`p<pi>w<wi>`), so the
+/// caller controls the paragraph numbering. `source_uid` optionally names the
+/// paragraph's source sutta so the agent workflow can use sutta-level context;
+/// the network path leaves it `None` and the field is omitted from the items.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordSelectionParagraphInput {
+    pub paragraph_index: usize,
+    pub words_json: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_uid: Option<String>,
+}
+
+/// Which ambiguous words `build_word_selection_items` includes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordSelectionBuildMode {
+    /// Network path: words already resolved (cache row / set phrase) are
+    /// skipped; `forced` re-includes `ai-selected` resolutions (the
+    /// per-paragraph "Update Selections" pass) but never `user-selected` /
+    /// `built-in-*` ones.
+    SkipResolved { forced: bool },
+    /// CLI agent path: every ambiguous word is included regardless of any
+    /// baked-in `resolution` value — stale resolutions in committed candidate
+    /// files must not silently exclude occurrences from agent review.
+    IncludeResolved,
+}
+
+/// Build the shared `pali_word_selection` request items for the given
+/// paragraphs (docs/gloss-ai-word-selection.md §4): ambiguous words only
+/// (more than one lookup result), stable `p<pi>w<wi>` ids (`wi` is the word's
+/// position in words_data, so skipped words never shift later ids), the
+/// occurrence-marked `example_sentence` as `context`, and option summaries
+/// HTML-stripped and truncated to 200 chars. Word entries that are not
+/// objects or lack a results array are skipped (matching the QML builder this
+/// replaces).
+///
+/// The output is deterministic: the item Values serialize with sorted object
+/// keys (serde_json's default BTreeMap), so the same input always yields
+/// byte-identical JSON.
+pub fn build_word_selection_items(
+    paragraphs: &[WordSelectionParagraphInput],
+    mode: WordSelectionBuildMode,
+) -> Result<Vec<serde_json::Value>, String> {
+    lazy_static! {
+        static ref RE_HTML_TAG: Regex = Regex::new(r"<[^>]*>").unwrap();
+    }
+
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    for para in paragraphs {
+        let words: Vec<serde_json::Value> = serde_json::from_str(&para.words_json)
+            .map_err(|e| {
+                format!(
+                    "build_word_selection_items: failed to parse words JSON for paragraph {}: {}",
+                    para.paragraph_index, e
+                )
+            })?;
+
+        for (wi, w) in words.iter().enumerate() {
+            let Some(results) = w.get("results").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            if results.len() <= 1 {
+                continue;
+            }
+
+            if let WordSelectionBuildMode::SkipResolved { forced } = mode {
+                let resolution = w
+                    .get("resolution")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty());
+                if let Some(res) = resolution {
+                    if !(forced && res == "ai-selected") {
+                        continue;
+                    }
+                }
+            }
+
+            let options: Vec<serde_json::Value> = results
+                .iter()
+                .map(|r| {
+                    let summary = r.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+                    let summary = RE_HTML_TAG.replace_all(summary, "");
+                    let summary: String = summary.chars().take(200).collect();
+                    serde_json::json!({
+                        "uid": r.get("uid").and_then(|v| v.as_str()).unwrap_or(""),
+                        "word": r.get("word").and_then(|v| v.as_str()).unwrap_or(""),
+                        "summary": summary,
+                    })
+                })
+                .collect();
+
+            let mut item = serde_json::json!({
+                "id": format!("p{}w{}", para.paragraph_index, wi),
+                "word": w.get("original_word").and_then(|v| v.as_str()).unwrap_or(""),
+                "context": w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or(""),
+                "options": options,
+            });
+            if let Some(source_uid) = &para.source_uid {
+                item.as_object_mut()
+                    .expect("item is an object")
+                    .insert("source_uid".to_string(), serde_json::json!(source_uid));
+            }
+            items.push(item);
+        }
+    }
+    Ok(items)
+}
+
+/// Wrap request items in the shared request envelope:
+/// `{"task": "pali_word_selection", "items": [...]}`. Deterministic for the
+/// same reason as `build_word_selection_items`.
+pub fn build_word_selection_payload(items: &[serde_json::Value]) -> Result<String, String> {
+    serde_json::to_string(&serde_json::json!({
+        "task": "pali_word_selection",
+        "items": items,
+    }))
+    .map_err(|e| format!("Failed to serialize the word-selection payload: {}", e))
+}
+
 /// Cheap structural check of an AI word-selection response, used by the
 /// request engine (`bridges/src/prompt_manager.rs`) to classify a truncated or
 /// malformed reply as a retryable `invalid_response` error *before* it is
@@ -3127,19 +3336,54 @@ pub fn validate_word_selection_response_shape(response: &str) -> Result<(), Stri
     Ok(())
 }
 
-/// Parse and validate an AI word-selection response (PRD: Gloss Tab AI word
-/// selection, `docs/gloss-ai-word-selection.md`).
+/// Strictness of `parse_word_selection_response`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordSelectionParseMode {
+    /// Network path: invalid entries are logged and skipped, valid ones
+    /// applied. Duplicate entries for one id keep the first; a disagreeing
+    /// duplicate is skipped. Unanswered items are fine.
+    Lenient,
+    /// Agent path: any invalid entry, disagreeing duplicate, or unanswered
+    /// item is a hard `Err` (all problems collected into one message).
+    Strict,
+}
+
+/// One validated word-selection answer: the item id, the resolved option
+/// `uid`, the agent's self-assessed `confidence` (`"confident"` /
+/// `"review"`; defaulted to `"confident"` when absent) and its optional
+/// `note` (expected for `review` entries).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WordSelectionEntry {
+    pub id: String,
+    pub uid: String,
+    pub confidence: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Parse and validate an AI word-selection response (PRD: agent-checked gloss
+/// selections §4.C, `docs/gloss-ai-word-selection.md` §4).
 ///
 /// `response` is the raw model output; a leading `Error:` (the in-band error
 /// convention of `PromptManager`) is treated as request failure. Otherwise the
-/// first top-level JSON object is extracted (lenient: code fences / prose
-/// around it are ignored) and its `selections` array validated against
-/// `expected_items_json` — the request payload's `items` array. Entries with
-/// unknown `id`s or a `uid` not among that item's options are logged and
-/// skipped; a completely unparseable response is an `Err`.
+/// first top-level JSON object is extracted (tolerant of code fences / prose
+/// around it) and its `selections` array validated against
+/// `expected_items_json` — the request payload's `items` array.
 ///
-/// Returns the valid `(id, uid)` pairs.
-pub fn parse_word_selection_response(response: &str, expected_items_json: &str) -> Result<Vec<(String, String)>, String> {
+/// An entry selects an option by its **`word` lemma** (resolved to the uid
+/// within that item's option list) and/or by `uid` directly (robustness for
+/// models following an edited prompt). An entry is invalid when: the id is
+/// missing or unknown; neither `word` nor `uid` is given; the lemma is not
+/// among the item's options, or is carried by more than one option (ambiguous);
+/// the uid is not among the options; `word` and `uid` are both given but
+/// disagree; or `confidence` is neither `confident` nor `review`.
+/// Invalid entries are skipped (`Lenient`) or collected into a hard error
+/// (`Strict`); `Strict` additionally fails on items with no answer.
+pub fn parse_word_selection_response(
+    response: &str,
+    expected_items_json: &str,
+    mode: WordSelectionParseMode,
+) -> Result<Vec<WordSelectionEntry>, String> {
     let trimmed = response.trim();
     if trimmed.is_empty() {
         return Err("Empty response".to_string());
@@ -3148,26 +3392,45 @@ pub fn parse_word_selection_response(response: &str, expected_items_json: &str) 
         return Err(trimmed.to_string());
     }
 
-    // Map of item id -> allowed option uids, from the request payload items.
+    // Per item id: the allowed option uids and the lemma -> uid map. A lemma
+    // shared by more than one option of the same item cannot identify a
+    // selection; it is mapped to None (ambiguous).
+    struct ItemOptions {
+        uids: HashSet<String>,
+        lemma_to_uid: HashMap<String, Option<String>>,
+    }
     let items: serde_json::Value = serde_json::from_str(expected_items_json)
         .map_err(|e| format!("Invalid expected items JSON: {}", e))?;
     let items = items.as_array().ok_or("Expected items JSON is not an array")?;
-    let mut allowed: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut allowed: HashMap<String, ItemOptions> = HashMap::new();
+    let mut item_ids: Vec<String> = Vec::new();
     for item in items {
         let id = item.get("id").and_then(|v| v.as_str()).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
-        let uids: HashSet<String> = item.get("options")
-            .and_then(|v| v.as_array())
-            .map(|opts| {
-                opts.iter()
-                    .filter_map(|o| o.get("uid").and_then(|v| v.as_str()))
-                    .map(|s| s.to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-        allowed.insert(id.to_string(), uids);
+        let mut uids: HashSet<String> = HashSet::new();
+        let mut lemma_to_uid: HashMap<String, Option<String>> = HashMap::new();
+        for o in item.get("options").and_then(|v| v.as_array()).into_iter().flatten() {
+            let uid = o.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
+            let lemma = o.get("word").and_then(|v| v.as_str()).unwrap_or_default();
+            if uid.is_empty() {
+                continue;
+            }
+            uids.insert(uid.to_string());
+            if !lemma.is_empty() {
+                match lemma_to_uid.entry(lemma.to_string()) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.insert(None);
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(Some(uid.to_string()));
+                    }
+                }
+            }
+        }
+        item_ids.push(id.to_string());
+        allowed.insert(id.to_string(), ItemOptions { uids, lemma_to_uid });
     }
 
     let json_text = extract_first_json_object(trimmed)
@@ -3178,22 +3441,96 @@ pub fn parse_word_selection_response(response: &str, expected_items_json: &str) 
         .and_then(|v| v.as_array())
         .ok_or("Response JSON has no 'selections' array")?;
 
-    let mut result: Vec<(String, String)> = Vec::new();
+    let mut result: Vec<WordSelectionEntry> = Vec::new();
+    let mut by_id: HashMap<String, usize> = HashMap::new();
+    let mut problems: Vec<String> = Vec::new();
+    let invalid = |msg: String, problems: &mut Vec<String>| {
+        info(&format!("parse_word_selection_response(): {}, skipping", msg));
+        problems.push(msg);
+    };
     for sel in selections {
         let id = sel.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-        let uid = sel.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
-        if id.is_empty() || uid.is_empty() {
-            info(&format!("parse_word_selection_response(): skipping malformed selection entry: {}", sel));
+        if id.is_empty() {
+            invalid(format!("selection entry without an 'id': {}", sel), &mut problems);
             continue;
         }
-        match allowed.get(id) {
-            None => {
-                info(&format!("parse_word_selection_response(): unknown item id '{}', skipping", id));
+        let Some(opts) = allowed.get(id) else {
+            invalid(format!("unknown item id '{}'", id), &mut problems);
+            continue;
+        };
+        let lemma = sel.get("word").and_then(|v| v.as_str()).unwrap_or_default();
+        let uid = sel.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
+
+        let lemma_uid = if lemma.is_empty() {
+            None
+        } else {
+            match opts.lemma_to_uid.get(lemma) {
+                None => {
+                    invalid(format!("lemma '{}' is not an option of item '{}'", lemma, id), &mut problems);
+                    continue;
+                }
+                Some(None) => {
+                    invalid(format!("lemma '{}' is ambiguous among the options of item '{}'", lemma, id), &mut problems);
+                    continue;
+                }
+                Some(Some(u)) => Some(u.clone()),
             }
-            Some(uids) if !uids.contains(uid) => {
-                info(&format!("parse_word_selection_response(): uid '{}' is not an option of item '{}', skipping", uid, id));
+        };
+        let resolved_uid = match (&lemma_uid, uid.is_empty()) {
+            (None, true) => {
+                invalid(format!("entry for item '{}' has neither 'word' nor 'uid'", id), &mut problems);
+                continue;
             }
-            Some(_) => result.push((id.to_string(), uid.to_string())),
+            (None, false) => {
+                if !opts.uids.contains(uid) {
+                    invalid(format!("uid '{}' is not an option of item '{}'", uid, id), &mut problems);
+                    continue;
+                }
+                uid.to_string()
+            }
+            (Some(lu), false) if lu != uid => {
+                invalid(format!("entry for item '{}' disagrees: lemma '{}' resolves to '{}' but uid is '{}'", id, lemma, lu, uid), &mut problems);
+                continue;
+            }
+            (Some(lu), _) => lu.clone(),
+        };
+
+        let confidence = sel.get("confidence").and_then(|v| v.as_str()).unwrap_or("confident");
+        if confidence != "confident" && confidence != "review" {
+            invalid(format!("entry for item '{}' has an invalid confidence '{}'", id, confidence), &mut problems);
+            continue;
+        }
+        let note = sel.get("note").and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+
+        // Duplicate answers for the same id: keep the first; a disagreeing
+        // duplicate is invalid (hard error in Strict mode).
+        if let Some(&prev_idx) = by_id.get(id) {
+            if result[prev_idx].uid != resolved_uid {
+                invalid(format!("duplicate answers for item '{}' disagree: '{}' vs '{}'", id, result[prev_idx].uid, resolved_uid), &mut problems);
+            }
+            continue;
+        }
+        by_id.insert(id.to_string(), result.len());
+        result.push(WordSelectionEntry {
+            id: id.to_string(),
+            uid: resolved_uid,
+            confidence: confidence.to_string(),
+            note,
+        });
+    }
+
+    if mode == WordSelectionParseMode::Strict {
+        let unanswered: Vec<&String> = item_ids.iter().filter(|id| !by_id.contains_key(*id)).collect();
+        if !unanswered.is_empty() {
+            problems.push(format!(
+                "unanswered items: {}",
+                unanswered.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+        if !problems.is_empty() {
+            return Err(format!("Invalid word-selection response: {}", problems.join("; ")));
         }
     }
     Ok(result)
@@ -4335,16 +4672,20 @@ mod tests {
     fn test_parse_word_selection_response_plain_and_fenced() {
         let items = word_selection_items_json();
 
-        // Plain JSON.
+        // Plain JSON, uid-only entry form.
         let r = parse_word_selection_response(
-            r#"{"selections": [{"id": "p0w4", "uid": "ārāma-4/dpd"}]}"#, items).unwrap();
-        assert_eq!(r, vec![("p0w4".to_string(), "ārāma-4/dpd".to_string())]);
+            r#"{"selections": [{"id": "p0w4", "uid": "ārāma-4/dpd"}]}"#,
+            items, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].id.as_str(), r[0].uid.as_str()), ("p0w4", "ārāma-4/dpd"));
+        assert_eq!(r[0].confidence, "confident");
+        assert_eq!(r[0].note, None);
 
         // Fenced JSON with prose around it.
         let fenced = "Here are the selections:\n```json\n{\"selections\": [\n  {\"id\": \"p0w4\", \"uid\": \"ārāma-4/dpd\"},\n  {\"id\": \"p1w2\", \"uid\": \"bhikkhu/dpd\"}\n]}\n```\nLet me know if you need anything else.";
-        let r = parse_word_selection_response(fenced, items).unwrap();
+        let r = parse_word_selection_response(fenced, items, WordSelectionParseMode::Lenient).unwrap();
         assert_eq!(r.len(), 2);
-        assert_eq!(r[1], ("p1w2".to_string(), "bhikkhu/dpd".to_string()));
+        assert_eq!((r[1].id.as_str(), r[1].uid.as_str()), ("p1w2", "bhikkhu/dpd"));
     }
 
     #[test]
@@ -4352,14 +4693,113 @@ mod tests {
         let items = word_selection_items_json();
 
         // Unknown id and a uid that is not among the item's options are
-        // skipped; the valid entry survives.
+        // skipped; the valid entry survives (lenient skip counting: 2 of 3
+        // entries dropped).
         let mixed = r#"{"selections": [
             {"id": "p9w9", "uid": "ārāma-4/dpd"},
             {"id": "p0w4", "uid": "bhikkhu/dpd"},
             {"id": "p1w2", "uid": "bhikkhu/dpd"}
         ]}"#;
-        let r = parse_word_selection_response(mixed, items).unwrap();
-        assert_eq!(r, vec![("p1w2".to_string(), "bhikkhu/dpd".to_string())]);
+        let r = parse_word_selection_response(mixed, items, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].id.as_str(), r[0].uid.as_str()), ("p1w2", "bhikkhu/dpd"));
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_lemma_entries() {
+        let items = word_selection_items_json();
+
+        // Lemma-based happy path: the lemma resolves to the option's uid
+        // within that item; confidence/note pass through, absent = confident.
+        let r = parse_word_selection_response(
+            r#"{"selections": [
+                {"id": "p0w4", "word": "ārāma 4"},
+                {"id": "p1w2", "word": "bhikkhū", "confidence": "review", "note": "plural fits"}
+            ]}"#,
+            items, WordSelectionParseMode::Strict).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!((r[0].id.as_str(), r[0].uid.as_str(), r[0].confidence.as_str()),
+                   ("p0w4", "ārāma-4/dpd", "confident"));
+        assert_eq!((r[1].uid.as_str(), r[1].confidence.as_str()), ("bhikkhū/dpd", "review"));
+        assert_eq!(r[1].note.as_deref(), Some("plural fits"));
+
+        // Both word and uid, agreeing.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w4", "word": "ārāma 4", "uid": "ārāma-4/dpd"}]}"#,
+            items, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(r[0].uid, "ārāma-4/dpd");
+
+        // Both present but disagreeing: skipped in lenient, Err in strict.
+        let disagree = r#"{"selections": [{"id": "p0w4", "word": "ārāma 4", "uid": "ārāma-1/dpd"}]}"#;
+        let r = parse_word_selection_response(disagree, items, WordSelectionParseMode::Lenient).unwrap();
+        assert!(r.is_empty());
+        let err = parse_word_selection_response(disagree, items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("disagrees"), "unexpected error: {}", err);
+
+        // Unknown lemma: skipped in lenient, Err in strict.
+        let unknown = r#"{"selections": [{"id": "p0w4", "word": "ārāma 9"}]}"#;
+        assert!(parse_word_selection_response(unknown, items, WordSelectionParseMode::Lenient).unwrap().is_empty());
+        let err = parse_word_selection_response(unknown, items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("not an option"), "unexpected error: {}", err);
+
+        // Invalid confidence value.
+        let bad_conf = r#"{"selections": [{"id": "p0w4", "word": "ārāma 4", "confidence": "maybe"}]}"#;
+        assert!(parse_word_selection_response(bad_conf, items, WordSelectionParseMode::Lenient).unwrap().is_empty());
+        assert!(parse_word_selection_response(bad_conf, items, WordSelectionParseMode::Strict).is_err());
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_duplicate_lemma_among_options() {
+        // Two options of one item carry the same lemma (possible with mixed
+        // dictionary sources): selecting by that lemma is ambiguous and
+        // invalid; selecting by uid still works.
+        let items = r#"[
+            {"id": "p0w0", "word": "x", "context": "<b>x</b>",
+             "options": [
+                {"uid": "a/one", "word": "same lemma", "summary": ""},
+                {"uid": "a/two", "word": "same lemma", "summary": ""}
+             ]}
+        ]"#;
+        let by_lemma = r#"{"selections": [{"id": "p0w0", "word": "same lemma"}]}"#;
+        assert!(parse_word_selection_response(by_lemma, items, WordSelectionParseMode::Lenient).unwrap().is_empty());
+        let err = parse_word_selection_response(by_lemma, items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("ambiguous"), "unexpected error: {}", err);
+
+        let by_uid = r#"{"selections": [{"id": "p0w0", "uid": "a/two"}]}"#;
+        let r = parse_word_selection_response(by_uid, items, WordSelectionParseMode::Strict).unwrap();
+        assert_eq!(r[0].uid, "a/two");
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_strict_completeness_and_duplicates() {
+        let items = word_selection_items_json();
+
+        // Strict: every item must be answered.
+        let partial = r#"{"selections": [{"id": "p0w4", "word": "ārāma 4"}]}"#;
+        assert!(parse_word_selection_response(partial, items, WordSelectionParseMode::Lenient).is_ok());
+        let err = parse_word_selection_response(partial, items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("unanswered items: p1w2"), "unexpected error: {}", err);
+
+        // Agreeing duplicates collapse to one entry in both modes.
+        let agree = r#"{"selections": [
+            {"id": "p0w4", "word": "ārāma 4"},
+            {"id": "p0w4", "uid": "ārāma-4/dpd"},
+            {"id": "p1w2", "word": "bhikkhu"}
+        ]}"#;
+        let r = parse_word_selection_response(agree, items, WordSelectionParseMode::Strict).unwrap();
+        assert_eq!(r.len(), 2);
+
+        // Disagreeing duplicates: first kept in lenient, Err in strict.
+        let disagree = r#"{"selections": [
+            {"id": "p0w4", "word": "ārāma 4"},
+            {"id": "p0w4", "word": "ārāma 1"},
+            {"id": "p1w2", "word": "bhikkhu"}
+        ]}"#;
+        let r = parse_word_selection_response(disagree, items, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].uid, "ārāma-4/dpd");
+        let err = parse_word_selection_response(disagree, items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("duplicate answers"), "unexpected error: {}", err);
     }
 
     #[test]
@@ -4370,6 +4810,15 @@ mod tests {
         ).is_ok());
         assert!(validate_word_selection_response_shape(
             "```json\n{\"selections\": []}\n```"
+        ).is_ok());
+
+        // The check is truncation-only and never inspects entries: both entry
+        // forms (uid-based and lemma-based, with confidence/note) must pass —
+        // do not add entry-shape checks here, the per-entry validation belongs
+        // to parse_word_selection_response.
+        assert!(validate_word_selection_response_shape(
+            r#"{"selections": [{"id": "p0w4", "word": "ārāma 4"},
+                {"id": "p1w2", "word": "suta 1.3", "confidence": "review", "note": "formula"}]}"#
         ).is_ok());
 
         // A reply truncated mid-JSON (observed with Gemini: the model stopped
@@ -4399,14 +4848,152 @@ mod tests {
     fn test_parse_word_selection_response_errors() {
         let items = word_selection_items_json();
 
-        // In-band provider error.
-        assert!(parse_word_selection_response("Error: Provider Gemini is disabled", items).is_err());
-        // Garbage input without a JSON object.
-        assert!(parse_word_selection_response("I could not decide.", items).is_err());
-        // A JSON object without a selections array.
-        assert!(parse_word_selection_response(r#"{"answers": []}"#, items).is_err());
-        // Empty response.
-        assert!(parse_word_selection_response("   ", items).is_err());
+        // These are hard errors in both modes (unusable response, not a
+        // skippable entry).
+        for mode in [WordSelectionParseMode::Lenient, WordSelectionParseMode::Strict] {
+            // In-band provider error.
+            assert!(parse_word_selection_response("Error: Provider Gemini is disabled", items, mode).is_err());
+            // Garbage input without a JSON object.
+            assert!(parse_word_selection_response("I could not decide.", items, mode).is_err());
+            // A JSON object without a selections array.
+            assert!(parse_word_selection_response(r#"{"answers": []}"#, items, mode).is_err());
+            // Empty response.
+            assert!(parse_word_selection_response("   ", items, mode).is_err());
+        }
+    }
+
+    /// words_data for one paragraph: w0 unambiguous (never an item), w1
+    /// ambiguous + unresolved, w2 ambiguous + resolved `ai-selected`, w3
+    /// ambiguous + resolved `user-selected`, w4 a non-object entry (skipped).
+    fn word_selection_words_json() -> &'static str {
+        r#"[
+            {"original_word": "Evaṁ", "example_sentence": "<b>Evaṁ</b> me sutaṁ.",
+             "results": [{"uid": "evaṁ/dpd", "word": "evaṁ", "summary": "(ind) thus"}]},
+            {"original_word": "me", "example_sentence": "Evaṁ <b>me</b> sutaṁ.",
+             "resolution": null,
+             "results": [
+                {"uid": "ma-2/dpd", "word": "ma 2", "summary": "<i>(pron)</i> by me; <b>for me</b>"},
+                {"uid": "ma-3/dpd", "word": "ma 3", "summary": "(pron) my; mine"}
+             ]},
+            {"original_word": "sutaṁ", "example_sentence": "Evaṁ me <b>sutaṁ</b>.",
+             "resolution": "ai-selected",
+             "results": [
+                {"uid": "suta-1.1/dpd", "word": "suta 1.1", "summary": "(pp) heard"},
+                {"uid": "suta-1.3/dpd", "word": "suta 1.3", "summary": "(nt) what is heard"}
+             ]},
+            {"original_word": "samayaṁ", "example_sentence": "Ekaṁ <b>samayaṁ</b> bhagavā.",
+             "resolution": "user-selected",
+             "results": [
+                {"uid": "samaya-1.1/dpd", "word": "samaya 1.1", "summary": "(masc) time"},
+                {"uid": "samaya-1.4/dpd", "word": "samaya 1.4", "summary": "(masc) occasion"}
+             ]},
+            null
+        ]"#
+    }
+
+    #[test]
+    fn test_build_word_selection_items_modes_and_id_stability() {
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 2,
+            words_json: word_selection_words_json().to_string(),
+            source_uid: None,
+        };
+
+        // Network mode, not forced: only the unresolved ambiguous word.
+        let items = build_word_selection_items(
+            &[para.clone()],
+            WordSelectionBuildMode::SkipResolved { forced: false },
+        ).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["id"], "p2w1");
+        assert_eq!(items[0]["word"], "me");
+        assert_eq!(items[0]["context"], "Evaṁ <b>me</b> sutaṁ.");
+        // Summary is HTML-stripped.
+        assert_eq!(items[0]["options"][0]["summary"], "(pron) by me; for me");
+        assert!(items[0].get("source_uid").is_none());
+
+        // Forced re-includes the ai-selected word but never the user-selected.
+        let items = build_word_selection_items(
+            &[para.clone()],
+            WordSelectionBuildMode::SkipResolved { forced: true },
+        ).unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p2w1", "p2w2"]);
+
+        // Include-resolved (CLI agent path): every ambiguous word, and the ids
+        // are identical to the network mode's for the shared words — `wi` is
+        // the words_data position, so skipping never shifts ids across modes.
+        let items = build_word_selection_items(
+            &[para],
+            WordSelectionBuildMode::IncludeResolved,
+        ).unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p2w1", "p2w2", "p2w3"]);
+    }
+
+    #[test]
+    fn test_build_word_selection_items_source_uid_and_summary_truncation() {
+        let long_summary = format!("<b>x</b>{}", "y".repeat(300));
+        let words = serde_json::json!([
+            {"original_word": "me", "example_sentence": "Evaṁ <b>me</b> sutaṁ.",
+             "results": [
+                {"uid": "a/dpd", "word": "a", "summary": long_summary},
+                {"uid": "b/dpd", "word": "b", "summary": null}
+             ]}
+        ]).to_string();
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: words,
+            source_uid: Some("sn56.11/pli/ms".to_string()),
+        };
+        let items = build_word_selection_items(
+            &[para],
+            WordSelectionBuildMode::IncludeResolved,
+        ).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["source_uid"], "sn56.11/pli/ms");
+        // Stripped then truncated to 200 chars; missing summary becomes "".
+        let s = items[0]["options"][0]["summary"].as_str().unwrap();
+        assert_eq!(s.chars().count(), 200);
+        assert!(!s.contains('<'));
+        assert_eq!(items[0]["options"][1]["summary"], "");
+    }
+
+    #[test]
+    fn test_build_word_selection_payload_determinism() {
+        let paras = vec![
+            WordSelectionParagraphInput {
+                paragraph_index: 0,
+                words_json: word_selection_words_json().to_string(),
+                source_uid: Some("mn1/pli/ms".to_string()),
+            },
+            WordSelectionParagraphInput {
+                paragraph_index: 1,
+                words_json: word_selection_words_json().to_string(),
+                source_uid: Some("mn2/pli/ms".to_string()),
+            },
+        ];
+        let a = build_word_selection_payload(
+            &build_word_selection_items(&paras, WordSelectionBuildMode::IncludeResolved).unwrap(),
+        ).unwrap();
+        let b = build_word_selection_payload(
+            &build_word_selection_items(&paras, WordSelectionBuildMode::IncludeResolved).unwrap(),
+        ).unwrap();
+        // Same input → byte-identical output (req: re-runs diff cleanly).
+        assert_eq!(a, b);
+        assert!(a.starts_with(r#"{"items":"#) || a.contains(r#""task":"pali_word_selection""#));
+
+        // Malformed words JSON is an Err naming the paragraph.
+        let bad = WordSelectionParagraphInput {
+            paragraph_index: 7,
+            words_json: "not json".to_string(),
+            source_uid: None,
+        };
+        let err = build_word_selection_items(
+            &[bad],
+            WordSelectionBuildMode::IncludeResolved,
+        ).unwrap_err();
+        assert!(err.contains("paragraph 7"), "unexpected error: {}", err);
     }
 
     #[test]
@@ -4418,13 +5005,13 @@ mod tests {
             "session": {"text": "Ekaṁ samayaṁ", "paragraphs": []},
             "word_cache": [
                 {"word": "ārāme", "context_hash": "h1", "context_snippet": "c",
-                 "selected_uid": "ārāma-4/dpd", "origin": "user"}
+                 "selected_uid": "ārāma-4/dpd", "origin": "user-selected"}
             ]
         }"#;
         let (session, word_cache) = parse_gloss_session_export(valid).unwrap();
         assert_eq!(session.get("text").unwrap().as_str().unwrap(), "Ekaṁ samayaṁ");
         assert_eq!(word_cache.len(), 1);
-        assert_eq!(word_cache[0].origin, "user");
+        assert_eq!(word_cache[0].origin, "user-selected");
 
         // Missing word_cache is tolerated (empty).
         let no_cache = r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {}}"#;
@@ -4475,19 +5062,30 @@ mod tests {
             .collect()
     }
 
+    /// Build resolution data from `(word_key, context_hash, uid, origin)` rows.
+    /// Each row lands in the tier its origin implies, so a key may carry both a
+    /// local and a shipped row — exactly as the DB stores them.
     fn resolution_data_with(
         cache: &[(&str, &str, &str, &str)],
         phrases: &[(&str, &str, &str)],
     ) -> GlossResolutionData {
+        let mut cache_map: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
+        for (w, h, u, o) in cache {
+            let entry = cache_map.entry((w.to_string(), h.to_string())).or_default();
+            let slot = if crate::db::appdata::gloss_cache_origin_is_built_in(o) {
+                &mut entry.built_in
+            } else {
+                &mut entry.local
+            };
+            *slot = Some((u.to_string(), o.to_string()));
+        }
+
         GlossResolutionData {
             phrases: phrases
                 .iter()
                 .map(|(p, w, u)| (p.to_string(), w.to_string(), u.to_string()))
                 .collect(),
-            cache: cache
-                .iter()
-                .map(|(w, h, u, o)| ((w.to_string(), h.to_string()), (u.to_string(), o.to_string())))
-                .collect(),
+            cache: cache_map,
         }
     }
 
@@ -4499,29 +5097,40 @@ mod tests {
 
         // user cache beats a phrase match pointing elsewhere.
         let data = resolution_data_with(
-            &[("ārāme", "h1", "ārāma-1/dpd", "user")],
+            &[("ārāme", "h1", "ārāma-1/dpd", "user-selected")],
             &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
         );
         assert_eq!(
             resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
-            Some((0, "user".to_string())),
+            Some((0, "user-selected".to_string())),
         );
 
-        // phrase beats built-in and ai cache rows.
-        for origin in ["built-in", "ai"] {
+        // A built-in-human-checked row beats a phrase match pointing elsewhere
+        // (the exact-context human confirmation overrides the general rule).
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "built-in-human-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "built-in-human-checked".to_string())),
+        );
+
+        // phrase beats agent-checked and ai cache rows.
+        for origin in ["built-in-agent-checked", "ai-selected"] {
             let data = resolution_data_with(
                 &[("ārāme", "h1", "ārāma-1/dpd", origin)],
                 &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
             );
             assert_eq!(
                 resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
-                Some((1, "phrase".to_string())),
+                Some((1, "built-in-phrase-match".to_string())),
                 "phrase must beat a {} cache row", origin,
             );
         }
 
-        // Without a phrase match, built-in and ai rows resolve with their origin.
-        for origin in ["built-in", "ai"] {
+        // Without a phrase match, the remaining tiers resolve with their origin.
+        for origin in ["built-in-human-checked", "built-in-agent-checked", "ai-selected"] {
             let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", origin)], &[]);
             assert_eq!(
                 resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
@@ -4540,7 +5149,7 @@ mod tests {
         let ctx = "jetavane anāthapiṇḍikassa ārāme";
 
         // A different context hash is a cache miss.
-        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user")], &[]);
+        let data = resolution_data_with(&[("ārāme", "other-hash", "ārāma-4/dpd", "user-selected")], &[]);
         assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
 
         // A phrase rule only fires when the normalized phrase occurs in the
@@ -4551,18 +5160,99 @@ mod tests {
         // A stale uid (dictionary data changed) is ignored and resolution
         // falls through to the next precedence level.
         let data = resolution_data_with(
-            &[("ārāme", "h1", "gone-uid/dpd", "user")],
+            &[("ārāme", "h1", "gone-uid/dpd", "user-selected")],
             &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
         );
         assert_eq!(
             resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
-            Some((1, "phrase".to_string())),
+            Some((1, "built-in-phrase-match".to_string())),
             "stale user uid falls through to the phrase match",
         );
 
+        // Same fall-through for a stale built-in-human-checked uid.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "gone-uid/dpd", "built-in-human-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
+            Some((1, "built-in-phrase-match".to_string())),
+            "stale built-in-human-checked uid falls through to the phrase match",
+        );
+
         // Stale uid everywhere → unresolved.
-        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai")], &[]);
+        let data = resolution_data_with(&[("ārāme", "h1", "gone-uid/dpd", "ai-selected")], &[]);
         assert_eq!(resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data), None);
+    }
+
+    /// The local and shipped rows for one key coexist, so the chain walks both
+    /// tiers. This is what lets the shield's outline state be UI-only: removing
+    /// the local row is enough to hand the word back to the shipped selection,
+    /// and no curated data has to be destroyed on the way.
+    #[test]
+    fn test_resolve_gloss_word_selection_local_row_shadows_shipped_row() {
+        let results = lookup_results(&["ārāma-1/dpd", "ārāma-4/dpd"]);
+        let ctx = "jetavane anāthapiṇḍikassa ārāme";
+        let hash = "h1";
+
+        // A user row and a shipped human-checked row for the same key: the
+        // user's own choice wins.
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "user-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-human-checked"),
+            ],
+            &[],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user-selected".to_string())),
+        );
+
+        // Remove just the local row (delete_gloss_word_cache never touches the
+        // shipped tier) and the shipped selection applies again.
+        let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", "built-in-human-checked")], &[]);
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-human-checked".to_string())),
+        );
+
+        // Same for a shipped row shadowed by a local ai row: the shipped row
+        // outranks it, so a coexisting ai row changes nothing.
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "ai-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-agent-checked"),
+            ],
+            &[],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-agent-checked".to_string())),
+        );
+
+        // A phrase rule sits between the two shipped tiers: it beats a shipped
+        // agent row, but a local user row still beats the phrase.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "built-in-agent-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((1, "built-in-phrase-match".to_string())),
+        );
+
+        let data = resolution_data_with(
+            &[
+                ("ārāme", "h1", "ārāma-1/dpd", "user-selected"),
+                ("ārāme", "h1", "ārāma-4/dpd", "built-in-agent-checked"),
+            ],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "user-selected".to_string())),
+        );
     }
 
     #[test]

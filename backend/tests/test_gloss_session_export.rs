@@ -83,12 +83,12 @@ fn test_gloss_session_export_round_trip() {
     // session's two words (plus an unrelated row that must NOT be exported).
     let db_a = temp_appdata("a");
     db_a.upsert_gloss_word_cache(
-        &gloss_cache_word_key("ārāme"), &arame_hash, ARAME_SENTENCE, "ārāma-4/dpd", "user")
+        &gloss_cache_word_key("ārāme"), &arame_hash, ARAME_SENTENCE, "ārāma-4/dpd", "user-selected")
         .unwrap();
     db_a.upsert_gloss_word_cache(
-        &gloss_cache_word_key("cittaṁ"), &cittam_hash, CITTAM_SENTENCE, "citta-2/dpd", "ai")
+        &gloss_cache_word_key("cittaṁ"), &cittam_hash, CITTAM_SENTENCE, "citta-2/dpd", "ai-selected")
         .unwrap();
-    db_a.upsert_gloss_word_cache("unrelated", "other-hash", "ctx", "x/dpd", "user")
+    db_a.upsert_gloss_word_cache("unrelated", "other-hash", "ctx", "x/dpd", "user-selected")
         .unwrap();
 
     let export = build_gloss_session_export_json(&db_a, &session_json()).unwrap();
@@ -110,7 +110,7 @@ fn test_gloss_session_export_round_trip() {
     // overwrite it; the imported user row for ārāme lands.
     let db_b = temp_appdata("b");
     db_b.upsert_gloss_word_cache(
-        &gloss_cache_word_key("cittaṁ"), &cittam_hash, CITTAM_SENTENCE, "citta-1/dpd", "user")
+        &gloss_cache_word_key("cittaṁ"), &cittam_hash, CITTAM_SENTENCE, "citta-1/dpd", "user-selected")
         .unwrap();
 
     let (imported, skipped) = import_gloss_word_cache_entries(&db_b, &word_cache);
@@ -121,12 +121,12 @@ fn test_gloss_session_export_round_trip() {
         .get_gloss_word_cache(&gloss_cache_word_key("ārāme"), &arame_hash)
         .expect("imported row exists");
     assert_eq!(row.selected_uid, "ārāma-4/dpd");
-    assert_eq!(row.origin, "user");
+    assert_eq!(row.origin, "user-selected");
     let row = db_b
         .get_gloss_word_cache(&gloss_cache_word_key("cittaṁ"), &cittam_hash)
         .expect("local row survives");
     assert_eq!(row.selected_uid, "citta-1/dpd");
-    assert_eq!(row.origin, "user");
+    assert_eq!(row.origin, "user-selected");
 
     // --- Restore side: the annotate pass (used by load_session) re-derives
     // resolution / selected_index from the imported cache table.
@@ -134,12 +134,12 @@ fn test_gloss_session_export_round_trip() {
     let annotated = annotate_gloss_words_json(&db_b, &words).unwrap();
     let annotated: Vec<serde_json::Value> = serde_json::from_str(&annotated).unwrap();
 
-    // ārāme: imported user row → ārāma-4/dpd (index 1), checked "user".
-    assert_eq!(annotated[0].get("resolution").unwrap().as_str().unwrap(), "user");
+    // ārāme: imported user row → ārāma-4/dpd (index 1), checked "user-selected".
+    assert_eq!(annotated[0].get("resolution").unwrap().as_str().unwrap(), "user-selected");
     assert_eq!(annotated[0].get("selected_index").unwrap().as_i64().unwrap(), 1);
     // cittaṁ: the local user's own row → citta-1/dpd (index 0), not the
     // exported ai selection.
-    assert_eq!(annotated[1].get("resolution").unwrap().as_str().unwrap(), "user");
+    assert_eq!(annotated[1].get("resolution").unwrap().as_str().unwrap(), "user-selected");
     assert_eq!(annotated[1].get("selected_index").unwrap().as_i64().unwrap(), 0);
 }
 
@@ -153,24 +153,55 @@ fn test_import_skips_invalid_entries() {
         GlossWordCacheExportEntry {
             word: "w1".into(), context_hash: "h1".into(), context_snippet: "c".into(),
             selected_uid: "u/dpd".into(), origin: "bogus".into(),
+            ..Default::default()
         },
         // Empty fields.
         GlossWordCacheExportEntry {
             word: "".into(), context_hash: "h1".into(), context_snippet: "c".into(),
-            selected_uid: "u/dpd".into(), origin: "ai".into(),
+            selected_uid: "u/dpd".into(), origin: "ai-selected".into(),
+            ..Default::default()
         },
         GlossWordCacheExportEntry {
             word: "w2".into(), context_hash: "".into(), context_snippet: "c".into(),
-            selected_uid: "u/dpd".into(), origin: "ai".into(),
+            selected_uid: "u/dpd".into(), origin: "ai-selected".into(),
+            ..Default::default()
         },
         // Valid; word is key-normalized on import (Dhammaṁ → dhammaṁ).
         GlossWordCacheExportEntry {
             word: "Dhammaṃ".into(), context_hash: "h2".into(), context_snippet: "c".into(),
-            selected_uid: "dhamma-1/dpd".into(), origin: "built-in".into(),
+            selected_uid: "dhamma-1/dpd".into(), origin: "built-in-human-checked".into(),
+            ..Default::default()
         },
     ];
     let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
     assert_eq!(imported, 1);
     assert_eq!(skipped, 3);
     assert!(db.get_gloss_word_cache(&gloss_cache_word_key("dhammaṁ"), "h2").is_some());
+}
+
+#[test]
+fn test_import_skips_review_entries_and_accepts_agent_checked() {
+    use simsapa_backend::helpers::GlossWordCacheExportEntry;
+
+    let db = temp_appdata("review");
+    let entries = vec![
+        // A review-flagged agent guess must never be written as a confirmed row.
+        GlossWordCacheExportEntry {
+            word: "w1".into(), context_hash: "h1".into(), context_snippet: "c".into(),
+            selected_uid: "u1/dpd".into(), origin: "built-in-agent-checked".into(),
+            confidence: Some("review".into()), note: Some("uncertain between senses".into()),
+        },
+        // A confident agent-checked entry imports with its origin.
+        GlossWordCacheExportEntry {
+            word: "w2".into(), context_hash: "h2".into(), context_snippet: "c".into(),
+            selected_uid: "u2/dpd".into(), origin: "built-in-agent-checked".into(),
+            ..Default::default()
+        },
+    ];
+    let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
+    assert_eq!(imported, 1);
+    assert_eq!(skipped, 1);
+    assert!(db.get_gloss_word_cache("w1", "h1").is_none());
+    let row = db.get_gloss_word_cache("w2", "h2").expect("agent entry imported");
+    assert_eq!(row.origin, "built-in-agent-checked");
 }

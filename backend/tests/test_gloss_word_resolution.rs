@@ -112,7 +112,7 @@ fn test_seeded_phrase_resolves_arame() {
         "ārāme should be ambiguous (multiple DPD entries), got {}",
         arame.results.len()
     );
-    assert_eq!(arame.resolution.as_deref(), Some("phrase"));
+    assert_eq!(arame.resolution.as_deref(), Some("built-in-phrase-match"));
     // Gloss options carry the numeric dpd_headwords uid; the curated phrase
     // stores the lemma-based form "ārāma-4/dpd" — they refer to the same entry.
     assert!(gloss_option_uid_matches(
@@ -158,22 +158,22 @@ fn test_user_cache_beats_phrase_and_stale_uid_falls_through() {
         .find(|uid| uid != "ārāma-4/dpd")
         .expect("ārāme has another option");
 
-    db.upsert_gloss_word_cache("ārāme", &context_hash, ARAME_SENTENCE, &other_uid, "user")
+    db.upsert_gloss_word_cache("ārāme", &context_hash, ARAME_SENTENCE, &other_uid, "user-selected")
         .expect("upsert user row");
 
     let words = gloss_paragraph(ARAME_SENTENCE, Some(&db));
     let arame = find_word(&words, "ārāme");
-    assert_eq!(arame.resolution.as_deref(), Some("user"));
+    assert_eq!(arame.resolution.as_deref(), Some("user-selected"));
     assert_eq!(arame.results[arame.selected_index as usize].uid, other_uid);
 
     // Replace with a stale uid (as if dictionary data changed): the user row
     // is ignored and the phrase resolves again.
-    db.upsert_gloss_word_cache("ārāme", &context_hash, ARAME_SENTENCE, "gone-uid/dpd", "user")
+    db.upsert_gloss_word_cache("ārāme", &context_hash, ARAME_SENTENCE, "gone-uid/dpd", "user-selected")
         .expect("upsert stale user row");
 
     let words = gloss_paragraph(ARAME_SENTENCE, Some(&db));
     let arame = find_word(&words, "ārāme");
-    assert_eq!(arame.resolution.as_deref(), Some("phrase"));
+    assert_eq!(arame.resolution.as_deref(), Some("built-in-phrase-match"));
     // Gloss options carry the numeric dpd_headwords uid; the curated phrase
     // stores the lemma-based form "ārāma-4/dpd" — they refer to the same entry.
     assert!(gloss_option_uid_matches(
@@ -192,7 +192,7 @@ fn test_ai_and_built_in_cache_rows_resolve() {
     // A sentence without any seeded set phrase around the target word.
     let sentence = "Bhagavā bhikkhūnaṁ dhammaṁ deseti.";
 
-    for origin in ["ai", "built-in"] {
+    for origin in ["ai-selected", "built-in-human-checked"] {
         let db = temp_appdata();
 
         let words = gloss_paragraph(sentence, Some(&db));
@@ -263,7 +263,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
     values[0]
         .as_object_mut()
         .unwrap()
-        .insert("resolution".to_string(), serde_json::json!("ai"));
+        .insert("resolution".to_string(), serde_json::json!("ai-selected"));
 
     let input = serde_json::to_string(&values).unwrap();
     let annotated = annotate_gloss_words_json(&db, &input).expect("annotate");
@@ -274,7 +274,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
         .iter()
         .find(|v| v["original_word"] == "ārāme")
         .expect("ārāme present");
-    assert_eq!(arame["resolution"], "phrase");
+    assert_eq!(arame["resolution"], "built-in-phrase-match");
     let hash = arame["context_hash"].as_str().unwrap().to_string();
     assert_eq!(hash.len(), 64, "context_hash filled in for old sessions");
     let idx = arame["selected_index"].as_i64().unwrap() as usize;
@@ -299,7 +299,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
         .find(|r| !gloss_option_uid_matches(r, "ārāma-4/dpd"))
         .map(|r| r.uid.clone())
         .expect("another option");
-    db.upsert_gloss_word_cache("ārāme", &hash, ARAME_SENTENCE, &other_uid, "user")
+    db.upsert_gloss_word_cache("ārāme", &hash, ARAME_SENTENCE, &other_uid, "user-selected")
         .expect("upsert user row");
 
     let annotated = annotate_gloss_words_json(&db, &input).expect("annotate");
@@ -308,14 +308,14 @@ fn test_annotate_gloss_words_json_rederives_state() {
         .iter()
         .find(|v| v["original_word"] == "ārāme")
         .expect("ārāme present");
-    assert_eq!(arame["resolution"], "user");
+    assert_eq!(arame["resolution"], "user-selected");
     let idx = arame["selected_index"].as_i64().unwrap() as usize;
     assert_eq!(arame["results"][idx]["uid"], serde_json::json!(other_uid.clone()));
 }
 
 // PRD acceptance cases, end-to-end at the backend level:
 // (1) covered by test_seeded_phrase_resolves_arame — a phrase-resolved word
-//     carries resolution "phrase", which the QML payload builder excludes, so
+//     carries resolution "built-in-phrase-match", which the QML payload builder excludes, so
 //     zero AI requests are issued for it;
 // (2) "manobhāvanīyā bhikkhū" resolves bhikkhū via the seeded phrase, and a
 //     mock AI response round-trips into an ai cache row for another word;
@@ -325,7 +325,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
 #[test]
 #[serial]
 fn test_prd_cases_phrase_ai_cache_and_user_survival() {
-    use simsapa_backend::helpers::{gloss_cache_word_key, parse_word_selection_response};
+    use simsapa_backend::helpers::{gloss_cache_word_key, parse_word_selection_response, WordSelectionParseMode};
 
     h::app_data_setup();
     let db = temp_appdata();
@@ -336,7 +336,7 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
     let words = gloss_paragraph(sentence, Some(&db));
     let bhikkhu = find_word(&words, "bhikkhū");
     assert!(bhikkhu.results.len() > 1, "bhikkhū should be ambiguous");
-    assert_eq!(bhikkhu.resolution.as_deref(), Some("phrase"));
+    assert_eq!(bhikkhu.resolution.as_deref(), Some("built-in-phrase-match"));
     assert!(gloss_option_uid_matches(
         &bhikkhu.results[bhikkhu.selected_index as usize],
         "bhikkhu/dpd",
@@ -363,8 +363,11 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
     }]);
     let chosen_uid = target.results[1].uid.clone();
     let response = format!(r#"{{"selections": [{{"id": "p0w2", "uid": "{}"}}]}}"#, chosen_uid);
-    let pairs = parse_word_selection_response(&response, &items.to_string()).expect("valid response");
-    assert_eq!(pairs, vec![("p0w2".to_string(), chosen_uid.clone())]);
+    let entries = parse_word_selection_response(&response, &items.to_string(), WordSelectionParseMode::Lenient)
+        .expect("valid response");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, "p0w2");
+    assert_eq!(entries[0].uid, chosen_uid);
 
     // Apply like SuttaBridge.save_gloss_word_cache does (key-normalized word,
     // hash from the snippet).
@@ -374,7 +377,7 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
             &target.context_hash,
             &target.example_sentence,
             &chosen_uid,
-            "ai",
+            "ai-selected",
         )
         .expect("upsert ai row"));
 
@@ -382,7 +385,7 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
     // resolution excludes the word from the automatic AI payload.
     let words = gloss_paragraph(sentence2, Some(&db));
     let target = find_word(&words, "dhammaṁ");
-    assert_eq!(target.resolution.as_deref(), Some("ai"));
+    assert_eq!(target.resolution.as_deref(), Some("ai-selected"));
     assert_eq!(target.results[target.selected_index as usize].uid, chosen_uid);
 
     // (4) The user saves a different choice; a later (forced-pass) ai write
@@ -399,7 +402,7 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
             &target.context_hash,
             &target.example_sentence,
             &user_uid,
-            "user",
+            "user-selected",
         )
         .expect("upsert user row"));
     assert!(!db
@@ -408,13 +411,13 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
             &target.context_hash,
             &target.example_sentence,
             &chosen_uid,
-            "ai",
+            "ai-selected",
         )
         .expect("ai upsert attempt"));
 
     let words = gloss_paragraph(sentence2, Some(&db));
     let target = find_word(&words, "dhammaṁ");
-    assert_eq!(target.resolution.as_deref(), Some("user"));
+    assert_eq!(target.resolution.as_deref(), Some("user-selected"));
     assert_eq!(target.results[target.selected_index as usize].uid, user_uid);
 }
 
@@ -461,7 +464,7 @@ fn test_iti_sandhi_quote_variants_share_cache() {
             &citta.context_hash,
             &citta.example_sentence,
             &citta_23_uid,
-            "user",
+            "user-selected",
         )
         .expect("upsert user row"));
 
@@ -474,7 +477,7 @@ fn test_iti_sandhi_quote_variants_share_cache() {
             citta_v.context_hash, citta.context_hash,
             "window hash differs for variant: {}", variant,
         );
-        assert_eq!(citta_v.resolution.as_deref(), Some("user"), "no cache hit for: {}", variant);
+        assert_eq!(citta_v.resolution.as_deref(), Some("user-selected"), "no cache hit for: {}", variant);
         assert_eq!(citta_v.results[citta_v.selected_index as usize].word, "citta 2.3");
     }
 
@@ -490,7 +493,7 @@ fn test_iti_sandhi_quote_variants_share_cache() {
             &vo.context_hash,
             &vo.example_sentence,
             &vo_uid,
-            "user",
+            "user-selected",
         )
         .expect("upsert vo row"));
 
@@ -500,7 +503,7 @@ fn test_iti_sandhi_quote_variants_share_cache() {
         vo_bare.context_hash, vo.context_hash,
         "vo window hash differs between the quoted and bare iti-sandhi editions",
     );
-    assert_eq!(vo_bare.resolution.as_deref(), Some("user"));
+    assert_eq!(vo_bare.resolution.as_deref(), Some("user-selected"));
     assert_eq!(vo_bare.results[vo_bare.selected_index as usize].uid, vo_uid);
 }
 
@@ -525,7 +528,7 @@ fn test_imported_builtin_row_resolves_during_glossing() {
     assert!(arame.resolution.is_none());
 
     // The confirmed selection, as a session-export word_cache entry. The
-    // bootstrap import writes it as origin "built-in".
+    // bootstrap import writes it as origin "built-in-human-checked".
     let selected = arame
         .results
         .iter()
@@ -536,7 +539,8 @@ fn test_imported_builtin_row_resolves_during_glossing() {
         context_hash: arame.context_hash.clone(),
         context_snippet: arame.example_sentence.clone(),
         selected_uid: selected.uid.clone(),
-        origin: "built-in".to_string(),
+        origin: "built-in-human-checked".to_string(),
+        ..Default::default()
     }];
     let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
     assert_eq!((imported, skipped), (1, 0));
@@ -546,7 +550,7 @@ fn test_imported_builtin_row_resolves_during_glossing() {
     let words2 = gloss_paragraph(ARAME_SENTENCE, Some(&db));
     let arame2 = find_word(&words2, "ārāme");
     assert_eq!(arame2.context_hash, arame.context_hash, "hash parity");
-    assert_eq!(arame2.resolution.as_deref(), Some("built-in"));
+    assert_eq!(arame2.resolution.as_deref(), Some("built-in-human-checked"));
     assert!(gloss_option_uid_matches(
         &arame2.results[arame2.selected_index as usize],
         "ārāma-4/dpd"

@@ -1261,7 +1261,7 @@ ${query_text}`;
     }
 
     Component.onCompleted: {
-        /* logger.info("SuttaSearchWindow: Component.onCompleted()"); */
+        logger.info("STARTUP-TRACE: SuttaSearchWindow onCompleted start");
         if (root.is_qml_preview) {
             return;
         } else {
@@ -1288,21 +1288,36 @@ ${query_text}`;
 
         // Add the default blank tab. The corresponding webview is created when it is focused.
         //
+        // Deferred with Qt.callLater so it runs on the first event-loop
+        // iteration instead of inside the synchronous QQmlApplicationEngine
+        // load (SuttaSearchWindow::setup_qml). The window cannot paint its
+        // first frame until app.exec() runs, so nothing heavyweight may run
+        // during the QML load — and on desktop the focused tab's webview is
+        // a WebEngineView (Chromium bring-up on the GUI thread). Session
+        // restore is posted from gui.cpp with QTimer::singleShot(0) AFTER
+        // this callback is queued, so the blank tab still exists before
+        // restore replaces it (restore_blank_results_pending). See
+        // docs/startup-sequence-and-caches.md §"First paint and the
+        // pre-exec stall".
+        //
         // When opened in narrow view, the right panel with results are shown.
         // In narrow view, don't add a blank tab, because its webview is going to cover the entire screen.
-        if (tabs_results_model.count == 0 && root.is_wide) {
-            root.add_results_tab(root.blank_sutta_tab_data());
-        }
+        Qt.callLater(function() {
+            if (tabs_results_model.count == 0 && root.is_wide) {
+                root.add_results_tab(root.blank_sutta_tab_data());
+            }
+
+            // Push initial history entry for the first view
+            if (tabs_results_model.count > 0 && root.nav_history.length === 0) {
+                let tab_data = tabs_results_model.get(0);
+                root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
+            }
+        });
 
         if (root.is_qml_preview) {
             root.qml_preview_state();
         }
-
-        // Push initial history entry for the first view
-        if (tabs_results_model.count > 0) {
-            let tab_data = tabs_results_model.get(0);
-            root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
-        }
+        logger.info("STARTUP-TRACE: SuttaSearchWindow onCompleted end");
     }
 
     function qml_preview_state() {

@@ -442,19 +442,27 @@ RELEASE_CHANNEL=development
         // Import the confirmed gloss data bank (exported session JSONs in
         // gloss-data-cache/) as built-in word-selection cache rows, so the
         // shipped appdata.tar.bz2 carries them. Same code path as the
-        // `import-gloss-data` CLI subcommand; the candidates/ subfolder is
-        // not scanned (directory inputs are non-recursive).
+        // `import-gloss-data` CLI subcommand; it scans the top level plus the
+        // human-checked/ and agent-checked/ subfolders (candidates/ and
+        // agent-answers/ are never scanned).
         logger::info("=== Import gloss data bank (gloss-data-cache/) ===");
         {
             let gloss_data_cache_dir = bootstrap_assets_dir.join("gloss-data-cache");
-            let has_session_files = std::fs::read_dir(&gloss_data_cache_dir)
-                .map(|entries| {
-                    entries.flatten().any(|e| {
-                        let p = e.path();
-                        p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case("json")).unwrap_or(false)
+            let dir_has_json = |dir: &std::path::Path| -> bool {
+                std::fs::read_dir(dir)
+                    .map(|entries| {
+                        entries.flatten().any(|e| {
+                            let p = e.path();
+                            p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case("json")).unwrap_or(false)
+                        })
                     })
-                })
-                .unwrap_or(false);
+                    .unwrap_or(false)
+            };
+            // Session files may live at the top level or only in the checked
+            // subfolders — the gate must match the import's scan.
+            let has_session_files = dir_has_json(&gloss_data_cache_dir)
+                || dir_has_json(&gloss_data_cache_dir.join("human-checked"))
+                || dir_has_json(&gloss_data_cache_dir.join("agent-checked"));
             if has_session_files {
                 let appdata_db_path = assets_dir.join("appdata.sqlite3");
                 match crate::import_gloss_data::import_gloss_data(&appdata_db_path, &[gloss_data_cache_dir]) {

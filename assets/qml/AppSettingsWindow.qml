@@ -1230,8 +1230,12 @@ ApplicationWindow {
         }
     }
 
+    Logger { id: startup_trace_logger }
+
     Component.onCompleted: {
+        startup_trace_logger.info("STARTUP-TRACE: AppSettingsWindow onCompleted start");
         theme_helper.apply();
         root.reload_settings_from_backend();
+        startup_trace_logger.info("STARTUP-TRACE: AppSettingsWindow onCompleted end");
     }
 }

@@ -43,7 +43,11 @@ ColumnLayout {
     // native display form ("Command+C+C" on macOS, unchanged elsewhere).
     KeySequenceDisplay { id: key_seq_display }
 
-    Component.onCompleted: load_config()
+    Component.onCompleted: {
+        logger.info("STARTUP-TRACE: GlobalHotkeysSection onCompleted start");
+        load_config();
+        logger.info("STARTUP-TRACE: GlobalHotkeysSection onCompleted end");
+    }
 
     function load_config() {
         let cfg = JSON.parse(ghm.get_global_hotkeys_json());

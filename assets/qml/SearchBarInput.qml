@@ -99,6 +99,7 @@ Frame {
     // (children complete before the parent), so root.Component.onCompleted can
     // fire the one initial query.
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: SearchBarInput onCompleted start");
         // Keyboard diagnostics: log the detected platform once at startup so we
         // can confirm whether a Chromebook (Android app) is treated as mobile.
         logger.debug("SearchBarInput: Qt.platform.os=" + Qt.platform.os

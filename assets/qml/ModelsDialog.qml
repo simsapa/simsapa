@@ -258,12 +258,14 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        logger.info("STARTUP-TRACE: ModelsDialog onCompleted start");
         theme_helper.apply();
         load_providers();
         // Select first provider by default
         select_first_provider();
         auto_retry.checked = SuttaBridge.get_ai_models_auto_retry();
         auto_fallback.checked = SuttaBridge.get_ai_auto_fallback();
+        logger.info("STARTUP-TRACE: ModelsDialog onCompleted end");
     }
 
     onVisibilityChanged: {

@@ -1,5 +1,6 @@
 pub mod bootstrap;
 pub mod bootstrap_old;
+pub mod gloss_agent_check;
 pub mod gloss_corpus_explore;
 pub mod gloss_ngrams;
 pub mod import_gloss_data;
@@ -1194,6 +1195,19 @@ enum Commands {
         inputs: Vec<PathBuf>,
     },
 
+    /// Agent review of gloss candidate session files: emit the word-selection
+    /// request payload for a candidate (prepare), validate the agent's answers
+    /// and write the finished session to agent-checked/ (apply), or list the
+    /// pipeline progress (status).
+    GlossAgentCheck {
+        /// Path to the gloss-data-cache folder
+        #[arg(long, value_name = "DIR", default_value = "../../bootstrap-assets-resources/gloss-data-cache")]
+        data_cache: PathBuf,
+
+        #[command(subcommand)]
+        action: gloss_agent_check::GlossAgentCheckAction,
+    },
+
     /// Explore the sutta corpus for the most common ambiguous words and
     /// phrases worth glossing; generate candidate gloss session files for
     /// review in the Gloss UI plus a frequency/coverage report. Read-only
@@ -1599,6 +1613,10 @@ fn main() {
 
         Commands::ImportGlossData { db_path, inputs } => {
             import_gloss_data::import_gloss_data(&db_path, &inputs)
+        }
+
+        Commands::GlossAgentCheck { data_cache, action } => {
+            gloss_agent_check::run(&data_cache, action)
         }
 
         Commands::GlossCorpusExplore { output_dir, nikayas, source, top_words, contexts_per_word, min_frequency, paragraphs_per_file } => {

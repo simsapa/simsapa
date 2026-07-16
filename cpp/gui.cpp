@@ -535,8 +535,18 @@ int start(int argc, char* argv[]) {
 
   AppGlobals::manager->create_sutta_search_window();
 
-  // Restore last session if enabled
-  AppGlobals::manager->restore_last_session();
+  // Restore last session if enabled. Posted to the event loop instead of
+  // running synchronously: the window cannot paint its first frame until
+  // app.exec() runs, and restored tabs create webviews (on desktop each is a
+  // WebEngineView — Chromium bring-up on the GUI thread), so restore must
+  // not run before app.exec(). singleShot(0) is queued AFTER the Qt.callLater
+  // posted by SuttaSearchWindow's Component.onCompleted (which creates the
+  // blank placeholder tab), so restore still finds the blank tab to replace.
+  // See docs/startup-sequence-and-caches.md §"First paint and the pre-exec
+  // stall".
+  QTimer::singleShot(0, &app, []() {
+    AppGlobals::manager->restore_last_session();
+  });
 
   // Construct and (if enabled in settings) register the OS-level global
   // hotkey for dictionary lookup. Created after the first sutta window so
