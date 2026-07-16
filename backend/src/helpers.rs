@@ -2912,7 +2912,13 @@ pub const GLOSS_SESSION_EXPORT_FORMAT_VERSION: u64 = 1;
 
 /// One `word_cache` entry of a gloss session export: a
 /// `gloss_word_context_cache` row without the local id / timestamps.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `confidence` / `note` are written by the agent-checked workflow
+/// (`gloss-agent-check apply`): `confidence: "review"` marks a best-guess
+/// entry flagged for human review (skipped by the imports), with the agent's
+/// reasoning in `note`. Absent means `confident`; entries exported by the app
+/// never carry these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlossWordCacheExportEntry {
     pub word: String,
     pub context_hash: String,
@@ -2920,6 +2926,10 @@ pub struct GlossWordCacheExportEntry {
     pub context_snippet: String,
     pub selected_uid: String,
     pub origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Collect the distinct `(word_key, context_hash)` pairs referenced by a
@@ -2974,6 +2984,8 @@ pub fn build_gloss_session_export_json(
             context_snippet: r.context_snippet,
             selected_uid: r.selected_uid,
             origin: r.origin,
+            confidence: None,
+            note: None,
         })
         .collect();
     word_cache.sort_by(|a, b| (&a.word, &a.context_hash).cmp(&(&b.word, &b.context_hash)));

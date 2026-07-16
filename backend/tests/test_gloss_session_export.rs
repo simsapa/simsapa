@@ -153,20 +153,24 @@ fn test_import_skips_invalid_entries() {
         GlossWordCacheExportEntry {
             word: "w1".into(), context_hash: "h1".into(), context_snippet: "c".into(),
             selected_uid: "u/dpd".into(), origin: "bogus".into(),
+            ..Default::default()
         },
         // Empty fields.
         GlossWordCacheExportEntry {
             word: "".into(), context_hash: "h1".into(), context_snippet: "c".into(),
             selected_uid: "u/dpd".into(), origin: "ai-selected".into(),
+            ..Default::default()
         },
         GlossWordCacheExportEntry {
             word: "w2".into(), context_hash: "".into(), context_snippet: "c".into(),
             selected_uid: "u/dpd".into(), origin: "ai-selected".into(),
+            ..Default::default()
         },
         // Valid; word is key-normalized on import (Dhammaṁ → dhammaṁ).
         GlossWordCacheExportEntry {
             word: "Dhammaṃ".into(), context_hash: "h2".into(), context_snippet: "c".into(),
             selected_uid: "dhamma-1/dpd".into(), origin: "built-in-human-checked".into(),
+            ..Default::default()
         },
     ];
     let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);

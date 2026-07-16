@@ -540,6 +540,7 @@ fn test_imported_builtin_row_resolves_during_glossing() {
         context_snippet: arame.example_sentence.clone(),
         selected_uid: selected.uid.clone(),
         origin: "built-in-human-checked".to_string(),
+        ..Default::default()
     }];
     let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
     assert_eq!((imported, skipped), (1, 0));
