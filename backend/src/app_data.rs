@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use diesel::prelude::*;
+use serde::{Serialize, Deserialize};
 use regex::Regex;
 use lazy_static::lazy_static;
 use anyhow::{anyhow, Context, Result};
 
 use crate::db::{appdata_models::*, DbManager};
+use crate::db::appdata::AppdataDbHandle;
 use crate::db::appdata_schema::suttas::dsl::*;
 
 use crate::logger::{warn, error, info, debug};
@@ -16,7 +18,7 @@ use crate::types::SuttaQuote;
 use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
 use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::global_hotkeys::GlobalHotkeysConfig;
-use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid};
+use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
 use crate::db::dictionaries_models::DictWord;
 use crate::html_content::{blank_html_page, sutta_html_page};
 use crate::{get_app_globals, init_app_globals};
@@ -24,6 +26,47 @@ use crate::{get_app_globals, init_app_globals};
 static DICTIONARY_JS: &str = include_str!("../../assets/js/dictionary.js");
 static DICTIONARY_CSS: &str = include_str!("../../assets/css/dictionary.css");
 static SIMSAPA_JS: &str = include_str!("../../assets/js/simsapa.min.js");
+
+/// The `format` marker of the gloss selections file written into `import-me/`
+/// by the appdata upgrade export.
+pub const GLOSS_SELECTIONS_EXPORT_FORMAT: &str = "simsapa-gloss-selections";
+/// Envelope version; bump on breaking changes to the envelope structure.
+pub const GLOSS_SELECTIONS_EXPORT_FORMAT_VERSION: u64 = 1;
+
+/// `import-me/gloss_selections.json`: the user's own gloss word selections,
+/// carried across an appdata re-download. Entries reuse the session export's
+/// `word_cache` shape, minus the agent-only `confidence` / `note` fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossSelectionsExport {
+    pub format: String,
+    pub format_version: u64,
+    pub word_cache: Vec<GlossWordCacheExportEntry>,
+}
+
+/// The `format` marker of the Gloss/Prompts history file written into
+/// `import-me/` by the appdata upgrade export.
+pub const GLOSS_PROMPTS_HISTORY_EXPORT_FORMAT: &str = "simsapa-gloss-prompts-history";
+/// Envelope version; bump on breaking changes to the envelope structure.
+pub const GLOSS_PROMPTS_HISTORY_EXPORT_FORMAT_VERSION: u64 = 1;
+
+/// One saved Gloss/Prompts session, without its local id. `data_json` is the
+/// tab's own serialized session — opaque here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossPromptsHistoryExportEntry {
+    pub item_type: String,
+    pub data_json: String,
+    pub created_at: Option<chrono::NaiveDateTime>,
+    pub updated_at: Option<chrono::NaiveDateTime>,
+}
+
+/// `import-me/gloss_prompts_history.json`: the saved Gloss/Prompts sessions,
+/// carried across an appdata re-download.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossPromptsHistoryExport {
+    pub format: String,
+    pub format_version: u64,
+    pub items: Vec<GlossPromptsHistoryExportEntry>,
+}
 
 /// Which table a resolved word came from. DPPN entries are a `DictWord` whose
 /// renderer branches on `dict_label`, not a separate kind.
@@ -2839,6 +2882,14 @@ impl AppData {
             errors.push(("bookmarks".to_string(), format!("{:#}", e)));
         }
 
+        if let Err(e) = self.export_gloss_selections(&import_dir) {
+            errors.push(("gloss_selections".to_string(), format!("{:#}", e)));
+        }
+
+        if let Err(e) = self.export_gloss_prompts_history(&import_dir) {
+            errors.push(("gloss_prompts_history".to_string(), format!("{:#}", e)));
+        }
+
         if let Err(e) = self.export_user_chanting_data(&import_dir) {
             errors.push(("chanting".to_string(), format!("{:#}", e)));
         }
@@ -3150,6 +3201,16 @@ impl AppData {
         // Import user bookmarks
         if let Err(e) = self.import_user_bookmarks(&import_dir) {
             error(&format!("Failed to import user bookmarks: {}", e));
+        }
+
+        // Import the user's own gloss word selections
+        if let Err(e) = self.import_gloss_selections(&import_dir) {
+            error(&format!("Failed to import gloss word selections: {}", e));
+        }
+
+        // Import the saved Gloss/Prompts sessions
+        if let Err(e) = self.import_gloss_prompts_history(&import_dir) {
+            error(&format!("Failed to import Gloss/Prompts history: {}", e));
         }
 
         // Import user chanting data and recordings
@@ -3675,6 +3736,22 @@ impl AppData {
         ));
 
         Ok(())
+    }
+
+    fn export_gloss_selections(&self, import_dir: &Path) -> Result<()> {
+        export_gloss_selections_to_dir(&self.dbm.appdata, import_dir)
+    }
+
+    fn import_gloss_selections(&self, import_dir: &Path) -> Result<()> {
+        import_gloss_selections_from_dir(&self.dbm.appdata, import_dir)
+    }
+
+    fn export_gloss_prompts_history(&self, import_dir: &Path) -> Result<()> {
+        export_gloss_prompts_history_to_dir(&self.dbm.appdata, import_dir)
+    }
+
+    fn import_gloss_prompts_history(&self, import_dir: &Path) -> Result<()> {
+        import_gloss_prompts_history_from_dir(&self.dbm.appdata, import_dir)
     }
 
     /// Export user chanting data and all recordings to the import-me folder.
@@ -4850,6 +4927,207 @@ impl AppData {
         }
         Ok(())
     }
+}
+
+// --- Gloss data in the appdata upgrade export/import cycle ---
+//
+// Free functions over an `AppdataDbHandle` rather than `AppData` methods: they
+// need nothing else from `AppData`, and this way they are testable against a
+// throwaway temp appdata DB. `AppData` keeps thin wrappers that pass
+// `self.dbm.appdata`. See `docs/gloss-ai-word-selection.md` §6.
+
+/// Export the user's own gloss word selections to the import-me folder.
+///
+/// Only the **local** rows of `gloss_word_context_cache` are exported (origins
+/// `user-selected` and `ai-selected`); `built-in-*` rows arrive with the freshly
+/// downloaded appdata, in a newer curation state than the copy being discarded.
+/// The `gloss_phrase_selections` table is not exported at all: it is
+/// bootstrap-seeded from the embedded curated JSON, has no in-app write path and
+/// no user-vs-shipped marker, so it holds nothing user-owned.
+pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+    let rows = appdata.get_local_gloss_word_cache_rows()
+        .context("Failed to load local gloss word selections for export")?;
+
+    if rows.is_empty() {
+        info("No gloss word selections to export");
+        return Ok(());
+    }
+
+    let export = GlossSelectionsExport {
+        format: GLOSS_SELECTIONS_EXPORT_FORMAT.to_string(),
+        format_version: GLOSS_SELECTIONS_EXPORT_FORMAT_VERSION,
+        word_cache: rows.into_iter()
+            .map(|row| GlossWordCacheExportEntry {
+                word: row.word,
+                context_hash: row.context_hash,
+                context_snippet: row.context_snippet,
+                selected_uid: row.selected_uid,
+                origin: row.origin,
+                confidence: None,
+                note: None,
+            })
+            .collect(),
+    };
+
+    let json_path = import_dir.join("gloss_selections.json");
+    let json = serde_json::to_string_pretty(&export)
+        .context("Failed to serialize gloss word selections")?;
+    std::fs::write(&json_path, json)
+        .with_context(|| format!("Failed to write gloss selections export: {}", json_path.display()))?;
+
+    info(&format!(
+        "Exported {} gloss word selections to {}",
+        export.word_cache.len(), json_path.display()
+    ));
+
+    Ok(())
+}
+
+/// Import the user's gloss word selections after a database upgrade.
+///
+/// Each row is restored with its original origin through the precedence-guarded
+/// upsert, so a `user-selected` row overrides a newly shipped `built-in-*` row
+/// for the same key, while an `ai-selected` row yields to a shipped `built-in-*`
+/// one.
+///
+/// No `ANALYZE` after the bulk write: every query on this table is a
+/// single-table lookup served by the `(word, context_hash)` unique index. See
+/// `docs/user-data-and-sqlite-analyze.md`.
+pub fn import_gloss_selections_from_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+    let json_path = import_dir.join("gloss_selections.json");
+    match json_path.try_exists() {
+        Ok(true) => {}
+        _ => {
+            info("No gloss_selections.json found in import-me folder");
+            return Ok(());
+        }
+    }
+
+    info(&format!("Importing gloss word selections from {}", json_path.display()));
+
+    let json = std::fs::read_to_string(&json_path)
+        .with_context(|| format!("Failed to read gloss selections export: {}", json_path.display()))?;
+    let export: GlossSelectionsExport = serde_json::from_str(&json)
+        .with_context(|| format!("Failed to parse gloss selections export: {}", json_path.display()))?;
+
+    if export.format != GLOSS_SELECTIONS_EXPORT_FORMAT {
+        return Err(anyhow!("Unexpected gloss selections export format: {}", export.format));
+    }
+
+    let mut written = 0usize;
+    for entry in &export.word_cache {
+        match appdata.upsert_gloss_word_cache(
+            &entry.word,
+            &entry.context_hash,
+            &entry.context_snippet,
+            &entry.selected_uid,
+            &entry.origin,
+        ) {
+            Ok(true) => written += 1,
+            Ok(false) => {}
+            Err(e) => error(&format!(
+                "Failed to import gloss word selection for '{}': {}", entry.word, e
+            )),
+        }
+    }
+
+    info(&format!(
+        "Imported {} of {} gloss word selections",
+        written, export.word_cache.len()
+    ));
+
+    Ok(())
+}
+
+/// Export the saved Gloss / Prompts sessions to the import-me folder.
+///
+/// The whole `gloss_prompts_history` table is user data — sessions are only ever
+/// written by the app's autosave / Save button — so there is no shipped row to
+/// filter out. Timestamps are carried across because the history list is ordered
+/// by `updated_at`. See `docs/gloss-prompts-history.md`.
+///
+/// No `ANALYZE`, for the reason recorded above the history CRUD helpers in
+/// `db/appdata.rs` and in `docs/user-data-and-sqlite-analyze.md`.
+pub fn export_gloss_prompts_history_to_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+    let rows = appdata.get_all_history_rows()
+        .context("Failed to load Gloss/Prompts history for export")?;
+
+    if rows.is_empty() {
+        info("No Gloss/Prompts history to export");
+        return Ok(());
+    }
+
+    let export = GlossPromptsHistoryExport {
+        format: GLOSS_PROMPTS_HISTORY_EXPORT_FORMAT.to_string(),
+        format_version: GLOSS_PROMPTS_HISTORY_EXPORT_FORMAT_VERSION,
+        items: rows.into_iter()
+            .map(|row| GlossPromptsHistoryExportEntry {
+                item_type: row.item_type,
+                data_json: row.data_json,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            })
+            .collect(),
+    };
+
+    let json_path = import_dir.join("gloss_prompts_history.json");
+    let json = serde_json::to_string(&export)
+        .context("Failed to serialize Gloss/Prompts history")?;
+    std::fs::write(&json_path, json)
+        .with_context(|| format!("Failed to write Gloss/Prompts history export: {}", json_path.display()))?;
+
+    info(&format!(
+        "Exported {} Gloss/Prompts history items to {}",
+        export.items.len(), json_path.display()
+    ));
+
+    Ok(())
+}
+
+/// Import the saved Gloss / Prompts sessions after a database upgrade.
+pub fn import_gloss_prompts_history_from_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+    let json_path = import_dir.join("gloss_prompts_history.json");
+    match json_path.try_exists() {
+        Ok(true) => {}
+        _ => {
+            info("No gloss_prompts_history.json found in import-me folder");
+            return Ok(());
+        }
+    }
+
+    info(&format!("Importing Gloss/Prompts history from {}", json_path.display()));
+
+    let json = std::fs::read_to_string(&json_path)
+        .with_context(|| format!("Failed to read Gloss/Prompts history export: {}", json_path.display()))?;
+    let export: GlossPromptsHistoryExport = serde_json::from_str(&json)
+        .with_context(|| format!("Failed to parse Gloss/Prompts history export: {}", json_path.display()))?;
+
+    if export.format != GLOSS_PROMPTS_HISTORY_EXPORT_FORMAT {
+        return Err(anyhow!("Unexpected Gloss/Prompts history export format: {}", export.format));
+    }
+
+    let mut written = 0usize;
+    for item in &export.items {
+        match appdata.import_history_row(
+            &item.item_type,
+            &item.data_json,
+            item.created_at,
+            item.updated_at,
+        ) {
+            Ok(true) => written += 1,
+            Ok(false) => {}
+            Err(e) => error(&format!(
+                "Failed to import Gloss/Prompts history item ({}): {}", item.item_type, e
+            )),
+        }
+    }
+
+    info(&format!(
+        "Imported {} of {} Gloss/Prompts history items",
+        written, export.items.len()
+    ));
+
+    Ok(())
 }
 
 impl Default for AppData {

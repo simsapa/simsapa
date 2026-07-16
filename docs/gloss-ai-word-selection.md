@@ -100,6 +100,13 @@ Two appdata tables (migration
 | `selected_uid` | the uid to select |
 | | UNIQUE `(phrase, word)` |
 
+`gloss_phrase_selections` is **bootstrap-seeded only** — it is written solely by
+`seed_gloss_phrase_selections()` from the embedded curated JSON, has no in-app or
+CLI write path, and carries no user-vs-shipped marker (its columns are just `id`,
+`phrase`, `word`, `selected_uid`). There is therefore nothing user-owned in it to
+preserve across an appdata re-download; the upgrade export/import cycle (§6)
+covers the local rows of `gloss_word_context_cache` only.
+
 The context window is **not new**: it is the ±50-char, sentence-bounded window
 `extract_words_with_context()` already computes per word and hands to QML as
 `ProcessedWord.example_sentence` (with the target marked `<b>word</b>`). The
@@ -440,6 +447,37 @@ Output goes through `save_bytes_to_folder(folder_url, filename, bytes)` — the
 bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
 See [android-file-saving-saf.md](./android-file-saving-saf.md).
+
+### Surviving an appdata re-download (the upgrade export/import cycle)
+
+A DB-version bump makes the app re-download `appdata.sqlite3`, which would
+otherwise take the user's gloss data with it. Two categories of the upgrade cycle
+(`export_user_data_to_assets()` → `import-me/` → `import_user_data_from_assets()`
+in `backend/src/app_data.rs`) carry it across:
+
+| File in `import-me/` | Contents |
+|---|---|
+| `gloss_selections.json` (`simsapa-gloss-selections` v1) | the **local** `gloss_word_context_cache` rows — origins `user-selected` and `ai-selected` only |
+| `gloss_prompts_history.json` (`simsapa-gloss-prompts-history` v1) | every `gloss_prompts_history` row (Gloss **and** Prompts sessions), timestamps included |
+
+What is deliberately *not* exported:
+
+- **`built-in-*` cache rows.** They arrive with the newly downloaded DB, in a
+  newer curation state than the copy that was just discarded.
+- **`gloss_phrase_selections`.** Bootstrap-seeded only — nothing user-owned in
+  it (§2).
+
+Selections re-import through `upsert_gloss_word_cache` with each row's original
+origin preserved, so a restored `user-selected` row (rank 4) overrides a newly
+shipped `built-in-human-checked` row for the same key, while a restored
+`ai-selected` row (rank 1) yields to any shipped `built-in-*` row — the shipped
+curation is the better guess. The origin also restores the shield state (`full`
+vs `half`, §5).
+
+History rows re-import with their **original** timestamps (the list is ordered by
+`updated_at`, so stamping `now` would scramble it) and are deduplicated on
+`(item_type, created_at, data_json)`. The source `id` is not carried over —
+nothing references history rows by id across the upgrade.
 
 ## 7. The built-in data bank (curation pipeline)
 

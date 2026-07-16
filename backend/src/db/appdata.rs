@@ -1958,6 +1958,64 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Every history row of every `item_type`, oldest first. Used by the appdata
+    /// upgrade export — the whole table is user data, there are no shipped rows.
+    pub fn get_all_history_rows(&self) -> Result<Vec<GlossPromptsHistory>> {
+        use crate::db::appdata_schema::gloss_prompts_history::dsl::*;
+
+        self.do_read(|db_conn| {
+            gloss_prompts_history
+                .order(id.asc())
+                .select(GlossPromptsHistory::as_select())
+                .load(db_conn)
+        })
+    }
+
+    /// Insert a history row with its **original** timestamps, for the appdata
+    /// upgrade import (`save_new_history` stamps `now`, which would reorder the
+    /// restored list — it is sorted by `updated_at`). The source `id` is not
+    /// carried over; nothing references history rows by id across the upgrade.
+    ///
+    /// A row with the same `(item_type, created_at, data_json)` is treated as
+    /// already imported and skipped, so a retried import cannot duplicate the
+    /// list. Returns true when a row was inserted.
+    pub fn import_history_row(
+        &self,
+        item_type_param: &str,
+        data_json_param: &str,
+        created_at_param: Option<chrono::NaiveDateTime>,
+        updated_at_param: Option<chrono::NaiveDateTime>,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_prompts_history::dsl::*;
+
+        let item = NewGlossPromptsHistory {
+            item_type: item_type_param,
+            data_json: data_json_param,
+            created_at: created_at_param,
+            updated_at: updated_at_param,
+        };
+
+        self.do_write(|db_conn| {
+            let existing = gloss_prompts_history
+                .filter(item_type.eq(item_type_param))
+                .filter(created_at.eq(created_at_param))
+                .filter(data_json.eq(data_json_param))
+                .select(id)
+                .first::<i32>(db_conn)
+                .optional()?;
+
+            if existing.is_some() {
+                return Ok(false);
+            }
+
+            diesel::insert_into(gloss_prompts_history)
+                .values(&item)
+                .execute(db_conn)?;
+
+            Ok(true)
+        })
+    }
+
     pub fn save_new_history(&self, item_type_param: HistoryItemType, data_json_param: &str) -> Result<i32> {
         use crate::db::appdata_schema::gloss_prompts_history::dsl::*;
 
@@ -2239,6 +2297,21 @@ impl AppdataDbHandle {
                 0
             }
         }
+    }
+
+    /// The locally-produced cache rows (`ai-selected` + `user-selected`), i.e.
+    /// everything that did not arrive with the shipped DB. Used by the appdata
+    /// upgrade export so a re-download does not lose the user's own choices.
+    /// Ordered by `(word, context_hash)` for deterministic export output.
+    pub fn get_local_gloss_word_cache_rows(&self) -> Result<Vec<GlossWordContextCache>> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(origin.eq_any(["ai-selected", "user-selected"]))
+                .order((word.asc(), context_hash.asc()))
+                .load::<GlossWordContextCache>(db_conn)
+        })
     }
 
     /// Bulk clear of the word-selection cache: deletes `ai-selected` and
