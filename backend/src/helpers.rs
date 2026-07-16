@@ -2857,12 +2857,19 @@ pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_
 }
 
 /// Resolve an ambiguous glossed word's selection from the pre-fetched cache /
-/// phrase data. Precedence: user cache > set phrase > built-in cache > ai
-/// cache. An entry whose `selected_uid` matches none of the word's lookup
-/// results (dictionary data changed) is ignored, falling through to the next
-/// level. Returns the matching option index and the resolution origin
-/// (`"user-selected"` / `"built-in-phrase-match"` / `"built-in-human-checked"`
-/// / `"ai-selected"`).
+/// phrase data. Precedence: user cache > built-in-human-checked cache > set
+/// phrase > built-in-agent-checked cache > ai cache. The human-confirmed
+/// tiers rank *above* the general phrase rule because a confirmed selection
+/// for this exact (word, context) must be able to override the rule — under
+/// the old phrase-over-built-in order a shipped phrase rule permanently
+/// masked a curator's per-context exception. The agent tier stays below
+/// phrase: a phrase rule carries multi-context human evidence, an agent row a
+/// single-context machine judgment (docs/gloss-ai-word-selection.md §1).
+/// An entry whose `selected_uid` matches none of the word's lookup results
+/// (dictionary data changed) is ignored, falling through to the next level.
+/// Returns the matching option index and the resolution origin
+/// (`"user-selected"` / `"built-in-human-checked"` /
+/// `"built-in-phrase-match"` / `"built-in-agent-checked"` / `"ai-selected"`).
 pub fn resolve_gloss_word_selection(
     word_key: &str,
     normalized_context: &str,
@@ -2877,7 +2884,7 @@ pub fn resolve_gloss_word_selection(
         .get(&(word_key.to_string(), context_hash.to_string()));
 
     if let Some((uid, origin)) = cached {
-        if origin == "user-selected" {
+        if origin == "user-selected" || origin == "built-in-human-checked" {
             if let Some(idx) = option_index(uid) {
                 return Some((idx as i32, origin.clone()));
             }
@@ -2893,7 +2900,7 @@ pub fn resolve_gloss_word_selection(
     }
 
     if let Some((uid, origin)) = cached {
-        if origin == "built-in-human-checked" || origin == "ai-selected" {
+        if origin == "built-in-agent-checked" || origin == "ai-selected" {
             if let Some(idx) = option_index(uid) {
                 return Some((idx as i32, origin.clone()));
             }
@@ -3040,7 +3047,10 @@ pub fn parse_gloss_session_export(
 /// Import exported cache rows with the strictly-higher precedence rule
 /// (PRD req 40; `AppdataDbHandle::import_gloss_word_cache_row`). The word is
 /// key-normalized; entries with empty fields or an unknown origin count as
-/// skipped. Returns `(imported, skipped)`.
+/// skipped. Entries flagged `confidence: "review"` (agent-checked best
+/// guesses pending human review) are skipped too — opening an agent-checked
+/// session file must never write review guesses into the local DB as
+/// confirmed rows. Returns `(imported, skipped)`.
 pub fn import_gloss_word_cache_entries(
     appdata: &crate::db::appdata::AppdataDbHandle,
     entries: &[GlossWordCacheExportEntry],
@@ -3051,12 +3061,14 @@ pub fn import_gloss_word_cache_entries(
         let word_key = gloss_cache_word_key(&e.word);
         let valid_origin = matches!(
             e.origin.as_str(),
-            "ai-selected" | "user-selected" | "built-in-human-checked"
+            "ai-selected" | "user-selected" | "built-in-human-checked" | "built-in-agent-checked"
         );
+        let pending_review = e.confidence.as_deref() == Some("review");
         if word_key.is_empty()
             || e.context_hash.is_empty()
             || e.selected_uid.is_empty()
             || !valid_origin
+            || pending_review
         {
             skipped += 1;
             continue;
@@ -5021,8 +5033,19 @@ mod tests {
             Some((0, "user-selected".to_string())),
         );
 
-        // phrase beats built-in and ai cache rows.
-        for origin in ["built-in-human-checked", "ai-selected"] {
+        // A built-in-human-checked row beats a phrase match pointing elsewhere
+        // (the exact-context human confirmation overrides the general rule).
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "ārāma-1/dpd", "built-in-human-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
+            Some((0, "built-in-human-checked".to_string())),
+        );
+
+        // phrase beats agent-checked and ai cache rows.
+        for origin in ["built-in-agent-checked", "ai-selected"] {
             let data = resolution_data_with(
                 &[("ārāme", "h1", "ārāma-1/dpd", origin)],
                 &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
@@ -5034,8 +5057,8 @@ mod tests {
             );
         }
 
-        // Without a phrase match, built-in and ai rows resolve with their origin.
-        for origin in ["built-in-human-checked", "ai-selected"] {
+        // Without a phrase match, the remaining tiers resolve with their origin.
+        for origin in ["built-in-human-checked", "built-in-agent-checked", "ai-selected"] {
             let data = resolution_data_with(&[("ārāme", "h1", "ārāma-4/dpd", origin)], &[]);
             assert_eq!(
                 resolve_gloss_word_selection("ārāme", ctx, hash, &results, &data),
@@ -5072,6 +5095,17 @@ mod tests {
             resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
             Some((1, "built-in-phrase-match".to_string())),
             "stale user uid falls through to the phrase match",
+        );
+
+        // Same fall-through for a stale built-in-human-checked uid.
+        let data = resolution_data_with(
+            &[("ārāme", "h1", "gone-uid/dpd", "built-in-human-checked")],
+            &[("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd")],
+        );
+        assert_eq!(
+            resolve_gloss_word_selection("ārāme", ctx, "h1", &results, &data),
+            Some((1, "built-in-phrase-match".to_string())),
+            "stale built-in-human-checked uid falls through to the phrase match",
         );
 
         // Stale uid everywhere → unresolved.

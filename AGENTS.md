@@ -235,8 +235,8 @@ Notable feature docs:
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
-  → set phrase (`built-in-phrase-match`) → `ai-selected` row → AI request →
-  unresolved) and the **uid two-lane gotcha** (gloss options carry the
+  → set phrase (`built-in-phrase-match`) → `built-in-agent-checked` row →
+  `ai-selected` row → AI request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
   numeric `12463/dpd` headword uid, curated data stores the lemma form
   `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The **cache key** is
   `(word, context_hash)` over the *existing* ±50-char gloss context window

@@ -16,12 +16,13 @@ static COMMON_WORDS_JSON: &str = include_str!("../../../assets/common-words.json
 static GLOSS_PHRASE_SELECTIONS_JSON: &str = include_str!("../../../assets/gloss-phrase-selections.json");
 
 /// Precedence rank of a `gloss_word_context_cache.origin` value:
-/// user-selected > built-in-human-checked > ai-selected. Unknown origins rank
-/// lowest.
+/// user-selected > built-in-human-checked > built-in-agent-checked >
+/// ai-selected. Unknown origins rank lowest.
 pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
     match origin {
-        "user-selected" => 3,
-        "built-in-human-checked" => 2,
+        "user-selected" => 4,
+        "built-in-human-checked" => 3,
+        "built-in-agent-checked" => 2,
         "ai-selected" => 1,
         _ => 0,
     }
@@ -2532,16 +2533,34 @@ mod gloss_word_selection_tests {
     }
 
     #[test]
+    fn origin_rank_ordering() {
+        use super::gloss_cache_origin_rank as rank;
+        assert!(rank("user-selected") > rank("built-in-human-checked"));
+        assert!(rank("built-in-human-checked") > rank("built-in-agent-checked"));
+        assert!(rank("built-in-agent-checked") > rank("ai-selected"));
+        assert!(rank("ai-selected") > rank("unknown-origin"));
+        assert_eq!(rank(""), 0);
+    }
+
+    #[test]
     fn ai_never_downgrades_user_or_built_in() {
         let db = setup();
         db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap();
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-builtin/dpd", "built-in-human-checked").unwrap();
+        db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-agent/dpd", "built-in-agent-checked").unwrap();
 
         assert!(!db.upsert_gloss_word_cache("w1", "h1", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
         assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(!db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
 
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-builtin/dpd");
+        assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().selected_uid, "uid-agent/dpd");
+
+        // Agent never downgrades human-checked; human-checked overwrites agent.
+        assert!(!db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert!(db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-hu/dpd", "built-in-human-checked").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().origin, "built-in-human-checked");
     }
 
     #[test]
@@ -2597,6 +2616,14 @@ mod gloss_word_selection_tests {
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
         assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
+
+        // Imported agent-checked beats a local ai row, but never a human tier.
+        db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap();
+        assert!(db.import_gloss_word_cache_row("w3", "h3", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().origin, "built-in-agent-checked");
+        db.upsert_gloss_word_cache("w4", "h4", "ctx", "uid-hu/dpd", "built-in-human-checked").unwrap();
+        assert!(!db.import_gloss_word_cache_row("w4", "h4", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert_eq!(db.get_gloss_word_cache("w4", "h4").unwrap().selected_uid, "uid-hu/dpd");
     }
 
     #[test]

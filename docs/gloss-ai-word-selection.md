@@ -30,22 +30,36 @@ skips are never involved) goes through one precedence chain, implemented once in
 `resolve_gloss_word_selection()` (`backend/src/helpers.rs`):
 
 ```
-user cache  >  set phrase  >  built-in cache  >  ai cache  >  fresh AI request
+user cache  >  built-in human-checked cache  >  set phrase  >  built-in agent-checked cache  >  ai cache  >  fresh AI request
 ```
 
 - **user cache** — the reader confirmed this choice for this context (the saved
   toggle, or a manual ComboBox change, see §5).
+- **built-in human-checked cache** — a `built-in-human-checked`-origin row
+  shipped in the bootstrapped appdata DB (§7).
 - **set phrase** — a curated rule ("in `anāthapiṇḍikassa ārāme`, `ārāme` is
   always `ārāma-4/dpd`"). Phrase matches write **no** cache row; they are
   re-derived on every gloss.
-- **built-in cache** — a `built-in-human-checked`-origin row shipped in the
-  bootstrapped appdata DB (§7).
+- **built-in agent-checked cache** — a `built-in-agent-checked`-origin row
+  shipped in the bootstrapped appdata DB, produced by the `gloss-agent-check`
+  pipeline (§7).
 - **ai cache** — an `ai-selected`-origin row written by an earlier AI response.
 - otherwise the word is **eligible** and goes into an AI request.
 
+**Why the human tiers rank above the phrase rule:** a confirmed selection for
+this exact (word, context) must be able to override the general rule. Under the
+old phrase-over-built-in order, a shipped phrase rule permanently masked a
+curator's per-context exception (a `user` row that beat the phrase on the
+curator's machine imported as a built-in row and then *lost* to the phrase in
+every install). The agent tier stays *below* phrase: a phrase rule carries
+multi-context human evidence, an agent row a single-context machine judgment.
+The `import-gloss-data` phrase-vs-row conflict report keeps such disagreements
+visible at curation time (§7).
+
 The resolved index is written to `ProcessedWord.selected_index` and the origin to
-`ProcessedWord.resolution` (`"user-selected"` / `"built-in-phrase-match"` /
-`"built-in-human-checked"` / `"ai-selected"`, or `None` when unresolved). Both
+`ProcessedWord.resolution` (`"user-selected"` / `"built-in-human-checked"` /
+`"built-in-phrase-match"` / `"built-in-agent-checked"` / `"ai-selected"`, or
+`None` when unresolved). Both
 fields are `#[serde(default)]` — pre-feature
 `gloss_prompts_history` sessions have neither and must still deserialize.
 
@@ -354,7 +368,8 @@ state **from the cache table**, not from the serialized session, via
 `SuttaBridge.annotate_gloss_words_json()`.
 
 Write precedence is enforced in the DB layer by `gloss_cache_origin_rank()`
-(`user-selected` 3 > `built-in-human-checked` 2 > `ai-selected` 1):
+(`user-selected` 4 > `built-in-human-checked` 3 > `built-in-agent-checked` 2 >
+`ai-selected` 1, unknown 0):
 `upsert_gloss_word_cache()` refuses a *lower*-ranked write (an `ai-selected`
 response never downgrades a `user-selected` or `built-in-human-checked` row) but
 allows an equal one (a re-save refreshes the row).

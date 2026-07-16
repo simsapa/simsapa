@@ -178,3 +178,30 @@ fn test_import_skips_invalid_entries() {
     assert_eq!(skipped, 3);
     assert!(db.get_gloss_word_cache(&gloss_cache_word_key("dhammaṁ"), "h2").is_some());
 }
+
+#[test]
+fn test_import_skips_review_entries_and_accepts_agent_checked() {
+    use simsapa_backend::helpers::GlossWordCacheExportEntry;
+
+    let db = temp_appdata("review");
+    let entries = vec![
+        // A review-flagged agent guess must never be written as a confirmed row.
+        GlossWordCacheExportEntry {
+            word: "w1".into(), context_hash: "h1".into(), context_snippet: "c".into(),
+            selected_uid: "u1/dpd".into(), origin: "built-in-agent-checked".into(),
+            confidence: Some("review".into()), note: Some("uncertain between senses".into()),
+        },
+        // A confident agent-checked entry imports with its origin.
+        GlossWordCacheExportEntry {
+            word: "w2".into(), context_hash: "h2".into(), context_snippet: "c".into(),
+            selected_uid: "u2/dpd".into(), origin: "built-in-agent-checked".into(),
+            ..Default::default()
+        },
+    ];
+    let (imported, skipped) = import_gloss_word_cache_entries(&db, &entries);
+    assert_eq!(imported, 1);
+    assert_eq!(skipped, 1);
+    assert!(db.get_gloss_word_cache("w1", "h1").is_none());
+    let row = db.get_gloss_word_cache("w2", "h2").expect("agent entry imported");
+    assert_eq!(row.origin, "built-in-agent-checked");
+}
