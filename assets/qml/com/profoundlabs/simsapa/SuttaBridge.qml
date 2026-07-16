@@ -366,6 +366,10 @@ Item {
         return '{"selections": []}';
     }
 
+    function build_word_selection_items_json(paragraphs_json: string, forced: bool): string {
+        return '[]';
+    }
+
     function annotate_gloss_words_json(words_data_json: string): string {
         return words_data_json;
     }

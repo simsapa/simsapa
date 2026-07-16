@@ -325,7 +325,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
 #[test]
 #[serial]
 fn test_prd_cases_phrase_ai_cache_and_user_survival() {
-    use simsapa_backend::helpers::{gloss_cache_word_key, parse_word_selection_response};
+    use simsapa_backend::helpers::{gloss_cache_word_key, parse_word_selection_response, WordSelectionParseMode};
 
     h::app_data_setup();
     let db = temp_appdata();
@@ -363,8 +363,11 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
     }]);
     let chosen_uid = target.results[1].uid.clone();
     let response = format!(r#"{{"selections": [{{"id": "p0w2", "uid": "{}"}}]}}"#, chosen_uid);
-    let pairs = parse_word_selection_response(&response, &items.to_string()).expect("valid response");
-    assert_eq!(pairs, vec![("p0w2".to_string(), chosen_uid.clone())]);
+    let entries = parse_word_selection_response(&response, &items.to_string(), WordSelectionParseMode::Lenient)
+        .expect("valid response");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, "p0w2");
+    assert_eq!(entries[0].uid, chosen_uid);
 
     // Apply like SuttaBridge.save_gloss_word_cache does (key-normalized word,
     // hash from the snippet).

@@ -200,7 +200,11 @@ disabled, e.g. for user-created keys).
 
 ## 4. The request
 
-Assembled in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
+The request items are built by the shared backend builder
+`build_word_selection_items()` in `backend/src/helpers.rs` (exposed to QML as
+`SuttaBridge.build_word_selection_items_json(paragraphs_json, forced)`; the CLI
+agent workflow calls the same builder in include-resolved mode), assembled into
+the prompt in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
 → `word_selection_response(request_id, model, response)` — a dedicated
 invokable/signal pair mirroring `prompt_request`, so it never collides with AI
 Translate's indices. The engine picks the model by walking the Fallback sequence
@@ -234,22 +238,49 @@ mis-aligned by position. `summary` is HTML-stripped and truncated to 200 chars.
 The `<b>` marker stays in the `context` (it pinpoints the target occurrence for
 the model; the hash strips it).
 
-Expected response:
+Expected response — a selection identifies the chosen option by its **`word`
+lemma**, with optional `confidence` (`confident` (default) | `review`) and
+`note`:
 
 ```json
-{ "selections": [ { "id": "p0w4", "uid": "ārāma-4/dpd" } ] }
+{ "selections": [
+    { "id": "p0w4", "word": "ārāma 4" },
+    { "id": "p1w2", "word": "suta 1.3", "confidence": "review",
+      "note": "formula 'evaṁ me sutaṁ' favours the nt sense" }
+] }
 ```
+
+The lemma is text the model has just reasoned about, so a copying error almost
+certainly fails validation instead of silently selecting a wrong sense (a
+numeric index or an opaque uid fails silently). An `{"id", "uid"}` entry form
+is also accepted as robustness (the response shape lives in the user-editable
+request prompt, so a model following an edited prompt may answer with uids);
+when both `word` and `uid` are present they must agree.
 
 JSON was chosen over table/CSV because every integrated provider emits it
 reliably for small schemas (several have native JSON modes), and column drift in
-a table is a *silent* misalignment. Parsing is **lenient but validating** —
-`parse_word_selection_response()` in Rust (exposed as a `SuttaBridge` invokable
-returning `{selections: [...]}` or `{error: "..."}`): strips code fences, extracts
-the first balanced top-level `{...}` from surrounding prose, treats a leading
-`Error:` as failure, drops entries with unknown `id`s or a `uid` that is not among
-*that item's* options, and leaves missing entries' ComboBoxes unchanged. A wholly
-unparseable response becomes a persistent error in the paragraph's status area and
-changes nothing.
+a table is a *silent* misalignment. Parsing is validating with two strictness
+modes — `parse_word_selection_response()` in Rust (exposed as a `SuttaBridge`
+invokable returning `{selections: [...]}` or `{error: "..."}`): strips code
+fences, extracts the first balanced top-level `{...}` from surrounding prose,
+treats a leading `Error:` as failure, resolves each entry's lemma to the uid
+*within that item's option list*, and rejects entries with unknown `id`s, a
+lemma/uid that is not among that item's options (or a lemma carried by more
+than one option), disagreeing `word`+`uid`, or an invalid `confidence` value.
+The **network path is lenient**: invalid entries are logged and skipped, and
+missing entries' ComboBoxes stay unchanged; `confidence`/`note` are logged,
+never displayed. The **CLI agent path is strict** (`gloss-agent-check apply`):
+any invalid entry, disagreeing duplicate, or unanswered item is a hard error.
+A wholly unparseable response becomes a persistent error in the paragraph's
+status area and changes nothing.
+
+> **Note — existing installs keep their stored prompt text.** The default
+> `"Gloss Tab: Word Selection Request"` prompt now instructs the lemma-based
+> response, but the prompts are user-editable settings: an install that already
+> has the old uid-based text keeps it (default-key merging never overwrites
+> user-visible values). The uid entry form remains accepted, so nothing breaks;
+> to get the new instructions, use **Reset to Default** on that prompt in
+> **Prompts > System Prompts...**.
 
 ### Batching, pacing, timeouts
 

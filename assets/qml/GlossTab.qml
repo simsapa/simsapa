@@ -343,47 +343,31 @@ Item {
         root.ws_request_items = ({});
     }
 
-    // Build the AI request items for the given paragraphs from words_data_json:
-    // ambiguous words only (results.length > 1), summaries HTML-stripped and
-    // truncated to 200 chars. Words already resolved from the cache or the
-    // phrase table (resolution set by the Rust gloss processing) are excluded;
-    // the forced pass re-includes "ai-selected"-resolved words but never
+    // Build the AI request items for the given paragraphs via the shared
+    // backend builder (SuttaBridge.build_word_selection_items_json): ambiguous
+    // words only (results.length > 1), summaries HTML-stripped and truncated
+    // to 200 chars. Words already resolved from the cache or the phrase table
+    // (resolution set by the Rust gloss processing) are excluded; the forced
+    // pass re-includes "ai-selected"-resolved words but never
     // "user-selected"/"built-in-phrase-match"/"built-in-human-checked".
     function build_word_selection_items(paragraph_indexes, forced) {
-        let items = [];
+        let paragraphs = [];
         for (let pi of paragraph_indexes) {
             if (pi >= paragraph_model.count) continue;
             let paragraph = paragraph_model.get(pi);
             if (!paragraph || !paragraph.words_data_json) continue;
-            let words_data;
-            try {
-                words_data = JSON.parse(paragraph.words_data_json);
-            } catch (e) {
-                logger.error("build_word_selection_items: failed to parse words_data_json: " + e);
-                continue;
-            }
-            for (let wi = 0; wi < words_data.length; wi++) {
-                let w = words_data[wi];
-                if (!w || !w.results || w.results.length <= 1) continue;
-                let resolution = w.resolution || null;
-                if (resolution !== null && !(forced && resolution === "ai-selected")) continue;
-                let options = [];
-                for (let r of w.results) {
-                    options.push({
-                        uid: r.uid,
-                        word: r.word,
-                        summary: (r.summary || "").replace(/<[^>]*>/g, "").substring(0, 200),
-                    });
-                }
-                items.push({
-                    id: "p" + pi + "w" + wi,
-                    word: w.original_word,
-                    context: w.example_sentence || "",
-                    options: options,
-                });
-            }
+            paragraphs.push({
+                paragraph_index: pi,
+                words_json: paragraph.words_data_json,
+            });
         }
-        return items;
+        let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
+        try {
+            return JSON.parse(items_json);
+        } catch (e) {
+            logger.error("build_word_selection_items: failed to parse items JSON: " + e);
+            return [];
+        }
     }
 
     // Assemble the combined prompt following the AI Translate convention:
@@ -536,6 +520,11 @@ Item {
             // Group the valid selections by paragraph index (id = p<pi>w<wi>).
             let by_para = {};
             for (let sel of parsed.selections) {
+                // confidence/note are parsed but not displayed (logged only).
+                if (sel.confidence === "review" || sel.note) {
+                    logger.info("Word selection " + sel.id + ": confidence=" + (sel.confidence || "confident")
+                                + (sel.note ? ", note: " + sel.note : ""));
+                }
                 let m = sel.id.match(/^p(\d+)w(\d+)$/);
                 if (!m) continue;
                 let pi = parseInt(m[1], 10);
