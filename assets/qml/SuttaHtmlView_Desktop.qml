@@ -292,6 +292,8 @@ if (document.SSP) {
         }
     }
 
+    WebEngineRepaintNudge { web: web }
+
     WebEngineView {
         id: web
         anchors.fill: parent

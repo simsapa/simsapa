@@ -69,6 +69,8 @@ document.documentElement.style.colorScheme = 'light';
     //         find_bar.reset();
     // }
 
+    WebEngineRepaintNudge { web: web }
+
     WebEngineView {
         id: web
         anchors.fill: parent

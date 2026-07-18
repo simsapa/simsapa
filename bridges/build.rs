@@ -32,6 +32,7 @@ fn main() {
         "../assets/qml/SuttaTabButton.qml",
         "../assets/qml/TabListDialog.qml",
         "../assets/qml/SuttaHtmlView.qml",
+        "../assets/qml/WebEngineRepaintNudge.qml",
         "../assets/qml/SuttaHtmlView_Desktop.qml",
         "../assets/qml/SuttaHtmlView_Mobile.qml",
         "../assets/qml/DictionaryHtmlView.qml",

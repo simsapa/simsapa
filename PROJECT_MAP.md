@@ -105,6 +105,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── SuttaStackLayout.qml
 │   │   ├── SuttaTabButton.qml
 │   │   ├── tst_GlossTab.qml
+│   │   ├── WebEngineRepaintNudge.qml
 │   │   └── WordSummary.qml
 ```
 

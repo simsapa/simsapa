@@ -91,6 +91,16 @@ Notable feature docs:
   env-var toggle is read from the DB in `gui.cpp` before `QApplication`
   (standalone `db::get_app_settings()` + `render_loop_basic_c()` FFI, cached,
   restart-only) vs. the two QML toggles passed down to `FulltextResults.qml`.
+- [WebEngineView stale black frame workaround](./docs/webengine-stale-black-frame-workaround.md) —
+  why the desktop HTML reader panels turned solid black after switching away
+  from and back to the app window on Linux (Chromium stops compositing while
+  the window is inactive; the scene graph is left with a stale texture —
+  [QTBUG-54127](https://bugreports.qt.io/browse/QTBUG-54127) /
+  [QTBUG-51892](https://bugreports.qt.io/browse/QTBUG-51892)), and the fix:
+  `WebEngineRepaintNudge.qml`, a **1px `anchors.bottomMargin` resize jiggle**
+  (two deferred 50 ms timers) on window re-activation. A JS-only repaint nudge
+  was tried first and does **not** work. Instantiate the helper next to every
+  new desktop `WebEngineView`.
 - [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md) — the chanting
   recorder/player stack (`cpal` + `flacenc` + `rubato` + `symphonia`) that
   replaced Qt Multimedia / FFmpeg for 16 KB compliance. cpal 0.18's Android
