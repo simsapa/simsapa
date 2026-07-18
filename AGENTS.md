@@ -101,6 +101,17 @@ Notable feature docs:
   (two deferred 50 ms timers) on window re-activation. A JS-only repaint nudge
   was tried first and does **not** work. Instantiate the helper next to every
   new desktop `WebEngineView`.
+- [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
+  shipped `assets/fonts/crimson-pro/*.ttf` are **patched, not stock**: stock
+  Crimson Pro lacks ṁ (U+1E41), so plain browsers fell back to a mismatched
+  system-font dot (Qt WebEngine masked it in-app). The fix
+  (`scripts/patch_crimson_pro_pali_glyphs.py`, idempotent) adds **both** ṁ and
+  Ṁ (U+1E40) as composites modeled on the font's own ṅ/Ṅ — the uppercase is
+  load-bearing because the font has no `smcp` feature, so browsers synthesize
+  `font-variant: small-caps` ("Evaṁ me sutaṁ") from scaled *uppercase* glyphs;
+  adding only the lowercase breaks the small caps. Re-run the script + `make
+  build -B` if the font files are ever refreshed from upstream (they are
+  embedded via `include_dir` in `bridges/src/api.rs`).
 - [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md) — the chanting
   recorder/player stack (`cpal` + `flacenc` + `rubato` + `symphonia`) that
   replaced Qt Multimedia / FFmpeg for 16 KB compliance. cpal 0.18's Android
