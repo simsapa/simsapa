@@ -16,6 +16,10 @@ ColumnLayout {
     required property int paragraph_index
     property string title: ""
     property int selected_tab_index: 0
+    // Display mode: false = one response at a time behind a TabBar (default),
+    // true = all responses side-by-side in a two-column grid. Toggled by the
+    // owning tab's button next to its collapse button.
+    property bool side_by_side: false
 
     readonly property int vocab_font_point_size: 10
     readonly property TextMetrics vocab_tm1: TextMetrics { text: "#"; font.pointSize: root.vocab_font_point_size }
@@ -152,6 +156,84 @@ ColumnLayout {
         return ai_error_utils.is_error(response_text)
     }
 
+    // One response entry's body (progress / error / rendered markdown, plus
+    // the Cancel overlay), shared by the tabbed StackLayout and the
+    // side-by-side grid. The owner binds its height to desired_height (the
+    // StackLayout additionally forwards late RichText contentHeight updates).
+    component ResponseContent: Item {
+        id: response_content
+
+        required property int entry_index
+        // The entries_model row object; role accesses stay reactive to the
+        // per-row setProperty patches in sync_entries().
+        required property var entry
+
+        readonly property real desired_height: Math.max(text_area.contentHeight + root.vocab_tm1.height, 200)
+
+        TextArea {
+            id: text_area
+            anchors.fill: parent
+            // Rebuilt from the model roles so it stays reactive
+            // to per-row setProperty updates.
+            property var data: ({
+                model_name: response_content.entry.model_name,
+                status: response_content.entry.status,
+                response: response_content.entry.response,
+                progress: response_content.entry.progress
+            })
+
+            text: {
+                if (data.status === "error") {
+                    var formatted = ai_error_utils.format_response_error(data.response)
+                    return formatted || data.response || "Unknown error occurred";
+                } else if (data.status === "completed") {
+                    return SuttaBridge.markdown_to_html(data.response || "");
+                }
+                // "waiting" (and any unknown status). The Rust
+                // engine's progress messages ("Trying X…",
+                // "Rate limited by Y…") land in data.progress.
+                if (data.progress && data.progress.length > 0) {
+                    return data.progress;
+                }
+                // Sequential mode has no model name until the
+                // first progress event arrives.
+                return data.model_name
+                    ? `Waiting for response from ${data.model_name} ...`
+                    : "Waiting for response ...";
+            }
+            font.pointSize: root.vocab_font_point_size
+            selectByMouse: true
+            readOnly: true
+            textFormat: data.status === "completed" ? Text.RichText : Text.PlainText
+            wrapMode: TextEdit.WordWrap
+            color: root.text_color
+
+            background: Rectangle {
+                color: "transparent"
+            }
+        }
+
+        // Cancel button — shown only once the engine has moved
+        // past the initial attempt and is continuing to fire
+        // further requests (model.continuing: fallback to the
+        // next model, or an auto-retry round). The initial
+        // in-flight request needs no Cancel: a success/error
+        // response will arrive regardless. This lets the user
+        // stop the fallback/retry sequence instead of waiting
+        // out every step. Overlaid at the top-right of the
+        // progress text.
+        Button {
+            text: "Cancel"
+            visible: response_content.entry.status === "waiting"
+                     && response_content.entry.continuing === true
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 4
+            z: 1
+            onClicked: root.cancel_request(response_content.entry_index)
+        }
+    }
+
     spacing: 10
 
     GroupBox {
@@ -180,6 +262,13 @@ ColumnLayout {
             TabBar {
                 id: tab_bar
                 Layout.fillWidth: true
+                // The tab headers stay visible and clickable in side-by-side
+                // mode: the checked tab is still the *selected* response, which
+                // the exports and the Prompts chat-sequence construction read
+                // via the persisted selected_ai_tab. The spacing opens a gap
+                // between the headers matching the grid's columnSpacing, so
+                // each header visually belongs to its column below.
+                spacing: root.side_by_side ? side_by_side_grid.columnSpacing : 0
                 // Clamp-aware binding; a user click on a TabButton breaks it,
                 // after which the Connections + sync_current_index() below
                 // keep currentIndex in sync (they only write on a real
@@ -242,6 +331,7 @@ ColumnLayout {
 
             StackLayout {
                 id: stack_layout
+                visible: !root.side_by_side
                 Layout.fillWidth: true
                 currentIndex: tab_bar.currentIndex
 
@@ -270,14 +360,17 @@ ColumnLayout {
                     id: content_repeater
                     model: entries_model
 
-                    Item {
+                    ResponseContent {
                         id: response_content_item
 
                         required property int index
                         required property var model
 
+                        entry_index: index
+                        entry: model
+
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.max(text_area.contentHeight + root.vocab_tm1.height, 200)
+                        Layout.preferredHeight: desired_height
 
                         // Propagate height changes (including late RichText
                         // contentHeight updates) up to the StackLayout for the
@@ -292,69 +385,43 @@ ColumnLayout {
                                 stack_layout.content_height = Layout.preferredHeight;
                             }
                         }
+                    }
+                }
+            }
 
-                        TextArea {
-                            id: text_area
-                            anchors.fill: parent
-                            // Rebuilt from the model roles so it stays reactive
-                            // to per-row setProperty updates.
-                            property var data: ({
-                                model_name: response_content_item.model.model_name,
-                                status: response_content_item.model.status,
-                                response: response_content_item.model.response,
-                                progress: response_content_item.model.progress
-                            })
+            // Side-by-side mode: every response at once, one equal-width
+            // column per response on a single row — never wrapping, so the
+            // tab headers above stay aligned with their columns for any
+            // number of parallel responses (the user decides how many fit
+            // their screen). The headers stay in the TabBar (visible in both
+            // modes), whose per-mode spacing matches columnSpacing here.
+            // Both mode containers stay instantiated (visibility-gated) so
+            // toggling never tears down delegates — the sync_entries()
+            // patch-in-place contract above applies to this Repeater too.
+            GridLayout {
+                id: side_by_side_grid
+                visible: root.side_by_side
+                Layout.fillWidth: true
+                columns: Math.max(1, entries_model.count)
+                columnSpacing: 10
+                rowSpacing: 10
 
-                            text: {
-                                if (data.status === "error") {
-                                    var formatted = ai_error_utils.format_response_error(data.response)
-                                    return formatted || data.response || "Unknown error occurred";
-                                } else if (data.status === "completed") {
-                                    return SuttaBridge.markdown_to_html(data.response || "");
-                                }
-                                // "waiting" (and any unknown status). The Rust
-                                // engine's progress messages ("Trying X…",
-                                // "Rate limited by Y…") land in data.progress.
-                                if (data.progress && data.progress.length > 0) {
-                                    return data.progress;
-                                }
-                                // Sequential mode has no model name until the
-                                // first progress event arrives.
-                                return data.model_name
-                                    ? `Waiting for response from ${data.model_name} ...`
-                                    : "Waiting for response ...";
-                            }
-                            font.pointSize: root.vocab_font_point_size
-                            selectByMouse: true
-                            readOnly: true
-                            textFormat: data.status === "completed" ? Text.RichText : Text.PlainText
-                            wrapMode: TextEdit.WordWrap
-                            color: root.text_color
+                Repeater {
+                    id: side_by_side_repeater
+                    model: entries_model
 
-                            background: Rectangle {
-                                color: "transparent"
-                            }
-                        }
+                    ResponseContent {
+                        required property int index
+                        required property var model
 
-                        // Cancel button — shown only once the engine has moved
-                        // past the initial attempt and is continuing to fire
-                        // further requests (model.continuing: fallback to the
-                        // next model, or an auto-retry round). The initial
-                        // in-flight request needs no Cancel: a success/error
-                        // response will arrive regardless. This lets the user
-                        // stop the fallback/retry sequence instead of waiting
-                        // out every step. Overlaid at the top-right of the
-                        // progress text.
-                        Button {
-                            text: "Cancel"
-                            visible: response_content_item.model.status === "waiting"
-                                     && response_content_item.model.continuing === true
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.margins: 4
-                            z: 1
-                            onClicked: root.cancel_request(response_content_item.index)
-                        }
+                        entry_index: index
+                        entry: model
+
+                        Layout.fillWidth: true
+                        // Equal-width columns regardless of content.
+                        Layout.preferredWidth: 1
+                        Layout.alignment: Qt.AlignTop
+                        Layout.preferredHeight: desired_height
                     }
                 }
             }

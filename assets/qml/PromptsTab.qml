@@ -1097,6 +1097,18 @@ Item {
                         Layout.preferredWidth: collapse_btn.height
                     }
 
+                    Button {
+                        id: side_by_side_btn
+                        checkable: true
+                        checked: false
+                        visible: message_item.role === "assistant"
+                        icon.source: checked ? "icons/32x32/ph--tabs-fill.png" : "icons/32x32/ph--tabs.png"
+                        Layout.alignment: Qt.AlignLeft
+                        Layout.preferredWidth: side_by_side_btn.height
+                        ToolTip.visible: hovered
+                        ToolTip.text: checked ? "Show responses in tabs" : "Show responses side-by-side"
+                    }
+
                     Label {
                         id: msg_role
                         text: message_item.role
@@ -1246,6 +1258,7 @@ Item {
                             AssistantResponses {
                                 id: assistant_responses_component
                                 visible: message_item.role === "assistant"
+                                side_by_side: side_by_side_btn.checked
                                 is_dark: root.is_dark
                                 Layout.fillWidth: true
 

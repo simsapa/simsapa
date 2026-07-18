@@ -2692,6 +2692,17 @@ ${main_text}
                         Layout.preferredWidth: ai_translations_collapse_btn.height
                     }
 
+                    Button {
+                        id: ai_translations_side_by_side_btn
+                        checkable: true
+                        checked: false
+                        icon.source: checked ? "icons/32x32/ph--tabs-fill.png" : "icons/32x32/ph--tabs.png"
+                        Layout.alignment: Qt.AlignLeft
+                        Layout.preferredWidth: ai_translations_side_by_side_btn.height
+                        ToolTip.visible: hovered
+                        ToolTip.text: checked ? "Show responses in tabs" : "Show responses side-by-side"
+                    }
+
                     Text {
                         text: {
                             let translations = assistant_responses_component.translations_data;
@@ -2718,6 +2729,7 @@ ${main_text}
                     // the collapse button), so no internal title here.
                     title: ""
                     visible: !ai_translations_collapse_btn.checked
+                    side_by_side: ai_translations_side_by_side_btn.checked
                     is_dark: root.is_dark
                     Layout.fillWidth: true
                     translations_data: {
