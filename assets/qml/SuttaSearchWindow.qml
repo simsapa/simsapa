@@ -62,6 +62,16 @@ ApplicationWindow {
 
     readonly property int icon_size: is_tall ? 40 : 30
 
+    // In narrow mode the reading panel shows whenever the sidebar is off,
+    // ignoring the (hidden) reading panel toggle. When the window becomes wide
+    // again, sync the toggle to what the narrow layout was actually showing,
+    // so the reading panel doesn't vanish because of a stale unchecked state.
+    onIs_wideChanged: {
+        if (is_wide && !show_sidebar_btn.checked) {
+            root.reveal_html_panel();
+        }
+    }
+
     // Add extra top margin on mobile to account for status bar
     // Get the actual status bar height from the system and add base margin
     property int top_bar_margin: is_mobile ? 24 : 0
@@ -831,6 +841,7 @@ ApplicationWindow {
             tab_data.web_item_key = root.generate_key();
             sutta_html_view_layout.add_item(tab_data, true);
             target_model.insert(insert_index, tab_data);
+            root.reveal_html_panel();
             root.focus_on_tab_with_id_key(tab_data.id_key);
 
             // Record navigation history
@@ -1022,6 +1033,17 @@ ${query_text}`;
         root.show_result_in_html_view(result_data, new_tab);
     }
 
+    // Ensure the reading panel (left html view) is visible when content is
+    // opened in it. In wide mode the panel follows show_html_panel_btn, which
+    // the user may have toggled off. In narrow mode the panel is driven by the
+    // sidebar toggle instead, but keeping the (hidden) toggle in sync avoids a
+    // stale state when the window becomes wide again.
+    function reveal_html_panel() {
+        if (!show_html_panel_btn.checked) {
+            show_html_panel_btn.checked = true;
+        }
+    }
+
     function show_result_in_html_view(result_data: var, new_tab) {
         if (new_tab === undefined) new_tab = false;
         // Capture the uid currently shown in the content view BEFORE we (maybe)
@@ -1102,6 +1124,7 @@ ${query_text}`;
             root.clear_translation_tabs();
         }
 
+        root.reveal_html_panel();
         if (!root.is_wide) {
             show_sidebar_btn.checked = false;
         }
@@ -1492,6 +1515,7 @@ ${query_text}`;
             }
             tabs_pinned_model.append(tab_data);
             if (focus) {
+                root.reveal_html_panel();
                 root.focus_on_tab_with_id_key(tab_data.id_key);
                 root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
             }
@@ -1506,6 +1530,7 @@ ${query_text}`;
             }
             tabs_translations_model.append(tab_data);
             if (focus) {
+                root.reveal_html_panel();
                 root.focus_on_tab_with_id_key(tab_data.id_key);
                 root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
             }
@@ -1610,6 +1635,12 @@ ${query_text}`;
 
     onIs_reading_modeChanged: {
         search_ui_row.visible = !root.is_reading_mode;
+        // Reading mode shows only the html view, so make sure its panel
+        // toggle is on — otherwise entering reading mode with the reading
+        // panel toggled off would leave a blank window.
+        if (root.is_reading_mode) {
+            root.reveal_html_panel();
+        }
         // On a narrow screen, the sidebar was already hidden when the user
         // enabled reading mode from the html button, and turning reader mode
         // off would show the sidebar for them instead of the html view.
@@ -2443,6 +2474,25 @@ ${query_text}`;
             }
 
             Button {
+                id: show_html_panel_btn
+                Layout.alignment: Qt.AlignTop
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                Layout.topMargin: 9
+                icon.source: "icons/32x32/fa_book-open-solid.png"
+                Layout.preferredHeight: root.icon_size
+                Layout.preferredWidth: root.icon_size
+                checkable: true
+                checked: true
+                // In narrow mode only one panel fits; the sidebar toggle alone
+                // switches between the sidebar and the reading panel, so this
+                // toggle is only needed (and shown) on wide screens.
+                visible: root.is_wide
+                ToolTip.visible: hovered
+                ToolTip.text: "Show Reading Panel"
+            }
+
+            Button {
                 id: show_sidebar_btn
                 Layout.alignment: Qt.AlignTop
                 Layout.leftMargin: 0
@@ -2891,8 +2941,12 @@ ${query_text}`;
 
                     Item {
                         id: suttas_tab_container
-                        SplitView.preferredWidth: show_sidebar_btn.checked ? (root.is_wide ? (parent.width * 0.5) : 0) : parent.width
-                        visible: show_sidebar_btn.checked ? (root.is_wide ? true : false) : true
+                        // Wide: the reading panel follows its own toggle (both panels can share
+                        // the width 50/50). Narrow: only one panel fits, and the sidebar toggle
+                        // switches between them — the reading panel shows when the sidebar is off.
+                        readonly property bool html_visible: root.is_wide ? show_html_panel_btn.checked : !show_sidebar_btn.checked
+                        SplitView.preferredWidth: !html_visible ? 0 : (show_sidebar_btn.checked && root.is_wide ? (parent.width * 0.5) : parent.width)
+                        visible: html_visible
                         /* Layout.alignment: Qt.AlignTop */
 
                         RowLayout {
@@ -3489,7 +3543,7 @@ ${query_text}`;
 
                     Item {
                         id: sidebar_panel
-                        SplitView.preferredWidth: show_sidebar_btn.checked ? (root.is_wide ? (parent.width * 0.5) : parent.width) : 0
+                        SplitView.preferredWidth: !show_sidebar_btn.checked ? 0 : (show_html_panel_btn.checked && root.is_wide ? (parent.width * 0.5) : parent.width)
                         visible: show_sidebar_btn.checked
 
                         // Show only icons when the sidebar is too narrow for tab titles
