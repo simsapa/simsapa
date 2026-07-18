@@ -334,6 +334,24 @@ div.btn a, span.btn a {
   padding-top: 0.2em;
   padding-bottom: 0.2em;
 }
+.suttacentral header h1 span.segment span.colcell.pali,
+.suttacentral header h1 span.segment span.colcell.translated {
+  font-family: "Abhaya Libre SSP";
+  font-size: 1em;
+  font-weight: bold;
+  word-spacing: 2pt;
+  padding-top: 0.2em;
+  padding-bottom: 0.2em;
+}
+.suttacentral header ul li span.segment span.colcell.pali,
+.suttacentral header ul li span.segment span.colcell.translated {
+  font-family: "Source Sans 3 SSP";
+  font-weight: 400;
+  font-size: 1em;
+  letter-spacing: 1pt;
+  word-spacing: 1.5pt;
+  padding-top: 0.15em;
+}
 .suttacentral h2 {
   font-size: 1.1em;
   font-weight: bold;
@@ -573,27 +591,27 @@ body:has(.suttacentral.layout-columns) {
   background-color: transparent;
 }
 
-.suttacentral.layout-columns span.segment {
+.suttacentral.layout-columns:not(.sbs-blocks) span.segment {
   display: flex;
   column-gap: 1em;
 }
-.suttacentral.layout-columns span.segment span.colcell {
+.suttacentral.layout-columns:not(.sbs-blocks) span.segment span.colcell {
   flex: 1 1 0;
   min-width: 0;
   padding-left: 0.75em;
   padding-right: 0.75em;
 }
-.suttacentral.layout-columns span.segment span.reference {
+.suttacentral.layout-columns:not(.sbs-blocks) span.segment span.reference {
   flex: 0 0 100%;
   order: -1;
 }
-.suttacentral.layout-columns .column-headers {
+.suttacentral.layout-columns:not(.sbs-blocks) .column-headers {
   display: flex;
   column-gap: 1em;
   margin-top: 0.5em;
   margin-bottom: 0.5em;
 }
-.suttacentral.layout-columns .column-headers span.colcell {
+.suttacentral.layout-columns:not(.sbs-blocks) .column-headers span.colcell {
   flex: 1 1 0;
   min-width: 0;
   padding-left: 0.75em;
@@ -601,6 +619,10 @@ body:has(.suttacentral.layout-columns) {
   font-family: "Source Sans 3 SSP";
   font-weight: bold;
   text-align: center;
+  font-size: 0.8em;
+  text-transform: lowercase;
+  font-variant-caps: small-caps;
+  letter-spacing: 1pt;
 }
 
 .suttacentral.sbs-blocks .sbs-row {
@@ -649,6 +671,10 @@ body:has(.suttacentral.layout-columns) {
   font-family: "Source Sans 3 SSP";
   font-weight: bold;
   text-align: center;
+  font-size: 0.8em;
+  text-transform: lowercase;
+  font-variant-caps: small-caps;
+  letter-spacing: 1pt;
   padding-bottom: 0.5em;
 }
 

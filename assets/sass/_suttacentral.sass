@@ -62,6 +62,33 @@ $solarized_light_bg: #FAE6B2
       padding-top: 0.2em
       padding-bottom: 0.2em
 
+    // Multi-column (Lines / Columns) header cells: the colcell typography
+    // rules below ('.suttacentral span.segment span.colcell.…', 0,4,2) beat
+    // the header rules above (0,3,2), so without these the serif title fell
+    // through to the body font (Crimson Pro) and the Pāli title to the sans
+    // 0.8em colcell defaults. The sutta title stays "Abhaya Libre SSP" in
+    // every column, matching the single-text rendering; these selectors win
+    // on element count (0,4,4).
+    h1 span.segment span.colcell.pali,
+    h1 span.segment span.colcell.translated
+      font-family: "Abhaya Libre SSP"
+      font-size: 1em
+      font-weight: bold
+      word-spacing: 2pt
+      padding-top: 0.2em
+      padding-bottom: 0.2em
+
+    // Same specificity fix for the nikāya line: keep the header list items
+    // in the sans caps style regardless of the per-group font settings.
+    ul li span.segment span.colcell.pali,
+    ul li span.segment span.colcell.translated
+      font-family: "Source Sans 3 SSP"
+      font-weight: 400
+      font-size: 1em
+      letter-spacing: 1pt
+      word-spacing: 1.5pt
+      padding-top: 0.15em
+
   h2
     font-size: 1.1em
     font-weight: bold
@@ -215,7 +242,12 @@ body:has(.suttacentral.layout-columns)
 // above the cells, or it steals a column.
 // The cells carry inner side padding so the column background stripe edge
 // is never flush against the text.
-.suttacentral.layout-columns
+// The sbs-blocks fallback is excluded: its wrapper carries layout-columns
+// too, but its columns are nested whole-document renders whose span.segment
+// elements must keep normal flow — display:flex on them breaks the
+// header's inherited text-align:center (a lone flex child sits at
+// flex-start), which left-aligned the nikāya/title header lines.
+.suttacentral.layout-columns:not(.sbs-blocks)
   span.segment
     display: flex
     column-gap: 1em
@@ -241,6 +273,10 @@ body:has(.suttacentral.layout-columns)
       font-family: "Source Sans 3 SSP"
       font-weight: bold
       text-align: center
+      font-size: 0.8em
+      text-transform: lowercase
+      font-variant-caps: small-caps
+      letter-spacing: 1pt
 
 // Unaligned block-columns fallback (a selected text has no segmented
 // format): each text's standard whole-document rendering in one flex column.
@@ -301,6 +337,10 @@ body:has(.suttacentral.layout-columns)
     font-family: "Source Sans 3 SSP"
     font-weight: bold
     text-align: center
+    font-size: 0.8em
+    text-transform: lowercase
+    font-variant-caps: small-caps
+    letter-spacing: 1pt
     padding-bottom: 0.5em
 
 // Block-fallback scrollbar colors in dark mode.
