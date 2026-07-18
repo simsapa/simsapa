@@ -1,4 +1,4 @@
-//! DOCX export for the Gloss tab.
+//! DOCX export for the Gloss and Prompts tabs.
 //!
 //! The document is generated from an embedded template
 //! (`assets/docx-template/gloss-template.docx`) analogous to pandoc's
@@ -7,64 +7,41 @@
 //!
 //! Named paragraph styles defined in the template (`w:styleId` / UI name):
 //! - `Title` / "Title" — document title
-//! - `Heading1` / "Heading 1" — per-paragraph header ("Paragraph N")
-//! - `Heading2` / "Heading 2" — section headers ("AI Translations", "Vocabulary")
-//! - `BodyText` / "Body Text" — Pāli text and AI translations
-//! - `VocabEntry` / "Vocab Entry" — vocabulary list entries
+//! - `Heading1` / "Heading 1" — per-paragraph / per-message header
+//!   ("Paragraph N", "System" / "User" / "Assistant")
+//! - `Heading2` / "Heading 2" — section headers ("AI Translations", model names)
+//! - `BodyText` / "Body Text" — Pāli text, chat content and AI responses
+//! - `VocabEntry` / "Vocab Entry" — vocabulary table cells
 //!
-//! The input is the Gloss tab's `gloss_export_data()` JSON (the same data the
-//! HTML / Markdown / Org-Mode exports derive from).
+//! The input is the Gloss tab's `gloss_export_data()` JSON or the Prompts tab's
+//! `chat_export_data()` JSON (the same data the HTML / Markdown / Org-Mode
+//! exports derive from). The shared structs live in [`crate::export_types`].
 
 use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use crate::export_types::{
+    ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph, GlossExportVocabItem,
+};
+
 static TEMPLATE_DOCX: &[u8] = include_bytes!("../../assets/docx-template/gloss-template.docx");
-
-#[derive(Deserialize, Debug, Default)]
-pub struct GlossExportData {
-    #[serde(default)]
-    pub text: String,
-    #[serde(default)]
-    pub paragraphs: Vec<GlossExportParagraph>,
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct GlossExportParagraph {
-    #[serde(default)]
-    pub text: String,
-    #[serde(default)]
-    pub vocabulary: Vec<GlossExportVocabItem>,
-    #[serde(default)]
-    pub ai_translations: Vec<GlossExportTranslation>,
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct GlossExportVocabItem {
-    #[serde(default)]
-    pub word: String,
-    #[serde(default)]
-    pub summary: String,
-}
-
-#[derive(Deserialize, Debug, Default)]
-pub struct GlossExportTranslation {
-    #[serde(default)]
-    pub model_name: String,
-    #[serde(default)]
-    pub response: String,
-    #[serde(default)]
-    pub is_selected: bool,
-}
 
 /// Generate the DOCX bytes for a gloss export JSON (`gloss_export_data()` shape).
 pub fn generate_gloss_docx(gloss_json: &str) -> Result<Vec<u8>> {
     let data: GlossExportData =
         serde_json::from_str(gloss_json).context("Failed to parse gloss export JSON")?;
     let document_xml = generate_document_xml(&data);
+    replace_document_xml(TEMPLATE_DOCX, &document_xml)
+}
+
+/// Generate the DOCX bytes for a chat export JSON (`chat_export_data()` shape).
+pub fn generate_chat_docx(chat_json: &str) -> Result<Vec<u8>> {
+    let data: ChatExportData =
+        serde_json::from_str(chat_json).context("Failed to parse chat export JSON")?;
+    let document_xml = generate_chat_document_xml(&data);
     replace_document_xml(TEMPLATE_DOCX, &document_xml)
 }
 
@@ -90,6 +67,20 @@ fn replace_document_xml(template_bytes: &[u8], document_xml: &str) -> Result<Vec
     Ok(cursor.into_inner())
 }
 
+/// Wrap the generated `<w:p>` / `<w:tbl>` runs in the document/section skeleton.
+fn wrap_document_body(body: &str) -> String {
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}"#,
+            r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>"#,
+            r#"<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>"#,
+            r#"</w:sectPr></w:body></w:document>"#,
+        ),
+        body
+    )
+}
+
 fn generate_document_xml(data: &GlossExportData) -> String {
     let mut body = String::new();
 
@@ -103,16 +94,50 @@ fn generate_document_xml(data: &GlossExportData) -> String {
         body.push_str(&format_paragraph(paragraph, i + 1));
     }
 
-    format!(
-        concat!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}"#,
-            r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>"#,
-            r#"<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>"#,
-            r#"</w:sectPr></w:body></w:document>"#,
-        ),
-        body
-    )
+    wrap_document_body(&body)
+}
+
+fn generate_chat_document_xml(data: &ChatExportData) -> String {
+    let mut body = String::new();
+
+    body.push_str(&styled_paragraph("Title", &[run(false, false, "Chat Export")]));
+
+    for message in &data.messages {
+        body.push_str(&format_message(message));
+    }
+
+    wrap_document_body(&body)
+}
+
+fn format_message(message: &ChatMessage) -> String {
+    let mut out = String::new();
+
+    let heading = match message.role.as_str() {
+        "system" => "System",
+        "user" => "User",
+        "assistant" => "Assistant",
+        _ => return out,
+    };
+    out.push_str(&styled_paragraph("Heading1", &[run(false, false, heading)]));
+
+    if message.role == "assistant" {
+        for resp in &message.responses {
+            out.push_str(&styled_paragraph(
+                "Heading2",
+                &[run(false, false, &format!("{}{}", resp.model_name, resp.selected_suffix()))],
+            ));
+            // AI responses are exported as plain text.
+            for line in resp.response.lines().filter(|l| !l.trim().is_empty()) {
+                out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+            }
+        }
+    } else {
+        for line in message.content.lines().filter(|l| !l.trim().is_empty()) {
+            out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+        }
+    }
+
+    out
 }
 
 fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
@@ -130,10 +155,9 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
     if !paragraph.ai_translations.is_empty() {
         out.push_str(&styled_paragraph("Heading2", &[run(false, false, "AI Translations")]));
         for trans in &paragraph.ai_translations {
-            let selected = if trans.is_selected { " (selected)" } else { "" };
             out.push_str(&styled_paragraph(
                 "BodyText",
-                &[run(true, false, &format!("{}{}", trans.model_name, selected))],
+                &[run(true, false, &format!("{}{}", trans.model_name, trans.selected_suffix()))],
             ));
             // AI translation responses are exported as plain text.
             for line in trans.response.lines().filter(|l| !l.trim().is_empty()) {
@@ -142,19 +166,50 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
         }
     }
 
-    out.push_str(&styled_paragraph("Heading2", &[run(false, false, "Vocabulary")]));
-    out.push_str(&styled_paragraph(
-        "BodyText",
-        &[run(true, false, "Dictionary definitions from DPD:")],
-    ));
-
-    for vocab in &paragraph.vocabulary {
-        let mut runs = vec![run(true, false, &vocab.word), run(false, false, " — ")];
-        runs.extend(summary_html_to_runs(&vocab.summary));
-        out.push_str(&styled_paragraph("VocabEntry", &runs));
+    if !paragraph.vocabulary.is_empty() {
+        out.push_str(&format_vocab_table(&paragraph.vocabulary));
     }
 
     out
+}
+
+/// Render the vocabulary as a two-column table (word | definition), mirroring
+/// the Markdown / Org-Mode exports.
+fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
+    let mut rows = String::new();
+    for vocab in vocabulary {
+        let word_cell = table_cell("2500", &[run(true, false, &vocab.word)]);
+        let summary_cell = table_cell("7000", &summary_html_to_runs(&vocab.summary));
+        rows.push_str(&format!("<w:tr>{}{}</w:tr>", word_cell, summary_cell));
+    }
+
+    format!(
+        concat!(
+            r#"<w:tbl><w:tblPr>"#,
+            r#"<w:tblW w:w="0" w:type="auto"/>"#,
+            r#"<w:tblBorders>"#,
+            r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
+            r#"</w:tblBorders>"#,
+            r#"</w:tblPr>{}</w:tbl>"#,
+        ),
+        rows
+    )
+}
+
+fn table_cell(width_twips: &str, runs: &[String]) -> String {
+    format!(
+        concat!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/></w:tcPr>"#,
+            r#"<w:p><w:pPr><w:pStyle w:val="VocabEntry"/></w:pPr>{}</w:p></w:tc>"#,
+        ),
+        width_twips,
+        runs.concat()
+    )
 }
 
 fn styled_paragraph(style_id: &str, runs: &[String]) -> String {
@@ -321,7 +376,10 @@ mod tests {
         assert!(doc.contains("AI Translations"));
         assert!(doc.contains("gemini-2.5-flash (selected)"));
         assert!(doc.contains("Thus have I heard."));
-        assert!(doc.contains("Vocabulary"));
+        // Vocabulary is rendered as a table, not a "Vocabulary" heading.
+        assert!(!doc.contains("Vocabulary"));
+        assert!(!doc.contains("Dictionary definitions from DPD"));
+        assert!(doc.contains("<w:tbl>"));
         assert!(doc.contains("ārāme"));
         // Escaped ampersand from the summary text.
         assert!(doc.contains("&amp; more"));
@@ -336,6 +394,49 @@ mod tests {
         let doc = read_part(&docx, "word/document.xml");
         roxmltree_lite_check(&doc);
         assert!(doc.contains("Gloss Export"));
+    }
+
+    fn chat_sample_json() -> String {
+        serde_json::json!({
+            "messages": [
+                {"role": "system", "content": "You are a Pāli tutor.", "responses": []},
+                {"role": "user", "content": "Translate evaṁ.\nPlease.", "responses": []},
+                {"role": "assistant", "content": "", "responses": [
+                    {"model_name": "gemini-2.5-flash", "response": "thus\nso", "is_selected": true},
+                    {"model_name": "gpt-4o", "response": "thus", "is_selected": false}
+                ]}
+            ]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_generate_chat_docx_structure() {
+        let docx = generate_chat_docx(&chat_sample_json()).unwrap();
+
+        let styles = read_part(&docx, "word/styles.xml");
+        for style_id in ["Title", "Heading1", "Heading2", "BodyText"] {
+            assert!(styles.contains(&format!("w:styleId=\"{}\"", style_id)));
+        }
+
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+
+        assert!(doc.contains("Chat Export"));
+        assert!(doc.contains("System"));
+        assert!(doc.contains("User"));
+        assert!(doc.contains("Assistant"));
+        assert!(doc.contains("You are a Pāli tutor."));
+        assert!(doc.contains("gemini-2.5-flash (selected)"));
+        assert!(doc.contains("gpt-4o"));
+    }
+
+    #[test]
+    fn test_empty_chat_export() {
+        let docx = generate_chat_docx(r#"{"messages": []}"#).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        assert!(doc.contains("Chat Export"));
     }
 
     #[test]

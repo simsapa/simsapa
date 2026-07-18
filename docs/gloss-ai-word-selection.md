@@ -534,12 +534,22 @@ pandoc's `--reference-doc` approach: an embedded minimal template
 `word/styles.xml` and the rest of the package, and only `word/document.xml` is
 regenerated. Named styles: `Title`, `Heading1`, `Heading2`, `BodyText`,
 `VocabEntry`. Summary markup `<b>`/`<i>` becomes bold/italic runs, other tags are
-stripped, entities decoded.
+stripped, entities decoded. The vocabulary is rendered as a **two-column
+bordered table** (word | definition) — the "Vocabulary" heading and the
+"Dictionary definitions from DPD:" line were removed (2026-07); the same
+template also backs the Prompts DOCX export (`generate_chat_docx`, roles as
+`Heading1`, model names as `Heading2`).
 
 (The `docx-rs` crate was considered and rejected: it cannot reuse an external
 template's styles, which was the point.)
 
 Input is the same `gloss_export_data()` JSON the HTML/Markdown/Org exports use.
+Those three text formats are **also generated in Rust** now
+(`backend/src/text_export.rs`, via `SuttaBridge.gloss_export` /
+`gloss_paragraph_export` / `chat_export` / `chat_message_export`) so the
+formatting is unit-tested against fixed JSON; the shared serde structs live in
+`backend/src/export_types.rs`. The QML side only collects the JSON
+(`gloss_export_data()` / `chat_export_data()`).
 Output goes through `save_bytes_to_folder(folder_url, filename, bytes)` — the
 bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
@@ -799,7 +809,8 @@ as the context windows, so the two sides cannot drift.
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
 | Migration | `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` (also appended to `upgrade_appdata_schema()`) |
 | DOCX | `backend/src/docx_export.rs` + `assets/docx-template/gloss-template.docx` |
-| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`) |
+| Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
+| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml` |
 | CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |

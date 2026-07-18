@@ -1717,144 +1717,6 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return text;
     }
 
-    function summary_html_to_md(text: string): string {
-        text = text
-            .replace(/\*/g, "&ast;") // escape asterisks in the text
-            .replace(/<i>/g, "*")
-            .replace(/<\/i>/g, "*")
-            .replace(/<b>/g, "**")
-            .replace(/<\/b>/g, "**");
-        return text;
-    }
-
-    function summary_html_to_orgmode(text: string): string {
-        text = text
-            .replace(/\*/g, "&ast;") // escape asterisks in the text
-            .replace(/<i>/g, "/")
-            .replace(/<\/i>/g, "/")
-            .replace(/<b>/g, "*")
-            .replace(/<\/b>/g, "*");
-        return text;
-    }
-
-    function format_paragraph_html(paragraph: var, paragraph_number: int): string {
-        let para_text = "\n<blockquote>\n" + paragraph.text.replace(/\n/g, "<br>\n") + "\n</blockquote>\n";
-
-        var table_rows = "";
-        for (var j = 0; j < paragraph.vocabulary.length; j++) {
-            var res = paragraph.vocabulary[j];
-            table_rows += `<tr><td> <b>${res.word}</b> </td><td> ${res.summary} </td></tr>\n`;
-        }
-
-        var ai_translations_section = "";
-        if (paragraph.ai_translations && paragraph.ai_translations.length > 0) {
-            ai_translations_section = "\n<h3>AI Translations</h3>\n";
-            for (var k = 0; k < paragraph.ai_translations.length; k++) {
-                var ai_trans = paragraph.ai_translations[k];
-                var ai_trans_html = SuttaBridge.markdown_to_html(ai_trans.response || "");
-                var model_display = ai_trans.model_name;
-                var selected_indicator = ai_trans.is_selected ? " (selected)" : "";
-                ai_translations_section += `<h4>${model_display}${selected_indicator}</h4>\n`;
-                ai_translations_section += `<blockquote>${ai_trans_html}</blockquote>\n`;
-            }
-        }
-
-        return `
-<h2>Paragraph ${paragraph_number}</h2>
-
-${para_text}
-
-${ai_translations_section}
-
-<h3>Vocabulary</h3>
-
-<p><b>Dictionary definitions from DPD:</b></p>
-
-<table><tbody>
-${table_rows}
-</tbody></table>
-`;
-    }
-
-    function format_paragraph_markdown(paragraph: var, paragraph_number: int): string {
-        var para_text = "\n> " + paragraph.text.replace(/\n/g, "\n> ");
-
-        var table_rows = "";
-        for (var j = 0; j < paragraph.vocabulary.length; j++) {
-            var res = paragraph.vocabulary[j];
-            var summary = root.summary_html_to_md(res.summary);
-            table_rows += `| **${res.word}** | ${summary} |\n`;
-        }
-
-        var ai_translations_section = "";
-        if (paragraph.ai_translations && paragraph.ai_translations.length > 0) {
-            ai_translations_section = "\n### AI Translations\n";
-            for (var k = 0; k < paragraph.ai_translations.length; k++) {
-                var ai_trans = paragraph.ai_translations[k];
-                var model_display = ai_trans.model_name;
-                var selected_indicator = ai_trans.is_selected ? " (selected)" : "";
-                ai_translations_section += `\n#### ${model_display}${selected_indicator}\n\n`;
-                ai_translations_section += `> ${ai_trans.response.replace(/\n/g, "\n> ")}\n`;
-            }
-        }
-
-        return `
-## Paragraph ${paragraph_number}
-
-${para_text}
-
-${ai_translations_section}
-
-### Vocabulary
-
-**Dictionary definitions from DPD:**
-
-|    |    |
-|----|----|
-${table_rows}
-`;
-    }
-
-    function format_paragraph_orgmode(paragraph: var, paragraph_number: int): string {
-        let para_text = "\n#+begin_quote\n" + paragraph.text + "\n#+end_quote\n";
-
-        var table_rows = "";
-        for (var j = 0; j < paragraph.vocabulary.length; j++) {
-            var res = paragraph.vocabulary[j];
-            var summary = root.summary_html_to_orgmode(res.summary);
-            table_rows += `| *${res.word}* | ${summary} |\n`;
-        }
-
-        var ai_translations_section = "";
-        if (paragraph.ai_translations && paragraph.ai_translations.length > 0) {
-            ai_translations_section = "\n*** AI Translations\n";
-            for (var k = 0; k < paragraph.ai_translations.length; k++) {
-                var ai_trans = paragraph.ai_translations[k];
-                var ai_trans_md = ai_trans.response.split('\n').map(function(line) {
-                    return line.replace(/^\* /, '- ');
-                }).join('\n');
-                var model_display = ai_trans.model_name;
-                var selected_indicator = ai_trans.is_selected ? " (selected)" : "";
-                ai_translations_section += `\n**** ${model_display}${selected_indicator}\n\n`;
-                ai_translations_section += `#+begin_src markdown\n${ai_trans_md}\n#+end_src\n`;
-            }
-        }
-
-        return `
-** Paragraph ${paragraph_number}
-
-${para_text}
-
-${ai_translations_section}
-
-*** Vocabulary
-
-*Dictionary definitions from DPD:*
-
-${table_rows}
-`;
-    }
-
     function gloss_export_data(): var {
         // paragraph_model_export:
         // {
@@ -1975,119 +1837,46 @@ ${table_rows}
         return gloss_data;
     }
 
+    // The HTML / Markdown / Org-Mode formatting is done in Rust (text_export.rs)
+    // from the gloss_export_data() JSON, so it can be unit-tested there.
     function gloss_as_html(): string {
-        let gloss_data = root.gloss_export_data();
-
-        let main_text = "\n<blockquote>\n" + gloss_data.text.replace(/\n/g, "<br>\n") + "\n</blockquote>\n";
-
-        let out = `
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="x-ua-compatible" content="ie=edge">
-    <title>Gloss Export</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-<h1>Gloss Export</h1>
-
-${main_text}
-`;
-
-        for (var i = 0; i < gloss_data.paragraphs.length; i++) {
-            var paragraph = gloss_data.paragraphs[i];
-            out += root.format_paragraph_html(paragraph, i+1);
-        }
-
-        out += "\n</body>\n</html>";
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        return SuttaBridge.gloss_export(JSON.stringify(root.gloss_export_data()), "html");
     }
 
     function gloss_as_markdown(): string {
-        let gloss_data = root.gloss_export_data();
-
-        let main_text = "\n> " + gloss_data.text.replace(/\n/g, "\n> ");
-
-        let out = `
-# Gloss Export
-
-${main_text}
-`;
-
-        for (var i = 0; i < gloss_data.paragraphs.length; i++) {
-            var paragraph = gloss_data.paragraphs[i];
-            out += root.format_paragraph_markdown(paragraph, i+1);
-        }
-
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        return SuttaBridge.gloss_export(JSON.stringify(root.gloss_export_data()), "markdown");
     }
 
     function gloss_as_orgmode(): string {
-        let gloss_data = root.gloss_export_data();
+        return SuttaBridge.gloss_export(JSON.stringify(root.gloss_export_data()), "orgmode");
+    }
 
-        let main_text = "\n#+begin_quote\n" + gloss_data.text + "\n#+end_quote\n";
-
-        let out = `
-* Gloss Export
-
-${main_text}
-`;
-
-        for (var i = 0; i < gloss_data.paragraphs.length; i++) {
-            var paragraph = gloss_data.paragraphs[i];
-            out += root.format_paragraph_orgmode(paragraph, i+1);
+    function paragraph_gloss_as(paragraph_index: int, format: string): string {
+        if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
+            logger.error("Invalid paragraph index: " + paragraph_index);
+            return "";
         }
 
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        let gloss_data = root.gloss_export_data();
+        if (paragraph_index >= gloss_data.paragraphs.length) {
+            logger.error("Paragraph index out of range: " + paragraph_index);
+            return "";
+        }
+
+        var paragraph = gloss_data.paragraphs[paragraph_index];
+        return SuttaBridge.gloss_paragraph_export(JSON.stringify(paragraph), paragraph_index + 1, format);
     }
 
     function paragraph_gloss_as_html(paragraph_index: int): string {
-        if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index: " + paragraph_index);
-            return "";
-        }
-
-        let gloss_data = root.gloss_export_data();
-        if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range: " + paragraph_index);
-            return "";
-        }
-
-        var paragraph = gloss_data.paragraphs[paragraph_index];
-        return root.format_paragraph_html(paragraph, paragraph_index + 1).trim().replace(/\n\n\n+/g, "\n\n");
+        return root.paragraph_gloss_as(paragraph_index, "html");
     }
 
     function paragraph_gloss_as_markdown(paragraph_index: int): string {
-        if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index: " + paragraph_index);
-            return "";
-        }
-
-        let gloss_data = root.gloss_export_data();
-        if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range: " + paragraph_index);
-            return "";
-        }
-
-        var paragraph = gloss_data.paragraphs[paragraph_index];
-        return root.format_paragraph_markdown(paragraph, paragraph_index + 1).trim().replace(/\n\n\n+/g, "\n\n");
+        return root.paragraph_gloss_as(paragraph_index, "markdown");
     }
 
     function paragraph_gloss_as_orgmode(paragraph_index: int): string {
-        if (paragraph_index < 0 || paragraph_index >= paragraph_model.count) {
-            logger.error("Invalid paragraph index: " + paragraph_index);
-            return "";
-        }
-
-        let gloss_data = root.gloss_export_data();
-        if (paragraph_index >= gloss_data.paragraphs.length) {
-            logger.error("Paragraph index out of range: " + paragraph_index);
-            return "";
-        }
-
-        var paragraph = gloss_data.paragraphs[paragraph_index];
-        return root.format_paragraph_orgmode(paragraph, paragraph_index + 1).trim().replace(/\n\n\n+/g, "\n\n");
+        return root.paragraph_gloss_as(paragraph_index, "orgmode");
     }
 
     function start_anki_export_background(folder_url) {

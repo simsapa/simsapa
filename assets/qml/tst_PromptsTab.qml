@@ -704,144 +704,41 @@ Item {
             });
         }
 
-        function test_chat_as_html_export() {
+        // NOTE: The HTML / Markdown / Org-Mode / DOCX formatting now lives in
+        // Rust (backend/src/text_export.rs, docx_export.rs) and is unit-tested
+        // there against fixed JSON. The QML tests below cover the remaining
+        // QML-side responsibility: collecting the export data from the messages
+        // model via chat_export_data(). (Under qmltestrunner SuttaBridge is the
+        // mock stub, so the formatted strings cannot be asserted here.)
+
+        function test_chat_export_data_structure() {
             setup_export_test_data();
 
-            var html_output = prompts_tab.chat_as_html();
+            var data = prompts_tab.chat_export_data();
 
-            var expected_html = `<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="x-ua-compatible" content="ie=edge">
-    <title>Chat Export</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-<h1>Chat Export</h1>
+            compare(data.messages.length, 5);
 
-<h2>System</h2>
-<blockquote>You are a helpful AI assistant specialized in Theravāda Buddhism.</blockquote>
+            compare(data.messages[0].role, "system");
+            verify(data.messages[0].content.includes("Theravāda Buddhism"));
 
-<h2>User</h2>
-<blockquote>What is meditation?</blockquote>
+            compare(data.messages[1].role, "user");
+            compare(data.messages[1].content, "What is meditation?");
 
-<h2>Assistant</h2>
-<h3>deepseek/deepseek-r1:free (selected)</h3>
-<blockquote># Hello Markdown</blockquote>
-<h3>google/gemma-2-9b-it:free</h3>
-<blockquote># Hello Markdown</blockquote>
+            compare(data.messages[2].role, "assistant");
+            compare(data.messages[2].responses.length, 2);
+            // The user-selected response is emitted first and flagged.
+            compare(data.messages[2].responses[0].model_name, "deepseek/deepseek-r1:free");
+            compare(data.messages[2].responses[0].is_selected, true);
+            verify(data.messages[2].responses[0].response.includes("**mental practice**"));
+            compare(data.messages[2].responses[1].model_name, "google/gemma-2-9b-it:free");
+            compare(data.messages[2].responses[1].is_selected, false);
 
-<h2>User</h2>
-<blockquote>Tell me more about mindfulness.</blockquote>
-
-<h2>Assistant</h2>
-<h3>deepseek/deepseek-r1:free (selected)</h3>
-<blockquote># Hello Markdown</blockquote>
-
-</body>
-</html>`;
-
-            compare(html_output, expected_html);
+            compare(data.messages[3].role, "user");
+            compare(data.messages[4].role, "assistant");
+            compare(data.messages[4].responses.length, 1);
         }
 
-        function test_chat_as_markdown_export() {
-            setup_export_test_data();
-
-            var md_output = prompts_tab.chat_as_markdown();
-
-            var expected_markdown = `# Chat Export
-
-## System
-
-> You are a helpful AI assistant specialized in Theravāda Buddhism.
-
-## User
-
-> What is meditation?
-
-## Assistant
-
-### deepseek/deepseek-r1:free (selected)
-
-> Meditation is a **mental practice** that involves:
-> 
-> * Focused attention
-> * Mindfulness
-> * Deep concentration
-
-### google/gemma-2-9b-it:free
-
-> Meditation helps calm the mind and develop awareness.
-
-## User
-
-> Tell me more about mindfulness.
-
-## Assistant
-
-### deepseek/deepseek-r1:free (selected)
-
-> Mindfulness is present-moment awareness without judgment.`;
-
-            compare(md_output, expected_markdown);
-        }
-
-        function test_chat_as_orgmode_export() {
-            setup_export_test_data();
-
-            var org_output = prompts_tab.chat_as_orgmode();
-
-            var expected_orgmode = `* Chat Export
-
-** System
-
-#+begin_quote
-You are a helpful AI assistant specialized in Theravāda Buddhism.
-#+end_quote
-
-** User
-
-#+begin_quote
-What is meditation?
-#+end_quote
-
-** Assistant
-
-*** deepseek/deepseek-r1:free (selected)
-
-#+begin_src markdown
-Meditation is a **mental practice** that involves:
-
-- Focused attention
-- Mindfulness
-- Deep concentration
-#+end_src
-
-*** google/gemma-2-9b-it:free
-
-#+begin_src markdown
-Meditation helps calm the mind and develop awareness.
-#+end_src
-
-** User
-
-#+begin_quote
-Tell me more about mindfulness.
-#+end_quote
-
-** Assistant
-
-*** deepseek/deepseek-r1:free (selected)
-
-#+begin_src markdown
-Mindfulness is present-moment awareness without judgment.
-#+end_src`;
-
-            compare(org_output, expected_orgmode);
-        }
-
-        function test_export_selected_indicator() {
+        function test_chat_export_selected_first() {
             prompts_tab.messages_model.clear();
 
             prompts_tab.messages_model.append({
@@ -849,7 +746,7 @@ Mindfulness is present-moment awareness without judgment.
                 content: "Test selection",
                 content_html: "",
                 responses_json: "[]",
-                selected_ai_tab: 0
+                selected_ai_tab: 1
             });
 
             var multi_responses = [{
@@ -857,13 +754,13 @@ Mindfulness is present-moment awareness without judgment.
                 status: "completed",
                 response: "First response",
                 request_id: "req1",
-                user_selected: true
+                user_selected: false
             }, {
                 model_name: "model2:free",
                 status: "completed",
                 response: "Second response",
                 request_id: "req2",
-                user_selected: false
+                user_selected: true
             }];
 
             prompts_tab.messages_model.append({
@@ -871,24 +768,20 @@ Mindfulness is present-moment awareness without judgment.
                 content: "",
                 content_html: "",
                 responses_json: JSON.stringify(multi_responses),
-                selected_ai_tab: 0
+                selected_ai_tab: 1
             });
 
-            var html_output = prompts_tab.chat_as_html();
-            verify(html_output.includes("model1:free (selected)"));
-            verify(html_output.includes("model2:free</h3>"));
-            verify(!html_output.includes("model2:free (selected)"));
-
-            var md_output = prompts_tab.chat_as_markdown();
-            verify(md_output.includes("model1:free (selected)"));
-            verify(!md_output.includes("model2:free (selected)"));
-
-            var org_output = prompts_tab.chat_as_orgmode();
-            verify(org_output.includes("model1:free (selected)"));
-            verify(!org_output.includes("model2:free (selected)"));
+            var data = prompts_tab.chat_export_data();
+            // selected_ai_tab === 1 selects model2, which must be emitted first.
+            var responses = data.messages[1].responses;
+            compare(responses.length, 2);
+            compare(responses[0].model_name, "model2:free");
+            compare(responses[0].is_selected, true);
+            compare(responses[1].model_name, "model1:free");
+            compare(responses[1].is_selected, false);
         }
 
-        function test_export_empty_responses() {
+        function test_chat_export_empty_responses() {
             prompts_tab.messages_model.clear();
 
             prompts_tab.messages_model.append({
@@ -907,9 +800,19 @@ Mindfulness is present-moment awareness without judgment.
                 selected_ai_tab: 0
             });
 
-            var html_output = prompts_tab.chat_as_html();
-            verify(html_output.includes("<h2>User</h2>"));
-            verify(html_output.includes("Test question"));
+            var data = prompts_tab.chat_export_data();
+            compare(data.messages.length, 2);
+            compare(data.messages[0].content, "Test question");
+            compare(data.messages[1].responses.length, 0);
+        }
+
+        function test_chat_export_delegates_to_bridge() {
+            // Smoke-test that the export helpers call through to the bridge and
+            // return its output (the mock stub returns non-empty placeholders).
+            setup_export_test_data();
+            verify(prompts_tab.chat_as_html().length > 0);
+            verify(prompts_tab.chat_as_markdown().length > 0);
+            verify(prompts_tab.chat_as_orgmode().length > 0);
         }
     }
 }

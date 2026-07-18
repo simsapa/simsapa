@@ -25,6 +25,8 @@ pub mod html_format;
 pub mod prompt_utils;
 pub mod anki_sample_data;
 pub mod anki_export;
+pub mod export_types;
+pub mod text_export;
 pub mod docx_export;
 pub mod epub_import;
 pub mod pdf_import;

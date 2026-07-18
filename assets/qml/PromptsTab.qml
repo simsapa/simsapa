@@ -609,6 +609,7 @@ Item {
         if (export_btn.currentIndex === 0) return;
         let save_file_name = null
         let save_content = null;
+        let is_docx = false;
 
         if (export_btn.currentValue === "HTML") {
             save_file_name = "chat_export.html";
@@ -621,10 +622,21 @@ Item {
         } else if (export_btn.currentValue === "Org-Mode") {
             save_file_name = "chat_export.org";
             save_content = root.chat_as_orgmode();
+
+        } else if (export_btn.currentValue === "Word (.docx)") {
+            save_file_name = "chat_export.docx";
+            is_docx = true;
         }
 
         let save_fn = function() {
-            let ok = SuttaBridge.save_file(export_folder_dialog.selectedFolder, save_file_name, save_content);
+            let ok = false;
+            if (is_docx) {
+                // The DOCX bytes are generated in Rust from the export data JSON.
+                let chat_json = JSON.stringify(root.chat_export_data());
+                ok = SuttaBridge.export_chat_docx(export_folder_dialog.selectedFolder, save_file_name, chat_json);
+            } else {
+                ok = SuttaBridge.save_file(export_folder_dialog.selectedFolder, save_file_name, save_content);
+            }
             if (ok) {
                 msg_dialog_ok.text = "Exported as: " + save_file_name;
                 msg_dialog_ok.open();
@@ -730,125 +742,34 @@ Item {
         return chat_data;
     }
 
+    // The HTML / Markdown / Org-Mode formatting is done in Rust (text_export.rs)
+    // from the chat_export_data() JSON, so it can be unit-tested there.
+    function message_as(msg: var, format: string): string {
+        return SuttaBridge.chat_message_export(JSON.stringify(msg), format);
+    }
+
     function message_as_html(msg: var): string {
-        var out = "";
-
-        if (msg.role === "system") {
-            out += `\n<h2>System</h2>\n`;
-            out += `<blockquote>${msg.content.replace(/\n/g, "<br>\n")}</blockquote>\n`;
-        } else if (msg.role === "user") {
-            out += `\n<h2>User</h2>\n`;
-            out += `<blockquote>${msg.content.replace(/\n/g, "<br>\n")}</blockquote>\n`;
-        } else if (msg.role === "assistant") {
-            out += `\n<h2>Assistant</h2>\n`;
-
-            for (var j = 0; j < msg.responses.length; j++) {
-                var resp = msg.responses[j];
-                var resp_html = SuttaBridge.markdown_to_html(resp.response || "");
-                var selected_indicator = resp.is_selected ? " (selected)" : "";
-                out += `<h3>${resp.model_name}${selected_indicator}</h3>\n`;
-                out += `<blockquote>${resp_html}</blockquote>\n`;
-            }
-        }
-
-        return out;
+        return root.message_as(msg, "html");
     }
 
     function message_as_markdown(msg: var): string {
-        var out = "";
-
-        if (msg.role === "system") {
-            out += `\n## System\n\n`;
-            out += `> ${msg.content.replace(/\n/g, "\n> ")}\n`;
-        } else if (msg.role === "user") {
-            out += `\n## User\n\n`;
-            out += `> ${msg.content.replace(/\n/g, "\n> ")}\n`;
-        } else if (msg.role === "assistant") {
-            out += `\n## Assistant\n`;
-
-            for (var j = 0; j < msg.responses.length; j++) {
-                var resp = msg.responses[j];
-                var selected_indicator = resp.is_selected ? " (selected)" : "";
-                out += `\n### ${resp.model_name}${selected_indicator}\n\n`;
-                out += `> ${resp.response.replace(/\n/g, "\n> ")}\n`;
-            }
-        }
-
-        return out;
+        return root.message_as(msg, "markdown");
     }
 
     function message_as_orgmode(msg: var): string {
-        var out = "";
-
-        if (msg.role === "system") {
-            out += `\n** System\n\n`;
-            out += `#+begin_quote\n${msg.content}\n#+end_quote\n`;
-        } else if (msg.role === "user") {
-            out += `\n** User\n\n`;
-            out += `#+begin_quote\n${msg.content}\n#+end_quote\n`;
-        } else if (msg.role === "assistant") {
-            out += `\n** Assistant\n`;
-
-            for (var j = 0; j < msg.responses.length; j++) {
-                var resp = msg.responses[j];
-                var resp_md = resp.response.split('\n').map(function(line) {
-                    return line.replace(/^\* /, '- ');
-                }).join('\n');
-                var selected_indicator = resp.is_selected ? " (selected)" : "";
-                out += `\n*** ${resp.model_name}${selected_indicator}\n\n`;
-                out += `#+begin_src markdown\n${resp_md}\n#+end_src\n`;
-            }
-        }
-
-        return out;
+        return root.message_as(msg, "orgmode");
     }
 
     function chat_as_html(): string {
-        let chat_data = root.chat_export_data();
-
-        let out = `
-<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="x-ua-compatible" content="ie=edge">
-    <title>Chat Export</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-<h1>Chat Export</h1>
-`;
-
-        for (var i = 0; i < chat_data.messages.length; i++) {
-            out += root.message_as_html(chat_data.messages[i]);
-        }
-
-        out += "\n</body>\n</html>";
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        return SuttaBridge.chat_export(JSON.stringify(root.chat_export_data()), "html");
     }
 
     function chat_as_markdown(): string {
-        let chat_data = root.chat_export_data();
-
-        let out = `# Chat Export\n`;
-
-        for (var i = 0; i < chat_data.messages.length; i++) {
-            out += root.message_as_markdown(chat_data.messages[i]);
-        }
-
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        return SuttaBridge.chat_export(JSON.stringify(root.chat_export_data()), "markdown");
     }
 
     function chat_as_orgmode(): string {
-        let chat_data = root.chat_export_data();
-
-        let out = `* Chat Export\n`;
-
-        for (var i = 0; i < chat_data.messages.length; i++) {
-            out += root.message_as_orgmode(chat_data.messages[i]);
-        }
-
-        return out.trim().replace(/\n\n\n+/g, "\n\n");
+        return SuttaBridge.chat_export(JSON.stringify(root.chat_export_data()), "orgmode");
     }
 
     TabBar {
@@ -941,7 +862,7 @@ Item {
 
                     ComboBox {
                         id: export_btn
-                        model: ["Export As...", "HTML", "Markdown", "Org-Mode"]
+                        model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Word (.docx)"]
                         enabled: messages_model.count > 2
                         onCurrentIndexChanged: {
                             if (export_btn.currentIndex !== 0) {

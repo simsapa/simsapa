@@ -1198,6 +1198,21 @@ pub mod qobject {
         fn export_gloss_docx(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, gloss_json: &QString) -> bool;
 
         #[qinvokable]
+        fn export_chat_docx(self: &SuttaBridge, folder_url: &QUrl, filename: &QString, chat_json: &QString) -> bool;
+
+        #[qinvokable]
+        fn gloss_export(self: &SuttaBridge, gloss_json: &QString, format: &QString) -> QString;
+
+        #[qinvokable]
+        fn gloss_paragraph_export(self: &SuttaBridge, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString;
+
+        #[qinvokable]
+        fn chat_export(self: &SuttaBridge, chat_json: &QString, format: &QString) -> QString;
+
+        #[qinvokable]
+        fn chat_message_export(self: &SuttaBridge, message_json: &QString, format: &QString) -> QString;
+
+        #[qinvokable]
         fn check_file_exists_in_folder(self: &SuttaBridge, folder_url: &QUrl, filename: &QString) -> bool;
 
         #[qinvokable]
@@ -3113,6 +3128,71 @@ impl qobject::SuttaBridge {
             }
         };
         save_bytes_to_folder(folder_url, &filename.to_string(), &bytes)
+    }
+
+    /// Generate a DOCX from the chat export JSON and write it to the chosen
+    /// folder (desktop path or Android SAF, same dispatch as `save_file`).
+    pub fn export_chat_docx(&self,
+                            folder_url: &QUrl,
+                            filename: &QString,
+                            chat_json: &QString) -> bool {
+        let bytes = match simsapa_backend::docx_export::generate_chat_docx(&chat_json.to_string()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error(&format!("export_chat_docx failed to generate the document: {}", e));
+                return false;
+            }
+        };
+        save_bytes_to_folder(folder_url, &filename.to_string(), &bytes)
+    }
+
+    /// Render a full gloss export as text (`format`: "html" / "markdown" /
+    /// "orgmode"). Returns an empty string on error.
+    pub fn gloss_export(&self, gloss_json: &QString, format: &QString) -> QString {
+        match simsapa_backend::text_export::gloss_export(&gloss_json.to_string(), &format.to_string()) {
+            Ok(text) => QString::from(text),
+            Err(e) => {
+                error(&format!("gloss_export failed: {}", e));
+                QString::from("")
+            }
+        }
+    }
+
+    /// Render a single gloss paragraph fragment as text (for per-paragraph
+    /// "Copy As..."). Returns an empty string on error.
+    pub fn gloss_paragraph_export(&self, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString {
+        let number = paragraph_number.max(0) as usize;
+        match simsapa_backend::text_export::gloss_paragraph_export(&paragraph_json.to_string(), number, &format.to_string()) {
+            Ok(text) => QString::from(text),
+            Err(e) => {
+                error(&format!("gloss_paragraph_export failed: {}", e));
+                QString::from("")
+            }
+        }
+    }
+
+    /// Render a full chat export as text (`format`: "html" / "markdown" /
+    /// "orgmode"). Returns an empty string on error.
+    pub fn chat_export(&self, chat_json: &QString, format: &QString) -> QString {
+        match simsapa_backend::text_export::chat_export(&chat_json.to_string(), &format.to_string()) {
+            Ok(text) => QString::from(text),
+            Err(e) => {
+                error(&format!("chat_export failed: {}", e));
+                QString::from("")
+            }
+        }
+    }
+
+    /// Render a single chat message fragment as text (for per-message
+    /// "Copy As..."). Returns an empty string on error.
+    pub fn chat_message_export(&self, message_json: &QString, format: &QString) -> QString {
+        match simsapa_backend::text_export::chat_message_export(&message_json.to_string(), &format.to_string()) {
+            Ok(text) => QString::from(text),
+            Err(e) => {
+                error(&format!("chat_message_export failed: {}", e));
+                QString::from("")
+            }
+        }
     }
 
     pub fn check_file_exists_in_folder(&self,

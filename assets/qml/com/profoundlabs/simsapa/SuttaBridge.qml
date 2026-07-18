@@ -557,6 +557,27 @@ Item {
         return true;
     }
 
+    function export_chat_docx(folder_url: url, filename: string, chat_json: string): bool {
+        console.log(`export_chat_docx(): ${folder_url}, ${filename}, ${chat_json}`);
+        return true;
+    }
+
+    function gloss_export(gloss_json: string, format: string): string {
+        return "# Gloss Export";
+    }
+
+    function gloss_paragraph_export(paragraph_json: string, paragraph_number: int, format: string): string {
+        return "## Paragraph 1";
+    }
+
+    function chat_export(chat_json: string, format: string): string {
+        return "# Chat Export";
+    }
+
+    function chat_message_export(message_json: string, format: string): string {
+        return "## User";
+    }
+
     function check_file_exists_in_folder(folder_url: url, filename: string): bool {
         console.log(`check_file_exists_in_folder(): ${folder_url}, ${filename}`);
         return true;

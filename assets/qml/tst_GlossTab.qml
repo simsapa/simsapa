@@ -186,9 +186,14 @@ Item {
             gloss_tab.update_word_selection(0, 0, 3);
             // 1st paragraph, word at index 1 (citta), change to 3rd selection 'citta 1.3'
             gloss_tab.update_word_selection(0, 1, 2);
-            var org_content = gloss_tab.gloss_as_orgmode();
-            verify(org_content.includes("karitvā 4"));
-            verify(org_content.includes("citta 1.3"));
+
+            // The export formatting itself is unit-tested in Rust
+            // (backend/src/text_export.rs). Here we verify the QML-side data
+            // collection reflects the selected senses.
+            var export_data = gloss_tab.gloss_export_data();
+            var words = export_data.paragraphs[0].vocabulary.map(function(v) { return v.word; });
+            verify(words.includes("karitvā 4"));
+            verify(words.includes("citta 1.3"));
         }
 
         function test_clean_word() {
@@ -349,30 +354,21 @@ Item {
 
             gloss_tab.paragraph_model.setProperty(0, "translations_json", JSON.stringify(translations));
 
-            // Test HTML export
-            var html_content = gloss_tab.gloss_as_html();
-            verify(html_content.length > 0);
-            verify(html_content.includes("<html>"));
-            verify(html_content.includes("Katamañca"));
-            verify(html_content.includes("AI Translations"));
-            verify(html_content.includes("deepseek/deepseek-r1-0528:free"));
-            verify(html_content.includes("Hello Markdown"));
-            verify(html_content.includes("(selected)"));
+            // The export formatting (HTML/Markdown/Org-Mode/DOCX) is unit-tested
+            // in Rust (backend/src/text_export.rs, docx_export.rs). Here we verify
+            // the QML-side gloss_export_data() collects the AI translations
+            // correctly, with the selected one placed first.
+            var export_data = gloss_tab.gloss_export_data();
+            verify(export_data.text.includes("Katamañca"));
 
-            // Test Markdown export
-            var markdown_content = gloss_tab.gloss_as_markdown();
-            verify(markdown_content.length > 0);
-            verify(markdown_content.includes("Katamañca"));
-            verify(markdown_content.includes("### AI Translations"));
-            verify(markdown_content.includes("#### deepseek/deepseek-r1-0528:free"));
-            verify(markdown_content.includes("**concentration faculty**"));
-
-            // Test Org-mode export
-            var org_content = gloss_tab.gloss_as_orgmode();
-            verify(org_content.length > 0);
-            verify(org_content.includes("Katamañca"));
-            verify(org_content.includes("*** AI Translations"));
-            verify(org_content.includes("**** deepseek/deepseek-r1-0528:free"));
+            var ai = export_data.paragraphs[0].ai_translations;
+            compare(ai.length, 2);
+            // The user-selected translation is emitted first and flagged.
+            compare(ai[0].model_name, "deepseek/deepseek-r1-0528:free");
+            compare(ai[0].is_selected, true);
+            verify(ai[0].response.includes("**concentration faculty**"));
+            compare(ai[1].model_name, "google/gemma-3-12b-it:free");
+            compare(ai[1].is_selected, false);
         }
 
         function test_translation_model_loading() {
@@ -518,7 +514,14 @@ Item {
             }
         }
 
-        function test_gloss_as_html_export() {
+        // NOTE: The HTML / Markdown / Org-Mode / DOCX formatting now lives in
+        // Rust (backend/src/text_export.rs, docx_export.rs) and is unit-tested
+        // there against fixed JSON. The QML tests below cover the remaining
+        // QML-side responsibility: collecting the export data from the models
+        // via gloss_export_data(). (Under qmltestrunner SuttaBridge is the mock
+        // stub, so the formatted strings cannot be asserted here.)
+
+        function test_gloss_export_data_structure() {
             var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
             var paragraph2 = "Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.";
             var full_text = paragraph1 + "\n\n" + paragraph2;
@@ -527,267 +530,40 @@ Item {
 
             verify(gloss_tab.paragraph_model.count === 2);
 
-            var html_output = gloss_tab.gloss_as_html();
+            var data = gloss_tab.gloss_export_data();
 
-            var expected_html = `<!doctype html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="x-ua-compatible" content="ie=edge">
-    <title>Gloss Export</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-<h1>Gloss Export</h1>
+            // The full source text is carried through.
+            verify(data.text.includes(paragraph1));
+            verify(data.text.includes("Katamañca"));
 
-<blockquote>
-Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.<br>
-<br>
-Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-</blockquote>
+            compare(data.paragraphs.length, 2);
+            verify(data.paragraphs[0].text.includes(paragraph1));
+            verify(data.paragraphs[1].text.includes("Katamañca"));
 
-<h2>Paragraph 1</h2>
+            // Vocabulary is collected as {word, summary, ...} entries.
+            var words0 = data.paragraphs[0].vocabulary.map(function(v) { return v.word; });
+            verify(words0.includes("karitvā 1"));
+            verify(words0.includes("citta 1.1"));
 
-<blockquote>
-Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.
-</blockquote>
+            var citta = data.paragraphs[0].vocabulary.filter(function(v) { return v.word === "citta 1.1"; })[0];
+            verify(citta.summary.includes("mind, heart"));
 
-<h3>Vocabulary</h3>
-
-<p><b>Dictionary definitions from DPD:</b></p>
-
-<table><tbody>
-<tr><td> <b>karitvā 1</b> </td><td> <i>(ind)</i> having done, having made </td></tr>
-<tr><td> <b>citta 1.1</b> </td><td> <b>citta 1.1</b> <i>(nt)</i> mind, heart </td></tr>
-
-</tbody></table>
-
-<h2>Paragraph 2</h2>
-
-<blockquote>
-Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-</blockquote>
-
-<h3>Vocabulary</h3>
-
-<p><b>Dictionary definitions from DPD:</b></p>
-
-<table><tbody>
-<tr><td> <b>karitvā 1</b> </td><td> <i>(ind)</i> having done, having made </td></tr>
-
-</tbody></table>
-
-</body>
-</html>`;
-
-            compare(html_output, expected_html);
+            var words1 = data.paragraphs[1].vocabulary.map(function(v) { return v.word; });
+            verify(words1.includes("karitvā 1"));
         }
 
-        function test_gloss_as_markdown_export() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
-            var paragraph2 = "Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.";
-            var full_text = paragraph1 + "\n\n" + paragraph2;
-
-            processTextBackground(full_text);
-
-            verify(gloss_tab.paragraph_model.count === 2);
-
-            var markdown_output = gloss_tab.gloss_as_markdown();
-
-            var expected_markdown = `# Gloss Export
-
-> Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.
-> 
-> Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-
-## Paragraph 1
-
-> Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.
-
-### Vocabulary
-
-**Dictionary definitions from DPD:**
-
-|    |    |
-|----|----|
-| **karitvā 1** | *(ind)* having done, having made |
-| **citta 1.1** | **citta 1.1** *(nt)* mind, heart |
-
-## Paragraph 2
-
-> Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-
-### Vocabulary
-
-**Dictionary definitions from DPD:**
-
-|    |    |
-|----|----|
-| **karitvā 1** | *(ind)* having done, having made |`;
-
-            compare(markdown_output, expected_markdown);
-        }
-
-        function test_gloss_as_orgmode_export() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
-            var paragraph2 = "Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.";
-            var full_text = paragraph1 + "\n\n" + paragraph2;
-
-            processTextBackground(full_text);
-
-            verify(gloss_tab.paragraph_model.count === 2);
-
-            var orgmode_output = gloss_tab.gloss_as_orgmode();
-
-            var expected_orgmode = `* Gloss Export
-
-#+begin_quote
-Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.
-
-Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-#+end_quote
-
-** Paragraph 1
-
-#+begin_quote
-Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.
-#+end_quote
-
-*** Vocabulary
-
-*Dictionary definitions from DPD:*
-
-| *karitvā 1* | /(ind)/ having done, having made |
-| *citta 1.1* | *citta 1.1* /(nt)/ mind, heart |
-
-** Paragraph 2
-
-#+begin_quote
-Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.
-#+end_quote
-
-*** Vocabulary
-
-*Dictionary definitions from DPD:*
-
-| *karitvā 1* | /(ind)/ having done, having made |`;
-
-            compare(orgmode_output, expected_orgmode);
-        }
-
-        function test_paragraph_gloss_functions_basic() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
-            var paragraph2 = "Katamañca, bhikkhave, samādhindriyaṁ? Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.";
-            var full_text = paragraph1 + "\n\n" + paragraph2;
-
-            processTextBackground(full_text);
-
-            verify(gloss_tab.paragraph_model.count === 2);
-
-            var html_para0 = gloss_tab.paragraph_gloss_as_html(0);
-            var md_para0 = gloss_tab.paragraph_gloss_as_markdown(0);
-            var org_para0 = gloss_tab.paragraph_gloss_as_orgmode(0);
-
-            verify(html_para0.length > 0);
-            verify(md_para0.length > 0);
-            verify(org_para0.length > 0);
-
-            verify(html_para0.includes("<h2>Paragraph 1</h2>"));
-            verify(html_para0.includes(paragraph1));
-            verify(html_para0.includes("karitvā 1"));
-            verify(!html_para0.includes("<!doctype html>"));
-            verify(!html_para0.includes("<h1>Gloss Export</h1>"));
-            verify(!html_para0.includes("</html>"));
-
-            verify(md_para0.includes("## Paragraph 1"));
-            verify(md_para0.includes("**karitvā 1**"));
-            verify(!md_para0.includes("# Gloss Export"));
-
-            verify(org_para0.includes("** Paragraph 1"));
-            verify(org_para0.includes("*karitvā 1*"));
-            verify(!org_para0.includes("* Gloss Export"));
-
-            var html_para1 = gloss_tab.paragraph_gloss_as_html(1);
-            verify(html_para1.includes("<h2>Paragraph 2</h2>"));
-            verify(html_para1.includes(paragraph2));
-            verify(!html_para1.includes("<!doctype html>"));
-        }
-
-        function test_paragraph_gloss_as_html() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
+        function test_gloss_export_delegates_to_bridge() {
+            // Smoke-test that the export helpers call through to the bridge and
+            // return its output (the mock stub returns non-empty placeholders).
+            var paragraph1 = "Idha, bhikkhave, ariyasāvako karitvā labhati samādhiṁ.";
             processTextBackground(paragraph1);
 
-            verify(gloss_tab.paragraph_model.count === 1);
-
-            var html_output = gloss_tab.paragraph_gloss_as_html(0);
-
-            verify(html_output.includes("<h2>Paragraph 1</h2>"));
-            verify(html_output.includes("<blockquote>"));
-            verify(html_output.includes("</blockquote>"));
-            verify(html_output.includes(paragraph1));
-            verify(html_output.includes("<h3>Vocabulary</h3>"));
-            verify(html_output.includes("<table><tbody>"));
-            verify(html_output.includes("</tbody></table>"));
-            verify(html_output.includes("<b>karitvā 1</b>"));
-            verify(html_output.includes("having done, having made"));
-            verify(!html_output.includes("<!doctype html>"));
-            verify(!html_output.includes("<html>"));
-            verify(!html_output.includes("</html>"));
-        }
-
-        function test_paragraph_gloss_as_markdown() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
-            processTextBackground(paragraph1);
-
-            verify(gloss_tab.paragraph_model.count === 1);
-
-            var md_output = gloss_tab.paragraph_gloss_as_markdown(0);
-
-            verify(md_output.includes("## Paragraph 1"));
-            verify(md_output.includes("> " + paragraph1.split('\n')[0]));
-            verify(md_output.includes("### Vocabulary"));
-            verify(md_output.includes("|----|----|"));
-            verify(md_output.includes("| **karitvā 1** |"));
-            verify(md_output.includes("having done, having made"));
-            verify(!md_output.includes("# Gloss Export"));
-        }
-
-        function test_paragraph_gloss_as_orgmode() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
-            processTextBackground(paragraph1);
-
-            verify(gloss_tab.paragraph_model.count === 1);
-
-            var org_output = gloss_tab.paragraph_gloss_as_orgmode(0);
-
-            verify(org_output.includes("** Paragraph 1"));
-            verify(org_output.includes("#+begin_quote"));
-            verify(org_output.includes("#+end_quote"));
-            verify(org_output.includes(paragraph1));
-            verify(org_output.includes("*** Vocabulary"));
-            verify(org_output.includes("| *karitvā 1* |"));
-            verify(org_output.includes("having done, having made"));
-            verify(!org_output.includes("* Gloss Export"));
-        }
-
-        function test_paragraph_export_excludes_document_headers() {
-            var paragraph1 = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ.";
-            processTextBackground(paragraph1);
-
-            var html_output = gloss_tab.paragraph_gloss_as_html(0);
-            var md_output = gloss_tab.paragraph_gloss_as_markdown(0);
-            var org_output = gloss_tab.paragraph_gloss_as_orgmode(0);
-
-            verify(!html_output.includes("<!doctype html>"));
-            verify(!html_output.includes("<html>"));
-            verify(!html_output.includes("<head>"));
-            verify(!html_output.includes("<title>Gloss Export</title>"));
-            verify(!html_output.includes("<h1>Gloss Export</h1>"));
-            verify(!html_output.includes("</html>"));
-
-            verify(!md_output.includes("# Gloss Export"));
-
-            verify(!org_output.includes("* Gloss Export"));
+            verify(gloss_tab.gloss_as_html().length > 0);
+            verify(gloss_tab.gloss_as_markdown().length > 0);
+            verify(gloss_tab.gloss_as_orgmode().length > 0);
+            verify(gloss_tab.paragraph_gloss_as_html(0).length > 0);
+            verify(gloss_tab.paragraph_gloss_as_markdown(0).length > 0);
+            verify(gloss_tab.paragraph_gloss_as_orgmode(0).length > 0);
         }
 
 
