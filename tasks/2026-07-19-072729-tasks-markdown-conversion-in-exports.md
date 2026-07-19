@@ -91,6 +91,16 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 3.7 Tests: unit tests asserting on the generated fragment/`document.xml` string — `**bold**` yields `<w:b/>` and no literal `**`; nested list has increasing `w:ind` and correct prefixes; table markdown yields `<w:tbl>` with bold header runs; code block yields Consolas runs; `<`/`&` in response text arrives XML-escaped; the raw-text fallback path (exercised directly) yields plain paragraphs; existing gloss/chat docx tests still pass.
   - [x] 3.8 Run `cd backend && cargo test`.
 
+### 5.0 DOCX design overhaul: fonts, styles, heading restructure (added 2026-07-19)
+
+**Specs:** Match the print design of pali-sutta-readings (`extra.css` print block): body Crimson Pro 11pt / 15pt line height; Title = Abhaya Libre X bold 20pt with thin bottom border; page margins 0.4 in (576 twips, text width 10754). Embed Abhaya Libre X (Regular/Bold) + Crimson Pro (Regular/Bold/Italic/BoldItalic) as obfuscated `.odttf` parts with `fontTable.xml` + `settings.xml` `embedTrueTypeFonts`. Vocab table borderless, cell right-padding ~1em (220 twips), cell paragraphs on the 15pt line height. All export formats: drop per-paragraph "Paragraph N" headings for one "Paragraphs" heading; "AI Translations" becomes bold text, not a heading.
+
+- [x] 5.1 Generate the DOCX package fully in Rust (dropped the binary-template code path): content types, rels, `styles.xml`, `settings.xml`, `fontTable.xml` + rels, obfuscated `.odttf` font parts (ECMA-376 XOR of first 32 bytes with reversed fontKey GUID).
+- [x] 5.2 New `styles.xml`: Crimson Pro body/table on a 15pt (300 twip) line; Abhaya Libre X Title (20pt bold, bottom border) and Heading1/2; 0.4 in (576 twip) page margins in `sectPr`.
+- [x] 5.3 Borderless vocab table (`w:tblCellMar`, right-only 220 twip pad, explicit grid); markdown response tables adjusted to the new 10754-twip text width.
+- [x] 5.4 Heading restructure in docx + HTML + Markdown + Org exports (single "Paragraphs" heading; bold "AI Translations" text; per-paragraph fragment drops "Paragraph N").
+- [x] 5.5 Updated tests (docx font parts/obfuscation/borderless/margins; text_export heading assertions); `cargo test` green (bar the pre-existing unrelated fulltext hit-count test); visual check via LibreOffice render confirms the design.
+
 ### 4.0 Final verification and docs
 
 **Specs / dependencies:** Depends on 1.0–3.0 all complete.

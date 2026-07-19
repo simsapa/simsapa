@@ -67,7 +67,7 @@ fn summary_html_to_orgmode(text: &str) -> String {
 
 // --- Gloss: per-paragraph -------------------------------------------------
 
-fn gloss_paragraph_html(paragraph: &GlossExportParagraph, number: usize) -> String {
+fn gloss_paragraph_html(paragraph: &GlossExportParagraph) -> String {
     let para_text = format!(
         "\n<blockquote>\n{}\n</blockquote>\n",
         paragraph.text.replace('\n', "<br>\n")
@@ -83,11 +83,11 @@ fn gloss_paragraph_html(paragraph: &GlossExportParagraph, number: usize) -> Stri
 
     let mut ai_section = String::new();
     if !paragraph.ai_translations.is_empty() {
-        ai_section.push_str("\n<h3>AI Translations</h3>\n");
+        ai_section.push_str("\n<p><b>AI Translations</b></p>\n");
         for trans in &paragraph.ai_translations {
             let html = markdown_to_html(&trans.response);
             ai_section.push_str(&format!(
-                "<h4>{}{}</h4>\n<blockquote>{}</blockquote>\n",
+                "<h3>{}{}</h3>\n<blockquote>{}</blockquote>\n",
                 trans.model_name,
                 trans.selected_suffix(),
                 html
@@ -95,12 +95,10 @@ fn gloss_paragraph_html(paragraph: &GlossExportParagraph, number: usize) -> Stri
         }
     }
 
-    format!(
-        "\n<h2>Paragraph {number}</h2>\n\n{para_text}\n\n{ai_section}\n\n<table><tbody>\n{table_rows}\n</tbody></table>\n"
-    )
+    format!("\n{para_text}\n\n{ai_section}\n\n<table><tbody>\n{table_rows}\n</tbody></table>\n")
 }
 
-fn gloss_paragraph_markdown(paragraph: &GlossExportParagraph, number: usize) -> String {
+fn gloss_paragraph_markdown(paragraph: &GlossExportParagraph) -> String {
     let para_text = format!("\n> {}", paragraph.text.replace('\n', "\n> "));
 
     let mut table_rows = String::new();
@@ -114,10 +112,10 @@ fn gloss_paragraph_markdown(paragraph: &GlossExportParagraph, number: usize) -> 
 
     let mut ai_section = String::new();
     if !paragraph.ai_translations.is_empty() {
-        ai_section.push_str("\n### AI Translations\n");
+        ai_section.push_str("\n**AI Translations**\n");
         for trans in &paragraph.ai_translations {
             ai_section.push_str(&format!(
-                "\n#### {}{}\n\n> {}\n",
+                "\n### {}{}\n\n> {}\n",
                 trans.model_name,
                 trans.selected_suffix(),
                 trans.response.replace('\n', "\n> ")
@@ -125,12 +123,10 @@ fn gloss_paragraph_markdown(paragraph: &GlossExportParagraph, number: usize) -> 
         }
     }
 
-    format!(
-        "\n## Paragraph {number}\n\n{para_text}\n\n{ai_section}\n\n|    |    |\n|----|----|\n{table_rows}\n"
-    )
+    format!("\n{para_text}\n\n{ai_section}\n\n|    |    |\n|----|----|\n{table_rows}\n")
 }
 
-fn gloss_paragraph_orgmode(paragraph: &GlossExportParagraph, number: usize) -> String {
+fn gloss_paragraph_orgmode(paragraph: &GlossExportParagraph) -> String {
     let para_text = format!("\n#+begin_quote\n{}\n#+end_quote\n", paragraph.text);
 
     let mut table_rows = String::new();
@@ -144,10 +140,10 @@ fn gloss_paragraph_orgmode(paragraph: &GlossExportParagraph, number: usize) -> S
 
     let mut ai_section = String::new();
     if !paragraph.ai_translations.is_empty() {
-        ai_section.push_str("\n*** AI Translations\n");
+        ai_section.push_str("\n*AI Translations*\n");
         for trans in &paragraph.ai_translations {
             ai_section.push_str(&format!(
-                "\n**** {}{}\n\n{}\n",
+                "\n*** {}{}\n\n{}\n",
                 trans.model_name,
                 trans.selected_suffix(),
                 markdown_to_orgmode(&trans.response)
@@ -155,18 +151,24 @@ fn gloss_paragraph_orgmode(paragraph: &GlossExportParagraph, number: usize) -> S
         }
     }
 
-    format!("\n** Paragraph {number}\n\n{para_text}\n\n{ai_section}\n\n{table_rows}\n")
+    format!("\n{para_text}\n\n{ai_section}\n\n{table_rows}\n")
 }
 
-fn gloss_paragraph_format(
-    paragraph: &GlossExportParagraph,
-    number: usize,
-    format: TextFormat,
-) -> String {
+fn gloss_paragraph_format(paragraph: &GlossExportParagraph, format: TextFormat) -> String {
     match format {
-        TextFormat::Html => gloss_paragraph_html(paragraph, number),
-        TextFormat::Markdown => gloss_paragraph_markdown(paragraph, number),
-        TextFormat::OrgMode => gloss_paragraph_orgmode(paragraph, number),
+        TextFormat::Html => gloss_paragraph_html(paragraph),
+        TextFormat::Markdown => gloss_paragraph_markdown(paragraph),
+        TextFormat::OrgMode => gloss_paragraph_orgmode(paragraph),
+    }
+}
+
+/// The single "Paragraphs" section heading emitted once before the paragraph
+/// iteration (replacing the former per-paragraph "Paragraph N" headings).
+fn paragraphs_heading(format: TextFormat) -> &'static str {
+    match format {
+        TextFormat::Html => "\n<h2>Paragraphs</h2>\n",
+        TextFormat::Markdown => "\n## Paragraphs\n",
+        TextFormat::OrgMode => "\n** Paragraphs\n",
     }
 }
 
@@ -196,23 +198,32 @@ pub fn gloss_export(gloss_json: &str, format: &str) -> Result<String> {
                 ),
                 main_text
             ));
-            for (i, para) in data.paragraphs.iter().enumerate() {
-                out.push_str(&gloss_paragraph_format(para, i + 1, format));
+            if !data.paragraphs.is_empty() {
+                out.push_str(paragraphs_heading(format));
+            }
+            for para in &data.paragraphs {
+                out.push_str(&gloss_paragraph_format(para, format));
             }
             out.push_str("\n</body>\n</html>");
         }
         TextFormat::Markdown => {
             let main_text = format!("\n> {}", data.text.replace('\n', "\n> "));
             out.push_str(&format!("\n# Gloss Export\n\n{}\n", main_text));
-            for (i, para) in data.paragraphs.iter().enumerate() {
-                out.push_str(&gloss_paragraph_format(para, i + 1, format));
+            if !data.paragraphs.is_empty() {
+                out.push_str(paragraphs_heading(format));
+            }
+            for para in &data.paragraphs {
+                out.push_str(&gloss_paragraph_format(para, format));
             }
         }
         TextFormat::OrgMode => {
             let main_text = format!("\n#+begin_quote\n{}\n#+end_quote\n", data.text);
             out.push_str(&format!("\n* Gloss Export\n\n{}\n", main_text));
-            for (i, para) in data.paragraphs.iter().enumerate() {
-                out.push_str(&gloss_paragraph_format(para, i + 1, format));
+            if !data.paragraphs.is_empty() {
+                out.push_str(paragraphs_heading(format));
+            }
+            for para in &data.paragraphs {
+                out.push_str(&gloss_paragraph_format(para, format));
             }
         }
     }
@@ -221,19 +232,18 @@ pub fn gloss_export(gloss_json: &str, format: &str) -> Result<String> {
 }
 
 /// Render a single gloss paragraph fragment (for per-paragraph "Copy As...").
+///
+/// `_paragraph_number` is retained for bridge/API compatibility but no longer
+/// drives a "Paragraph N" heading (the fragment is now just the content).
 pub fn gloss_paragraph_export(
     paragraph_json: &str,
-    paragraph_number: usize,
+    _paragraph_number: usize,
     format: &str,
 ) -> Result<String> {
     let format = TextFormat::parse(format)?;
     let paragraph: GlossExportParagraph =
         serde_json::from_str(paragraph_json).context("Failed to parse gloss paragraph JSON")?;
-    Ok(normalize(&gloss_paragraph_format(
-        &paragraph,
-        paragraph_number,
-        format,
-    )))
+    Ok(normalize(&gloss_paragraph_format(&paragraph, format)))
 }
 
 // --- Chat: per-message ----------------------------------------------------
@@ -412,8 +422,11 @@ mod tests {
     fn gloss_html_has_no_removed_headers() {
         let out = gloss_export(&gloss_json(), "html").unwrap();
         assert!(out.contains("<h1>Gloss Export</h1>"));
-        assert!(out.contains("<h2>Paragraph 1</h2>"));
-        assert!(out.contains("<h3>AI Translations</h3>"));
+        // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
+        assert!(out.contains("<h2>Paragraphs</h2>"));
+        assert!(!out.contains("Paragraph 1"));
+        // "AI Translations" is bold text, not a heading.
+        assert!(out.contains("<p><b>AI Translations</b></p>"));
         assert!(out.contains("gemini (selected)"));
         assert!(out.contains("<table><tbody>"));
         assert!(out.contains("<b>evaṁ</b>"));
@@ -428,9 +441,12 @@ mod tests {
     fn gloss_markdown_table_and_no_headers() {
         let out = gloss_export(&gloss_json(), "markdown").unwrap();
         assert!(out.contains("# Gloss Export"));
-        assert!(out.contains("## Paragraph 1"));
+        assert!(out.contains("## Paragraphs"));
+        assert!(!out.contains("## Paragraph 1"));
         assert!(out.contains("| **evaṁ** | thus; this **way** |"));
-        assert!(out.contains("#### gemini (selected)"));
+        // "AI Translations" is bold text, not a heading.
+        assert!(out.contains("**AI Translations**"));
+        assert!(out.contains("### gemini (selected)"));
         assert!(!out.contains("### Vocabulary"));
         assert!(!out.contains("Dictionary definitions from DPD"));
     }
@@ -439,8 +455,11 @@ mod tests {
     fn gloss_orgmode_escapes_and_converts_response() {
         let out = gloss_export(&gloss_json(), "orgmode").unwrap();
         assert!(out.contains("* Gloss Export"));
-        assert!(out.contains("** Paragraph 1"));
+        assert!(out.contains("** Paragraphs"));
+        assert!(!out.contains("** Paragraph 1"));
         assert!(out.contains("| *evaṁ* | thus; this *way* |"));
+        // "AI Translations" is bold text, not a headline.
+        assert!(out.contains("*AI Translations*"));
         // The AI response is converted to Org markup, not wrapped in a
         // markdown src block.
         assert!(!out.contains("#+begin_src markdown"));
@@ -458,7 +477,8 @@ mod tests {
         }))
         .unwrap();
         let out = gloss_paragraph_export(&para_json, 3, "markdown").unwrap();
-        assert!(out.starts_with("## Paragraph 3"));
+        // The per-paragraph fragment no longer carries a "Paragraph N" heading.
+        assert!(!out.contains("Paragraph 3"));
         assert!(out.contains("| **evaṁ** | thus |"));
         assert!(!out.contains("Gloss Export"));
     }

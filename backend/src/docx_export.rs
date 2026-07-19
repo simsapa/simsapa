@@ -1,15 +1,27 @@
 //! DOCX export for the Gloss and Prompts tabs.
 //!
-//! The document is generated from an embedded template
-//! (`assets/docx-template/gloss-template.docx`) analogous to pandoc's
-//! `--reference-doc`: the template's parts (`word/styles.xml` etc.) are kept
-//! intact and only `word/document.xml` is replaced with generated content.
+//! The whole package (`[Content_Types].xml`, rels, `word/document.xml`,
+//! `word/styles.xml`, `word/settings.xml`, `word/fontTable.xml` and the
+//! embedded fonts) is generated in code — no binary template. The visual
+//! design mirrors the pali-sutta-readings print stylesheet: Crimson Pro
+//! 10 pt body on 1.5-line spacing, Abhaya Libre X titles and headings,
+//! 1.5 cm page margins, borderless vocabulary table.
 //!
-//! Named paragraph styles defined in the template (`w:styleId` / UI name):
-//! - `Title` / "Title" — document title
-//! - `Heading1` / "Heading 1" — per-paragraph / per-message header
-//!   ("Paragraph N", "System" / "User" / "Assistant")
-//! - `Heading2` / "Heading 2" — section headers ("AI Translations", model names)
+//! **Font embedding** (ECMA-376 §17.8): each TTF is stored as
+//! `word/fonts/fontN.odttf` with its first 32 bytes XOR-obfuscated using the
+//! 16 GUID bytes of the font's `w:fontKey` in reverse order;
+//! `word/fontTable.xml` maps family names to the embedded parts and
+//! `word/settings.xml` sets `<w:embedTrueTypeFonts/>`. Word and LibreOffice
+//! de-obfuscate with the same fontKey, so the document renders identically on
+//! machines without the fonts installed.
+//!
+//! Named paragraph styles (`w:styleId` / UI name):
+//! - `Title` / "Title" — document title (Abhaya Libre X, bottom rule)
+//! - `Heading1` / "Heading 1" — section headers ("Paragraphs",
+//!   "System" / "User" / "Assistant")
+//! - `VocabQuoteBlock` / "Vocab Quote Block" — the combined glossed text and
+//!   each paragraph's text above its vocab table
+//! - `Heading2` / "Heading 2" — sub-headers (chat model names)
 //! - `BodyText` / "Body Text" — Pāli text, chat content and AI responses
 //! - `VocabEntry` / "Vocab Entry" — vocabulary table cells
 //!
@@ -21,7 +33,9 @@ use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result};
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::ZipWriter;
+#[cfg(test)]
+use zip::ZipArchive;
 
 use markdown::mdast::{Code, List, Node, Table};
 
@@ -30,14 +44,12 @@ use crate::export_types::{
 };
 use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, InlineRun};
 
-static TEMPLATE_DOCX: &[u8] = include_bytes!("../../assets/docx-template/gloss-template.docx");
-
 /// Generate the DOCX bytes for a gloss export JSON (`gloss_export_data()` shape).
 pub fn generate_gloss_docx(gloss_json: &str) -> Result<Vec<u8>> {
     let data: GlossExportData =
         serde_json::from_str(gloss_json).context("Failed to parse gloss export JSON")?;
     let document_xml = generate_document_xml(&data);
-    replace_document_xml(TEMPLATE_DOCX, &document_xml)
+    build_docx_package(&document_xml)
 }
 
 /// Generate the DOCX bytes for a chat export JSON (`chat_export_data()` shape).
@@ -45,30 +57,270 @@ pub fn generate_chat_docx(chat_json: &str) -> Result<Vec<u8>> {
     let data: ChatExportData =
         serde_json::from_str(chat_json).context("Failed to parse chat export JSON")?;
     let document_xml = generate_chat_document_xml(&data);
-    replace_document_xml(TEMPLATE_DOCX, &document_xml)
+    build_docx_package(&document_xml)
 }
 
-/// Copy every part of the template archive except `word/document.xml`, which
-/// is replaced with the generated content.
-fn replace_document_xml(template_bytes: &[u8], document_xml: &str) -> Result<Vec<u8>> {
-    let mut archive = ZipArchive::new(Cursor::new(template_bytes))
-        .context("Failed to open the embedded DOCX template")?;
-    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+// --- Package assembly and embedded fonts ------------------------------------
 
-    for i in 0..archive.len() {
-        let entry = archive.by_index_raw(i)?;
-        if entry.name() == "word/document.xml" {
-            continue;
-        }
-        out.raw_copy_file(entry)?;
+/// An embedded font: part name, `w:fontKey` GUID and the TTF bytes.
+struct EmbeddedFont {
+    part: &'static str,
+    font_key: &'static str,
+    ttf: &'static [u8],
+}
+
+/// The `w:embedRegular`/`w:embedBold`/… slots of one `w:font` family entry.
+struct FontFamily {
+    name: &'static str,
+    regular: EmbeddedFont,
+    bold: EmbeddedFont,
+    italic: Option<EmbeddedFont>,
+    bold_italic: Option<EmbeddedFont>,
+}
+
+fn embedded_font_families() -> [FontFamily; 2] {
+    [
+        FontFamily {
+            name: "Abhaya Libre X",
+            regular: EmbeddedFont {
+                part: "font1.odttf",
+                font_key: "{1DF903F4-2E50-4C22-9B6E-95C11F26A201}",
+                ttf: include_bytes!("../../assets/fonts/abhaya-libre/AbhayaLibreX-Regular.ttf"),
+            },
+            bold: EmbeddedFont {
+                part: "font2.odttf",
+                font_key: "{2A61C912-7C34-4D6F-8E5A-3B9D40E7B302}",
+                ttf: include_bytes!("../../assets/fonts/abhaya-libre/AbhayaLibreX-Bold.ttf"),
+            },
+            italic: None,
+            bold_italic: None,
+        },
+        FontFamily {
+            name: "Crimson Pro",
+            regular: EmbeddedFont {
+                part: "font3.odttf",
+                font_key: "{3B72DA23-8D45-4E70-9F6B-4CAE51F8C403}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Regular.ttf"),
+            },
+            bold: EmbeddedFont {
+                part: "font4.odttf",
+                font_key: "{4C83EB34-9E56-4F81-A07C-5DBF62A9D504}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Bold.ttf"),
+            },
+            italic: Some(EmbeddedFont {
+                part: "font5.odttf",
+                font_key: "{5D94FC45-AF67-4092-B18D-6EC073BAE605}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Italic.ttf"),
+            }),
+            bold_italic: Some(EmbeddedFont {
+                part: "font6.odttf",
+                font_key: "{6EA50D56-B078-41A3-B29E-7FD184CBF706}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf"),
+            }),
+        },
+    ]
+}
+
+/// ECMA-376 font obfuscation: XOR the first 32 bytes with the GUID's 16 bytes
+/// in reverse order (the operation is its own inverse; consumers de-obfuscate
+/// with the `w:fontKey` from `fontTable.xml`).
+fn obfuscate_font(ttf: &[u8], font_key: &str) -> Vec<u8> {
+    let hex: String = font_key
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect();
+    let key: Vec<u8> = (0..16)
+        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0))
+        .collect();
+    let mut out = ttf.to_vec();
+    for (i, byte) in out.iter_mut().take(32).enumerate() {
+        *byte ^= key[15 - (i % 16)];
     }
+    out
+}
 
-    out.start_file("word/document.xml", SimpleFileOptions::default())?;
-    out.write_all(document_xml.as_bytes())?;
+fn build_docx_package(document_xml: &str) -> Result<Vec<u8>> {
+    let families = embedded_font_families();
+    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default();
+
+    let write_part = |zip: &mut ZipWriter<Cursor<Vec<u8>>>, name: &str, data: &[u8]| -> Result<()> {
+        zip.start_file(name, opts)?;
+        zip.write_all(data)?;
+        Ok(())
+    };
+
+    write_part(&mut out, "[Content_Types].xml", CONTENT_TYPES_XML.as_bytes())?;
+    write_part(&mut out, "_rels/.rels", ROOT_RELS_XML.as_bytes())?;
+    write_part(&mut out, "word/document.xml", document_xml.as_bytes())?;
+    write_part(&mut out, "word/_rels/document.xml.rels", DOCUMENT_RELS_XML.as_bytes())?;
+    write_part(&mut out, "word/styles.xml", STYLES_XML.as_bytes())?;
+    write_part(&mut out, "word/settings.xml", SETTINGS_XML.as_bytes())?;
+    write_part(&mut out, "word/fontTable.xml", &font_table_xml(&families))?;
+    write_part(&mut out, "word/_rels/fontTable.xml.rels", &font_table_rels_xml(&families))?;
+
+    for font in families.iter().flat_map(font_slots) {
+        write_part(
+            &mut out,
+            &format!("word/fonts/{}", font.part),
+            &obfuscate_font(font.ttf, font.font_key),
+        )?;
+    }
 
     let cursor = out.finish().context("Failed to finalize the DOCX archive")?;
     Ok(cursor.into_inner())
 }
+
+fn font_slots(family: &FontFamily) -> Vec<&EmbeddedFont> {
+    let mut slots = vec![&family.regular, &family.bold];
+    slots.extend(family.italic.iter());
+    slots.extend(family.bold_italic.iter());
+    slots
+}
+
+const CONTENT_TYPES_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+    r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>"#,
+    r#"<Default Extension="xml" ContentType="application/xml"/>"#,
+    r#"<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>"#,
+    r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
+    r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+    r#"<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>"#,
+    r#"<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>"#,
+    r#"</Types>"#,
+);
+
+const ROOT_RELS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+    r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>"#,
+    r#"</Relationships>"#,
+);
+
+const DOCUMENT_RELS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+    r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>"#,
+    r#"<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>"#,
+    r#"<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>"#,
+    r#"</Relationships>"#,
+);
+
+const SETTINGS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+    r#"<w:embedTrueTypeFonts/>"#,
+    r#"</w:settings>"#,
+);
+
+fn font_table_xml(families: &[FontFamily]) -> Vec<u8> {
+    let mut fonts = String::new();
+    let mut rid = 0;
+    for family in families {
+        let mut embeds = String::new();
+        let mut slot = |tag: &str, font: &EmbeddedFont, rid: &mut u32| {
+            *rid += 1;
+            embeds.push_str(&format!(
+                r#"<w:{} r:id="rId{}" w:fontKey="{}"/>"#,
+                tag, rid, font.font_key
+            ));
+        };
+        slot("embedRegular", &family.regular, &mut rid);
+        slot("embedBold", &family.bold, &mut rid);
+        if let Some(f) = &family.italic {
+            slot("embedItalic", f, &mut rid);
+        }
+        if let Some(f) = &family.bold_italic {
+            slot("embedBoldItalic", f, &mut rid);
+        }
+        fonts.push_str(&format!(
+            concat!(
+                r#"<w:font w:name="{}">"#,
+                r#"<w:family w:val="roman"/><w:pitch w:val="variable"/>"#,
+                "{}</w:font>",
+            ),
+            family.name, embeds
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" "#,
+            r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">{}</w:fonts>"#,
+        ),
+        fonts
+    )
+    .into_bytes()
+}
+
+fn font_table_rels_xml(families: &[FontFamily]) -> Vec<u8> {
+    let mut rels = String::new();
+    for (i, font) in families.iter().flat_map(font_slots).enumerate() {
+        rels.push_str(&format!(
+            r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" Target="fonts/{}"/>"#,
+            i + 1,
+            font.part
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{}</Relationships>"#,
+        ),
+        rels
+    )
+    .into_bytes()
+}
+
+/// Styles for the export. Metric units follow the requested design
+/// (1 cm ≈ 567 twips; line spacing "1.5 lines" = `w:line="360" w:lineRule="auto"`):
+/// - Body Text: Crimson Pro 10 pt, 1.5 line spacing.
+/// - Vocab Quote Block (the combined glossed text and per-paragraph text):
+///   10 pt, 0.7 cm left indent, 0.4 cm above/below, 1.5 line spacing.
+/// - Title: Abhaya Libre X 20 pt, 0.8 cm after, thin (0.4 pt) bottom rule.
+/// - Heading 1: Abhaya Libre X 16 pt, 0.4 cm after.
+/// - Vocab Entry: 10 pt, 1.5 line spacing.
+const STYLES_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+    r#"<w:docDefaults><w:rPrDefault><w:rPr>"#,
+    r#"<w:rFonts w:ascii="Crimson Pro" w:hAnsi="Crimson Pro" w:cs="Crimson Pro"/>"#,
+    r#"<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US"/>"#,
+    r#"</w:rPr></w:rPrDefault>"#,
+    r#"<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="300" w:lineRule="atLeast"/></w:pPr></w:pPrDefault>"#,
+    r#"</w:docDefaults>"#,
+    r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:keepNext/>"#,
+    // 0.4 pt bottom rule (w:sz is in eighths of a point → 3 ≈ 0.4 pt).
+    r#"<w:pBdr><w:bottom w:val="single" w:sz="3" w:space="4" w:color="auto"/></w:pBdr>"#,
+    // 0.8 cm after the title paragraph (454 twips).
+    r#"<w:spacing w:before="0" w:after="454" w:line="480" w:lineRule="atLeast"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    // 0.4 cm after the heading paragraph (227 twips).
+    r#"<w:pPr><w:keepNext/><w:spacing w:before="280" w:after="227" w:line="400" w:lineRule="atLeast"/><w:outlineLvl w:val="0"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="Heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120" w:line="320" w:lineRule="atLeast"/><w:outlineLvl w:val="1"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>"#,
+    // Body Text: 10 pt (sz 20), 1.5 line spacing (line 360, auto).
+    r#"<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/><w:basedOn w:val="Normal"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // Vocab Quote Block (our own style, not the default "Block Quotation"):
+    // 10 pt, 0.7 cm left indent (397 twips), 0 after-text, 0.4 cm above/below
+    // (227 twips), 1.5 line spacing.
+    r#"<w:style w:type="paragraph" w:styleId="VocabQuoteBlock"><w:name w:val="Vocab Quote Block"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:before="227" w:after="227" w:line="360" w:lineRule="auto"/><w:ind w:left="397" w:right="0"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // Vocab Entry: 10 pt, 1.5 line spacing.
+    r#"<w:style w:type="paragraph" w:styleId="VocabEntry"><w:name w:val="Vocab Entry"/><w:basedOn w:val="Normal"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="40" w:line="360" w:lineRule="auto"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    r#"</w:styles>"#,
+);
 
 /// Wrap the generated `<w:p>` / `<w:tbl>` runs in the document/section skeleton.
 fn wrap_document_body(body: &str) -> String {
@@ -77,7 +329,8 @@ fn wrap_document_body(body: &str) -> String {
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}"#,
             r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>"#,
-            r#"<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>"#,
+            // 1.5 cm margins all around (850 twips).
+            r#"<w:pgMar w:top="850" w:right="850" w:bottom="850" w:left="850" w:header="708" w:footer="708" w:gutter="0"/>"#,
             r#"</w:sectPr></w:body></w:document>"#,
         ),
         body
@@ -89,12 +342,16 @@ fn generate_document_xml(data: &GlossExportData) -> String {
 
     body.push_str(&styled_paragraph("Title", &[run(false, false, "Gloss Export")]));
 
+    // The combined glossed text uses the Vocab Quote Block paragraph style.
     for line in data.text.lines().filter(|l| !l.trim().is_empty()) {
-        body.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+        body.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
     }
 
-    for (i, paragraph) in data.paragraphs.iter().enumerate() {
-        body.push_str(&format_paragraph(paragraph, i + 1));
+    if !data.paragraphs.is_empty() {
+        body.push_str(&styled_paragraph("Heading1", &[run(false, false, "Paragraphs")]));
+    }
+    for paragraph in &data.paragraphs {
+        body.push_str(&format_paragraph(paragraph));
     }
 
     wrap_document_body(&body)
@@ -140,20 +397,16 @@ fn format_message(message: &ChatMessage) -> String {
     out
 }
 
-fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
+fn format_paragraph(paragraph: &GlossExportParagraph) -> String {
     let mut out = String::new();
 
-    out.push_str(&styled_paragraph(
-        "Heading1",
-        &[run(false, false, &format!("Paragraph {}", number))],
-    ));
-
+    // The paragraph text (shown above its vocab table) uses Vocab Quote Block.
     for line in paragraph.text.lines().filter(|l| !l.trim().is_empty()) {
-        out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+        out.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
     }
 
     if !paragraph.ai_translations.is_empty() {
-        out.push_str(&styled_paragraph("Heading2", &[run(false, false, "AI Translations")]));
+        out.push_str(&styled_paragraph("BodyText", &[run(true, false, "AI Translations")]));
         for trans in &paragraph.ai_translations {
             out.push_str(&styled_paragraph(
                 "BodyText",
@@ -170,41 +423,70 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
     out
 }
 
-/// Render the vocabulary as a two-column table (word | definition), mirroring
-/// the Markdown / Org-Mode exports.
+/// Vocabulary column widths: word column + definition column fill the text
+/// width (`TABLE_TEXT_WIDTH_TWIPS`).
+const VOCAB_WORD_COL_TWIPS: u32 = 2500;
+
+/// Render the vocabulary as a borderless two-column table
+/// (word | definition), per the print design: no borders, no left cell
+/// padding, ~1 em right padding, compact 15 pt cell lines.
 fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
+    let def_col = (TABLE_TEXT_WIDTH_TWIPS - VOCAB_WORD_COL_TWIPS).to_string();
+    let word_col = VOCAB_WORD_COL_TWIPS.to_string();
     let mut rows = String::new();
     for vocab in vocabulary {
-        let word_cell = table_cell("VocabEntry", "2500", "dxa", &[run(true, false, &vocab.word)]);
+        let word_cell = table_cell("VocabEntry", &word_col, "dxa", &[run(true, false, &vocab.word)]);
         let summary_cell =
-            table_cell("VocabEntry", "7000", "dxa", &summary_html_to_runs(&vocab.summary));
+            table_cell("VocabEntry", &def_col, "dxa", &summary_html_to_runs(&vocab.summary));
         rows.push_str(&format!("<w:tr>{}{}</w:tr>", word_cell, summary_cell));
     }
 
-    bordered_table(&rows)
+    let grid = format!(
+        r#"<w:tblGrid><w:gridCol w:w="{}"/><w:gridCol w:w="{}"/></w:tblGrid>"#,
+        word_col, def_col
+    );
+    format!("{}{}", borderless_table(&grid, &rows), table_spacer(454))
 }
 
-/// Wrap pre-built `<w:tr>` rows in an auto-width, single-bordered table.
-/// Used by the vocabulary table (cells carry explicit dxa widths).
-fn bordered_table(rows: &str) -> String {
-    bordered_table_with(r#"<w:tblW w:w="0" w:type="auto"/>"#, "", rows)
+/// An empty spacer paragraph after a table (OOXML has no direct "space after
+/// table"). The line is a tiny exact height so the paragraph contributes
+/// essentially only its `w:after` gap — 0.8 cm (454 twips) below the table.
+fn table_spacer(after_twips: u32) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="{}" w:line="20" w:lineRule="exact"/></w:pPr></w:p>"#,
+        after_twips
+    )
 }
 
-/// Single-bordered table with a caller-chosen `w:tblW` and optional
-/// `w:tblGrid`. Shared by the vocabulary table and markdown tables.
-fn bordered_table_with(tblw: &str, grid: &str, rows: &str) -> String {
+/// Borderless table for the vocabulary: no borders, zero cell margins except
+/// ~1 em (220 twips) on the right so columns cannot touch.
+fn borderless_table(grid: &str, rows: &str) -> String {
+    format!(
+        concat!(
+            r#"<w:tbl><w:tblPr>"#,
+            r#"<w:tblW w:w="0" w:type="auto"/>"#,
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="0" w:type="dxa"/><w:right w:w="220" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
+            r#"</w:tblPr>{}{}</w:tbl>"#,
+        ),
+        grid, rows
+    )
+}
+
+/// Borderless table with a caller-chosen `w:tblW` and optional `w:tblGrid`.
+/// Used for markdown tables in AI responses — no borders, with a small right
+/// cell margin (~1 em) so adjacent columns cannot touch.
+fn borderless_table_with(tblw: &str, grid: &str, rows: &str) -> String {
     format!(
         concat!(
             r#"<w:tbl><w:tblPr>"#,
             "{}",
-            r#"<w:tblBorders>"#,
-            r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"</w:tblBorders>"#,
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="0" w:type="dxa"/><w:right w:w="220" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
             r#"</w:tblPr>{}{}</w:tbl>"#,
         ),
         tblw, grid, rows
@@ -500,9 +782,9 @@ fn docx_code(code: &Code, indent: u32) -> String {
 }
 
 /// Usable text width in twips for the page geometry in `wrap_document_body`
-/// (A4 11906 minus 2 × 1134 margins). Markdown table columns share it evenly
+/// (A4 11906 minus 2 × 850 margins). Markdown table columns share it evenly
 /// so the table never extends past the page edge.
-const TABLE_TEXT_WIDTH_TWIPS: u32 = 9638;
+const TABLE_TEXT_WIDTH_TWIPS: u32 = 10206;
 
 fn docx_markdown_table(table: &Table) -> String {
     let ncols = table
@@ -540,7 +822,7 @@ fn docx_markdown_table(table: &Table) -> String {
         "<w:tblGrid>{}</w:tblGrid>",
         format!(r#"<w:gridCol w:w="{}"/>"#, col_width).repeat(ncols)
     );
-    bordered_table_with(r#"<w:tblW w:w="5000" w:type="pct"/>"#, &grid, &rows)
+    borderless_table_with(r#"<w:tblW w:w="5000" w:type="pct"/>"#, &grid, &rows)
 }
 
 #[cfg(test)]
@@ -584,7 +866,7 @@ mod tests {
     fn test_generate_gloss_docx_structure() {
         let docx = generate_gloss_docx(&sample_json()).unwrap();
 
-        // Output unzips and keeps the template's other parts intact.
+        // The package is generated in code with all required parts present.
         let styles = read_part(&docx, "word/styles.xml");
         for style_id in ["Title", "Heading1", "Heading2", "BodyText", "VocabEntry"] {
             assert!(styles.contains(&format!("w:styleId=\"{}\"", style_id)));
@@ -598,10 +880,13 @@ mod tests {
         roxmltree_lite_check(&doc);
 
         assert!(doc.contains("Gloss Export"));
-        assert!(doc.contains("Paragraph 1"));
-        assert!(doc.contains("Paragraph 2"));
+        // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
+        assert!(doc.contains("Paragraphs"));
+        assert!(!doc.contains("Paragraph 1"));
+        assert!(!doc.contains("Paragraph 2"));
         assert!(doc.contains("anāthapiṇḍikassa ārāme."));
-        assert!(doc.contains("AI Translations"));
+        // "AI Translations" is bold body text, not a Heading2 section.
+        assert!(doc.contains(r#"<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">AI Translations</w:t>"#));
         assert!(doc.contains("gemini-2.5-flash (selected)"));
         assert!(doc.contains("Thus have I heard."));
         // Vocabulary is rendered as a table, not a "Vocabulary" heading.
@@ -748,13 +1033,14 @@ mod tests {
         let body = markdown_to_docx_body("| A | B |\n|---|---|\n| **x** | y |");
         roxmltree_lite_check(&wrap_document_body(&body));
         assert!(body.contains("<w:tbl>"));
-        assert!(body.contains(r#"<w:tblBorders>"#));
+        // Markdown response tables are borderless too.
+        assert!(!body.contains(r#"<w:tblBorders>"#));
         assert!(body.contains(r#"<w:pStyle w:val="BodyText"/>"#));
         // Full-text-width layout: 100% pct table, explicit equal-column grid,
-        // dxa cell widths (2 columns → 9638 / 2 = 4819 twips each).
+        // dxa cell widths (2 columns → 10206 / 2 = 5103 twips each).
         assert!(body.contains(r#"<w:tblW w:w="5000" w:type="pct"/>"#));
-        assert!(body.contains(r#"<w:tblGrid><w:gridCol w:w="4819"/><w:gridCol w:w="4819"/></w:tblGrid>"#));
-        assert!(body.contains(r#"<w:tcW w:w="4819" w:type="dxa"/>"#));
+        assert!(body.contains(r#"<w:tblGrid><w:gridCol w:w="5103"/><w:gridCol w:w="5103"/></w:tblGrid>"#));
+        assert!(body.contains(r#"<w:tcW w:w="5103" w:type="dxa"/>"#));
         // Header cells bold.
         assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">A</w:t>"#));
         assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">B</w:t>"#));
@@ -853,6 +1139,81 @@ mod tests {
         roxmltree_lite_check(&doc);
         assert!(doc.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Thus</w:t>"#));
         assert!(!doc.contains("**Thus**"));
+    }
+
+    // --- Font embedding & styling -------------------------------------------
+
+    #[test]
+    fn test_docx_embeds_fonts() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+
+        // Content types declare the obfuscated-font default and settings/fontTable.
+        let ct = read_part(&docx, "[Content_Types].xml");
+        assert!(ct.contains("obfuscatedFont"));
+        assert!(ct.contains("/word/fontTable.xml"));
+        assert!(ct.contains("/word/settings.xml"));
+
+        // settings.xml opts into embedded fonts.
+        let settings = read_part(&docx, "word/settings.xml");
+        assert!(settings.contains("<w:embedTrueTypeFonts/>"));
+
+        // fontTable maps both families with fontKey-carrying embed slots.
+        let ft = read_part(&docx, "word/fontTable.xml");
+        assert!(ft.contains(r#"<w:font w:name="Abhaya Libre X">"#));
+        assert!(ft.contains(r#"<w:font w:name="Crimson Pro">"#));
+        assert!(ft.contains("w:embedRegular"));
+        assert!(ft.contains("w:embedBold"));
+        assert!(ft.contains("w:embedItalic"));
+        assert!(ft.contains("w:embedBoldItalic"));
+        assert!(ft.contains("w:fontKey"));
+
+        // All six obfuscated font parts are present (binary; read as bytes).
+        let mut archive = ZipArchive::new(Cursor::new(&docx)).unwrap();
+        for part in ["font1", "font2", "font3", "font4", "font5", "font6"] {
+            let mut f = archive
+                .by_name(&format!("word/fonts/{}.odttf", part))
+                .unwrap();
+            let mut buf = Vec::new();
+            f.read_to_end(&mut buf).unwrap();
+            assert!(buf.len() > 1000, "embedded font {} looks truncated", part);
+        }
+
+        // Styles reference the design fonts.
+        let styles = read_part(&docx, "word/styles.xml");
+        assert!(styles.contains(r#"w:ascii="Crimson Pro""#));
+        assert!(styles.contains(r#"w:ascii="Abhaya Libre X""#));
+    }
+
+    #[test]
+    fn test_obfuscate_font_is_reversible_and_touches_first_32_bytes() {
+        let key = "{1DF903F4-2E50-4C22-9B6E-95C11F26A201}";
+        let ttf: Vec<u8> = (0u8..=255).cycle().take(100).collect();
+        let obf = obfuscate_font(&ttf, key);
+        // Only the first 32 bytes are altered; the tail is untouched.
+        assert_ne!(obf[..32], ttf[..32]);
+        assert_eq!(obf[32..], ttf[32..]);
+        // XOR is its own inverse: de-obfuscating restores the original.
+        let restored = obfuscate_font(&obf, key);
+        assert_eq!(restored, ttf);
+    }
+
+    #[test]
+    fn test_vocab_table_is_borderless() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        // The vocab table has no borders and a right cell margin only.
+        assert!(doc.contains("<w:tblCellMar>"));
+        assert!(doc.contains(r#"<w:right w:w="220" w:type="dxa"/>"#));
+        // No table emits tblBorders (vocab and markdown tables are borderless).
+        assert!(!doc.contains("<w:tblBorders>"));
+    }
+
+    #[test]
+    fn test_page_margins_are_15mm_design() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        // 1.5 cm margins all around (850 twips).
+        assert!(doc.contains(r#"w:top="850" w:right="850" w:bottom="850" w:left="850""#));
     }
 
     /// Minimal well-formedness check without adding an XML parser dependency:
