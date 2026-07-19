@@ -38,13 +38,13 @@ Update the file after completing each sub-task, not just after completing an ent
 - `struct InlineRun { text: String, bold: bool, italic: bool, code: bool, link_url: Option<String> }` (or equivalent) + `fn inline_runs(children: &[Node]) -> Vec<InlineRun>` — flattens `Text`/`Strong`/`Emphasis`/`InlineCode`/`Link`/`Break` (Break → `\n` in text); nested `Strong(Emphasis(..))` combines flags; unknown inline nodes flatten to their plain text.
 - `fn node_plain_text(node: &Node) -> String` — recursive text flattening, the universal fallback for unsupported block nodes.
 
-- [ ] 1.0 Shared Markdown conversion core
-  - [ ] 1.1 In `prompt_utils.rs`, extract the two-regex fence-around-tables pre-processing (lines 100–117) into a `pub fn unwrap_fenced_tables(text: &str) -> String`; call it from `markdown_to_html`. No behavior change.
-  - [ ] 1.2 Create `backend/src/markdown_convert.rs` and register it in `backend/src/lib.rs`. Add `parse_response()` per the spec above (pre-process → trim → `to_mdast` with `ParseOptions::gfm()` → `Option<Node>`).
-  - [ ] 1.3 Implement `InlineRun` and `inline_runs()`: handle `Text`, `Strong`, `Emphasis`, `InlineCode`, `Link` (capture URL, flatten link children to text), `Break`/soft newline; combine nesting flags; flatten unknown inline nodes to text.
-  - [ ] 1.4 Implement `node_plain_text()` as the recursive plain-text fallback for any unsupported node.
-  - [ ] 1.5 Unit tests in `markdown_convert.rs` for the core: parse of a GFM table succeeds, fenced-table input parses as a `Table` node (pre-processing applied), `inline_runs` on `**bold** *it* `` `code` `` [t](u)` and on nested `**bold *both***`, and `node_plain_text` on an unsupported construct (e.g. an image or raw HTML node).
-  - [ ] 1.6 Run `cd backend && cargo test` — new tests pass, `prompt_utils` tests unchanged.
+- [x] 1.0 Shared Markdown conversion core
+  - [x] 1.1 In `prompt_utils.rs`, extract the two-regex fence-around-tables pre-processing (lines 100–117) into a `pub fn unwrap_fenced_tables(text: &str) -> String`; call it from `markdown_to_html`. No behavior change.
+  - [x] 1.2 Create `backend/src/markdown_convert.rs` and register it in `backend/src/lib.rs`. Add `parse_response()` per the spec above (pre-process → trim → `to_mdast` with `ParseOptions::gfm()` → `Option<Node>`).
+  - [x] 1.3 Implement `InlineRun` and `inline_runs()`: handle `Text`, `Strong`, `Emphasis`, `InlineCode`, `Link` (capture URL, flatten link children to text), `Break`/soft newline; combine nesting flags; flatten unknown inline nodes to text.
+  - [x] 1.4 Implement `node_plain_text()` as the recursive plain-text fallback for any unsupported node.
+  - [x] 1.5 Unit tests in `markdown_convert.rs` for the core: parse of a GFM table succeeds, fenced-table input parses as a `Table` node (pre-processing applied), `inline_runs` on `**bold** *it* `` `code` `` [t](u)` and on nested `**bold *both***`, and `node_plain_text` on an unsupported construct (e.g. an image or raw HTML node).
+  - [x] 1.6 Run `cd backend && cargo test` — new tests pass, `prompt_utils` tests unchanged.
 
 ### 2.0 Org-Mode emitter and integration
 

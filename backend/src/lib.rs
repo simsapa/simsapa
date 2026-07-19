@@ -23,6 +23,7 @@ pub mod ai_fallback;
 pub mod lookup;
 pub mod html_format;
 pub mod prompt_utils;
+pub mod markdown_convert;
 pub mod anki_sample_data;
 pub mod anki_export;
 pub mod export_types;
