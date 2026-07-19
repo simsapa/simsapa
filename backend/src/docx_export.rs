@@ -23,9 +23,12 @@ use anyhow::{Context, Result};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use markdown::mdast::{Code, List, Node, Table};
+
 use crate::export_types::{
     ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph, GlossExportVocabItem,
 };
+use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, InlineRun};
 
 static TEMPLATE_DOCX: &[u8] = include_bytes!("../../assets/docx-template/gloss-template.docx");
 
@@ -126,10 +129,7 @@ fn format_message(message: &ChatMessage) -> String {
                 "Heading2",
                 &[run(false, false, &format!("{}{}", resp.model_name, resp.selected_suffix()))],
             ));
-            // AI responses are exported as plain text.
-            for line in resp.response.lines().filter(|l| !l.trim().is_empty()) {
-                out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
-            }
+            out.push_str(&markdown_to_docx_body(&resp.response));
         }
     } else {
         for line in message.content.lines().filter(|l| !l.trim().is_empty()) {
@@ -159,10 +159,7 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
                 "BodyText",
                 &[run(true, false, &format!("{}{}", trans.model_name, trans.selected_suffix()))],
             ));
-            // AI translation responses are exported as plain text.
-            for line in trans.response.lines().filter(|l| !l.trim().is_empty()) {
-                out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
-            }
+            out.push_str(&markdown_to_docx_body(&trans.response));
         }
     }
 
@@ -178,15 +175,28 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
 fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
     let mut rows = String::new();
     for vocab in vocabulary {
-        let word_cell = table_cell("2500", &[run(true, false, &vocab.word)]);
-        let summary_cell = table_cell("7000", &summary_html_to_runs(&vocab.summary));
+        let word_cell = table_cell("VocabEntry", "2500", "dxa", &[run(true, false, &vocab.word)]);
+        let summary_cell =
+            table_cell("VocabEntry", "7000", "dxa", &summary_html_to_runs(&vocab.summary));
         rows.push_str(&format!("<w:tr>{}{}</w:tr>", word_cell, summary_cell));
     }
 
+    bordered_table(&rows)
+}
+
+/// Wrap pre-built `<w:tr>` rows in an auto-width, single-bordered table.
+/// Used by the vocabulary table (cells carry explicit dxa widths).
+fn bordered_table(rows: &str) -> String {
+    bordered_table_with(r#"<w:tblW w:w="0" w:type="auto"/>"#, "", rows)
+}
+
+/// Single-bordered table with a caller-chosen `w:tblW` and optional
+/// `w:tblGrid`. Shared by the vocabulary table and markdown tables.
+fn bordered_table_with(tblw: &str, grid: &str, rows: &str) -> String {
     format!(
         concat!(
             r#"<w:tbl><w:tblPr>"#,
-            r#"<w:tblW w:w="0" w:type="auto"/>"#,
+            "{}",
             r#"<w:tblBorders>"#,
             r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
             r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
@@ -195,36 +205,61 @@ fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
             r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
             r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
             r#"</w:tblBorders>"#,
-            r#"</w:tblPr>{}</w:tbl>"#,
+            r#"</w:tblPr>{}{}</w:tbl>"#,
         ),
-        rows
+        tblw, grid, rows
     )
 }
 
-fn table_cell(width_twips: &str, runs: &[String]) -> String {
+fn table_cell(style_id: &str, width_twips: &str, width_type: &str, runs: &[String]) -> String {
     format!(
         concat!(
-            r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/></w:tcPr>"#,
-            r#"<w:p><w:pPr><w:pStyle w:val="VocabEntry"/></w:pPr>{}</w:p></w:tc>"#,
+            r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="{}"/></w:tcPr>"#,
+            r#"<w:p><w:pPr><w:pStyle w:val="{}"/></w:pPr>{}</w:p></w:tc>"#,
         ),
         width_twips,
-        runs.concat()
-    )
-}
-
-fn styled_paragraph(style_id: &str, runs: &[String]) -> String {
-    format!(
-        r#"<w:p><w:pPr><w:pStyle w:val="{}"/></w:pPr>{}</w:p>"#,
+        width_type,
         style_id,
         runs.concat()
     )
 }
 
+fn styled_paragraph(style_id: &str, runs: &[String]) -> String {
+    styled_paragraph_indent(style_id, 0, runs)
+}
+
+/// Paragraph with an optional left indent (`w:ind`), used for nested list
+/// levels and blockquotes. An indent of 0 emits no `w:ind` element.
+fn styled_paragraph_indent(style_id: &str, indent_twips: u32, runs: &[String]) -> String {
+    let ind = if indent_twips == 0 {
+        String::new()
+    } else {
+        format!(r#"<w:ind w:left="{}"/>"#, indent_twips)
+    };
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="{}"/>{}</w:pPr>{}</w:p>"#,
+        style_id,
+        ind,
+        runs.concat()
+    )
+}
+
 fn run(bold: bool, italic: bool, text: &str) -> String {
+    run_props(bold, italic, false, text).unwrap_or_default()
+}
+
+/// A styled text run. `code` switches the run to a monospace font. Newlines in
+/// `text` become `<w:br/>` elements inside the run. Returns `None` for empty
+/// text.
+fn run_props(bold: bool, italic: bool, code: bool, text: &str) -> Option<String> {
     if text.is_empty() {
-        return String::new();
+        return None;
     }
     let mut rpr = String::new();
+    if code {
+        // rFonts must precede w:b / w:i in the CT_RPr element order.
+        rpr.push_str(r#"<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Courier New"/>"#);
+    }
     if bold {
         rpr.push_str("<w:b/>");
     }
@@ -236,11 +271,11 @@ fn run(bold: bool, italic: bool, text: &str) -> String {
     } else {
         format!("<w:rPr>{}</w:rPr>", rpr)
     };
-    format!(
-        r#"<w:r>{}<w:t xml:space="preserve">{}</w:t></w:r>"#,
-        rpr,
-        escape_xml(text)
-    )
+    let segments: Vec<String> = text
+        .split('\n')
+        .map(|seg| format!(r#"<w:t xml:space="preserve">{}</w:t>"#, escape_xml(seg)))
+        .collect();
+    Some(format!("<w:r>{}{}</w:r>", rpr, segments.join("<w:br/>")))
 }
 
 fn escape_xml(text: &str) -> String {
@@ -313,6 +348,199 @@ fn summary_html_to_runs(summary: &str) -> Vec<String> {
     flush(&mut text, bold, italic, &mut runs);
 
     runs
+}
+
+// --- Markdown → OOXML body emitter -----------------------------------------
+
+/// Twips of left indent per nesting level (lists, blockquotes).
+const INDENT_STEP_TWIPS: u32 = 360;
+
+/// Convert a Markdown AI/assistant response to OOXML `<w:p>` / `<w:tbl>`
+/// fragments. On parse failure, falls back to one `BodyText` paragraph per
+/// non-empty raw line.
+pub fn markdown_to_docx_body(text: &str) -> String {
+    match parse_response(text) {
+        Some(Node::Root(root)) => root.children.iter().map(|n| docx_block(n, 0)).collect(),
+        _ => docx_raw_fallback(text),
+    }
+}
+
+/// Raw-text fallback when the response cannot be parsed as Markdown.
+fn docx_raw_fallback(text: &str) -> String {
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| styled_paragraph("BodyText", &[run(false, false, l.trim())]))
+        .collect()
+}
+
+fn docx_block(node: &Node, level: usize) -> String {
+    let indent = INDENT_STEP_TWIPS * level as u32;
+    match node {
+        Node::Paragraph(p) => {
+            styled_paragraph_indent("BodyText", indent, &inline_runs_xml(&inline_runs(&p.children)))
+        }
+        // No Word Heading styles for response content: a bold BodyText
+        // paragraph, so response headings cannot interleave with the
+        // exporter's own document outline.
+        Node::Heading(h) => styled_paragraph_indent(
+            "BodyText",
+            indent,
+            &inline_runs_xml_bold(&inline_runs(&h.children)),
+        ),
+        Node::List(list) => docx_list(list, level),
+        Node::Code(code) => docx_code(code, indent),
+        Node::Table(table) => docx_markdown_table(table),
+        Node::Blockquote(quote) => quote
+            .children
+            .iter()
+            .map(|child| docx_block(child, level + 1))
+            .collect(),
+        Node::ThematicBreak(_) => concat!(
+            r#"<w:p><w:pPr><w:pStyle w:val="BodyText"/>"#,
+            r#"<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr>"#,
+            r#"</w:pPr></w:p>"#,
+        )
+        .to_string(),
+        other => {
+            let text = node_plain_text(other);
+            text.lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| styled_paragraph_indent("BodyText", indent, &[run(false, false, l.trim())]))
+                .collect()
+        }
+    }
+}
+
+/// Render flattened inline runs as OOXML run elements. Links become
+/// `text (url)`; autolinks (text == url) just the url.
+fn inline_runs_xml(runs: &[InlineRun]) -> Vec<String> {
+    runs.iter().filter_map(inline_run_xml).collect()
+}
+
+/// Same, with bold forced on every run (headings, table header row).
+fn inline_runs_xml_bold(runs: &[InlineRun]) -> Vec<String> {
+    runs.iter()
+        .filter_map(|r| inline_run_xml(&InlineRun { bold: true, ..r.clone() }))
+        .collect()
+}
+
+fn inline_run_xml(r: &InlineRun) -> Option<String> {
+    let text = match &r.link_url {
+        Some(url) if is_autolink(&r.text, url) => r.text.clone(),
+        Some(url) => format!("{} ({})", r.text, url),
+        None => r.text.clone(),
+    };
+    run_props(r.bold, r.italic, r.code, &text)
+}
+
+/// GFM autolinks carry no distinct link text: the url is the text, possibly
+/// with an inferred `http://` / `mailto:` prefix (`www.example.com`,
+/// `<user@x.y>`). Repeating the url in parentheses would just be noise.
+fn is_autolink(text: &str, url: &str) -> bool {
+    url == text
+        || ["http://", "https://", "mailto:"]
+            .iter()
+            .any(|scheme| url.strip_prefix(scheme) == Some(text))
+}
+
+fn docx_list(list: &List, level: usize) -> String {
+    let mut out = String::new();
+    let indent = INDENT_STEP_TWIPS * (level as u32 + 1);
+    let mut counter: u64 = u64::from(list.start.unwrap_or(1));
+    for item in &list.children {
+        let Node::ListItem(li) = item else { continue };
+        let marker = if list.ordered {
+            let m = format!("{}. ", counter);
+            counter += 1;
+            m
+        } else {
+            "- ".to_string()
+        };
+        // The literal marker is prepended to the item's first paragraph; if
+        // the item starts with some other block (code, nested list), the
+        // marker gets its own paragraph so it is not lost.
+        let mut marker_pending = true;
+        if !matches!(li.children.first(), Some(Node::Paragraph(_))) {
+            out.push_str(&styled_paragraph_indent(
+                "BodyText",
+                indent,
+                &[run(false, false, marker.trim_end())],
+            ));
+            marker_pending = false;
+        }
+        for block in &li.children {
+            match block {
+                Node::Paragraph(p) => {
+                    let mut runs: Vec<String> = Vec::new();
+                    if marker_pending {
+                        runs.push(run(false, false, &marker));
+                        marker_pending = false;
+                    }
+                    runs.extend(inline_runs_xml(&inline_runs(&p.children)));
+                    out.push_str(&styled_paragraph_indent("BodyText", indent, &runs));
+                }
+                Node::List(inner) => out.push_str(&docx_list(inner, level + 1)),
+                other => out.push_str(&docx_block(other, level + 1)),
+            }
+        }
+    }
+    out
+}
+
+/// One monospace `BodyText` paragraph per code line; blank lines are
+/// preserved as empty paragraphs.
+fn docx_code(code: &Code, indent: u32) -> String {
+    code.value
+        .lines()
+        .map(|line| {
+            let runs: Vec<String> = run_props(false, false, true, line).into_iter().collect();
+            styled_paragraph_indent("BodyText", indent, &runs)
+        })
+        .collect()
+}
+
+/// Usable text width in twips for the page geometry in `wrap_document_body`
+/// (A4 11906 minus 2 × 1134 margins). Markdown table columns share it evenly
+/// so the table never extends past the page edge.
+const TABLE_TEXT_WIDTH_TWIPS: u32 = 9638;
+
+fn docx_markdown_table(table: &Table) -> String {
+    let ncols = table
+        .children
+        .iter()
+        .filter_map(|row| match row {
+            Node::TableRow(r) => Some(r.children.len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let col_width = (TABLE_TEXT_WIDTH_TWIPS / ncols as u32).to_string();
+
+    let mut rows = String::new();
+    for (row_idx, row) in table.children.iter().enumerate() {
+        let Node::TableRow(row) = row else { continue };
+        let mut cells = String::new();
+        for cell in &row.children {
+            let runs = match cell {
+                Node::TableCell(tc) => inline_runs(&tc.children),
+                _ => Vec::new(),
+            };
+            let run_strs = if row_idx == 0 {
+                inline_runs_xml_bold(&runs)
+            } else {
+                inline_runs_xml(&runs)
+            };
+            cells.push_str(&table_cell("BodyText", &col_width, "dxa", &run_strs));
+        }
+        rows.push_str(&format!("<w:tr>{}</w:tr>", cells));
+    }
+
+    let grid = format!(
+        "<w:tblGrid>{}</w:tblGrid>",
+        format!(r#"<w:gridCol w:w="{}"/>"#, col_width).repeat(ncols)
+    );
+    bordered_table_with(r#"<w:tblW w:w="5000" w:type="pct"/>"#, &grid, &rows)
 }
 
 #[cfg(test)]
@@ -467,6 +695,164 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert!(runs[0].contains("fish &amp; chips"));
         assert!(!runs[0].contains("&amp;amp;"));
+    }
+
+    // --- Markdown → OOXML emitter -------------------------------------------
+
+    #[test]
+    fn test_docx_bold_italic_inline() {
+        let body = markdown_to_docx_body("**bold** and *italic* text");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">bold</w:t>"#));
+        assert!(body.contains(r#"<w:rPr><w:i/></w:rPr><w:t xml:space="preserve">italic</w:t>"#));
+        assert!(!body.contains("**"));
+    }
+
+    #[test]
+    fn test_docx_heading_is_bold_bodytext() {
+        let body = markdown_to_docx_body("## Section Title");
+        assert!(body.contains(r#"<w:pStyle w:val="BodyText"/>"#));
+        assert!(!body.contains("Heading"));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Section Title</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_nested_list_indent_and_prefixes() {
+        let body = markdown_to_docx_body("- alpha\n- beta\n  - inner\n- gamma");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
+        assert!(body.contains(r#"<w:ind w:left="720"/>"#));
+        assert!(body.contains(r#"<w:t xml:space="preserve">- </w:t></w:r><w:r><w:t xml:space="preserve">alpha</w:t>"#));
+        assert!(body.contains(r#"<w:t xml:space="preserve">- </w:t></w:r><w:r><w:t xml:space="preserve">inner</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_ordered_list_honors_start() {
+        let body = markdown_to_docx_body("3. third\n4. fourth");
+        assert!(body.contains(r#"<w:t xml:space="preserve">3. </w:t>"#));
+        assert!(body.contains(r#"<w:t xml:space="preserve">4. </w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_loose_list_item_second_paragraph_same_indent() {
+        let body = markdown_to_docx_body("- first para\n\n  second para\n\n- next item");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        // Both item paragraphs at the same level; only the first has a marker.
+        assert_eq!(body.matches(r#"<w:ind w:left="360"/>"#).count(), 3);
+        assert_eq!(body.matches(r#"<w:t xml:space="preserve">- </w:t>"#).count(), 2);
+        assert!(body.contains("second para"));
+    }
+
+    #[test]
+    fn test_docx_markdown_table_bold_header() {
+        let body = markdown_to_docx_body("| A | B |\n|---|---|\n| **x** | y |");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains("<w:tbl>"));
+        assert!(body.contains(r#"<w:tblBorders>"#));
+        assert!(body.contains(r#"<w:pStyle w:val="BodyText"/>"#));
+        // Full-text-width layout: 100% pct table, explicit equal-column grid,
+        // dxa cell widths (2 columns → 9638 / 2 = 4819 twips each).
+        assert!(body.contains(r#"<w:tblW w:w="5000" w:type="pct"/>"#));
+        assert!(body.contains(r#"<w:tblGrid><w:gridCol w:w="4819"/><w:gridCol w:w="4819"/></w:tblGrid>"#));
+        assert!(body.contains(r#"<w:tcW w:w="4819" w:type="dxa"/>"#));
+        // Header cells bold.
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">A</w:t>"#));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">B</w:t>"#));
+        // Body row keeps its own emphasis.
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">x</w:t>"#));
+        assert!(body.contains(r#"<w:r><w:t xml:space="preserve">y</w:t></w:r>"#));
+    }
+
+    #[test]
+    fn test_docx_code_block_monospace_and_blank_lines() {
+        let body = markdown_to_docx_body("```python\nprint('hi')\n\nprint('there')\n```");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert_eq!(body.matches(r#"<w:rFonts w:ascii="Consolas""#).count(), 2);
+        assert!(body.contains("print('hi')"));
+        // The blank line is preserved as an empty paragraph.
+        assert!(body.contains(r#"<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr></w:p>"#));
+    }
+
+    #[test]
+    fn test_docx_inline_code_monospace() {
+        let body = markdown_to_docx_body("run `cargo test` now");
+        assert!(body.contains(r#"<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Courier New"/>"#));
+        assert!(body.contains("cargo test"));
+    }
+
+    #[test]
+    fn test_docx_link_text_and_url() {
+        let body = markdown_to_docx_body("see [docs](https://x.y) here");
+        assert!(body.contains("docs (https://x.y)"));
+    }
+
+    #[test]
+    fn test_docx_autolink_bare_url() {
+        let body = markdown_to_docx_body("See https://example.org here");
+        assert!(body.contains(r#"<w:t xml:space="preserve">https://example.org</w:t>"#));
+        assert!(!body.contains("https://example.org (https://example.org)"));
+    }
+
+    #[test]
+    fn test_docx_autolink_email_and_www_no_url_repeat() {
+        let body = markdown_to_docx_body("Mail <user@x.y> or visit www.example.org today");
+        assert!(body.contains("user@x.y"));
+        assert!(!body.contains("(mailto:user@x.y)"));
+        assert!(body.contains("www.example.org"));
+        assert!(!body.contains("(http://www.example.org)"));
+    }
+
+    #[test]
+    fn test_docx_blockquote_indent_and_thematic_break() {
+        let body = markdown_to_docx_body("> quoted text\n\n---");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
+        assert!(body.contains("quoted text"));
+        assert!(body.contains(r#"<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr>"#));
+    }
+
+    #[test]
+    fn test_docx_xml_escaping_in_response() {
+        let body = markdown_to_docx_body("a < b & c");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains("a &lt; b &amp; c"));
+    }
+
+    #[test]
+    fn test_docx_soft_break_becomes_w_br() {
+        let body = markdown_to_docx_body("first line\nsecond line");
+        assert!(body.contains(r#"<w:t xml:space="preserve">first line</w:t><w:br/><w:t xml:space="preserve">second line</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_raw_fallback_plain_paragraphs() {
+        // Exercised directly: `to_mdast` practically cannot fail on plain
+        // markdown, so the fallback is tested at the function level.
+        let body = docx_raw_fallback("line one\n\nline two");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert_eq!(body.matches("<w:p>").count(), 2);
+        assert!(body.contains("line one"));
+        assert!(body.contains("line two"));
+    }
+
+    #[test]
+    fn test_docx_response_markdown_rendered_in_gloss_export() {
+        let json = serde_json::json!({
+            "text": "Evaṁ me sutaṁ.",
+            "paragraphs": [{
+                "text": "Evaṁ me sutaṁ.",
+                "vocabulary": [],
+                "ai_translations": [
+                    {"model_name": "m", "response": "**Thus** have I heard.", "is_selected": true}
+                ]
+            }]
+        })
+        .to_string();
+        let docx = generate_gloss_docx(&json).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        assert!(doc.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Thus</w:t>"#));
+        assert!(!doc.contains("**Thus**"));
     }
 
     /// Minimal well-formedness check without adding an XML parser dependency:

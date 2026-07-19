@@ -82,14 +82,14 @@ Update the file after completing each sub-task, not just after completing an ent
 - Note the existing paragraph helpers take `&[String]` runs — the emitter can reuse `styled_paragraph` but needs an indent-capable variant.
 
 - [ ] 3.0 DOCX emitter and integration
-  - [ ] 3.1 Extend the run/paragraph helpers in `docx_export.rs` (or expose them to `markdown_convert.rs` — prefer keeping OOXML emission in `docx_export.rs` and having it call the shared AST walk; decide by what keeps `markdown_convert.rs` free of OOXML details vs. duplication): code-font run support and an indented-paragraph variant.
-  - [ ] 3.2 Implement the block walk → OOXML: paragraphs, bold-run headings, blockquote indent, thematic break border paragraph, raw-line fallback.
-  - [ ] 3.3 Implement list emission: literal `- `/`N. ` prefixes, `start` honored, per-level `w:ind` indentation, loose items.
-  - [ ] 3.4 Generalize the bordered-table builder; emit markdown tables with bold header row and emphasis-capable cells; parameterize the cell paragraph style (the vocab table uses `VocabEntry`, markdown tables should use `BodyText`); keep the vocab table rendering identical (shared builder or unchanged code, no duplicated `w:tblBorders` boilerplate).
-  - [ ] 3.5 Implement code emission: inline code runs and per-line monospace code-block paragraphs with blank lines preserved.
-  - [ ] 3.6 Wire into `format_paragraph` and the chat assistant response loop, replacing the plain-text line loops.
-  - [ ] 3.7 Tests: unit tests asserting on the generated fragment/`document.xml` string — `**bold**` yields `<w:b/>` and no literal `**`; nested list has increasing `w:ind` and correct prefixes; table markdown yields `<w:tbl>` with bold header runs; code block yields Consolas runs; `<`/`&` in response text arrives XML-escaped; the raw-text fallback path (exercised directly) yields plain paragraphs; existing gloss/chat docx tests still pass.
-  - [ ] 3.8 Run `cd backend && cargo test`.
+  - [x] 3.1 Extend the run/paragraph helpers in `docx_export.rs` (or expose them to `markdown_convert.rs` — prefer keeping OOXML emission in `docx_export.rs` and having it call the shared AST walk; decide by what keeps `markdown_convert.rs` free of OOXML details vs. duplication): code-font run support and an indented-paragraph variant. *(Decision: OOXML stays in `docx_export.rs`; it consumes `parse_response`/`inline_runs`/`node_plain_text` from `markdown_convert.rs`.)*
+  - [x] 3.2 Implement the block walk → OOXML: paragraphs, bold-run headings, blockquote indent, thematic break border paragraph, raw-line fallback.
+  - [x] 3.3 Implement list emission: literal `- `/`N. ` prefixes, `start` honored, per-level `w:ind` indentation, loose items.
+  - [x] 3.4 Generalize the bordered-table builder; emit markdown tables with bold header row and emphasis-capable cells; parameterize the cell paragraph style (the vocab table uses `VocabEntry`, markdown tables should use `BodyText`); keep the vocab table rendering identical (shared builder or unchanged code, no duplicated `w:tblBorders` boilerplate).
+  - [x] 3.5 Implement code emission: inline code runs and per-line monospace code-block paragraphs with blank lines preserved.
+  - [x] 3.6 Wire into `format_paragraph` and the chat assistant response loop, replacing the plain-text line loops.
+  - [x] 3.7 Tests: unit tests asserting on the generated fragment/`document.xml` string — `**bold**` yields `<w:b/>` and no literal `**`; nested list has increasing `w:ind` and correct prefixes; table markdown yields `<w:tbl>` with bold header runs; code block yields Consolas runs; `<`/`&` in response text arrives XML-escaped; the raw-text fallback path (exercised directly) yields plain paragraphs; existing gloss/chat docx tests still pass.
+  - [x] 3.8 Run `cd backend && cargo test`.
 
 ### 4.0 Final verification and docs
 
