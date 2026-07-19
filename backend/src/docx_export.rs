@@ -48,16 +48,18 @@ use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, Inli
 pub fn generate_gloss_docx(gloss_json: &str) -> Result<Vec<u8>> {
     let data: GlossExportData =
         serde_json::from_str(gloss_json).context("Failed to parse gloss export JSON")?;
-    let document_xml = generate_document_xml(&data);
-    build_docx_package(&document_xml)
+    let mut numbering = NumberingRegistry::default();
+    let document_xml = generate_document_xml(&data, &mut numbering);
+    build_docx_package(&document_xml, &numbering_xml(&numbering))
 }
 
 /// Generate the DOCX bytes for a chat export JSON (`chat_export_data()` shape).
 pub fn generate_chat_docx(chat_json: &str) -> Result<Vec<u8>> {
     let data: ChatExportData =
         serde_json::from_str(chat_json).context("Failed to parse chat export JSON")?;
-    let document_xml = generate_chat_document_xml(&data);
-    build_docx_package(&document_xml)
+    let mut numbering = NumberingRegistry::default();
+    let document_xml = generate_chat_document_xml(&data, &mut numbering);
+    build_docx_package(&document_xml, &numbering_xml(&numbering))
 }
 
 // --- Package assembly and embedded fonts ------------------------------------
@@ -139,7 +141,7 @@ fn obfuscate_font(ttf: &[u8], font_key: &str) -> Vec<u8> {
     out
 }
 
-fn build_docx_package(document_xml: &str) -> Result<Vec<u8>> {
+fn build_docx_package(document_xml: &str, numbering_xml: &[u8]) -> Result<Vec<u8>> {
     let families = embedded_font_families();
     let mut out = ZipWriter::new(Cursor::new(Vec::new()));
     let opts = SimpleFileOptions::default();
@@ -155,6 +157,7 @@ fn build_docx_package(document_xml: &str) -> Result<Vec<u8>> {
     write_part(&mut out, "word/document.xml", document_xml.as_bytes())?;
     write_part(&mut out, "word/_rels/document.xml.rels", DOCUMENT_RELS_XML.as_bytes())?;
     write_part(&mut out, "word/styles.xml", STYLES_XML.as_bytes())?;
+    write_part(&mut out, "word/numbering.xml", numbering_xml)?;
     write_part(&mut out, "word/settings.xml", SETTINGS_XML.as_bytes())?;
     write_part(&mut out, "word/fontTable.xml", &font_table_xml(&families))?;
     write_part(&mut out, "word/_rels/fontTable.xml.rels", &font_table_rels_xml(&families))?;
@@ -186,6 +189,7 @@ const CONTENT_TYPES_XML: &str = concat!(
     r#"<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>"#,
     r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
     r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+    r#"<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>"#,
     r#"<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>"#,
     r#"<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>"#,
     r#"</Types>"#,
@@ -204,6 +208,7 @@ const DOCUMENT_RELS_XML: &str = concat!(
     r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>"#,
     r#"<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>"#,
     r#"<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>"#,
+    r#"<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>"#,
     r#"</Relationships>"#,
 );
 
@@ -319,6 +324,11 @@ const STYLES_XML: &str = concat!(
     r#"<w:style w:type="paragraph" w:styleId="VocabEntry"><w:name w:val="Vocab Entry"/><w:basedOn w:val="Normal"/><w:qFormat/>"#,
     r#"<w:pPr><w:spacing w:after="40" w:line="360" w:lineRule="auto"/></w:pPr>"#,
     r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // List Paragraph: numbered/bulleted list items. Indentation and the
+    // marker come from word/numbering.xml (via w:numPr); contextualSpacing
+    // tightens the gap between consecutive items.
+    r#"<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="40" w:line="360" w:lineRule="auto"/><w:contextualSpacing/></w:pPr></w:style>"#,
     r#"</w:styles>"#,
 );
 
@@ -337,7 +347,7 @@ fn wrap_document_body(body: &str) -> String {
     )
 }
 
-fn generate_document_xml(data: &GlossExportData) -> String {
+fn generate_document_xml(data: &GlossExportData, numbering: &mut NumberingRegistry) -> String {
     let mut body = String::new();
 
     body.push_str(&styled_paragraph("Title", &[run(false, false, "Gloss Export")]));
@@ -351,25 +361,25 @@ fn generate_document_xml(data: &GlossExportData) -> String {
         body.push_str(&styled_paragraph("Heading1", &[run(false, false, "Paragraphs")]));
     }
     for paragraph in &data.paragraphs {
-        body.push_str(&format_paragraph(paragraph));
+        body.push_str(&format_paragraph(paragraph, numbering));
     }
 
     wrap_document_body(&body)
 }
 
-fn generate_chat_document_xml(data: &ChatExportData) -> String {
+fn generate_chat_document_xml(data: &ChatExportData, numbering: &mut NumberingRegistry) -> String {
     let mut body = String::new();
 
     body.push_str(&styled_paragraph("Title", &[run(false, false, "Chat Export")]));
 
     for message in &data.messages {
-        body.push_str(&format_message(message));
+        body.push_str(&format_message(message, numbering));
     }
 
     wrap_document_body(&body)
 }
 
-fn format_message(message: &ChatMessage) -> String {
+fn format_message(message: &ChatMessage, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
 
     let heading = match message.role.as_str() {
@@ -386,7 +396,7 @@ fn format_message(message: &ChatMessage) -> String {
                 "Heading2",
                 &[run(false, false, &format!("{}{}", resp.model_name, resp.selected_suffix()))],
             ));
-            out.push_str(&markdown_to_docx_body(&resp.response));
+            out.push_str(&markdown_to_docx_body_reg(&resp.response, numbering));
         }
     } else {
         for line in message.content.lines().filter(|l| !l.trim().is_empty()) {
@@ -397,7 +407,7 @@ fn format_message(message: &ChatMessage) -> String {
     out
 }
 
-fn format_paragraph(paragraph: &GlossExportParagraph) -> String {
+fn format_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
 
     // The paragraph text (shown above its vocab table) uses Vocab Quote Block.
@@ -412,7 +422,7 @@ fn format_paragraph(paragraph: &GlossExportParagraph) -> String {
                 "BodyText",
                 &[run(true, false, &format!("{}{}", trans.model_name, trans.selected_suffix()))],
             ));
-            out.push_str(&markdown_to_docx_body(&trans.response));
+            out.push_str(&markdown_to_docx_body_reg(&trans.response, numbering));
         }
     }
 
@@ -637,14 +647,145 @@ fn summary_html_to_runs(summary: &str) -> Vec<String> {
 /// Twips of left indent per nesting level (lists, blockquotes).
 const INDENT_STEP_TWIPS: u32 = 360;
 
+/// One list instance recorded while emitting the body. Each Markdown `List`
+/// node (including every nested list) gets its own `numId` so counters restart
+/// per list and ordered lists can honour their `start` value.
+struct ListInstance {
+    num_id: u32,
+    ordered: bool,
+    /// The `w:ilvl` the list's items sit at (its Markdown nesting depth).
+    ilvl: u32,
+    /// The first item's number (ordered lists only; ignored for bullets).
+    start: u32,
+}
+
+/// Collects the list instances emitted into the document body so that a
+/// matching `word/numbering.xml` can be generated afterwards. `numId` values
+/// start at 1 (0 is not a valid `w:numId`).
+#[derive(Default)]
+struct NumberingRegistry {
+    lists: Vec<ListInstance>,
+}
+
+impl NumberingRegistry {
+    /// Allocate a fresh `numId` for a list at nesting depth `ilvl`.
+    fn allocate(&mut self, ordered: bool, ilvl: u32, start: u32) -> u32 {
+        let num_id = self.lists.len() as u32 + 1;
+        self.lists.push(ListInstance { num_id, ordered, ilvl, start });
+        num_id
+    }
+}
+
+/// The two shared abstract numbering definitions: bullets and decimal.
+const ABSTRACT_BULLET_ID: u32 = 0;
+const ABSTRACT_DECIMAL_ID: u32 = 1;
+
+/// One `<w:abstractNum>` with nine levels, all bullet or all decimal. Each
+/// list references one of these via its own `<w:num>`; the level used is the
+/// item's nesting depth, so nested lists indent correctly.
+fn abstract_num_xml(abstract_id: u32, ordered: bool) -> String {
+    let mut levels = String::new();
+    for i in 0..9u32 {
+        let (num_fmt, lvl_text) = if ordered {
+            ("decimal", format!("%{}.", i + 1))
+        } else {
+            ("bullet", "\u{2022}".to_string())
+        };
+        // Hanging indent: the marker sits at (i)*360, the text at (i+1)*360.
+        let left = INDENT_STEP_TWIPS * (i + 1);
+        levels.push_str(&format!(
+            concat!(
+                r#"<w:lvl w:ilvl="{}"><w:start w:val="1"/><w:numFmt w:val="{}"/>"#,
+                r#"<w:lvlText w:val="{}"/><w:lvlJc w:val="left"/>"#,
+                r#"<w:pPr><w:ind w:left="{}" w:hanging="360"/></w:pPr></w:lvl>"#,
+            ),
+            i,
+            num_fmt,
+            escape_xml(&lvl_text),
+            left,
+        ));
+    }
+    format!(
+        r#"<w:abstractNum w:abstractNumId="{}">{}</w:abstractNum>"#,
+        abstract_id, levels
+    )
+}
+
+/// Build `word/numbering.xml` for the lists recorded in `registry`. The two
+/// abstract definitions are always present; ordered lists carry a per-level
+/// `w:startOverride` so each one restarts at its Markdown `start` value.
+fn numbering_xml(registry: &NumberingRegistry) -> Vec<u8> {
+    let mut nums = String::new();
+    for list in &registry.lists {
+        let (abstract_id, override_xml) = if list.ordered {
+            (
+                ABSTRACT_DECIMAL_ID,
+                format!(
+                    r#"<w:lvlOverride w:ilvl="{}"><w:startOverride w:val="{}"/></w:lvlOverride>"#,
+                    list.ilvl, list.start
+                ),
+            )
+        } else {
+            (ABSTRACT_BULLET_ID, String::new())
+        };
+        nums.push_str(&format!(
+            r#"<w:num w:numId="{}"><w:abstractNumId w:val="{}"/>{}</w:num>"#,
+            list.num_id, abstract_id, override_xml
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+            "{}{}{}</w:numbering>",
+        ),
+        abstract_num_xml(ABSTRACT_BULLET_ID, false),
+        abstract_num_xml(ABSTRACT_DECIMAL_ID, true),
+        nums,
+    )
+    .into_bytes()
+}
+
+/// A list-item paragraph. When `num_id` is `Some`, the paragraph is a real
+/// list item (marker + indent supplied by `word/numbering.xml` via `w:numPr`).
+/// When `None` (a loose item's continuation paragraph), it carries a plain
+/// left indent matching the list level so it aligns under the item text.
+fn list_paragraph(level: usize, num_id: Option<u32>, runs: &[String]) -> String {
+    let pr = match num_id {
+        Some(id) => format!(
+            r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{}"/></w:numPr>"#,
+            level, id
+        ),
+        None => format!(r#"<w:ind w:left="{}"/>"#, INDENT_STEP_TWIPS * (level as u32 + 1)),
+    };
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>{}</w:pPr>{}</w:p>"#,
+        pr,
+        runs.concat()
+    )
+}
+
 /// Convert a Markdown AI/assistant response to OOXML `<w:p>` / `<w:tbl>`
-/// fragments. On parse failure, falls back to one `BodyText` paragraph per
-/// non-empty raw line.
-pub fn markdown_to_docx_body(text: &str) -> String {
+/// fragments, recording any lists in `numbering` so a matching
+/// `word/numbering.xml` can be built. On parse failure, falls back to one
+/// `BodyText` paragraph per non-empty raw line.
+fn markdown_to_docx_body_reg(text: &str, numbering: &mut NumberingRegistry) -> String {
     match parse_response(text) {
-        Some(Node::Root(root)) => root.children.iter().map(|n| docx_block(n, 0)).collect(),
+        Some(Node::Root(root)) => root
+            .children
+            .iter()
+            .map(|n| docx_block(n, 0, numbering))
+            .collect(),
         _ => docx_raw_fallback(text),
     }
+}
+
+/// Convenience wrapper for callers that do not assemble a full package (tests):
+/// emits the body with a throwaway numbering registry.
+#[cfg(test)]
+pub fn markdown_to_docx_body(text: &str) -> String {
+    let mut numbering = NumberingRegistry::default();
+    markdown_to_docx_body_reg(text, &mut numbering)
 }
 
 /// Raw-text fallback when the response cannot be parsed as Markdown.
@@ -655,7 +796,7 @@ fn docx_raw_fallback(text: &str) -> String {
         .collect()
 }
 
-fn docx_block(node: &Node, level: usize) -> String {
+fn docx_block(node: &Node, level: usize, numbering: &mut NumberingRegistry) -> String {
     let indent = INDENT_STEP_TWIPS * level as u32;
     match node {
         Node::Paragraph(p) => {
@@ -669,13 +810,13 @@ fn docx_block(node: &Node, level: usize) -> String {
             indent,
             &inline_runs_xml_bold(&inline_runs(&h.children)),
         ),
-        Node::List(list) => docx_list(list, level),
+        Node::List(list) => docx_list(list, level, numbering),
         Node::Code(code) => docx_code(code, indent),
         Node::Table(table) => docx_markdown_table(table),
         Node::Blockquote(quote) => quote
             .children
             .iter()
-            .map(|child| docx_block(child, level + 1))
+            .map(|child| docx_block(child, level + 1, numbering))
             .collect(),
         Node::ThematicBreak(_) => concat!(
             r#"<w:p><w:pPr><w:pStyle w:val="BodyText"/>"#,
@@ -725,44 +866,33 @@ fn is_autolink(text: &str, url: &str) -> bool {
             .any(|scheme| url.strip_prefix(scheme) == Some(text))
 }
 
-fn docx_list(list: &List, level: usize) -> String {
+fn docx_list(list: &List, level: usize, numbering: &mut NumberingRegistry) -> String {
+    // One numId per list so counters restart per list and ordered lists honour
+    // their start value. Items sit at ilvl = the Markdown nesting depth.
+    let num_id = numbering.allocate(list.ordered, level as u32, list.start.unwrap_or(1));
     let mut out = String::new();
-    let indent = INDENT_STEP_TWIPS * (level as u32 + 1);
-    let mut counter: u64 = u64::from(list.start.unwrap_or(1));
     for item in &list.children {
         let Node::ListItem(li) = item else { continue };
-        let marker = if list.ordered {
-            let m = format!("{}. ", counter);
-            counter += 1;
-            m
-        } else {
-            "- ".to_string()
-        };
-        // The literal marker is prepended to the item's first paragraph; if
-        // the item starts with some other block (code, nested list), the
-        // marker gets its own paragraph so it is not lost.
+        // The list marker attaches to the item's first paragraph. If the item
+        // starts with some other block (code, nested list), an empty numbered
+        // paragraph carries the marker so the item is not left unlabelled.
         let mut marker_pending = true;
         if !matches!(li.children.first(), Some(Node::Paragraph(_))) {
-            out.push_str(&styled_paragraph_indent(
-                "BodyText",
-                indent,
-                &[run(false, false, marker.trim_end())],
-            ));
+            out.push_str(&list_paragraph(level, Some(num_id), &[]));
             marker_pending = false;
         }
         for block in &li.children {
             match block {
                 Node::Paragraph(p) => {
-                    let mut runs: Vec<String> = Vec::new();
-                    if marker_pending {
-                        runs.push(run(false, false, &marker));
-                        marker_pending = false;
-                    }
-                    runs.extend(inline_runs_xml(&inline_runs(&p.children)));
-                    out.push_str(&styled_paragraph_indent("BodyText", indent, &runs));
+                    let runs = inline_runs_xml(&inline_runs(&p.children));
+                    // Only the first paragraph of the item is the numbered
+                    // line; later paragraphs are indented continuations.
+                    let this_num = if marker_pending { Some(num_id) } else { None };
+                    marker_pending = false;
+                    out.push_str(&list_paragraph(level, this_num, &runs));
                 }
-                Node::List(inner) => out.push_str(&docx_list(inner, level + 1)),
-                other => out.push_str(&docx_block(other, level + 1)),
+                Node::List(inner) => out.push_str(&docx_list(inner, level + 1, numbering)),
+                other => out.push_str(&docx_block(other, level + 1, numbering)),
             }
         }
     }
@@ -1002,30 +1132,94 @@ mod tests {
     }
 
     #[test]
-    fn test_docx_nested_list_indent_and_prefixes() {
-        let body = markdown_to_docx_body("- alpha\n- beta\n  - inner\n- gamma");
+    fn test_docx_nested_list_uses_real_list_items() {
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg("- alpha\n- beta\n  - inner\n- gamma", &mut numbering);
         roxmltree_lite_check(&wrap_document_body(&body));
-        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
-        assert!(body.contains(r#"<w:ind w:left="720"/>"#));
-        assert!(body.contains(r#"<w:t xml:space="preserve">- </w:t></w:r><w:r><w:t xml:space="preserve">alpha</w:t>"#));
-        assert!(body.contains(r#"<w:t xml:space="preserve">- </w:t></w:r><w:r><w:t xml:space="preserve">inner</w:t>"#));
+        // Real list items: ListParagraph style + w:numPr, no literal markers.
+        assert!(body.contains(r#"<w:pStyle w:val="ListParagraph"/>"#));
+        assert!(!body.contains(r#"<w:t xml:space="preserve">- </w:t>"#));
+        // Outer list at ilvl 0 (numId 1), nested list at ilvl 1 (numId 2).
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#));
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="1"/><w:numId w:val="2"/></w:numPr>"#));
+        // Two lists were registered, both bullet.
+        assert_eq!(numbering.lists.len(), 2);
+        assert!(numbering.lists.iter().all(|l| !l.ordered));
+        // "inner" is a numbered item, not a marker-prefixed body paragraph.
+        assert!(body.contains(r#"<w:t xml:space="preserve">inner</w:t>"#));
     }
 
     #[test]
     fn test_docx_ordered_list_honors_start() {
-        let body = markdown_to_docx_body("3. third\n4. fourth");
-        assert!(body.contains(r#"<w:t xml:space="preserve">3. </w:t>"#));
-        assert!(body.contains(r#"<w:t xml:space="preserve">4. </w:t>"#));
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg("3. third\n4. fourth", &mut numbering);
+        roxmltree_lite_check(&wrap_document_body(&body));
+        // No literal "3. " markers: Word renders the number from numbering.xml.
+        assert!(!body.contains(r#"<w:t xml:space="preserve">3. </w:t>"#));
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#));
+        // The registered ordered list carries start=3.
+        assert_eq!(numbering.lists.len(), 1);
+        assert!(numbering.lists[0].ordered);
+        assert_eq!(numbering.lists[0].start, 3);
+        // numbering.xml overrides the start of this list to 3.
+        let xml = String::from_utf8(numbering_xml(&numbering)).unwrap();
+        assert!(xml.contains(r#"<w:startOverride w:val="3"/>"#));
     }
 
     #[test]
     fn test_docx_loose_list_item_second_paragraph_same_indent() {
-        let body = markdown_to_docx_body("- first para\n\n  second para\n\n- next item");
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg(
+            "- first para\n\n  second para\n\n- next item",
+            &mut numbering,
+        );
         roxmltree_lite_check(&wrap_document_body(&body));
-        // Both item paragraphs at the same level; only the first has a marker.
-        assert_eq!(body.matches(r#"<w:ind w:left="360"/>"#).count(), 3);
-        assert_eq!(body.matches(r#"<w:t xml:space="preserve">- </w:t>"#).count(), 2);
+        // Two numbered items (one per bullet); the continuation paragraph has
+        // no numPr but is indented to the list level (360).
+        assert_eq!(
+            body.matches(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#)
+                .count(),
+            2
+        );
+        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
         assert!(body.contains("second para"));
+    }
+
+    #[test]
+    fn test_docx_numbering_part_present_and_referenced() {
+        let docx = generate_gloss_docx(
+            &serde_json::json!({
+                "text": "x",
+                "paragraphs": [{
+                    "text": "x",
+                    "vocabulary": [],
+                    "ai_translations": [
+                        {"model_name": "m", "response": "- one\n- two", "is_selected": true}
+                    ]
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // The numbering part exists and declares both abstract definitions.
+        let numbering = read_part(&docx, "word/numbering.xml");
+        roxmltree_lite_check(&numbering);
+        assert!(numbering.contains(r#"<w:abstractNum w:abstractNumId="0">"#));
+        assert!(numbering.contains(r#"<w:abstractNum w:abstractNumId="1">"#));
+        assert!(numbering.contains(r#"<w:numFmt w:val="bullet"/>"#));
+        assert!(numbering.contains(r#"<w:numFmt w:val="decimal"/>"#));
+        assert!(numbering.contains(r#"<w:num w:numId="1">"#));
+
+        // It is declared and related from the document.
+        let ct = read_part(&docx, "[Content_Types].xml");
+        assert!(ct.contains("/word/numbering.xml"));
+        let rels = read_part(&docx, "word/_rels/document.xml.rels");
+        assert!(rels.contains("numbering.xml"));
+
+        // The list style exists.
+        let styles = read_part(&docx, "word/styles.xml");
+        assert!(styles.contains(r#"w:styleId="ListParagraph""#));
     }
 
     #[test]
