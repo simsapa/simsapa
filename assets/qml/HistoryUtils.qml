@@ -43,4 +43,18 @@ QtObject {
         var label = single_line_truncate(source, 80);
         return label.length > 0 ? label : "(empty session)";
     }
+
+    // Format the stored `modified` timestamp for display as
+    // "2026-07-19 13:48:32", dropping any fractional-seconds suffix.
+    function format_modified(modified) {
+        if (!modified) {
+            return "";
+        }
+        var s = ("" + modified).trim();
+        var dot = s.indexOf(".");
+        if (dot >= 0) {
+            s = s.substring(0, dot);
+        }
+        return s.substring(0, 19);
+    }
 }
