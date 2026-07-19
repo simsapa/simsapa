@@ -1,15 +1,27 @@
 //! DOCX export for the Gloss and Prompts tabs.
 //!
-//! The document is generated from an embedded template
-//! (`assets/docx-template/gloss-template.docx`) analogous to pandoc's
-//! `--reference-doc`: the template's parts (`word/styles.xml` etc.) are kept
-//! intact and only `word/document.xml` is replaced with generated content.
+//! The whole package (`[Content_Types].xml`, rels, `word/document.xml`,
+//! `word/styles.xml`, `word/settings.xml`, `word/fontTable.xml` and the
+//! embedded fonts) is generated in code — no binary template. The visual
+//! design mirrors the pali-sutta-readings print stylesheet: Crimson Pro
+//! 10 pt body on 1.5-line spacing, Abhaya Libre X titles and headings,
+//! 1.5 cm page margins, borderless vocabulary table.
 //!
-//! Named paragraph styles defined in the template (`w:styleId` / UI name):
-//! - `Title` / "Title" — document title
-//! - `Heading1` / "Heading 1" — per-paragraph / per-message header
-//!   ("Paragraph N", "System" / "User" / "Assistant")
-//! - `Heading2` / "Heading 2" — section headers ("AI Translations", model names)
+//! **Font embedding** (ECMA-376 §17.8): each TTF is stored as
+//! `word/fonts/fontN.odttf` with its first 32 bytes XOR-obfuscated using the
+//! 16 GUID bytes of the font's `w:fontKey` in reverse order;
+//! `word/fontTable.xml` maps family names to the embedded parts and
+//! `word/settings.xml` sets `<w:embedTrueTypeFonts/>`. Word and LibreOffice
+//! de-obfuscate with the same fontKey, so the document renders identically on
+//! machines without the fonts installed.
+//!
+//! Named paragraph styles (`w:styleId` / UI name):
+//! - `Title` / "Title" — document title (Abhaya Libre X, bottom rule)
+//! - `Heading1` / "Heading 1" — section headers ("Paragraphs",
+//!   "System" / "User" / "Assistant")
+//! - `VocabQuoteBlock` / "Vocab Quote Block" — the combined glossed text and
+//!   each paragraph's text above its vocab table
+//! - `Heading2` / "Heading 2" — sub-headers (chat model names)
 //! - `BodyText` / "Body Text" — Pāli text, chat content and AI responses
 //! - `VocabEntry` / "Vocab Entry" — vocabulary table cells
 //!
@@ -21,51 +33,304 @@ use std::io::{Cursor, Write};
 
 use anyhow::{Context, Result};
 use zip::write::SimpleFileOptions;
-use zip::{ZipArchive, ZipWriter};
+use zip::ZipWriter;
+#[cfg(test)]
+use zip::ZipArchive;
+
+use markdown::mdast::{Code, List, Node, Table};
 
 use crate::export_types::{
     ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph, GlossExportVocabItem,
 };
-
-static TEMPLATE_DOCX: &[u8] = include_bytes!("../../assets/docx-template/gloss-template.docx");
+use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, InlineRun};
 
 /// Generate the DOCX bytes for a gloss export JSON (`gloss_export_data()` shape).
 pub fn generate_gloss_docx(gloss_json: &str) -> Result<Vec<u8>> {
     let data: GlossExportData =
         serde_json::from_str(gloss_json).context("Failed to parse gloss export JSON")?;
-    let document_xml = generate_document_xml(&data);
-    replace_document_xml(TEMPLATE_DOCX, &document_xml)
+    let mut numbering = NumberingRegistry::default();
+    let document_xml = generate_document_xml(&data, &mut numbering);
+    build_docx_package(&document_xml, &numbering_xml(&numbering))
 }
 
 /// Generate the DOCX bytes for a chat export JSON (`chat_export_data()` shape).
 pub fn generate_chat_docx(chat_json: &str) -> Result<Vec<u8>> {
     let data: ChatExportData =
         serde_json::from_str(chat_json).context("Failed to parse chat export JSON")?;
-    let document_xml = generate_chat_document_xml(&data);
-    replace_document_xml(TEMPLATE_DOCX, &document_xml)
+    let mut numbering = NumberingRegistry::default();
+    let document_xml = generate_chat_document_xml(&data, &mut numbering);
+    build_docx_package(&document_xml, &numbering_xml(&numbering))
 }
 
-/// Copy every part of the template archive except `word/document.xml`, which
-/// is replaced with the generated content.
-fn replace_document_xml(template_bytes: &[u8], document_xml: &str) -> Result<Vec<u8>> {
-    let mut archive = ZipArchive::new(Cursor::new(template_bytes))
-        .context("Failed to open the embedded DOCX template")?;
-    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+// --- Package assembly and embedded fonts ------------------------------------
 
-    for i in 0..archive.len() {
-        let entry = archive.by_index_raw(i)?;
-        if entry.name() == "word/document.xml" {
-            continue;
-        }
-        out.raw_copy_file(entry)?;
+/// An embedded font: part name, `w:fontKey` GUID and the TTF bytes.
+struct EmbeddedFont {
+    part: &'static str,
+    font_key: &'static str,
+    ttf: &'static [u8],
+}
+
+/// The `w:embedRegular`/`w:embedBold`/… slots of one `w:font` family entry.
+struct FontFamily {
+    name: &'static str,
+    regular: EmbeddedFont,
+    bold: EmbeddedFont,
+    italic: Option<EmbeddedFont>,
+    bold_italic: Option<EmbeddedFont>,
+}
+
+fn embedded_font_families() -> [FontFamily; 2] {
+    [
+        FontFamily {
+            name: "Abhaya Libre X",
+            regular: EmbeddedFont {
+                part: "font1.odttf",
+                font_key: "{1DF903F4-2E50-4C22-9B6E-95C11F26A201}",
+                ttf: include_bytes!("../../assets/fonts/abhaya-libre/AbhayaLibreX-Regular.ttf"),
+            },
+            bold: EmbeddedFont {
+                part: "font2.odttf",
+                font_key: "{2A61C912-7C34-4D6F-8E5A-3B9D40E7B302}",
+                ttf: include_bytes!("../../assets/fonts/abhaya-libre/AbhayaLibreX-Bold.ttf"),
+            },
+            italic: None,
+            bold_italic: None,
+        },
+        FontFamily {
+            name: "Crimson Pro",
+            regular: EmbeddedFont {
+                part: "font3.odttf",
+                font_key: "{3B72DA23-8D45-4E70-9F6B-4CAE51F8C403}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Regular.ttf"),
+            },
+            bold: EmbeddedFont {
+                part: "font4.odttf",
+                font_key: "{4C83EB34-9E56-4F81-A07C-5DBF62A9D504}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Bold.ttf"),
+            },
+            italic: Some(EmbeddedFont {
+                part: "font5.odttf",
+                font_key: "{5D94FC45-AF67-4092-B18D-6EC073BAE605}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-Italic.ttf"),
+            }),
+            bold_italic: Some(EmbeddedFont {
+                part: "font6.odttf",
+                font_key: "{6EA50D56-B078-41A3-B29E-7FD184CBF706}",
+                ttf: include_bytes!("../../assets/fonts/crimson-pro/CrimsonPro-BoldItalic.ttf"),
+            }),
+        },
+    ]
+}
+
+/// ECMA-376 font obfuscation: XOR the first 32 bytes with the GUID's 16 bytes
+/// in reverse order (the operation is its own inverse; consumers de-obfuscate
+/// with the `w:fontKey` from `fontTable.xml`).
+fn obfuscate_font(ttf: &[u8], font_key: &str) -> Vec<u8> {
+    let hex: String = font_key
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect();
+    let key: Vec<u8> = (0..16)
+        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0))
+        .collect();
+    let mut out = ttf.to_vec();
+    for (i, byte) in out.iter_mut().take(32).enumerate() {
+        *byte ^= key[15 - (i % 16)];
     }
+    out
+}
 
-    out.start_file("word/document.xml", SimpleFileOptions::default())?;
-    out.write_all(document_xml.as_bytes())?;
+fn build_docx_package(document_xml: &str, numbering_xml: &[u8]) -> Result<Vec<u8>> {
+    let families = embedded_font_families();
+    let mut out = ZipWriter::new(Cursor::new(Vec::new()));
+    let opts = SimpleFileOptions::default();
+
+    let write_part = |zip: &mut ZipWriter<Cursor<Vec<u8>>>, name: &str, data: &[u8]| -> Result<()> {
+        zip.start_file(name, opts)?;
+        zip.write_all(data)?;
+        Ok(())
+    };
+
+    write_part(&mut out, "[Content_Types].xml", CONTENT_TYPES_XML.as_bytes())?;
+    write_part(&mut out, "_rels/.rels", ROOT_RELS_XML.as_bytes())?;
+    write_part(&mut out, "word/document.xml", document_xml.as_bytes())?;
+    write_part(&mut out, "word/_rels/document.xml.rels", DOCUMENT_RELS_XML.as_bytes())?;
+    write_part(&mut out, "word/styles.xml", STYLES_XML.as_bytes())?;
+    write_part(&mut out, "word/numbering.xml", numbering_xml)?;
+    write_part(&mut out, "word/settings.xml", SETTINGS_XML.as_bytes())?;
+    write_part(&mut out, "word/fontTable.xml", &font_table_xml(&families))?;
+    write_part(&mut out, "word/_rels/fontTable.xml.rels", &font_table_rels_xml(&families))?;
+
+    for font in families.iter().flat_map(font_slots) {
+        write_part(
+            &mut out,
+            &format!("word/fonts/{}", font.part),
+            &obfuscate_font(font.ttf, font.font_key),
+        )?;
+    }
 
     let cursor = out.finish().context("Failed to finalize the DOCX archive")?;
     Ok(cursor.into_inner())
 }
+
+fn font_slots(family: &FontFamily) -> Vec<&EmbeddedFont> {
+    let mut slots = vec![&family.regular, &family.bold];
+    slots.extend(family.italic.iter());
+    slots.extend(family.bold_italic.iter());
+    slots
+}
+
+const CONTENT_TYPES_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+    r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>"#,
+    r#"<Default Extension="xml" ContentType="application/xml"/>"#,
+    r#"<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>"#,
+    r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
+    r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+    r#"<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>"#,
+    r#"<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>"#,
+    r#"<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>"#,
+    r#"</Types>"#,
+);
+
+const ROOT_RELS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+    r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>"#,
+    r#"</Relationships>"#,
+);
+
+const DOCUMENT_RELS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">"#,
+    r#"<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>"#,
+    r#"<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>"#,
+    r#"<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>"#,
+    r#"<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>"#,
+    r#"</Relationships>"#,
+);
+
+const SETTINGS_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+    r#"<w:embedTrueTypeFonts/>"#,
+    r#"</w:settings>"#,
+);
+
+fn font_table_xml(families: &[FontFamily]) -> Vec<u8> {
+    let mut fonts = String::new();
+    let mut rid = 0;
+    for family in families {
+        let mut embeds = String::new();
+        let mut slot = |tag: &str, font: &EmbeddedFont, rid: &mut u32| {
+            *rid += 1;
+            embeds.push_str(&format!(
+                r#"<w:{} r:id="rId{}" w:fontKey="{}"/>"#,
+                tag, rid, font.font_key
+            ));
+        };
+        slot("embedRegular", &family.regular, &mut rid);
+        slot("embedBold", &family.bold, &mut rid);
+        if let Some(f) = &family.italic {
+            slot("embedItalic", f, &mut rid);
+        }
+        if let Some(f) = &family.bold_italic {
+            slot("embedBoldItalic", f, &mut rid);
+        }
+        fonts.push_str(&format!(
+            concat!(
+                r#"<w:font w:name="{}">"#,
+                r#"<w:family w:val="roman"/><w:pitch w:val="variable"/>"#,
+                "{}</w:font>",
+            ),
+            family.name, embeds
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" "#,
+            r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">{}</w:fonts>"#,
+        ),
+        fonts
+    )
+    .into_bytes()
+}
+
+fn font_table_rels_xml(families: &[FontFamily]) -> Vec<u8> {
+    let mut rels = String::new();
+    for (i, font) in families.iter().flat_map(font_slots).enumerate() {
+        rels.push_str(&format!(
+            r#"<Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" Target="fonts/{}"/>"#,
+            i + 1,
+            font.part
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{}</Relationships>"#,
+        ),
+        rels
+    )
+    .into_bytes()
+}
+
+/// Styles for the export. Metric units follow the requested design
+/// (1 cm ≈ 567 twips; line spacing "1.5 lines" = `w:line="360" w:lineRule="auto"`):
+/// - Body Text: Crimson Pro 10 pt, 1.5 line spacing.
+/// - Vocab Quote Block (the combined glossed text and per-paragraph text):
+///   10 pt, 0.7 cm left indent, 0.4 cm above/below, 1.5 line spacing.
+/// - Title: Abhaya Libre X 20 pt, 0.8 cm after, thin (0.4 pt) bottom rule.
+/// - Heading 1: Abhaya Libre X 16 pt, 0.4 cm after.
+/// - Vocab Entry: 10 pt, 1.5 line spacing.
+const STYLES_XML: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+    r#"<w:docDefaults><w:rPrDefault><w:rPr>"#,
+    r#"<w:rFonts w:ascii="Crimson Pro" w:hAnsi="Crimson Pro" w:cs="Crimson Pro"/>"#,
+    r#"<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US"/>"#,
+    r#"</w:rPr></w:rPrDefault>"#,
+    r#"<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="300" w:lineRule="atLeast"/></w:pPr></w:pPrDefault>"#,
+    r#"</w:docDefaults>"#,
+    r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:keepNext/>"#,
+    // 0.4 pt bottom rule (w:sz is in eighths of a point → 3 ≈ 0.4 pt).
+    r#"<w:pBdr><w:bottom w:val="single" w:sz="3" w:space="4" w:color="auto"/></w:pBdr>"#,
+    // 0.8 cm after the title paragraph (454 twips).
+    r#"<w:spacing w:before="0" w:after="454" w:line="480" w:lineRule="atLeast"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    // 0.4 cm after the heading paragraph (227 twips).
+    r#"<w:pPr><w:keepNext/><w:spacing w:before="280" w:after="227" w:line="400" w:lineRule="atLeast"/><w:outlineLvl w:val="0"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="Heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120" w:line="320" w:lineRule="atLeast"/><w:outlineLvl w:val="1"/></w:pPr>"#,
+    r#"<w:rPr><w:rFonts w:ascii="Abhaya Libre X" w:hAnsi="Abhaya Libre X"/><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>"#,
+    // Body Text: 10 pt (sz 20), 1.5 line spacing (line 360, auto).
+    r#"<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/><w:basedOn w:val="Normal"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // Vocab Quote Block (our own style, not the default "Block Quotation"):
+    // 10 pt, 0.7 cm left indent (397 twips), 0 after-text, 0.4 cm above/below
+    // (227 twips), 1.5 line spacing.
+    r#"<w:style w:type="paragraph" w:styleId="VocabQuoteBlock"><w:name w:val="Vocab Quote Block"/><w:basedOn w:val="Normal"/><w:next w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:before="227" w:after="227" w:line="360" w:lineRule="auto"/><w:ind w:left="397" w:right="0"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // Vocab Entry: 10 pt, 1.5 line spacing.
+    r#"<w:style w:type="paragraph" w:styleId="VocabEntry"><w:name w:val="Vocab Entry"/><w:basedOn w:val="Normal"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="40" w:line="360" w:lineRule="auto"/></w:pPr>"#,
+    r#"<w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>"#,
+    // List Paragraph: numbered/bulleted list items. Indentation and the
+    // marker come from word/numbering.xml (via w:numPr); contextualSpacing
+    // tightens the gap between consecutive items.
+    r#"<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="BodyText"/><w:qFormat/>"#,
+    r#"<w:pPr><w:spacing w:after="40" w:line="360" w:lineRule="auto"/><w:contextualSpacing/></w:pPr></w:style>"#,
+    r#"</w:styles>"#,
+);
 
 /// Wrap the generated `<w:p>` / `<w:tbl>` runs in the document/section skeleton.
 fn wrap_document_body(body: &str) -> String {
@@ -74,42 +339,47 @@ fn wrap_document_body(body: &str) -> String {
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{}"#,
             r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>"#,
-            r#"<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/>"#,
+            // 1.5 cm margins all around (850 twips).
+            r#"<w:pgMar w:top="850" w:right="850" w:bottom="850" w:left="850" w:header="708" w:footer="708" w:gutter="0"/>"#,
             r#"</w:sectPr></w:body></w:document>"#,
         ),
         body
     )
 }
 
-fn generate_document_xml(data: &GlossExportData) -> String {
+fn generate_document_xml(data: &GlossExportData, numbering: &mut NumberingRegistry) -> String {
     let mut body = String::new();
 
     body.push_str(&styled_paragraph("Title", &[run(false, false, "Gloss Export")]));
 
+    // The combined glossed text uses the Vocab Quote Block paragraph style.
     for line in data.text.lines().filter(|l| !l.trim().is_empty()) {
-        body.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+        body.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
     }
 
-    for (i, paragraph) in data.paragraphs.iter().enumerate() {
-        body.push_str(&format_paragraph(paragraph, i + 1));
+    if !data.paragraphs.is_empty() {
+        body.push_str(&styled_paragraph("Heading1", &[run(false, false, "Paragraphs")]));
+    }
+    for paragraph in &data.paragraphs {
+        body.push_str(&format_paragraph(paragraph, numbering));
     }
 
     wrap_document_body(&body)
 }
 
-fn generate_chat_document_xml(data: &ChatExportData) -> String {
+fn generate_chat_document_xml(data: &ChatExportData, numbering: &mut NumberingRegistry) -> String {
     let mut body = String::new();
 
     body.push_str(&styled_paragraph("Title", &[run(false, false, "Chat Export")]));
 
     for message in &data.messages {
-        body.push_str(&format_message(message));
+        body.push_str(&format_message(message, numbering));
     }
 
     wrap_document_body(&body)
 }
 
-fn format_message(message: &ChatMessage) -> String {
+fn format_message(message: &ChatMessage, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
 
     let heading = match message.role.as_str() {
@@ -126,10 +396,7 @@ fn format_message(message: &ChatMessage) -> String {
                 "Heading2",
                 &[run(false, false, &format!("{}{}", resp.model_name, resp.selected_suffix()))],
             ));
-            // AI responses are exported as plain text.
-            for line in resp.response.lines().filter(|l| !l.trim().is_empty()) {
-                out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
-            }
+            out.push_str(&markdown_to_docx_body_reg(&resp.response, numbering));
         }
     } else {
         for line in message.content.lines().filter(|l| !l.trim().is_empty()) {
@@ -140,29 +407,22 @@ fn format_message(message: &ChatMessage) -> String {
     out
 }
 
-fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
+fn format_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
 
-    out.push_str(&styled_paragraph(
-        "Heading1",
-        &[run(false, false, &format!("Paragraph {}", number))],
-    ));
-
+    // The paragraph text (shown above its vocab table) uses Vocab Quote Block.
     for line in paragraph.text.lines().filter(|l| !l.trim().is_empty()) {
-        out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
+        out.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
     }
 
     if !paragraph.ai_translations.is_empty() {
-        out.push_str(&styled_paragraph("Heading2", &[run(false, false, "AI Translations")]));
+        out.push_str(&styled_paragraph("BodyText", &[run(true, false, "AI Translations")]));
         for trans in &paragraph.ai_translations {
             out.push_str(&styled_paragraph(
                 "BodyText",
                 &[run(true, false, &format!("{}{}", trans.model_name, trans.selected_suffix()))],
             ));
-            // AI translation responses are exported as plain text.
-            for line in trans.response.lines().filter(|l| !l.trim().is_empty()) {
-                out.push_str(&styled_paragraph("BodyText", &[run(false, false, line.trim())]));
-            }
+            out.push_str(&markdown_to_docx_body_reg(&trans.response, numbering));
         }
     }
 
@@ -173,58 +433,125 @@ fn format_paragraph(paragraph: &GlossExportParagraph, number: usize) -> String {
     out
 }
 
-/// Render the vocabulary as a two-column table (word | definition), mirroring
-/// the Markdown / Org-Mode exports.
+/// Vocabulary column widths: word column + definition column fill the text
+/// width (`TABLE_TEXT_WIDTH_TWIPS`).
+const VOCAB_WORD_COL_TWIPS: u32 = 2500;
+
+/// Render the vocabulary as a borderless two-column table
+/// (word | definition), per the print design: no borders, no left cell
+/// padding, ~1 em right padding, compact 15 pt cell lines.
 fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
+    let def_col = (TABLE_TEXT_WIDTH_TWIPS - VOCAB_WORD_COL_TWIPS).to_string();
+    let word_col = VOCAB_WORD_COL_TWIPS.to_string();
     let mut rows = String::new();
     for vocab in vocabulary {
-        let word_cell = table_cell("2500", &[run(true, false, &vocab.word)]);
-        let summary_cell = table_cell("7000", &summary_html_to_runs(&vocab.summary));
+        let word_cell = table_cell("VocabEntry", &word_col, "dxa", &[run(true, false, &vocab.word)]);
+        let summary_cell =
+            table_cell("VocabEntry", &def_col, "dxa", &summary_html_to_runs(&vocab.summary));
         rows.push_str(&format!("<w:tr>{}{}</w:tr>", word_cell, summary_cell));
     }
 
+    let grid = format!(
+        r#"<w:tblGrid><w:gridCol w:w="{}"/><w:gridCol w:w="{}"/></w:tblGrid>"#,
+        word_col, def_col
+    );
+    format!("{}{}", borderless_table(&grid, &rows), table_spacer(454))
+}
+
+/// An empty spacer paragraph after a table (OOXML has no direct "space after
+/// table"). The line is a tiny exact height so the paragraph contributes
+/// essentially only its `w:after` gap — 0.8 cm (454 twips) below the table.
+fn table_spacer(after_twips: u32) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:spacing w:before="0" w:after="{}" w:line="20" w:lineRule="exact"/></w:pPr></w:p>"#,
+        after_twips
+    )
+}
+
+/// Borderless table for the vocabulary: no borders, zero cell margins except
+/// ~1 em (220 twips) on the right so columns cannot touch.
+fn borderless_table(grid: &str, rows: &str) -> String {
     format!(
         concat!(
             r#"<w:tbl><w:tblPr>"#,
             r#"<w:tblW w:w="0" w:type="auto"/>"#,
-            r#"<w:tblBorders>"#,
-            r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"</w:tblBorders>"#,
-            r#"</w:tblPr>{}</w:tbl>"#,
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="0" w:type="dxa"/><w:right w:w="220" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
+            r#"</w:tblPr>{}{}</w:tbl>"#,
         ),
-        rows
+        grid, rows
     )
 }
 
-fn table_cell(width_twips: &str, runs: &[String]) -> String {
+/// Borderless table with a caller-chosen `w:tblW` and optional `w:tblGrid`.
+/// Used for markdown tables in AI responses — no borders, with a small right
+/// cell margin (~1 em) so adjacent columns cannot touch.
+fn borderless_table_with(tblw: &str, grid: &str, rows: &str) -> String {
     format!(
         concat!(
-            r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/></w:tcPr>"#,
-            r#"<w:p><w:pPr><w:pStyle w:val="VocabEntry"/></w:pPr>{}</w:p></w:tc>"#,
+            r#"<w:tbl><w:tblPr>"#,
+            "{}",
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="0" w:type="dxa"/><w:right w:w="220" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
+            r#"</w:tblPr>{}{}</w:tbl>"#,
         ),
-        width_twips,
-        runs.concat()
+        tblw, grid, rows
     )
 }
 
-fn styled_paragraph(style_id: &str, runs: &[String]) -> String {
+fn table_cell(style_id: &str, width_twips: &str, width_type: &str, runs: &[String]) -> String {
     format!(
-        r#"<w:p><w:pPr><w:pStyle w:val="{}"/></w:pPr>{}</w:p>"#,
+        concat!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="{}"/></w:tcPr>"#,
+            r#"<w:p><w:pPr><w:pStyle w:val="{}"/></w:pPr>{}</w:p></w:tc>"#,
+        ),
+        width_twips,
+        width_type,
         style_id,
         runs.concat()
     )
 }
 
+fn styled_paragraph(style_id: &str, runs: &[String]) -> String {
+    styled_paragraph_indent(style_id, 0, runs)
+}
+
+/// Paragraph with an optional left indent (`w:ind`), used for nested list
+/// levels and blockquotes. An indent of 0 emits no `w:ind` element.
+fn styled_paragraph_indent(style_id: &str, indent_twips: u32, runs: &[String]) -> String {
+    let ind = if indent_twips == 0 {
+        String::new()
+    } else {
+        format!(r#"<w:ind w:left="{}"/>"#, indent_twips)
+    };
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="{}"/>{}</w:pPr>{}</w:p>"#,
+        style_id,
+        ind,
+        runs.concat()
+    )
+}
+
 fn run(bold: bool, italic: bool, text: &str) -> String {
+    run_props(bold, italic, false, text).unwrap_or_default()
+}
+
+/// A styled text run. `code` switches the run to a monospace font. Newlines in
+/// `text` become `<w:br/>` elements inside the run. Returns `None` for empty
+/// text.
+fn run_props(bold: bool, italic: bool, code: bool, text: &str) -> Option<String> {
     if text.is_empty() {
-        return String::new();
+        return None;
     }
     let mut rpr = String::new();
+    if code {
+        // rFonts must precede w:b / w:i in the CT_RPr element order.
+        rpr.push_str(r#"<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Courier New"/>"#);
+    }
     if bold {
         rpr.push_str("<w:b/>");
     }
@@ -236,11 +563,11 @@ fn run(bold: bool, italic: bool, text: &str) -> String {
     } else {
         format!("<w:rPr>{}</w:rPr>", rpr)
     };
-    format!(
-        r#"<w:r>{}<w:t xml:space="preserve">{}</w:t></w:r>"#,
-        rpr,
-        escape_xml(text)
-    )
+    let segments: Vec<String> = text
+        .split('\n')
+        .map(|seg| format!(r#"<w:t xml:space="preserve">{}</w:t>"#, escape_xml(seg)))
+        .collect();
+    Some(format!("<w:r>{}{}</w:r>", rpr, segments.join("<w:br/>")))
 }
 
 fn escape_xml(text: &str) -> String {
@@ -315,6 +642,319 @@ fn summary_html_to_runs(summary: &str) -> Vec<String> {
     runs
 }
 
+// --- Markdown → OOXML body emitter -----------------------------------------
+
+/// Twips of left indent per nesting level (lists, blockquotes).
+const INDENT_STEP_TWIPS: u32 = 360;
+
+/// One list instance recorded while emitting the body. Each Markdown `List`
+/// node (including every nested list) gets its own `numId` so counters restart
+/// per list and ordered lists can honour their `start` value.
+struct ListInstance {
+    num_id: u32,
+    ordered: bool,
+    /// The `w:ilvl` the list's items sit at (its Markdown nesting depth).
+    ilvl: u32,
+    /// The first item's number (ordered lists only; ignored for bullets).
+    start: u32,
+}
+
+/// Collects the list instances emitted into the document body so that a
+/// matching `word/numbering.xml` can be generated afterwards. `numId` values
+/// start at 1 (0 is not a valid `w:numId`).
+#[derive(Default)]
+struct NumberingRegistry {
+    lists: Vec<ListInstance>,
+}
+
+impl NumberingRegistry {
+    /// Allocate a fresh `numId` for a list at nesting depth `ilvl`.
+    fn allocate(&mut self, ordered: bool, ilvl: u32, start: u32) -> u32 {
+        let num_id = self.lists.len() as u32 + 1;
+        self.lists.push(ListInstance { num_id, ordered, ilvl, start });
+        num_id
+    }
+}
+
+/// The two shared abstract numbering definitions: bullets and decimal.
+const ABSTRACT_BULLET_ID: u32 = 0;
+const ABSTRACT_DECIMAL_ID: u32 = 1;
+
+/// One `<w:abstractNum>` with nine levels, all bullet or all decimal. Each
+/// list references one of these via its own `<w:num>`; the level used is the
+/// item's nesting depth, so nested lists indent correctly.
+fn abstract_num_xml(abstract_id: u32, ordered: bool) -> String {
+    let mut levels = String::new();
+    for i in 0..9u32 {
+        let (num_fmt, lvl_text) = if ordered {
+            ("decimal", format!("%{}.", i + 1))
+        } else {
+            ("bullet", "\u{2022}".to_string())
+        };
+        // Hanging indent: the marker sits at (i)*360, the text at (i+1)*360.
+        let left = INDENT_STEP_TWIPS * (i + 1);
+        levels.push_str(&format!(
+            concat!(
+                r#"<w:lvl w:ilvl="{}"><w:start w:val="1"/><w:numFmt w:val="{}"/>"#,
+                r#"<w:lvlText w:val="{}"/><w:lvlJc w:val="left"/>"#,
+                r#"<w:pPr><w:ind w:left="{}" w:hanging="360"/></w:pPr></w:lvl>"#,
+            ),
+            i,
+            num_fmt,
+            escape_xml(&lvl_text),
+            left,
+        ));
+    }
+    format!(
+        r#"<w:abstractNum w:abstractNumId="{}">{}</w:abstractNum>"#,
+        abstract_id, levels
+    )
+}
+
+/// Build `word/numbering.xml` for the lists recorded in `registry`. The two
+/// abstract definitions are always present; ordered lists carry a per-level
+/// `w:startOverride` so each one restarts at its Markdown `start` value.
+fn numbering_xml(registry: &NumberingRegistry) -> Vec<u8> {
+    let mut nums = String::new();
+    for list in &registry.lists {
+        let (abstract_id, override_xml) = if list.ordered {
+            (
+                ABSTRACT_DECIMAL_ID,
+                format!(
+                    r#"<w:lvlOverride w:ilvl="{}"><w:startOverride w:val="{}"/></w:lvlOverride>"#,
+                    list.ilvl, list.start
+                ),
+            )
+        } else {
+            (ABSTRACT_BULLET_ID, String::new())
+        };
+        nums.push_str(&format!(
+            r#"<w:num w:numId="{}"><w:abstractNumId w:val="{}"/>{}</w:num>"#,
+            list.num_id, abstract_id, override_xml
+        ));
+    }
+    format!(
+        concat!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#,
+            "{}{}{}</w:numbering>",
+        ),
+        abstract_num_xml(ABSTRACT_BULLET_ID, false),
+        abstract_num_xml(ABSTRACT_DECIMAL_ID, true),
+        nums,
+    )
+    .into_bytes()
+}
+
+/// A list-item paragraph. When `num_id` is `Some`, the paragraph is a real
+/// list item (marker + indent supplied by `word/numbering.xml` via `w:numPr`).
+/// When `None` (a loose item's continuation paragraph), it carries a plain
+/// left indent matching the list level so it aligns under the item text.
+fn list_paragraph(level: usize, num_id: Option<u32>, runs: &[String]) -> String {
+    let pr = match num_id {
+        Some(id) => format!(
+            r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{}"/></w:numPr>"#,
+            level, id
+        ),
+        None => format!(r#"<w:ind w:left="{}"/>"#, INDENT_STEP_TWIPS * (level as u32 + 1)),
+    };
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="ListParagraph"/>{}</w:pPr>{}</w:p>"#,
+        pr,
+        runs.concat()
+    )
+}
+
+/// Convert a Markdown AI/assistant response to OOXML `<w:p>` / `<w:tbl>`
+/// fragments, recording any lists in `numbering` so a matching
+/// `word/numbering.xml` can be built. On parse failure, falls back to one
+/// `BodyText` paragraph per non-empty raw line.
+fn markdown_to_docx_body_reg(text: &str, numbering: &mut NumberingRegistry) -> String {
+    match parse_response(text) {
+        Some(Node::Root(root)) => root
+            .children
+            .iter()
+            .map(|n| docx_block(n, 0, numbering))
+            .collect(),
+        _ => docx_raw_fallback(text),
+    }
+}
+
+/// Convenience wrapper for callers that do not assemble a full package (tests):
+/// emits the body with a throwaway numbering registry.
+#[cfg(test)]
+pub fn markdown_to_docx_body(text: &str) -> String {
+    let mut numbering = NumberingRegistry::default();
+    markdown_to_docx_body_reg(text, &mut numbering)
+}
+
+/// Raw-text fallback when the response cannot be parsed as Markdown.
+fn docx_raw_fallback(text: &str) -> String {
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| styled_paragraph("BodyText", &[run(false, false, l.trim())]))
+        .collect()
+}
+
+fn docx_block(node: &Node, level: usize, numbering: &mut NumberingRegistry) -> String {
+    let indent = INDENT_STEP_TWIPS * level as u32;
+    match node {
+        Node::Paragraph(p) => {
+            styled_paragraph_indent("BodyText", indent, &inline_runs_xml(&inline_runs(&p.children)))
+        }
+        // No Word Heading styles for response content: a bold BodyText
+        // paragraph, so response headings cannot interleave with the
+        // exporter's own document outline.
+        Node::Heading(h) => styled_paragraph_indent(
+            "BodyText",
+            indent,
+            &inline_runs_xml_bold(&inline_runs(&h.children)),
+        ),
+        Node::List(list) => docx_list(list, level, numbering),
+        Node::Code(code) => docx_code(code, indent),
+        Node::Table(table) => docx_markdown_table(table),
+        Node::Blockquote(quote) => quote
+            .children
+            .iter()
+            .map(|child| docx_block(child, level + 1, numbering))
+            .collect(),
+        Node::ThematicBreak(_) => concat!(
+            r#"<w:p><w:pPr><w:pStyle w:val="BodyText"/>"#,
+            r#"<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr>"#,
+            r#"</w:pPr></w:p>"#,
+        )
+        .to_string(),
+        other => {
+            let text = node_plain_text(other);
+            text.lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| styled_paragraph_indent("BodyText", indent, &[run(false, false, l.trim())]))
+                .collect()
+        }
+    }
+}
+
+/// Render flattened inline runs as OOXML run elements. Links become
+/// `text (url)`; autolinks (text == url) just the url.
+fn inline_runs_xml(runs: &[InlineRun]) -> Vec<String> {
+    runs.iter().filter_map(inline_run_xml).collect()
+}
+
+/// Same, with bold forced on every run (headings, table header row).
+fn inline_runs_xml_bold(runs: &[InlineRun]) -> Vec<String> {
+    runs.iter()
+        .filter_map(|r| inline_run_xml(&InlineRun { bold: true, ..r.clone() }))
+        .collect()
+}
+
+fn inline_run_xml(r: &InlineRun) -> Option<String> {
+    let text = match &r.link_url {
+        Some(url) if is_autolink(&r.text, url) => r.text.clone(),
+        Some(url) => format!("{} ({})", r.text, url),
+        None => r.text.clone(),
+    };
+    run_props(r.bold, r.italic, r.code, &text)
+}
+
+/// GFM autolinks carry no distinct link text: the url is the text, possibly
+/// with an inferred `http://` / `mailto:` prefix (`www.example.com`,
+/// `<user@x.y>`). Repeating the url in parentheses would just be noise.
+fn is_autolink(text: &str, url: &str) -> bool {
+    url == text
+        || ["http://", "https://", "mailto:"]
+            .iter()
+            .any(|scheme| url.strip_prefix(scheme) == Some(text))
+}
+
+fn docx_list(list: &List, level: usize, numbering: &mut NumberingRegistry) -> String {
+    // One numId per list so counters restart per list and ordered lists honour
+    // their start value. Items sit at ilvl = the Markdown nesting depth.
+    let num_id = numbering.allocate(list.ordered, level as u32, list.start.unwrap_or(1));
+    let mut out = String::new();
+    for item in &list.children {
+        let Node::ListItem(li) = item else { continue };
+        // The list marker attaches to the item's first paragraph. If the item
+        // starts with some other block (code, nested list), an empty numbered
+        // paragraph carries the marker so the item is not left unlabelled.
+        let mut marker_pending = true;
+        if !matches!(li.children.first(), Some(Node::Paragraph(_))) {
+            out.push_str(&list_paragraph(level, Some(num_id), &[]));
+            marker_pending = false;
+        }
+        for block in &li.children {
+            match block {
+                Node::Paragraph(p) => {
+                    let runs = inline_runs_xml(&inline_runs(&p.children));
+                    // Only the first paragraph of the item is the numbered
+                    // line; later paragraphs are indented continuations.
+                    let this_num = if marker_pending { Some(num_id) } else { None };
+                    marker_pending = false;
+                    out.push_str(&list_paragraph(level, this_num, &runs));
+                }
+                Node::List(inner) => out.push_str(&docx_list(inner, level + 1, numbering)),
+                other => out.push_str(&docx_block(other, level + 1, numbering)),
+            }
+        }
+    }
+    out
+}
+
+/// One monospace `BodyText` paragraph per code line; blank lines are
+/// preserved as empty paragraphs.
+fn docx_code(code: &Code, indent: u32) -> String {
+    code.value
+        .lines()
+        .map(|line| {
+            let runs: Vec<String> = run_props(false, false, true, line).into_iter().collect();
+            styled_paragraph_indent("BodyText", indent, &runs)
+        })
+        .collect()
+}
+
+/// Usable text width in twips for the page geometry in `wrap_document_body`
+/// (A4 11906 minus 2 × 850 margins). Markdown table columns share it evenly
+/// so the table never extends past the page edge.
+const TABLE_TEXT_WIDTH_TWIPS: u32 = 10206;
+
+fn docx_markdown_table(table: &Table) -> String {
+    let ncols = table
+        .children
+        .iter()
+        .filter_map(|row| match row {
+            Node::TableRow(r) => Some(r.children.len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let col_width = (TABLE_TEXT_WIDTH_TWIPS / ncols as u32).to_string();
+
+    let mut rows = String::new();
+    for (row_idx, row) in table.children.iter().enumerate() {
+        let Node::TableRow(row) = row else { continue };
+        let mut cells = String::new();
+        for cell in &row.children {
+            let runs = match cell {
+                Node::TableCell(tc) => inline_runs(&tc.children),
+                _ => Vec::new(),
+            };
+            let run_strs = if row_idx == 0 {
+                inline_runs_xml_bold(&runs)
+            } else {
+                inline_runs_xml(&runs)
+            };
+            cells.push_str(&table_cell("BodyText", &col_width, "dxa", &run_strs));
+        }
+        rows.push_str(&format!("<w:tr>{}</w:tr>", cells));
+    }
+
+    let grid = format!(
+        "<w:tblGrid>{}</w:tblGrid>",
+        format!(r#"<w:gridCol w:w="{}"/>"#, col_width).repeat(ncols)
+    );
+    borderless_table_with(r#"<w:tblW w:w="5000" w:type="pct"/>"#, &grid, &rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,7 +996,7 @@ mod tests {
     fn test_generate_gloss_docx_structure() {
         let docx = generate_gloss_docx(&sample_json()).unwrap();
 
-        // Output unzips and keeps the template's other parts intact.
+        // The package is generated in code with all required parts present.
         let styles = read_part(&docx, "word/styles.xml");
         for style_id in ["Title", "Heading1", "Heading2", "BodyText", "VocabEntry"] {
             assert!(styles.contains(&format!("w:styleId=\"{}\"", style_id)));
@@ -370,10 +1010,13 @@ mod tests {
         roxmltree_lite_check(&doc);
 
         assert!(doc.contains("Gloss Export"));
-        assert!(doc.contains("Paragraph 1"));
-        assert!(doc.contains("Paragraph 2"));
+        // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
+        assert!(doc.contains("Paragraphs"));
+        assert!(!doc.contains("Paragraph 1"));
+        assert!(!doc.contains("Paragraph 2"));
         assert!(doc.contains("anāthapiṇḍikassa ārāme."));
-        assert!(doc.contains("AI Translations"));
+        // "AI Translations" is bold body text, not a Heading2 section.
+        assert!(doc.contains(r#"<w:pStyle w:val="BodyText"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">AI Translations</w:t>"#));
         assert!(doc.contains("gemini-2.5-flash (selected)"));
         assert!(doc.contains("Thus have I heard."));
         // Vocabulary is rendered as a table, not a "Vocabulary" heading.
@@ -467,6 +1110,304 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert!(runs[0].contains("fish &amp; chips"));
         assert!(!runs[0].contains("&amp;amp;"));
+    }
+
+    // --- Markdown → OOXML emitter -------------------------------------------
+
+    #[test]
+    fn test_docx_bold_italic_inline() {
+        let body = markdown_to_docx_body("**bold** and *italic* text");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">bold</w:t>"#));
+        assert!(body.contains(r#"<w:rPr><w:i/></w:rPr><w:t xml:space="preserve">italic</w:t>"#));
+        assert!(!body.contains("**"));
+    }
+
+    #[test]
+    fn test_docx_heading_is_bold_bodytext() {
+        let body = markdown_to_docx_body("## Section Title");
+        assert!(body.contains(r#"<w:pStyle w:val="BodyText"/>"#));
+        assert!(!body.contains("Heading"));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Section Title</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_nested_list_uses_real_list_items() {
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg("- alpha\n- beta\n  - inner\n- gamma", &mut numbering);
+        roxmltree_lite_check(&wrap_document_body(&body));
+        // Real list items: ListParagraph style + w:numPr, no literal markers.
+        assert!(body.contains(r#"<w:pStyle w:val="ListParagraph"/>"#));
+        assert!(!body.contains(r#"<w:t xml:space="preserve">- </w:t>"#));
+        // Outer list at ilvl 0 (numId 1), nested list at ilvl 1 (numId 2).
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#));
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="1"/><w:numId w:val="2"/></w:numPr>"#));
+        // Two lists were registered, both bullet.
+        assert_eq!(numbering.lists.len(), 2);
+        assert!(numbering.lists.iter().all(|l| !l.ordered));
+        // "inner" is a numbered item, not a marker-prefixed body paragraph.
+        assert!(body.contains(r#"<w:t xml:space="preserve">inner</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_ordered_list_honors_start() {
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg("3. third\n4. fourth", &mut numbering);
+        roxmltree_lite_check(&wrap_document_body(&body));
+        // No literal "3. " markers: Word renders the number from numbering.xml.
+        assert!(!body.contains(r#"<w:t xml:space="preserve">3. </w:t>"#));
+        assert!(body.contains(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#));
+        // The registered ordered list carries start=3.
+        assert_eq!(numbering.lists.len(), 1);
+        assert!(numbering.lists[0].ordered);
+        assert_eq!(numbering.lists[0].start, 3);
+        // numbering.xml overrides the start of this list to 3.
+        let xml = String::from_utf8(numbering_xml(&numbering)).unwrap();
+        assert!(xml.contains(r#"<w:startOverride w:val="3"/>"#));
+    }
+
+    #[test]
+    fn test_docx_loose_list_item_second_paragraph_same_indent() {
+        let mut numbering = NumberingRegistry::default();
+        let body = markdown_to_docx_body_reg(
+            "- first para\n\n  second para\n\n- next item",
+            &mut numbering,
+        );
+        roxmltree_lite_check(&wrap_document_body(&body));
+        // Two numbered items (one per bullet); the continuation paragraph has
+        // no numPr but is indented to the list level (360).
+        assert_eq!(
+            body.matches(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#)
+                .count(),
+            2
+        );
+        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
+        assert!(body.contains("second para"));
+    }
+
+    #[test]
+    fn test_docx_numbering_part_present_and_referenced() {
+        let docx = generate_gloss_docx(
+            &serde_json::json!({
+                "text": "x",
+                "paragraphs": [{
+                    "text": "x",
+                    "vocabulary": [],
+                    "ai_translations": [
+                        {"model_name": "m", "response": "- one\n- two", "is_selected": true}
+                    ]
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // The numbering part exists and declares both abstract definitions.
+        let numbering = read_part(&docx, "word/numbering.xml");
+        roxmltree_lite_check(&numbering);
+        assert!(numbering.contains(r#"<w:abstractNum w:abstractNumId="0">"#));
+        assert!(numbering.contains(r#"<w:abstractNum w:abstractNumId="1">"#));
+        assert!(numbering.contains(r#"<w:numFmt w:val="bullet"/>"#));
+        assert!(numbering.contains(r#"<w:numFmt w:val="decimal"/>"#));
+        assert!(numbering.contains(r#"<w:num w:numId="1">"#));
+
+        // It is declared and related from the document.
+        let ct = read_part(&docx, "[Content_Types].xml");
+        assert!(ct.contains("/word/numbering.xml"));
+        let rels = read_part(&docx, "word/_rels/document.xml.rels");
+        assert!(rels.contains("numbering.xml"));
+
+        // The list style exists.
+        let styles = read_part(&docx, "word/styles.xml");
+        assert!(styles.contains(r#"w:styleId="ListParagraph""#));
+    }
+
+    #[test]
+    fn test_docx_markdown_table_bold_header() {
+        let body = markdown_to_docx_body("| A | B |\n|---|---|\n| **x** | y |");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains("<w:tbl>"));
+        // Markdown response tables are borderless too.
+        assert!(!body.contains(r#"<w:tblBorders>"#));
+        assert!(body.contains(r#"<w:pStyle w:val="BodyText"/>"#));
+        // Full-text-width layout: 100% pct table, explicit equal-column grid,
+        // dxa cell widths (2 columns → 10206 / 2 = 5103 twips each).
+        assert!(body.contains(r#"<w:tblW w:w="5000" w:type="pct"/>"#));
+        assert!(body.contains(r#"<w:tblGrid><w:gridCol w:w="5103"/><w:gridCol w:w="5103"/></w:tblGrid>"#));
+        assert!(body.contains(r#"<w:tcW w:w="5103" w:type="dxa"/>"#));
+        // Header cells bold.
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">A</w:t>"#));
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">B</w:t>"#));
+        // Body row keeps its own emphasis.
+        assert!(body.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">x</w:t>"#));
+        assert!(body.contains(r#"<w:r><w:t xml:space="preserve">y</w:t></w:r>"#));
+    }
+
+    #[test]
+    fn test_docx_code_block_monospace_and_blank_lines() {
+        let body = markdown_to_docx_body("```python\nprint('hi')\n\nprint('there')\n```");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert_eq!(body.matches(r#"<w:rFonts w:ascii="Consolas""#).count(), 2);
+        assert!(body.contains("print('hi')"));
+        // The blank line is preserved as an empty paragraph.
+        assert!(body.contains(r#"<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr></w:p>"#));
+    }
+
+    #[test]
+    fn test_docx_inline_code_monospace() {
+        let body = markdown_to_docx_body("run `cargo test` now");
+        assert!(body.contains(r#"<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Courier New"/>"#));
+        assert!(body.contains("cargo test"));
+    }
+
+    #[test]
+    fn test_docx_link_text_and_url() {
+        let body = markdown_to_docx_body("see [docs](https://x.y) here");
+        assert!(body.contains("docs (https://x.y)"));
+    }
+
+    #[test]
+    fn test_docx_autolink_bare_url() {
+        let body = markdown_to_docx_body("See https://example.org here");
+        assert!(body.contains(r#"<w:t xml:space="preserve">https://example.org</w:t>"#));
+        assert!(!body.contains("https://example.org (https://example.org)"));
+    }
+
+    #[test]
+    fn test_docx_autolink_email_and_www_no_url_repeat() {
+        let body = markdown_to_docx_body("Mail <user@x.y> or visit www.example.org today");
+        assert!(body.contains("user@x.y"));
+        assert!(!body.contains("(mailto:user@x.y)"));
+        assert!(body.contains("www.example.org"));
+        assert!(!body.contains("(http://www.example.org)"));
+    }
+
+    #[test]
+    fn test_docx_blockquote_indent_and_thematic_break() {
+        let body = markdown_to_docx_body("> quoted text\n\n---");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains(r#"<w:ind w:left="360"/>"#));
+        assert!(body.contains("quoted text"));
+        assert!(body.contains(r#"<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr>"#));
+    }
+
+    #[test]
+    fn test_docx_xml_escaping_in_response() {
+        let body = markdown_to_docx_body("a < b & c");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert!(body.contains("a &lt; b &amp; c"));
+    }
+
+    #[test]
+    fn test_docx_soft_break_becomes_w_br() {
+        let body = markdown_to_docx_body("first line\nsecond line");
+        assert!(body.contains(r#"<w:t xml:space="preserve">first line</w:t><w:br/><w:t xml:space="preserve">second line</w:t>"#));
+    }
+
+    #[test]
+    fn test_docx_raw_fallback_plain_paragraphs() {
+        // Exercised directly: `to_mdast` practically cannot fail on plain
+        // markdown, so the fallback is tested at the function level.
+        let body = docx_raw_fallback("line one\n\nline two");
+        roxmltree_lite_check(&wrap_document_body(&body));
+        assert_eq!(body.matches("<w:p>").count(), 2);
+        assert!(body.contains("line one"));
+        assert!(body.contains("line two"));
+    }
+
+    #[test]
+    fn test_docx_response_markdown_rendered_in_gloss_export() {
+        let json = serde_json::json!({
+            "text": "Evaṁ me sutaṁ.",
+            "paragraphs": [{
+                "text": "Evaṁ me sutaṁ.",
+                "vocabulary": [],
+                "ai_translations": [
+                    {"model_name": "m", "response": "**Thus** have I heard.", "is_selected": true}
+                ]
+            }]
+        })
+        .to_string();
+        let docx = generate_gloss_docx(&json).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        assert!(doc.contains(r#"<w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Thus</w:t>"#));
+        assert!(!doc.contains("**Thus**"));
+    }
+
+    // --- Font embedding & styling -------------------------------------------
+
+    #[test]
+    fn test_docx_embeds_fonts() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+
+        // Content types declare the obfuscated-font default and settings/fontTable.
+        let ct = read_part(&docx, "[Content_Types].xml");
+        assert!(ct.contains("obfuscatedFont"));
+        assert!(ct.contains("/word/fontTable.xml"));
+        assert!(ct.contains("/word/settings.xml"));
+
+        // settings.xml opts into embedded fonts.
+        let settings = read_part(&docx, "word/settings.xml");
+        assert!(settings.contains("<w:embedTrueTypeFonts/>"));
+
+        // fontTable maps both families with fontKey-carrying embed slots.
+        let ft = read_part(&docx, "word/fontTable.xml");
+        assert!(ft.contains(r#"<w:font w:name="Abhaya Libre X">"#));
+        assert!(ft.contains(r#"<w:font w:name="Crimson Pro">"#));
+        assert!(ft.contains("w:embedRegular"));
+        assert!(ft.contains("w:embedBold"));
+        assert!(ft.contains("w:embedItalic"));
+        assert!(ft.contains("w:embedBoldItalic"));
+        assert!(ft.contains("w:fontKey"));
+
+        // All six obfuscated font parts are present (binary; read as bytes).
+        let mut archive = ZipArchive::new(Cursor::new(&docx)).unwrap();
+        for part in ["font1", "font2", "font3", "font4", "font5", "font6"] {
+            let mut f = archive
+                .by_name(&format!("word/fonts/{}.odttf", part))
+                .unwrap();
+            let mut buf = Vec::new();
+            f.read_to_end(&mut buf).unwrap();
+            assert!(buf.len() > 1000, "embedded font {} looks truncated", part);
+        }
+
+        // Styles reference the design fonts.
+        let styles = read_part(&docx, "word/styles.xml");
+        assert!(styles.contains(r#"w:ascii="Crimson Pro""#));
+        assert!(styles.contains(r#"w:ascii="Abhaya Libre X""#));
+    }
+
+    #[test]
+    fn test_obfuscate_font_is_reversible_and_touches_first_32_bytes() {
+        let key = "{1DF903F4-2E50-4C22-9B6E-95C11F26A201}";
+        let ttf: Vec<u8> = (0u8..=255).cycle().take(100).collect();
+        let obf = obfuscate_font(&ttf, key);
+        // Only the first 32 bytes are altered; the tail is untouched.
+        assert_ne!(obf[..32], ttf[..32]);
+        assert_eq!(obf[32..], ttf[32..]);
+        // XOR is its own inverse: de-obfuscating restores the original.
+        let restored = obfuscate_font(&obf, key);
+        assert_eq!(restored, ttf);
+    }
+
+    #[test]
+    fn test_vocab_table_is_borderless() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        // The vocab table has no borders and a right cell margin only.
+        assert!(doc.contains("<w:tblCellMar>"));
+        assert!(doc.contains(r#"<w:right w:w="220" w:type="dxa"/>"#));
+        // No table emits tblBorders (vocab and markdown tables are borderless).
+        assert!(!doc.contains("<w:tblBorders>"));
+    }
+
+    #[test]
+    fn test_page_margins_are_15mm_design() {
+        let docx = generate_gloss_docx(&sample_json()).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        // 1.5 cm margins all around (850 twips).
+        assert!(doc.contains(r#"w:top="850" w:right="850" w:bottom="850" w:left="850""#));
     }
 
     /// Minimal well-formedness check without adding an XML parser dependency:

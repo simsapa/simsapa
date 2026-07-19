@@ -26,7 +26,7 @@ Item {
         target: root.Window.window
         function onActiveChanged() {
             if (root.Window.window && root.Window.window.active) {
-                logger.info("WebEngineRepaintNudge: window re-activated, resize-nudging webview");
+                logger.debug("WebEngineRepaintNudge: window re-activated, resize-nudging webview");
                 nudge_timer.restart();
             }
         }

@@ -58,6 +58,13 @@ Item {
             elide: Text.ElideRight
         }
 
+        Label {
+            id: modified_label
+            text: history_utils.format_modified(root.item_data.modified)
+            font.pointSize: 9
+            color: root.is_dark ? "#a0a0a0" : "#606060"
+        }
+
         Row {
             id: buttons_row
             spacing: 4
