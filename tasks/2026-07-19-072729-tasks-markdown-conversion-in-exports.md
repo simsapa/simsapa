@@ -59,14 +59,14 @@ Update the file after completing each sub-task, not just after completing an ent
 - Blockquote → `#+begin_quote`/`#+end_quote` (recurse into children); `ThematicBreak` → `-----`.
 - Integration replaces, in `text_export.rs`: the `#+begin_src markdown\n{}\n#+end_src` wrappers in `gloss_paragraph_orgmode` (line ~164) and `chat_message_orgmode` (line ~318) with the converted org text, and deletes `markdown_bullets_for_org`.
 
-- [ ] 2.0 Org-Mode emitter and integration
-  - [ ] 2.1 Implement `markdown_to_orgmode()` block walk in `markdown_convert.rs`: paragraphs, headings-as-bold-lines, blockquotes, thematic breaks, with the raw-text fallback path.
-  - [ ] 2.2 Implement list emission: nested unordered/ordered lists, `start` honored, indentation per spec, multi-paragraph (loose) items.
-  - [ ] 2.3 Implement table emission with the `|---+---|` header separator, using `inline_runs` → org emphasis inside cells; escape literal `|` inside cell text (org has no in-cell pipe escape — replace with `\vert` or `¦`) so a cell cannot break the row.
-  - [ ] 2.4 Implement code emission (`#+begin_src <lang>` / `#+begin_example`, comma-escaping of `*`/`#+` lines) and the headline guard applied to all emitted body lines.
-  - [ ] 2.5 In `text_export.rs`: call `markdown_to_orgmode(&trans.response)` / `markdown_to_orgmode(&resp.response)` in the two org-mode branches; remove the src-block wrappers and `markdown_bullets_for_org`.
-  - [ ] 2.6 Update existing tests (`gloss_orgmode_*`, `chat_orgmode_*` assert `#+begin_src markdown`) to assert converted org output; add emitter unit tests: each construct, nested list indentation, table with bold cell, code block with/without lang + comma-escape, headline guard, pipe-in-cell escaping, and the raw-text fallback (exercised directly — see Notes on `to_mdast` never failing).
-  - [ ] 2.7 Run `cd backend && cargo test`.
+- [x] 2.0 Org-Mode emitter and integration
+  - [x] 2.1 Implement `markdown_to_orgmode()` block walk in `markdown_convert.rs`: paragraphs, headings-as-bold-lines, blockquotes, thematic breaks, with the raw-text fallback path.
+  - [x] 2.2 Implement list emission: nested unordered/ordered lists, `start` honored, indentation per spec, multi-paragraph (loose) items.
+  - [x] 2.3 Implement table emission with the `|---+---|` header separator, using `inline_runs` → org emphasis inside cells; escape literal `|` inside cell text (org has no in-cell pipe escape — replace with `\vert` or `¦`) so a cell cannot break the row.
+  - [x] 2.4 Implement code emission (`#+begin_src <lang>` / `#+begin_example`, comma-escaping of `*`/`#+` lines) and the headline guard applied to all emitted body lines.
+  - [x] 2.5 In `text_export.rs`: call `markdown_to_orgmode(&trans.response)` / `markdown_to_orgmode(&resp.response)` in the two org-mode branches; remove the src-block wrappers and `markdown_bullets_for_org`.
+  - [x] 2.6 Update existing tests (`gloss_orgmode_*`, `chat_orgmode_*` assert `#+begin_src markdown`) to assert converted org output; add emitter unit tests: each construct, nested list indentation, table with bold cell, code block with/without lang + comma-escape, headline guard, pipe-in-cell escaping, and the raw-text fallback (exercised directly — see Notes on `to_mdast` never failing).
+  - [x] 2.7 Run `cd backend && cargo test`.
 
 ### 3.0 DOCX emitter and integration
 

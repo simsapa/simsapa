@@ -13,6 +13,7 @@ use regex::Regex;
 use crate::export_types::{
     ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
 };
+use crate::markdown_convert::markdown_to_orgmode;
 use crate::prompt_utils::markdown_to_html;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -62,21 +63,6 @@ fn summary_html_to_orgmode(text: &str) -> String {
         .replace("</i>", "/")
         .replace("<b>", "*")
         .replace("</b>", "*")
-}
-
-/// Turn `* ` list markers at line starts into `- ` so Org-Mode `#+begin_src
-/// markdown` blocks don't collide with heading syntax.
-fn markdown_bullets_for_org(text: &str) -> String {
-    text.lines()
-        .map(|line| {
-            if let Some(rest) = line.strip_prefix("* ") {
-                format!("- {}", rest)
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 // --- Gloss: per-paragraph -------------------------------------------------
@@ -161,10 +147,10 @@ fn gloss_paragraph_orgmode(paragraph: &GlossExportParagraph, number: usize) -> S
         ai_section.push_str("\n*** AI Translations\n");
         for trans in &paragraph.ai_translations {
             ai_section.push_str(&format!(
-                "\n**** {}{}\n\n#+begin_src markdown\n{}\n#+end_src\n",
+                "\n**** {}{}\n\n{}\n",
                 trans.model_name,
                 trans.selected_suffix(),
-                markdown_bullets_for_org(&trans.response)
+                markdown_to_orgmode(&trans.response)
             ));
         }
     }
@@ -315,10 +301,10 @@ fn chat_message_orgmode(msg: &ChatMessage) -> String {
             let mut out = String::from("\n** Assistant\n");
             for resp in &msg.responses {
                 out.push_str(&format!(
-                    "\n*** {}{}\n\n#+begin_src markdown\n{}\n#+end_src\n",
+                    "\n*** {}{}\n\n{}\n",
                     resp.model_name,
                     resp.selected_suffix(),
-                    markdown_bullets_for_org(&resp.response)
+                    markdown_to_orgmode(&resp.response)
                 ));
             }
             out
@@ -450,12 +436,15 @@ mod tests {
     }
 
     #[test]
-    fn gloss_orgmode_escapes_and_bullets() {
+    fn gloss_orgmode_escapes_and_converts_response() {
         let out = gloss_export(&gloss_json(), "orgmode").unwrap();
         assert!(out.contains("* Gloss Export"));
         assert!(out.contains("** Paragraph 1"));
         assert!(out.contains("| *evaṁ* | thus; this *way* |"));
-        assert!(out.contains("#+begin_src markdown"));
+        // The AI response is converted to Org markup, not wrapped in a
+        // markdown src block.
+        assert!(!out.contains("#+begin_src markdown"));
+        assert!(out.contains("Thus have I heard."));
         assert!(!out.contains("*** Vocabulary"));
     }
 
@@ -486,12 +475,12 @@ mod tests {
     }
 
     #[test]
-    fn chat_orgmode_converts_bullets_in_src() {
+    fn chat_orgmode_converts_response_to_org() {
         let out = chat_export(&chat_json(), "orgmode").unwrap();
         assert!(out.contains("* Chat Export"));
         assert!(out.contains("** System"));
-        assert!(out.contains("#+begin_src markdown"));
-        // The "* thus" bullet must become "- thus" inside the src block.
+        assert!(!out.contains("#+begin_src markdown"));
+        // The "* thus / * so" markdown list becomes an Org `- ` list.
         assert!(out.contains("- thus"));
         assert!(out.contains("- so"));
     }
