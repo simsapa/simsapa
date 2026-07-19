@@ -129,8 +129,6 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── icons
 │   ├── fonts
 │   ├── dpd-res
-│   ├── docx-template
-│   │   └── gloss-template.docx
 │   ├── templates
 │   │   ├── column_bar.html
 │   │   ├── display_settings.html
@@ -146,7 +144,6 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `fonts/` - Custom fonts (Abhaya Libre, Crimson Pro, Source Sans)
 - `templates/` - HTML templates for content rendering
 - `dpd-res/` - Digital Pali Dictionary specific resources
-- `docx-template/gloss-template.docx` - Minimal OOXML template defining the named styles (Title/Heading1/Heading2/BodyText/VocabEntry) used by the Gloss DOCX export; embedded with `include_bytes!` in `backend/src/docx_export.rs`
 - `gloss-phrase-selections.json` - Curated set-phrase → word → uid data (`include_str!`), seeded into `gloss_phrase_selections` at bootstrap
 
 #### `/backend/` - Rust Backend Core
@@ -221,7 +218,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/app_settings.rs` - Application settings and configuration (incl. `SuttaLayout` / `SuttaDisplayDefaults`)
   - `src/sutta_display.rs` - per-request `SuttaDisplayOptions` + display GET-param parsing (multi-column sutta view)
   - `src/helpers.rs` - Utility functions including Linux desktop launcher creation; also the Gloss word-processing pipeline (`extract_words_with_context`, `process_word_for_glossing`) and the AI word-selection layer on top of it (`normalize_gloss_context` / `gloss_context_hash` / `gloss_cache_word_key`, `strip_gloss_annotations`, `resolve_gloss_word_selection`, the shared word-selection request builder `build_word_selection_items` / `build_word_selection_payload`, `parse_word_selection_response` (lenient/strict modes), `build_gloss_session_export_json` / `parse_gloss_session_export`)
-  - `src/docx_export.rs` - Gloss and Prompts DOCX export: `gloss_export_data()` / `chat_export_data()` JSON → `word/document.xml`, rezipped around the embedded `assets/docx-template/gloss-template.docx` (`generate_gloss_docx` / `generate_chat_docx`)
+  - `src/docx_export.rs` - Gloss and Prompts DOCX export: `gloss_export_data()` / `chat_export_data()` JSON → `word/document.xml` inside a fully code-generated OOXML package (content types, rels, `styles.xml`, `settings.xml`, `fontTable.xml`, and obfuscated `.odttf` embedded font parts — no binary template) (`generate_gloss_docx` / `generate_chat_docx`); AI-translation / assistant response text is rendered through `markdown_convert::markdown_to_docx_body`
+  - `src/markdown_convert.rs` - Shared Markdown → export conversion: `parse_response()` (GFM mdast parse with `unwrap_fenced_tables` pre-processing), `inline_runs()` styled-run flattening, `node_plain_text()` fallback, and the two emitters `markdown_to_orgmode()` (Org-Mode) and `markdown_to_docx_body()` (OOXML fragments), used by `text_export.rs` and `docx_export.rs`
   - `src/export_types.rs` - shared serde structs for the Gloss and Prompts exports (`GlossExportData` / `ChatExportData` / `AiResponse` …), deserialized by both `text_export.rs` and `docx_export.rs`
   - `src/text_export.rs` - Gloss and Prompts text exports (HTML / Markdown / Org-Mode) generated from the export JSON so the formatting is unit-tested in Rust: `gloss_export` / `gloss_paragraph_export` / `chat_export` / `chat_message_export`
 - `backend/tests/` - Rust backend unit + integration tests (the tree above lists a sample). Gloss word selection: `test_gloss_word_resolution.rs` (resolution chain + precedence + the bootstrap built-in-import hash-parity test), `test_gloss_session_export.rs` (JSON export → strict-precedence import → re-annotation round-trip).

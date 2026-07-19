@@ -528,20 +528,34 @@ imported rows.
 
 ### DOCX
 
-`backend/src/docx_export.rs`. A DOCX is a ZIP of XML parts, so the export takes
-pandoc's `--reference-doc` approach: an embedded minimal template
-(`assets/docx-template/gloss-template.docx`, `include_bytes!`) supplies
-`word/styles.xml` and the rest of the package, and only `word/document.xml` is
-regenerated. Named styles: `Title`, `Heading1`, `Heading2`, `BodyText`,
-`VocabEntry`. Summary markup `<b>`/`<i>` becomes bold/italic runs, other tags are
-stripped, entities decoded. The vocabulary is rendered as a **two-column
-bordered table** (word | definition) — the "Vocabulary" heading and the
-"Dictionary definitions from DPD:" line were removed (2026-07); the same
-template also backs the Prompts DOCX export (`generate_chat_docx`, roles as
-`Heading1`, model names as `Heading2`).
+`backend/src/docx_export.rs`. A DOCX is a ZIP of XML parts, and the **entire
+package is generated in Rust** — content types, rels, `word/styles.xml`,
+`settings.xml`, `fontTable.xml` + rels, the obfuscated `.odttf` embedded font
+parts (ECMA-376 XOR of the first 32 bytes with the reversed fontKey GUID), and
+`word/document.xml`. There is **no binary `.docx` template**; the earlier
+`assets/docx-template/gloss-template.docx` (embedded via `include_bytes!`) was
+dropped in the 2026-07 design overhaul and the file has been removed. Named
+styles: `Title`, `Heading1`, `Heading2`, `BodyText`, `VocabEntry`. The design
+matches the print CSS of pali-sutta-readings — Crimson Pro 11pt body on a 15pt
+line, Abhaya Libre X bold Title with a thin bottom border, 0.4 in page margins;
+the fonts (Abhaya Libre X Regular/Bold, Crimson Pro Regular/Bold/Italic/BoldItalic)
+are embedded from `assets/fonts/` via `include_bytes!`.
+
+Summary markup `<b>`/`<i>` becomes bold/italic runs, other tags are stripped,
+entities decoded. The vocabulary is rendered as a **borderless two-column table**
+(word | definition, right-only cell padding). AI-translation and Prompts
+assistant response text is Markdown, converted to OOXML `<w:p>`/`<w:tbl>`
+fragments by `markdown_convert::markdown_to_docx_body` (see
+`backend/src/markdown_convert.rs` — bold/italic/inline-code runs, bold-run
+headings, `- `/`N. ` lists with per-level indent, bordered markdown tables,
+monospace code blocks, links as `text (url)`). Export headings were flattened
+in the overhaul: a single "Paragraphs" heading (not per-paragraph "Paragraph N"),
+and "AI Translations" is bold text rather than a heading. The same code path backs
+the Prompts DOCX export (`generate_chat_docx`).
 
 (The `docx-rs` crate was considered and rejected: it cannot reuse an external
-template's styles, which was the point.)
+template's styles, and the design ultimately generates the whole package by hand
+anyway.)
 
 Input is the same `gloss_export_data()` JSON the HTML/Markdown/Org exports use.
 Those three text formats are **also generated in Rust** now
@@ -808,7 +822,8 @@ as the context windows, so the two sides cannot drift.
 | Normalization, hashing, resolution, export/import, response parsing | `backend/src/helpers.rs` |
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
 | Migration | `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` (also appended to `upgrade_appdata_schema()`) |
-| DOCX | `backend/src/docx_export.rs` + `assets/docx-template/gloss-template.docx` |
+| DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
+| Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |

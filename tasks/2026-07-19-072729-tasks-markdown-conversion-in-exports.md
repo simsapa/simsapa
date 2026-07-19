@@ -9,7 +9,8 @@ PRD: [2026-07-19-072729-prd---markdown-conversion-in-exports.md](./2026-07-19-07
 - `backend/src/text_export.rs` - Org-Mode branches (`gloss_paragraph_orgmode`, `chat_message_orgmode`) call the Org emitter; retire `markdown_bullets_for_org`; update tests.
 - `backend/src/docx_export.rs` - `format_paragraph` and the chat message loop call the DOCX emitter; extend `run()`/paragraph helpers (monospace, indent); generalize the table builder; new tests.
 - `backend/src/lib.rs` - Register the new `markdown_convert` module.
-- `PROJECT_MAP.md` - Note the new module.
+- `PROJECT_MAP.md` - Note the new module; removed the dropped `docx-template/gloss-template.docx`.
+- `docs/gloss-ai-word-selection.md` - Updated the DOCX export section (code-generated package, embedded fonts, markdown→OOXML conversion) and the "Where things live" table.
 
 ### Notes
 
@@ -81,7 +82,7 @@ Update the file after completing each sub-task, not just after completing an ent
 - Integration: in `format_paragraph` (AI translations, lines ~162–165) and the chat assistant loop (lines ~129–132), replace the plain-line loops with `markdown_to_docx_body(&…response)`. User messages / Pāli text unchanged.
 - Note the existing paragraph helpers take `&[String]` runs — the emitter can reuse `styled_paragraph` but needs an indent-capable variant.
 
-- [ ] 3.0 DOCX emitter and integration
+- [x] 3.0 DOCX emitter and integration
   - [x] 3.1 Extend the run/paragraph helpers in `docx_export.rs` (or expose them to `markdown_convert.rs` — prefer keeping OOXML emission in `docx_export.rs` and having it call the shared AST walk; decide by what keeps `markdown_convert.rs` free of OOXML details vs. duplication): code-font run support and an indented-paragraph variant. *(Decision: OOXML stays in `docx_export.rs`; it consumes `parse_response`/`inline_runs`/`node_plain_text` from `markdown_convert.rs`.)*
   - [x] 3.2 Implement the block walk → OOXML: paragraphs, bold-run headings, blockquote indent, thematic break border paragraph, raw-line fallback.
   - [x] 3.3 Implement list emission: literal `- `/`N. ` prefixes, `start` honored, per-level `w:ind` indentation, loose items.
@@ -105,6 +106,6 @@ Update the file after completing each sub-task, not just after completing an ent
 
 **Specs / dependencies:** Depends on 1.0–3.0 all complete.
 
-- [ ] 4.0 Final verification and docs
-  - [ ] 4.1 Run `cd backend && cargo test` (full suite) and `make build -B`; confirm clean (ignore pre-existing unrelated failures per user preference).
-  - [ ] 4.2 Update `PROJECT_MAP.md` with `backend/src/markdown_convert.rs`; if `docs/gloss-prompts-history.md` or gloss export docs describe the org/docx export formatting, update the relevant sentences.
+- [x] 4.0 Final verification and docs
+  - [x] 4.1 Run `cd backend && cargo test` (full suite) and `make build -B`; confirm clean (ignore pre-existing unrelated failures per user preference). *(User confirmed builds and tests pass.)*
+  - [x] 4.2 Update `PROJECT_MAP.md` with `backend/src/markdown_convert.rs`; if `docs/gloss-prompts-history.md` or gloss export docs describe the org/docx export formatting, update the relevant sentences. *(PROJECT_MAP.md: added `markdown_convert.rs` to the backend tree + key-modules; rewrote the `docx_export.rs` description (code-generated package + markdown conversion); removed the `docx-template/gloss-template.docx` tree line and description. docs/gloss-ai-word-selection.md: rewrote the DOCX section for the fully code-generated package, embedded fonts, borderless table, markdown→OOXML conversion, and flattened headings; updated the "Where things live" table.)*
