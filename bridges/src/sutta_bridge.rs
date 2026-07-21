@@ -704,6 +704,10 @@ pub mod qobject {
         fn dpd_lookup_ready(self: Pin<&mut SuttaBridge>, query_id: QString, results_json: QString);
 
         #[qsignal]
+        #[cxx_name = "dpdLookupGroupedReady"]
+        fn dpd_lookup_grouped_ready(self: Pin<&mut SuttaBridge>, query_id: QString, grouped_json: QString);
+
+        #[qsignal]
         #[cxx_name = "ankiCsvExportReady"]
         fn anki_csv_export_ready(self: Pin<&mut SuttaBridge>, results_json: QString);
 
@@ -866,6 +870,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn dpd_lookup_json_async(self: Pin<&mut SuttaBridge>, query_id: &QString, query: &QString);
+
+        #[qinvokable]
+        fn dpd_lookup_grouped_json_async(self: Pin<&mut SuttaBridge>, query_id: &QString, query: &QString);
 
         #[qinvokable]
         fn get_sutta_html(self: &SuttaBridge, window_id: &QString, uid: &QString) -> QString;
@@ -2319,6 +2326,31 @@ impl qobject::SuttaBridge {
             }).unwrap();
 
             info("SuttaBridge::dpd_lookup_json_async() end");
+        });
+    }
+
+    /// Grouped, break-down-aware DPD lookup (PRD FR-A1/FR-B3). WordSummary and
+    /// FulltextResults consume the grouped structure to render the break-down
+    /// selector and lock-filter the result list. `deconstructor_exact_only` is
+    /// `false` here to preserve WordSummary's fuzzy deconstructor list behavior.
+    pub fn dpd_lookup_grouped_json_async(self: Pin<&mut Self>, query_id: &QString, query: &QString) {
+        info("SuttaBridge::dpd_lookup_grouped_json_async() start");
+        let qt_thread = self.qt_thread();
+        let query_id_string = query_id.to_string();
+        let query_text = query.to_string();
+
+        // Spawn a thread so Qt event loop is not blocked
+        thread::spawn(move || {
+            let app_data = get_app_data();
+            let s = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false);
+            let grouped_json = QString::from(s);
+            let query_id_qstring = QString::from(query_id_string);
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().dpd_lookup_grouped_ready(query_id_qstring, grouped_json);
+            }).unwrap();
+
+            info("SuttaBridge::dpd_lookup_grouped_json_async() end");
         });
     }
 

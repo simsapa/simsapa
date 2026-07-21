@@ -33,7 +33,18 @@ Frame {
     property bool is_loading: false
     property string current_query_id: ""
 
+    // Grouped, break-down-aware lookup state (PRD FR-B3). `grouped_data` is the
+    // parsed GroupedDpdLookup payload; `grouped_results` is the flat
+    // {uid, word, summary} list before lock-filtering; `deconstructor_words` is
+    // the list of break-down display strings for the selector.
+    property var grouped_data: null
+    property var grouped_results: []
+    property var deconstructor_words: []
+    property int selected_deconstruction_index: 0
+    property bool deconstructor_locked: false
+
     Logger { id: logger }
+    DeconstructorUtils { id: dec_utils }
 
     background: Rectangle {
         color: palette.window
@@ -52,7 +63,6 @@ Frame {
         }
     }
 
-    ListModel { id: deconstructor_model }
     ListModel { id: summaries_model }
 
     // Short-query offer for the dictionary lookup: append "/dpd" so a one/two
@@ -82,7 +92,7 @@ Frame {
     Connections {
         target: SuttaBridge
 
-        function onDpdLookupReady(query_id: string, results_json: string) {
+        function onDpdLookupGroupedReady(query_id: string, grouped_json: string) {
             // Ignore results from stale queries
             if (query_id !== root.current_query_id) {
                 logger.info(`Discarding stale query results: ${query_id}, current: ${root.current_query_id}`);
@@ -90,17 +100,34 @@ Frame {
             }
 
             root.is_loading = false;
-            summaries_model.clear();
-            let sum_list = JSON.parse(results_json);
-            for (let i=0; i < sum_list.length; i++) {
-                summaries_model.append({
-                    uid: sum_list[i].uid,
-                    word: sum_list[i].word,
-                    summary: sum_list[i].summary,
+
+            let grouped = JSON.parse(grouped_json);
+            root.grouped_data = grouped;
+
+            // Map SearchResult (uid/title/snippet) to the summary shape the list
+            // consumes (uid/word/summary).
+            let results = grouped.results || [];
+            let mapped = [];
+            for (let i=0; i < results.length; i++) {
+                mapped.push({
+                    uid: results[i].uid,
+                    word: results[i].title,
+                    summary: results[i].snippet,
                 });
             }
-            // clear the previous selection highlight
-            summaries_list.currentIndex = -1;
+            root.grouped_results = mapped;
+
+            // Populate the break-down selector from the deconstructions.
+            let decs = grouped.deconstructions || [];
+            let words = [];
+            for (let i=0; i < decs.length; i++) {
+                words.push(decs[i].words_joined);
+            }
+            root.deconstructor_words = words;
+            root.selected_deconstruction_index = 0;
+            root.deconstructor_locked = false;
+
+            root.refilter_summaries();
         }
     }
 
@@ -143,6 +170,24 @@ Frame {
         short_query_dpd_dialog.open();
     }
 
+    // Rebuild summaries_model from the grouped results, applying the lock
+    // filter. Unlocked shows the full list (today's behavior); locked shows the
+    // selected break-down's components plus direct matches. See PRD FR-B3.
+    function refilter_summaries() {
+        let visible = dec_utils.visible_uids(root.grouped_data,
+                                             root.selected_deconstruction_index,
+                                             root.deconstructor_locked);
+        summaries_model.clear();
+        let results = root.grouped_results;
+        for (let i=0; i < results.length; i++) {
+            if (dec_utils.uid_is_visible(visible, results[i].uid)) {
+                summaries_model.append(results[i]);
+            }
+        }
+        // clear the previous selection highlight
+        summaries_list.currentIndex = -1;
+    }
+
     // min_length 4 is the search-as-you-type floor (a plain text query runs from
     // 4 characters); the search button calls this with min_length 1.
     function run_lookup(query: string, min_length = 4) {
@@ -154,16 +199,9 @@ Frame {
 
         root.is_loading = true;
 
-        // Get deconstructor list synchronously (it's fast)
-        deconstructor_model.clear();
-        let dec_list = SuttaBridge.dpd_deconstructor_list(query);
-        for (let i=0; i < dec_list.length; i++) {
-            deconstructor_model.append({ words_joined: dec_list[i] });
-        }
-        deconstructor.currentIndex = 0;
-
-        // Start async lookup for summaries (this can be slow)
-        SuttaBridge.dpd_lookup_json_async(root.current_query_id, query);
+        // The grouped async lookup returns both the summaries and the
+        // deconstructor break-downs in one payload (see onDpdLookupGroupedReady).
+        SuttaBridge.dpd_lookup_grouped_json_async(root.current_query_id, query);
     }
 
     ColumnLayout {
@@ -216,12 +254,21 @@ Frame {
 
         RowLayout {
             id: row_two
-            visible: deconstructor_model.count > 0
-            ComboBox {
-                textRole: "words_joined"
+            visible: root.deconstructor_words.length > 0
+            DeconstructorSelector {
                 id: deconstructor
-                model: deconstructor_model
                 Layout.fillWidth: true
+                model: root.deconstructor_words
+                current_index: root.selected_deconstruction_index
+                locked: root.deconstructor_locked
+                onActivated: (index) => {
+                    root.selected_deconstruction_index = index;
+                    root.refilter_summaries();
+                }
+                onLock_toggled: (locked) => {
+                    root.deconstructor_locked = locked;
+                    root.refilter_summaries();
+                }
             }
             Button {
                 id: copy_btn

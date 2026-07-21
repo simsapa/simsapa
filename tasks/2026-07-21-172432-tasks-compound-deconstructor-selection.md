@@ -91,12 +91,12 @@ Membership is many-to-many: a result uid may be in `direct_uids` and in several 
 **Depends on:** 1.0 (grouped JSON payload).
 **Specs:** `DeconstructorSelector.qml`: props `model` (list of `words_joined`), `current_index`, `locked`; signals `activated(int index)`, `lock_toggled(bool locked)`; lock icons `icons/32x32/system-uicons--lock.png` (checked) / `system-uicons--lock-open.png` (unchecked); ComboBox changes only via `onActivated`. `DeconstructorUtils.qml`: pure functions `visible_uids(grouped, selected_index, locked)` (returns the set of uids to display: all uids when unlocked; `direct_uids` ∪ selected break-down's component uids when locked) and `breakdowns_of_uid(grouped, uid)`. `DeconstructorUtils` is a plain instantiated component (`DeconstructorUtils { id: dec_utils }`, like `Logger`), **not** a QML singleton (no `qmldir` for `assets/qml/` files). WordSummary's async result payload must carry the grouped structure; the deconstructor list is no longer fetched separately via `dpd_deconstructor_list` — the grouped call passes `deconstructor_exact_only = false` to preserve WordSummary's current fuzzy deconstructor behavior.
 
-- [ ] 3.1 Create `assets/qml/DeconstructorSelector.qml`; add to `qml_files` in `bridges/build.rs`.
-- [ ] 3.2 Create `assets/qml/DeconstructorUtils.qml` with the pure helper functions; add to `qml_files`.
-- [ ] 3.3 Add a grouped async bridge fn `dpd_lookup_grouped_json_async(query_id, query)` + signal (e.g. `dpdLookupGroupedReady`) in `bridges/src/sutta_bridge.rs`; add qmllint stubs in `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`.
-- [ ] 3.4 `WordSummary.qml`: switch `run_lookup()` to the grouped async fn; populate `deconstructor_model` from `deconstructions[].words_joined`; replace the plain ComboBox row with `DeconstructorSelector`; store the grouped payload; filter `summaries_model` through `DeconstructorUtils.visible_uids()` on lock/selection changes (unlocked shows the full list, today's behavior).
-- [ ] 3.5 Create `assets/qml/tst_DeconstructorUtils.qml` covering: unlocked = all uids; locked = direct ∪ selected break-down; shared-component membership. (Do not run; the user runs QML tests.)
-- [ ] 3.6 `make build -B`; user manually verifies WordSummary lookup on `sādhūti` / `pañcaggadāyakaṁ`.
+- [x] 3.1 Create `assets/qml/DeconstructorSelector.qml`; add to `qml_files` in `bridges/build.rs`.
+- [x] 3.2 Create `assets/qml/DeconstructorUtils.qml` with the pure helper functions; add to `qml_files`.
+- [x] 3.3 Add a grouped async bridge fn `dpd_lookup_grouped_json_async(query_id, query)` + signal (e.g. `dpdLookupGroupedReady`) in `bridges/src/sutta_bridge.rs`; add qmllint stubs in `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`.
+- [x] 3.4 `WordSummary.qml`: switch `run_lookup()` to the grouped async fn; populate `deconstructor_model` from `deconstructions[].words_joined`; replace the plain ComboBox row with `DeconstructorSelector`; store the grouped payload; filter `summaries_model` through `DeconstructorUtils.visible_uids()` on lock/selection changes (unlocked shows the full list, today's behavior).
+- [x] 3.5 Create `assets/qml/tst_DeconstructorUtils.qml` covering: unlocked = all uids; locked = direct ∪ selected break-down; shared-component membership. (Do not run; the user runs QML tests.)
+- [x] 3.6 `make build -B`; user manually verifies WordSummary lookup on `sādhūti` / `pañcaggadāyakaṁ`.
 
 ### 4.0 GlossTab compound word items
 

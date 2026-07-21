@@ -57,6 +57,8 @@ fn main() {
         "../assets/qml/DrawerEmptyItem.qml",
         "../assets/qml/ListBackground.qml",
         "../assets/qml/WordSummary.qml",
+        "../assets/qml/DeconstructorSelector.qml",
+        "../assets/qml/DeconstructorUtils.qml",
         "../assets/qml/StorageDialog.qml",
         "../assets/qml/GlossTab.qml",
         "../assets/qml/GlossWordSelectionDialog.qml",
