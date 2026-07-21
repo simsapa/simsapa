@@ -339,6 +339,38 @@ impl SearchResult {
 
 }
 
+/// One component word of a deconstructor break-down, with the uids of the
+/// lookup results that component resolved to. See
+/// docs/gloss-ai-word-selection.md (grouped lookup) and PRD FR-A1.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeconstructionComponent {
+    pub word: String,
+    pub result_uids: Vec<String>,
+}
+
+/// One deconstructor break-down of a compound word: its display string
+/// (`words_joined`, e.g. `"sādhu + iti"`) and its per-component result
+/// membership. Parallel to `Lookup::deconstructor_nested()` /
+/// `deconstructor_unpack()` — same order, no re-parsing of `+`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Deconstruction {
+    pub words_joined: String,
+    pub components: Vec<DeconstructionComponent>,
+}
+
+/// Break-down-aware DPD lookup result (PRD FR-A1). `results` is the flat
+/// deduplicated list (direct results first, then deconstructor-derived in
+/// first-seen order). `direct_uids` are the uids found via direct / uid / i2h
+/// / stem matches; a result uid may appear in `direct_uids` *and* in several
+/// break-downs (many-to-many). Produced by `dpd_lookup_grouped()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedDpdLookup {
+    pub query: String,
+    pub results: Vec<SearchResult>,
+    pub deconstructions: Vec<Deconstruction>,
+    pub direct_uids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultPage {
     pub total_hits: usize,
