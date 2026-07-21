@@ -419,6 +419,30 @@ pub struct ProcessedWord {
     /// for pre-existing history sessions (see `context_hash` above).
     #[serde(default)]
     pub resolution: Option<String>,
+    /// The deconstructor break-downs of this word (PRD FR-A3). Populated for
+    /// every word that has a deconstructor entry, even mixed words with a
+    /// direct match (used by WordSummary / FulltextResults / API consumers).
+    /// See docs/gloss-ai-word-selection.md (grouped lookup).
+    #[serde(default)]
+    pub deconstructions: Vec<Deconstruction>,
+    /// The uids found via direct / uid / i2h / stem match. Empty for a
+    /// deconstructor-resolved word.
+    #[serde(default)]
+    pub direct_uids: Vec<String>,
+    /// The chosen break-down index for a deconstructor-resolved word with
+    /// ≥ 2 break-downs. `None` also when there is exactly one break-down (the
+    /// sole break-down is trivially selected).
+    #[serde(default)]
+    pub selected_deconstruction_index: Option<usize>,
+    /// Whether the break-down selection is locked (filters the visible
+    /// components). Default `false`; set to `true` by an AI break-down choice.
+    #[serde(default)]
+    pub deconstruction_locked: bool,
+    /// Per-component sense selection (component word → chosen result uid).
+    /// Uid-based so the choice is stable under lock-filtering and break-down
+    /// switches. Used only by deconstructor-resolved words (FR-A5 cases (c)/(d)).
+    #[serde(default)]
+    pub component_selected_uids: std::collections::HashMap<String, String>,
 }
 
 /// Result indicating an unrecognized word

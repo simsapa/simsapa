@@ -1197,6 +1197,14 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // distinct from its parts while still deduplicating repeats of the same word.
     // Must match the Rust mirror (helpers.rs:gloss_dedup_key) byte-for-byte, so
     // do NOT sort (avoids JS UTF-16 vs Rust UTF-8 order divergence on diacritics).
+    //
+    // `results` is the grouped lookup's flat result set (direct results first,
+    // then deconstructor-derived components). The grouped path fetches component
+    // results even for mixed words (a direct match that also deconstructs, e.g.
+    // sādhūti), so this list — and the key — now spans those components too.
+    // Both mirrors compute over the same stored `results` array (Rust produces
+    // it in the background processor, QML consumes it here), so they stay
+    // byte-identical.
     function gloss_dedup_key(results): string {
         if (!results || results.length === 0) return "";
         var stems = [];

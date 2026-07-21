@@ -296,6 +296,9 @@ pub fn upgrade_appdata_schema(db_conn: &mut SqliteConnection) {
         // 2026-07-16: built_in tier column, so a local row shadows the shipped
         // row for the same (word, context_hash) instead of overwriting it
         include_str!("../../migrations/appdata/2026-07-16-120000_gloss_cache_built_in_tier/up.sql"),
+        // 2026-07-21: deconstruction column — a compound word's chosen break-down
+        // string, plus component-sense rows keyed on the compound's context hash
+        include_str!("../../migrations/appdata/2026-07-21-173000_gloss_cache_deconstruction/up.sql"),
     ];
 
     for sql in &statements {

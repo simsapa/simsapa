@@ -2188,6 +2188,37 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Fetch all cache rows whose `context_hash` is in the given set, in one
+    /// query. Used to pre-fetch a paragraph's rows before gloss processing:
+    /// component-sense rows of a compound word are stored under the *component*
+    /// word key but the *compound's* context hash, so they can only be reached
+    /// by the hash (the component words are unknown before the grouped lookup).
+    /// See PRD FR-C5 ("resolution pre-fetch refactor").
+    pub fn get_gloss_word_cache_by_context_hashes(&self, hashes: &[String]) -> Vec<GlossWordContextCache> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        if hashes.is_empty() {
+            return Vec::new();
+        }
+
+        let hash_refs: Vec<&str> = hashes.iter().map(|h| h.as_str()).collect();
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(context_hash.eq_any(&hash_refs))
+                .select(GlossWordContextCache::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => rows,
+            Err(e) => {
+                error(&format!("get_gloss_word_cache_by_context_hashes(): {}", e));
+                Vec::new()
+            }
+        }
+    }
+
     /// Insert or update a cache row **in the origin's own tier**
     /// (`gloss_cache_origin_is_built_in`), respecting origin precedence within
     /// that tier: a lower-ranked origin never overwrites a higher-ranked one
@@ -2224,6 +2255,7 @@ impl AppdataDbHandle {
                     selected_uid: selected_uid_param,
                     origin: origin_param,
                     built_in: if tier { 1 } else { 0 },
+                    deconstruction: None,
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2293,6 +2325,7 @@ impl AppdataDbHandle {
                     selected_uid: selected_uid_param,
                     origin: origin_param,
                     built_in: if tier { 1 } else { 0 },
+                    deconstruction: None,
                     created_at: Some(now),
                     updated_at: Some(now),
                 };

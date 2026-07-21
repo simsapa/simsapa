@@ -2600,6 +2600,15 @@ pub fn is_common_word(stem: &str, common_words: &[String]) -> bool {
 /// Order is preserved (no sort) so the key matches byte-for-byte whether it is
 /// computed here in Rust or in the QML mirror (`GlossTab.qml:gloss_dedup_key`),
 /// avoiding UTF-16 vs. UTF-8 sort-order divergence on Pāli diacritics.
+///
+/// The `results` list is the **grouped** lookup's flat result set
+/// (`dpd_lookup_grouped().results`): direct results first, then
+/// deconstructor-derived component results. Since the grouped path fetches
+/// component results even for mixed words (a direct match that also
+/// deconstructs, e.g. `sādhūti`), this list — and therefore the key — now spans
+/// the component lemmas of such words too. Both mirrors compute over this same
+/// stored `results` array (Rust produces it, QML consumes it in
+/// `get_previous_paragraph_stems`), so they stay byte-identical.
 pub fn gloss_dedup_key(results: &[crate::db::dpd::LookupResult]) -> String {
     let mut stems: Vec<String> = Vec::new();
     for r in results {
@@ -2705,19 +2714,28 @@ pub struct GlossResolutionData {
 /// destroying it, and removing the local row lets the shipped one apply again.
 #[derive(Debug, Clone, Default)]
 pub struct GlossCacheEntry {
-    /// `(selected_uid, origin)` of this install's row: `user-selected` or
-    /// `ai-selected`.
-    pub local: Option<(String, String)>,
-    /// `(selected_uid, origin)` of the bootstrap-shipped row:
-    /// `built-in-human-checked` or `built-in-agent-checked`.
-    pub built_in: Option<(String, String)>,
+    /// This install's row: `user-selected` or `ai-selected`.
+    pub local: Option<GlossCacheSlot>,
+    /// The bootstrap-shipped row: `built-in-human-checked` or
+    /// `built-in-agent-checked`.
+    pub built_in: Option<GlossCacheSlot>,
+}
+
+/// One tier's cache row for a `(word, context_hash)` key: the selected sense
+/// uid, the origin, and (for a compound's own row) the chosen break-down
+/// display string in `deconstruction`.
+#[derive(Debug, Clone)]
+pub struct GlossCacheSlot {
+    pub selected_uid: String,
+    pub origin: String,
+    pub deconstruction: Option<String>,
 }
 
 impl GlossCacheEntry {
     /// The local row's uid when its origin is one of `origins`.
     fn local_uid_of(&self, origins: &[&str]) -> Option<&str> {
         match &self.local {
-            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            Some(s) if origins.contains(&s.origin.as_str()) => Some(&s.selected_uid),
             _ => None,
         }
     }
@@ -2725,47 +2743,67 @@ impl GlossCacheEntry {
     /// The shipped row's uid when its origin is one of `origins`.
     fn built_in_uid_of(&self, origins: &[&str]) -> Option<&str> {
         match &self.built_in {
-            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            Some(s) if origins.contains(&s.origin.as_str()) => Some(&s.selected_uid),
+            _ => None,
+        }
+    }
+
+    /// The local row's break-down string when its origin is one of `origins`.
+    fn local_deconstruction_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.local {
+            Some(s) if origins.contains(&s.origin.as_str()) => s.deconstruction.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The shipped row's break-down string when its origin is one of `origins`.
+    fn built_in_deconstruction_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.built_in {
+            Some(s) if origins.contains(&s.origin.as_str()) => s.deconstruction.as_deref(),
             _ => None,
         }
     }
 }
 
 impl GlossResolutionData {
-    /// Fetch the phrase table and the cache rows for the given words' keys in
-    /// one batch query. Key derivation matches `process_word_for_glossing`:
-    /// `gloss_cache_word_key(clean_word_pali(word))` + the context hash of the
+    /// Fetch the phrase table and the cache rows for the given words in one
+    /// batch query. Keyed by **context hash only** (not `(word, hash)` pairs)
+    /// so that component-sense rows of a compound word — which are stored under
+    /// the *component* word key but the *compound's* context hash — are
+    /// pre-fetched even though the component words are not known before the
+    /// grouped lookup runs (PRD FR-C5 "resolution pre-fetch refactor"). Key
+    /// derivation matches `process_word_for_glossing`: the context hash of the
     /// word's window.
     pub fn fetch(
         appdata: &crate::db::appdata::AppdataDbHandle,
         words_with_context: &[GlossWordContext],
     ) -> Self {
-        let pairs: Vec<(String, String)> = words_with_context
+        let hashes: Vec<String> = words_with_context
             .iter()
-            .map(|w| {
-                (
-                    gloss_cache_word_key(&clean_word_pali(&w.clean_word)),
-                    gloss_context_hash(&normalize_gloss_context(&w.context_snippet)),
-                )
-            })
+            .map(|w| gloss_context_hash(&normalize_gloss_context(&w.context_snippet)))
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
 
-        Self::fetch_for_pairs(appdata, &pairs)
+        Self::fetch_for_context_hashes(appdata, &hashes)
     }
 
-    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
-    /// pairs (e.g. re-annotating a restored session's words_data JSON).
-    pub fn fetch_for_pairs(
+    /// As `fetch`, keyed by the context hashes directly (e.g. re-annotating a
+    /// restored session's words_data JSON, where the hashes are derivable from
+    /// the words).
+    pub fn fetch_for_context_hashes(
         appdata: &crate::db::appdata::AppdataDbHandle,
-        pairs: &[(String, String)],
+        context_hashes: &[String],
     ) -> Self {
         let mut cache: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
-        for r in appdata.get_gloss_word_cache_batch(pairs) {
+        for r in appdata.get_gloss_word_cache_by_context_hashes(context_hashes) {
             let entry = cache.entry((r.word, r.context_hash)).or_default();
             let slot = if r.built_in != 0 { &mut entry.built_in } else { &mut entry.local };
-            *slot = Some((r.selected_uid, r.origin));
+            *slot = Some(GlossCacheSlot {
+                selected_uid: r.selected_uid,
+                origin: r.origin,
+                deconstruction: r.deconstruction,
+            });
         }
 
         let phrases = appdata
@@ -2775,6 +2813,23 @@ impl GlossResolutionData {
             .collect();
 
         GlossResolutionData { phrases, cache }
+    }
+
+    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
+    /// pairs. Retained for compatibility; derives the distinct context hashes
+    /// and delegates to `fetch_for_context_hashes` so component-sense rows are
+    /// still pre-fetched.
+    pub fn fetch_for_pairs(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        pairs: &[(String, String)],
+    ) -> Self {
+        let hashes: Vec<String> = pairs
+            .iter()
+            .map(|(_, h)| h.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        Self::fetch_for_context_hashes(appdata, &hashes)
     }
 }
 
@@ -2964,6 +3019,40 @@ pub fn resolve_gloss_word_selection(
         }
     }
 
+    None
+}
+
+/// Resolve a deconstructor-resolved compound word's cached break-down choice
+/// (the `deconstruction` string) from the pre-fetched cache, walking the same
+/// tier precedence as sense selections **minus the phrase tier** (break-downs
+/// have no phrase rules). The compound's own cache row stores the chosen
+/// break-down display string (`words_joined`) with an empty `selected_uid`.
+/// Returns the chosen break-down string; the caller maps it to an index by
+/// matching against the current break-downs (robust to break-down list
+/// reordering across DPD releases). See docs/gloss-ai-word-selection.md.
+pub fn resolve_gloss_deconstruction(
+    word_key: &str,
+    context_hash: &str,
+    data: &GlossResolutionData,
+) -> Option<String> {
+    let empty = GlossCacheEntry::default();
+    let cached = data
+        .cache
+        .get(&(word_key.to_string(), context_hash.to_string()))
+        .unwrap_or(&empty);
+
+    if let Some(d) = cached.local_deconstruction_of(&["user-selected"]) {
+        return Some(d.to_string());
+    }
+    if let Some(d) = cached.built_in_deconstruction_of(&["built-in-human-checked"]) {
+        return Some(d.to_string());
+    }
+    if let Some(d) = cached.built_in_deconstruction_of(&["built-in-agent-checked"]) {
+        return Some(d.to_string());
+    }
+    if let Some(d) = cached.local_deconstruction_of(&["ai-selected"]) {
+        return Some(d.to_string());
+    }
     None
 }
 
@@ -3546,14 +3635,19 @@ pub fn process_word_for_glossing(
     dpd: &crate::db::dpd::DpdDbHandle,
     resolution_data: Option<&GlossResolutionData>,
 ) -> Result<Option<WordProcessingResult>, String> {
-    // Call the DPD lookup function directly - much more efficient than JSON serialization
-    let search_results = match dpd.dpd_lookup(&word_info.word.to_lowercase(), false, true, None, None) {
-        Ok(results) => results,
+    // Grouped, break-down-aware lookup (deconstructor_exact_only = true, the
+    // gloss path's behavior). `results` is the flat list: direct results first,
+    // then deconstructor-derived components. See
+    // docs/gloss-ai-word-selection.md (grouped lookup) and PRD FR-A2/FR-A5.
+    let grouped = match dpd.dpd_lookup_grouped(&word_info.word.to_lowercase(), false, true, true, None, None) {
+        Ok(g) => g,
         Err(e) => return Err(format!("DPD lookup failed: {}", e)),
     };
 
     // Convert search results to lookup results
-    let results = crate::db::dpd::LookupResult::from_search_results(&search_results);
+    let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
+    let deconstructions = grouped.deconstructions;
+    let direct_uids = grouped.direct_uids;
 
     // Skip if no results - but return info about unrecognized word
     if results.is_empty() {
@@ -3596,23 +3690,97 @@ pub fn process_word_for_glossing(
     let normalized_context = normalize_gloss_context(&word_info.sentence);
     let context_hash = gloss_context_hash(&normalized_context);
 
-    // Resolve ambiguous words from the pre-fetched cache / set-phrase data
-    // (user cache > phrase > built-in cache > ai cache); unambiguous words
-    // need no resolution.
+    // A word is "deconstructor-resolved" (FR-A5 cases (c)/(d)) when it has no
+    // direct match but does have break-downs. Such words carry per-component
+    // sense selections and a break-down choice; direct / mixed words (cases
+    // (a)/(b)) keep the flat `selected_index` sense selection.
+    let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
+
     let mut selected_index = 0;
     let mut resolution = None;
-    if results.len() > 1 {
-        if let Some(data) = resolution_data {
+    let mut selected_deconstruction_index: Option<usize> = None;
+    let mut deconstruction_locked = false;
+    let mut component_selected_uids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
+    if let Some(data) = resolution_data {
+        if is_deconstructor_resolved {
             let word_key = gloss_cache_word_key(&original_word);
-            if let Some((idx, res)) = resolve_gloss_word_selection(
-                &word_key,
-                &normalized_context,
-                &context_hash,
-                &results,
-                data,
-            ) {
-                selected_index = idx;
-                resolution = Some(res);
+
+            // Break-down choice (only meaningful with >= 2 break-downs; a sole
+            // break-down is trivially selected). Match the stored words_joined
+            // string against the current break-downs; no match -> leave unset.
+            if deconstructions.len() >= 2 {
+                if let Some(words_joined) =
+                    resolve_gloss_deconstruction(&word_key, &context_hash, data)
+                {
+                    if let Some(idx) = deconstructions
+                        .iter()
+                        .position(|d| d.words_joined == words_joined)
+                    {
+                        selected_deconstruction_index = Some(idx);
+                        deconstruction_locked = true;
+                    }
+                }
+            }
+
+            // Per-component sense selection. Components are deduplicated by word
+            // across all break-downs (a component's senses are independent of
+            // which break-down it appears in). Component-sense cache rows are
+            // keyed on the component word key + the compound's context hash.
+            let mut seen_components: HashSet<String> = HashSet::new();
+            for dec in &deconstructions {
+                for comp in &dec.components {
+                    if !seen_components.insert(comp.word.clone()) {
+                        continue;
+                    }
+                    let comp_results: Vec<crate::db::dpd::LookupResult> = results
+                        .iter()
+                        .filter(|r| comp.result_uids.contains(&r.uid))
+                        .cloned()
+                        .collect();
+                    if comp_results.len() < 2 {
+                        continue; // single sense: nothing to resolve
+                    }
+                    let comp_word_key = gloss_cache_word_key(&comp.word);
+                    if let Some((idx, _res)) = resolve_gloss_word_selection(
+                        &comp_word_key,
+                        &normalized_context,
+                        &context_hash,
+                        &comp_results,
+                        data,
+                    ) {
+                        component_selected_uids
+                            .insert(comp.word.clone(), comp_results[idx as usize].uid.clone());
+                    }
+                }
+            }
+        } else {
+            // Direct / mixed word: resolve the sense among the direct results
+            // only (they occupy the front of `results`, so the index is valid
+            // for the full list too). Mixed words never resolve into a
+            // component result.
+            let sense_results: Vec<crate::db::dpd::LookupResult> = if direct_uids.is_empty() {
+                results.clone()
+            } else {
+                results
+                    .iter()
+                    .filter(|r| direct_uids.contains(&r.uid))
+                    .cloned()
+                    .collect()
+            };
+            if sense_results.len() > 1 {
+                let word_key = gloss_cache_word_key(&original_word);
+                if let Some((idx, res)) = resolve_gloss_word_selection(
+                    &word_key,
+                    &normalized_context,
+                    &context_hash,
+                    &sense_results,
+                    data,
+                ) {
+                    selected_index = idx;
+                    resolution = Some(res);
+                }
             }
         }
     }
@@ -3626,6 +3794,11 @@ pub fn process_word_for_glossing(
         example_sentence: word_info.sentence.clone(),
         context_hash,
         resolution,
+        deconstructions,
+        direct_uids,
+        selected_deconstruction_index,
+        deconstruction_locked,
+        component_selected_uids,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -3668,6 +3841,150 @@ pub fn update_global_stems_deduplication(
             global_stems.insert(dedup_key, true);
         }
     }
+}
+
+/// Qt-free core of the multi-paragraph gloss processor. Extracted from
+/// `SuttaBridge::process_all_paragraphs_background` so the localhost API route
+/// (`POST /gloss_text`) can reuse the exact same pipeline; the bridge is now a
+/// thin thread + Qt-signal wrapper around this. See PRD FR-D1.
+pub fn process_all_paragraphs(
+    input: &crate::types::AllParagraphsProcessingInput,
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: &crate::db::dpd::DpdDbHandle,
+) -> Result<crate::types::AllParagraphsProcessingResult, String> {
+    let mut paragraph_results: Vec<crate::types::ParagraphProcessingResult> = Vec::new();
+    let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
+    let mut global_stems = input.options.existing_global_stems.clone();
+    let mut paragraph_unrecognized_words = input.options.existing_paragraph_unrecognized.clone();
+
+    for (paragraph_idx, paragraph_text) in input.paragraphs.iter().enumerate() {
+        // Extract words with context, then pre-fetch the word-selection cache
+        // rows + set-phrase table for this paragraph (process_word_for_glossing
+        // takes no appdata handle).
+        let words_with_context = extract_words_with_context(paragraph_text);
+        let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
+        let mut paragraph_shown_stems = std::collections::HashMap::new();
+        let mut processed_words = Vec::new();
+
+        for word_context in words_with_context {
+            let word_info = WordInfo {
+                word: word_context.clean_word.clone(),
+                sentence: word_context.context_snippet.clone(),
+            };
+
+            match process_word_for_glossing(
+                &word_info,
+                &mut paragraph_shown_stems,
+                &mut global_stems,
+                input.options.no_duplicates_globally,
+                &input.options,
+                dpd,
+                Some(&resolution_data),
+            ) {
+                Ok(result) => processed_words.push(result),
+                Err(e) => return Err(format!("Word processing error: {}", e)),
+            }
+        }
+
+        collect_unrecognized_words(
+            &processed_words,
+            paragraph_idx,
+            &mut paragraph_unrecognized_words,
+            &mut global_unrecognized_words,
+        );
+
+        let words_data: Vec<ProcessedWord> = processed_words
+            .into_iter()
+            .filter_map(|result| match result {
+                Some(WordProcessingResult::Recognized(word)) => Some(word),
+                _ => None,
+            })
+            .collect();
+
+        let paragraph_unrecognized = paragraph_unrecognized_words
+            .get(&paragraph_idx.to_string())
+            .cloned()
+            .unwrap_or_default();
+
+        paragraph_results.push(crate::types::ParagraphProcessingResult {
+            paragraph_index: paragraph_idx,
+            words_data,
+            unrecognized_words: paragraph_unrecognized,
+        });
+    }
+
+    Ok(crate::types::AllParagraphsProcessingResult {
+        success: true,
+        paragraphs: paragraph_results,
+        global_unrecognized_words,
+        updated_global_stems: global_stems,
+    })
+}
+
+/// Qt-free core of the single-paragraph gloss processor. Extracted from
+/// `SuttaBridge::process_paragraph_background`; shares the per-word loop shape
+/// with `process_all_paragraphs`.
+pub fn process_single_paragraph(
+    paragraph_index: usize,
+    input: &crate::types::SingleParagraphProcessingInput,
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: &crate::db::dpd::DpdDbHandle,
+) -> Result<crate::types::SingleParagraphProcessingResult, String> {
+    let words_with_context = extract_words_with_context(&input.paragraph_text);
+    let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
+    let mut paragraph_shown_stems = std::collections::HashMap::new();
+    let mut global_stems = input.options.existing_global_stems.clone();
+    let mut processed_words = Vec::new();
+
+    for word_context in words_with_context {
+        let word_info = WordInfo {
+            word: word_context.clean_word.clone(),
+            sentence: word_context.context_snippet.clone(),
+        };
+
+        match process_word_for_glossing(
+            &word_info,
+            &mut paragraph_shown_stems,
+            &mut global_stems,
+            input.options.no_duplicates_globally,
+            &input.options,
+            dpd,
+            Some(&resolution_data),
+        ) {
+            Ok(result) => processed_words.push(result),
+            Err(e) => return Err(format!("Word processing error: {}", e)),
+        }
+    }
+
+    let mut paragraph_unrecognized_words = std::collections::HashMap::new();
+    let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
+    collect_unrecognized_words(
+        &processed_words,
+        paragraph_index,
+        &mut paragraph_unrecognized_words,
+        &mut global_unrecognized_words,
+    );
+
+    let words_data: Vec<ProcessedWord> = processed_words
+        .into_iter()
+        .filter_map(|result| match result {
+            Some(WordProcessingResult::Recognized(word)) => Some(word),
+            _ => None,
+        })
+        .collect();
+
+    let paragraph_unrecognized = paragraph_unrecognized_words
+        .get(&paragraph_index.to_string())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(crate::types::SingleParagraphProcessingResult {
+        success: true,
+        paragraph_index,
+        words_data,
+        unrecognized_words: paragraph_unrecognized,
+        updated_global_stems: global_stems,
+    })
 }
 
 /// Create or update Linux desktop launcher file for AppImage
@@ -5077,7 +5394,11 @@ mod tests {
             } else {
                 &mut entry.local
             };
-            *slot = Some((u.to_string(), o.to_string()));
+            *slot = Some(GlossCacheSlot {
+                selected_uid: u.to_string(),
+                origin: o.to_string(),
+                deconstruction: None,
+            });
         }
 
         GlossResolutionData {

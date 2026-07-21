@@ -244,6 +244,7 @@ diesel::table! {
         selected_uid -> Text,
         origin -> Text,
         built_in -> Integer,
+        deconstruction -> Nullable<Text>,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
     }

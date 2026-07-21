@@ -783,6 +783,11 @@ impl DpdDbHandle {
         // `deconstructor_nested()` (list-of-lists parallel to
         // `deconstructor_unpack()`'s `words_joined` strings — same order).
         if let Some(lookup) = self.dpd_deconstructor_query(&query_text, deconstructor_exact_only)? {
+            // A lookup row can match on i2h/headwords while carrying an empty
+            // deconstructor (common for ordinary recognized words now that this
+            // phase is un-gated). Skip those without unpacking — `deconstructor_unpack`
+            // warns on empty input.
+            if !lookup.deconstructor.is_empty() {
             let words_joined = lookup.deconstructor_unpack();
             let nested = lookup.deconstructor_nested();
             for (words_joined_str, component_words) in words_joined.into_iter().zip(nested.into_iter()) {
@@ -814,6 +819,7 @@ impl DpdDbHandle {
                     words_joined: words_joined_str,
                     components,
                 });
+            }
             }
         }
 
