@@ -2287,6 +2287,67 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Upsert the **compound's own** cache row for a deconstructor-resolved
+    /// word: it stores the chosen break-down display string (`words_joined`) in
+    /// `deconstruction` with an **empty** `selected_uid` (never a sense match).
+    /// Same tier-precedence guard as `upsert_gloss_word_cache`. See PRD FR-C5
+    /// (row semantics for compounds) and docs/gloss-ai-word-selection.md.
+    pub fn upsert_gloss_word_deconstruction(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        context_snippet_param: &str,
+        deconstruction_param: &str,
+        origin_param: &str,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let tier = gloss_cache_origin_is_built_in(origin_param);
+        let existing = self.get_gloss_word_cache_tier(word_param, context_hash_param, tier);
+        let now = chrono::Utc::now().naive_utc();
+
+        match existing {
+            None => {
+                let new_row = NewGlossWordContextCache {
+                    word: word_param,
+                    context_hash: context_hash_param,
+                    context_snippet: context_snippet_param,
+                    selected_uid: "",
+                    origin: origin_param,
+                    built_in: if tier { 1 } else { 0 },
+                    deconstruction: Some(deconstruction_param),
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                };
+                self.do_write(|db_conn| {
+                    diesel::insert_into(gloss_word_context_cache)
+                        .values(&new_row)
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+            Some(row) => {
+                let new_rank = gloss_cache_origin_rank(origin_param);
+                let old_rank = gloss_cache_origin_rank(&row.origin);
+                if new_rank < old_rank {
+                    return Ok(false);
+                }
+                self.do_write(|db_conn| {
+                    diesel::update(gloss_word_context_cache.find(row.id))
+                        .set((
+                            context_snippet.eq(context_snippet_param),
+                            selected_uid.eq(""),
+                            deconstruction.eq(Some(deconstruction_param)),
+                            origin.eq(origin_param),
+                            updated_at.eq(Some(now)),
+                        ))
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+        }
+    }
+
     /// Import a cache row from an exported gloss session with the
     /// **strictly-higher** precedence rule (PRD req 40), applied **within the
     /// origin's own tier** (`gloss_cache_origin_is_built_in`): write only when

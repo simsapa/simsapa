@@ -968,6 +968,9 @@ pub mod qobject {
         fn save_gloss_word_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool;
 
         #[qinvokable]
+        fn save_gloss_word_deconstruction_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, deconstruction: &QString, origin: &QString) -> bool;
+
+        #[qinvokable]
         fn delete_gloss_word_cache(self: &SuttaBridge, word: &QString, context_hash: &QString) -> bool;
 
         #[qinvokable]
@@ -2645,6 +2648,32 @@ impl qobject::SuttaBridge {
             Ok(written) => written,
             Err(e) => {
                 error(&format!("save_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Save the compound's own cache row for a deconstructor-resolved word: the
+    /// chosen break-down display string (`words_joined`) is stored in the
+    /// `deconstruction` column with an empty `selected_uid`. `context_snippet`
+    /// is the compound occurrence's context window (its hash keys the row, and
+    /// the compound's component-sense rows share this hash). See PRD FR-C5.
+    pub fn save_gloss_word_deconstruction_cache(&self, word: &QString, context_snippet: &QString, deconstruction: &QString, origin: &QString) -> bool {
+        use simsapa_backend::helpers::{gloss_cache_word_key, gloss_context_hash, normalize_gloss_context};
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        let snippet = context_snippet.to_string();
+        let hash = gloss_context_hash(&normalize_gloss_context(&snippet));
+        match app_data.dbm.appdata.upsert_gloss_word_deconstruction(
+            &word_key,
+            &hash,
+            &snippet,
+            &deconstruction.to_string(),
+            &origin.to_string(),
+        ) {
+            Ok(written) => written,
+            Err(e) => {
+                error(&format!("save_gloss_word_deconstruction_cache(): {}", e));
                 false
             }
         }

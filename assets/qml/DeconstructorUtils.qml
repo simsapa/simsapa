@@ -57,6 +57,52 @@ QtObject {
         return uids;
     }
 
+    // The component sub-rows to display for a deconstructor-resolved word
+    // (GlossTab cases (c)/(d)), as an array of `{word, result_uids}` objects.
+    //   locked   -> the selected break-down's components, in break-down order.
+    //   unlocked -> the union of ALL break-downs' components, deduplicated by
+    //               component word in first-appearance order (case (c)'s sole
+    //               break-down trivially yields just its own components).
+    // Per-component uid selections are keyed on the component word, so they
+    // survive a break-down switch for components present in both.
+    function visible_components(grouped, selected_index, locked) {
+        if (!grouped) return [];
+        let decs = grouped.deconstructions || [];
+
+        if (locked && selected_index >= 0 && selected_index < decs.length) {
+            return decs[selected_index].components || [];
+        }
+
+        let out = [];
+        let seen = ({});
+        for (let i = 0; i < decs.length; i++) {
+            let comps = decs[i].components || [];
+            for (let c = 0; c < comps.length; c++) {
+                let w = comps[c].word;
+                if (!seen[w]) { seen[w] = true; out.push(comps[c]); }
+            }
+        }
+        return out;
+    }
+
+    // Map a component's `result_uids` to the corresponding result objects from
+    // the flat `results` list (grouped.results), preserving result_uids order.
+    function component_results(grouped, component) {
+        let out = [];
+        if (!grouped || !component) return out;
+        let results = grouped.results || [];
+        let by_uid = ({});
+        for (let i = 0; i < results.length; i++) {
+            by_uid[results[i].uid] = results[i];
+        }
+        let ruids = component.result_uids || [];
+        for (let r = 0; r < ruids.length; r++) {
+            let res = by_uid[ruids[r]];
+            if (res !== undefined) out.push(res);
+        }
+        return out;
+    }
+
     // The indices of the break-downs whose components include the given result
     // uid (many-to-many membership). Returns an array of break-down indices.
     function breakdowns_of_uid(grouped, uid) {

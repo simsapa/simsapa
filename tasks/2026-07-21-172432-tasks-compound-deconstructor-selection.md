@@ -86,7 +86,7 @@ Membership is many-to-many: a result uid may be in `direct_uids` and in several 
 - [x] 2.6 Unit test: `process_all_paragraphs()` over a two-paragraph input containing a compound (`atthaññe`) asserts populated `deconstructions` and unchanged dedup behavior for repeated words.
 - [x] 2.7 Run the new tests and `make build -B`.
 
-### 3.0 Shared QML selection components + WordSummary integration
+### 3.0 Shared QML selection components + WordSummary integration ✅
 
 **Depends on:** 1.0 (grouped JSON payload).
 **Specs:** `DeconstructorSelector.qml`: props `model` (list of `words_joined`), `current_index`, `locked`; signals `activated(int index)`, `lock_toggled(bool locked)`; lock icons `icons/32x32/system-uicons--lock.png` (checked) / `system-uicons--lock-open.png` (unchecked); ComboBox changes only via `onActivated`. `DeconstructorUtils.qml`: pure functions `visible_uids(grouped, selected_index, locked)` (returns the set of uids to display: all uids when unlocked; `direct_uids` ∪ selected break-down's component uids when locked) and `breakdowns_of_uid(grouped, uid)`. `DeconstructorUtils` is a plain instantiated component (`DeconstructorUtils { id: dec_utils }`, like `Logger`), **not** a QML singleton (no `qmldir` for `assets/qml/` files). WordSummary's async result payload must carry the grouped structure; the deconstructor list is no longer fetched separately via `dpd_deconstructor_list` — the grouped call passes `deconstructor_exact_only = false` to preserve WordSummary's current fuzzy deconstructor behavior.
@@ -98,7 +98,7 @@ Membership is many-to-many: a result uid may be in `direct_uids` and in several 
 - [x] 3.5 Create `assets/qml/tst_DeconstructorUtils.qml` covering: unlocked = all uids; locked = direct ∪ selected break-down; shared-component membership. (Do not run; the user runs QML tests.)
 - [x] 3.6 `make build -B`; user manually verifies WordSummary lookup on `sādhūti` / `pañcaggadāyakaṁ`.
 
-### 4.0 GlossTab compound word items
+### 4.0 GlossTab compound word items ✅
 
 **Depends on:** 2.0 (ProcessedWord fields), 3.0 (shared components).
 **Specs (PRD FR-A5 case partition + FR-B4):** In `wordItemDelegate`:
@@ -107,12 +107,12 @@ Membership is many-to-many: a result uid may be in `direct_uids` and in several 
 (d) deconstructor-resolved, ≥ 2 break-downs → as (c) plus a `DeconstructorSelector` row bound to `selected_deconstruction_index`/`deconstruction_locked`. Unlocked: sub-rows = union of all break-downs' components (deduped, first-appearance order); locked: selected break-down's components only; per-component selections survive break-down switches.
 Manual break-down change (`onActivated`) persists the index + saves a `user-selected` cache row with the break-down string on the compound's own row (the `deconstruction` column is created in 2.1b, so it is already present given 4.0 depends on 2.0); component sense change saves a `user-selected` component row. All state persists in `words_data_json`; exports render (c)/(d) words as one line per **visible** component with its selected sense.
 
-- [ ] 4.1 Extend the word-item delegate: implement the case partition (deconstructor-resolved detection = `direct_uids` empty ∧ deconstructions non-empty), render the `DeconstructorSelector` row for case (d), wire `activated`/`lock_toggled` to model updates (`paragraph_model.setProperty` on `words_data_json`) and mark `session_needs_saving`.
-- [ ] 4.2 Implement the indented component sub-row Repeater driven by `DeconstructorUtils.visible_uids()` / the break-down union: per-component ComboBox (model = that component's results, `onActivated` → update `component_selected_uids` + save a `user-selected` component cache row), static-text single-sense case, shield placement mirroring existing rows.
-- [ ] 4.3 Keep case (a)/(b) rendering byte-identical to today (incl. mixed words); verify `update_word_selection()` and the shield toggle are untouched for them.
-- [ ] 4.4 Session round-trip: confirm serialize/restore (`session_data_json()`, `load_session()`, JSON export / Open JSON) carries the new fields; no legacy-session handling needed.
-- [ ] 4.5 Update the copy/export generators (`paragraph_gloss_as_html/markdown/orgmode`, DOCX/Anki backends where they read `words_data`) to render deconstructor-resolved words as their visible components with per-component selected senses; (a)/(b) words unchanged.
-- [ ] 4.6 `make build -B`; user manually verifies glossing a passage containing `atthaññe` (case (c): component sub-rows, no selector), a multi-break-down compound (case (d): selector + lock), and `sādhūti` (mixed: rendered as today).
+- [x] 4.1 Extend the word-item delegate: implement the case partition (deconstructor-resolved detection = `direct_uids` empty ∧ deconstructions non-empty), render the `DeconstructorSelector` row for case (d), wire `activated`/`lock_toggled` to model updates (`paragraph_model.setProperty` on `words_data_json`) and mark `session_needs_saving`.
+- [x] 4.2 Implement the indented component sub-row Repeater driven by `DeconstructorUtils.visible_uids()` / the break-down union: per-component ComboBox (model = that component's results, `onActivated` → update `component_selected_uids` + save a `user-selected` component cache row), static-text single-sense case, shield placement mirroring existing rows.
+- [x] 4.3 Keep case (a)/(b) rendering byte-identical to today (incl. mixed words); verify `update_word_selection()` and the shield toggle are untouched for them.
+- [x] 4.4 Session round-trip: confirm serialize/restore (`session_data_json()`, `load_session()`, JSON export / Open JSON) carries the new fields; no legacy-session handling needed.
+- [x] 4.5 Update the copy/export generators (`paragraph_gloss_as_html/markdown/orgmode`, DOCX/Anki backends where they read `words_data`) to render deconstructor-resolved words as their visible components with per-component selected senses; (a)/(b) words unchanged.
+- [x] 4.6 `make build -B`; user manually verifies glossing a passage containing `atthaññe` (case (c): component sub-rows, no selector), a multi-break-down compound (case (d): selector + lock), and `sādhūti` (mixed: rendered as today).
 
 ### 5.0 FulltextResults break-down selector for Dictionary DPD Lookup
 

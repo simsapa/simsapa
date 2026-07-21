@@ -443,6 +443,12 @@ pub struct ProcessedWord {
     /// switches. Used only by deconstructor-resolved words (FR-A5 cases (c)/(d)).
     #[serde(default)]
     pub component_selected_uids: std::collections::HashMap<String, String>,
+    /// Per-component resolution origin (component word → `"user-selected"` /
+    /// `"built-in-human-checked"` / `"ai-selected"` / …), mirroring the flat
+    /// `resolution` field but for each component of a deconstructor-resolved
+    /// word. Drives the per-component shield indicator in the Gloss tab.
+    #[serde(default)]
+    pub component_resolutions: std::collections::HashMap<String, String>,
 }
 
 /// Result indicating an unrecognized word

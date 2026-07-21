@@ -3646,7 +3646,7 @@ pub fn process_word_for_glossing(
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
-    let deconstructions = grouped.deconstructions;
+    let mut deconstructions = grouped.deconstructions;
     let direct_uids = grouped.direct_uids;
 
     // Skip if no results - but return info about unrecognized word
@@ -3660,14 +3660,42 @@ pub fn process_word_for_glossing(
     // Get the stem from the first result (used for display and common-word checks)
     let stem = results[0].word.clone();
 
+    // A word is "deconstructor-resolved" (FR-A5 cases (c)/(d)) when it has no
+    // direct match but does have break-downs. Such words carry per-component
+    // sense selections and a break-down choice; direct / mixed words (cases
+    // (a)/(b)) keep the flat `selected_index` sense selection.
+    let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
+
     // Dedup key spans every component lemma so a sandhi-compound (e.g.
     // atthaññe -> atthi + aññe) is not dropped as a duplicate of its first
     // component (atthi). See gloss_dedup_key().
     let dedup_key = gloss_dedup_key(&results);
 
-    // Skip common words if option is enabled
-    if options.skip_common && is_common_word(&stem, &options.common_words) {
-        return Ok(Some(WordProcessingResult::Skipped));
+    // Skip common words if the option is enabled. For a deconstructor-resolved
+    // compound the check is per-component: a common component (e.g. `pañca` in
+    // `pañcaggadāyakaṁ`) is dropped from every break-down's component list —
+    // never the whole compound — so the remaining sub-words are still glossed.
+    // The `words_joined` display string is left intact. Only when *every*
+    // component of *every* break-down is common is the whole word skipped. A
+    // direct / mixed word keeps the original whole-word check on its stem.
+    if options.skip_common {
+        if is_deconstructor_resolved {
+            for dec in deconstructions.iter_mut() {
+                dec.components.retain(|comp| {
+                    let comp_stem = results
+                        .iter()
+                        .find(|r| comp.result_uids.contains(&r.uid))
+                        .map(|r| r.word.as_str())
+                        .unwrap_or(comp.word.as_str());
+                    !is_common_word(comp_stem, &options.common_words)
+                });
+            }
+            if deconstructions.iter().all(|d| d.components.is_empty()) {
+                return Ok(Some(WordProcessingResult::Skipped));
+            }
+        } else if is_common_word(&stem, &options.common_words) {
+            return Ok(Some(WordProcessingResult::Skipped));
+        }
     }
 
     // Skip if already shown in this paragraph
@@ -3690,17 +3718,13 @@ pub fn process_word_for_glossing(
     let normalized_context = normalize_gloss_context(&word_info.sentence);
     let context_hash = gloss_context_hash(&normalized_context);
 
-    // A word is "deconstructor-resolved" (FR-A5 cases (c)/(d)) when it has no
-    // direct match but does have break-downs. Such words carry per-component
-    // sense selections and a break-down choice; direct / mixed words (cases
-    // (a)/(b)) keep the flat `selected_index` sense selection.
-    let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
-
     let mut selected_index = 0;
     let mut resolution = None;
     let mut selected_deconstruction_index: Option<usize> = None;
     let mut deconstruction_locked = false;
     let mut component_selected_uids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut component_resolutions: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
 
     if let Some(data) = resolution_data {
@@ -3743,7 +3767,7 @@ pub fn process_word_for_glossing(
                         continue; // single sense: nothing to resolve
                     }
                     let comp_word_key = gloss_cache_word_key(&comp.word);
-                    if let Some((idx, _res)) = resolve_gloss_word_selection(
+                    if let Some((idx, res)) = resolve_gloss_word_selection(
                         &comp_word_key,
                         &normalized_context,
                         &context_hash,
@@ -3752,6 +3776,7 @@ pub fn process_word_for_glossing(
                     ) {
                         component_selected_uids
                             .insert(comp.word.clone(), comp_results[idx as usize].uid.clone());
+                        component_resolutions.insert(comp.word.clone(), res);
                     }
                 }
             }
@@ -3799,6 +3824,7 @@ pub fn process_word_for_glossing(
         selected_deconstruction_index,
         deconstruction_locked,
         component_selected_uids,
+        component_resolutions,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))

@@ -359,6 +359,10 @@ Item {
         return true;
     }
 
+    function save_gloss_word_deconstruction_cache(word: string, context_snippet: string, deconstruction: string, origin: string): bool {
+        return true;
+    }
+
     function delete_gloss_word_cache(word: string, context_hash: string): bool {
         return true;
     }
