@@ -54,11 +54,27 @@ Never start a second file before the current one has applied successfully.
        --out /path/to/scratchpad/candidates-001-payload.json
    ```
 
-   The payload is `{"task": "pali_word_selection", "items": [...]}`. Each item:
-   `id` (`p<paragraph>w<word>`), `word` (the inflected surface form), `context`
-   (the sentence window; `<b>…</b>` marks the target occurrence), `source_uid`
-   (the sutta reference, e.g. `sn56.11/pli/ms`), and `options` — each option has
-   `uid`, `word` (the DPD lemma, e.g. `ārāma 4`), and a `summary` of the sense.
+   The payload is `{"task": "pali_word_selection", "items": [...]}`. Each item
+   carries `word` (the inflected surface form), `context` (the sentence window;
+   `<b>…</b>` marks the target occurrence), `source_uid` (the sutta reference,
+   e.g. `sn56.11/pli/ms`), and `options`. There are **three item kinds**,
+   distinguished by the `id` suffix (docs/gloss-ai-word-selection.md):
+
+   - **Sense items** (`p<paragraph>w<word>`): the options are candidate DPD
+     dictionary senses — each has `uid`, `word` (the DPD lemma, e.g.
+     `ārāma 4`), and a `summary` of the sense.
+   - **Break-down items** (`…d`): the word is a compound/sandhi form with ≥ 2
+     possible deconstructions; each option's `word` is a break-down string
+     (e.g. `sādhu + iti`) and its `uid` a pseudo-uid (`d:0`, `d:1`, …). Pick
+     the break-down that fits the context.
+   - **Component items** (`…c<k>`): the item's `word` is the compound and
+     `component_word` names one of its component words; the options are DPD
+     senses for that component. The item's `deconstructions` array lists the
+     compound's break-downs as strings; a `breakdowns` array (when present)
+     lists the break-down strings this component occurs in. Pick the sense the
+     component has **within the compound** in this context, consistent with
+     the break-down you selected for that compound (when it has a break-down
+     item).
 
 3. **Decide every item** using the context sentence, the `source_uid` (sutta-level
    knowledge, e.g. standard formulas), and the option summaries. Apply the
@@ -75,9 +91,11 @@ Never start a second file before the current one has applied successfully.
    ] }
    ```
 
-   Every entry identifies the chosen option by its `word` lemma. `confidence`
-   is `confident` (default, omit it) or `review`; add a one-line `note` on
-   review entries.
+   Every entry identifies the chosen option by its `word` value — for sense
+   and component items the DPD lemma, for break-down items the break-down
+   string copied verbatim (e.g. `{"id": "p0w3d", "word": "sādhu + iti"}`).
+   `confidence` is `confident` (default, omit it) or `review`; add a one-line
+   `note` on review entries.
 
 5. **Apply:**
 

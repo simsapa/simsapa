@@ -284,7 +284,14 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
                 continue;
             }
             let word_key = gloss_cache_word_key(&entry.word);
-            if word_key.is_empty() || entry.context_hash.is_empty() || entry.selected_uid.is_empty() {
+            // A compound's own row carries a break-down string with an empty
+            // selected_uid (PRD FR-C5); it is a valid entry despite the empty uid.
+            let is_deconstruction_row =
+                entry.deconstruction.as_deref().is_some_and(|d| !d.is_empty());
+            if word_key.is_empty()
+                || entry.context_hash.is_empty()
+                || (entry.selected_uid.is_empty() && !is_deconstruction_row)
+            {
                 continue;
             }
             file_confirmed += 1;
@@ -296,7 +303,12 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
                     confirmed.insert(key, (entry, tier));
                 }
                 Some((existing, existing_tier)) => {
-                    if existing.selected_uid != entry.selected_uid {
+                    // Deconstruction rows both carry an empty selected_uid, so
+                    // the break-down string takes part in the comparison.
+                    let existing_sel =
+                        (existing.selected_uid.as_str(), existing.deconstruction.as_deref());
+                    let entry_sel = (entry.selected_uid.as_str(), entry.deconstruction.as_deref());
+                    if existing_sel != entry_sel {
                         conflicts += 1;
                         // Human beats agent regardless of scan order (req 37);
                         // within a tier the first-scanned entry is kept.
@@ -334,7 +346,8 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     let mut valid: Vec<(&GlossWordCacheExportEntry, EntryTier)> = Vec::new();
     let mut invalid_uids: usize = 0;
     for (entry, tier) in confirmed.values() {
-        if selected_uid_is_valid(&entry.selected_uid) {
+        // Deconstruction-only rows (empty selected_uid) have no uid to validate.
+        if entry.selected_uid.is_empty() || selected_uid_is_valid(&entry.selected_uid) {
             valid.push((entry, *tier));
         } else {
             invalid_uids += 1;
@@ -362,6 +375,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
             &entry.context_snippet,
             &entry.selected_uid,
             tier.import_origin(),
+            entry.deconstruction.as_deref().filter(|d| !d.is_empty()),
         ) {
             Ok(true) => match tier {
                 EntryTier::Human => imported_human += 1,

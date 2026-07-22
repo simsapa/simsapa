@@ -2188,6 +2188,37 @@ impl AppdataDbHandle {
         }
     }
 
+    /// Fetch all cache rows whose `context_hash` is in the given set, in one
+    /// query. Used to pre-fetch a paragraph's rows before gloss processing:
+    /// component-sense rows of a compound word are stored under the *component*
+    /// word key but the *compound's* context hash, so they can only be reached
+    /// by the hash (the component words are unknown before the grouped lookup).
+    /// See PRD FR-C5 ("resolution pre-fetch refactor").
+    pub fn get_gloss_word_cache_by_context_hashes(&self, hashes: &[String]) -> Vec<GlossWordContextCache> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        if hashes.is_empty() {
+            return Vec::new();
+        }
+
+        let hash_refs: Vec<&str> = hashes.iter().map(|h| h.as_str()).collect();
+
+        let result = self.do_read(|db_conn| {
+            gloss_word_context_cache
+                .filter(context_hash.eq_any(&hash_refs))
+                .select(GlossWordContextCache::as_select())
+                .load(db_conn)
+        });
+
+        match result {
+            Ok(rows) => rows,
+            Err(e) => {
+                error(&format!("get_gloss_word_cache_by_context_hashes(): {}", e));
+                Vec::new()
+            }
+        }
+    }
+
     /// Insert or update a cache row **in the origin's own tier**
     /// (`gloss_cache_origin_is_built_in`), respecting origin precedence within
     /// that tier: a lower-ranked origin never overwrites a higher-ranked one
@@ -2224,6 +2255,7 @@ impl AppdataDbHandle {
                     selected_uid: selected_uid_param,
                     origin: origin_param,
                     built_in: if tier { 1 } else { 0 },
+                    deconstruction: None,
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2245,6 +2277,67 @@ impl AppdataDbHandle {
                         .set((
                             context_snippet.eq(context_snippet_param),
                             selected_uid.eq(selected_uid_param),
+                            origin.eq(origin_param),
+                            updated_at.eq(Some(now)),
+                        ))
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+        }
+    }
+
+    /// Upsert the **compound's own** cache row for a deconstructor-resolved
+    /// word: it stores the chosen break-down display string (`words_joined`) in
+    /// `deconstruction` with an **empty** `selected_uid` (never a sense match).
+    /// Same tier-precedence guard as `upsert_gloss_word_cache`. See PRD FR-C5
+    /// (row semantics for compounds) and docs/gloss-ai-word-selection.md.
+    pub fn upsert_gloss_word_deconstruction(
+        &self,
+        word_param: &str,
+        context_hash_param: &str,
+        context_snippet_param: &str,
+        deconstruction_param: &str,
+        origin_param: &str,
+    ) -> Result<bool> {
+        use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
+
+        let tier = gloss_cache_origin_is_built_in(origin_param);
+        let existing = self.get_gloss_word_cache_tier(word_param, context_hash_param, tier);
+        let now = chrono::Utc::now().naive_utc();
+
+        match existing {
+            None => {
+                let new_row = NewGlossWordContextCache {
+                    word: word_param,
+                    context_hash: context_hash_param,
+                    context_snippet: context_snippet_param,
+                    selected_uid: "",
+                    origin: origin_param,
+                    built_in: if tier { 1 } else { 0 },
+                    deconstruction: Some(deconstruction_param),
+                    created_at: Some(now),
+                    updated_at: Some(now),
+                };
+                self.do_write(|db_conn| {
+                    diesel::insert_into(gloss_word_context_cache)
+                        .values(&new_row)
+                        .execute(db_conn)
+                })?;
+                Ok(true)
+            }
+            Some(row) => {
+                let new_rank = gloss_cache_origin_rank(origin_param);
+                let old_rank = gloss_cache_origin_rank(&row.origin);
+                if new_rank < old_rank {
+                    return Ok(false);
+                }
+                self.do_write(|db_conn| {
+                    diesel::update(gloss_word_context_cache.find(row.id))
+                        .set((
+                            context_snippet.eq(context_snippet_param),
+                            selected_uid.eq(""),
+                            deconstruction.eq(Some(deconstruction_param)),
                             origin.eq(origin_param),
                             updated_at.eq(Some(now)),
                         ))
@@ -2277,6 +2370,7 @@ impl AppdataDbHandle {
         context_snippet_param: &str,
         selected_uid_param: &str,
         origin_param: &str,
+        deconstruction_param: Option<&str>,
     ) -> Result<bool> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
@@ -2293,6 +2387,7 @@ impl AppdataDbHandle {
                     selected_uid: selected_uid_param,
                     origin: origin_param,
                     built_in: if tier { 1 } else { 0 },
+                    deconstruction: deconstruction_param,
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2312,6 +2407,7 @@ impl AppdataDbHandle {
                         .set((
                             context_snippet.eq(context_snippet_param),
                             selected_uid.eq(selected_uid_param),
+                            deconstruction.eq(deconstruction_param),
                             origin.eq(origin_param),
                             updated_at.eq(Some(now)),
                         ))
@@ -2762,29 +2858,29 @@ mod gloss_word_selection_tests {
         let db = setup();
 
         // No local row: any valid origin inserts.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai-selected");
 
         // Imported ai vs local ai: equal precedence is a no-op (no churn).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai-selected").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-imported/dpd");
 
         // Imported user beats local ai.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user-selected", None).unwrap());
         let row = db.get_gloss_word_cache("w1", "h1").unwrap();
         assert_eq!(row.origin, "user-selected");
         assert_eq!(row.selected_uid, "uid-user/dpd");
 
         // Local user row survives an imported user row (equal precedence).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
 
         // An imported ai row lands in the local tier beside the shipped row,
         // which keeps winning; an imported user row then outranks both.
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
-        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
-        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
         assert_eq!(
             db.get_gloss_word_cache_tier("w2", "h2", true).unwrap().selected_uid,
@@ -2793,10 +2889,10 @@ mod gloss_word_selection_tests {
 
         // Imported agent-checked beats a local ai row, but never a human tier.
         db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap();
-        assert!(db.import_gloss_word_cache_row("w3", "h3", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert!(db.import_gloss_word_cache_row("w3", "h3", "ctx", "uid-ag/dpd", "built-in-agent-checked", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().origin, "built-in-agent-checked");
         db.upsert_gloss_word_cache("w4", "h4", "ctx", "uid-hu/dpd", "built-in-human-checked").unwrap();
-        assert!(!db.import_gloss_word_cache_row("w4", "h4", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w4", "h4", "ctx", "uid-ag/dpd", "built-in-agent-checked", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w4", "h4").unwrap().selected_uid, "uid-hu/dpd");
     }
 

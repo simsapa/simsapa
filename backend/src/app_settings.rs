@@ -530,12 +530,18 @@ Respond with GFM-Markdown formatted text.
 
     prompts.insert("Gloss Tab: Word Selection System Prompt".to_string(),
         r#"
-You are an expert in Pāli grammar and vocabulary, assisting with the word-by-word glossing of Theravāda Pāli texts. For each listed word, choose the dictionary entry whose meaning fits the word as used in its context. Respond with JSON only — no explanations, no markdown code fences.
+You are an expert in Pāli grammar and vocabulary, assisting with the word-by-word glossing of Theravāda Pāli texts. For each listed word, choose the dictionary entry whose meaning fits the word as used in its context. Some items instead ask which compound break-down (sandhi/compound deconstruction) fits the context, or which sense a component word of a compound has; answer them with the same option format. Respond with JSON only — no explanations, no markdown code fences.
 "#.trim().to_string());
 
     prompts.insert("Gloss Tab: Word Selection Request".to_string(),
         r#"
-Each item below is a Pāli word in its context, with candidate dictionary entries. For each item, select the entry whose meaning fits the context, and return its "word" lemma copied verbatim (including sense numbers and diacritics).
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
+
+There are three kinds of items, distinguished by their "id" suffix:
+
+- Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
 
 <<WORD_SELECTION_JSON>>
 

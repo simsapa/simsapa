@@ -17,7 +17,7 @@ use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
-use crate::types::SearchResult;
+use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup};
 use crate::logger::{info, error};
 
 pub type DpdDbHandle = DatabaseHandle;
@@ -554,6 +554,328 @@ impl DpdDbHandle {
         Ok(results)
     }
 
+    /// Break-down-aware DPD lookup (PRD FR-A1/FR-A2). Mirrors the flat
+    /// `dpd_lookup()` phase order, but additionally records the deconstructor
+    /// break-downs as structured data and fetches each break-down's component
+    /// results **even when direct results exist** (the flat lookup gates the
+    /// deconstructor branch on `results.is_empty()`; the grouped path removes
+    /// that gate). See docs/gloss-ai-word-selection.md (grouped lookup).
+    ///
+    /// `deconstructor_exact_only` is separate from `exact_only`: the gloss
+    /// caller passes `true` (matching `dpd_lookup`'s internal deconstructor
+    /// branch), WordSummary passes `false` (matching the fuzzy
+    /// `dpd_deconstructor_list` behavior its ComboBox shows today).
+    ///
+    /// Membership is many-to-many: a result uid may appear in `direct_uids`
+    /// and in several break-downs. The flat `results` list is
+    /// direct-first, then deconstructor-derived in first-seen order,
+    /// deduplicated by uid overall.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dpd_lookup_grouped(
+        &self,
+        query_text_orig: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+    ) -> Result<GroupedDpdLookup> {
+        info(&format!("dpd_lookup_grouped(): query_text_orig: {}", query_text_orig));
+        let timer = Instant::now();
+
+        use crate::db::dpd_schema::dpd_headwords;
+        use crate::db::dpd_schema::dpd_roots;
+
+        let db_conn = &mut self.get_conn().expect("Can't get db conn");
+
+        let query_text = normalize_query_text(Some(query_text_orig.to_string()));
+        let uid_candidate = query_text_orig.trim().to_lowercase();
+
+        let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
+        let uid_prefix_ref = uid_prefix_pat.as_deref();
+        let uid_suffix_ref = uid_suffix_pat.as_deref();
+
+        let mut results: Vec<SearchResult> = Vec::new();
+        let mut results_uids: Vec<String> = Vec::new();
+        let mut direct_uids: Vec<String> = Vec::new();
+        let mut deconstructions: Vec<Deconstruction> = Vec::new();
+
+        // Append `res_words` to the flat `results` list, deduplicating by uid
+        // against what is already present, and return the uids of the newly
+        // added rows (in first-seen order). `results` / `results_uids` are
+        // passed as arguments to sidestep closure-borrow limitations.
+        let add_results = |res_words: Vec<UDpdWord>,
+                           results: &mut Vec<SearchResult>,
+                           results_uids: &mut Vec<String>|
+         -> Vec<String> {
+            let mut res = parse_words(res_words, do_pali_sort);
+            res.retain(|i| !results_uids.contains(&i.uid));
+            let new_uids: Vec<String> = res.iter().map(|i| i.uid.clone()).collect();
+            results_uids.extend(new_uids.iter().cloned());
+            sort_search_results_natural(&mut res);
+            results.extend(res);
+            new_uids
+        };
+
+        // Phase 1: uid / id branch. Early return if it matched.
+        if uid_candidate.ends_with("/dpd")
+            || (!uid_candidate.is_empty() && uid_candidate.chars().all(char::is_numeric))
+        {
+            let mut res_words: Vec<UDpdWord> = Vec::new();
+            let ref_str = uid_candidate.replace("/dpd", "");
+            if ref_str.chars().all(char::is_numeric) {
+                if let Ok(id_val) = ref_str.parse::<i32>() {
+                    let mut q = dpd_headwords::table
+                        .filter(dpd_headwords::id.eq(id_val))
+                        .into_boxed();
+                    if let Some(p) = uid_prefix_ref {
+                        q = q.filter(dpd_headwords::uid.like(p.to_string()));
+                    }
+                    if let Some(s) = uid_suffix_ref {
+                        q = q.filter(dpd_headwords::uid.like(s.to_string()));
+                    }
+                    let r_opt = q.first::<DpdHeadword>(db_conn).optional()?;
+                    if let Some(r) = r_opt {
+                        res_words.push(UDpdWord::Headword(Box::new(r)));
+                    }
+                }
+            } else {
+                let mut q = dpd_roots::table
+                    .filter(dpd_roots::uid.eq(&uid_candidate))
+                    .into_boxed();
+                if let Some(p) = uid_prefix_ref {
+                    q = q.filter(dpd_roots::uid.like(p.to_string()));
+                }
+                if let Some(s) = uid_suffix_ref {
+                    q = q.filter(dpd_roots::uid.like(s.to_string()));
+                }
+                let r_opt = q.first::<DpdRoot>(db_conn).optional()?;
+                if let Some(r) = r_opt {
+                    res_words.push(UDpdWord::Root(Box::new(r)));
+                }
+
+                if res_words.is_empty() {
+                    let base: String = ref_str
+                        .split('-')
+                        .take_while(|t| !t.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                        .collect::<Vec<_>>()
+                        .join("-");
+                    let candidates = dpd_headwords::table
+                        .filter(dpd_headwords::lemma_clean.eq(&base)
+                                .or(dpd_headwords::word_ascii.eq(&base)))
+                        .load::<DpdHeadword>(db_conn)?;
+                    for h in candidates {
+                        if word_uid_sanitize(&h.lemma_1).to_lowercase() == ref_str {
+                            res_words.push(UDpdWord::Headword(Box::new(h)));
+                        }
+                    }
+                }
+            }
+
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+
+            if !results.is_empty() {
+                info(&format!("Query took: {:?}", timer.elapsed()));
+                return Ok(GroupedDpdLookup {
+                    query: query_text_orig.to_string(),
+                    results,
+                    deconstructions,
+                    direct_uids,
+                });
+            }
+        }
+
+        // Phase 2: headword exact match.
+        {
+            let mut q = dpd_headwords::table
+                .filter(dpd_headwords::lemma_clean.eq(&query_text)
+                        .or(dpd_headwords::word_ascii.eq(&query_text)))
+                .into_boxed();
+            if let Some(p) = uid_prefix_ref {
+                q = q.filter(dpd_headwords::uid.like(p.to_string()));
+            }
+            if let Some(s) = uid_suffix_ref {
+                q = q.filter(dpd_headwords::uid.like(s.to_string()));
+            }
+            let r = q.load::<DpdHeadword>(db_conn)?;
+            let res_words: Vec<UDpdWord> =
+                r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+        }
+
+        // Phase 3: roots.
+        let mut roots: HashSet<DpdRoot> = HashSet::new();
+        for col in ["root_clean", "root_no_sign", "word_ascii"] {
+            let mut q = dpd_roots::table.into_boxed();
+            q = match col {
+                "root_clean" => q.filter(dpd_roots::root_clean.eq(&query_text)),
+                "root_no_sign" => q.filter(dpd_roots::root_no_sign.eq(&query_text)),
+                _ => q.filter(dpd_roots::word_ascii.eq(&query_text)),
+            };
+            if let Some(p) = uid_prefix_ref {
+                q = q.filter(dpd_roots::uid.like(p.to_string()));
+            }
+            if let Some(s) = uid_suffix_ref {
+                q = q.filter(dpd_roots::uid.like(s.to_string()));
+            }
+            roots.extend(q.load::<DpdRoot>(db_conn)?);
+        }
+        {
+            let res_words: Vec<UDpdWord> =
+                roots.into_iter().map(|r| UDpdWord::Root(Box::new(r))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+        }
+
+        // Phase 4: inflection_to_pali_words — unconditional.
+        {
+            let r = self.inflection_to_pali_words(&query_text, uid_prefix_ref, uid_suffix_ref)?;
+            let res_words: Vec<UDpdWord> =
+                r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+        }
+
+        // Phase 5: stem form exact match — gated on `results` empty.
+        if results.is_empty() {
+            let stem = pali_stem(&query_text, false);
+            let mut q = dpd_headwords::table
+                .filter(dpd_headwords::stem.eq(&stem))
+                .into_boxed();
+            if let Some(p) = uid_prefix_ref {
+                q = q.filter(dpd_headwords::uid.like(p.to_string()));
+            }
+            if let Some(s) = uid_suffix_ref {
+                q = q.filter(dpd_headwords::uid.like(s.to_string()));
+            }
+            let r = q.load::<DpdHeadword>(db_conn)?;
+            let res_words: Vec<UDpdWord> =
+                r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+        }
+
+        // Phase 6: nospace-compound — gated on `results` empty.
+        if results.is_empty() && query_text.contains(' ') {
+            let nospace_query = query_text.replace(' ', "");
+            let mut q = dpd_headwords::table
+                .filter(dpd_headwords::lemma_clean.eq(&nospace_query)
+                        .or(dpd_headwords::word_ascii.eq(&nospace_query)))
+                .into_boxed();
+            if let Some(p) = uid_prefix_ref {
+                q = q.filter(dpd_headwords::uid.like(p.to_string()));
+            }
+            if let Some(s) = uid_suffix_ref {
+                q = q.filter(dpd_headwords::uid.like(s.to_string()));
+            }
+            let r = q.load::<DpdHeadword>(db_conn)?;
+            let res_words: Vec<UDpdWord> =
+                r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+        }
+
+        // Phase 7: deconstructor phase — UN-gated (unlike flat lookup). Record
+        // the per-break-down component membership and append each component's
+        // results to the flat list. Component words come from
+        // `deconstructor_nested()` (list-of-lists parallel to
+        // `deconstructor_unpack()`'s `words_joined` strings — same order).
+        if let Some(lookup) = self.dpd_deconstructor_query(&query_text, deconstructor_exact_only)? {
+            // A lookup row can match on i2h/headwords while carrying an empty
+            // deconstructor (common for ordinary recognized words now that this
+            // phase is un-gated). Skip those without unpacking — `deconstructor_unpack`
+            // warns on empty input.
+            if !lookup.deconstructor.is_empty() {
+            let words_joined = lookup.deconstructor_unpack();
+            let nested = lookup.deconstructor_nested();
+            for (words_joined_str, component_words) in words_joined.into_iter().zip(nested.into_iter()) {
+                let mut components: Vec<DeconstructionComponent> = Vec::new();
+                for comp_word in component_words {
+                    let hws = self.inflection_to_pali_words(&comp_word, uid_prefix_ref, uid_suffix_ref)?;
+                    let res_words: Vec<UDpdWord> =
+                        hws.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+                    // The component's full uid membership (before dedup against
+                    // the flat list) — many-to-many, so shared components keep
+                    // the uid in every break-down's membership list.
+                    let comp_results = parse_words(res_words, do_pali_sort);
+                    let comp_uids: Vec<String> =
+                        comp_results.iter().map(|i| i.uid.clone()).collect();
+                    // Append only unseen results to the flat list.
+                    let mut unseen: Vec<SearchResult> = comp_results
+                        .into_iter()
+                        .filter(|i| !results_uids.contains(&i.uid))
+                        .collect();
+                    results_uids.extend(unseen.iter().map(|i| i.uid.clone()));
+                    sort_search_results_natural(&mut unseen);
+                    results.extend(unseen);
+                    components.push(DeconstructionComponent {
+                        word: comp_word,
+                        result_uids: comp_uids,
+                    });
+                }
+                deconstructions.push(Deconstruction {
+                    words_joined: words_joined_str,
+                    components,
+                });
+            }
+            }
+        }
+
+        // Phase 8: "starts with" fallbacks — only when BOTH direct and
+        // component results are empty (i.e. the flat list is still empty).
+        // Their uids count as direct_uids.
+        if results.is_empty() {
+            let mut q = dpd_headwords::table
+                .filter(dpd_headwords::lemma_clean.like(format!("{}%", query_text))
+                        .or(dpd_headwords::word_ascii.like(format!("{}%", query_text))))
+                .into_boxed();
+            if let Some(p) = uid_prefix_ref {
+                q = q.filter(dpd_headwords::uid.like(p.to_string()));
+            }
+            if let Some(s) = uid_suffix_ref {
+                q = q.filter(dpd_headwords::uid.like(s.to_string()));
+            }
+            let r = q.load::<DpdHeadword>(db_conn)?;
+            let res_words: Vec<UDpdWord> =
+                r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let new_uids = add_results(res_words, &mut results, &mut results_uids);
+            direct_uids.extend(new_uids);
+
+            if results.is_empty() {
+                let stem = pali_stem(&query_text, false);
+                let mut q = dpd_headwords::table
+                    .filter(dpd_headwords::stem.like(format!("{}%", stem)))
+                    .into_boxed();
+                if let Some(p) = uid_prefix_ref {
+                    q = q.filter(dpd_headwords::uid.like(p.to_string()));
+                }
+                if let Some(s) = uid_suffix_ref {
+                    q = q.filter(dpd_headwords::uid.like(s.to_string()));
+                }
+                let r = q.load::<DpdHeadword>(db_conn)?;
+                let res_words: Vec<UDpdWord> =
+                    r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+                let new_uids = add_results(res_words, &mut results, &mut results_uids);
+                direct_uids.extend(new_uids);
+            }
+        }
+
+        // `exact_only` is honored by the direct-match phases implicitly (they
+        // match exact columns); it is retained in the signature for parity with
+        // `dpd_lookup()` and future use.
+        let _ = exact_only;
+
+        info(&format!("Query took: {:?}", timer.elapsed()));
+        Ok(GroupedDpdLookup {
+            query: query_text_orig.to_string(),
+            results,
+            deconstructions,
+            direct_uids,
+        })
+    }
+
     /// Look up a bold-definition row by its computed `uid` (e.g.
     /// `"dhammo/mn1"` — lowercased bold + "/" + lowercased ref_code, with
     /// collision disambiguation added by the bootstrap step).
@@ -612,6 +934,25 @@ impl DpdDbHandle {
             }
         };
         serde_json::to_string(&list).unwrap_or_default()
+    }
+
+    /// Serialized `dpd_lookup_grouped()` (PRD FR-A1). `deconstructor_exact_only`
+    /// selects the deconstructor matching behavior: `false` for WordSummary's
+    /// fuzzy list, `true` for the gloss path.
+    pub fn dpd_lookup_grouped_json(&self, query: &str, deconstructor_exact_only: bool) -> String {
+        match self.dpd_lookup_grouped(query, false, true, deconstructor_exact_only, None, None) {
+            Ok(grouped) => serde_json::to_string(&grouped).unwrap_or_default(),
+            Err(e) => {
+                error(&format!("{}", e));
+                let empty = GroupedDpdLookup {
+                    query: query.to_string(),
+                    results: Vec::new(),
+                    deconstructions: Vec::new(),
+                    direct_uids: Vec::new(),
+                };
+                serde_json::to_string(&empty).unwrap_or_default()
+            }
+        }
     }
 
     /// Get a meaning snippet for a word from DPD headwords.

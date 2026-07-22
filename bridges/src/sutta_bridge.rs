@@ -704,6 +704,10 @@ pub mod qobject {
         fn dpd_lookup_ready(self: Pin<&mut SuttaBridge>, query_id: QString, results_json: QString);
 
         #[qsignal]
+        #[cxx_name = "dpdLookupGroupedReady"]
+        fn dpd_lookup_grouped_ready(self: Pin<&mut SuttaBridge>, query_id: QString, grouped_json: QString);
+
+        #[qsignal]
         #[cxx_name = "ankiCsvExportReady"]
         fn anki_csv_export_ready(self: Pin<&mut SuttaBridge>, results_json: QString);
 
@@ -868,6 +872,9 @@ pub mod qobject {
         fn dpd_lookup_json_async(self: Pin<&mut SuttaBridge>, query_id: &QString, query: &QString);
 
         #[qinvokable]
+        fn dpd_lookup_grouped_json_async(self: Pin<&mut SuttaBridge>, query_id: &QString, query: &QString);
+
+        #[qinvokable]
         fn get_sutta_html(self: &SuttaBridge, window_id: &QString, uid: &QString) -> QString;
 
         #[qinvokable]
@@ -959,6 +966,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn save_gloss_word_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, selected_uid: &QString, origin: &QString) -> bool;
+
+        #[qinvokable]
+        fn save_gloss_word_deconstruction_cache(self: &SuttaBridge, word: &QString, context_snippet: &QString, deconstruction: &QString, origin: &QString) -> bool;
 
         #[qinvokable]
         fn delete_gloss_word_cache(self: &SuttaBridge, word: &QString, context_hash: &QString) -> bool;
@@ -1942,6 +1952,28 @@ impl qobject::SuttaBridge {
             let is_combined_dict = search_area_text == "Dictionary"
                 && matches!(parsed_params.mode, SearchMode::Combined);
 
+            // Grouped deconstructor break-downs for the original query, attached
+            // to the result page on the Dictionary DPD Lookup / Combined-remap
+            // path so FulltextResults can show a break-down selector and
+            // lock-filter the page client-side (PRD FR-B5). Computed once per
+            // results_page() call (cheap in-memory DPD lookup) and cloned into
+            // each SearchResultPage. `deconstructor_exact_only = false` mirrors
+            // WordSummary's fuzzy break-down list. Empty for other paths.
+            let (page_deconstructions, page_direct_uids) = if search_area_text == "Dictionary"
+                && matches!(parsed_params.mode, SearchMode::DpdLookup | SearchMode::Combined)
+            {
+                let app_data = get_app_data();
+                match app_data.dbm.dpd.dpd_lookup_grouped(&query_text, false, true, false, None, None) {
+                    Ok(grouped) => (grouped.deconstructions, grouped.direct_uids),
+                    Err(e) => {
+                        error(&format!("dpd_lookup_grouped for result page failed: {}", e));
+                        (Vec::new(), Vec::new())
+                    }
+                }
+            } else {
+                (Vec::new(), Vec::new())
+            };
+
             if is_combined_dict {
                 // PRD §6.6: distinct `|combined` suffix prevents any chance
                 // of colliding with `RESULTS_PAGE_CACHE` keys.
@@ -1982,6 +2014,8 @@ impl qobject::SuttaBridge {
                             page_len,
                             page_num,
                             results,
+                            deconstructions: page_deconstructions.clone(),
+                            direct_uids: page_direct_uids.clone(),
                         };
                         let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                         qt_thread.queue(move |mut qo| {
@@ -2068,6 +2102,8 @@ impl qobject::SuttaBridge {
                                 page_len: cache.page_len,
                                 page_num,
                                 results: cached_results.clone(),
+                                deconstructions: page_deconstructions.clone(),
+                                direct_uids: page_direct_uids.clone(),
                             };
                             let json = serde_json::to_string(&results_page).unwrap_or_default();
                             qt_thread.queue(move |mut qo| {
@@ -2127,6 +2163,8 @@ impl qobject::SuttaBridge {
                         page_len,
                         page_num,
                         results,
+                        deconstructions: page_deconstructions.clone(),
+                        direct_uids: page_direct_uids.clone(),
                     };
                     let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                     qt_thread.queue(move |mut qo| {
@@ -2319,6 +2357,31 @@ impl qobject::SuttaBridge {
             }).unwrap();
 
             info("SuttaBridge::dpd_lookup_json_async() end");
+        });
+    }
+
+    /// Grouped, break-down-aware DPD lookup (PRD FR-A1/FR-B3). WordSummary and
+    /// FulltextResults consume the grouped structure to render the break-down
+    /// selector and lock-filter the result list. `deconstructor_exact_only` is
+    /// `false` here to preserve WordSummary's fuzzy deconstructor list behavior.
+    pub fn dpd_lookup_grouped_json_async(self: Pin<&mut Self>, query_id: &QString, query: &QString) {
+        info("SuttaBridge::dpd_lookup_grouped_json_async() start");
+        let qt_thread = self.qt_thread();
+        let query_id_string = query_id.to_string();
+        let query_text = query.to_string();
+
+        // Spawn a thread so Qt event loop is not blocked
+        thread::spawn(move || {
+            let app_data = get_app_data();
+            let s = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false);
+            let grouped_json = QString::from(s);
+            let query_id_qstring = QString::from(query_id_string);
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().dpd_lookup_grouped_ready(query_id_qstring, grouped_json);
+            }).unwrap();
+
+            info("SuttaBridge::dpd_lookup_grouped_json_async() end");
         });
     }
 
@@ -2613,6 +2676,32 @@ impl qobject::SuttaBridge {
             Ok(written) => written,
             Err(e) => {
                 error(&format!("save_gloss_word_cache(): {}", e));
+                false
+            }
+        }
+    }
+
+    /// Save the compound's own cache row for a deconstructor-resolved word: the
+    /// chosen break-down display string (`words_joined`) is stored in the
+    /// `deconstruction` column with an empty `selected_uid`. `context_snippet`
+    /// is the compound occurrence's context window (its hash keys the row, and
+    /// the compound's component-sense rows share this hash). See PRD FR-C5.
+    pub fn save_gloss_word_deconstruction_cache(&self, word: &QString, context_snippet: &QString, deconstruction: &QString, origin: &QString) -> bool {
+        use simsapa_backend::helpers::{gloss_cache_word_key, gloss_context_hash, normalize_gloss_context};
+        let app_data = get_app_data();
+        let word_key = gloss_cache_word_key(&word.to_string());
+        let snippet = context_snippet.to_string();
+        let hash = gloss_context_hash(&normalize_gloss_context(&snippet));
+        match app_data.dbm.appdata.upsert_gloss_word_deconstruction(
+            &word_key,
+            &hash,
+            &snippet,
+            &deconstruction.to_string(),
+            &origin.to_string(),
+        ) {
+            Ok(written) => written,
+            Err(e) => {
+                error(&format!("save_gloss_word_deconstruction_cache(): {}", e));
                 false
             }
         }
@@ -3816,90 +3905,20 @@ impl qobject::SuttaBridge {
             // Get app data for DPD database access
             let app_data = simsapa_backend::get_app_data();
 
-            let mut paragraph_results: Vec<simsapa_backend::types::ParagraphProcessingResult> = Vec::new();
-            let mut global_unrecognized_words = input_data.options.existing_global_unrecognized.clone();
-            let mut global_stems = input_data.options.existing_global_stems.clone();
-            let mut paragraph_unrecognized_words = input_data.options.existing_paragraph_unrecognized.clone();
-
-            // Process each paragraph
-            for (paragraph_idx, paragraph_text) in input_data.paragraphs.iter().enumerate() {
-
-                // Extract words with context from paragraph
-                let words_with_context = simsapa_backend::helpers::extract_words_with_context(paragraph_text);
-                // Pre-fetch the word-selection cache rows + set-phrase table for
-                // this paragraph (process_word_for_glossing takes no appdata handle).
-                let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
-                    &app_data.dbm.appdata,
-                    &words_with_context,
-                );
-                let mut paragraph_shown_stems = std::collections::HashMap::new();
-                let mut processed_words = Vec::new();
-
-                // Process each word
-                for word_context in words_with_context {
-                    let word_info = simsapa_backend::types::WordInfo {
-                        word: word_context.clean_word.clone(),
-                        sentence: word_context.context_snippet.clone(),
-                    };
-
-                    match simsapa_backend::helpers::process_word_for_glossing(
-                        &word_info,
-                        &mut paragraph_shown_stems,
-                        &mut global_stems,
-                        input_data.options.no_duplicates_globally,
-                        &input_data.options,
-                        &app_data.dbm.dpd,
-                        Some(&resolution_data),
-                    ) {
-                        Ok(result) => processed_words.push(result),
-                        Err(e) => {
-                            let error_response = Self::create_error_response(&format!("Word processing error: {}", e));
-                            self_.queue(move |mut qo| {
-                                qo.as_mut().all_paragraphs_gloss_ready(QString::from(error_response));
-                            }).unwrap();
-                            return;
-                        }
-                    }
+            // Delegate to the Qt-free backend core (shared with POST /gloss_text).
+            let response = match simsapa_backend::helpers::process_all_paragraphs(
+                &input_data,
+                &app_data.dbm.appdata,
+                &app_data.dbm.dpd,
+            ) {
+                Ok(response) => response,
+                Err(e) => {
+                    let error_response = Self::create_error_response(&e);
+                    self_.queue(move |mut qo| {
+                        qo.as_mut().all_paragraphs_gloss_ready(QString::from(error_response));
+                    }).unwrap();
+                    return;
                 }
-
-                // Collect unrecognized words for this paragraph
-                simsapa_backend::helpers::collect_unrecognized_words(
-                    &processed_words,
-                    paragraph_idx,
-                    &mut paragraph_unrecognized_words,
-                    &mut global_unrecognized_words,
-                );
-
-                // Collect recognized words data
-                let words_data: Vec<simsapa_backend::types::ProcessedWord> = processed_words
-                    .into_iter()
-                    .filter_map(|result| {
-                        if let Some(simsapa_backend::types::WordProcessingResult::Recognized(word)) = result {
-                            Some(word)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                let paragraph_unrecognized = paragraph_unrecognized_words
-                    .get(&paragraph_idx.to_string())
-                    .cloned()
-                    .unwrap_or_default();
-
-                paragraph_results.push(simsapa_backend::types::ParagraphProcessingResult {
-                    paragraph_index: paragraph_idx,
-                    words_data,
-                    unrecognized_words: paragraph_unrecognized,
-                });
-            }
-
-            // Create success response
-            let response = simsapa_backend::types::AllParagraphsProcessingResult {
-                success: true,
-                paragraphs: paragraph_results,
-                global_unrecognized_words,
-                updated_global_stems: global_stems,
             };
 
             let response_json = match serde_json::to_string(&response) {
@@ -3940,79 +3959,21 @@ impl qobject::SuttaBridge {
             // Get app data for DPD database access
             let app_data = simsapa_backend::get_app_data();
 
-            // Extract words with context from paragraph
-            let words_with_context = simsapa_backend::helpers::extract_words_with_context(&input_data.paragraph_text);
-            // Pre-fetch the word-selection cache rows + set-phrase table for
-            // this paragraph (process_word_for_glossing takes no appdata handle).
-            let resolution_data = simsapa_backend::helpers::GlossResolutionData::fetch(
-                &app_data.dbm.appdata,
-                &words_with_context,
-            );
-            let mut paragraph_shown_stems = std::collections::HashMap::new();
-            let mut global_stems = input_data.options.existing_global_stems.clone();
-            let mut processed_words = Vec::new();
-
-            // Process each word
-            for word_context in words_with_context {
-                let word_info = simsapa_backend::types::WordInfo {
-                    word: word_context.clean_word.clone(),
-                    sentence: word_context.context_snippet.clone(),
-                };
-
-                match simsapa_backend::helpers::process_word_for_glossing(
-                    &word_info,
-                    &mut paragraph_shown_stems,
-                    &mut global_stems,
-                    input_data.options.no_duplicates_globally,
-                    &input_data.options,
-                    &app_data.dbm.dpd,
-                    Some(&resolution_data),
-                ) {
-                    Ok(result) => processed_words.push(result),
-                    Err(e) => {
-                        let error_response = Self::create_error_response(&format!("Word processing error: {}", e));
-                        self_.queue(move |mut qo| {
-                            qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(error_response));
-                        }).unwrap();
-                        return;
-                    }
-                }
-            }
-
-            // Collect unrecognized words
-            let mut paragraph_unrecognized_words = std::collections::HashMap::new();
-            let mut global_unrecognized_words = input_data.options.existing_global_unrecognized.clone();
-            simsapa_backend::helpers::collect_unrecognized_words(
-                &processed_words,
+            // Delegate to the Qt-free backend core (shared with POST /gloss_text).
+            let response = match simsapa_backend::helpers::process_single_paragraph(
                 paragraph_index as usize,
-                &mut paragraph_unrecognized_words,
-                &mut global_unrecognized_words,
-            );
-
-            // Collect recognized words data
-            let words_data: Vec<simsapa_backend::types::ProcessedWord> = processed_words
-                .into_iter()
-                .filter_map(|result| {
-                    if let Some(simsapa_backend::types::WordProcessingResult::Recognized(word)) = result {
-                        Some(word)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            let paragraph_unrecognized = paragraph_unrecognized_words
-                .get(&paragraph_index.to_string())
-                .cloned()
-                .unwrap_or_default();
-
-            // Create success response
-            let response = simsapa_backend::types::SingleParagraphProcessingResult {
-                success: true,
-                paragraph_index: paragraph_index as usize,
-                words_data,
-                unrecognized_words: paragraph_unrecognized,
-                updated_global_stems: global_stems,
+                &input_data,
+                &app_data.dbm.appdata,
+                &app_data.dbm.dpd,
+            ) {
+                Ok(response) => response,
+                Err(e) => {
+                    let error_response = Self::create_error_response(&e);
+                    self_.queue(move |mut qo| {
+                        qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(error_response));
+                    }).unwrap();
+                    return;
+                }
             };
 
             let response_json = match serde_json::to_string(&response) {

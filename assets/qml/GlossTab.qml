@@ -41,6 +41,7 @@ Item {
     signal requestWordSummary(string word)
 
     Logger { id: logger }
+    DeconstructorUtils { id: dec_utils }
 
     AiErrorUtils { id: ai_error_utils }
     PromptManager { id: pm }
@@ -517,7 +518,19 @@ Item {
                 root.ws_set_status(pi, "error", parsed.error);
             }
         } else {
-            // Group the valid selections by paragraph index (id = p<pi>w<wi>).
+            // Group the valid selections by paragraph index. Ids are
+            // p<pi>w<wi> (sense), p<pi>w<wi>d (break-down choice) or
+            // p<pi>w<wi>c<k> (component sense); a c-item answer is routed to
+            // its component via the item's component_word field, never by
+            // re-deriving the k enumeration (see build_word_selection_items).
+            let items_by_id = {};
+            try {
+                for (let it of JSON.parse(items_json)) {
+                    items_by_id[it.id] = it;
+                }
+            } catch (e) {
+                logger.error("handle_word_selection_response: failed to parse request items: " + e);
+            }
             let by_para = {};
             for (let sel of parsed.selections) {
                 // confidence/note are parsed but not displayed (logged only).
@@ -525,11 +538,26 @@ Item {
                     logger.info("Word selection " + sel.id + ": confidence=" + (sel.confidence || "confident")
                                 + (sel.note ? ", note: " + sel.note : ""));
                 }
-                let m = sel.id.match(/^p(\d+)w(\d+)$/);
+                let m = sel.id.match(/^p(\d+)w(\d+)(d|c\d+)?$/);
                 if (!m) continue;
                 let pi = parseInt(m[1], 10);
+                let entry = { word_idx: parseInt(m[2], 10), uid: sel.uid };
+                let suffix = m[3] || "";
+                if (suffix === "d") {
+                    entry.kind = "d";
+                } else if (suffix.length > 0) {
+                    entry.kind = "c";
+                    let it = items_by_id[sel.id];
+                    entry.component_word = (it && it.component_word) ? it.component_word : "";
+                    if (entry.component_word === "") {
+                        logger.error("Word selection " + sel.id + ": no component_word on the request item, skipping");
+                        continue;
+                    }
+                } else {
+                    entry.kind = "sense";
+                }
                 if (by_para[pi] === undefined) by_para[pi] = [];
-                by_para[pi].push({ word_idx: parseInt(m[2], 10), uid: sel.uid });
+                by_para[pi].push(entry);
             }
             for (let pi of covered) {
                 let applied = root.apply_word_selections(pi, by_para[pi] || []);
@@ -1197,6 +1225,14 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // distinct from its parts while still deduplicating repeats of the same word.
     // Must match the Rust mirror (helpers.rs:gloss_dedup_key) byte-for-byte, so
     // do NOT sort (avoids JS UTF-16 vs Rust UTF-8 order divergence on diacritics).
+    //
+    // `results` is the grouped lookup's flat result set (direct results first,
+    // then deconstructor-derived components). The grouped path fetches component
+    // results even for mixed words (a direct match that also deconstructs, e.g.
+    // sādhūti), so this list — and the key — now spans those components too.
+    // Both mirrors compute over the same stored `results` array (Rust produces
+    // it in the background processor, QML consumes it here), so they stay
+    // byte-identical.
     function gloss_dedup_key(results): string {
         if (!results || results.length === 0) return "";
         var stems = [];
@@ -1299,6 +1335,33 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             for (var i = 0; i < words_data.length; i++) {
                 var w = words_data[i];
                 if (!w || !w.results || !w.results.length) continue;
+
+                // Deconstructor-resolved words (FR-A5 cases (c)/(d)): emit one
+                // line per visible component with its selected sense, so the AI
+                // translation context sees every sub-word of the compound.
+                var w_direct_uids = w.direct_uids || [];
+                var w_decs = w.deconstructions || [];
+                if (w_direct_uids.length === 0 && w_decs.length > 0) {
+                    var si = (w.selected_deconstruction_index !== null && w.selected_deconstruction_index !== undefined)
+                        ? w.selected_deconstruction_index : 0;
+                    var locked = w.deconstruction_locked || false;
+                    var comps = dec_utils.visible_components(w, si, locked);
+                    var comp_sel = w.component_selected_uids || ({});
+                    for (var ci = 0; ci < comps.length; ci++) {
+                        var cres = dec_utils.component_results(w, comps[ci]);
+                        if (cres.length === 0) continue;
+                        var cidx = 0;
+                        var csel_uid = comp_sel[comps[ci].word];
+                        if (csel_uid) {
+                            for (var ck = 0; ck < cres.length; ck++) {
+                                if (cres[ck].uid === csel_uid) { cidx = ck; break; }
+                            }
+                        }
+                        var csummary = summary_strip_html(cres[cidx].summary);
+                        out += `- ${comps[ci].word}: ${csummary}\n`;
+                    }
+                    continue;
+                }
 
                 var selected_idx = w.selected_index || 0;
                 if (selected_idx >= w.results.length) selected_idx = 0;
@@ -1564,11 +1627,16 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         root.session_needs_saving = true;
     }
 
-    // Batch variant of update_word_selection() for applying an AI response:
+    // Batch variant of the update_* functions for applying an AI response:
     // all of a paragraph's selections in one words_data_json rewrite + a
-    // single setProperty (the per-word function rebuilds the whole word-row
-    // Repeater on every call). selections = [{ word_idx, uid }]; the option
-    // index is found by uid. Returns the number of applied selections.
+    // single setProperty (the per-word functions rebuild the whole word-row
+    // Repeater on every call). selections = [{ word_idx, uid, kind,
+    // component_word? }] where kind is "sense" (flat sense choice), "d"
+    // (break-down choice, uid = "d:<n>") or "c" (component sense choice,
+    // keyed by component_word). Per FR-C4 the user-override-wins rule is
+    // enforced per field: a late AI answer never overrides anything but an
+    // earlier AI resolution — checked independently for the word sense, the
+    // break-down and each component. Returns the number of applied selections.
     function apply_word_selections(paragraph_idx, selections) {
         if (paragraph_idx >= paragraph_model.count) return 0;
 
@@ -1589,10 +1657,57 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (wi >= words_data.length) continue;
             let w = words_data[wi];
             if (!w || !w.results) continue;
-            // The word may have been resolved while the request was in
-            // flight (e.g. the user corrected the ComboBox, which now saves
-            // a "user-selected" row): never let a late AI response override
-            // anything but an earlier AI resolution.
+
+            if (sel.kind === "d") {
+                // AI break-down choice: set the index, auto-lock, persist the
+                // break-down string on the compound's own cache row.
+                let dec_resolution = w.deconstruction_resolution || null;
+                if (dec_resolution !== null && dec_resolution !== "ai-selected") continue;
+                let decs = w.deconstructions || [];
+                let n = parseInt(sel.uid.slice(2), 10);
+                if (isNaN(n) || n < 0 || n >= decs.length) continue;
+                w.selected_deconstruction_index = n;
+                w.deconstruction_locked = true;
+                let dec_saved = SuttaBridge.save_gloss_word_deconstruction_cache(
+                    w.original_word,
+                    w.example_sentence || "",
+                    decs[n].words_joined,
+                    "ai-selected");
+                if (dec_saved) {
+                    w.deconstruction_resolution = "ai-selected";
+                }
+                words_data[wi] = w;
+                applied += 1;
+                continue;
+            }
+
+            if (sel.kind === "c") {
+                // AI component sense choice. Answers for components outside
+                // the chosen break-down are stored too (harmless — they only
+                // display when unlocked or after a break-down switch).
+                let cw = sel.component_word;
+                if (!w.component_resolutions) w.component_resolutions = ({});
+                let comp_resolution = w.component_resolutions[cw] || null;
+                if (comp_resolution !== null && comp_resolution !== "ai-selected") continue;
+                if (!w.component_selected_uids) w.component_selected_uids = ({});
+                w.component_selected_uids[cw] = sel.uid;
+                let comp_saved = SuttaBridge.save_gloss_word_cache(
+                    cw,
+                    w.example_sentence || "",
+                    sel.uid,
+                    "ai-selected");
+                if (comp_saved) {
+                    w.component_resolutions[cw] = "ai-selected";
+                }
+                words_data[wi] = w;
+                applied += 1;
+                continue;
+            }
+
+            // Flat sense choice (case (b)). The word may have been resolved
+            // while the request was in flight (e.g. the user corrected the
+            // ComboBox, which now saves a "user-selected" row): never let a
+            // late AI response override anything but an earlier AI resolution.
             let resolution = w.resolution || null;
             if (resolution !== null && resolution !== "ai-selected") continue;
             let opt_idx = -1;
@@ -1643,6 +1758,138 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
         if (word_idx >= words_data.length) return;
         words_data[word_idx].resolution = resolution;
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.session_needs_saving = true;
+    }
+
+    // --- Deconstructor-resolved (compound) word helpers (FR-A5 cases (c)/(d)) ---
+    //
+    // These mutate a compound word's break-down / per-component state in
+    // words_data_json and persist the corresponding cache rows. All state lives
+    // on the compound word entry; components are NOT separate words_data rows —
+    // they are nested in `deconstructions` / `component_selected_uids` /
+    // `component_resolutions`. See docs/gloss-ai-word-selection.md (grouped
+    // lookup) and the shared DeconstructorUtils helpers.
+
+    // User picked a break-down from the DeconstructorSelector ComboBox: persist
+    // the index, auto-lock (mirroring the cache-restore semantics, which set
+    // `deconstruction_locked = true` for a resolved break-down), and save a
+    // "user-selected" cache row storing the break-down string on the compound's
+    // own row (empty selected_uid). Caller must be a real onActivated event.
+    function update_deconstruction_selection(paragraph_idx, word_idx, dec_index) {
+        if (paragraph_idx >= paragraph_model.count) return;
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return;
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("update_deconstruction_selection: failed to parse words_data_json: " + e);
+            return;
+        }
+        if (word_idx >= words_data.length) return;
+        var w = words_data[word_idx];
+        var decs = w.deconstructions || [];
+        if (dec_index < 0 || dec_index >= decs.length) return;
+
+        words_data[word_idx].selected_deconstruction_index = dec_index;
+        words_data[word_idx].deconstruction_locked = true;
+
+        let saved = SuttaBridge.save_gloss_word_deconstruction_cache(
+            w.original_word,
+            w.example_sentence || "",
+            decs[dec_index].words_joined,
+            "user-selected");
+        if (saved) {
+            words_data[word_idx].deconstruction_resolution = "user-selected";
+        } else {
+            logger.error("update_deconstruction_selection: failed to save break-down for '" + w.original_word + "'");
+        }
+
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.session_needs_saving = true;
+    }
+
+    // User toggled the DeconstructorSelector lock. Lock state is a per-session
+    // view filter persisted in words_data_json; no cache write (the cache stores
+    // the break-down string, which resolves to locked on restore).
+    function update_deconstruction_lock(paragraph_idx, word_idx, locked) {
+        if (paragraph_idx >= paragraph_model.count) return;
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return;
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("update_deconstruction_lock: failed to parse words_data_json: " + e);
+            return;
+        }
+        if (word_idx >= words_data.length) return;
+        words_data[word_idx].deconstruction_locked = locked;
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.session_needs_saving = true;
+    }
+
+    // User picked a sense for a component of a compound: persist the component's
+    // chosen uid + "user-selected" resolution, and save a component cache row
+    // (keyed on the component word + the compound's context, so it resolves next
+    // session). Caller must be a real onActivated event.
+    function update_component_selection(paragraph_idx, word_idx, component_word, selected_uid) {
+        if (paragraph_idx >= paragraph_model.count) return;
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return;
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("update_component_selection: failed to parse words_data_json: " + e);
+            return;
+        }
+        if (word_idx >= words_data.length) return;
+        var w = words_data[word_idx];
+        if (!w.component_selected_uids) w.component_selected_uids = ({});
+        if (!w.component_resolutions) w.component_resolutions = ({});
+        w.component_selected_uids[component_word] = selected_uid;
+
+        let saved = SuttaBridge.save_gloss_word_cache(
+            component_word,
+            w.example_sentence || "",
+            selected_uid,
+            "user-selected");
+        if (saved) {
+            w.component_resolutions[component_word] = "user-selected";
+        } else {
+            logger.error("update_component_selection: failed to save component '" + component_word + "'");
+        }
+
+        words_data[word_idx] = w;
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.session_needs_saving = true;
+    }
+
+    // Set or clear (null) a compound component's resolution annotation.
+    // UI/session state only — the cache row is written/deleted by the caller
+    // (component shield click / unsave confirm dialog).
+    function set_component_resolution(paragraph_idx, word_idx, component_word, resolution) {
+        if (paragraph_idx >= paragraph_model.count) return;
+        var paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return;
+        var words_data;
+        try {
+            words_data = JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("set_component_resolution: failed to parse words_data_json: " + e);
+            return;
+        }
+        if (word_idx >= words_data.length) return;
+        var w = words_data[word_idx];
+        if (!w.component_resolutions) w.component_resolutions = ({});
+        if (resolution === null) {
+            delete w.component_resolutions[component_word];
+        } else {
+            w.component_resolutions[component_word] = resolution;
+        }
+        words_data[word_idx] = w;
         paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
         root.session_needs_saving = true;
     }
@@ -1777,6 +2024,34 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                     for (var j = 0; j < words_data.length; j++) {
                         var w_data = words_data[j];
                         if (!w_data || !w_data.results || w_data.results.length == 0) continue;
+
+                        // Deconstructor-resolved words (FR-A5 cases (c)/(d)):
+                        // export one line per VISIBLE component (lock filtering
+                        // applied) with that component's selected sense.
+                        var w_direct_uids = w_data.direct_uids || [];
+                        var w_decs = w_data.deconstructions || [];
+                        if (w_direct_uids.length === 0 && w_decs.length > 0) {
+                            var si = (w_data.selected_deconstruction_index !== null && w_data.selected_deconstruction_index !== undefined)
+                                ? w_data.selected_deconstruction_index : 0;
+                            var locked = w_data.deconstruction_locked || false;
+                            var comps = dec_utils.visible_components(w_data, si, locked);
+                            var comp_sel = w_data.component_selected_uids || ({});
+                            for (var c = 0; c < comps.length; c++) {
+                                var cres = dec_utils.component_results(w_data, comps[c]);
+                                if (cres.length === 0) continue;
+                                var cidx = 0;
+                                var csel_uid = comp_sel[comps[c].word];
+                                if (csel_uid) {
+                                    for (var ck = 0; ck < cres.length; ck++) {
+                                        if (cres[ck].uid === csel_uid) { cidx = ck; break; }
+                                    }
+                                }
+                                var citem = Object.assign({}, cres[cidx]);
+                                citem.context_snippet = w_data.example_sentence || "";
+                                para_data.vocabulary.push(citem);
+                            }
+                            continue;
+                        }
 
                         var selected_index = w_data.selected_index || 0;
                         if (selected_index >= w_data.results.length) selected_index = 0;
@@ -2704,22 +2979,48 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
                             property int paragraph_index: vocabulary_gloss.paragraph_index
 
-                            Frame {
+                            // Case partition (FR-A5): a word is
+                            // "deconstructor-resolved" when it has no direct
+                            // match but does have break-downs. Such words render
+                            // as indented component sub-rows (cases (c)/(d)),
+                            // with a break-down selector for >= 2 break-downs
+                            // (case (d)); direct / mixed words (cases (a)/(b))
+                            // keep the flat single-row rendering below.
+                            property var direct_uids: wordItem.modelData.direct_uids || []
+                            property var decs: wordItem.modelData.deconstructions || []
+                            property bool is_deconstructor_resolved: wordItem.direct_uids.length === 0 && wordItem.decs.length > 0
+                            property bool has_selector: wordItem.is_deconstructor_resolved && wordItem.decs.length >= 2
+                            property int selected_dec_index: {
+                                let si = wordItem.modelData.selected_deconstruction_index;
+                                return (si !== null && si !== undefined) ? si : 0;
+                            }
+                            property bool dec_locked: wordItem.modelData.deconstruction_locked || false
+                            property var visible_components: wordItem.is_deconstructor_resolved
+                                ? dec_utils.visible_components(wordItem.modelData, wordItem.selected_dec_index, wordItem.dec_locked)
+                                : []
+
+                            ColumnLayout {
                                 id: mainContent
                                 width: parent.width
-                                padding: 4
+                                spacing: 0
 
-                                background: Rectangle {
-                                    border.width: 0
-                                    color: (wordItem.index % 2 === 0 ?  root.bg_color_lighter : root.bg_color)
-                                }
+                                // --- Cases (a)/(b): direct / mixed word (today's rendering) ---
+                                Frame {
+                                    visible: !wordItem.is_deconstructor_resolved
+                                    Layout.fillWidth: true
+                                    padding: 4
 
-                                RowLayout {
-                                    width: parent.width
-                                    spacing: 10
+                                    background: Rectangle {
+                                        border.width: 0
+                                        color: (wordItem.index % 2 === 0 ?  root.bg_color_lighter : root.bg_color)
+                                    }
 
-                                    ComboBox {
-                                        id: word_select
+                                    RowLayout {
+                                        width: parent.width
+                                        spacing: 10
+
+                                        ComboBox {
+                                            id: word_select
                                         Layout.alignment: Qt.AlignTop
                                         Layout.preferredWidth: wordItem.width * 0.2
                                         visible: {
@@ -2803,6 +3104,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                                     unsave_word_dialog.word_idx = wordItem.index;
                                                     unsave_word_dialog.word = wordItem.modelData.original_word;
                                                     unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
+                                                    unsave_word_dialog.component_word = "";
                                                     unsave_word_dialog.open();
                                                 } else {
                                                     // Built-in row or set phrase: nothing of the
@@ -2876,6 +3178,187 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                         }
                                     }
                                 }
+                                }
+
+                                // --- Cases (c)/(d): deconstructor-resolved compound ---
+                                // The compound word header, an optional break-down
+                                // selector (case (d), >= 2 break-downs), and one
+                                // indented sub-row per visible component word.
+                                Frame {
+                                    visible: wordItem.is_deconstructor_resolved
+                                    Layout.fillWidth: true
+                                    padding: 4
+
+                                    background: Rectangle {
+                                        border.width: 0
+                                        color: (wordItem.index % 2 === 0 ?  root.bg_color_lighter : root.bg_color)
+                                    }
+
+                                    ColumnLayout {
+                                        width: parent.width
+                                        spacing: 4
+
+                                        // Compound word header.
+                                        Text {
+                                            text: wordItem.modelData.original_word
+                                            color: root.text_color
+                                            font.bold: true
+                                            font.pointSize: root.vocab_font_point_size
+                                            wrapMode: TextEdit.WordWrap
+                                        }
+
+                                        // Break-down selector (case (d) only).
+                                        DeconstructorSelector {
+                                            id: compound_selector
+                                            visible: wordItem.has_selector
+                                            Layout.fillWidth: true
+                                            Layout.leftMargin: 20
+                                            model: wordItem.decs.map((d) => d.words_joined)
+                                            current_index: wordItem.selected_dec_index
+                                            locked: wordItem.dec_locked
+                                            onActivated: (index) => {
+                                                root.update_deconstruction_selection(wordItem.paragraph_index, wordItem.index, index);
+                                            }
+                                            onLock_toggled: (locked) => {
+                                                root.update_deconstruction_lock(wordItem.paragraph_index, wordItem.index, locked);
+                                            }
+                                        }
+
+                                        // Indented component sub-rows.
+                                        Repeater {
+                                            model: wordItem.visible_components
+
+                                            delegate: RowLayout {
+                                                id: compRow
+                                                Layout.fillWidth: true
+                                                Layout.leftMargin: 20
+                                                spacing: 10
+
+                                                required property var modelData
+                                                required property int index
+
+                                                property var comp_results: dec_utils.component_results(wordItem.modelData, compRow.modelData)
+                                                property string comp_word: compRow.modelData.word
+                                                property string sel_uid: (wordItem.modelData.component_selected_uids || ({}))[compRow.comp_word] || ""
+                                                property int sel_idx: {
+                                                    for (var i = 0; i < compRow.comp_results.length; i++) {
+                                                        if (compRow.comp_results[i].uid === compRow.sel_uid) return i;
+                                                    }
+                                                    return 0;
+                                                }
+                                                property string comp_resolution: (wordItem.modelData.component_resolutions || ({}))[compRow.comp_word] || ""
+
+                                                ComboBox {
+                                                    id: comp_select
+                                                    Layout.alignment: Qt.AlignTop
+                                                    Layout.preferredWidth: wordItem.width * 0.2
+                                                    visible: compRow.comp_results.length > 1
+                                                    model: compRow.comp_results
+                                                    textRole: "word"
+                                                    font.bold: true
+                                                    font.pointSize: root.vocab_font_point_size
+                                                    currentIndex: compRow.sel_idx
+                                                    onActivated: (index) => {
+                                                        let uid = compRow.comp_results[index].uid;
+                                                        if (uid !== compRow.sel_uid) {
+                                                            root.update_component_selection(wordItem.paragraph_index, wordItem.index, compRow.comp_word, uid);
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    Layout.preferredWidth: wordItem.width * 0.2
+                                                    Layout.fillHeight: true
+                                                    verticalAlignment: Text.AlignTop
+                                                    visible: compRow.comp_results.length <= 1
+                                                    text: compRow.comp_results.length > 0 ? compRow.comp_results[0].word : compRow.comp_word
+                                                    color: root.text_color
+                                                    font.bold: true
+                                                    font.pointSize: root.vocab_font_point_size
+                                                    wrapMode: TextEdit.WordWrap
+                                                }
+
+                                                // Per-component shield, mirroring the word-row
+                                                // shield (root.shield_state / component cache row).
+                                                ToolButton {
+                                                    id: comp_shield
+                                                    visible: comp_select.visible
+                                                    property var shield: root.shield_state(compRow.comp_resolution || null)
+                                                    icon.source: comp_shield.shield.icon
+                                                    icon.color: "transparent"
+                                                    Layout.preferredHeight: comp_select.height
+                                                    Layout.preferredWidth: comp_select.height
+                                                    Layout.alignment: Qt.AlignTop
+                                                    ToolTip.visible: hovered
+                                                    ToolTip.delay: 500
+                                                    ToolTip.text: comp_shield.shield.tooltip
+                                                    onClicked: {
+                                                        let sh = root.shield_state(compRow.comp_resolution || null);
+                                                        if (sh.state === "human") {
+                                                            if (sh.owned) {
+                                                                unsave_word_dialog.paragraph_idx = wordItem.paragraph_index;
+                                                                unsave_word_dialog.word_idx = wordItem.index;
+                                                                unsave_word_dialog.word = compRow.comp_word;
+                                                                unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
+                                                                unsave_word_dialog.component_word = compRow.comp_word;
+                                                                unsave_word_dialog.open();
+                                                            } else {
+                                                                root.set_component_resolution(wordItem.paragraph_index, wordItem.index, compRow.comp_word, null);
+                                                            }
+                                                            return;
+                                                        }
+                                                        var idx = comp_select.currentIndex >= 0 ? comp_select.currentIndex : 0;
+                                                        let uid = compRow.comp_results[idx].uid;
+                                                        let ok = SuttaBridge.save_gloss_word_cache(
+                                                            compRow.comp_word,
+                                                            wordItem.modelData.example_sentence || "",
+                                                            uid,
+                                                            "user-selected");
+                                                        if (ok) {
+                                                            root.set_component_resolution(wordItem.paragraph_index, wordItem.index, compRow.comp_word, "user-selected");
+                                                        } else {
+                                                            logger.error("Failed to save component selection for '" + compRow.comp_word + "'");
+                                                        }
+                                                    }
+                                                }
+
+                                                RowLayout {
+                                                    Layout.preferredWidth: wordItem.width * 0.8
+                                                    Layout.fillHeight: true
+
+                                                    Text {
+                                                        Layout.fillHeight: true
+                                                        Layout.fillWidth: true
+                                                        verticalAlignment: Text.AlignTop
+                                                        text: {
+                                                            if (compRow.comp_results.length > 0) {
+                                                                var idx = comp_select.currentIndex >= 0 ? comp_select.currentIndex : 0;
+                                                                return compRow.comp_results[idx].summary || "No summary";
+                                                            }
+                                                            return "No summary";
+                                                        }
+                                                        color: root.text_color
+                                                        font.pointSize: root.vocab_font_point_size
+                                                        wrapMode: TextEdit.WordWrap
+                                                        textFormat: Text.RichText
+                                                    }
+
+                                                    Button {
+                                                        icon.source: "icons/32x32/bxs_book_content.png"
+                                                        Layout.preferredHeight: comp_select.height
+                                                        Layout.preferredWidth: comp_select.height
+                                                        Layout.alignment: Qt.AlignTop
+                                                        onClicked: {
+                                                            var idx = comp_select.currentIndex >= 0 ? comp_select.currentIndex : 0;
+                                                            let word = compRow.comp_results.length > 0 ? compRow.comp_results[idx].word : compRow.comp_word;
+                                                            root.handle_open_dict_tab_fn(word.replace(/ /g, "-") + "/dpd"); // qmllint disable use-proper-function
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2901,6 +3384,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         property int word_idx: -1
         property string word: ""
         property string word_context_hash: ""
+        // When set (non-empty), the shield click was on a compound's component
+        // sub-row: the deleted row is the component's, and the cleared
+        // resolution is the component's (routed to set_component_resolution).
+        // Callers set `component_word` explicitly before open() (empty for a
+        // plain word row, the component surface word for a component sub-row).
+        property string component_word: ""
 
         Label {
             text: "Remove your saved selection for '" + unsave_word_dialog.word + "' in this context? The word returns to the unchecked state. Any built-in selection for it is kept and applies again in a new session."
@@ -2909,10 +3398,15 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         onAccepted: {
             if (SuttaBridge.delete_gloss_word_cache(unsave_word_dialog.word, unsave_word_dialog.word_context_hash)) {
-                root.set_word_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, null);
+                if (unsave_word_dialog.component_word.length > 0) {
+                    root.set_component_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, unsave_word_dialog.component_word, null);
+                } else {
+                    root.set_word_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, null);
+                }
             } else {
                 logger.error("Failed to delete word selection cache row for '" + unsave_word_dialog.word + "'");
             }
+            unsave_word_dialog.component_word = "";
         }
     }
 

@@ -339,12 +339,54 @@ impl SearchResult {
 
 }
 
+/// One component word of a deconstructor break-down, with the uids of the
+/// lookup results that component resolved to. See
+/// docs/gloss-ai-word-selection.md (grouped lookup) and PRD FR-A1.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeconstructionComponent {
+    pub word: String,
+    pub result_uids: Vec<String>,
+}
+
+/// One deconstructor break-down of a compound word: its display string
+/// (`words_joined`, e.g. `"sādhu + iti"`) and its per-component result
+/// membership. Parallel to `Lookup::deconstructor_nested()` /
+/// `deconstructor_unpack()` — same order, no re-parsing of `+`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Deconstruction {
+    pub words_joined: String,
+    pub components: Vec<DeconstructionComponent>,
+}
+
+/// Break-down-aware DPD lookup result (PRD FR-A1). `results` is the flat
+/// deduplicated list (direct results first, then deconstructor-derived in
+/// first-seen order). `direct_uids` are the uids found via direct / uid / i2h
+/// / stem matches; a result uid may appear in `direct_uids` *and* in several
+/// break-downs (many-to-many). Produced by `dpd_lookup_grouped()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedDpdLookup {
+    pub query: String,
+    pub results: Vec<SearchResult>,
+    pub deconstructions: Vec<Deconstruction>,
+    pub direct_uids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultPage {
     pub total_hits: usize,
     pub page_len: usize,
     pub page_num: usize,
     pub results: Vec<SearchResult>,
+    /// Grouped deconstructor break-downs for the original query, attached only
+    /// on the Dictionary / DpdLookup (incl. Combined-remap) query path so
+    /// `FulltextResults` can show a break-down selector and lock-filter the
+    /// result page client-side (PRD FR-B5). Empty for every other search path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deconstructions: Vec<Deconstruction>,
+    /// Uids of the results found via direct / uid / i2h / stem matches, used by
+    /// the break-down lock filter to always keep direct matches visible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub direct_uids: Vec<String>,
 }
 
 /// Options for word processing in gloss operations
@@ -387,6 +429,43 @@ pub struct ProcessedWord {
     /// for pre-existing history sessions (see `context_hash` above).
     #[serde(default)]
     pub resolution: Option<String>,
+    /// The deconstructor break-downs of this word (PRD FR-A3). Populated for
+    /// every word that has a deconstructor entry, even mixed words with a
+    /// direct match (used by WordSummary / FulltextResults / API consumers).
+    /// See docs/gloss-ai-word-selection.md (grouped lookup).
+    #[serde(default)]
+    pub deconstructions: Vec<Deconstruction>,
+    /// The uids found via direct / uid / i2h / stem match. Empty for a
+    /// deconstructor-resolved word.
+    #[serde(default)]
+    pub direct_uids: Vec<String>,
+    /// The chosen break-down index for a deconstructor-resolved word with
+    /// ≥ 2 break-downs. `None` also when there is exactly one break-down (the
+    /// sole break-down is trivially selected).
+    #[serde(default)]
+    pub selected_deconstruction_index: Option<usize>,
+    /// Whether the break-down selection is locked (filters the visible
+    /// components). Default `false`; set to `true` by an AI break-down choice.
+    #[serde(default)]
+    pub deconstruction_locked: bool,
+    /// Per-component sense selection (component word → chosen result uid).
+    /// Uid-based so the choice is stable under lock-filtering and break-down
+    /// switches. Used only by deconstructor-resolved words (FR-A5 cases (c)/(d)).
+    #[serde(default)]
+    pub component_selected_uids: std::collections::HashMap<String, String>,
+    /// Per-component resolution origin (component word → `"user-selected"` /
+    /// `"built-in-human-checked"` / `"ai-selected"` / …), mirroring the flat
+    /// `resolution` field but for each component of a deconstructor-resolved
+    /// word. Drives the per-component shield indicator in the Gloss tab.
+    #[serde(default)]
+    pub component_resolutions: std::collections::HashMap<String, String>,
+    /// How `selected_deconstruction_index` was resolved, mirroring the flat
+    /// `resolution` field but for the break-down choice (compound's own cache
+    /// row). `None` = unresolved. Lets the AI items builder skip an already
+    /// resolved break-down (re-including only `"ai-selected"` on a forced
+    /// pass) and the apply path enforce user-override-wins for break-downs.
+    #[serde(default)]
+    pub deconstruction_resolution: Option<String>,
 }
 
 /// Result indicating an unrecognized word

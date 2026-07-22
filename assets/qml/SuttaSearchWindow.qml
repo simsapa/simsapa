@@ -583,6 +583,12 @@ ApplicationWindow {
         root.last_search_area = search_area;
         root.last_params = params;
 
+        // Reset the break-down selector on a new query only. This runs for every
+        // explicit search but NOT for page navigation (new_results_page), so the
+        // user's break-down selection/lock is preserved while paging. See PRD
+        // FR-B5 and FulltextResults.reset_deconstructor_state().
+        fulltext_results.reset_deconstructor_state();
+
         // FIXME: page number
         root.results_page(query_text, 0, search_area, params);
 

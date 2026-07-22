@@ -606,6 +606,10 @@ pub struct GlossWordContextCache {
     /// this install created. Part of the unique key with `(word, context_hash)`,
     /// so a local row shadows the shipped one rather than replacing it.
     pub built_in: i32,
+    /// For a deconstructor-resolved compound word: the chosen break-down
+    /// display string ("words_joined", e.g. "sādhu + iti") on the compound's
+    /// own row (with `selected_uid` empty). `None` for ordinary sense rows.
+    pub deconstruction: Option<String>,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -619,6 +623,7 @@ pub struct NewGlossWordContextCache<'a> {
     pub selected_uid: &'a str,
     pub origin: &'a str,
     pub built_in: i32,
+    pub deconstruction: Option<&'a str>,
     pub created_at: Option<chrono::NaiveDateTime>,
     pub updated_at: Option<chrono::NaiveDateTime>,
 }

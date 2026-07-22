@@ -20,6 +20,7 @@ Item {
     signal allParagraphsGlossReady(results_json: string);
     signal paragraphGlossReady(paragraph_index: int, results_json: string);
     signal dpdLookupReady(query_id: string, results_json: string);
+    signal dpdLookupGroupedReady(query_id: string, grouped_json: string);
     signal ankiCsvExportReady(results_json: string);
     signal ankiPreviewReady(preview_html: string);
     signal databaseValidationResult(database_name: string, is_valid: bool, message: string);
@@ -248,6 +249,14 @@ Item {
         });
     }
 
+    function dpd_lookup_grouped_json_async(query_id: string, query: string) {
+        console.log("dpd_lookup_grouped_json_async():", query_id, query);
+        Qt.callLater(function() {
+            let result = JSON.stringify({ query: query, results: [], deconstructions: [], direct_uids: [] });
+            dpdLookupGroupedReady(query_id, result);
+        });
+    }
+
     function check_search_index_status(): string {
         return '{"exists": true, "current": true}';
     }
@@ -347,6 +356,10 @@ Item {
     }
 
     function save_gloss_word_cache(word: string, context_snippet: string, selected_uid: string, origin: string): bool {
+        return true;
+    }
+
+    function save_gloss_word_deconstruction_cache(word: string, context_snippet: string, deconstruction: string, origin: string): bool {
         return true;
     }
 

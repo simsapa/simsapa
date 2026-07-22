@@ -4965,6 +4965,7 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
                 origin: row.origin,
                 confidence: None,
                 note: None,
+                deconstruction: row.deconstruction,
             })
             .collect(),
     };
@@ -5016,13 +5017,25 @@ pub fn import_gloss_selections_from_dir(appdata: &AppdataDbHandle, import_dir: &
 
     let mut written = 0usize;
     for entry in &export.word_cache {
-        match appdata.upsert_gloss_word_cache(
-            &entry.word,
-            &entry.context_hash,
-            &entry.context_snippet,
-            &entry.selected_uid,
-            &entry.origin,
-        ) {
+        // A compound's own row carries the break-down string with an empty
+        // selected_uid (PRD FR-C5); it goes through the deconstruction upsert.
+        let result = match entry.deconstruction.as_deref().filter(|d| !d.is_empty()) {
+            Some(deconstruction) => appdata.upsert_gloss_word_deconstruction(
+                &entry.word,
+                &entry.context_hash,
+                &entry.context_snippet,
+                deconstruction,
+                &entry.origin,
+            ),
+            None => appdata.upsert_gloss_word_cache(
+                &entry.word,
+                &entry.context_hash,
+                &entry.context_snippet,
+                &entry.selected_uid,
+                &entry.origin,
+            ),
+        };
+        match result {
             Ok(true) => written += 1,
             Ok(false) => {}
             Err(e) => error(&format!(

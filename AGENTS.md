@@ -168,8 +168,23 @@ Notable feature docs:
   / `run_search_with_uid_fallback`: a 0-hit auto-`UidMatch` re-runs as normalized
   `UidMatch` → `DpdLookup` for dict, or the route's fallback mode for suttas — no
   silent 0-hit); and the **`GET /health`** readiness snapshot (version, port,
-  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources). Pairs with
-  [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md).
+  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources). **Gloss
+  pipeline routes (§16):** `POST /gloss_text` (synchronous multi-paragraph
+  glossing → `AllParagraphsProcessingResult`, full `ProcessedWord` incl. the
+  grouped deconstruction fields; stateless per call) and `GET /word_selection_ws`
+  (WebSocket AI Word Selection over glossed paragraphs; streams
+  `status`/`error`/terminal `result`, accepts `cancel`, one run per connection,
+  `d:<n>` break-down + `c<k>` component answers), with request/response examples,
+  the full message protocol, a live transcript and a two-step agent quick-start —
+  for external clients building a vocabulary-table UI. The WS uses the app's
+  **saved** provider keys, so **`POST /set_ai_provider_key`** (set key + enable
+  provider + prioritize it in the fallback sequence; never echoes the key)
+  configures a provider first; a self-contained **`scripts/gloss_demo.html`**
+  (textarea → Gloss → vocab list, Gemini key field, AI-selection checkbox
+  disabled while the key is empty) demonstrates all three routes end-to-end
+  (§16.4). Pairs with
+  [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md)
+  and [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
 - [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live
@@ -287,7 +302,21 @@ Notable feature docs:
   (CLI `prepare`/`apply`/`status` + the `/gloss-agent-check` project skill) →
   `agent-checked/` → `import-gloss-data` → bootstrap), the review-skip +
   human-over-agent import precedence, the naming scheme (folders / `confidence`
-  / origins / shield), and the Rust-vs-Python-API decision.
+  / origins / shield), and the Rust-vs-Python-API decision. **§9 compound
+  deconstructor selection:** `dpd_lookup_grouped()` (`GroupedDpdLookup` with
+  many-to-many break-down membership; fetches component results even when direct
+  results exist), the **FR-A5 case partition** (mixed words like *sādhūti* stay
+  compact — no compound UI, no extra AI items; only deconstructor-resolved words
+  get per-component sub-rows and a break-down selector for ≥ 2 break-downs), the
+  new `ProcessedWord` fields, the shared `DeconstructorSelector.qml` /
+  `DeconstructorUtils.qml` (lock = `direct_uids` ∪ selected break-down), the AI
+  item id scheme (`p<pi>w<wi>` sense / `d` break-down with `d:<n>` pseudo-uids /
+  `c<k>` component with an explicit `component_word` field), the **compound-row
+  (`deconstruction` string, empty uid) + component-row cache** keyed on the
+  compound's context hash with the `fetch_for_context_hashes` batch fetch, the
+  shared `resolve_compound_selections()` used by both live glossing and session
+  restore, and the Qt-free `bridges/src/ai_engine.rs` engine shared with the
+  `/word_selection_ws` route.
 - [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
   how the provider/model lists keep themselves current and how a model is chosen
   per request. The **shared update procedure**

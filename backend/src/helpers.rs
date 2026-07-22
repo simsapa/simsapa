@@ -2600,6 +2600,15 @@ pub fn is_common_word(stem: &str, common_words: &[String]) -> bool {
 /// Order is preserved (no sort) so the key matches byte-for-byte whether it is
 /// computed here in Rust or in the QML mirror (`GlossTab.qml:gloss_dedup_key`),
 /// avoiding UTF-16 vs. UTF-8 sort-order divergence on Pāli diacritics.
+///
+/// The `results` list is the **grouped** lookup's flat result set
+/// (`dpd_lookup_grouped().results`): direct results first, then
+/// deconstructor-derived component results. Since the grouped path fetches
+/// component results even for mixed words (a direct match that also
+/// deconstructs, e.g. `sādhūti`), this list — and therefore the key — now spans
+/// the component lemmas of such words too. Both mirrors compute over this same
+/// stored `results` array (Rust produces it, QML consumes it in
+/// `get_previous_paragraph_stems`), so they stay byte-identical.
 pub fn gloss_dedup_key(results: &[crate::db::dpd::LookupResult]) -> String {
     let mut stems: Vec<String> = Vec::new();
     for r in results {
@@ -2705,19 +2714,28 @@ pub struct GlossResolutionData {
 /// destroying it, and removing the local row lets the shipped one apply again.
 #[derive(Debug, Clone, Default)]
 pub struct GlossCacheEntry {
-    /// `(selected_uid, origin)` of this install's row: `user-selected` or
-    /// `ai-selected`.
-    pub local: Option<(String, String)>,
-    /// `(selected_uid, origin)` of the bootstrap-shipped row:
-    /// `built-in-human-checked` or `built-in-agent-checked`.
-    pub built_in: Option<(String, String)>,
+    /// This install's row: `user-selected` or `ai-selected`.
+    pub local: Option<GlossCacheSlot>,
+    /// The bootstrap-shipped row: `built-in-human-checked` or
+    /// `built-in-agent-checked`.
+    pub built_in: Option<GlossCacheSlot>,
+}
+
+/// One tier's cache row for a `(word, context_hash)` key: the selected sense
+/// uid, the origin, and (for a compound's own row) the chosen break-down
+/// display string in `deconstruction`.
+#[derive(Debug, Clone)]
+pub struct GlossCacheSlot {
+    pub selected_uid: String,
+    pub origin: String,
+    pub deconstruction: Option<String>,
 }
 
 impl GlossCacheEntry {
     /// The local row's uid when its origin is one of `origins`.
     fn local_uid_of(&self, origins: &[&str]) -> Option<&str> {
         match &self.local {
-            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            Some(s) if origins.contains(&s.origin.as_str()) => Some(&s.selected_uid),
             _ => None,
         }
     }
@@ -2725,47 +2743,67 @@ impl GlossCacheEntry {
     /// The shipped row's uid when its origin is one of `origins`.
     fn built_in_uid_of(&self, origins: &[&str]) -> Option<&str> {
         match &self.built_in {
-            Some((uid, origin)) if origins.contains(&origin.as_str()) => Some(uid),
+            Some(s) if origins.contains(&s.origin.as_str()) => Some(&s.selected_uid),
+            _ => None,
+        }
+    }
+
+    /// The local row's break-down string when its origin is one of `origins`.
+    fn local_deconstruction_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.local {
+            Some(s) if origins.contains(&s.origin.as_str()) => s.deconstruction.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The shipped row's break-down string when its origin is one of `origins`.
+    fn built_in_deconstruction_of(&self, origins: &[&str]) -> Option<&str> {
+        match &self.built_in {
+            Some(s) if origins.contains(&s.origin.as_str()) => s.deconstruction.as_deref(),
             _ => None,
         }
     }
 }
 
 impl GlossResolutionData {
-    /// Fetch the phrase table and the cache rows for the given words' keys in
-    /// one batch query. Key derivation matches `process_word_for_glossing`:
-    /// `gloss_cache_word_key(clean_word_pali(word))` + the context hash of the
+    /// Fetch the phrase table and the cache rows for the given words in one
+    /// batch query. Keyed by **context hash only** (not `(word, hash)` pairs)
+    /// so that component-sense rows of a compound word — which are stored under
+    /// the *component* word key but the *compound's* context hash — are
+    /// pre-fetched even though the component words are not known before the
+    /// grouped lookup runs (PRD FR-C5 "resolution pre-fetch refactor"). Key
+    /// derivation matches `process_word_for_glossing`: the context hash of the
     /// word's window.
     pub fn fetch(
         appdata: &crate::db::appdata::AppdataDbHandle,
         words_with_context: &[GlossWordContext],
     ) -> Self {
-        let pairs: Vec<(String, String)> = words_with_context
+        let hashes: Vec<String> = words_with_context
             .iter()
-            .map(|w| {
-                (
-                    gloss_cache_word_key(&clean_word_pali(&w.clean_word)),
-                    gloss_context_hash(&normalize_gloss_context(&w.context_snippet)),
-                )
-            })
+            .map(|w| gloss_context_hash(&normalize_gloss_context(&w.context_snippet)))
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
 
-        Self::fetch_for_pairs(appdata, &pairs)
+        Self::fetch_for_context_hashes(appdata, &hashes)
     }
 
-    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
-    /// pairs (e.g. re-annotating a restored session's words_data JSON).
-    pub fn fetch_for_pairs(
+    /// As `fetch`, keyed by the context hashes directly (e.g. re-annotating a
+    /// restored session's words_data JSON, where the hashes are derivable from
+    /// the words).
+    pub fn fetch_for_context_hashes(
         appdata: &crate::db::appdata::AppdataDbHandle,
-        pairs: &[(String, String)],
+        context_hashes: &[String],
     ) -> Self {
         let mut cache: HashMap<(String, String), GlossCacheEntry> = HashMap::new();
-        for r in appdata.get_gloss_word_cache_batch(pairs) {
+        for r in appdata.get_gloss_word_cache_by_context_hashes(context_hashes) {
             let entry = cache.entry((r.word, r.context_hash)).or_default();
             let slot = if r.built_in != 0 { &mut entry.built_in } else { &mut entry.local };
-            *slot = Some((r.selected_uid, r.origin));
+            *slot = Some(GlossCacheSlot {
+                selected_uid: r.selected_uid,
+                origin: r.origin,
+                deconstruction: r.deconstruction,
+            });
         }
 
         let phrases = appdata
@@ -2775,6 +2813,23 @@ impl GlossResolutionData {
             .collect();
 
         GlossResolutionData { phrases, cache }
+    }
+
+    /// As `fetch`, for callers that already hold the `(word_key, context_hash)`
+    /// pairs. Retained for compatibility; derives the distinct context hashes
+    /// and delegates to `fetch_for_context_hashes` so component-sense rows are
+    /// still pre-fetched.
+    pub fn fetch_for_pairs(
+        appdata: &crate::db::appdata::AppdataDbHandle,
+        pairs: &[(String, String)],
+    ) -> Self {
+        let hashes: Vec<String> = pairs
+            .iter()
+            .map(|(_, h)| h.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        Self::fetch_for_context_hashes(appdata, &hashes)
     }
 }
 
@@ -2786,10 +2841,22 @@ impl GlossResolutionData {
 /// the saved-toggle delete path needs).
 ///
 /// Words are kept as raw JSON values so unknown/extra fields survive the
-/// round trip. Ambiguous words (more than one result) get `selected_index` +
-/// `resolution` where the lookup resolves, and `resolution: null` where it
-/// does not (clearing stale annotations); unambiguous words only get their
-/// `context_hash` refreshed.
+/// round trip. Direct / mixed words with more than one **direct** sense get
+/// `selected_index` + `resolution` where the lookup resolves, and
+/// `resolution: null` where it does not (clearing stale annotations);
+/// unambiguous words only get their `context_hash` refreshed.
+///
+/// Deconstructor-resolved compounds (`direct_uids` empty, `deconstructions`
+/// non-empty) follow the same contract per field (PRD §11 FR-F1), via the
+/// shared `resolve_compound_selections`: a cache-resolved break-down
+/// overwrites `selected_deconstruction_index` (+ locks) and carries its
+/// origin in `deconstruction_resolution`; a cache-resolved component
+/// overwrites its `component_selected_uids` entry and carries its origin in
+/// `component_resolutions`. Where the cache does not resolve, the serialized
+/// selection values are kept but the stale resolution annotations are
+/// cleared. Component cache rows share the compound's context hash, so the
+/// hash-based pre-fetch below retrieves them without knowing the component
+/// words up front.
 pub fn annotate_gloss_words_json(
     appdata: &crate::db::appdata::AppdataDbHandle,
     words_json: &str,
@@ -2846,20 +2913,107 @@ pub fn annotate_gloss_words_json(
             })
             .unwrap_or_default();
 
+        // The serialized grouping fields decide the case partition, exactly
+        // as in process_word_for_glossing.
+        let direct_uids: Vec<String> = w
+            .get("direct_uids")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|u| u.as_str())
+                    .map(|u| u.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let deconstructions: Vec<crate::types::Deconstruction> = w
+            .get("deconstructions")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
+
         let Some(obj) = w.as_object_mut() else { continue };
         obj.insert("context_hash".to_string(), serde_json::json!(info.context_hash));
 
-        if results.len() > 1 {
+        if is_deconstructor_resolved {
+            let res = resolve_compound_selections(
+                &info.word_key,
+                &info.normalized_context,
+                &info.context_hash,
+                &deconstructions,
+                &results,
+                &data,
+            );
+
+            match res.selected_deconstruction_index {
+                Some(idx) => {
+                    obj.insert(
+                        "selected_deconstruction_index".to_string(),
+                        serde_json::json!(idx),
+                    );
+                    obj.insert("deconstruction_locked".to_string(), serde_json::json!(true));
+                    obj.insert(
+                        "deconstruction_resolution".to_string(),
+                        serde_json::json!(res.deconstruction_resolution),
+                    );
+                }
+                None => {
+                    // Keep the serialized index/lock; clear the stale origin.
+                    obj.insert("deconstruction_resolution".to_string(), serde_json::Value::Null);
+                }
+            }
+
+            // Resolved component uids overwrite the serialized entries;
+            // unresolved ones keep their serialized uid. The resolutions map
+            // is replaced wholesale so stale origins are cleared.
+            let mut uids = obj
+                .get("component_selected_uids")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+            for (comp_word, uid) in &res.component_selected_uids {
+                uids.insert(comp_word.clone(), serde_json::json!(uid));
+            }
+            obj.insert(
+                "component_selected_uids".to_string(),
+                serde_json::Value::Object(uids),
+            );
+            obj.insert(
+                "component_resolutions".to_string(),
+                serde_json::json!(res.component_resolutions),
+            );
+            continue;
+        }
+
+        // Direct / mixed word: gate ambiguity on the direct senses only,
+        // mirroring process_word_for_glossing (PRD §11 FR-F2) — a mixed word
+        // with one direct sense is unambiguous even though the grouped result
+        // list also carries its break-down component results. The direct
+        // results occupy the front of the full list, so an index into
+        // `sense_results` is valid for the full list too.
+        let sense_results: Vec<crate::db::dpd::LookupResult> = if direct_uids.is_empty() {
+            results.clone()
+        } else {
+            results
+                .iter()
+                .filter(|r| direct_uids.contains(&r.uid))
+                .cloned()
+                .collect()
+        };
+        if sense_results.len() > 1 {
             match resolve_gloss_word_selection(
                 &info.word_key,
                 &info.normalized_context,
                 &info.context_hash,
-                &results,
+                &sense_results,
                 &data,
             ) {
                 Some((idx, res)) => {
                     obj.insert("selected_index".to_string(), serde_json::json!(idx));
-                    obj.insert("stem".to_string(), serde_json::json!(results[idx as usize].word));
+                    obj.insert(
+                        "stem".to_string(),
+                        serde_json::json!(sense_results[idx as usize].word),
+                    );
                     obj.insert("resolution".to_string(), serde_json::json!(res));
                 }
                 None => {
@@ -2967,6 +3121,127 @@ pub fn resolve_gloss_word_selection(
     None
 }
 
+/// Resolve a deconstructor-resolved compound word's cached break-down choice
+/// (the `deconstruction` string) from the pre-fetched cache, walking the same
+/// tier precedence as sense selections **minus the phrase tier** (break-downs
+/// have no phrase rules). The compound's own cache row stores the chosen
+/// break-down display string (`words_joined`) with an empty `selected_uid`.
+/// Returns the chosen break-down string and its resolution origin; the caller
+/// maps the string to an index by matching against the current break-downs
+/// (robust to break-down list reordering across DPD releases). See
+/// docs/gloss-ai-word-selection.md.
+pub fn resolve_gloss_deconstruction(
+    word_key: &str,
+    context_hash: &str,
+    data: &GlossResolutionData,
+) -> Option<(String, String)> {
+    let empty = GlossCacheEntry::default();
+    let cached = data
+        .cache
+        .get(&(word_key.to_string(), context_hash.to_string()))
+        .unwrap_or(&empty);
+
+    if let Some(d) = cached.local_deconstruction_of(&["user-selected"]) {
+        return Some((d.to_string(), "user-selected".to_string()));
+    }
+    if let Some(d) = cached.built_in_deconstruction_of(&["built-in-human-checked"]) {
+        return Some((d.to_string(), "built-in-human-checked".to_string()));
+    }
+    if let Some(d) = cached.built_in_deconstruction_of(&["built-in-agent-checked"]) {
+        return Some((d.to_string(), "built-in-agent-checked".to_string()));
+    }
+    if let Some(d) = cached.local_deconstruction_of(&["ai-selected"]) {
+        return Some((d.to_string(), "ai-selected".to_string()));
+    }
+    None
+}
+
+/// The re-resolvable selection state of a deconstructor-resolved compound
+/// (FR-A5 cases (c)/(d)): the break-down choice and the per-component sense
+/// selections, as derived from the pre-fetched cache. Produced by
+/// `resolve_compound_selections`, which is shared by the live gloss path
+/// (`process_word_for_glossing`) and the session-restore re-annotation
+/// (`annotate_gloss_words_json`) so both walk the same tier precedence.
+#[derive(Debug, Default)]
+pub struct CompoundResolution {
+    pub selected_deconstruction_index: Option<usize>,
+    pub deconstruction_locked: bool,
+    pub deconstruction_resolution: Option<String>,
+    /// Component word → chosen result uid, for the components that resolved.
+    pub component_selected_uids: std::collections::HashMap<String, String>,
+    /// Component word → resolution origin, parallel to
+    /// `component_selected_uids`.
+    pub component_resolutions: std::collections::HashMap<String, String>,
+}
+
+/// Resolve a deconstructor-resolved compound's break-down choice and
+/// per-component sense selections from the pre-fetched cache.
+///
+/// - **Break-down choice:** only meaningful with ≥ 2 break-downs (a sole
+///   break-down is trivially selected). The stored `words_joined` string is
+///   matched against the current break-downs; no match → left unset. A
+///   resolved break-down auto-checks the lock.
+/// - **Components:** deduplicated by word across all break-downs (a
+///   component's senses are independent of which break-down it appears in).
+///   Component-sense cache rows are keyed on the component word key + the
+///   **compound's** context hash. Single-sense components need no resolution.
+pub fn resolve_compound_selections(
+    word_key: &str,
+    normalized_context: &str,
+    context_hash: &str,
+    deconstructions: &[crate::types::Deconstruction],
+    results: &[crate::db::dpd::LookupResult],
+    data: &GlossResolutionData,
+) -> CompoundResolution {
+    let mut res = CompoundResolution::default();
+
+    if deconstructions.len() >= 2 {
+        if let Some((words_joined, dec_origin)) =
+            resolve_gloss_deconstruction(word_key, context_hash, data)
+        {
+            if let Some(idx) = deconstructions
+                .iter()
+                .position(|d| d.words_joined == words_joined)
+            {
+                res.selected_deconstruction_index = Some(idx);
+                res.deconstruction_locked = true;
+                res.deconstruction_resolution = Some(dec_origin);
+            }
+        }
+    }
+
+    let mut seen_components: HashSet<String> = HashSet::new();
+    for dec in deconstructions {
+        for comp in &dec.components {
+            if !seen_components.insert(comp.word.clone()) {
+                continue;
+            }
+            let comp_results: Vec<crate::db::dpd::LookupResult> = results
+                .iter()
+                .filter(|r| comp.result_uids.contains(&r.uid))
+                .cloned()
+                .collect();
+            if comp_results.len() < 2 {
+                continue; // single sense: nothing to resolve
+            }
+            let comp_word_key = gloss_cache_word_key(&comp.word);
+            if let Some((idx, origin)) = resolve_gloss_word_selection(
+                &comp_word_key,
+                normalized_context,
+                context_hash,
+                &comp_results,
+                data,
+            ) {
+                res.component_selected_uids
+                    .insert(comp.word.clone(), comp_results[idx as usize].uid.clone());
+                res.component_resolutions.insert(comp.word.clone(), origin);
+            }
+        }
+    }
+
+    res
+}
+
 // --- Gloss session JSON export / Open JSON (PRD §4.9, docs/gloss-ai-word-selection.md) ---
 
 /// The `format` marker of a gloss session JSON export envelope.
@@ -2994,13 +3269,21 @@ pub struct GlossWordCacheExportEntry {
     pub confidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// A compound's own row: the chosen break-down string (`words_joined`),
+    /// carried with an **empty** `selected_uid` (PRD FR-C5). Sense rows leave
+    /// it `None` and the field is omitted from the JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deconstruction: Option<String>,
 }
 
 /// Collect the distinct `(word_key, context_hash)` pairs referenced by a
 /// serialized gloss session's words. Derivation matches
 /// `annotate_gloss_words_json`: the hash is recomputed from
 /// `example_sentence`, falling back to the stored `context_hash` when the
-/// sentence is missing. Sorted for deterministic export output.
+/// sentence is missing. A compound word's break-down component words are
+/// included too (their sense rows are keyed on the component word + the
+/// compound's context hash; PRD FR-C5), so the export carries them. Sorted
+/// for deterministic export output.
 fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String)> {
     let mut pairs = HashSet::new();
     let paragraphs = session.get("paragraphs").and_then(|v| v.as_array());
@@ -3020,7 +3303,18 @@ fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String
             if hash.is_empty() {
                 continue;
             }
-            pairs.insert((gloss_cache_word_key(original_word), hash));
+            pairs.insert((gloss_cache_word_key(original_word), hash.clone()));
+
+            for dec in w.get("deconstructions").and_then(|v| v.as_array()).into_iter().flatten() {
+                for comp in dec.get("components").and_then(|v| v.as_array()).into_iter().flatten() {
+                    if let Some(comp_word) = comp.get("word").and_then(|v| v.as_str()) {
+                        let comp_key = gloss_cache_word_key(comp_word);
+                        if !comp_key.is_empty() {
+                            pairs.insert((comp_key, hash.clone()));
+                        }
+                    }
+                }
+            }
         }
     }
     let mut pairs: Vec<(String, String)> = pairs.into_iter().collect();
@@ -3050,6 +3344,7 @@ pub fn build_gloss_session_export_json(
             origin: r.origin,
             confidence: None,
             note: None,
+            deconstruction: r.deconstruction,
         })
         .collect();
     // A key can carry both a local and a shipped row, so `origin` is part of the
@@ -3111,7 +3406,9 @@ pub fn parse_gloss_session_export(
 /// skipped. Entries flagged `confidence: "review"` (agent-checked best
 /// guesses pending human review) are skipped too — opening an agent-checked
 /// session file must never write review guesses into the local DB as
-/// confirmed rows. Returns `(imported, skipped)`.
+/// confirmed rows. A compound's own row carries the break-down string in
+/// `deconstruction` with an empty `selected_uid` (PRD FR-C5) — valid despite
+/// the empty uid. Returns `(imported, skipped)`.
 pub fn import_gloss_word_cache_entries(
     appdata: &crate::db::appdata::AppdataDbHandle,
     entries: &[GlossWordCacheExportEntry],
@@ -3125,9 +3422,11 @@ pub fn import_gloss_word_cache_entries(
             "ai-selected" | "user-selected" | "built-in-human-checked" | "built-in-agent-checked"
         );
         let pending_review = e.confidence.as_deref() == Some("review");
+        let deconstruction = e.deconstruction.as_deref().filter(|d| !d.is_empty());
+        let has_selection = !e.selected_uid.is_empty() || deconstruction.is_some();
         if word_key.is_empty()
             || e.context_hash.is_empty()
-            || e.selected_uid.is_empty()
+            || !has_selection
             || !valid_origin
             || pending_review
         {
@@ -3140,6 +3439,7 @@ pub fn import_gloss_word_cache_entries(
             &e.context_snippet,
             &e.selected_uid,
             &e.origin,
+            deconstruction,
         ) {
             Ok(true) => imported += 1,
             Ok(false) => skipped += 1,
@@ -3215,13 +3515,44 @@ pub enum WordSelectionBuildMode {
 }
 
 /// Build the shared `pali_word_selection` request items for the given
-/// paragraphs (docs/gloss-ai-word-selection.md §4): ambiguous words only
-/// (more than one lookup result), stable `p<pi>w<wi>` ids (`wi` is the word's
-/// position in words_data, so skipped words never shift later ids), the
-/// occurrence-marked `example_sentence` as `context`, and option summaries
-/// HTML-stripped and truncated to 200 chars. Word entries that are not
-/// objects or lack a results array are skipped (matching the QML builder this
-/// replaces).
+/// paragraphs (docs/gloss-ai-word-selection.md §4), following the FR-A5 case
+/// partition:
+///
+/// - **Direct / mixed words** (cases (a)/(b); `direct_uids` non-empty, or no
+///   break-downs at all): one sense item `p<pi>w<wi>` when the word has ≥ 2
+///   **direct** senses (options over the direct results only — a mixed word's
+///   deconstructor-derived component results are not sense options and no
+///   break-down/component items are emitted for it).
+/// - **Deconstructor-resolved words** (cases (c)/(d); `direct_uids` empty,
+///   `deconstructions` non-empty): a break-down item `p<pi>w<wi>d` **only when
+///   ≥ 2 break-downs** (options reuse the standard shape with pseudo-uids
+///   `d:<n>`, `word` = the break-down's `words_joined`, empty summary; a sole
+///   break-down is trivially selected and emits nothing), plus one component
+///   item `p<pi>w<wi>c<k>` per **ambiguous** component word (≥ 2 senses).
+///   `k` is the component's position in the deduplicated, first-appearance
+///   -ordered enumeration of ALL component words across all break-downs —
+///   computed from the full enumeration, so skipping unambiguous or resolved
+///   components never shifts later ids. Component items carry the compound as
+///   `word`, the component's surface word as `component_word` (the apply path
+///   keys `component_selected_uids` by reading this field, never by
+///   re-deriving `k`), a `deconstructions` annotation array of break-down
+///   strings (uniform also for single-break-down compounds), and a
+///   `breakdowns` list of the break-down strings containing the component
+///   when it belongs to a strict subset of the break-downs. Both annotations
+///   are word-based — no numeric-index joins for the model to reason over
+///   (PRD §11 FR-F3); nothing in the apply path reads them.
+///
+/// Stable `p<pi>w<wi>` ids (`wi` is the word's position in words_data, so
+/// skipped words never shift later ids), the occurrence-marked
+/// `example_sentence` as `context`, and option summaries HTML-stripped and
+/// truncated to 200 chars. Word entries that are not objects or lack a
+/// results array are skipped.
+///
+/// Skip-resolved logic (`SkipResolved` mode) applies **per item**: the sense
+/// item is skipped when `resolution` is set, the break-down item when
+/// `deconstruction_resolution` is set, and a component item when that
+/// component has a `component_resolutions` entry — each re-included on a
+/// forced pass only when the origin is `"ai-selected"`.
 ///
 /// The output is deterministic: the item Values serialize with sorted object
 /// keys (serde_json's default BTreeMap), so the same input always yields
@@ -3233,6 +3564,28 @@ pub fn build_word_selection_items(
     lazy_static! {
         static ref RE_HTML_TAG: Regex = Regex::new(r"<[^>]*>").unwrap();
     }
+
+    // Whether an item with the given resolution origin is skipped in this mode.
+    let skip_resolved = |resolution: Option<&str>| -> bool {
+        match mode {
+            WordSelectionBuildMode::IncludeResolved => false,
+            WordSelectionBuildMode::SkipResolved { forced } => match resolution {
+                Some(res) if !res.is_empty() => !(forced && res == "ai-selected"),
+                _ => false,
+            },
+        }
+    };
+
+    let option_json = |r: &serde_json::Value| -> serde_json::Value {
+        let summary = r.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+        let summary = RE_HTML_TAG.replace_all(summary, "");
+        let summary: String = summary.chars().take(200).collect();
+        serde_json::json!({
+            "uid": r.get("uid").and_then(|v| v.as_str()).unwrap_or(""),
+            "word": r.get("word").and_then(|v| v.as_str()).unwrap_or(""),
+            "summary": summary,
+        })
+    };
 
     let mut items: Vec<serde_json::Value> = Vec::new();
     for para in paragraphs {
@@ -3248,48 +3601,176 @@ pub fn build_word_selection_items(
             let Some(results) = w.get("results").and_then(|v| v.as_array()) else {
                 continue;
             };
-            if results.len() <= 1 {
+
+            let original_word = w.get("original_word").and_then(|v| v.as_str()).unwrap_or("");
+            let context = w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or("");
+            let direct_uids: Vec<&str> = w
+                .get("direct_uids")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|u| u.as_str()).collect())
+                .unwrap_or_default();
+            let empty_decs = Vec::new();
+            let decs = w
+                .get("deconstructions")
+                .and_then(|v| v.as_array())
+                .unwrap_or(&empty_decs);
+            let is_deconstructor_resolved = direct_uids.is_empty() && !decs.is_empty();
+
+            let with_source_uid = |mut item: serde_json::Value| -> serde_json::Value {
+                if let Some(source_uid) = &para.source_uid {
+                    item.as_object_mut()
+                        .expect("item is an object")
+                        .insert("source_uid".to_string(), serde_json::json!(source_uid));
+                }
+                item
+            };
+
+            if !is_deconstructor_resolved {
+                // Cases (a)/(b), incl. mixed words: one sense item over the
+                // direct results only. A pure fallback word (empty direct_uids,
+                // no deconstructions) treats all its results as direct.
+                let sense_results: Vec<&serde_json::Value> = if direct_uids.is_empty() {
+                    results.iter().collect()
+                } else {
+                    results
+                        .iter()
+                        .filter(|r| {
+                            r.get("uid")
+                                .and_then(|v| v.as_str())
+                                .map(|u| direct_uids.contains(&u))
+                                .unwrap_or(false)
+                        })
+                        .collect()
+                };
+                if sense_results.len() <= 1 {
+                    continue;
+                }
+                if skip_resolved(w.get("resolution").and_then(|v| v.as_str())) {
+                    continue;
+                }
+
+                let options: Vec<serde_json::Value> =
+                    sense_results.iter().map(|r| option_json(r)).collect();
+                items.push(with_source_uid(serde_json::json!({
+                    "id": format!("p{}w{}", para.paragraph_index, wi),
+                    "word": original_word,
+                    "context": context,
+                    "options": options,
+                })));
                 continue;
             }
 
-            if let WordSelectionBuildMode::SkipResolved { forced } = mode {
-                let resolution = w
-                    .get("resolution")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty());
-                if let Some(res) = resolution {
-                    if !(forced && res == "ai-selected") {
-                        continue;
-                    }
-                }
-            }
-
-            let options: Vec<serde_json::Value> = results
+            // Cases (c)/(d): deconstructor-resolved compound. The annotation
+            // is a plain list of break-down strings — word-based identifiers
+            // the model can reason over directly, with no numeric-index join
+            // (PRD §11 FR-F3); nothing in the apply path reads it.
+            let decs_annotation: Vec<serde_json::Value> = decs
                 .iter()
-                .map(|r| {
-                    let summary = r.get("summary").and_then(|v| v.as_str()).unwrap_or("");
-                    let summary = RE_HTML_TAG.replace_all(summary, "");
-                    let summary: String = summary.chars().take(200).collect();
-                    serde_json::json!({
-                        "uid": r.get("uid").and_then(|v| v.as_str()).unwrap_or(""),
-                        "word": r.get("word").and_then(|v| v.as_str()).unwrap_or(""),
-                        "summary": summary,
-                    })
+                .map(|d| {
+                    serde_json::json!(d.get("words_joined").and_then(|v| v.as_str()).unwrap_or(""))
                 })
                 .collect();
 
-            let mut item = serde_json::json!({
-                "id": format!("p{}w{}", para.paragraph_index, wi),
-                "word": w.get("original_word").and_then(|v| v.as_str()).unwrap_or(""),
-                "context": w.get("example_sentence").and_then(|v| v.as_str()).unwrap_or(""),
-                "options": options,
-            });
-            if let Some(source_uid) = &para.source_uid {
-                item.as_object_mut()
-                    .expect("item is an object")
-                    .insert("source_uid".to_string(), serde_json::json!(source_uid));
+            // Break-down item, only when there is an actual choice.
+            if decs.len() >= 2
+                && !skip_resolved(w.get("deconstruction_resolution").and_then(|v| v.as_str()))
+            {
+                let options: Vec<serde_json::Value> = decs
+                    .iter()
+                    .enumerate()
+                    .map(|(di, d)| {
+                        serde_json::json!({
+                            "uid": format!("d:{}", di),
+                            "word": d.get("words_joined").and_then(|v| v.as_str()).unwrap_or(""),
+                            "summary": "",
+                        })
+                    })
+                    .collect();
+                items.push(with_source_uid(serde_json::json!({
+                    "id": format!("p{}w{}d", para.paragraph_index, wi),
+                    "word": original_word,
+                    "context": context,
+                    "options": options,
+                })));
             }
-            items.push(item);
+
+            // Component enumeration: ALL component words across all
+            // break-downs, deduplicated by surface word, first-appearance
+            // order. `k` indexes this full enumeration.
+            let mut component_order: Vec<&str> = Vec::new();
+            let mut component_uids: HashMap<&str, Vec<&str>> = HashMap::new();
+            let mut component_breakdowns: HashMap<&str, Vec<usize>> = HashMap::new();
+            for (di, d) in decs.iter().enumerate() {
+                for comp in d.get("components").and_then(|v| v.as_array()).into_iter().flatten() {
+                    let Some(comp_word) = comp.get("word").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    if !component_uids.contains_key(comp_word) {
+                        component_order.push(comp_word);
+                    }
+                    let uids = component_uids.entry(comp_word).or_default();
+                    for u in comp
+                        .get("result_uids")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|u| u.as_str())
+                    {
+                        if !uids.contains(&u) {
+                            uids.push(u);
+                        }
+                    }
+                    component_breakdowns.entry(comp_word).or_default().push(di);
+                }
+            }
+
+            let component_resolutions = w.get("component_resolutions");
+            for (k, comp_word) in component_order.iter().enumerate() {
+                let uids = &component_uids[comp_word];
+                let comp_results: Vec<&serde_json::Value> = results
+                    .iter()
+                    .filter(|r| {
+                        r.get("uid")
+                            .and_then(|v| v.as_str())
+                            .map(|u| uids.contains(&u))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                if comp_results.len() <= 1 {
+                    continue;
+                }
+                let comp_resolution = component_resolutions
+                    .and_then(|m| m.get(*comp_word))
+                    .and_then(|v| v.as_str());
+                if skip_resolved(comp_resolution) {
+                    continue;
+                }
+
+                let options: Vec<serde_json::Value> =
+                    comp_results.iter().map(|r| option_json(r)).collect();
+                let mut item = serde_json::json!({
+                    "id": format!("p{}w{}c{}", para.paragraph_index, wi, k),
+                    "word": original_word,
+                    "component_word": comp_word,
+                    "context": context,
+                    "options": options,
+                    "deconstructions": decs_annotation,
+                });
+                let membership = &component_breakdowns[comp_word];
+                if membership.len() < decs.len() {
+                    // Membership as break-down strings, not indexes (FR-F3).
+                    let membership_strs: Vec<&str> = membership
+                        .iter()
+                        .filter_map(|di| {
+                            decs[*di].get("words_joined").and_then(|v| v.as_str())
+                        })
+                        .collect();
+                    item.as_object_mut()
+                        .expect("item is an object")
+                        .insert("breakdowns".to_string(), serde_json::json!(membership_strs));
+                }
+                items.push(with_source_uid(item));
+            }
         }
     }
     Ok(items)
@@ -3546,14 +4027,19 @@ pub fn process_word_for_glossing(
     dpd: &crate::db::dpd::DpdDbHandle,
     resolution_data: Option<&GlossResolutionData>,
 ) -> Result<Option<WordProcessingResult>, String> {
-    // Call the DPD lookup function directly - much more efficient than JSON serialization
-    let search_results = match dpd.dpd_lookup(&word_info.word.to_lowercase(), false, true, None, None) {
-        Ok(results) => results,
+    // Grouped, break-down-aware lookup (deconstructor_exact_only = true, the
+    // gloss path's behavior). `results` is the flat list: direct results first,
+    // then deconstructor-derived components. See
+    // docs/gloss-ai-word-selection.md (grouped lookup) and PRD FR-A2/FR-A5.
+    let grouped = match dpd.dpd_lookup_grouped(&word_info.word.to_lowercase(), false, true, true, None, None) {
+        Ok(g) => g,
         Err(e) => return Err(format!("DPD lookup failed: {}", e)),
     };
 
     // Convert search results to lookup results
-    let results = crate::db::dpd::LookupResult::from_search_results(&search_results);
+    let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
+    let mut deconstructions = grouped.deconstructions;
+    let direct_uids = grouped.direct_uids;
 
     // Skip if no results - but return info about unrecognized word
     if results.is_empty() {
@@ -3566,14 +4052,42 @@ pub fn process_word_for_glossing(
     // Get the stem from the first result (used for display and common-word checks)
     let stem = results[0].word.clone();
 
+    // A word is "deconstructor-resolved" (FR-A5 cases (c)/(d)) when it has no
+    // direct match but does have break-downs. Such words carry per-component
+    // sense selections and a break-down choice; direct / mixed words (cases
+    // (a)/(b)) keep the flat `selected_index` sense selection.
+    let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
+
     // Dedup key spans every component lemma so a sandhi-compound (e.g.
     // atthaññe -> atthi + aññe) is not dropped as a duplicate of its first
     // component (atthi). See gloss_dedup_key().
     let dedup_key = gloss_dedup_key(&results);
 
-    // Skip common words if option is enabled
-    if options.skip_common && is_common_word(&stem, &options.common_words) {
-        return Ok(Some(WordProcessingResult::Skipped));
+    // Skip common words if the option is enabled. For a deconstructor-resolved
+    // compound the check is per-component: a common component (e.g. `pañca` in
+    // `pañcaggadāyakaṁ`) is dropped from every break-down's component list —
+    // never the whole compound — so the remaining sub-words are still glossed.
+    // The `words_joined` display string is left intact. Only when *every*
+    // component of *every* break-down is common is the whole word skipped. A
+    // direct / mixed word keeps the original whole-word check on its stem.
+    if options.skip_common {
+        if is_deconstructor_resolved {
+            for dec in deconstructions.iter_mut() {
+                dec.components.retain(|comp| {
+                    let comp_stem = results
+                        .iter()
+                        .find(|r| comp.result_uids.contains(&r.uid))
+                        .map(|r| r.word.as_str())
+                        .unwrap_or(comp.word.as_str());
+                    !is_common_word(comp_stem, &options.common_words)
+                });
+            }
+            if deconstructions.iter().all(|d| d.components.is_empty()) {
+                return Ok(Some(WordProcessingResult::Skipped));
+            }
+        } else if is_common_word(&stem, &options.common_words) {
+            return Ok(Some(WordProcessingResult::Skipped));
+        }
     }
 
     // Skip if already shown in this paragraph
@@ -3596,23 +4110,58 @@ pub fn process_word_for_glossing(
     let normalized_context = normalize_gloss_context(&word_info.sentence);
     let context_hash = gloss_context_hash(&normalized_context);
 
-    // Resolve ambiguous words from the pre-fetched cache / set-phrase data
-    // (user cache > phrase > built-in cache > ai cache); unambiguous words
-    // need no resolution.
     let mut selected_index = 0;
     let mut resolution = None;
-    if results.len() > 1 {
-        if let Some(data) = resolution_data {
+    let mut selected_deconstruction_index: Option<usize> = None;
+    let mut deconstruction_locked = false;
+    let mut deconstruction_resolution: Option<String> = None;
+    let mut component_selected_uids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut component_resolutions: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
+    if let Some(data) = resolution_data {
+        if is_deconstructor_resolved {
             let word_key = gloss_cache_word_key(&original_word);
-            if let Some((idx, res)) = resolve_gloss_word_selection(
+            let res = resolve_compound_selections(
                 &word_key,
                 &normalized_context,
                 &context_hash,
+                &deconstructions,
                 &results,
                 data,
-            ) {
-                selected_index = idx;
-                resolution = Some(res);
+            );
+            selected_deconstruction_index = res.selected_deconstruction_index;
+            deconstruction_locked = res.deconstruction_locked;
+            deconstruction_resolution = res.deconstruction_resolution;
+            component_selected_uids = res.component_selected_uids;
+            component_resolutions = res.component_resolutions;
+        } else {
+            // Direct / mixed word: resolve the sense among the direct results
+            // only (they occupy the front of `results`, so the index is valid
+            // for the full list too). Mixed words never resolve into a
+            // component result.
+            let sense_results: Vec<crate::db::dpd::LookupResult> = if direct_uids.is_empty() {
+                results.clone()
+            } else {
+                results
+                    .iter()
+                    .filter(|r| direct_uids.contains(&r.uid))
+                    .cloned()
+                    .collect()
+            };
+            if sense_results.len() > 1 {
+                let word_key = gloss_cache_word_key(&original_word);
+                if let Some((idx, res)) = resolve_gloss_word_selection(
+                    &word_key,
+                    &normalized_context,
+                    &context_hash,
+                    &sense_results,
+                    data,
+                ) {
+                    selected_index = idx;
+                    resolution = Some(res);
+                }
             }
         }
     }
@@ -3626,6 +4175,13 @@ pub fn process_word_for_glossing(
         example_sentence: word_info.sentence.clone(),
         context_hash,
         resolution,
+        deconstructions,
+        direct_uids,
+        selected_deconstruction_index,
+        deconstruction_locked,
+        component_selected_uids,
+        component_resolutions,
+        deconstruction_resolution,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -3668,6 +4224,150 @@ pub fn update_global_stems_deduplication(
             global_stems.insert(dedup_key, true);
         }
     }
+}
+
+/// Qt-free core of the multi-paragraph gloss processor. Extracted from
+/// `SuttaBridge::process_all_paragraphs_background` so the localhost API route
+/// (`POST /gloss_text`) can reuse the exact same pipeline; the bridge is now a
+/// thin thread + Qt-signal wrapper around this. See PRD FR-D1.
+pub fn process_all_paragraphs(
+    input: &crate::types::AllParagraphsProcessingInput,
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: &crate::db::dpd::DpdDbHandle,
+) -> Result<crate::types::AllParagraphsProcessingResult, String> {
+    let mut paragraph_results: Vec<crate::types::ParagraphProcessingResult> = Vec::new();
+    let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
+    let mut global_stems = input.options.existing_global_stems.clone();
+    let mut paragraph_unrecognized_words = input.options.existing_paragraph_unrecognized.clone();
+
+    for (paragraph_idx, paragraph_text) in input.paragraphs.iter().enumerate() {
+        // Extract words with context, then pre-fetch the word-selection cache
+        // rows + set-phrase table for this paragraph (process_word_for_glossing
+        // takes no appdata handle).
+        let words_with_context = extract_words_with_context(paragraph_text);
+        let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
+        let mut paragraph_shown_stems = std::collections::HashMap::new();
+        let mut processed_words = Vec::new();
+
+        for word_context in words_with_context {
+            let word_info = WordInfo {
+                word: word_context.clean_word.clone(),
+                sentence: word_context.context_snippet.clone(),
+            };
+
+            match process_word_for_glossing(
+                &word_info,
+                &mut paragraph_shown_stems,
+                &mut global_stems,
+                input.options.no_duplicates_globally,
+                &input.options,
+                dpd,
+                Some(&resolution_data),
+            ) {
+                Ok(result) => processed_words.push(result),
+                Err(e) => return Err(format!("Word processing error: {}", e)),
+            }
+        }
+
+        collect_unrecognized_words(
+            &processed_words,
+            paragraph_idx,
+            &mut paragraph_unrecognized_words,
+            &mut global_unrecognized_words,
+        );
+
+        let words_data: Vec<ProcessedWord> = processed_words
+            .into_iter()
+            .filter_map(|result| match result {
+                Some(WordProcessingResult::Recognized(word)) => Some(word),
+                _ => None,
+            })
+            .collect();
+
+        let paragraph_unrecognized = paragraph_unrecognized_words
+            .get(&paragraph_idx.to_string())
+            .cloned()
+            .unwrap_or_default();
+
+        paragraph_results.push(crate::types::ParagraphProcessingResult {
+            paragraph_index: paragraph_idx,
+            words_data,
+            unrecognized_words: paragraph_unrecognized,
+        });
+    }
+
+    Ok(crate::types::AllParagraphsProcessingResult {
+        success: true,
+        paragraphs: paragraph_results,
+        global_unrecognized_words,
+        updated_global_stems: global_stems,
+    })
+}
+
+/// Qt-free core of the single-paragraph gloss processor. Extracted from
+/// `SuttaBridge::process_paragraph_background`; shares the per-word loop shape
+/// with `process_all_paragraphs`.
+pub fn process_single_paragraph(
+    paragraph_index: usize,
+    input: &crate::types::SingleParagraphProcessingInput,
+    appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: &crate::db::dpd::DpdDbHandle,
+) -> Result<crate::types::SingleParagraphProcessingResult, String> {
+    let words_with_context = extract_words_with_context(&input.paragraph_text);
+    let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
+    let mut paragraph_shown_stems = std::collections::HashMap::new();
+    let mut global_stems = input.options.existing_global_stems.clone();
+    let mut processed_words = Vec::new();
+
+    for word_context in words_with_context {
+        let word_info = WordInfo {
+            word: word_context.clean_word.clone(),
+            sentence: word_context.context_snippet.clone(),
+        };
+
+        match process_word_for_glossing(
+            &word_info,
+            &mut paragraph_shown_stems,
+            &mut global_stems,
+            input.options.no_duplicates_globally,
+            &input.options,
+            dpd,
+            Some(&resolution_data),
+        ) {
+            Ok(result) => processed_words.push(result),
+            Err(e) => return Err(format!("Word processing error: {}", e)),
+        }
+    }
+
+    let mut paragraph_unrecognized_words = std::collections::HashMap::new();
+    let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
+    collect_unrecognized_words(
+        &processed_words,
+        paragraph_index,
+        &mut paragraph_unrecognized_words,
+        &mut global_unrecognized_words,
+    );
+
+    let words_data: Vec<ProcessedWord> = processed_words
+        .into_iter()
+        .filter_map(|result| match result {
+            Some(WordProcessingResult::Recognized(word)) => Some(word),
+            _ => None,
+        })
+        .collect();
+
+    let paragraph_unrecognized = paragraph_unrecognized_words
+        .get(&paragraph_index.to_string())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(crate::types::SingleParagraphProcessingResult {
+        success: true,
+        paragraph_index,
+        words_data,
+        unrecognized_words: paragraph_unrecognized,
+        updated_global_stems: global_stems,
+    })
 }
 
 /// Create or update Linux desktop launcher file for AppImage
@@ -4959,6 +5659,204 @@ mod tests {
         assert_eq!(items[0]["options"][1]["summary"], "");
     }
 
+    /// One paragraph exercising the FR-A5 case partition: w0 a mixed word
+    /// (direct results + deconstructions), w1 a deconstructor-resolved word
+    /// with 2 break-downs (shared unambiguous component + one ambiguous
+    /// component per break-down), w2 a deconstructor-resolved word with a
+    /// single break-down.
+    fn compound_words_json() -> String {
+        serde_json::json!([
+            {"original_word": "sādhūti", "example_sentence": "so <b>sādhūti</b> vatvā",
+             "direct_uids": ["sādhūti-x/dpd", "sādhūti-y/dpd"],
+             "deconstructions": [
+                {"words_joined": "sādhu + iti", "components": [
+                    {"word": "sādhu", "result_uids": ["sādhu-1/dpd", "sādhu-2/dpd"]},
+                    {"word": "iti", "result_uids": ["iti/dpd"]}
+                ]}
+             ],
+             "results": [
+                {"uid": "sādhūti-x/dpd", "word": "sādhūti x", "summary": ""},
+                {"uid": "sādhūti-y/dpd", "word": "sādhūti y", "summary": ""},
+                {"uid": "sādhu-1/dpd", "word": "sādhu 1", "summary": ""},
+                {"uid": "sādhu-2/dpd", "word": "sādhu 2", "summary": ""},
+                {"uid": "iti/dpd", "word": "iti", "summary": ""}
+             ]},
+            {"original_word": "pañcaggadāyakaṁ", "example_sentence": "<b>pañcaggadāyakaṁ</b> disvā",
+             "direct_uids": [],
+             "deconstructions": [
+                {"words_joined": "pañca + agga + dāyaka", "components": [
+                    {"word": "pañca", "result_uids": ["pañca/dpd"]},
+                    {"word": "agga", "result_uids": ["agga-1/dpd", "agga-2/dpd"]},
+                    {"word": "dāyaka", "result_uids": ["dāyaka/dpd"]}
+                ]},
+                {"words_joined": "pañca + aggadāyaka", "components": [
+                    {"word": "pañca", "result_uids": ["pañca/dpd"]},
+                    {"word": "aggadāyaka", "result_uids": ["aggadāyaka-1/dpd", "aggadāyaka-2/dpd"]}
+                ]}
+             ],
+             "results": [
+                {"uid": "pañca/dpd", "word": "pañca", "summary": ""},
+                {"uid": "agga-1/dpd", "word": "agga 1", "summary": ""},
+                {"uid": "agga-2/dpd", "word": "agga 2", "summary": ""},
+                {"uid": "dāyaka/dpd", "word": "dāyaka", "summary": ""},
+                {"uid": "aggadāyaka-1/dpd", "word": "aggadāyaka 1", "summary": ""},
+                {"uid": "aggadāyaka-2/dpd", "word": "aggadāyaka 2", "summary": ""}
+             ]},
+            {"original_word": "atthaññe", "example_sentence": "santi ca kho <b>atthaññe</b>",
+             "direct_uids": [],
+             "deconstructions": [
+                {"words_joined": "atthi + aññe", "components": [
+                    {"word": "atthi", "result_uids": ["atthi/dpd"]},
+                    {"word": "aññe", "result_uids": ["añña-1/dpd", "añña-2/dpd"]}
+                ]}
+             ],
+             "results": [
+                {"uid": "atthi/dpd", "word": "atthi", "summary": ""},
+                {"uid": "añña-1/dpd", "word": "añña 1", "summary": ""},
+                {"uid": "añña-2/dpd", "word": "añña 2", "summary": ""}
+             ]}
+        ]).to_string()
+    }
+
+    #[test]
+    fn test_build_word_selection_items_compound_case_partition() {
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: compound_words_json(),
+            source_uid: None,
+        };
+        let items = build_word_selection_items(
+            &[para],
+            WordSelectionBuildMode::IncludeResolved,
+        ).unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+        // w0 (mixed): only its (b) sense item. w1 (2 break-downs): a d item
+        // plus c items for the ambiguous components — `k` indexes the full
+        // deduplicated enumeration (pañca=0, agga=1, dāyaka=2, aggadāyaka=3),
+        // so the unambiguous components leave gaps instead of shifting ids.
+        // w2 (single break-down): no d item, c item for the ambiguous
+        // component (atthi=0, aññe=1).
+        assert_eq!(ids, vec!["p0w0", "p0w1d", "p0w1c1", "p0w1c3", "p0w2c1"]);
+
+        // The mixed word's options span the direct results only, never the
+        // deconstructor-derived component results.
+        let w0_uids: Vec<&str> = items[0]["options"].as_array().unwrap()
+            .iter().map(|o| o["uid"].as_str().unwrap()).collect();
+        assert_eq!(w0_uids, vec!["sādhūti-x/dpd", "sādhūti-y/dpd"]);
+
+        // The d item reuses the standard option shape with pseudo-uids.
+        assert_eq!(items[1]["word"], "pañcaggadāyakaṁ");
+        let d_opts = items[1]["options"].as_array().unwrap();
+        assert_eq!(d_opts.len(), 2);
+        assert_eq!(d_opts[0]["uid"], "d:0");
+        assert_eq!(d_opts[0]["word"], "pañca + agga + dāyaka");
+        assert_eq!(d_opts[1]["uid"], "d:1");
+        assert_eq!(d_opts[1]["word"], "pañca + aggadāyaka");
+
+        // Component items: top-level word is the compound, component_word the
+        // component; options are that component's senses; the deconstructions
+        // annotation is uniform, breakdowns only on strict-subset membership.
+        assert_eq!(items[2]["word"], "pañcaggadāyakaṁ");
+        assert_eq!(items[2]["component_word"], "agga");
+        let c_uids: Vec<&str> = items[2]["options"].as_array().unwrap()
+            .iter().map(|o| o["uid"].as_str().unwrap()).collect();
+        assert_eq!(c_uids, vec!["agga-1/dpd", "agga-2/dpd"]);
+        // Both annotations are word-based break-down strings (FR-F3).
+        assert_eq!(
+            items[2]["deconstructions"],
+            serde_json::json!(["pañca + agga + dāyaka", "pañca + aggadāyaka"])
+        );
+        assert_eq!(items[2]["breakdowns"], serde_json::json!(["pañca + agga + dāyaka"]));
+        assert_eq!(items[3]["component_word"], "aggadāyaka");
+        assert_eq!(items[3]["breakdowns"], serde_json::json!(["pañca + aggadāyaka"]));
+
+        // Single-break-down compound: uniform deconstructions annotation, no
+        // breakdowns field (the component is in every break-down).
+        assert_eq!(items[4]["component_word"], "aññe");
+        assert_eq!(items[4]["deconstructions"], serde_json::json!(["atthi + aññe"]));
+        assert!(items[4].get("breakdowns").is_none());
+    }
+
+    #[test]
+    fn test_build_word_selection_items_compound_skip_resolved() {
+        // Resolve w1's break-down (ai) and its agga component (user), and
+        // w2's aññe component (ai).
+        let mut words: Vec<serde_json::Value> =
+            serde_json::from_str(&compound_words_json()).unwrap();
+        words[1]["deconstruction_resolution"] = serde_json::json!("ai-selected");
+        words[1]["component_resolutions"] = serde_json::json!({"agga": "user-selected"});
+        words[2]["component_resolutions"] = serde_json::json!({"aññe": "ai-selected"});
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: serde_json::to_string(&words).unwrap(),
+            source_uid: None,
+        };
+
+        // Not forced: every resolved item is skipped, ids of the rest are
+        // unchanged (k comes from the full enumeration).
+        let items = build_word_selection_items(
+            &[para.clone()],
+            WordSelectionBuildMode::SkipResolved { forced: false },
+        ).unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p0w0", "p0w1c3"]);
+
+        // Forced re-includes the ai-resolved break-down and component, never
+        // the user-selected component.
+        let items = build_word_selection_items(
+            &[para],
+            WordSelectionBuildMode::SkipResolved { forced: true },
+        ).unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p0w0", "p0w1d", "p0w1c3", "p0w2c1"]);
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_breakdown_items() {
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: compound_words_json(),
+            source_uid: None,
+        };
+        let items = build_word_selection_items(
+            &[para],
+            WordSelectionBuildMode::IncludeResolved,
+        ).unwrap();
+        let items_json = serde_json::to_string(&items).unwrap();
+
+        // A break-down answer works by pseudo-uid and by the break-down
+        // string as the option word — the standard option machinery.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w1d", "uid": "d:1"}]}"#,
+            &items_json, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!((r[0].id.as_str(), r[0].uid.as_str()), ("p0w1d", "d:1"));
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w1d", "word": "pañca + agga + dāyaka"}]}"#,
+            &items_json, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(r[0].uid, "d:0");
+
+        // Out-of-range pseudo-uids are not options: skipped in Lenient, a
+        // hard error in Strict.
+        let out_of_range = r#"{"selections": [{"id": "p0w1d", "uid": "d:5"}]}"#;
+        assert!(parse_word_selection_response(out_of_range, &items_json,
+            WordSelectionParseMode::Lenient).unwrap().is_empty());
+        let err = parse_word_selection_response(out_of_range, &items_json,
+            WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("'d:5'"), "unexpected error: {}", err);
+
+        // Strict completeness: unanswered d and c items are collected.
+        let partial = r#"{"selections": [
+            {"id": "p0w0", "uid": "sādhūti-x/dpd"},
+            {"id": "p0w1c1", "uid": "agga-1/dpd"}
+        ]}"#;
+        let err = parse_word_selection_response(partial, &items_json,
+            WordSelectionParseMode::Strict).unwrap_err();
+        assert!(err.contains("unanswered items"), "unexpected error: {}", err);
+        assert!(err.contains("p0w1d"), "unexpected error: {}", err);
+        assert!(err.contains("p0w1c3"), "unexpected error: {}", err);
+        assert!(err.contains("p0w2c1"), "unexpected error: {}", err);
+    }
+
     #[test]
     fn test_build_word_selection_payload_determinism() {
         let paras = vec![
@@ -5077,7 +5975,11 @@ mod tests {
             } else {
                 &mut entry.local
             };
-            *slot = Some((u.to_string(), o.to_string()));
+            *slot = Some(GlossCacheSlot {
+                selected_uid: u.to_string(),
+                origin: o.to_string(),
+                deconstruction: None,
+            });
         }
 
         GlossResolutionData {

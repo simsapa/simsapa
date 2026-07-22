@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simsapa Gloss Demo</title>
+<style>
+  :root { --border: #d9d4c8; --bg: #faf8f2; --card: #fff; --ink: #2b2b2b;
+          --muted: #6b6b6b; --accent: #7a5c1e; --field-bg: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --border: #3a3a3a; --bg: #1b1b1b; --card: #242424; --ink: #e6e3dc;
+            --muted: #9a948a; --accent: #c9a54e; --field-bg: #2b2b2b; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         margin: 0; background: var(--bg); color: var(--ink); line-height: 1.4; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 1.2rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 .2rem; }
+  p.lede { color: var(--muted); margin: 0 0 1rem; font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  label { font-size: .85rem; font-weight: 600; display: block; margin: .1rem 0 .3rem; }
+  textarea { width: 100%; min-height: 6rem; font: inherit; padding: .6rem;
+             border: 1px solid var(--border); border-radius: 6px; resize: vertical;
+             background: var(--field-bg); color: var(--ink); }
+  input[type=text], input[type=password], input.port {
+    font: inherit; padding: .45rem .6rem; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--field-bg); color: var(--ink); }
+  input[type=password] { width: 100%; }
+  input.port { width: 6rem; }
+  .row { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-top: .8rem; }
+  .row > div { flex: 1 1 auto; }
+  .checkline { display: flex; align-items: center; gap: .4rem; font-size: .9rem; }
+  .checkline label { margin: 0; font-weight: 400; }
+  button { font: inherit; font-weight: 600; padding: .55rem 1.1rem; cursor: pointer;
+           background: var(--accent); color: #fff; border: none; border-radius: 6px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { font-size: .78rem; color: var(--muted); margin-top: .3rem; }
+  #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
+         background: #1e1e1e; color: #dcdcdc; border-radius: 6px; padding: .6rem .7rem;
+         max-height: 12rem; overflow: auto; white-space: pre-wrap; display: none; }
+  #log.show { display: block; }
+  .log-status { color: #6fb3ff; }
+  .log-error  { color: #ff8a80; }
+  .log-result { color: #b5f4a5; }
+  .word { padding: .5rem .2rem; border-bottom: 1px solid var(--border); }
+  .word:last-child { border-bottom: none; }
+  .headword { font-weight: 700; font-size: 1rem; }
+  .headword .stem { color: var(--muted); font-weight: 400; font-size: .82rem; margin-left: .4rem; }
+  .sense { margin-top: .25rem; }
+  select { font: inherit; max-width: 100%; padding: .25rem; border: 1px solid var(--border);
+           border-radius: 5px; background: var(--field-bg); color: var(--ink); }
+  .summary { font-size: .82rem; color: var(--ink); margin-top: .25rem; }
+  .summary i { color: var(--muted); }
+  .components { margin-top: .4rem; }
+  .component { margin: .3rem 0 .3rem 20px; padding-left: .6rem; border-left: 2px solid var(--border); }
+  .component .cword { font-weight: 600; font-size: .9rem; }
+  .breakdown { margin-top: .3rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .para-title { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+                color: var(--muted); margin: .2rem 0 .3rem; }
+  .unrec { font-size: .8rem; color: var(--muted); margin-top: .5rem; }
+  .empty { color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Simsapa Gloss Demo</h1>
+  <p class="lede">Glosses Pāli text via <code>POST /gloss_text</code> and (optionally) runs AI
+     word&nbsp;selection over the <code>GET /word_selection_ws</code> WebSocket. Point it at a
+     running Simsapa instance.</p>
+
+  <div class="card">
+    <label for="text">Pāli text (blank line separates paragraphs)</label>
+    <textarea id="text">Sabbaso'ti imaṁ dhammadesanaṁ satthā jetavane viharanto pañcaggadāyakaṁ nāma brāhmaṇaṁ ārabbha kathesi.
+
+Atthaññe kusalā dhammā.</textarea>
+
+    <div class="row">
+      <div style="flex: 0 0 auto;">
+        <label for="port">API port</label>
+        <input class="port" id="port" type="text" value="4848" inputmode="numeric">
+      </div>
+      <div>
+        <label for="key">Gemini API key (configures the app for AI selection)</label>
+        <input id="key" type="password" placeholder="AIza… — leave empty to gloss only" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="checkline" style="flex: 0 0 auto;">
+        <input type="checkbox" id="ai" checked disabled>
+        <label for="ai">AI word selection</label>
+      </div>
+      <div style="flex: 0 0 auto;">
+        <button id="go">Gloss</button>
+      </div>
+    </div>
+    <div class="hint">The WebSocket uses the app's saved provider keys, so the key is first sent to
+       <code>POST /set_ai_provider_key</code> (Gemini, enabled &amp; prioritized). The key is never
+       stored by this page.</div>
+  </div>
+
+  <div id="log"></div>
+  <div id="out" class="card"><span class="empty">Enter text and press <b>Gloss</b>.</span></div>
+</div>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const base = () => `http://localhost:${($("port").value || "4848").trim()}`;
+const wsBase = () => `ws://localhost:${($("port").value || "4848").trim()}`;
+
+// --- key field gates the AI checkbox -----------------------------------------
+// Checked by default; disabled (greyed, and so inactive) while the key is empty.
+// `aiEnabled()` requires the box to be both checked AND enabled, so a
+// checked-but-disabled box never runs AI.
+function syncAiCheckbox() {
+  $("ai").disabled = $("key").value.trim().length === 0;
+}
+$("key").addEventListener("input", syncAiCheckbox);
+syncAiCheckbox();
+
+const aiEnabled = () => $("ai").checked && !$("ai").disabled;
+
+// On load, prefill the key from the app's saved settings if one exists.
+async function prefillKey() {
+  try {
+    const r = await fetch(base() + "/ai_provider_key?provider=Gemini");
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j.api_key && !$("key").value) { $("key").value = j.api_key; syncAiCheckbox(); }
+  } catch (_) { /* app not running yet; user can type a key */ }
+}
+prefillKey();
+
+// --- small helpers -----------------------------------------------------------
+function stripHtml(s) {
+  const d = document.createElement("div"); d.innerHTML = s || ""; return d.textContent || "";
+}
+function truncate(s, n) { s = s || ""; return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+function log(kind, msg) {
+  const box = $("log"); box.classList.add("show");
+  const line = document.createElement("div");
+  line.className = "log-" + kind;
+  line.textContent = msg;
+  box.appendChild(line); box.scrollTop = box.scrollHeight;
+}
+function clearLog() { const b = $("log"); b.textContent = ""; b.classList.remove("show"); }
+
+// A word is "deconstructor-resolved" when it has no direct match but has break-downs.
+const isCompound = (w) => (w.direct_uids || []).length === 0 && (w.deconstructions || []).length > 0;
+// Sense options of a direct/mixed word = its results limited to the direct uids.
+function senseResults(w) {
+  const direct = new Set(w.direct_uids || []);
+  const r = (w.results || []).filter((x) => direct.has(x.uid));
+  return r.length ? r : (w.results || []);   // fallback: show all if direct set is unexpectedly empty
+}
+// uid -> result record, for looking up a component's option summaries.
+function resultIndex(w) {
+  const m = new Map();
+  for (const r of (w.results || [])) m.set(r.uid, r);
+  return m;
+}
+// Dedup, first-appearance order of ALL component words across all break-downs.
+// The AI `c<k>` id is the 0-based position in THIS list.
+function componentEnumeration(w) {
+  const seen = new Set(), list = [];
+  for (const d of (w.deconstructions || []))
+    for (const c of (d.components || []))
+      if (!seen.has(c.word)) { seen.add(c.word); list.push(c.word); }
+  return list;
+}
+// The components to show: locked+selected -> that break-down's; else the union.
+function visibleComponents(w) {
+  const locked = w.deconstruction_locked && w.selected_deconstruction_index != null;
+  if (locked) return (w.deconstructions[w.selected_deconstruction_index].components) || [];
+  const seen = new Set(), list = [];
+  for (const d of (w.deconstructions || []))
+    for (const c of (d.components || []))
+      if (!seen.has(c.word)) { seen.add(c.word); list.push(c); }
+  return list;
+}
+
+// --- rendering ---------------------------------------------------------------
+let DATA = null;   // last gloss result; mutated in place as selections apply
+
+function render() {
+  const out = $("out");
+  out.innerHTML = "";
+  if (!DATA || !DATA.paragraphs || !DATA.paragraphs.length) {
+    out.innerHTML = '<span class="empty">No words.</span>'; return;
+  }
+  for (const para of DATA.paragraphs) {
+    if (DATA.paragraphs.length > 1) {
+      const t = document.createElement("div");
+      t.className = "para-title"; t.textContent = "Paragraph " + (para.paragraph_index + 1);
+      out.appendChild(t);
+    }
+    para.words_data.forEach((w, wi) => out.appendChild(renderWord(para.paragraph_index, wi, w)));
+    if ((para.unrecognized_words || []).length) {
+      const u = document.createElement("div");
+      u.className = "unrec"; u.textContent = "Unrecognized: " + para.unrecognized_words.join(", ");
+      out.appendChild(u);
+    }
+  }
+}
+
+function renderWord(pi, wi, w) {
+  const el = document.createElement("div");
+  el.className = "word";
+  const head = document.createElement("div");
+  head.className = "headword";
+  head.innerHTML = (w.original_word || w.stem || "?") +
+    (w.stem && w.stem !== w.original_word ? '<span class="stem">' + w.stem + "</span>" : "");
+  el.appendChild(head);
+
+  if (isCompound(w)) {
+    renderCompound(el, pi, wi, w);
+  } else {
+    renderDirect(el, pi, wi, w);
+  }
+  return el;
+}
+
+// (a)/(b): single sense = static; multiple = a <select>.
+function renderDirect(el, pi, wi, w) {
+  const opts = senseResults(w);
+  const chosen = w._sense_uid || (opts[w.selected_index] && opts[w.selected_index].uid) ||
+                 (opts[0] && opts[0].uid);
+  if (opts.length <= 1) {
+    const s = document.createElement("div"); s.className = "summary";
+    s.innerHTML = opts[0] ? opts[0].summary : "<i>(no entry)</i>";
+    el.appendChild(s); return;
+  }
+  const sel = document.createElement("select");
+  opts.forEach((o) => {
+    const op = document.createElement("option");
+    op.value = o.uid; op.textContent = truncate(stripHtml(o.summary) || o.uid, 90);
+    if (o.uid === chosen) op.selected = true;
+    sel.appendChild(op);
+  });
+  sel.value = chosen;
+  const detail = document.createElement("div"); detail.className = "summary";
+  const setDetail = (uid) => {
+    const o = opts.find((x) => x.uid === uid);
+    detail.innerHTML = o ? o.summary : "";
+  };
+  sel.addEventListener("change", () => { w._sense_uid = sel.value; setDetail(sel.value); });
+  const line = document.createElement("div"); line.className = "sense";
+  line.appendChild(sel);
+  el.appendChild(line); el.appendChild(detail);
+  setDetail(chosen);
+}
+
+// (c)/(d): component sub-rows, plus a break-down selector for >= 2 break-downs.
+function renderCompound(el, pi, wi, w) {
+  const idx = resultIndex(w);
+
+  if ((w.deconstructions || []).length > 1) {
+    const bd = document.createElement("div"); bd.className = "breakdown";
+    const sel = document.createElement("select");
+    w.deconstructions.forEach((d, i) => {
+      const op = document.createElement("option");
+      op.value = String(i); op.textContent = d.words_joined;
+      sel.appendChild(op);
+    });
+    // Set the current value explicitly — option.selected during construction is
+    // not honored reliably, which left the dropdown on break-down 0 after an AI pick.
+    if (w.selected_deconstruction_index != null)
+      sel.value = String(w.selected_deconstruction_index);
+    const lock = document.createElement("input"); lock.type = "checkbox";
+    lock.checked = !!w.deconstruction_locked;
+    const lockLbl = document.createElement("label");
+    lockLbl.style.fontWeight = "400"; lockLbl.style.fontSize = ".85rem"; lockLbl.style.margin = "0";
+    lockLbl.textContent = "lock"; lockLbl.style.display = "inline";
+    sel.addEventListener("change", () => {
+      w.selected_deconstruction_index = parseInt(sel.value, 10);
+      w.deconstruction_locked = true; lock.checked = true; render();
+    });
+    lock.addEventListener("change", () => {
+      w.deconstruction_locked = lock.checked;
+      if (lock.checked && w.selected_deconstruction_index == null)
+        w.selected_deconstruction_index = parseInt(sel.value, 10);
+      render();
+    });
+    bd.appendChild(document.createTextNode("break-down: "));
+    bd.appendChild(sel); bd.appendChild(lock); bd.appendChild(lockLbl);
+    el.appendChild(bd);
+  }
+
+  const box = document.createElement("div"); box.className = "components";
+  for (const comp of visibleComponents(w)) {
+    box.appendChild(renderComponent(w, comp, idx));
+  }
+  el.appendChild(box);
+}
+
+function renderComponent(w, comp, idx) {
+  const el = document.createElement("div"); el.className = "component";
+  const name = document.createElement("span"); name.className = "cword"; name.textContent = comp.word;
+  el.appendChild(name);
+
+  const uids = comp.result_uids || [];
+  w.component_selected_uids = w.component_selected_uids || {};
+  const chosen = w.component_selected_uids[comp.word] || uids[0];
+
+  if (uids.length <= 1) {
+    const s = document.createElement("div"); s.className = "summary";
+    const r = idx.get(uids[0]);
+    s.innerHTML = r ? r.summary : "<i>(no entry)</i>";
+    el.appendChild(s); return el;
+  }
+  const sel = document.createElement("select");
+  uids.forEach((uid) => {
+    const r = idx.get(uid);
+    const op = document.createElement("option");
+    op.value = uid; op.textContent = truncate(stripHtml(r ? r.summary : "") || uid, 80);
+    if (uid === chosen) op.selected = true;
+    sel.appendChild(op);
+  });
+  sel.value = chosen;
+  const detail = document.createElement("div"); detail.className = "summary";
+  const setDetail = (uid) => { const r = idx.get(uid); detail.innerHTML = r ? r.summary : ""; };
+  sel.addEventListener("change", () => { w.component_selected_uids[comp.word] = sel.value; setDetail(sel.value); });
+  const line = document.createElement("span"); line.style.marginLeft = ".4rem";
+  line.appendChild(sel);
+  el.appendChild(line);
+  el.appendChild(detail); setDetail(chosen);
+  return el;
+}
+
+// --- applying WebSocket selections -------------------------------------------
+function wordAt(pi, wi) {
+  const para = DATA.paragraphs.find((p) => p.paragraph_index === pi);
+  return para ? para.words_data[wi] : null;
+}
+
+function applySelection(entry) {
+  const m = /^p(\d+)w(\d+)(?:(d)|c(\d+))?$/.exec(entry.id || "");
+  if (!m) return;
+  const pi = +m[1], wi = +m[2], w = wordAt(pi, wi);
+  if (!w) return;
+
+  if (m[3] === "d") {                                   // break-down: uid = "d:<n>"
+    const n = parseInt(String(entry.uid).replace(/^d:/, ""), 10);
+    if (!Number.isNaN(n)) { w.selected_deconstruction_index = n; w.deconstruction_locked = true; }
+  } else if (m[4] != null) {                            // component sense: c<k>
+    const k = +m[4], compWord = componentEnumeration(w)[k];
+    if (compWord) {
+      w.component_selected_uids = w.component_selected_uids || {};
+      w.component_selected_uids[compWord] = entry.uid;
+    }
+  } else {                                              // direct sense
+    w._sense_uid = entry.uid;
+  }
+}
+
+function runWordSelection(key) {
+  return new Promise(async (resolve) => {
+    // 1. Configure the app so the WS engine can reach Gemini.
+    try {
+      const r = await fetch(base() + "/set_ai_provider_key", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "Gemini", api_key: key }),
+      });
+      const j = await r.json();
+      log("status", `Configured Gemini (enabled=${j.enabled}, fallback has ${j.fallback_sequence.length} model(s)).`);
+    } catch (e) { log("error", "set_ai_provider_key failed: " + e); resolve(); return; }
+
+    // 2. Open the WebSocket and stream the run.
+    const paragraphs = DATA.paragraphs.map((p) => ({
+      paragraph_index: p.paragraph_index, words_json: JSON.stringify(p.words_data),
+    }));
+    let ws;
+    try { ws = new WebSocket(wsBase() + "/word_selection_ws"); }
+    catch (e) { log("error", "WebSocket failed: " + e); resolve(); return; }
+
+    ws.onopen = () => {
+      log("status", "WebSocket open — requesting word selection…");
+      ws.send(JSON.stringify({ type: "request", paragraphs }));
+    };
+    ws.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { log("error", "bad frame: " + ev.data); return; }
+      if (msg.type === "status") {
+        const b = (msg.batch_count > 1) ? ` [batch ${msg.batch + 1}/${msg.batch_count}]` : "";
+        log("status", `${msg.stage}: ${msg.message || msg.model || ""}${b}`);
+      } else if (msg.type === "error") {
+        const detail = msg.ai_error ? (msg.ai_error.message || JSON.stringify(msg.ai_error)) : msg.message;
+        log("error", "error: " + detail);
+      } else if (msg.type === "result") {
+        (msg.selections || []).forEach(applySelection);
+        log("result", `Applied ${(msg.selections || []).length} selection(s).`);
+        render();
+        ws.close();
+      }
+    };
+    ws.onerror = () => log("error", "WebSocket error.");
+    ws.onclose = () => { log("status", "WebSocket closed."); resolve(); };
+  });
+}
+
+// --- main action -------------------------------------------------------------
+async function gloss() {
+  const text = $("text").value;
+  const wantAi = aiEnabled();
+  const key = $("key").value.trim();
+  $("go").disabled = true; clearLog();
+  $("out").innerHTML = '<span class="empty">Glossing…</span>';
+  try {
+    const r = await fetch(base() + "/gloss_text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    DATA = await r.json();
+    render();
+    if (wantAi && key) {
+      log("status", "Starting AI word selection…");
+      await runWordSelection(key);
+    }
+  } catch (e) {
+    $("out").innerHTML = '<span class="empty">Error: ' + stripHtml(String(e)) + "</span>";
+  } finally {
+    $("go").disabled = false;
+  }
+}
+$("go").addEventListener("click", gloss);
+</script>
+</body>
+</html>
