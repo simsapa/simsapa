@@ -1952,6 +1952,28 @@ impl qobject::SuttaBridge {
             let is_combined_dict = search_area_text == "Dictionary"
                 && matches!(parsed_params.mode, SearchMode::Combined);
 
+            // Grouped deconstructor break-downs for the original query, attached
+            // to the result page on the Dictionary DPD Lookup / Combined-remap
+            // path so FulltextResults can show a break-down selector and
+            // lock-filter the page client-side (PRD FR-B5). Computed once per
+            // results_page() call (cheap in-memory DPD lookup) and cloned into
+            // each SearchResultPage. `deconstructor_exact_only = false` mirrors
+            // WordSummary's fuzzy break-down list. Empty for other paths.
+            let (page_deconstructions, page_direct_uids) = if search_area_text == "Dictionary"
+                && matches!(parsed_params.mode, SearchMode::DpdLookup | SearchMode::Combined)
+            {
+                let app_data = get_app_data();
+                match app_data.dbm.dpd.dpd_lookup_grouped(&query_text, false, true, false, None, None) {
+                    Ok(grouped) => (grouped.deconstructions, grouped.direct_uids),
+                    Err(e) => {
+                        error(&format!("dpd_lookup_grouped for result page failed: {}", e));
+                        (Vec::new(), Vec::new())
+                    }
+                }
+            } else {
+                (Vec::new(), Vec::new())
+            };
+
             if is_combined_dict {
                 // PRD §6.6: distinct `|combined` suffix prevents any chance
                 // of colliding with `RESULTS_PAGE_CACHE` keys.
@@ -1992,6 +2014,8 @@ impl qobject::SuttaBridge {
                             page_len,
                             page_num,
                             results,
+                            deconstructions: page_deconstructions.clone(),
+                            direct_uids: page_direct_uids.clone(),
                         };
                         let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                         qt_thread.queue(move |mut qo| {
@@ -2078,6 +2102,8 @@ impl qobject::SuttaBridge {
                                 page_len: cache.page_len,
                                 page_num,
                                 results: cached_results.clone(),
+                                deconstructions: page_deconstructions.clone(),
+                                direct_uids: page_direct_uids.clone(),
                             };
                             let json = serde_json::to_string(&results_page).unwrap_or_default();
                             qt_thread.queue(move |mut qo| {
@@ -2137,6 +2163,8 @@ impl qobject::SuttaBridge {
                         page_len,
                         page_num,
                         results,
+                        deconstructions: page_deconstructions.clone(),
+                        direct_uids: page_direct_uids.clone(),
                     };
                     let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                     qt_thread.queue(move |mut qo| {

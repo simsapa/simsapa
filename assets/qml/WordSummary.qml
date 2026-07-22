@@ -258,6 +258,9 @@ Frame {
             DeconstructorSelector {
                 id: deconstructor
                 Layout.fillWidth: true
+                // Match the sibling buttons in this row (e.g. "Copy listed
+                // summaries"), which are sized to lookup_input.height.
+                control_size: lookup_input.height
                 model: root.deconstructor_words
                 current_index: root.selected_deconstruction_index
                 locked: root.deconstructor_locked

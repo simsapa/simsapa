@@ -119,10 +119,10 @@ Manual break-down change (`onActivated`) persists the index + saves a `user-sele
 **Depends on:** 1.0, 3.0.
 **Specs:** The Dictionary/DpdLookup (incl. Combined-remap) query path attaches the grouped deconstruction structure to the result payload consumed by `SuttaSearchWindow` (mirror how the API's `deconstructor` strings are attached to `ApiSearchResult`; the QML-side query path needs the same data). `FulltextResults.qml` gains optional props (`deconstructions_json` or similar) + a `DeconstructorSelector` row between the paging controls and the list, visible only when data is present. Filtering is client-side over `results_model` (uids in `visible_uids()`); page counts stay unfiltered. Selection + lock reset on every **new query only** — keyed on query-text change tracked in `SuttaSearchWindow.qml`, NOT inside `set_search_result_page()`, which also runs on page navigation and must preserve the state.
 
-- [ ] 5.1 Extend the QML-side Dictionary/DpdLookup query path (bridge fn returning the search result page in `sutta_bridge.rs` / `query_task.rs`) to include the grouped deconstructions for the original query.
-- [ ] 5.2 Add the selector header to `FulltextResults.qml` with a `reset_deconstructor_state()` function; filter rows client-side via `DeconstructorUtils`.
-- [ ] 5.3 Wire `SuttaSearchWindow.qml` to pass the grouped data down and call the reset only when the query text changes (page navigation preserves selection + lock); other embedders pass nothing (selector hidden).
-- [ ] 5.4 `make build -B`; user manually verifies a Dictionary DPD Lookup search for `pañcaggadāyakaṁ`.
+- [x] 5.1 Extend the QML-side Dictionary/DpdLookup query path (bridge fn returning the search result page in `sutta_bridge.rs` / `query_task.rs`) to include the grouped deconstructions for the original query.
+- [x] 5.2 Add the selector header to `FulltextResults.qml` with a `reset_deconstructor_state()` function; filter rows client-side via `DeconstructorUtils`.
+- [x] 5.3 Wire `SuttaSearchWindow.qml` to pass the grouped data down and call the reset only when the query text changes (page navigation preserves selection + lock); other embedders pass nothing (selector hidden).
+- [x] 5.4 `make build -B`; user manually verifies a Dictionary DPD Lookup search for `pañcaggadāyakaṁ`.
 
 ### 6.0 AI Word Selection redesign for compounds
 

@@ -377,6 +377,16 @@ pub struct SearchResultPage {
     pub page_len: usize,
     pub page_num: usize,
     pub results: Vec<SearchResult>,
+    /// Grouped deconstructor break-downs for the original query, attached only
+    /// on the Dictionary / DpdLookup (incl. Combined-remap) query path so
+    /// `FulltextResults` can show a break-down selector and lock-filter the
+    /// result page client-side (PRD FR-B5). Empty for every other search path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deconstructions: Vec<Deconstruction>,
+    /// Uids of the results found via direct / uid / i2h / stem matches, used by
+    /// the break-down lock filter to always keep direct matches visible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub direct_uids: Vec<String>,
 }
 
 /// Options for word processing in gloss operations

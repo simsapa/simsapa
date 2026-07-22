@@ -23,6 +23,12 @@ RowLayout {
     // Whether the selection is locked (filters the result list).
     property bool locked: false
 
+    // Control sizing: the ComboBox height and the (square) lock button side.
+    // Defaults to the ComboBox's natural implicit height so embedders that
+    // don't set it (e.g. GlossTab) keep today's appearance; WordSummary and
+    // FulltextResults set it to match their sibling buttons' height.
+    property int control_size: breakdown_combo.implicitHeight
+
     // Emitted when the user picks a different break-down from the ComboBox.
     signal activated(int index)
     // Emitted when the user toggles the lock button.
@@ -33,6 +39,7 @@ RowLayout {
     ComboBox {
         id: breakdown_combo
         Layout.fillWidth: true
+        Layout.preferredHeight: root.control_size
         model: root.model
         currentIndex: root.current_index
 
@@ -57,8 +64,8 @@ RowLayout {
         checked: root.locked
         icon.source: root.locked ? "icons/32x32/system-uicons--lock.png"
                                  : "icons/32x32/system-uicons--lock-open.png"
-        Layout.preferredHeight: breakdown_combo.height
-        Layout.preferredWidth: breakdown_combo.height
+        Layout.preferredHeight: root.control_size
+        Layout.preferredWidth: root.control_size
         ToolTip.visible: hovered
         ToolTip.text: root.locked ? "Unlock: show all break-downs" : "Lock: show only this break-down"
 
