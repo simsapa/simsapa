@@ -2370,6 +2370,7 @@ impl AppdataDbHandle {
         context_snippet_param: &str,
         selected_uid_param: &str,
         origin_param: &str,
+        deconstruction_param: Option<&str>,
     ) -> Result<bool> {
         use crate::db::appdata_schema::gloss_word_context_cache::dsl::*;
 
@@ -2386,7 +2387,7 @@ impl AppdataDbHandle {
                     selected_uid: selected_uid_param,
                     origin: origin_param,
                     built_in: if tier { 1 } else { 0 },
-                    deconstruction: None,
+                    deconstruction: deconstruction_param,
                     created_at: Some(now),
                     updated_at: Some(now),
                 };
@@ -2406,6 +2407,7 @@ impl AppdataDbHandle {
                         .set((
                             context_snippet.eq(context_snippet_param),
                             selected_uid.eq(selected_uid_param),
+                            deconstruction.eq(deconstruction_param),
                             origin.eq(origin_param),
                             updated_at.eq(Some(now)),
                         ))
@@ -2856,29 +2858,29 @@ mod gloss_word_selection_tests {
         let db = setup();
 
         // No local row: any valid origin inserts.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-imported/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().origin, "ai-selected");
 
         // Imported ai vs local ai: equal precedence is a no-op (no churn).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai-selected").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-other/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-imported/dpd");
 
         // Imported user beats local ai.
-        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user/dpd", "user-selected", None).unwrap());
         let row = db.get_gloss_word_cache("w1", "h1").unwrap();
         assert_eq!(row.origin, "user-selected");
         assert_eq!(row.selected_uid, "uid-user/dpd");
 
         // Local user row survives an imported user row (equal precedence).
-        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w1", "h1", "ctx", "uid-user2/dpd", "user-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w1", "h1").unwrap().selected_uid, "uid-user/dpd");
 
         // An imported ai row lands in the local tier beside the shipped row,
         // which keeps winning; an imported user row then outranks both.
         db.upsert_gloss_word_cache("w2", "h2", "ctx", "uid-bi/dpd", "built-in-human-checked").unwrap();
-        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-ai/dpd", "ai-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().selected_uid, "uid-bi/dpd");
-        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected").unwrap());
+        assert!(db.import_gloss_word_cache_row("w2", "h2", "ctx", "uid-u/dpd", "user-selected", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w2", "h2").unwrap().origin, "user-selected");
         assert_eq!(
             db.get_gloss_word_cache_tier("w2", "h2", true).unwrap().selected_uid,
@@ -2887,10 +2889,10 @@ mod gloss_word_selection_tests {
 
         // Imported agent-checked beats a local ai row, but never a human tier.
         db.upsert_gloss_word_cache("w3", "h3", "ctx", "uid-ai/dpd", "ai-selected").unwrap();
-        assert!(db.import_gloss_word_cache_row("w3", "h3", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert!(db.import_gloss_word_cache_row("w3", "h3", "ctx", "uid-ag/dpd", "built-in-agent-checked", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w3", "h3").unwrap().origin, "built-in-agent-checked");
         db.upsert_gloss_word_cache("w4", "h4", "ctx", "uid-hu/dpd", "built-in-human-checked").unwrap();
-        assert!(!db.import_gloss_word_cache_row("w4", "h4", "ctx", "uid-ag/dpd", "built-in-agent-checked").unwrap());
+        assert!(!db.import_gloss_word_cache_row("w4", "h4", "ctx", "uid-ag/dpd", "built-in-agent-checked", None).unwrap());
         assert_eq!(db.get_gloss_word_cache("w4", "h4").unwrap().selected_uid, "uid-hu/dpd");
     }
 

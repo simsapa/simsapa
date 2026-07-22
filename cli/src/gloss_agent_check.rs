@@ -157,19 +157,40 @@ fn prepare(candidate: &Path, out: Option<&Path>) -> Result<(), String> {
     Ok(())
 }
 
-/// Parse a builder item id (`p<pi>w<wi>`) back into paragraph and word
-/// indices. The strict parser only passes through ids present in the rebuilt
+/// The kind of a builder item, parsed from the id suffix (see
+/// `build_word_selection_items`): `p<pi>w<wi>` = flat sense choice,
+/// `p<pi>w<wi>d` = break-down choice, `p<pi>w<wi>c<k>` = component sense
+/// choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemKind {
+    Sense,
+    Breakdown,
+    Component,
+}
+
+/// Parse a builder item id back into paragraph and word indices plus the item
+/// kind. The strict parser only passes through ids present in the rebuilt
 /// payload, so a parse failure here is a bug, not bad agent input.
-fn parse_item_id(id: &str) -> Result<(usize, usize), String> {
+fn parse_item_id(id: &str) -> Result<(usize, usize, ItemKind), String> {
     let rest = id
         .strip_prefix('p')
         .ok_or_else(|| format!("Malformed item id '{}'", id))?;
-    let (pi, wi) = rest
+    let (pi, rest) = rest
         .split_once('w')
         .ok_or_else(|| format!("Malformed item id '{}'", id))?;
     let pi = pi.parse::<usize>().map_err(|_| format!("Malformed item id '{}'", id))?;
-    let wi = wi.parse::<usize>().map_err(|_| format!("Malformed item id '{}'", id))?;
-    Ok((pi, wi))
+    let (wi_str, kind) = if let Some(wi_str) = rest.strip_suffix('d') {
+        (wi_str, ItemKind::Breakdown)
+    } else if let Some((wi_str, k)) = rest.split_once('c') {
+        if k.parse::<usize>().is_err() {
+            return Err(format!("Malformed item id '{}'", id));
+        }
+        (wi_str, ItemKind::Component)
+    } else {
+        (rest, ItemKind::Sense)
+    };
+    let wi = wi_str.parse::<usize>().map_err(|_| format!("Malformed item id '{}'", id))?;
+    Ok((pi, wi, kind))
 }
 
 fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), String> {
@@ -191,9 +212,14 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             .map_err(|e| format!("{}: {}", answers.display(), e))?;
 
     // Validate every selected uid against the dictionaries / DPD databases.
+    // Break-down answers carry pseudo-uids (`d:<n>`), not dictionary uids —
+    // they are validated against the word's deconstructions during apply.
     let dangling: Vec<String> = entries
         .iter()
-        .filter(|e| get_app_data().resolve_word_uid(&e.uid).is_none())
+        .filter(|e| {
+            !matches!(parse_item_id(&e.id), Ok((_, _, ItemKind::Breakdown)))
+                && get_app_data().resolve_word_uid(&e.uid).is_none()
+        })
         .map(|e| format!("{} ({})", e.uid, e.id))
         .collect();
     if !dangling.is_empty() {
@@ -206,11 +232,18 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
     // Apply the answers to the session words and collect the word_cache
     // entries, matching what the app's Save/export writes (the import derives
     // the word_key itself; values come from the candidate, never re-derived).
+    // A component answer is routed to its component via the request item's
+    // component_word field, never by re-deriving the k enumeration.
+    let items_by_id: std::collections::HashMap<&str, &serde_json::Value> = items
+        .iter()
+        .filter_map(|it| it.get("id").and_then(|v| v.as_str()).map(|id| (id, it)))
+        .collect();
+
     let mut session = session;
     let mut confirmed: usize = 0;
     let mut review: usize = 0;
     for entry in &entries {
-        let (pi, wi) = parse_item_id(&entry.id)?;
+        let (pi, wi, kind) = parse_item_id(&entry.id)?;
         let word = session
             .get_mut("paragraphs")
             .and_then(|v| v.as_array_mut())
@@ -219,18 +252,6 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             .and_then(|v| v.as_array_mut())
             .and_then(|a| a.get_mut(wi))
             .ok_or_else(|| format!("Item id '{}' points outside the session", entry.id))?;
-
-        let selected_index = word
-            .get("results")
-            .and_then(|v| v.as_array())
-            .and_then(|results| {
-                results
-                    .iter()
-                    .position(|r| r.get("uid").and_then(|v| v.as_str()) == Some(entry.uid.as_str()))
-            })
-            .ok_or_else(|| {
-                format!("Uid '{}' is not among the options of item '{}'", entry.uid, entry.id)
-            })?;
 
         let original_word = word
             .get("original_word")
@@ -248,9 +269,69 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             .unwrap_or("")
             .to_string();
 
-        word.as_object_mut()
-            .expect("word is an object")
-            .insert("selected_index".to_string(), serde_json::json!(selected_index));
+        // The cache row's word key and selection fields, per item kind.
+        let (cache_word, selected_uid, deconstruction) = match kind {
+            ItemKind::Sense => {
+                let selected_index = word
+                    .get("results")
+                    .and_then(|v| v.as_array())
+                    .and_then(|results| {
+                        results.iter().position(|r| {
+                            r.get("uid").and_then(|v| v.as_str()) == Some(entry.uid.as_str())
+                        })
+                    })
+                    .ok_or_else(|| {
+                        format!("Uid '{}' is not among the options of item '{}'", entry.uid, entry.id)
+                    })?;
+                word.as_object_mut()
+                    .expect("word is an object")
+                    .insert("selected_index".to_string(), serde_json::json!(selected_index));
+                (original_word, entry.uid.clone(), None)
+            }
+            ItemKind::Breakdown => {
+                // Pseudo-uid `d:<n>` — resolve the break-down string; the
+                // compound's own cache row stores it with an empty uid.
+                let n = entry
+                    .uid
+                    .strip_prefix("d:")
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .ok_or_else(|| {
+                        format!("Malformed break-down uid '{}' for item '{}'", entry.uid, entry.id)
+                    })?;
+                let words_joined = word
+                    .get("deconstructions")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.get(n))
+                    .and_then(|d| d.get("words_joined"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        format!("Break-down index {} of item '{}' points outside the word's deconstructions", n, entry.id)
+                    })?
+                    .to_string();
+                let w = word.as_object_mut().expect("word is an object");
+                w.insert("selected_deconstruction_index".to_string(), serde_json::json!(n));
+                w.insert("deconstruction_locked".to_string(), serde_json::json!(true));
+                (original_word, String::new(), Some(words_joined))
+            }
+            ItemKind::Component => {
+                let component_word = items_by_id
+                    .get(entry.id.as_str())
+                    .and_then(|it| it.get("component_word"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        format!("Item '{}' has no component_word field", entry.id)
+                    })?
+                    .to_string();
+                let w = word.as_object_mut().expect("word is an object");
+                let map = w
+                    .entry("component_selected_uids")
+                    .or_insert_with(|| serde_json::json!({}));
+                map.as_object_mut()
+                    .ok_or_else(|| format!("component_selected_uids of item '{}' is not an object", entry.id))?
+                    .insert(component_word.clone(), serde_json::json!(entry.uid));
+                (component_word, entry.uid.clone(), None)
+            }
+        };
 
         let is_review = entry.confidence == "review";
         if is_review {
@@ -259,13 +340,14 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             confirmed += 1;
         }
         word_cache.push(GlossWordCacheExportEntry {
-            word: original_word,
+            word: cache_word,
             context_hash,
             context_snippet: example_sentence,
-            selected_uid: entry.uid.clone(),
+            selected_uid,
             origin: "built-in-agent-checked".to_string(),
             confidence: if is_review { Some("review".to_string()) } else { None },
             note: entry.note.clone(),
+            deconstruction,
         });
     }
 
@@ -715,10 +797,13 @@ mod tests {
 
     #[test]
     fn test_parse_item_id() {
-        assert_eq!(parse_item_id("p0w0").unwrap(), (0, 0));
-        assert_eq!(parse_item_id("p12w34").unwrap(), (12, 34));
+        assert_eq!(parse_item_id("p0w0").unwrap(), (0, 0, ItemKind::Sense));
+        assert_eq!(parse_item_id("p12w34").unwrap(), (12, 34, ItemKind::Sense));
+        assert_eq!(parse_item_id("p0w3d").unwrap(), (0, 3, ItemKind::Breakdown));
+        assert_eq!(parse_item_id("p2w7c1").unwrap(), (2, 7, ItemKind::Component));
         assert!(parse_item_id("x0w0").is_err());
         assert!(parse_item_id("p0").is_err());
         assert!(parse_item_id("pXwY").is_err());
+        assert!(parse_item_id("p0w1cX").is_err());
     }
 }

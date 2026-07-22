@@ -459,6 +459,13 @@ pub struct ProcessedWord {
     /// word. Drives the per-component shield indicator in the Gloss tab.
     #[serde(default)]
     pub component_resolutions: std::collections::HashMap<String, String>,
+    /// How `selected_deconstruction_index` was resolved, mirroring the flat
+    /// `resolution` field but for the break-down choice (compound's own cache
+    /// row). `None` = unresolved. Lets the AI items builder skip an already
+    /// resolved break-down (re-including only `"ai-selected"` on a forced
+    /// pass) and the apply path enforce user-override-wins for break-downs.
+    #[serde(default)]
+    pub deconstruction_resolution: Option<String>,
 }
 
 /// Result indicating an unrecognized word

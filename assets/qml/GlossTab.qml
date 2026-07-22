@@ -518,7 +518,19 @@ Item {
                 root.ws_set_status(pi, "error", parsed.error);
             }
         } else {
-            // Group the valid selections by paragraph index (id = p<pi>w<wi>).
+            // Group the valid selections by paragraph index. Ids are
+            // p<pi>w<wi> (sense), p<pi>w<wi>d (break-down choice) or
+            // p<pi>w<wi>c<k> (component sense); a c-item answer is routed to
+            // its component via the item's component_word field, never by
+            // re-deriving the k enumeration (see build_word_selection_items).
+            let items_by_id = {};
+            try {
+                for (let it of JSON.parse(items_json)) {
+                    items_by_id[it.id] = it;
+                }
+            } catch (e) {
+                logger.error("handle_word_selection_response: failed to parse request items: " + e);
+            }
             let by_para = {};
             for (let sel of parsed.selections) {
                 // confidence/note are parsed but not displayed (logged only).
@@ -526,11 +538,26 @@ Item {
                     logger.info("Word selection " + sel.id + ": confidence=" + (sel.confidence || "confident")
                                 + (sel.note ? ", note: " + sel.note : ""));
                 }
-                let m = sel.id.match(/^p(\d+)w(\d+)$/);
+                let m = sel.id.match(/^p(\d+)w(\d+)(d|c\d+)?$/);
                 if (!m) continue;
                 let pi = parseInt(m[1], 10);
+                let entry = { word_idx: parseInt(m[2], 10), uid: sel.uid };
+                let suffix = m[3] || "";
+                if (suffix === "d") {
+                    entry.kind = "d";
+                } else if (suffix.length > 0) {
+                    entry.kind = "c";
+                    let it = items_by_id[sel.id];
+                    entry.component_word = (it && it.component_word) ? it.component_word : "";
+                    if (entry.component_word === "") {
+                        logger.error("Word selection " + sel.id + ": no component_word on the request item, skipping");
+                        continue;
+                    }
+                } else {
+                    entry.kind = "sense";
+                }
                 if (by_para[pi] === undefined) by_para[pi] = [];
-                by_para[pi].push({ word_idx: parseInt(m[2], 10), uid: sel.uid });
+                by_para[pi].push(entry);
             }
             for (let pi of covered) {
                 let applied = root.apply_word_selections(pi, by_para[pi] || []);
@@ -1600,11 +1627,16 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         root.session_needs_saving = true;
     }
 
-    // Batch variant of update_word_selection() for applying an AI response:
+    // Batch variant of the update_* functions for applying an AI response:
     // all of a paragraph's selections in one words_data_json rewrite + a
-    // single setProperty (the per-word function rebuilds the whole word-row
-    // Repeater on every call). selections = [{ word_idx, uid }]; the option
-    // index is found by uid. Returns the number of applied selections.
+    // single setProperty (the per-word functions rebuild the whole word-row
+    // Repeater on every call). selections = [{ word_idx, uid, kind,
+    // component_word? }] where kind is "sense" (flat sense choice), "d"
+    // (break-down choice, uid = "d:<n>") or "c" (component sense choice,
+    // keyed by component_word). Per FR-C4 the user-override-wins rule is
+    // enforced per field: a late AI answer never overrides anything but an
+    // earlier AI resolution — checked independently for the word sense, the
+    // break-down and each component. Returns the number of applied selections.
     function apply_word_selections(paragraph_idx, selections) {
         if (paragraph_idx >= paragraph_model.count) return 0;
 
@@ -1625,10 +1657,57 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (wi >= words_data.length) continue;
             let w = words_data[wi];
             if (!w || !w.results) continue;
-            // The word may have been resolved while the request was in
-            // flight (e.g. the user corrected the ComboBox, which now saves
-            // a "user-selected" row): never let a late AI response override
-            // anything but an earlier AI resolution.
+
+            if (sel.kind === "d") {
+                // AI break-down choice: set the index, auto-lock, persist the
+                // break-down string on the compound's own cache row.
+                let dec_resolution = w.deconstruction_resolution || null;
+                if (dec_resolution !== null && dec_resolution !== "ai-selected") continue;
+                let decs = w.deconstructions || [];
+                let n = parseInt(sel.uid.slice(2), 10);
+                if (isNaN(n) || n < 0 || n >= decs.length) continue;
+                w.selected_deconstruction_index = n;
+                w.deconstruction_locked = true;
+                let dec_saved = SuttaBridge.save_gloss_word_deconstruction_cache(
+                    w.original_word,
+                    w.example_sentence || "",
+                    decs[n].words_joined,
+                    "ai-selected");
+                if (dec_saved) {
+                    w.deconstruction_resolution = "ai-selected";
+                }
+                words_data[wi] = w;
+                applied += 1;
+                continue;
+            }
+
+            if (sel.kind === "c") {
+                // AI component sense choice. Answers for components outside
+                // the chosen break-down are stored too (harmless — they only
+                // display when unlocked or after a break-down switch).
+                let cw = sel.component_word;
+                if (!w.component_resolutions) w.component_resolutions = ({});
+                let comp_resolution = w.component_resolutions[cw] || null;
+                if (comp_resolution !== null && comp_resolution !== "ai-selected") continue;
+                if (!w.component_selected_uids) w.component_selected_uids = ({});
+                w.component_selected_uids[cw] = sel.uid;
+                let comp_saved = SuttaBridge.save_gloss_word_cache(
+                    cw,
+                    w.example_sentence || "",
+                    sel.uid,
+                    "ai-selected");
+                if (comp_saved) {
+                    w.component_resolutions[cw] = "ai-selected";
+                }
+                words_data[wi] = w;
+                applied += 1;
+                continue;
+            }
+
+            // Flat sense choice (case (b)). The word may have been resolved
+            // while the request was in flight (e.g. the user corrected the
+            // ComboBox, which now saves a "user-selected" row): never let a
+            // late AI response override anything but an earlier AI resolution.
             let resolution = w.resolution || null;
             if (resolution !== null && resolution !== "ai-selected") continue;
             let opt_idx = -1;
@@ -1721,7 +1800,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             w.example_sentence || "",
             decs[dec_index].words_joined,
             "user-selected");
-        if (!saved) {
+        if (saved) {
+            words_data[word_idx].deconstruction_resolution = "user-selected";
+        } else {
             logger.error("update_deconstruction_selection: failed to save break-down for '" + w.original_word + "'");
         }
 
