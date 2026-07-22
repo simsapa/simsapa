@@ -22,6 +22,7 @@ cxx-qt = { git = "https://github.com/simsapa/cxx-qt.git", rev = "8a597414623c704
 cxx-qt-lib = { git = "https://github.com/simsapa/cxx-qt.git", rev = "8a597414623c704a465f55369ff168f01ca4e93f", features = ["full"] }
 qt-build-utils = { git = "https://github.com/simsapa/cxx-qt.git", rev = "8a597414623c704a465f55369ff168f01ca4e93f" }
 rocket = { version = "0.5", features = ["json"] }
+rocket_ws = "0.1"
 rocket_cors = "0.6.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
