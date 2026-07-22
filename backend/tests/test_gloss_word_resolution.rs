@@ -313,6 +313,160 @@ fn test_annotate_gloss_words_json_rederives_state() {
     assert_eq!(arame["results"][idx]["uid"], serde_json::json!(other_uid.clone()));
 }
 
+// A deconstructor-resolved compound word as serialized in a session's
+// words_data (annotate_gloss_words_json needs no DPD lookup — it works on the
+// serialized grouping fields), with two break-downs and an ambiguous
+// component in each.
+fn compound_word_value(sentence: &str) -> serde_json::Value {
+    serde_json::json!({
+        "original_word": "pañcaggadāyakaṁ",
+        "example_sentence": sentence,
+        "direct_uids": [],
+        "deconstructions": [
+            {"words_joined": "pañca + agga + dāyaka", "components": [
+                {"word": "pañca", "result_uids": ["pañca/dpd"]},
+                {"word": "agga", "result_uids": ["agga-1/dpd", "agga-2/dpd"]},
+                {"word": "dāyaka", "result_uids": ["dāyaka/dpd"]}
+            ]},
+            {"words_joined": "pañca + aggadāyaka", "components": [
+                {"word": "pañca", "result_uids": ["pañca/dpd"]},
+                {"word": "aggadāyaka", "result_uids": ["aggadāyaka-1/dpd", "aggadāyaka-2/dpd"]}
+            ]}
+        ],
+        "results": [
+            {"uid": "pañca/dpd", "word": "pañca"},
+            {"uid": "agga-1/dpd", "word": "agga 1"},
+            {"uid": "agga-2/dpd", "word": "agga 2"},
+            {"uid": "dāyaka/dpd", "word": "dāyaka"},
+            {"uid": "aggadāyaka-1/dpd", "word": "aggadāyaka 1"},
+            {"uid": "aggadāyaka-2/dpd", "word": "aggadāyaka 2"}
+        ]
+    })
+}
+
+// Restored-session annotation for compounds (PRD §11 FR-F1): the break-down
+// choice and component-sense selections are re-resolved from the current
+// cache; where the cache resolves, the serialized values are overwritten with
+// the cached choice + origin, and where it does not, the serialized values
+// are kept but the stale resolution annotations are cleared.
+#[test]
+#[serial]
+fn test_annotate_rederives_compound_state() {
+    use simsapa_backend::helpers::{
+        annotate_gloss_words_json, gloss_cache_word_key, gloss_context_hash,
+        normalize_gloss_context,
+    };
+
+    let db = temp_appdata();
+    let sentence = "so <b>pañcaggadāyakaṁ</b> passati";
+    let hash = gloss_context_hash(&normalize_gloss_context(sentence));
+
+    // Serialized session state with stale annotations: an old ai-selected
+    // break-down (index 0) and a stale ai component resolution.
+    let mut word = compound_word_value(sentence);
+    {
+        let obj = word.as_object_mut().unwrap();
+        obj.insert("selected_deconstruction_index".to_string(), serde_json::json!(0));
+        obj.insert("deconstruction_locked".to_string(), serde_json::json!(false));
+        obj.insert("deconstruction_resolution".to_string(), serde_json::json!("ai-selected"));
+        obj.insert(
+            "component_selected_uids".to_string(),
+            serde_json::json!({"aggadāyaka": "aggadāyaka-1/dpd"}),
+        );
+        obj.insert(
+            "component_resolutions".to_string(),
+            serde_json::json!({"aggadāyaka": "ai-selected"}),
+        );
+    }
+    let input = serde_json::to_string(&vec![word]).unwrap();
+
+    // Empty cache: serialized selection values are kept, stale resolution
+    // annotations are cleared.
+    let out: Vec<serde_json::Value> =
+        serde_json::from_str(&annotate_gloss_words_json(&db, &input).unwrap()).unwrap();
+    let w = &out[0];
+    assert_eq!(w["selected_deconstruction_index"], 0);
+    assert_eq!(w["deconstruction_locked"], false);
+    assert!(w["deconstruction_resolution"].is_null());
+    assert_eq!(w["component_selected_uids"]["aggadāyaka"], "aggadāyaka-1/dpd");
+    assert_eq!(w["component_resolutions"], serde_json::json!({}));
+    assert_eq!(w["context_hash"].as_str().unwrap(), hash);
+
+    // Cache rows written after the session was saved (e.g. from another
+    // session over the same passage): a user break-down choice for the
+    // compound and a user sense choice for the agga component. Component rows
+    // are keyed on the component word + the compound's context hash.
+    let compound_key = gloss_cache_word_key("pañcaggadāyakaṁ");
+    db.upsert_gloss_word_deconstruction(&compound_key, &hash, sentence, "pañca + aggadāyaka", "user-selected")
+        .expect("upsert compound row");
+    db.upsert_gloss_word_cache(&gloss_cache_word_key("agga"), &hash, sentence, "agga-2/dpd", "user-selected")
+        .expect("upsert component row");
+
+    let out: Vec<serde_json::Value> =
+        serde_json::from_str(&annotate_gloss_words_json(&db, &input).unwrap()).unwrap();
+    let w = &out[0];
+    // The cached break-down string maps to index 1 and auto-locks.
+    assert_eq!(w["selected_deconstruction_index"], 1);
+    assert_eq!(w["deconstruction_locked"], true);
+    assert_eq!(w["deconstruction_resolution"], "user-selected");
+    // The resolved component overwrites; the unresolved one keeps its
+    // serialized uid but carries no resolution.
+    assert_eq!(w["component_selected_uids"]["agga"], "agga-2/dpd");
+    assert_eq!(w["component_selected_uids"]["aggadāyaka"], "aggadāyaka-1/dpd");
+    assert_eq!(w["component_resolutions"], serde_json::json!({"agga": "user-selected"}));
+}
+
+// Mixed-word ambiguity gate on restore (PRD §11 FR-F2): a word with direct
+// matches is gated on its direct senses only — one direct sense plus
+// deconstructor-derived component results in the grouped list must not be
+// treated as ambiguous, even when a cache row could match a component uid.
+#[test]
+#[serial]
+fn test_annotate_mixed_word_gates_on_direct_senses() {
+    use simsapa_backend::helpers::{
+        annotate_gloss_words_json, gloss_cache_word_key, gloss_context_hash,
+        normalize_gloss_context,
+    };
+
+    let db = temp_appdata();
+    let sentence = "so <b>sādhūti</b> vatvā";
+    let hash = gloss_context_hash(&normalize_gloss_context(sentence));
+
+    let word = serde_json::json!({
+        "original_word": "sādhūti",
+        "example_sentence": sentence,
+        "selected_index": 0,
+        "direct_uids": ["sādhūti-x/dpd"],
+        "deconstructions": [
+            {"words_joined": "sādhu + iti", "components": [
+                {"word": "sādhu", "result_uids": ["sādhu-1/dpd", "sādhu-2/dpd"]},
+                {"word": "iti", "result_uids": ["iti/dpd"]}
+            ]}
+        ],
+        "results": [
+            {"uid": "sādhūti-x/dpd", "word": "sādhūti x"},
+            {"uid": "sādhu-1/dpd", "word": "sādhu 1"},
+            {"uid": "sādhu-2/dpd", "word": "sādhu 2"},
+            {"uid": "iti/dpd", "word": "iti"}
+        ]
+    });
+    let input = serde_json::to_string(&vec![word]).unwrap();
+
+    // A cache row pointing at a component result must not resolve the word.
+    db.upsert_gloss_word_cache(&gloss_cache_word_key("sādhūti"), &hash, sentence, "sādhu-2/dpd", "user-selected")
+        .expect("upsert row");
+
+    let out: Vec<serde_json::Value> =
+        serde_json::from_str(&annotate_gloss_words_json(&db, &input).unwrap()).unwrap();
+    let w = &out[0];
+    // One direct sense: unambiguous — untouched by resolution.
+    assert_eq!(w["selected_index"], 0);
+    assert!(w.get("resolution").is_none());
+    // Mixed words carry no compound annotations either.
+    assert!(w.get("deconstruction_resolution").is_none());
+    assert!(w.get("component_resolutions").is_none());
+}
+
 // PRD acceptance cases, end-to-end at the backend level:
 // (1) covered by test_seeded_phrase_resolves_arame — a phrase-resolved word
 //     carries resolution "built-in-phrase-match", which the QML payload builder excludes, so

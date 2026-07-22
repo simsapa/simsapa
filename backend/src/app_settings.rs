@@ -541,7 +541,7 @@ There are three kinds of items, distinguished by their "id" suffix:
 
 - Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
 - Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
-- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs; when the item also has a "breakdowns" array, the component occurs only in the break-downs with those indexes. Select the entry whose meaning fits the component as used within the compound in context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
 
 <<WORD_SELECTION_JSON>>
 

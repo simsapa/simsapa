@@ -633,3 +633,47 @@ None — all resolved:
 7. **Engine extraction approach** → reuse the existing pure walk + async
    request layer; dedicated thread + mpsc channel + `AtomicBool` cancel for
    the WS route. See the §8 design notes.
+
+## 11. Amendments (2026-07-22 implementation review)
+
+Found while reviewing the 1.0–6.0 implementation; to be fixed **before 7.0**
+(the API routes freeze the request format and reuse the restore-annotation
+path).
+
+- **FR-F1. Restore parity for compound selections.** Break-down and
+  component-sense choices must be re-resolved from the *current* cache on
+  session restore, exactly like direct-word senses. Today
+  `annotate_gloss_words_json()` (`backend/src/helpers.rs`) — despite its
+  "never trust the serialized session's annotations" contract — only
+  re-resolves the flat `selected_index`; for deconstructor-resolved words it
+  preserves the serialized `selected_deconstruction_index` /
+  `deconstruction_locked` / `component_selected_uids` /
+  `*_resolution` fields untouched. (The pre-fetch is *not* part of the gap:
+  `fetch_for_pairs` delegates to the hash-based `fetch_for_context_hashes`,
+  so component rows — keyed on the component word key + the compound's
+  context hash — are already retrieved; annotate just never used them.)
+  Fix: factor the compound-resolution block of `process_word_for_glossing()`
+  into a shared helper and apply it in annotate.
+  Mirror the direct-word restore contract: cache resolves → set
+  index/lock/uids + origin; cache does not resolve → keep the serialized
+  values but null the resolution field(s) (clearing stale shield states).
+- **FR-F2. Mixed-word ambiguity gate on restore (bug).**
+  `annotate_gloss_words_json()` gates on `results.len() > 1` over the full
+  grouped result list, while the live path filters to `direct_uids` first.
+  A mixed word with **one** direct sense plus component results is wrongly
+  treated as ambiguous on restore, and a cached component uid could resolve
+  `selected_index` onto a component result. Apply the same
+  direct-`sense_results` filter as `process_word_for_glossing()`.
+- **FR-F3. Word-based break-down identifiers in AI items.** The answer
+  channel is already word-based (options answered by `word` copied verbatim;
+  break-down items answer with the `words_joined` string; `d:<n>` pseudo-uids
+  and item ids are echo-only). But the component-item annotations force
+  numeric-index joins the model must reason over: `deconstructions:
+  [{index, breakdown}]` and `breakdowns: [0, 1]`. No consumer reads those
+  indexes (the apply path uses the option uid and `component_word`), so
+  replace both with plain break-down strings: `deconstructions: ["sādhu +
+  iti", …]` and `breakdowns: ["…"]` (membership subset). Update the two
+  default prompts accordingly, and add an instruction that component-sense
+  answers should be consistent with the break-down the model selected for
+  that compound. Agent-check CLI (Strict path) and unit tests updated in the
+  same pass.

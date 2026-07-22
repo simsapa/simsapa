@@ -190,6 +190,7 @@ fn test_import_skips_review_entries_and_accepts_agent_checked() {
             word: "w1".into(), context_hash: "h1".into(), context_snippet: "c".into(),
             selected_uid: "u1/dpd".into(), origin: "built-in-agent-checked".into(),
             confidence: Some("review".into()), note: Some("uncertain between senses".into()),
+            ..Default::default()
         },
         // A confident agent-checked entry imports with its origin.
         GlossWordCacheExportEntry {

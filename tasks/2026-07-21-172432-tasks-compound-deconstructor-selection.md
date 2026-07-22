@@ -139,6 +139,55 @@ Manual break-down change (`onActivated`) persists the index + saves a `user-sele
 - [x] 6.8 Unit tests in `helpers.rs`: items builder for compound fixtures (case partition: mixed word emits only its (b) sense item; `d` item only for ≥ 2 break-downs; `c<k>` id stability under skipping and component dedup across break-downs); parser accepting `d:<n>` by uid and by break-down string, rejecting out-of-range; Strict-mode unanswered `d`/`c` item errors.
 - [x] 6.9 Run the new tests and `make build -B`.
 
+### 6b.0 Review fixes: compound restore parity + word-based AI break-down identifiers
+
+**Depends on:** 6.0. **Must land before 7.0** (the API routes freeze the request
+format and reuse `annotate_gloss_words_json`). PRD §11 (FR-F1/F2/F3).
+**Specs:** Session restore must re-resolve compound state from the *current*
+cache like direct senses: `annotate_gloss_words_json()` currently only
+re-resolves `selected_index` and never fetches component rows (pairs are built
+from surface words; component rows are keyed `(component_word_key, compound
+context_hash)`). Restore contract mirrors direct words: cache resolves → set
+`selected_deconstruction_index` + `deconstruction_locked` +
+`component_selected_uids` + resolution origins; no resolve → keep serialized
+values, null the resolution field(s). Also fix the mixed-word gate (full
+`results.len() > 1` instead of the direct-`sense_results` filter — a mixed word
+with one direct sense can wrongly resolve onto a component result). AI format:
+replace the numeric-index annotations on component items
+(`deconstructions: [{index, breakdown}]`, `breakdowns: [0, 1]`) with plain
+break-down strings; answers are already word-based (`d:<n>` pseudo-uids and
+item ids are echo-only and stay).
+
+- [x] 6b.1 Factor the compound-resolution block of `process_word_for_glossing()`
+  (`backend/src/helpers.rs` — break-down choice via
+  `resolve_gloss_deconstruction` + per-component `resolve_gloss_word_selection`)
+  into a shared helper (`resolve_compound_selections()` returning a
+  `CompoundResolution`); `process_word_for_glossing()` behavior unchanged.
+- [x] 6b.2 Extend `annotate_gloss_words_json()`: for deconstructor-resolved
+  words apply the shared helper per the restore contract above (resolve →
+  overwrite + origin; no resolve → keep values, null
+  `deconstruction_resolution` / drop the stale `component_resolutions`
+  entries). *(No pre-fetch change was needed: `fetch_for_pairs` already
+  delegates to the hash-based `fetch_for_context_hashes`, which retrieves
+  component rows via the compound's shared context hash.)*
+- [x] 6b.3 Fix the mixed-word ambiguity gate in `annotate_gloss_words_json()`:
+  filter to direct `sense_results` (mirroring `process_word_for_glossing()`)
+  before the `> 1` check and resolution.
+- [x] 6b.4 Word-based AI annotations: in `build_word_selection_items()` emit
+  `deconstructions` as an array of `words_joined` strings and `breakdowns`
+  (subset membership) as break-down strings; verified no consumer reads the
+  numeric fields (QML apply uses option uid + `component_word`; the agent-check
+  CLI reads `deconstructions` from words_data, not from items — only the
+  `/gloss-agent-check` SKILL.md item description needed updating). Updated the
+  Word Selection request prompt (`default_system_prompts()`): string-based
+  annotations + component answers consistent with the chosen break-down.
+- [x] 6b.5 Tests: restore round-trip through `annotate_gloss_words_json()` for
+  a compound (`test_annotate_rederives_compound_state`,
+  `test_annotate_mixed_word_gates_on_direct_senses` in
+  `backend/tests/test_gloss_word_resolution.rs`) and items-builder assertions
+  updated for the string-based annotations. Full backend suite + `make build
+  -B` clean (one pre-existing unrelated fulltext-search failure).
+
 ### 7.0 Localhost API routes: POST /gloss_text and the word-selection WebSocket
 
 **Depends on:** 2.0 (shared paragraph processor), 6.0 (items builder/parser).

@@ -70,9 +70,11 @@ Never start a second file before the current one has applied successfully.
    - **Component items** (`…c<k>`): the item's `word` is the compound and
      `component_word` names one of its component words; the options are DPD
      senses for that component. The item's `deconstructions` array lists the
-     compound's break-downs; a `breakdowns` array (when present) gives the
-     indexes of the break-downs this component occurs in. Pick the sense the
-     component has **within the compound** in this context.
+     compound's break-downs as strings; a `breakdowns` array (when present)
+     lists the break-down strings this component occurs in. Pick the sense the
+     component has **within the compound** in this context, consistent with
+     the break-down you selected for that compound (when it has a break-down
+     item).
 
 3. **Decide every item** using the context sentence, the `source_uid` (sutta-level
    knowledge, e.g. standard formulas), and the option summaries. Apply the
