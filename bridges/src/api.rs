@@ -25,7 +25,7 @@ use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::helpers::{create_or_update_linux_desktop_icon_file, query_text_to_uid_field_query, verse_sutta_ref_to_uid, normalize_human_word_uid};
 use simsapa_backend::helpers::{process_all_paragraphs, build_word_selection_items, WordSelectionBuildMode, WordSelectionParagraphInput, parse_word_selection_response, WordSelectionParseMode};
 use simsapa_backend::logger::{info, warn, error, profile};
-use simsapa_backend::app_settings::SuttaDisplayDefaults;
+use simsapa_backend::app_settings::{SuttaDisplayDefaults, ModelUsageEntry};
 use simsapa_backend::sutta_display::parse_display_overrides;
 use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea};
 use simsapa_backend::types::{AllParagraphsProcessingInput, WordProcessingOptions, AllParagraphsProcessingResult};
@@ -2137,6 +2137,113 @@ fn word_selection_ws(ws: ws::WebSocket) -> ws::Channel<'static> {
     }))
 }
 
+/// Request body for `POST /set_ai_provider_key`. Configures a provider's API key
+/// and enablement so the `/word_selection_ws` engine (which uses the app's saved
+/// settings, not a per-request key) can reach that provider. `model` is optional
+/// — an id to enable (added if unknown). Empty `api_key` clears the key and
+/// disables the provider.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetAiProviderKeyRequest {
+    pub provider: String,
+    pub api_key: String,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// Response for `POST /set_ai_provider_key`. Never echoes the key — only whether
+/// one is set, the provider's enabled state, and the resulting fallback sequence.
+#[derive(Debug, Clone, Serialize)]
+pub struct SetAiProviderKeyResponse {
+    pub provider: String,
+    pub enabled: bool,
+    pub has_key: bool,
+    pub fallback_sequence: Vec<ModelUsageEntry>,
+}
+
+/// POST /set_ai_provider_key
+/// Dev/demo convenience: set a provider's API key + enable it so the
+/// word-selection WebSocket has a working model. Prioritizes the provider's
+/// entries to the front of the fallback sequence so a just-configured provider
+/// is tried first. 400 on an unparseable body.
+#[post("/set_ai_provider_key", data = "<body>")]
+fn set_ai_provider_key(body: String) -> Result<Json<SetAiProviderKeyResponse>, Status> {
+    let req: SetAiProviderKeyRequest = serde_json::from_str(&body).map_err(|e| {
+        error(&format!("set_ai_provider_key(): bad request: {}", e));
+        Status::BadRequest
+    })?;
+
+    let app_data = get_app_data();
+    let provider = req.provider.trim().to_string();
+    let key = req.api_key.trim().to_string();
+    let enable = !key.is_empty();
+
+    app_data.set_provider_api_key(&provider, &key);
+    // Enabling a provider syncs its enabled models into the fallback list;
+    // disabling drops them.
+    app_data.set_provider_enabled(&provider, enable);
+
+    if enable {
+        if let Some(model) = req.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+            let known = app_data.get_providers().iter()
+                .find(|p| p.name.as_str() == provider)
+                .map(|p| p.models.iter().any(|m| m.model_name == model))
+                .unwrap_or(false);
+            if known {
+                app_data.set_provider_model_enabled(&provider, model, true);
+            } else {
+                app_data.add_provider_model(&provider, model);
+            }
+        }
+
+        // Move this provider's entries to the front so the demo uses it first,
+        // rather than failing auth on other enabled providers with no key.
+        let seq = app_data.get_ai_fallback_sequence();
+        let (mut mine, rest): (Vec<ModelUsageEntry>, Vec<ModelUsageEntry>) =
+            seq.into_iter().partition(|e| e.provider == provider);
+        if !mine.is_empty() {
+            mine.extend(rest);
+            let json = serde_json::to_string(&mine).unwrap_or_else(|_| "[]".to_string());
+            app_data.set_ai_fallback_sequence_json(&json);
+        }
+    }
+
+    let enabled = app_data.is_provider_enabled(&provider);
+    let has_key = !app_data.get_provider_api_key(&provider).is_empty();
+    let fallback_sequence = app_data.get_ai_fallback_sequence();
+
+    info(&format!("set_ai_provider_key(): provider={} enabled={} has_key={}", provider, enabled, has_key));
+
+    Ok(Json(SetAiProviderKeyResponse { provider, enabled, has_key, fallback_sequence }))
+}
+
+/// Response for `GET /ai_provider_key`. Returns the stored key value so a
+/// trusted localhost client (the gloss demo) can prefill its key field. The
+/// key is read from the app's saved settings (or the provider's env var).
+#[derive(Debug, Clone, Serialize)]
+pub struct GetAiProviderKeyResponse {
+    pub provider: String,
+    pub enabled: bool,
+    pub has_key: bool,
+    pub api_key: String,
+}
+
+/// GET /ai_provider_key?provider=Gemini
+/// Read a provider's currently-saved API key + enabled state (for a localhost
+/// demo to prefill its key field on load). Defaults to `Gemini`.
+#[get("/ai_provider_key?<provider>")]
+fn get_ai_provider_key(provider: Option<String>) -> Json<GetAiProviderKeyResponse> {
+    let provider = provider.unwrap_or_else(|| "Gemini".to_string());
+    let app_data = get_app_data();
+    let api_key = app_data.get_provider_api_key(&provider);
+    let enabled = app_data.is_provider_enabled(&provider);
+    Json(GetAiProviderKeyResponse {
+        has_key: !api_key.is_empty(),
+        api_key,
+        enabled,
+        provider,
+    })
+}
+
 #[rocket::main]
 #[unsafe(no_mangle)]
 pub async extern "C" fn start_webserver() {
@@ -2207,6 +2314,8 @@ pub async extern "C" fn start_webserver() {
             health,
             gloss_text,
             word_selection_ws,
+            set_ai_provider_key,
+            get_ai_provider_key,
         ])
         .manage(assets_files)
         .manage(db_manager)

@@ -201,11 +201,11 @@ item ids are echo-only and stay).
 - [x] 7.6 Live verification with the running app: `curl` the `/gloss_text` route (compound-containing text; assert grouped fields in the JSON) and drive the WebSocket with `websocat` (capture a transcript for the docs); verify error path with a bogus request and cancel mid-run.
 - [x] 7.7 Run backend tests and `make build -B`.
 
-### 8.0 Documentation and project map updates
+### 8.0 Documentation and project map updates ✅
 
 **Depends on:** all previous (documents the final state). Doc-only changes: no tests/build needed.
 
-- [ ] 8.1 `docs/simsapa-localhost-api-search-endpoints.md`: add `POST /gloss_text` and `GET /word_selection_ws` — request/response examples (incl. a compound word's grouped structure), the full WebSocket message protocol (types, ordering, errors, cancel), and the agent quick-start recipe ("Glossing…" → "Word Selection…" two-step client with progress + error display, with the captured transcript).
-- [ ] 8.2 `docs/gloss-ai-word-selection.md`: grouped lookup structure, the FR-A5 case partition (mixed words stay compact; component sub-rows for deconstructor-resolved words), the `d` (≥ 2 break-downs only) / `c<k>` item id scheme and pseudo-uid options, lock semantics (AI choice auto-locks; user override wins per field), the compound-row (`deconstruction`, empty uid) and component-row cache semantics with the context-hash batch fetch, updated prompts, the data-bank format regeneration.
-- [ ] 8.3 `PROJECT_MAP.md`: new files (`DeconstructorSelector.qml`, `DeconstructorUtils.qml`, `ai_engine.rs`, migration) and moved responsibilities (`process_all_paragraphs` in backend).
-- [ ] 8.4 CLAUDE.md doc-index blurbs (edit `AGENTS.md`, the symlink target) for the two updated docs; note the new appdata migration in the migrations section only if its guidance changes.
+- [x] 8.1 `docs/simsapa-localhost-api-search-endpoints.md`: add `POST /gloss_text` and `GET /word_selection_ws` — request/response examples (incl. a compound word's grouped structure), the full WebSocket message protocol (types, ordering, errors, cancel), and the agent quick-start recipe ("Glossing…" → "Word Selection…" two-step client with progress + error display, with the captured transcript).
+- [x] 8.2 `docs/gloss-ai-word-selection.md`: grouped lookup structure, the FR-A5 case partition (mixed words stay compact; component sub-rows for deconstructor-resolved words), the `d` (≥ 2 break-downs only) / `c<k>` item id scheme and pseudo-uid options, lock semantics (AI choice auto-locks; user override wins per field), the compound-row (`deconstruction`, empty uid) and component-row cache semantics with the context-hash batch fetch, updated prompts, the data-bank format regeneration.
+- [x] 8.3 `PROJECT_MAP.md`: new files (`DeconstructorSelector.qml`, `DeconstructorUtils.qml`, `ai_engine.rs`, migration) and moved responsibilities (`process_all_paragraphs` in backend).
+- [x] 8.4 CLAUDE.md doc-index blurbs (edit `AGENTS.md`, the symlink target) for the two updated docs; note the new appdata migration in the migrations section only if its guidance changes.

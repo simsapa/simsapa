@@ -821,13 +821,15 @@ as the context windows, so the two sides cannot drift.
 |---|---|
 | Normalization, hashing, resolution, export/import, response parsing | `backend/src/helpers.rs` |
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
-| Migration | `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` (also appended to `upgrade_appdata_schema()`) |
+| Migration | `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/`; deconstruction cache column: `2026-07-21-173000_gloss_cache_deconstruction/` (both appended to `upgrade_appdata_schema()`) |
+| Grouped DPD lookup | `backend/src/db/dpd.rs` (`dpd_lookup_grouped()`), structs in `backend/src/types.rs` (`GroupedDpdLookup` / `Deconstruction` / `DeconstructionComponent`) — see §9 |
+| AI fallback engine (Qt-free) | `bridges/src/ai_engine.rs` (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
 | Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
-| UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml` |
+| UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml`; shared compound UI: `assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
@@ -836,3 +838,156 @@ as the context windows, so the two sides cannot drift.
 No per-write `ANALYZE` for the two new tables (same rationale as
 `gloss_prompts_history`; see
 [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md)).
+
+## 9. Compound deconstructor selection
+
+PRD: `tasks/2026-07-21-172432-prd---compound-deconstructor-selection.md`.
+
+Many Pāli words are sandhi compounds (*pañcaggadāyakaṁ*) or iti-sandhi forms
+(*sādhūti*, *atthaññe*). The DPD deconstructor offers one or more **break-downs**
+(`pañca + agga + dāyakaṁ`, `pañca + gadā + yakaṁ`, …). Previously the deconstructor
+list was purely cosmetic (a WordSummary ComboBox with no effect) and all component
+results were flattened into one deduped list, so a compound could only ever be
+glossed as **one** of its parts. This feature makes break-downs a first-class,
+structured part of DPD lookup and glosses **every** component.
+
+### Grouped lookup
+
+`dpd_lookup_grouped()` (`backend/src/db/dpd.rs`) returns `GroupedDpdLookup`
+(`backend/src/types.rs`):
+
+```jsonc
+{
+  "query": "sādhūti",
+  "results": [ /* flat SearchResult list: direct first, then break-down-derived, deduped by uid */ ],
+  "deconstructions": [
+    { "words_joined": "sādhu + iti",
+      "components": [ { "word": "sādhu", "result_uids": ["…/dpd"] },
+                      { "word": "iti",   "result_uids": ["…/dpd"] } ] }
+  ],
+  "direct_uids": [ "…/dpd" ]   // uids found via direct / uid / i2h / stem match
+}
+```
+
+Membership is **many-to-many**: a uid may be in `direct_uids` and in several
+break-downs. It preserves the flat `dpd_lookup()` phase order but removes the
+`results.is_empty()` gate for the deconstructor phase, so component results are
+fetched **even when direct results exist**. `deconstructor_exact_only` is a
+parameter (gloss passes `true`, WordSummary `false`). `dpd_lookup_grouped_json()`
+is the serialized form; `dpdLookupGroupedReady`/`_async` the Qt async bridge fn.
+
+### The FR-A5 rendering / AI-item case partition
+
+How a word **resolved** decides its Gloss-tab rendering and which AI items it
+emits — this is what keeps iti-sandhi-heavy text from crowding the gloss:
+
+- **(a) one sense** → static text, no AI item.
+- **(b) ≥ 2 direct senses** (`direct_uids` non-empty) → today's single sense
+  ComboBox + one `p<pi>w<wi>` AI sense item.
+- **(c) deconstructor-resolved, one break-down** (`direct_uids` empty, exactly
+  one deconstruction) → **no selector row**; an indented (~20 px) sub-row per
+  component word, each with its own sense ComboBox (≥ 2 senses) or static text.
+- **(d) deconstructor-resolved, ≥ 2 break-downs** → as (c) plus a
+  `DeconstructorSelector` row (break-down ComboBox + lock).
+
+**Mixed words** (both direct results *and* deconstructions, e.g. *sādhūti* — the
+127,791 both-kind lookup keys) render per (a)/(b): the direct match resolves them,
+**no compound UI, no extra AI items**. Their `deconstructions` are still populated
+for WordSummary / FulltextResults / the API. "Deconstructor-resolved" ≡
+`direct_uids` empty ∧ `deconstructions` non-empty.
+
+### The `ProcessedWord` fields and shared selection UI
+
+`ProcessedWord` gains (`#[serde(default)]`): `deconstructions`, `direct_uids`,
+`selected_deconstruction_index: Option<usize>` (`None` also for a single
+break-down — trivially selected), `deconstruction_locked: bool`,
+`component_selected_uids: HashMap<String,String>` (component word → chosen result
+uid; uid-based so it survives lock-filtering and break-down switches).
+
+`DeconstructorSelector.qml` (ComboBox + checkable lock, `system-uicons--lock*.png`)
+and `DeconstructorUtils.qml` (pure `visible_uids()` / `breakdowns_of_uid()`; a
+plain instantiated component like `Logger`, **not** a singleton) are shared by
+GlossTab, WordSummary and FulltextResults. **Locked** = show `direct_uids` ∪ the
+selected break-down's component uids; **unlocked** = the full list (today's
+behavior). Break-down and sense ComboBoxes change only via `onActivated`. In
+`FulltextResults.qml` the selector filters the loaded page client-side and its
+state resets on a **new query only** (keyed on query-text change in
+`SuttaSearchWindow.qml`, never on page navigation).
+
+### AI item id scheme (FR-C2)
+
+The flat-suffix scheme reuses the existing `build_word_selection_items()` /
+`parse_word_selection_response()` option-validation machinery unchanged:
+
+- **`p<pi>w<wi>`** — sense item over the direct results (case (b) only).
+- **`p<pi>w<wi>d`** — break-down choice, emitted **only for ≥ 2 break-downs**.
+  Options reuse the standard shape with pseudo-uids
+  `{"uid":"d:<n>","word":"<words_joined>","summary":""}`. Applying `d:<n>` sets
+  `selected_deconstruction_index = n` **and** `deconstruction_locked = true`
+  (auto-lock), caching the break-down **string**. Single break-down → no item.
+- **`p<pi>w<wi>c<k>`** — one per **ambiguous** component, `k` = the component's
+  position in the deduplicated, first-appearance-ordered enumeration of **all**
+  component words across all break-downs (computed from the full enumeration so
+  skipping never shifts ids). Each `c` item carries an explicit
+  **`component_word`** field so the QML apply path writes
+  `component_selected_uids[component_word]` by reading the item, never by
+  re-deriving `k`. Annotations are **plain break-down strings** (`deconstructions:
+  ["sādhu + iti", …]`, `breakdowns: ["…"]` subset membership) — not numeric
+  indexes (FR-F3).
+
+A **late AI response never clobbers** a fresher `user-selected` break-down or
+component/word sense, enforced per field independently. The two default Word
+Selection prompts (`default_system_prompts()`, `backend/src/app_settings.rs`)
+describe the `d`/`c` items, the pseudo-uids and the string annotations.
+
+### Cache: the compound row and component rows (FR-C5)
+
+`gloss_word_context_cache` gains a nullable **`deconstruction`** column (migration
+`2026-07-21-173000_gloss_cache_deconstruction`). For a deconstructor-resolved
+compound:
+
+- The **compound's own row** (`word` = the compound surface-word key) stores the
+  chosen break-down **string** in `deconstruction` with an **empty `selected_uid`**.
+  Lookup helpers treat an empty-uid row as deconstruction-only, **never** a sense
+  match. The string (not the index) is stored so it survives DPD break-down list
+  reordering; restore resolves the index by matching the string.
+- **Component-sense rows** are ordinary cache rows keyed
+  `(gloss_cache_word_key(component_word), context_hash)` where `context_hash` is
+  the **compound occurrence's** hash — components share the compound's ±50-char
+  window. All tier/shield/precedence semantics apply per component row.
+
+Because component words are only known *after* the grouped lookup,
+`GlossResolutionData::fetch` uses a **context-hash-based batch query**
+(`fetch_for_context_hashes`, `WHERE context_hash IN (…)`; hashes are computable
+pre-lookup) so component rows are pre-fetched without knowing component words in
+advance. `resolve_compound_selections()` (`backend/src/helpers.rs`) is the shared
+resolver used by both `process_word_for_glossing()` (live) and
+`annotate_gloss_words_json()` (session restore) — restore re-resolves compound
+state from the *current* cache exactly like direct senses (FR-F1), and gates
+mixed-word ambiguity on the direct `sense_results` (FR-F2).
+
+### Exports and the data bank
+
+Exports (HTML/Markdown/Org/DOCX/Anki) render cases (a)/(b) as today (the selected
+sense) and cases (c)/(d) as one line per **visible** component (lock filtering
+applied) with that component's selected sense. All state persists in
+`words_data_json`, so JSON export / Open JSON and history restore carry it.
+
+The gloss data-bank format (`cli/src/gloss_agent_check.rs`, the `/gloss-agent-check`
+skill, `import-gloss-data`) handles the new item/response formats incl. `d` items
+and imports the `deconstruction` value. Pre-existing `candidates/` session files
+were **regenerated** with `gloss-corpus-explore` (no compat mapping — pre-release).
+
+### External clients: the localhost API + demo page
+
+The whole gloss pipeline is exposed over the localhost API for external clients:
+`POST /gloss_text` (synchronous glossing → grouped `ProcessedWord` JSON) and the
+`GET /word_selection_ws` WebSocket (the AI Word Selection engine, streaming
+progress). The WebSocket uses the app's **saved** provider keys, so
+`POST /set_ai_provider_key` sets a provider's key + enables it first.
+[`scripts/gloss_demo.html`](../scripts/gloss_demo.html) is a self-contained
+demo — textarea → **Gloss** button → vocabulary list, with a Gemini key field
+and an AI-word-selection checkbox that renders the same sense dropdowns and
+compound component sub-rows as the QML tab. Full protocol + the demo source:
+[simsapa-localhost-api-search-endpoints.md](./simsapa-localhost-api-search-endpoints.md)
+§16.
