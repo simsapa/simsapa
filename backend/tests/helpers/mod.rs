@@ -115,6 +115,8 @@ pub fn get_contains_params_with_lang(lang: Option<String>) -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 
@@ -139,6 +141,8 @@ pub fn get_dict_params_with_mode_and_lang(mode: SearchMode, lang: Option<String>
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 
@@ -163,6 +167,8 @@ pub fn get_uid_params_with_lang(lang: Option<String>) -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 
@@ -187,6 +193,8 @@ pub fn get_uid_params() -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 
@@ -214,6 +222,8 @@ pub fn create_test_task(query_text: &str, search_mode: SearchMode) -> SearchQuer
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     };
 
     SearchQueryTask::new(

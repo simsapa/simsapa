@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -117,6 +118,17 @@ pub struct SearchParams {
     /// (diacritic-insensitive) is dropped. `None`/empty = no exclusion.
     #[serde(default)]
     pub snippet_exclude: Option<Vec<String>>,
+    /// Index of the break-down the user picked in the `DeconstructorSelector`.
+    /// Only meaningful on the Dictionary DPD-Lookup path, where it selects
+    /// which break-down's component results the lock filter keeps.
+    #[serde(default)]
+    pub deconstruction_selected_index: Option<usize>,
+    /// Whether the break-down selection is locked. When true the regular DPD
+    /// result list is filtered to `direct_uids` ∪ the selected break-down's
+    /// components, in Rust, *before* pagination — so pages stay dense and the
+    /// reported total matches what the user can reach.
+    #[serde(default)]
+    pub deconstruction_locked: bool,
 }
 
 impl Default for SearchParams {
@@ -140,6 +152,8 @@ impl Default for SearchParams {
             dict_source_uids: None,
             show_all_snippets: false,
             snippet_exclude: None,
+            deconstruction_selected_index: None,
+            deconstruction_locked: false,
         }
     }
 }
@@ -369,6 +383,47 @@ pub struct GroupedDpdLookup {
     pub results: Vec<SearchResult>,
     pub deconstructions: Vec<Deconstruction>,
     pub direct_uids: Vec<String>,
+}
+
+impl GroupedDpdLookup {
+    /// The flat `results` list with the break-down lock filter applied, ready
+    /// to be paginated. This is the Rust equivalent of the QML
+    /// `DeconstructorUtils.visible_uids()` / `uid_is_visible()` pair, which it
+    /// replaces as the authoritative filter for the Dictionary DPD-Lookup
+    /// result page; see docs/search-snippet-highlight-pipeline.md (the
+    /// three-stream Dictionary page).
+    ///
+    /// - Unlocked, or no break-downs: the full list, unchanged.
+    /// - Locked: rows whose uid is in `direct_uids` ∪ the selected
+    ///   break-down's component `result_uids`, **in `results` order** (not in
+    ///   visible-uid order — matching the QML, which iterates the page and
+    ///   skips non-visible rows).
+    /// - Locked with a `None` or out-of-range index: `direct_uids` **only** —
+    ///   exact parity with `visible_uids()`, whose bounds check simply skips
+    ///   the component loop. A malformed request degrades to "direct matches
+    ///   only" rather than to a silently different break-down.
+    pub fn ordered_filtered_results(
+        &self,
+        selected_index: Option<usize>,
+        locked: bool,
+    ) -> Vec<SearchResult> {
+        if !locked || self.deconstructions.is_empty() {
+            return self.results.clone();
+        }
+
+        let mut visible: HashSet<&str> = self.direct_uids.iter().map(|i| i.as_str()).collect();
+        if let Some(dec) = selected_index.and_then(|idx| self.deconstructions.get(idx)) {
+            for component in &dec.components {
+                visible.extend(component.result_uids.iter().map(|i| i.as_str()));
+            }
+        }
+
+        self.results
+            .iter()
+            .filter(|i| visible.contains(i.uid.as_str()))
+            .cloned()
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

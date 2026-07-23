@@ -265,6 +265,8 @@ fn search_finds_uid(query: &str, mode: SearchMode, want_uid: &str) -> bool {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     };
 
     let mut task = SearchQueryTask::new(
@@ -362,6 +364,8 @@ fn search_has_results(query: &str, mode: SearchMode) -> bool {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     };
 
     let mut task = SearchQueryTask::new(

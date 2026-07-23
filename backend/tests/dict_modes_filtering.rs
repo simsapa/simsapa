@@ -37,6 +37,8 @@ fn dict_params(mode: SearchMode) -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 
@@ -60,6 +62,8 @@ fn suttas_params(mode: SearchMode) -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 

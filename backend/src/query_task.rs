@@ -106,6 +106,10 @@ pub struct SearchQueryTask<'a> {
     pub dict_source_uids: Option<Vec<String>>,
     pub show_all_snippets: bool,
     pub snippet_exclude: Option<Vec<String>>,
+    /// Break-down selection + lock for the Dictionary DPD-Lookup result page.
+    /// See `dpd_lookup_full()`.
+    pub deconstruction_selected_index: Option<usize>,
+    pub deconstruction_locked: bool,
     pub snippet_chars_before: usize,
     pub snippet_chars_after: usize,
     pub snippet_all_chars_before: usize,
@@ -173,6 +177,8 @@ impl<'a> SearchQueryTask<'a> {
             dict_source_uids: params.dict_source_uids.clone(),
             show_all_snippets: params.show_all_snippets,
             snippet_exclude: params.snippet_exclude.clone(),
+            deconstruction_selected_index: params.deconstruction_selected_index,
+            deconstruction_locked: params.deconstruction_locked,
             snippet_chars_before: get_app_data().get_snippet_chars_before(),
             snippet_chars_after: get_app_data().get_snippet_chars_after(),
             snippet_all_chars_before: get_app_data().get_snippet_all_chars_before(),
@@ -1714,6 +1720,40 @@ impl<'a> SearchQueryTask<'a> {
         !self.lang.is_empty() && self.lang != "Language" && self.lang != "pli"
     }
 
+    /// Whether the Dictionary DPD-Lookup ordering + lock filter applies. This
+    /// is the whole scope gate for the feature; nothing else uses the grouped
+    /// lookup for its result rows.
+    ///
+    /// Combined never arrives here as `Combined`: `SuttaBridge` sets
+    /// `dpd_params.mode = SearchMode::DpdLookup` before spawning the DPD
+    /// sub-query and the localhost API remaps too (`query_task` errors on
+    /// `Combined + Dictionary`), so an extra `| Combined` arm would be dead
+    /// code implying the opposite.
+    fn use_grouped_dpd_ordering(&self) -> bool {
+        self.search_area == SearchArea::Dictionary && self.search_mode == SearchMode::DpdLookup
+    }
+
+    /// The regular DPD result stream — stream 1 of the Dictionary page. The
+    /// other two streams (bold commentary definitions, and on Combined the
+    /// Fulltext-Match rows) are appended downstream and are deliberately left
+    /// lazy and unfiltered: the lock chooses a *deconstruction of the compound
+    /// into sub-words*, so it scopes only the stream that displays those
+    /// sub-words. See docs/search-snippet-highlight-pipeline.md.
+    ///
+    /// On the Dictionary DPD-Lookup path the grouped lookup replaces the flat
+    /// one **unconditionally** — no "does it deconstruct?" pre-check and no
+    /// flat fallback. When `deconstructions` is empty the two return identical
+    /// lists in identical order (the phase sequences are structurally the same
+    /// and `deconstructor_exact_only = false` is a strict superset of `true`);
+    /// see the PRD's "Equivalence proof", guarded by the equivalence test in
+    /// `tests/test_deconstructor_result_pagination.rs`. For a deconstructing
+    /// query the grouped list is a *superset* of the flat one, which is the
+    /// point of the feature: the result page then agrees with WordSummary and
+    /// with the break-downs the selector offers.
+    ///
+    /// The whole list is materialised here either way (it always was), and it
+    /// is bounded — the DB-wide worst case is 127 rows. Callers slice it, so
+    /// their totals become the filtered DPD count automatically.
     fn dpd_lookup_full(&self) -> Result<Vec<SearchResult>, Box<dyn Error>> {
         // DPD entries are Pāli headwords; a non-Pāli language filter excludes
         // them all (e.g. selecting "en" yields nothing from DPD Lookup).
@@ -1721,6 +1761,26 @@ impl<'a> SearchQueryTask<'a> {
             return Ok(Vec::new());
         }
         let app_data = get_app_data();
+
+        if self.use_grouped_dpd_ordering() {
+            // Same arguments as the selector's grouped call in
+            // `SuttaBridge::results_page()`, via the shared memo — the
+            // break-downs the user sees and the uids the filter keeps must be
+            // computed from the same lookup.
+            let grouped = app_data.dbm.dpd.dpd_lookup_grouped_memo(
+                &self.query_text,
+                false,
+                true,
+                false,
+                self.uid_prefix.as_deref(),
+                self.uid_suffix.as_deref(),
+            )?;
+            return Ok(grouped.ordered_filtered_results(
+                self.deconstruction_selected_index,
+                self.deconstruction_locked,
+            ));
+        }
+
         let results = app_data.dbm.dpd.dpd_lookup(
             &self.query_text,
             false,

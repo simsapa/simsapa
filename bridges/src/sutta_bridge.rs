@@ -1736,6 +1736,8 @@ impl qobject::SuttaBridge {
                     dict_source_uids: None,
                     show_all_snippets: false,
                     snippet_exclude: None,
+                    deconstruction_selected_index: None,
+                    deconstruction_locked: false,
                 };
 
                 let mut query_task = SearchQueryTask::new(
