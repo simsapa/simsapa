@@ -344,7 +344,108 @@ exclusion) in the backend on the `results_page` path — never move it into
 
 ---
 
-## 9. Where to look in the code
+## 9. The Dictionary result page is three streams (DPD Lookup / Combined)
+
+A Dictionary result page is not one list. It is a **contiguous sequence of
+streams**, spliced by `split_page_across_streams()` (`query_task.rs`), which
+derives every downstream offset from the length of the stream in front of it:
+
+| mode | stream 1 (front) | stream 2 | stream 3 |
+|---|---|---|---|
+| DPD Lookup | regular DPD rows | bold definitions | — |
+| Combined | regular DPD rows | bold definitions | Fulltext Match |
+
+Only **stream 1** is deconstructor-derived. Streams 2 and 3 stay **lazily
+paged** (SQL `LIMIT/OFFSET` / Tantivy paging) and are never eagerly
+materialised — `vāti` alone has 6118 Dictionary fulltext hits (3.3 s / 3.7 MB
+to collect), and a bold-definition stream can run to ~30 k rows. Stream 1 is
+bounded by construction (DB-wide worst case 127 rows, ~85 ms) and *is* built in
+full on every page request.
+
+### 9a. Ordering and the break-down lock (stream 1 only, in Rust)
+
+On `search_area == Dictionary && search_mode == DpdLookup` — the gate is
+`SearchQueryTask::use_grouped_dpd_ordering()`; Combined never arrives as
+`Combined`, both `sutta_bridge.rs` and `api.rs` remap it to `DpdLookup` before
+the sub-query — `dpd_lookup_full()` builds stream 1 from
+`dpd_lookup_grouped()`'s flat `results` (direct matches first, then components
+in break-down order, deduped) rather than the flat `dpd_lookup()`'s natural
+database order. So the rows for `pañcaggadāyakaṁ` read `pañca → agga →
+dāyaka`, matching WordSummary and the order the `DeconstructorSelector` shows.
+
+When the client sends `deconstruction_locked` (+ `deconstruction_selected_index`,
+both on `SearchParams`), `GroupedDpdLookup::ordered_filtered_results()` retains
+rows whose uid is in **`direct_uids` ∪ the selected break-down's component
+`result_uids`**, in flat-list order, **before** pagination. Consequences:
+
+- **No empty interior pages.** The filter used to run client-side in
+  `FulltextResults.update_page()`, *after* the backend had paginated the
+  unfiltered set, so a page whose rows were all filtered out rendered blank.
+  The filter is now authoritative in Rust; the QML only renders and re-requests
+  page 0 when the selection or lock changes. (`DeconstructorUtils.visible_uids()`
+  survives for WordSummary and GlossTab, which are not paginated.)
+- **The direct union is load-bearing.** Locking `sādhū + iti` on `sādhūti` must
+  still show `sādhu 2/3/4`: they are direct matches of the typed query but not
+  components of that break-down.
+- **Index guard.** Locked with a `None` or out-of-range index yields
+  `direct_uids` **only** — never a silent fallback to break-down 0. Parity with
+  the QML it replaces.
+- **Unlocked results are a superset of the pre-2026-07 page**, not a match for
+  it: the flat lookup gated its deconstructor phase on `results.is_empty()`, the
+  grouped one does not. Unlocked `sādhūti` now also lists `iti`. Intended.
+
+### 9b. Why streams 2 and 3 are never lock-filtered
+
+The lock chooses a **deconstruction of the compound into sub-words**, so its
+scope is the stream that displays those sub-words. Streams 2 and 3 query the
+**complete compound exactly as typed** and never deconstruct anything (rewriting
+them into component sub-queries would flood the page — `iti`, `vā`, `ca` match
+vast numbers of rows). A bold-definition row is *where the whole compound is
+defined in commentary*; a Fulltext-Match row is *where the whole compound occurs
+in the texts*. The page therefore reads: **what the parts mean → where the whole
+word is defined → where the whole word appears.** A later refactor that
+"helpfully" filters streams 2 and 3 is a bug, not an improvement.
+
+Two consequences:
+
+- **Bold rows are visible under lock.** The old client filter dropped every row
+  not in the visible set, which incidentally hid the bold stream and quietly
+  overrode the user's "include commentary bold definitions" setting.
+- **The counter is exact.** `total_hits = filtered_dpd + bold_total
+  (+ fulltext_total)`, and every counted row is reachable. The old counter
+  over-reported: it counted the unfiltered DPD block while the client hid part
+  of it.
+
+### 9c. Unconditional grouped lookup, and the memo
+
+The grouped lookup replaces the flat one on this path **unconditionally** — no
+"does it deconstruct?" pre-check, no flat fallback. That is safe because when
+`deconstructions` is empty the two return identical lists in identical order
+(phases 1–6 and 8 are structurally the same, and `dpd_deconstructor_query()`'s
+`exact_only = false` attempts are additive and `is_none()`-gated — the full
+argument is the "Equivalence proof" in
+`tasks/2026-07-22-205209-prd---deconstructor-results-ordering-and-dense-pagination.md`).
+`grouped_equals_flat_for_non_deconstructing_words` in
+`backend/tests/test_deconstructor_result_pagination.rs` is the guard: it fails if
+someone reorders one function's phases or makes those attempts non-additive.
+
+Both callers — the selector options at `SuttaBridge::results_page()` and the
+filter inside `dpd_lookup_full()` — go through
+`DpdWordDb::dpd_lookup_grouped_memo()`, a single-cell memo keyed on the full
+argument tuple. It exists for two reasons: without it the grouped lookup runs
+3–6× per page request (selector, query task, Combined sub-query thread, every
+prefetched page), and, more importantly, it makes the two call sites' arguments
+**agree by construction** — in particular the normalized query text, since
+`dpd_lookup_grouped()` derives its `uid_candidate` from the *unnormalized*
+argument. A divergence there would let the selector offer break-downs whose
+components were filtered out of the results.
+
+`RESULTS_PAGE_CACHE` / `COMBINED_CACHE` keys embed `params_json`, so changing the
+selection or lock invalidates both automatically (§8).
+
+---
+
+## 10. Where to look in the code
 
 | Concern                         | Location                                                        |
 |---------------------------------|-----------------------------------------------------------------|
@@ -356,6 +457,11 @@ exclusion) in the backend on the `results_page` path — never move it into
 | Occurrence enumerator (stemmed) | `searcher.rs` + `search/tokenizer.rs` analyzer                  |
 | Page assembly / exclusion       | `query_task.rs` `results_page`                                  |
 | Cache                           | `bridges/src/sutta_bridge.rs` `RESULTS_PAGE_CACHE`              |
+| Dictionary stream splicing      | `query_task.rs` `split_page_across_streams`, `dpd_lookup_with_bold` |
+| Grouped ordering + lock filter  | `query_task.rs` `dpd_lookup_full` / `use_grouped_dpd_ordering`, `types.rs` `GroupedDpdLookup::ordered_filtered_results` |
+| Grouped lookup + memo           | `backend/src/db/dpd.rs` `dpd_lookup_grouped` / `dpd_lookup_grouped_memo` |
+| Combined merge (3 streams)      | `bridges/src/sutta_bridge.rs` `fetch_combined_page`             |
+| Break-down selector (QML)       | `assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` / `GlossTab.qml` |
 | QML render / header dedup       | `assets/qml/FulltextResults.qml` `update_page` (`show_header`, `find_query`) |
 | Find-bar jump / open path       | `assets/qml/SuttaSearchWindow.qml` `show_result_in_html_view` / `new_tab_data` |
 | Find-bar punctuation tolerance  | `src-ts/find.ts` `makeInterWordFlexible` (+ `find.test.ts`)     |
