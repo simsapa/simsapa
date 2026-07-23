@@ -98,19 +98,19 @@ Each top-level task leaves the app compiling with relevant tests passing.
 
 ## Tasks
 
-- [ ] 1.0 Bump app and DB version to 1.0.0
+- [x] 1.0 Bump app and DB version to v1.0.0-alpha.1
 
   *State:* the `major.minor` gate in `is_app_version_compatible_with_db_version()`
   compares app vs. `db_version`; bumping `DB_VERSION` is what makes 0.4.x DBs read
   as obsolete. `cli/Cargo.toml` (build tool) is deliberately **not** bumped.
 
-  - [ ] 1.1 In `cpp/gui.cpp`, change `app.setApplicationVersion("v0.4.4")` to
-    `"v1.0.0"` (keep the `v` prefix).
-  - [ ] 1.2 In `backend/Cargo.toml`, set `package.version = "1.0.0"`.
-  - [ ] 1.3 In `bridges/Cargo.toml`, set `package.version = "1.0.0"`.
-  - [ ] 1.4 In `cli/src/bootstrap/appdata.rs:14`, set
-    `pub static DB_VERSION: &str = "1.0.0"` (no `v` prefix).
-  - [ ] 1.5 Grep for any other literal `0.4.4` / `v0.4.4` / `0.4.1-alpha.1`
+  - [x] 1.1 In `cpp/gui.cpp`, change `app.setApplicationVersion("v0.4.4")` to
+    `"v1.0.0-alpha.1"` (keep the `v` prefix).
+  - [x] 1.2 In `backend/Cargo.toml`, set `package.version = "1.0.0-alpha.1"`.
+  - [x] 1.3 In `bridges/Cargo.toml`, set `package.version = "1.0.0-alpha.1"`.
+  - [x] 1.4 In `cli/src/bootstrap/appdata.rs:14`, set
+    `pub static DB_VERSION: &str = "1.0.0-alpha.1"` (no `v` prefix).
+  - [x] 1.5 Grep for any other literal `0.4.4` / `v0.4.4` / `0.4.1-alpha.1`
     version strings that represent the app/DB version (exclude changelogs,
     lockfiles, and unrelated dep versions like `tar = "0.4.44"`); confirm the four
     above are the only **live** declarations. **Known non-declaration to leave
