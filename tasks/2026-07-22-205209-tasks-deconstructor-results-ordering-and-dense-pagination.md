@@ -88,14 +88,14 @@ PRD: [2026-07-22-205209-prd---deconstructor-results-ordering-and-dense-paginatio
 - **`last_params` trap:** `new_results_page()` reuses `root.last_params`, so the deconstructor fields must be injected at `results_page()` time (read from `fulltext_results`) or `last_params` must be refreshed on every selection/lock change — otherwise page navigation would send a stale lock.
 - **Depends on:** 2.4 (task fields).
 
-- [ ] 3.0 Plumb the break-down selection index + lock state from QML into `SearchParams` and `SearchQueryTask` (FR-10, FR-11, FR-12)
+- [x] 3.0 Plumb the break-down selection index + lock state from QML into `SearchParams` and `SearchQueryTask` (FR-10, FR-11, FR-12)
   - [x] 3.1 In `backend/src/types.rs`, add to `SearchParams`: `#[serde(default)] pub deconstruction_selected_index: Option<usize>` and `#[serde(default)] pub deconstruction_locked: bool`; add both to the `Default` impl (`None` / `false`).
   - [x] 3.2 Wire them into `SearchQueryTask::new()` (the fields added in 2.4).
-  - [ ] 3.3 In `SuttaSearchWindow.qml`, add the two keys to the object returned by `get_search_params_from_ui()`, defaulting to `null` / `false`.
-  - [ ] 3.4 In `SuttaSearchWindow.results_page()` (`:605`), overwrite those two keys from the live `fulltext_results` state (`selected_deconstruction_index`, `deconstructor_locked`) immediately before `JSON.stringify`, so both a fresh search and `new_results_page()` (which reuses `last_params`) always send the current values. Add a comment naming the `last_params` trap. Note `results_page()` is the single entry point for **all** areas — the two keys ride along harmlessly for Suttas/Library because the backend gate is Dictionary + DpdLookup (2.6).
-  - [ ] 3.5 Verify the ordering in `start_search_query_workers()`: `root.last_params = params` (`:584`) happens *before* `fulltext_results.reset_deconstructor_state()` (`:590`), but the injection in 3.4 runs inside `results_page()` (`:593`), i.e. after the reset — so a new query correctly sends index 0 / unlocked (FR-12). Keep the injection after any reset if this code is reordered.
+  - [x] 3.3 In `SuttaSearchWindow.qml`, add the two keys to the object returned by `get_search_params_from_ui()`, defaulting to `null` / `false`.
+  - [x] 3.4 In `SuttaSearchWindow.results_page()` (`:605`), overwrite those two keys from the live `fulltext_results` state (`selected_deconstruction_index`, `deconstructor_locked`) immediately before `JSON.stringify`, so both a fresh search and `new_results_page()` (which reuses `last_params`) always send the current values. Add a comment naming the `last_params` trap. Note `results_page()` is the single entry point for **all** areas — the two keys ride along harmlessly for Suttas/Library because the backend gate is Dictionary + DpdLookup (2.6).
+  - [x] 3.5 Verify the ordering in `start_search_query_workers()`: `root.last_params = params` (`:584`) happens *before* `fulltext_results.reset_deconstructor_state()` (`:590`), but the injection in 3.4 runs inside `results_page()` (`:593`), i.e. after the reset — so a new query correctly sends index 0 / unlocked (FR-12). Keep the injection after any reset if this code is reordered.
   - [x] 3.6 Confirm the localhost API (`bridges/src/api.rs`) still compiles and behaves unchanged: it builds `SearchParams` via `build_search_params`, which will now use the new defaults (unlocked) — the API surface is deliberately not extended in this feature.
-  - [ ] 3.7 `make build -B`.
+  - [x] 3.7 `make build -B`.
 
 ### Specs for 4.0 — client stops filtering, re-queries instead
 

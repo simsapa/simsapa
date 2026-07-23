@@ -604,6 +604,24 @@ ApplicationWindow {
 
     function results_page(query_text: string, page_num: int, search_area: string, params: var) {
         root.is_loading = true;
+
+        // Always overwrite the break-down selection / lock from the live
+        // FulltextResults state here, at the single entry point for every
+        // area's page request.
+        //
+        // The last_params trap: new_results_page() reuses root.last_params,
+        // the object captured when the query was first started. Setting these
+        // keys only in get_search_params_from_ui() would send a stale
+        // selection/lock on every page navigation and after every selector
+        // change. Injecting here keeps a fresh search and page navigation in
+        // sync with what the user currently sees.
+        //
+        // The keys ride along harmlessly for Suttas/Library: the backend gate
+        // is Dictionary + DpdLookup.
+        const sel = fulltext_results.selected_deconstruction_index;
+        params.deconstruction_selected_index = (sel !== undefined && sel >= 0) ? sel : null;
+        params.deconstruction_locked = fulltext_results.deconstructor_locked;
+
         let params_json = JSON.stringify(params);
         SuttaBridge.results_page(query_text, page_num, search_area, params_json);
     }
@@ -678,6 +696,11 @@ ApplicationWindow {
             dict_source_uids: dict_source_uids,
             show_all_snippets: root.show_all_snippets,
             snippet_exclude: root.parse_snippet_exclude_csv(root.snippet_exclude_text),
+            // Break-down selection / lock for the Dictionary DPD-Lookup result
+            // ordering and filtering. Defaults here; the live values are
+            // injected in results_page() just before serialization.
+            deconstruction_selected_index: null,
+            deconstruction_locked: false,
         };
     }
 
