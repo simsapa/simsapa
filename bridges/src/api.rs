@@ -1114,6 +1114,11 @@ fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &Sear
         dict_source_uids: None,
         show_all_snippets: request.show_all_snippets.unwrap_or(false),
         snippet_exclude: request.snippet_exclude.clone(),
+        // The API surface deliberately does not expose the break-down
+        // selection / lock: an API dictionary lookup is always unlocked, i.e.
+        // it returns the full ordered list for every break-down.
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 

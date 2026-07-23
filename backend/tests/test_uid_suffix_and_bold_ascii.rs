@@ -26,6 +26,8 @@ fn make_params(mode: SearchMode, uid_prefix: Option<&str>, uid_suffix: Option<&s
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 

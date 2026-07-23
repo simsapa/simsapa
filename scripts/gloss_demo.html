@@ -6,7 +6,7 @@
 <title>Simsapa Gloss Demo</title>
 <style>
   :root { --border: #d9d4c8; --bg: #faf8f2; --card: #fff; --ink: #2b2b2b;
-          --muted: #6b6b6b; --accent: #7a5c1e; --field-bg: #fff; }
+          --muted: #7b7b7b; --accent: #7a5c1e; --field-bg: #fff; }
   @media (prefers-color-scheme: dark) {
     :root { --border: #3a3a3a; --bg: #1b1b1b; --card: #242424; --ink: #e6e3dc;
             --muted: #9a948a; --accent: #c9a54e; --field-bg: #2b2b2b; }
@@ -35,7 +35,7 @@
   button { font: inherit; font-weight: 600; padding: .55rem 1.1rem; cursor: pointer;
            background: var(--accent); color: #fff; border: none; border-radius: 6px; }
   button:disabled { opacity: .5; cursor: default; }
-  .hint { font-size: .78rem; color: var(--muted); margin-top: .3rem; }
+  .hint { font-size: .85rem; color: var(--muted); margin: 1rem; }
   #log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem;
          background: #1e1e1e; color: #dcdcdc; border-radius: 6px; padding: .6rem .7rem;
          max-height: 12rem; overflow: auto; white-space: pre-wrap; display: none; }
@@ -60,6 +60,12 @@
                 color: var(--muted); margin: .2rem 0 .3rem; }
   .unrec { font-size: .8rem; color: var(--muted); margin-top: .5rem; }
   .empty { color: var(--muted); font-size: .9rem; }
+  .status { border-radius: 8px; padding: .6rem .8rem; margin-bottom: 1rem; font-size: .85rem;
+            border: 1px solid var(--border); display: none; }
+  .status.show { display: block; }
+  .status.offline { border-color: #c46b4a; background: rgba(196, 107, 74, .12); }
+  .status.online  { border-color: #4a8f4a; background: rgba(74, 143, 74, .12); }
+  .status b { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -69,6 +75,8 @@
      word&nbsp;selection over the <code>GET /word_selection_ws</code> WebSocket. Point it at a
      running Simsapa instance.</p>
 
+  <div id="status" class="status"></div>
+
   <div class="card">
     <label for="text">Pāli text (blank line separates paragraphs)</label>
     <textarea id="text">Sabbaso'ti imaṁ dhammadesanaṁ satthā jetavane viharanto pañcaggadāyakaṁ nāma brāhmaṇaṁ ārabbha kathesi.
@@ -77,24 +85,32 @@ Atthaññe kusalā dhammā.</textarea>
 
     <div class="row">
       <div style="flex: 0 0 auto;">
-        <label for="port">API port</label>
-        <input class="port" id="port" type="text" value="4848" inputmode="numeric">
+        <button id="go">Gloss</button>
       </div>
-      <div>
-        <label for="key">Gemini API key (configures the app for AI selection)</label>
-        <input id="key" type="password" placeholder="AIza… — leave empty to gloss only" autocomplete="off">
-      </div>
-    </div>
-
-    <div class="row">
       <div class="checkline" style="flex: 0 0 auto;">
         <input type="checkbox" id="ai" checked disabled>
         <label for="ai">AI word selection</label>
       </div>
+    </div>
+
+    <div class="hint">
+        The Gloss function only needs a running Simsapa app, it works entirely offline.
+    </div>
+    <div class="hint">
+        <em>After</em> glossing, the Gemini key is used to auto-select the correct sense of the words which have multiple options.
+    </div>
+
+    <div class="row">
       <div style="flex: 0 0 auto;">
-        <button id="go">Gloss</button>
+        <label for="port">Simsapa API port</label>
+        <input class="port" id="port" type="text" value="4848" inputmode="numeric">
+      </div>
+      <div>
+        <label for="key">Gemini API key (for AI word selection)</label>
+        <input id="key" type="password" placeholder="AIza… — leave empty to gloss only" autocomplete="off">
       </div>
     </div>
+
     <div class="hint">The WebSocket uses the app's saved provider keys, so the key is first sent to
        <code>POST /set_ai_provider_key</code> (Gemini, enabled &amp; prioritized). The key is never
        stored by this page.</div>
@@ -132,7 +148,48 @@ async function prefillKey() {
     if (j.api_key && !$("key").value) { $("key").value = j.api_key; syncAiCheckbox(); }
   } catch (_) { /* app not running yet; user can type a key */ }
 }
-prefillKey();
+
+// --- app-running detection ---------------------------------------------------
+// Polls GET /health every 3 s. A banner explains what to do while the app is
+// not reachable on the chosen port; on the offline → online transition we also
+// (re-)prefill the saved Gemini key, since the first attempt may have run
+// before the app was up.
+let app_online = null;   // null = not checked yet
+
+async function checkAppRunning() {
+  const port = ($("port").value || "4848").trim();
+  const url = base() + "/health";
+  let ok = false;
+  let version = "";
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+    clearTimeout(t);
+    if (r.ok) {
+      ok = true;
+      try { version = (await r.json()).version || ""; } catch (_) { /* ignore */ }
+    }
+  } catch (_) { ok = false; }
+
+  const box = $("status");
+  box.classList.add("show");
+  if (ok) {
+    box.className = "status show online";
+    box.innerHTML = "Simsapa app found on <b>localhost:" + port + "</b>" +
+      (version ? " (version " + version + ")" : "") + ".";
+    if (app_online !== true) prefillKey();
+  } else {
+    box.className = "status show offline";
+    box.innerHTML = "<b>Simsapa app not found on localhost:" + port + ".</b> " +
+      "Please start the Simsapa app. Re-checking every 3 seconds.";
+  }
+  app_online = ok;
+}
+
+checkAppRunning();
+setInterval(checkAppRunning, 3000);
+$("port").addEventListener("input", () => { app_online = null; checkAppRunning(); });
 
 // --- small helpers -----------------------------------------------------------
 function stripHtml(s) {

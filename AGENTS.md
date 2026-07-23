@@ -137,7 +137,18 @@ Notable feature docs:
   text — including the same-sutta "already open, no reload" immediate re-run, and
   the punctuation-tolerant inter-word matching in `src-ts/find.ts`
   `makeInterWordFlexible` that bridges punctuation-stripped `content_plain` vs.
-  the punctuation-bearing rendered HTML). Pairs with the bootstrap-time
+  the punctuation-bearing rendered HTML). **§9 the three-stream Dictionary
+  result page:** regular DPD → bold definitions → (Combined) Fulltext Match,
+  spliced by `split_page_across_streams`; only stream 1 is deconstructor-derived,
+  and on `Dictionary + DpdLookup` it is built from `dpd_lookup_grouped()` (rows in
+  break-down order) and **lock-filtered in Rust before pagination**
+  (`GroupedDpdLookup::ordered_filtered_results()`, `direct_uids ∪ selected
+  break-down`), which is what removed the blank interior pages the old
+  client-side filter produced. Streams 2 and 3 query the **compound as typed**
+  and are never lock-filtered — so bold rows are visible under lock and the
+  counter is exact; the grouped lookup replaces the flat one **unconditionally**
+  on that path (equivalence proof + the `grouped_equals_flat_…` guard test), both
+  call sites sharing `dpd_lookup_grouped_memo()`. Pairs with the bootstrap-time
   normalization in
   [text-processing-for-contains-match-and-fulltext-match-search.md](./docs/text-processing-for-contains-match-and-fulltext-match-search.md).
 - [Localhost API search endpoints](./docs/simsapa-localhost-api-search-endpoints.md) —

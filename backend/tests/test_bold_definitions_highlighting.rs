@@ -53,6 +53,8 @@ fn make_params(mode: SearchMode, uid_suffix: Option<&str>) -> SearchParams {
         dict_source_uids: None,
         show_all_snippets: false,
         snippet_exclude: None,
+        deconstruction_selected_index: None,
+        deconstruction_locked: false,
     }
 }
 

@@ -843,6 +843,14 @@ No per-write `ANALYZE` for the two new tables (same rationale as
 
 PRD: `tasks/2026-07-21-172432-prd---compound-deconstructor-selection.md`.
 
+> The **search result page** side of the same selection model — how the
+> Dictionary DPD-Lookup page orders its rows by break-down, applies the lock
+> filter in Rust before pagination, and why the bold-definition and
+> Fulltext-Match streams are never lock-filtered — is documented in
+> [search-snippet-highlight-pipeline.md §9](./search-snippet-highlight-pipeline.md#9-the-dictionary-result-page-is-three-streams-dpd-lookup--combined).
+> This section covers the gloss-side selection; that one covers result-page
+> composition.
+
 Many Pāli words are sandhi compounds (*pañcaggadāyakaṁ*) or iti-sandhi forms
 (*sādhūti*, *atthaññe*). The DPD deconstructor offers one or more **break-downs**
 (`pañca + agga + dāyakaṁ`, `pañca + gadā + yakaṁ`, …). Previously the deconstructor

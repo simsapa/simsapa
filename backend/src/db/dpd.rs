@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use diesel::prelude::*;
@@ -21,6 +22,15 @@ use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, Groupe
 use crate::logger::{info, error};
 
 pub type DpdDbHandle = DatabaseHandle;
+
+/// Argument tuple identifying a memoized grouped lookup:
+/// `(query_text, do_pali_sort, exact_only, deconstructor_exact_only,
+/// uid_prefix, uid_suffix)`. See `dpd_lookup_grouped_memo()`.
+type GroupedLookupKey = (String, bool, bool, bool, Option<String>, Option<String>);
+
+/// One-entry memo for `dpd_lookup_grouped()`. See `dpd_lookup_grouped_memo()`.
+static GROUPED_LOOKUP_MEMO: Mutex<Option<(GroupedLookupKey, Arc<GroupedDpdLookup>)>> =
+    Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookupResult {
@@ -552,6 +562,69 @@ impl DpdDbHandle {
 
         info(&format!("Query took: {:?}", timer.elapsed()));
         Ok(results)
+    }
+
+    /// Single-cell memo in front of `dpd_lookup_grouped()`, keyed on the full
+    /// argument tuple. Page navigation within one query is the hot path: the
+    /// grouped lookup would otherwise run 3–6× per page request (the selector
+    /// in `SuttaBridge::results_page()`, the query task's `dpd_lookup_full()`,
+    /// the Combined DPD sub-query thread, and every prefetched page).
+    ///
+    /// It is also what keeps the two call sites' arguments in agreement, which
+    /// is load-bearing: `dpd_lookup_grouped()` re-normalizes its query text
+    /// (idempotent) **but derives `uid_candidate` from the unnormalized
+    /// argument**, because `normalize_query_text()` strips the hyphens that are
+    /// significant in a `dict_words` uid. So a raw and a normalized call can
+    /// take different phase-1 branches, and the break-downs offered by the
+    /// selector could then disagree with the uids the result filter keeps.
+    /// Both callers pass the already-normalized query text through this memo,
+    /// so they cannot diverge.
+    ///
+    /// Mirrors the `RESULTS_PAGE_CACHE` discipline: the mutex is never held
+    /// across the DB call.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dpd_lookup_grouped_memo(
+        &self,
+        query_text: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+    ) -> Result<Arc<GroupedDpdLookup>> {
+        let key = (
+            query_text.to_string(),
+            do_pali_sort,
+            exact_only,
+            deconstructor_exact_only,
+            uid_prefix.map(|i| i.to_string()),
+            uid_suffix.map(|i| i.to_string()),
+        );
+
+        {
+            let guard = GROUPED_LOOKUP_MEMO.lock().unwrap();
+            if let Some((ref cached_key, ref cached)) = *guard {
+                if *cached_key == key {
+                    return Ok(Arc::clone(cached));
+                }
+            }
+        }
+
+        let grouped = Arc::new(self.dpd_lookup_grouped(
+            query_text,
+            do_pali_sort,
+            exact_only,
+            deconstructor_exact_only,
+            uid_prefix,
+            uid_suffix,
+        )?);
+
+        {
+            let mut guard = GROUPED_LOOKUP_MEMO.lock().unwrap();
+            *guard = Some((key, Arc::clone(&grouped)));
+        }
+
+        Ok(grouped)
     }
 
     /// Break-down-aware DPD lookup (PRD FR-A1/FR-A2). Mirrors the flat

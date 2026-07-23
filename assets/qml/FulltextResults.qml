@@ -23,17 +23,25 @@ ColumnLayout {
     readonly property string match_bg: root.is_dark ? "#007A31" : "#F6E600"
 
     Logger { id: logger }
-    DeconstructorUtils { id: dec_utils }
 
     // Grouped, break-down-aware deconstruction state for the Dictionary DPD
-    // Lookup (incl. Combined-remap) path (PRD FR-B5). Populated by
+    // Lookup (incl. Combined-remap) path. Populated by
     // set_search_result_page() from the SearchResultPage payload; empty for
-    // every other search path (the selector row stays hidden). When locked,
-    // the currently loaded result page is filtered client-side to the selected
-    // break-down's components plus the direct matches (page counts stay
-    // unfiltered). Selection + lock reset on new query only — the embedding
-    // window calls reset_deconstructor_state() on query-text change, NOT on
-    // page navigation (which must preserve the selection/lock).
+    // every other search path (the selector row stays hidden).
+    //
+    // The break-down lock filter is authoritative in Rust: the selection index
+    // and lock state ride along in the page request (SearchParams), and the
+    // backend returns an already-ordered, already-filtered, densely paginated
+    // page. This view only renders what it receives and re-requests page 0
+    // whenever the selection or lock changes. Consequently bold-definition and
+    // Fulltext-Match rows are no longer hidden by the lock — those streams
+    // query the complete compound as typed and never deconstruct, so no
+    // break-down choice applies to them. See
+    // docs/search-snippet-highlight-pipeline.md.
+    //
+    // Selection + lock reset on new query only — the embedding window calls
+    // reset_deconstructor_state() on query-text change, NOT on page navigation
+    // (which must preserve the selection/lock).
     property var deconstructions: []
     property var direct_uids: []
     readonly property var deconstructor_words: {
@@ -193,9 +201,11 @@ ColumnLayout {
         }
     }
 
-    // Break-down selector for Dictionary DPD Lookup results (PRD FR-B5). Shown
-    // only when the current query deconstructs; locking filters the loaded page
-    // client-side (see update_page). Selection/lock reset on new query only.
+    // Break-down selector for Dictionary DPD Lookup results. Shown only when
+    // the current query deconstructs. Locking filters the DPD result stream in
+    // Rust before pagination, so a change of selection or lock changes both the
+    // rows and the total — the view re-requests page 0 rather than re-filtering
+    // in place. Selection/lock reset on new query only.
     DeconstructorSelector {
         id: deconstructor
         Layout.fillWidth: true
@@ -206,13 +216,21 @@ ColumnLayout {
         model: root.deconstructor_words
         current_index: root.selected_deconstruction_index
         locked: root.deconstructor_locked
+        // Picking a break-down auto-locks it, so the results filter to the
+        // chosen break-down without a second click — matching GlossTab and
+        // WordSummary. The lock stays independently toggleable afterwards. The
+        // selector is emit-only, so these assignments are what drive its
+        // visual state.
         onActivated: (index) => {
             root.selected_deconstruction_index = index;
-            root.update_page();
+            root.deconstructor_locked = true;
+            root.page_num = 0;
+            root.new_results_page_fn(root.page_num); // qmllint disable use-proper-function
         }
         onLock_toggled: (locked) => {
             root.deconstructor_locked = locked;
-            root.update_page();
+            root.page_num = 0;
+            root.new_results_page_fn(root.page_num); // qmllint disable use-proper-function
         }
     }
 
@@ -269,29 +287,13 @@ ColumnLayout {
         // the first row of each record group. A section-header row is a group
         // boundary, so the next real row always shows its header. See
         // docs/search-snippet-highlight-pipeline.md.
-        // Break-down lock filter (PRD FR-B5): when locked, keep only real
-        // result rows whose uid is in the selected break-down's components plus
-        // the direct matches. Section-header rows are always kept. Unlocked (or
-        // no deconstructions) shows the full page — today's behavior. The
-        // `grouped`-shaped object reuses DeconstructorUtils.visible_uids(): its
-        // unlocked branch returns every current result uid (no filtering), the
-        // locked branch returns direct ∪ selected components.
-        var filtering = root.deconstructor_locked && root.deconstructions.length > 0;
-        var visible_set = filtering
-            ? dec_utils.visible_uids({ results: root.current_results,
-                                       deconstructions: root.deconstructions,
-                                       direct_uids: root.direct_uids },
-                                     root.selected_deconstruction_index,
-                                     true)
-            : [];
+        // No break-down lock filter here: the backend already ordered and
+        // filtered the DPD stream before paginating, so every row it sends is
+        // meant to be rendered.
         var prev_uid = null;
         for (var i = 0; i < root.current_results.length; i++) {
             var item = root.current_results[i];
             var is_header = !!item.is_section_header;
-            if (filtering && !is_header
-                && !dec_utils.uid_is_visible(visible_set, item.uid)) {
-                continue;
-            }
             var show_header;
             if (is_header) {
                 show_header = false;
