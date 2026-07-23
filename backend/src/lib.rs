@@ -865,7 +865,6 @@ pub extern "C" fn dotenv_c() {
 pub extern "C" fn ensure_no_empty_db_files() {
     let g = get_app_globals();
     for p in [g.paths.appdata_db_path.clone(),
-              g.paths.app_assets_dir.join("userdata.sqlite3"),
               g.paths.dict_db_path.clone(),
               g.paths.dpd_db_path.clone()] {
         match p.try_exists() {
@@ -891,7 +890,6 @@ pub extern "C" fn ensure_no_empty_db_files() {
 /// This is called during app startup. If the marker file exists, it deletes:
 /// - The marker file itself
 /// - appdata.sqlite3
-/// - userdata.sqlite3
 /// - dictionaries.sqlite3
 /// - dpd.sqlite3
 /// - index/ (the fulltext search index directory; the next asset download
@@ -921,10 +919,8 @@ pub extern "C" fn check_delete_files_for_upgrade() {
             }
 
             // Delete database files
-            let legacy_userdata_path = g.paths.app_assets_dir.join("userdata.sqlite3");
             let db_paths = [
                 &g.paths.appdata_db_path,
-                &legacy_userdata_path,
                 &g.paths.dict_db_path,
                 &g.paths.dpd_db_path,
             ];
@@ -1121,44 +1117,6 @@ pub extern "C" fn check_remove_lang_index_dirs() {
         }
     } else {
         warn("Keeping remove_lang_index_dirs.txt marker file for retry on next start");
-    }
-}
-
-/// Silent cleanup of a stale legacy `userdata.sqlite3` file.
-///
-/// If `app_assets_dir/userdata.sqlite3` exists and there is no pending `import-me/`
-/// folder (i.e. the legacy bridge has already completed), remove the stale file.
-/// This handles the case where the bridge ran but the empty/stale userdata file remains.
-#[unsafe(no_mangle)]
-pub extern "C" fn cleanup_stale_legacy_userdata() {
-    let g = get_app_globals();
-    let legacy_path = g.paths.app_assets_dir.join("userdata.sqlite3");
-    let import_dir = g.paths.app_assets_dir.join("import-me");
-
-    match legacy_path.try_exists() {
-        Ok(true) => {},
-        Ok(false) => return,
-        Err(e) => {
-            error(&format!("cleanup_stale_legacy_userdata: try_exists failed for {}: {}", legacy_path.display(), e));
-            return;
-        }
-    }
-
-    match import_dir.try_exists() {
-        Ok(true) => {
-            info("cleanup_stale_legacy_userdata: import-me/ pending — skipping cleanup");
-            return;
-        }
-        Ok(false) => {}
-        Err(e) => {
-            error(&format!("cleanup_stale_legacy_userdata: try_exists failed for {}: {}", import_dir.display(), e));
-            return;
-        }
-    }
-
-    match fs::remove_file(&legacy_path) {
-        Ok(_) => info(&format!("cleanup_stale_legacy_userdata: removed stale {}", legacy_path.display())),
-        Err(e) => error(&format!("cleanup_stale_legacy_userdata: failed to remove {}: {}", legacy_path.display(), e)),
     }
 }
 

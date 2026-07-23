@@ -39,6 +39,119 @@ pub const DICTIONARIES_MIGRATIONS: EmbeddedMigrations = embed_migrations!("migra
 
 pub static DATABASE_MANAGER: OnceLock<DbManager> = OnceLock::new();
 
+/// Which migrated (or presence-tracked) database a startup-report entry is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DbKind {
+    Appdata,
+    Dictionaries,
+    Dpd,
+}
+
+/// Three-valued migration outcome recorded per database at startup.
+///
+/// `Dpd` has no migration folder and never runs `run_pending_migrations`, so its
+/// outcome is permanently `NotApplicable` — do NOT report it as an `Ok`. Only
+/// `appdata` and `dictionaries` ever carry a real `Ok` / `Failed`.
+#[derive(Debug, Clone)]
+pub enum MigrationOutcome {
+    /// Not run yet, or a database (dpd) that has no migration folder.
+    NotApplicable,
+    Ok,
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct DbReportEntry {
+    /// Whether the database file existed *before* `DbManager::new()` ran.
+    /// `None` = not recorded yet.
+    pub present_at_start: Option<bool>,
+    pub migration: MigrationOutcome,
+}
+
+impl Default for DbReportEntry {
+    fn default() -> Self {
+        Self { present_at_start: None, migration: MigrationOutcome::NotApplicable }
+    }
+}
+
+/// Per-database record of what happened at startup — file presence before any
+/// file-creating call, and the migration outcome. Lives in a process-global so
+/// the recovery UI (Database Validation) can report it long after startup.
+#[derive(Debug, Clone, Default)]
+pub struct StartupDbReport {
+    pub appdata: DbReportEntry,
+    pub dictionaries: DbReportEntry,
+    pub dpd: DbReportEntry,
+}
+
+impl StartupDbReport {
+    fn entry_mut(&mut self, kind: DbKind) -> &mut DbReportEntry {
+        match kind {
+            DbKind::Appdata => &mut self.appdata,
+            DbKind::Dictionaries => &mut self.dictionaries,
+            DbKind::Dpd => &mut self.dpd,
+        }
+    }
+}
+
+static STARTUP_DB_REPORT: OnceLock<Mutex<StartupDbReport>> = OnceLock::new();
+
+fn startup_db_report() -> &'static Mutex<StartupDbReport> {
+    STARTUP_DB_REPORT.get_or_init(|| Mutex::new(StartupDbReport::default()))
+}
+
+/// Record whether a database file existed at startup. **First write wins** so a
+/// later `DbManager::new()` (the API server constructs a second one) cannot
+/// overwrite the pre-fabrication truth recorded by the first caller.
+pub fn record_db_presence(kind: DbKind, present_at_start: bool) {
+    let mut report = startup_db_report().lock();
+    let entry = report.entry_mut(kind);
+    if entry.present_at_start.is_none() {
+        entry.present_at_start = Some(present_at_start);
+    }
+}
+
+/// Record the migration outcome for a database. Idempotent per database — a
+/// second construction re-recording the same outcome is harmless, so the latest
+/// write wins here (unlike presence).
+pub fn record_migration_outcome(kind: DbKind, outcome: MigrationOutcome) {
+    let mut report = startup_db_report().lock();
+    report.entry_mut(kind).migration = outcome;
+}
+
+/// Snapshot of the startup report for the recovery UI.
+pub fn get_startup_db_report() -> StartupDbReport {
+    startup_db_report().lock().clone()
+}
+
+/// JSON accessor for the QML bridge. Shape per database:
+/// `{ "present_at_start": bool|null, "migration_ok": bool|null, "migration_error": string|null }`.
+/// `migration_ok` is `null` for a `NotApplicable` outcome (dpd, or not-yet-run).
+pub fn get_startup_db_report_json() -> String {
+    fn entry_json(e: &DbReportEntry) -> serde_json::Value {
+        let (migration_ok, migration_error) = match &e.migration {
+            MigrationOutcome::NotApplicable => (serde_json::Value::Null, serde_json::Value::Null),
+            MigrationOutcome::Ok => (serde_json::Value::Bool(true), serde_json::Value::Null),
+            MigrationOutcome::Failed(msg) => {
+                (serde_json::Value::Bool(false), serde_json::Value::String(msg.clone()))
+            }
+        };
+        serde_json::json!({
+            "present_at_start": e.present_at_start,
+            "migration_ok": migration_ok,
+            "migration_error": migration_error,
+        })
+    }
+
+    let report = get_startup_db_report();
+    let value = serde_json::json!({
+        "appdata": entry_json(&report.appdata),
+        "dictionaries": entry_json(&report.dictionaries),
+        "dpd": entry_json(&report.dpd),
+    });
+    serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ConnectionCustomizer;
 
@@ -153,22 +266,33 @@ impl DbManager {
             // The dictionaries DB is shipped pre-built (migrations applied at
             // bootstrap), but an already-installed DB may predate a newly-added
             // migration. Run any pending dictionaries migrations on the existing
-            // DB so schema additions (e.g. dict_resources) are present.
-            let mut dict_conn = SqliteConnection::establish(&g.paths.dict_database_url)
-                .with_context(|| format!("Failed to connect to dictionaries DB '{}'", g.paths.dict_database_url))?;
-            run_dictionaries_migrations(&mut dict_conn)
-                .context("Failed to run pending dictionaries migrations")?;
+            // DB so schema additions are present. A migration failure is
+            // NON-FATAL: it is logged and recorded, and startup continues so the
+            // user can reach Database Validation and re-download. See
+            // docs/appdata-migration-mechanisms.md.
+            match SqliteConnection::establish(&g.paths.dict_database_url) {
+                Ok(mut dict_conn) => {
+                    if let Err(e) = run_dictionaries_migrations(&mut dict_conn) {
+                        error(&format!("DbManager::new(): dictionaries migrations failed (non-fatal): {:#}", e));
+                    }
+                }
+                Err(e) => {
+                    error(&format!("DbManager::new(): failed to connect to dictionaries DB for migrations (non-fatal): {:#}", e));
+                }
+            }
         }
 
         let appdata = DatabaseHandle::new(&g.paths.appdata_database_url)?;
 
-        // Run schema upgrades on the appdata database.
-        // The appdata db is pre-built outside Diesel's migration system,
-        // so we apply incremental ALTER statements idempotently.
+        // Apply pending appdata migrations via Diesel (same mechanism as the
+        // dictionaries DB). A migration failure is NON-FATAL: logged, recorded in
+        // the startup report, and startup continues.
         {
             let mut db_conn = appdata.get_conn()
-                .context("Failed to get appdata connection for schema upgrades")?;
-            upgrade_appdata_schema(&mut db_conn);
+                .context("Failed to get appdata connection for migrations")?;
+            if let Err(e) = run_appdata_migrations(&mut db_conn) {
+                error(&format!("DbManager::new(): appdata migrations failed (non-fatal): {:#}", e));
+            }
         }
 
         let dbm = Self {
@@ -269,60 +393,52 @@ pub fn get_app_settings() -> AppSettings {
     }
 }
 
-/// Apply incremental schema upgrades to the appdata database.
-/// Each statement is idempotent — errors from "already exists" / "duplicate column" are ignored.
-pub fn upgrade_appdata_schema(db_conn: &mut SqliteConnection) {
-    use diesel::connection::SimpleConnection;
-
-    info("upgrade_appdata_schema()");
-
-    let statements = [
-        // 2026-03-24: chanting tables
-        include_str!("../../migrations/appdata/2026-03-24-000000_create_chanting_tables/up.sql"),
-        // 2026-03-24: recording volume column
-        include_str!("../../migrations/appdata/2026-03-24-100000_add_recording_volume/up.sql"),
-        // 2026-03-24: recording waveform cache
-        include_str!("../../migrations/appdata/2026-03-24-200000_add_recording_waveform/up.sql"),
-        // 2026-04-02: bookmark tables
-        include_str!("../../migrations/appdata/2026-04-02-120000_create_bookmarks/up.sql"),
-        // 2026-04-14: is_user_added on books / bookmark tables
-        include_str!("../../migrations/appdata/2026-04-14-000000_add_is_user_added/up.sql"),
-        // 2026-04-14: is_user_added on chanting_recordings
-        include_str!("../../migrations/appdata/2026-04-14-000002_add_recordings_is_user_added/up.sql"),
-        // 2026-06-27: gloss / prompts session history
-        include_str!("../../migrations/appdata/2026-06-27-131935_create_gloss_prompts_history/up.sql"),
-        // 2026-07-09: gloss word context cache and phrase selections
-        include_str!("../../migrations/appdata/2026-07-09-160000_create_gloss_word_selection/up.sql"),
-        // 2026-07-16: built_in tier column, so a local row shadows the shipped
-        // row for the same (word, context_hash) instead of overwriting it
-        include_str!("../../migrations/appdata/2026-07-16-120000_gloss_cache_built_in_tier/up.sql"),
-        // 2026-07-21: deconstruction column — a compound word's chosen break-down
-        // string, plus component-sense rows keyed on the compound's context hash
-        include_str!("../../migrations/appdata/2026-07-21-173000_gloss_cache_deconstruction/up.sql"),
-    ];
-
-    for sql in &statements {
-        for statement in sql.split(';') {
-            let trimmed = statement.trim();
-            if trimmed.is_empty() {
-                continue;
+/// Apply pending `appdata` migrations via Diesel. Logs greppably, records the
+/// outcome in the startup report, and returns the error to the caller (which
+/// catches it — migration failure is non-fatal at startup). Returns the number
+/// of migrations applied on success.
+pub fn run_appdata_migrations(db_conn: &mut SqliteConnection) -> Result<usize> {
+    info("run_appdata_migrations()");
+    match db_conn.run_pending_migrations(APPDATA_MIGRATIONS) {
+        Ok(applied) => {
+            let n = applied.len();
+            if n == 0 {
+                info("run_appdata_migrations(): no pending migrations");
+            } else {
+                info(&format!("run_appdata_migrations(): applied {} migration(s)", n));
             }
-            if let Err(e) = db_conn.batch_execute(trimmed) {
-                let msg = e.to_string();
-                // Ignore "already exists" / "duplicate column" — means upgrade already applied
-                if !msg.contains("already exists") && !msg.contains("duplicate column") {
-                    warn(&format!("upgrade_appdata_schema warning: {}", msg));
-                }
-            }
+            record_migration_outcome(DbKind::Appdata, MigrationOutcome::Ok);
+            Ok(n)
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            error(&format!("run_appdata_migrations(): FAILED: {}", msg));
+            record_migration_outcome(DbKind::Appdata, MigrationOutcome::Failed(msg.clone()));
+            Err(anyhow::anyhow!("Failed to execute pending appdata migrations: {}", msg))
         }
     }
 }
 
 pub fn run_dictionaries_migrations(db_conn: &mut SqliteConnection) -> Result<()> {
     info("run_dictionaries_migrations()");
-    db_conn.run_pending_migrations(DICTIONARIES_MIGRATIONS)
-           .map_err(|e| anyhow::anyhow!("Failed to execute pending database migrations: {}", e))?;
-    Ok(())
+    match db_conn.run_pending_migrations(DICTIONARIES_MIGRATIONS) {
+        Ok(applied) => {
+            let n = applied.len();
+            if n == 0 {
+                info("run_dictionaries_migrations(): no pending migrations");
+            } else {
+                info(&format!("run_dictionaries_migrations(): applied {} migration(s)", n));
+            }
+            record_migration_outcome(DbKind::Dictionaries, MigrationOutcome::Ok);
+            Ok(())
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            error(&format!("run_dictionaries_migrations(): FAILED: {}", msg));
+            record_migration_outcome(DbKind::Dictionaries, MigrationOutcome::Failed(msg.clone()));
+            Err(anyhow::anyhow!("Failed to execute pending dictionaries migrations: {}", msg))
+        }
+    }
 }
 
 /// Returns connections as a tuple to appdata.sqlite3, dictionaries.sqlite3, dpd.sqlite3

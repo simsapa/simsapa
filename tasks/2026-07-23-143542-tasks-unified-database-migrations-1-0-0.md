@@ -119,7 +119,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     build-tool crate, not a version declaration. The grep will surface it; do
     **not** bump it. Build with `make build -B`.
 
-- [ ] 2.0 Unify the runtime migration mechanism on Diesel, make failures non-fatal, and remove the legacy userdata bridge
+- [x] 2.0 Unify the runtime migration mechanism on Diesel, make failures non-fatal, and remove the legacy userdata bridge
 
   *Specs / state:*
   - Runtime call site: `DbManager::new()` (`backend/src/db/mod.rs:~168`) currently
@@ -141,7 +141,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     deleting `upgrade_appdata_schema()` removes the `include_str!`s that reference
     the old files.
 
-  - [ ] 2.1 Add a startup-report process-global in `backend/src/db/mod.rs`: a
+  - [x] 2.1 Add a startup-report process-global in `backend/src/db/mod.rs`: a
     struct (e.g. `StartupDbReport`) holding, per database (`appdata`,
     `dictionaries`, `dpd`), the file-presence-at-start flag (populated in Task 4)
     and the migration outcome. **Model the migration outcome as three-valued**
@@ -158,35 +158,35 @@ Each top-level task leaves the app compiling with relevant tests passing.
     once, before either constructor, at `ensure_no_empty_db_files()`
     `cpp/gui.cpp:348`, so construction order is not load-bearing). Add a
     `pub fn get_startup_db_report()` (or a JSON accessor) for the bridge to read.
-  - [ ] 2.2 Add a non-fatal migration runner, e.g.
+  - [x] 2.2 Add a non-fatal migration runner, e.g.
     `fn run_appdata_migrations(conn) -> Result<usize>` and reuse/adjust
     `run_dictionaries_migrations`, each calling `run_pending_migrations(...)`,
     logging greppably (`run_appdata_migrations(): applied N migration(s)` /
     `no pending migrations` / `FAILED: <err>`), and recording the outcome into the
     process-global (2.1). Failure returns the error to the caller but is caught by
     `DbManager::new()` (2.4) rather than propagated.
-  - [ ] 2.3 In `DbManager::new()`, replace the `upgrade_appdata_schema(&mut db_conn)`
+  - [x] 2.3 In `DbManager::new()`, replace the `upgrade_appdata_schema(&mut db_conn)`
     call with the appdata runner (2.2). Remove the stale comment "The appdata db
     is pre-built outside Diesel's migration system…".
-  - [ ] 2.4 In `DbManager::new()`, make **both** migration runners non-fatal:
+  - [x] 2.4 In `DbManager::new()`, make **both** migration runners non-fatal:
     catch their `Err`, log at `error` level with the full text, record it in the
     startup report, and continue (do not `?`-propagate). `DbManager::new()` returns
     `Ok` as long as the DB handles opened. (Non-migration failures — pool/handle
     creation — keep current behaviour per PRD §7.6.)
-  - [ ] 2.5 Delete `upgrade_appdata_schema()` from `backend/src/db/mod.rs`
+  - [x] 2.5 Delete `upgrade_appdata_schema()` from `backend/src/db/mod.rs`
     (the function, its `statements` `include_str!` array, and the `;`-splitting
     replay loop with error suppression).
-  - [ ] 2.6 Remove the legacy userdata bridge (PRD §7.7 option (a)): delete
+  - [x] 2.6 Remove the legacy userdata bridge (PRD §7.7 option (a)): delete
     `export_from_legacy_userdata`, `legacy_userdata_path`, `has_legacy_userdata`,
     and the `export_from_legacy_userdata` trigger in `export_user_data_to_assets`;
     delete the defensive tail pass over `legacy-userdata.sqlite3` in
     `import_user_data_from_assets` (`backend/src/app_data.rs`).
-  - [ ] 2.7 Remove the remaining legacy references in `backend/src/lib.rs`
+  - [x] 2.7 Remove the remaining legacy references in `backend/src/lib.rs`
     (`cleanup_stale_legacy_userdata` and its `userdata.sqlite3` path handling at
     `:868/894/924`) and the `cleanup_stale_legacy_userdata()` call in `cpp/gui.cpp`.
     Leave `ensure_no_empty_db_files()`'s inclusion of the `userdata.sqlite3` path
     harmless-or-remove per judgement (it no longer needs to guard that file).
-  - [ ] 2.8 `cd backend && cargo build` and `cargo test`; confirm the migration
+  - [x] 2.8 `cd backend && cargo build` and `cargo test`; confirm the migration
     tests in `backend/src/db/appdata.rs` still pass (they run `run_pending_migrations`
     against the still-present old folders). `make build -B` for the C++/QML side
     (verifies the `gui.cpp` edit). Confirm no dangling references to removed symbols.
