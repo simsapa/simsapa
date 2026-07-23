@@ -2385,6 +2385,17 @@ impl<'a> SearchQueryTask<'a> {
     /// fetched with a true `LIMIT/OFFSET` SQL query for just the bold slice
     /// the page needs (or only its COUNT when the page lies entirely inside
     /// the regular range). No cover-fetch.
+    ///
+    /// The bold stream is queried with the **complete compound exactly as
+    /// typed** and is never lock-filtered. The break-down lock chooses a
+    /// *deconstruction of the compound into sub-words*, so it scopes only the
+    /// regular DPD stream that displays those sub-words; a bold-definition row
+    /// is a place where the whole compound is defined in commentary, which no
+    /// break-down choice makes more or less applicable. Filtering it here would
+    /// also override the user's "include commentary bold definitions" setting
+    /// from an unrelated control. It stays lazily paged for the same reason the
+    /// Combined Fulltext stream does — it is not bounded (`vā` → ~30 k rows).
+    /// See docs/search-snippet-highlight-pipeline.md.
     fn dpd_lookup_with_bold(&self, page_num: usize) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
         let regular_full = self.dpd_lookup_full()?;
         let regular_total = regular_full.len();

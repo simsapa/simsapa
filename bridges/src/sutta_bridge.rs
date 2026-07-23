@@ -268,6 +268,17 @@ fn fetch_combined_page(
     };
     let mut dpd_params = base_params.clone();
     dpd_params.mode = SearchMode::DpdLookup;
+    // The Fulltext half searches the **complete compound exactly as typed** —
+    // only `mode` is swapped, `query_text` is passed through untouched — and it
+    // is never lock-filtered. The break-down lock chooses a *deconstruction of
+    // the compound into sub-words*, so it scopes only the DPD Lookup stream
+    // that displays those sub-words; a Fulltext row is a place where the whole
+    // compound occurs in the texts, which no break-down choice makes more or
+    // less applicable. Do not "helpfully" filter this stream or rewrite it into
+    // component sub-queries: a short component (`vā`, `iti`, `ca`) matches vast
+    // numbers of irrelevant rows, and the stream is not bounded (`vāti` → 6118
+    // hits, 3.3 s / 3.7 MB to materialise), so it also stays lazily paged.
+    // See docs/search-snippet-highlight-pipeline.md.
     let mut ft_params = base_params.clone();
     ft_params.mode = SearchMode::FulltextMatch;
 
@@ -1956,17 +1967,35 @@ impl qobject::SuttaBridge {
 
             // Grouped deconstructor break-downs for the original query, attached
             // to the result page on the Dictionary DPD Lookup / Combined-remap
-            // path so FulltextResults can show a break-down selector and
-            // lock-filter the page client-side (PRD FR-B5). Computed once per
-            // results_page() call (cheap in-memory DPD lookup) and cloned into
-            // each SearchResultPage. `deconstructor_exact_only = false` mirrors
-            // WordSummary's fuzzy break-down list. Empty for other paths.
+            // path so FulltextResults can show a break-down selector. Cloned
+            // into each SearchResultPage. `deconstructor_exact_only = false`
+            // mirrors WordSummary's fuzzy break-down list. Empty for other
+            // paths.
+            //
+            // This goes through the shared memo with the *same arguments* the
+            // query task's `dpd_lookup_full()` uses — the normalized query text
+            // and the raw uid_prefix / uid_suffix (dpd_lookup_grouped builds
+            // its own LIKE patterns; pre-built ones would be double-wrapped).
+            // The break-downs the user sees and the uids the backend lock
+            // filter keeps must come from one and the same lookup, or the
+            // selector can offer a break-down whose components were filtered
+            // out of the results. The memo also collapses the 3–6 grouped
+            // lookups a page request would otherwise run (selector, query task,
+            // Combined DPD sub-query thread, every prefetched page) into one.
             let (page_deconstructions, page_direct_uids) = if search_area_text == "Dictionary"
                 && matches!(parsed_params.mode, SearchMode::DpdLookup | SearchMode::Combined)
             {
                 let app_data = get_app_data();
-                match app_data.dbm.dpd.dpd_lookup_grouped(&query_text, false, true, false, None, None) {
-                    Ok(grouped) => (grouped.deconstructions, grouped.direct_uids),
+                let normalized_query = normalize_query_text(Some(query_text.clone()));
+                match app_data.dbm.dpd.dpd_lookup_grouped_memo(
+                    &normalized_query,
+                    false,
+                    true,
+                    false,
+                    parsed_params.uid_prefix.as_deref(),
+                    parsed_params.uid_suffix.as_deref(),
+                ) {
+                    Ok(grouped) => (grouped.deconstructions.clone(), grouped.direct_uids.clone()),
                     Err(e) => {
                         error(&format!("dpd_lookup_grouped for result page failed: {}", e));
                         (Vec::new(), Vec::new())
@@ -1989,6 +2018,16 @@ impl qobject::SuttaBridge {
                 // itself never resets — only this top-level entry does — so
                 // stale prefetcher threads from a previous search can't clobber
                 // the live cache while a cold-start join is in flight.
+                //
+                // The key embeds `params_json_text`, which now carries the
+                // break-down selection index and lock state, so toggling the
+                // lock or picking a different break-down changes the key and
+                // resets the cell — the DPD side is rebuilt at its new,
+                // filtered length. The same cache_key re-check that protects
+                // against a previous *search*'s prefetch thread also covers a
+                // previous *lock state*'s: both `fetch_combined_page` and
+                // `fetch_and_cache_page` re-check the key after every unlocked
+                // sub-query and return `Ok(None)` on mismatch.
                 {
                     let mut guard = COMBINED_CACHE.lock().unwrap();
                     let needs_reset = match *guard {
