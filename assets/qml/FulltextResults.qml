@@ -206,8 +206,14 @@ ColumnLayout {
         model: root.deconstructor_words
         current_index: root.selected_deconstruction_index
         locked: root.deconstructor_locked
+        // Picking a break-down auto-locks it, so the results filter to the
+        // chosen break-down without a second click — matching GlossTab and
+        // WordSummary. The lock stays independently toggleable afterwards. The
+        // selector is emit-only, so these assignments are what drive its
+        // visual state.
         onActivated: (index) => {
             root.selected_deconstruction_index = index;
+            root.deconstructor_locked = true;
             root.update_page();
         }
         onLock_toggled: (locked) => {

@@ -13,6 +13,14 @@ import QtQuick.Controls
 // The ComboBox emits changes only via `onActivated` (never
 // `onCurrentIndexChanged`), mirroring the sense-selection rule, so programmatic
 // index changes (e.g. restoring a saved selection) do not fire `activated`.
+//
+// This component is emit-only: it NEVER writes its own `current_index` or
+// `locked`. Both are owned by the embedder, which typically binds them to its
+// own state; a self-write here would destroy that binding, after which
+// programmatic changes (auto-lock on pick, resetting the selection on a new
+// query) would silently stop reaching the UI. The embedder assigns its own
+// state in `onActivated` / `onLock_toggled` and the value flows back down
+// through the binding.
 RowLayout {
     id: root
 
@@ -53,14 +61,17 @@ RowLayout {
         }
 
         onActivated: (index) => {
-            root.current_index = index;
             root.activated(index);
         }
     }
 
     ToolButton {
         id: lock_btn
-        checkable: true
+        // Deliberately NOT `checkable`: a checkable button flips its own
+        // `checked` on click, which would break the binding below and leave the
+        // visual state stale after a programmatic lock change. `checked` is
+        // driven purely from the embedder's state; the click only emits.
+        checkable: false
         checked: root.locked
         icon.source: root.locked ? "icons/32x32/system-uicons--lock.png"
                                  : "icons/32x32/system-uicons--lock-open.png"
@@ -70,8 +81,7 @@ RowLayout {
         ToolTip.text: root.locked ? "Unlock: show all break-downs" : "Lock: show only this break-down"
 
         onClicked: {
-            root.locked = lock_btn.checked;
-            root.lock_toggled(lock_btn.checked);
+            root.lock_toggled(!root.locked);
         }
     }
 }

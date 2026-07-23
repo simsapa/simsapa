@@ -255,6 +255,10 @@ Frame {
         RowLayout {
             id: row_two
             visible: root.deconstructor_words.length > 0
+            // Picking a break-down auto-locks it, so the summaries filter to the
+            // chosen break-down without a second click — matching GlossTab. The
+            // lock stays independently toggleable afterwards. The selector is
+            // emit-only, so these assignments are what drive its visual state.
             DeconstructorSelector {
                 id: deconstructor
                 Layout.fillWidth: true
@@ -266,6 +270,7 @@ Frame {
                 locked: root.deconstructor_locked
                 onActivated: (index) => {
                     root.selected_deconstruction_index = index;
+                    root.deconstructor_locked = true;
                     root.refilter_summaries();
                 }
                 onLock_toggled: (locked) => {
