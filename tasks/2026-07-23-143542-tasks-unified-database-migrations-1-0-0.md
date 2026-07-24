@@ -418,26 +418,59 @@ Each top-level task leaves the app compiling with relevant tests passing.
   - [x] 5.8 `make build -B`. (QML tests skipped unless asked.) Sanity-check the
     dialog layout mentally / via the user for the added rows and button.
 
-- [ ] 6.0 Update documentation and perform final end-to-end verification
+- [x] 6.0 Update documentation and perform final end-to-end verification
 
-  - [ ] 6.1 Rewrite the "Database migrations (appdata vs. dictionaries)" section in
+  - [x] 6.1 Rewrite the "Database migrations (appdata vs. dictionaries)" section in
     `AGENTS.md`: one mechanism (Diesel `run_pending_migrations` for both DBs),
     one table row per DB, delete the "you MUST also append to the `statements`
     array" instruction and the `;`-splitting / error-suppression constraints.
-  - [ ] 6.2 Rewrite the notable-docs bullet for
+    (Retitled "Database migrations"; gained the frozen-baseline / no-`archive/`
+    rules and the non-fatal-failure note.)
+  - [x] 6.2 Rewrite the notable-docs bullet for
     `docs/appdata-migration-mechanisms.md` in `AGENTS.md` to the resolved state.
-  - [ ] 6.3 Rewrite `docs/appdata-migration-mechanisms.md` (retitle, e.g.
+  - [x] 6.3 Rewrite `docs/appdata-migration-mechanisms.md` (retitle, e.g.
     *Database migrations*): why two mechanisms existed, why unified at 1.0.0, the
     squash, the non-fatal decision + startup-ordering that forces it, the rejected
     `db_version` pre-check, and the recovery/fabrication behaviour incl. the
-    "zero-byte vs schema-bearing" trap.
-  - [ ] 6.4 Add a short `AGENTS.md` QML rule: any UI running a long operation
+    "zero-byte vs schema-bearing" trap. **File renamed** to
+    `docs/database-migrations.md` (the old name asserts the state we just removed);
+    all 7 code/doc references updated. Also records the reproducible
+    squash-verification recipe (replay the old chain from git — the old-system
+    reference DBs are gone, re-bootstrapped), the `StartupDbReport` write rules,
+    the six validation rows, and the two report-lifetime facts found in review:
+    the presence record is a **startup snapshot, sticky for the process** (masked
+    in practice by the download window's "Quit and start again" completion screen),
+    and **"Not run" is a normal migration-row value** when the DB was missing.
+  - [x] 6.4 Add a short `AGENTS.md` QML rule: any UI running a long operation
     (download, re-index, bulk import) must bracket it with
-    `AssetManager.set_keep_screen_on(true/false)`, released on every exit path.
-  - [ ] 6.5 Update `PROJECT_MAP.md` wherever it references the migration folders or
-    `upgrade_appdata_schema()`.
-  - [ ] 6.6 Final verification pass against PRD §8 success metrics: single migration
+    `AssetManager.set_keep_screen_on(true/false)`, released on every exit path —
+    stated as release-in-the-completion-handler-only (never `onClosed`/`onRejected`,
+    the job outlives the dialog) plus the "initiated here" guard for global signals.
+  - [x] 6.5 Update `PROJECT_MAP.md` wherever it references the migration folders or
+    `upgrade_appdata_schema()`. **Scope widened during review** — 8 further live
+    docs referenced deleted migration folders or removed functions and were fixed
+    in the same pass: `PROJECT_MAP.md` (gloss history + gloss word selection
+    migration lists; the legacy-userdata section rewritten as *removed at 1.0.0*;
+    two new "Database Operations" bullets for the migration mechanism and the
+    startup report), `docs/gloss-ai-word-selection.md` (§2 + the file table's
+    "appended to `upgrade_appdata_schema()`"), `docs/user-data-and-sqlite-analyze.md`,
+    `docs/gloss-prompts-history.md`, `docs/dict-words-fts5-implementation.md` (×2),
+    `docs/startup-sequence-and-caches.md` (the `dict_words.dictionary_id` index
+    forensics), `docs/epub-image-loading-fix.md`.
+  - [x] 6.6 Final verification pass against PRD §8 success metrics: single migration
     folder each; `grep upgrade_appdata_schema` and `grep userdata.sqlite3` clean in
     code; `cd backend && cargo test` green (bar pre-existing unrelated failures);
     `make build -B` clean; manual/user check of the never-fatal + missing-DB +
     index-rebuild + keep-screen-on behaviours (metrics 7–13).
+
+    *Results:* metrics 2, 3, 9 verified clean by grep. Metric 1 (schema
+    equivalence) **re-verified independently**: the 13 + 4 old migrations replayed
+    from `b156dd21^` produce a `sqlite_master` **identical** to both baselines
+    (incl. chanting `DEFAULT 1` and `dict_words.dictionary_id`); both `down.sql`
+    run clean and leave 0 objects. Metric 6: both `dist/` DBs carry exactly one
+    ledger row (`20260723000000`). Metric 4: `cargo test` — 1 pre-existing
+    unrelated failure, `test_fulltext_search_so_ce_evam_vadeyya` (Tantivy hit-count
+    assertion, got 2331 / expected 2217 — index-content churn from the
+    re-bootstrap, not migration-related); everything else green. Metric 5:
+    `make build -B` clean. Metrics 7, 8, 10–13 need the running app on desktop +
+    an Android device and are left for the user's manual pass.

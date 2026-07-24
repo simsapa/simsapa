@@ -278,7 +278,7 @@ impl DbManager {
             // DB so schema additions are present. A migration failure is
             // NON-FATAL: it is logged and recorded, and startup continues so the
             // user can reach Database Validation and re-download. See
-            // docs/appdata-migration-mechanisms.md.
+            // docs/database-migrations.md.
             match SqliteConnection::establish(&g.paths.dict_database_url) {
                 Ok(mut dict_conn) => {
                     if let Err(e) = run_dictionaries_migrations(&mut dict_conn) {
@@ -505,7 +505,7 @@ mod startup_stub_tests {
     /// on the next launch and the DB is reported missing again instead of
     /// silently reading as "present". If this assertion ever fails, the
     /// recorded-absent database needs an explicit unlink after validation.
-    /// See docs/appdata-migration-mechanisms.md.
+    /// See docs/database-migrations.md.
     #[test]
     fn missing_db_open_leaves_zero_byte_stub() {
         let dir = tempfile::tempdir().expect("tempdir");

@@ -1645,7 +1645,7 @@ pub mod qobject {
 /// - **File missing** beats everything: without it the downstream query reports
 ///   the misleading "Query returned 0 results" for a database that was never
 ///   there. A zero-byte stub also reads as missing (see
-///   `docs/appdata-migration-mechanisms.md`).
+///   `docs/database-migrations.md`).
 /// - **Migration failed** otherwise. dpd has no migration folder, so its
 ///   outcome is always `NotApplicable` and only appdata/dictionaries can fail.
 fn startup_report_error(kind: DbKind, label: &str) -> Option<String> {

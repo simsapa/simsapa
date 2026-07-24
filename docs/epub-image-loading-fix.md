@@ -164,7 +164,7 @@ format!(r#"{}="/book_resources/{}/{}""#, attr, book_uid, full_path)
 - **EPUB Import:** `backend/src/epub_import.rs` (lines 155-231)
 - **API Endpoint:** `bridges/src/api.rs` (lines 279-328)
 - **Database Query:** `backend/src/db/appdata.rs` (line 223)
-- **Database Schema:** `backend/migrations/appdata/2025-12-04-130316_create_books_tables/up.sql`
+- **Database Schema:** `backend/migrations/appdata/2026-07-23-000000_initial_schema/up.sql` (the books tables arrived in `2025-12-04-130316_create_books_tables`, since squashed into the 1.0.0 baseline)
 
 ## Testing
 

@@ -1,5 +1,5 @@
 -- 1.0.0 baseline schema for appdata.sqlite3.
--- Squashed from the pre-1.0.0 migration chain (see docs/appdata-migration-mechanisms.md).
+-- Squashed from the pre-1.0.0 migration chain (see docs/database-migrations.md).
 -- FTS5 virtual tables + sync triggers are created separately by scripts/*-fts5-indexes.sql
 -- at bootstrap and are deliberately NOT part of this migration.
 

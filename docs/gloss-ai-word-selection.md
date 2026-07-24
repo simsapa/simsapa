@@ -104,9 +104,10 @@ to an option must go through this helper.
 
 ## 2. The cache key: word + normalized context window + tier
 
-Two appdata tables (migrations
-`backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/` and
-`…/2026-07-16-120000_gloss_cache_built_in_tier/`):
+Two appdata tables (introduced by the pre-1.0.0 migrations
+`2026-07-09-160000_create_gloss_word_selection` and
+`2026-07-16-120000_gloss_cache_built_in_tier`, both squashed into
+`backend/migrations/appdata/2026-07-23-000000_initial_schema/`):
 
 | `gloss_word_context_cache` | |
 |---|---|
@@ -821,7 +822,7 @@ as the context windows, so the two sides cannot drift.
 |---|---|
 | Normalization, hashing, resolution, export/import, response parsing | `backend/src/helpers.rs` |
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
-| Migration | `backend/migrations/appdata/2026-07-09-160000_create_gloss_word_selection/`; deconstruction cache column: `2026-07-21-173000_gloss_cache_deconstruction/` (both appended to `upgrade_appdata_schema()`) |
+| Migration | `backend/migrations/appdata/2026-07-23-000000_initial_schema/` (the 1.0.0 baseline; the tables and the `deconstruction` column arrived pre-1.0.0 as `2026-07-09-160000_create_gloss_word_selection` / `2026-07-16-120000_gloss_cache_built_in_tier` / `2026-07-21-173000_gloss_cache_deconstruction`, since squashed) |
 | Grouped DPD lookup | `backend/src/db/dpd.rs` (`dpd_lookup_grouped()`), structs in `backend/src/types.rs` (`GroupedDpdLookup` / `Deconstruction` / `DeconstructionComponent`) — see §9 |
 | AI fallback engine (Qt-free) | `bridges/src/ai_engine.rs` (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |

@@ -10,7 +10,7 @@ This document describes the implementation of FTS5 (Full-Text Search) indexes fo
 
 ### 1. Database Migration - Dictionary FTS5 Index
 
-**Location:** `backend/migrations/dictionaries/2025-05-03-143320_create-tables/up.sql`
+**Location:** `backend/migrations/dictionaries/2026-07-23-000000_initial_schema/up.sql` (originally `2025-05-03-143320_create-tables`, since squashed into the 1.0.0 baseline)
 
 Integrated into the main dictionaries create_tables migration, this adds:
 
@@ -31,7 +31,7 @@ Integrated into the main dictionaries create_tables migration, this adds:
 
 ### 2. Database Migration - Sutta Composite Indexes
 
-**Location:** `backend/migrations/appdata/2025-03-18-165332_create_tables/up.sql`
+**Location:** `backend/migrations/appdata/2026-07-23-000000_initial_schema/up.sql` (originally `2025-03-18-165332_create_tables`, since squashed into the 1.0.0 baseline)
 
 Integrated into the main appdata create_tables migration, this adds performance indexes for suttas table to optimize queries with source_uid filtering and other common filters:
 

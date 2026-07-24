@@ -1,5 +1,5 @@
 -- 1.0.0 baseline schema for dictionaries.sqlite3.
--- Squashed from the pre-1.0.0 migration chain (see docs/appdata-migration-mechanisms.md).
+-- Squashed from the pre-1.0.0 migration chain (see docs/database-migrations.md).
 -- The dict_words_fts FTS5 virtual table + sync triggers are created separately by
 -- scripts/dictionaries-fts5-indexes.sql at bootstrap and are NOT part of this migration.
 

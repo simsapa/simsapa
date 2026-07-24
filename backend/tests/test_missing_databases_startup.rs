@@ -6,7 +6,7 @@
 //! `OnceLock`, so this cannot share a process with the tests that use the real
 //! bootstrapped database.
 //!
-//! See `docs/appdata-migration-mechanisms.md` for why a fabricated,
+//! See `docs/database-migrations.md` for why a fabricated,
 //! schema-bearing dictionaries DB is harmful (it is not zero bytes, so
 //! `ensure_no_empty_db_files()` never reclaims it and the honest "was missing"
 //! diagnosis is lost on the next launch).
