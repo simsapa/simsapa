@@ -3392,8 +3392,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         property string component_word: ""
 
         Label {
-            text: "Remove your saved selection for '" + unsave_word_dialog.word + "' in this context? The word returns to the unchecked state. Any built-in selection for it is kept and applies again in a new session."
+            text: "<p>Remove your saved selection for '" + unsave_word_dialog.word + "' in this context?<br>The word returns to the unchecked state.<br>Any built-in selection for it is kept and applies again in a new session.</p>"
             wrapMode: Text.WordWrap
+            textFormat: Text.RichText
         }
 
         onAccepted: {
