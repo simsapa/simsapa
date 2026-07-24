@@ -248,13 +248,12 @@ takes seconds — so the placeholders are visible there, as designed.
 
 ### Fix 1 — the index (the actual cure)
 
-`backend/migrations/dictionaries/2026-07-15-120000_add_dict_words_dictionary_id_index`
-adds `dict_words_dictionary_id_idx ON dict_words (dictionary_id)`. Since
-`dictionaries.sqlite3` uses **real runtime Diesel migrations** (unlike
-`appdata.sqlite3` — see
-[appdata-migration-mechanisms.md](./appdata-migration-mechanisms.md)),
-the dated folder is the complete job: existing installs get the index on
-next launch. Measured effect: the panel's `refresh_state()` went from
+The migration `2026-07-15-120000_add_dict_words_dictionary_id_index` (since
+squashed into `backend/migrations/dictionaries/2026-07-23-000000_initial_schema/`)
+adds `dict_words_dictionary_id_idx ON dict_words (dictionary_id)`. Both migrated
+databases use **runtime Diesel migrations** (see
+[database-migrations.md](./database-migrations.md)), so the dated folder is the
+complete job: existing installs get the index on next launch. Measured effect: the panel's `refresh_state()` went from
 8.7 s to 62 ms; launch → `app.exec()` from ~9.5 s to ~2.0 s.
 
 Gotcha hit while verifying: adding a migration folder does **not** make

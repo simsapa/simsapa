@@ -1,3 +1,8 @@
+-- 1.0.0 baseline schema for dictionaries.sqlite3.
+-- Squashed from the pre-1.0.0 migration chain (see docs/database-migrations.md).
+-- The dict_words_fts FTS5 virtual table + sync triggers are created separately by
+-- scripts/dictionaries-fts5-indexes.sql at bootstrap and are NOT part of this migration.
+
 CREATE TABLE dictionaries (
     id INTEGER NOT NULL,
     label VARCHAR NOT NULL,
@@ -9,7 +14,7 @@ CREATE TABLE dictionaries (
     feedback_url VARCHAR,
     version VARCHAR,
     created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-    updated_at DATETIME,
+    updated_at DATETIME, is_user_imported BOOLEAN NOT NULL DEFAULT 0, language TEXT NULL, indexed_at TIMESTAMP NULL,
     PRIMARY KEY (id),
     UNIQUE (label)
 );
@@ -43,15 +48,25 @@ CREATE TABLE dict_words (
     UNIQUE (uid)
 );
 
--- B-tree indexes for efficient queries and deletions:
+CREATE TABLE dict_resources (
+    id INTEGER NOT NULL,
+    dictionary_id INTEGER NOT NULL,
+    resource_path VARCHAR NOT NULL,
+    mime_type VARCHAR,
+    content_data BLOB,
+    created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+    updated_at DATETIME,
+    PRIMARY KEY (id),
+    FOREIGN KEY(dictionary_id) REFERENCES dictionaries (id) ON DELETE CASCADE
+);
 
--- Index on dict_words.dict_label for fast filtering by dict_label (used in removal operations)
 CREATE INDEX dict_words_dict_label_idx ON dict_words(dict_label);
 
--- Composite index for dict_label + word filtering
 CREATE INDEX dict_words_idx ON dict_words(dict_label, word);
 
--- Covering index for SELECT DISTINCT language FROM dict_words (search-bar lang filter).
 CREATE INDEX dict_words_language_idx ON dict_words(language);
 
--- FTS5 trigram indexes will be added with sql script.
+CREATE INDEX dict_resources_dict_id_path_idx ON dict_resources(dictionary_id, resource_path);
+
+CREATE INDEX dict_words_dictionary_id_idx ON dict_words (dictionary_id);
+

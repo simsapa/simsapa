@@ -1285,10 +1285,10 @@ ${query_text}`;
         try {
             let status = JSON.parse(status_json);
             if (!status.exists) {
-                search_index_notification.status_text = "Search index not found. Fulltext search will not work until you build it.\n\nUse File > Rebuild Search Index to create one.";
+                search_index_notification.status_text = "Search index not found. Fulltext search will not work until you build it.\n\nUse Settings → General → Database → Rebuild Search Index to create one.";
                 search_index_notification.open();
             } else if (!status.current) {
-                search_index_notification.status_text = "Search index is outdated. Re-indexing is recommended for best results.\n\nUse File > Rebuild Search Index to update it.";
+                search_index_notification.status_text = "Search index is outdated. Re-indexing is recommended for best results.\n\nUse Settings → General → Database → Rebuild Search Index to update it.";
                 search_index_notification.open();
             }
         } catch (e) {

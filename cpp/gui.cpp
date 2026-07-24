@@ -54,7 +54,6 @@ extern "C" void init_app_data();
 extern "C" void init_android_context(void* java_vm, void* context);
 #endif
 extern "C" void import_user_data_after_upgrade();
-extern "C" void cleanup_stale_legacy_userdata();
 extern "C" void check_and_configure_for_first_start();
 extern "C" bool reconcile_dict_indexes_needed_c();
 extern "C" void reconcile_dict_indexes_blocking_c();
@@ -432,7 +431,7 @@ int start(int argc, char* argv[]) {
     free_rust_string(desktop_file_path);
   }
 
-  app.setApplicationVersion("v0.4.4");
+  app.setApplicationVersion("v1.0.0-alpha.1");
 
   // app_windows = AppWindows(app, app_data, hotkeys_manager, enable_tray_icon)
 
@@ -482,10 +481,6 @@ int start(int argc, char* argv[]) {
   // Import user data from the import-me folder if it exists.
   // This restores app settings and user-imported books after a database upgrade.
   import_user_data_after_upgrade();
-
-  // Remove any stale legacy userdata.sqlite3 left behind after the one-shot
-  // alpha-upgrade bridge completed. No-op when no import-me/ is pending.
-  cleanup_stale_legacy_userdata();
 
   // Check if this is the first start and configure settings based on system memory
   check_and_configure_for_first_start();

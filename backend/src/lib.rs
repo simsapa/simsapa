@@ -861,28 +861,39 @@ pub extern "C" fn dotenv_c() {
     init_dotenv();
 }
 
+/// Delete zero-byte database files left behind by a previous run, and record
+/// the resulting presence-at-start into the startup report.
+///
+/// This runs from `gui.cpp` before `QApplication`, i.e. before any code can
+/// create a database file, so on the GUI path it is the authoritative first
+/// writer of the presence record (see `db::record_db_presence()`, first write
+/// wins). A stub deleted here is recorded as **missing**, which is what makes
+/// the diagnosis honest across launches. `DbManager::new()` re-records the same
+/// sweep for the non-GUI paths.
 #[unsafe(no_mangle)]
 pub extern "C" fn ensure_no_empty_db_files() {
     let g = get_app_globals();
-    for p in [g.paths.appdata_db_path.clone(),
-              g.paths.app_assets_dir.join("userdata.sqlite3"),
-              g.paths.dict_db_path.clone(),
-              g.paths.dpd_db_path.clone()] {
+    for (p, kind) in [(g.paths.appdata_db_path.clone(), crate::db::DbKind::Appdata),
+                      (g.paths.dict_db_path.clone(), crate::db::DbKind::Dictionaries),
+                      (g.paths.dpd_db_path.clone(), crate::db::DbKind::Dpd)] {
+        let mut present = false;
         match p.try_exists() {
             Ok(true) => {
                 match fs::metadata(&p) {
                     Ok(metadata) if metadata.len() == 0 => {
                         if let Err(e) = fs::remove_file(&p) {
                             eprintln!("Failed to remove file {:?}: {}", p, e);
+                            present = true;
                         }
                     }
-                    Ok(_) => {}, // File exists but is not empty
+                    Ok(_) => present = true, // File exists but is not empty
                     Err(e) => eprintln!("Failed to get metadata for {:?}: {}", p, e),
                 }
             }
             Ok(false) => {}, // File doesn't exist
             Err(e) => eprintln!("Failed to check if file exists {:?}: {}", p, e),
         }
+        crate::db::record_db_presence(kind, present);
     }
 }
 
@@ -891,7 +902,6 @@ pub extern "C" fn ensure_no_empty_db_files() {
 /// This is called during app startup. If the marker file exists, it deletes:
 /// - The marker file itself
 /// - appdata.sqlite3
-/// - userdata.sqlite3
 /// - dictionaries.sqlite3
 /// - dpd.sqlite3
 /// - index/ (the fulltext search index directory; the next asset download
@@ -921,10 +931,8 @@ pub extern "C" fn check_delete_files_for_upgrade() {
             }
 
             // Delete database files
-            let legacy_userdata_path = g.paths.app_assets_dir.join("userdata.sqlite3");
             let db_paths = [
                 &g.paths.appdata_db_path,
-                &legacy_userdata_path,
                 &g.paths.dict_db_path,
                 &g.paths.dpd_db_path,
             ];
@@ -1121,44 +1129,6 @@ pub extern "C" fn check_remove_lang_index_dirs() {
         }
     } else {
         warn("Keeping remove_lang_index_dirs.txt marker file for retry on next start");
-    }
-}
-
-/// Silent cleanup of a stale legacy `userdata.sqlite3` file.
-///
-/// If `app_assets_dir/userdata.sqlite3` exists and there is no pending `import-me/`
-/// folder (i.e. the legacy bridge has already completed), remove the stale file.
-/// This handles the case where the bridge ran but the empty/stale userdata file remains.
-#[unsafe(no_mangle)]
-pub extern "C" fn cleanup_stale_legacy_userdata() {
-    let g = get_app_globals();
-    let legacy_path = g.paths.app_assets_dir.join("userdata.sqlite3");
-    let import_dir = g.paths.app_assets_dir.join("import-me");
-
-    match legacy_path.try_exists() {
-        Ok(true) => {},
-        Ok(false) => return,
-        Err(e) => {
-            error(&format!("cleanup_stale_legacy_userdata: try_exists failed for {}: {}", legacy_path.display(), e));
-            return;
-        }
-    }
-
-    match import_dir.try_exists() {
-        Ok(true) => {
-            info("cleanup_stale_legacy_userdata: import-me/ pending — skipping cleanup");
-            return;
-        }
-        Ok(false) => {}
-        Err(e) => {
-            error(&format!("cleanup_stale_legacy_userdata: try_exists failed for {}: {}", import_dir.display(), e));
-            return;
-        }
-    }
-
-    match fs::remove_file(&legacy_path) {
-        Ok(_) => info(&format!("cleanup_stale_legacy_userdata: removed stale {}", legacy_path.display())),
-        Err(e) => error(&format!("cleanup_stale_legacy_userdata: failed to remove {}: {}", legacy_path.display(), e)),
     }
 }
 

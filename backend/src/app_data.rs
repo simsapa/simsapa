@@ -1,5 +1,5 @@
 use std::sync::RwLock;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use indexmap::IndexMap;
 
@@ -2898,17 +2898,6 @@ impl AppData {
             errors.push(("user_dictionaries".to_string(), format!("{:#}", e)));
         }
 
-        // One-shot legacy bridge: if userdata.sqlite3 still exists (alpha testers
-        // upgrading from the pre-consolidation two-DB layout), pull its user data
-        // into the standard per-table import files and keep a safety-net copy.
-        if self.legacy_userdata_exists() {
-            info("export_user_data_to_assets(): legacy userdata.sqlite3 detected — running one-shot bridge");
-            if let Err(e) = self.export_from_legacy_userdata(&import_dir) {
-                error(&format!("Legacy userdata export failed: {}", e));
-                errors.push(("legacy_bridge".to_string(), format!("{:#}", e)));
-            }
-        }
-
         if errors.is_empty() {
             info("export_user_data_to_assets(): Export completed successfully");
             Ok(())
@@ -2918,77 +2907,6 @@ impl AppData {
             }
             Err(errors)
         }
-    }
-
-    /// Returns true if the legacy `userdata.sqlite3` file exists in the app assets dir.
-    /// Used only by the one-shot alpha-upgrade bridge.
-    fn legacy_userdata_exists(&self) -> bool {
-        let g = get_app_globals();
-        let path = g.paths.app_assets_dir.join("userdata.sqlite3");
-        matches!(path.try_exists(), Ok(true))
-    }
-
-    fn legacy_userdata_path(&self) -> PathBuf {
-        let g = get_app_globals();
-        g.paths.app_assets_dir.join("userdata.sqlite3")
-    }
-
-    /// One-shot legacy bridge: copies `userdata.sqlite3` into the import-me folder,
-    /// applies idempotent schema upgrades to that copy, extracts `app_settings.json`,
-    /// and aliases the copy under the per-table export filenames so the standard
-    /// importer will pick them up — but only for tables not already exported.
-    fn export_from_legacy_userdata(&self, import_dir: &Path) -> Result<()> {
-        use diesel::sqlite::SqliteConnection;
-        use crate::db::upgrade_appdata_schema;
-        use crate::db::appdata_schema::app_settings;
-
-        let legacy_path = self.legacy_userdata_path();
-
-        // 5.3: safety-net full copy
-        let safety_copy = import_dir.join("legacy-userdata.sqlite3");
-        std::fs::copy(&legacy_path, &safety_copy)
-            .with_context(|| format!("Failed to copy legacy userdata to {}", safety_copy.display()))?;
-        info(&format!("Legacy bridge: copied userdata.sqlite3 to {}", safety_copy.display()));
-
-        // Apply idempotent schema upgrades to the copy so Diesel models can load from it.
-        let copy_url = format!("sqlite://{}", safety_copy.display());
-        let mut legacy_conn = SqliteConnection::establish(&copy_url)
-            .with_context(|| format!("Failed to open legacy userdata copy: {}", safety_copy.display()))?;
-        upgrade_appdata_schema(&mut legacy_conn);
-
-        // Extract app_settings.json from the legacy DB. Overwrites any standard export so
-        // the alpha user's pre-upgrade settings take precedence.
-        let app_settings_out = import_dir.join("app_settings.json");
-        let row: Option<AppSetting> = app_settings::table
-            .filter(app_settings::key.eq("app_settings"))
-            .select(AppSetting::as_select())
-            .first(&mut legacy_conn)
-            .optional()
-            .context("Failed to read legacy app_settings")?;
-        if let Some(setting) = row
-            && let Some(val) = setting.value {
-                std::fs::write(&app_settings_out, &val)
-                    .context("Failed to write app_settings.json from legacy")?;
-                info("Legacy bridge: exported app_settings.json from legacy userdata");
-            }
-
-        // Alias the migrated copy under the per-table filenames the standard importer expects,
-        // but only when those files are missing — the standard export from appdata wins.
-        for target_name in ["appdata-bookmarks.sqlite3", "appdata-books.sqlite3", "appdata-chanting.sqlite3"] {
-            let target_path = import_dir.join(target_name);
-            match target_path.try_exists() {
-                Ok(true) => {
-                    info(&format!("Legacy bridge: {} already present — skipping", target_name));
-                }
-                _ => {
-                    std::fs::copy(&safety_copy, &target_path)
-                        .with_context(|| format!("Failed to copy legacy into {}", target_name))?;
-                    info(&format!("Legacy bridge: aliased legacy into {}", target_name));
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// Export app settings to JSON file.
@@ -3225,18 +3143,6 @@ impl AppData {
             error(&format!("Failed to import user dictionaries: {}", e));
         }
 
-        // Defensive tail pass for the one-shot legacy bridge: if legacy-userdata.sqlite3
-        // is present and the current app_settings in appdata still looks like defaults,
-        // re-apply the legacy app_settings. (Bookmark/book/chanting tables already got
-        // aliased copies during export, so the standard importer handled those.)
-        let legacy_copy = import_dir.join("legacy-userdata.sqlite3");
-        if matches!(legacy_copy.try_exists(), Ok(true)) {
-            info("import_user_data_from_assets(): legacy-userdata.sqlite3 present — running defensive tail pass");
-            if let Err(e) = self.defensive_reapply_legacy_app_settings(&legacy_copy) {
-                error(&format!("Defensive legacy app_settings re-apply failed: {}", e));
-            }
-        }
-
         // Clean up: remove the import-me folder, but preserve
         // `user_dictionaries.sqlite3` if it is still present (PRD task 5.6).
         // If the dictionary import succeeded the importer already deleted
@@ -3275,59 +3181,6 @@ impl AppData {
         }
 
         info("import_user_data_from_assets(): Import completed");
-        Ok(())
-    }
-
-    /// Defensive tail pass for the one-shot legacy bridge.
-    ///
-    /// Re-reads `app_settings` from the legacy-userdata copy and applies it into appdata
-    /// unconditionally. The standard importer's `app_settings.json` step is usually the
-    /// source of truth, but this pass guards against the JSON extraction failing silently.
-    fn defensive_reapply_legacy_app_settings(&self, legacy_copy: &Path) -> Result<()> {
-        use diesel::sqlite::SqliteConnection;
-        use crate::db::appdata_schema::app_settings;
-
-        let url = format!("sqlite://{}", legacy_copy.display());
-        let mut conn = SqliteConnection::establish(&url)
-            .with_context(|| format!("Failed to open legacy userdata copy: {}", legacy_copy.display()))?;
-
-        let row: Option<AppSetting> = app_settings::table
-            .filter(app_settings::key.eq("app_settings"))
-            .select(AppSetting::as_select())
-            .first(&mut conn)
-            .optional()
-            .context("Failed to read legacy app_settings")?;
-
-        let Some(setting) = row else {
-            info("Defensive tail: legacy app_settings row not found");
-            return Ok(());
-        };
-        let Some(val) = setting.value else {
-            info("Defensive tail: legacy app_settings value is NULL");
-            return Ok(());
-        };
-
-        // Parse once to validate the JSON and to seed the in-memory cache, but
-        // write the original bytes back to the DB — re-serializing would only
-        // reproduce the same content (modulo field ordering) and could drop
-        // any future fields we haven't taught `AppSettings` about yet.
-        let imported: AppSettings = serde_json::from_str(&val)
-            .context("Failed to parse legacy app_settings JSON")?;
-
-        {
-            let mut cache = self.app_settings_cache.write().expect("Failed to write app settings");
-            *cache = imported;
-        }
-
-        let db_conn = &mut self.dbm.appdata.get_conn()
-            .context("Failed to get appdata connection")?;
-        diesel::update(app_settings::table)
-            .filter(app_settings::key.eq("app_settings"))
-            .set(app_settings::value.eq(Some(val.as_str())))
-            .execute(db_conn)
-            .context("Failed to update app_settings from legacy tail pass")?;
-
-        info("Defensive tail: legacy app_settings re-applied to appdata");
         Ok(())
     }
 
@@ -3393,11 +3246,9 @@ impl AppData {
         let mut import_conn = SqliteConnection::establish(&import_db_url)
             .with_context(|| format!("Failed to open import database: {}", import_db_path.display()))?;
 
-        // Filter to user-added rows only. The legacy one-shot bridge aliases
-        // the full userdata.sqlite3 copy as appdata-books.sqlite3, which could
-        // contain bootstrap-seeded rows copied around in earlier alpha builds;
-        // UID collisions would skip them anyway, but the filter keeps the
-        // import contract explicit and avoids touching seeded rows.
+        // Filter to user-added rows only: UID collisions would skip
+        // bootstrap-seeded rows anyway, but the filter keeps the import contract
+        // explicit and avoids touching seeded rows.
         let import_books: Vec<Book> = books::table
             .filter(books::is_user_added.eq(true))
             .load::<Book>(&mut import_conn)
@@ -3632,10 +3483,8 @@ impl AppData {
         let mut import_conn = SqliteConnection::establish(&db_url)
             .with_context(|| format!("Failed to open bookmark import database: {}", sqlite_path.display()))?;
 
-        // Filter defensively: the legacy one-shot bridge aliases the full
-        // userdata.sqlite3 copy as appdata-bookmarks.sqlite3, so the import DB
-        // may contain transient `is_last_session = true` folders and rows that
-        // predate the `is_user_added` column. Mirror the export contract here.
+        // Filter defensively to mirror the export contract: skip transient
+        // `is_last_session = true` folders and non-user-added rows.
         let import_folders: Vec<BookmarkFolder> = bookmark_folders::table
             .filter(bookmark_folders::is_last_session.eq(false))
             .filter(bookmark_folders::is_user_added.eq(true))
@@ -3685,8 +3534,7 @@ impl AppData {
             };
 
             // Load items from the import database for this source folder.
-            // Filter by `is_user_added` to match the export contract — see the
-            // folder-load site above for the legacy-bridge aliasing reason.
+            // Filter by `is_user_added` to match the export contract.
             let items: Vec<BookmarkItem> = bookmark_items::table
                 .filter(bookmark_items::folder_id.eq(folder.id))
                 .filter(bookmark_items::is_user_added.eq(true))

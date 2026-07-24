@@ -105,8 +105,10 @@ Notes:
   has nothing to get wrong; there is no join for bad stats to wreck. The bulk
   re-import is also bounded by what one user personally selected (hundreds of
   rows), against a freshly downloaded DB that bootstrap already `ANALYZE`d.
-- Schema migrations / startup schema upgrades (`run_dictionaries_migrations`,
-  `upgrade_appdata_schema`): we don't `ANALYZE` after these because we ship a
+- Schema migrations (`run_appdata_migrations` / `run_dictionaries_migrations`,
+  both Diesel `run_pending_migrations` — see
+  [database-migrations.md](./database-migrations.md)): we don't `ANALYZE` after
+  these because we ship a
   new shipped DB on any change large enough to shift selectivity — migrations
   that run on already-installed DBs are limited to additive ALTERs that don't
   move row counts.

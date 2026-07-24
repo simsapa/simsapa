@@ -10,7 +10,9 @@ use helpers as h;
 fn ensure_bookmark_tables() {
     let app_data = get_app_data();
 
-    let up_sql = include_str!("../migrations/appdata/2026-04-02-120000_create_bookmarks/up.sql");
+    // The 1.0.0 baseline creates the full appdata schema (incl. bookmark tables).
+    // "already exists" errors are swallowed below when tables are present.
+    let up_sql = include_str!("../migrations/appdata/2026-07-23-000000_initial_schema/up.sql");
 
     let mut db_conn = app_data.dbm.appdata.get_conn().expect("get conn");
     for statement in up_sql.split(';') {

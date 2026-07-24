@@ -46,20 +46,23 @@ Notable feature docs:
   session restore `singleShot(0)`-posted (ordering is load-bearing), webview
   `Loader`s `asynchronous` on desktop only — never create a webview before
   `app.exec()`.
-- [Why `appdata` has two migration mechanisms](./docs/appdata-migration-mechanisms.md) —
-  `dictionaries.sqlite3` is migrated at runtime by Diesel, but `appdata.sqlite3`
-  is upgraded in place by `upgrade_appdata_schema()`, a **hand-maintained array**
-  of `include_str!`'d `up.sql` files. Explains the historical reason (the array is
-  a leftover from when `APPDATA_MIGRATIONS` built a separate `userdata.sqlite3`),
-  why the code comment's rationale ("outside Diesel's migration system") is now
-  **false** (bootstrap does stamp `__diesel_schema_migrations`), what keeps the two
-  in sync today (the `major.minor` DB-version gate forces a re-download; the array
-  covers additive changes within a minor series), and the **two live divergences**
-  (`upgrade_appdata_schema` never stamps the ledger; the non-replayable table-rewrite
-  migration `2026-04-14-000001` has never run on an upgraded install). Concludes
-  that unifying on Diesel is **safe today but only until 0.4.4 ships** — afterwards
-  it needs a ledger-baseline pre-pass or `run_pending_migrations` hard-fails startup
-  with `table already exists`.
+- [Database migrations](./docs/database-migrations.md) — **one** runtime
+  mechanism for both migrated databases: Diesel `run_pending_migrations()`.
+  Records why two mechanisms existed until 1.0.0 (`upgrade_appdata_schema()`, a
+  hand-maintained array of `include_str!`'d `up.sql` files replayed with errors
+  swallowed — a leftover from when `APPDATA_MIGRATIONS` built a separate
+  `userdata.sqlite3`), the bugs it caused, and why the 1.0.0 clean-break release
+  was the moment to **squash** 13 appdata + 4 dictionaries migrations into one
+  `2026-07-23-000000_initial_schema` baseline each and delete it. Covers the
+  **non-fatal migration failure** rule and the startup ordering that forces it
+  (Database Validation is only reachable if `DbManager::new()` succeeded, so a
+  fatal migration error would destroy the exact recovery UI the user needs), the
+  rejected `db_version` pre-check, why no ledger-stamping pre-pass is needed, and
+  the **missing-database recovery** behaviour — including the trap that a
+  *fabricated* empty database is **not** zero bytes, so `ensure_no_empty_db_files()`
+  never reclaims it (which is why `initialize_dictionaries()` was deleted rather
+  than fixed), and the `StartupDbReport` process-global that makes "Database file
+  was missing" an honest diagnosis instead of "Query returned 0 results".
 - [User data imports and SQLite `ANALYZE`](./docs/user-data-and-sqlite-analyze.md) —
   every code path that grows a shipped DB at runtime (StarDict zip/dir,
   EPUB/PDF/HTML books, sutta language downloads) and where the matching
@@ -440,6 +443,32 @@ When you create a new QML component such as `SearchBarInput.qml`, the file has t
 qml_files.push("../assets/qml/SearchBarInput.qml");
 ```
 
+### Long operations in QML must keep the screen awake
+
+**Any UI that starts a long-running operation — download, search-index rebuild,
+bulk import — must bracket it with `AssetManager.set_keep_screen_on(true)` /
+`set_keep_screen_on(false)`.** On Android this sets `FLAG_KEEP_SCREEN_ON`
+(`cpp/screen.cpp`); elsewhere it is a no-op. Without it the device suspends
+part-way through and the operation is interrupted.
+
+``` qml
+AssetManager { id: manager }
+// ...
+manager.set_keep_screen_on(true);
+SuttaBridge.rebuild_search_index();
+```
+
+Two rules for the release:
+
+- **Release when the operation actually ends** — in its completion signal
+  handler, on **both** success and failure. Do **not** release in a dialog's
+  `onClosed` / `onRejected`: the backend job runs on a spawned thread and
+  continues after the dialog closes, so closing would drop the lock mid-operation.
+- **If the completion signal is global** (e.g. `rebuildSearchIndexProgress` /
+  `rebuildSearchIndexCompleted` on `SuttaBridge`, which several windows listen
+  to), guard the handlers with an "initiated here" boolean so only the window
+  that started the operation updates its state and releases its own lock.
+
 ### Logging in QML (no console API)
 
 In the QML files under `assets/qml/`, do **not** use the `console` API
@@ -524,63 +553,56 @@ assets/qml/com/profoundlabs/simsapa/PromptManager.qml
 assets/qml/com/profoundlabs/simsapa/qmldir
 ```
 
-### Database migrations (appdata vs. dictionaries)
+### Database migrations
 
-The two databases apply migrations by **different mechanisms**. Adding a folder
-under `backend/migrations/` is only half the job for `appdata`.
+Both migrated databases use **one** mechanism at runtime: Diesel
+`run_pending_migrations()`. Creating a dated folder under `backend/migrations/`
+is the **whole** job — there is no second list to register it in.
 
 | DB | Migration folder | Applied at runtime by |
 |---|---|---|
-| `dictionaries.sqlite3` | `backend/migrations/dictionaries/` | `run_dictionaries_migrations()` — real Diesel `run_pending_migrations()`. Nothing else to do. |
-| `appdata.sqlite3` | `backend/migrations/appdata/` | `upgrade_appdata_schema()` — a **hand-maintained list** in `backend/src/db/mod.rs`. |
+| `appdata.sqlite3` | `backend/migrations/appdata/` | `run_appdata_migrations()` — Diesel `run_pending_migrations(APPDATA_MIGRATIONS)` |
+| `dictionaries.sqlite3` | `backend/migrations/dictionaries/` | `run_dictionaries_migrations()` — Diesel `run_pending_migrations(DICTIONARIES_MIGRATIONS)` |
+| `dpd.sqlite3` | — | nothing; imported wholesale from upstream DPD, no migration folder |
+
+Both runners live in `backend/src/db/mod.rs` and are called from
+`DbManager::new()`. `embed_migrations!` picks up whatever folders exist, so a
+**rebuild** is required after adding or editing one.
 
 `appdata.sqlite3` is shipped pre-built, downloaded once at first-run setup, and
 then **kept across app updates** because it also holds user data (bookmarks,
-gloss/prompts history, chanting recordings, imported books).
-`run_pending_migrations(APPDATA_MIGRATIONS)` is called **only** during CLI
-bootstrap (`cli/src/`), in the DB-export paths, and in tests. On app startup
-`DatabaseManager` instead calls `upgrade_appdata_schema()`, which replays an
-explicit array of `include_str!`'d `up.sql` files, swallowing "already exists" /
-"duplicate column" errors so the whole list is idempotent.
+gloss/prompts history, chanting recordings, imported books). It carries a
+populated `__diesel_schema_migrations` ledger (bootstrap wrote it), so at runtime
+Diesel applies exactly the migrations that are new, once, in a transaction, and
+stamps them.
 
-Note that the shipped `appdata.sqlite3` **does** carry a populated
-`__diesel_schema_migrations` ledger (bootstrap wrote it). `upgrade_appdata_schema()`
-does **not** update that ledger, so on an in-place-upgraded install the ledger
-under-reports what the schema actually contains. See
-[appdata-migration-mechanisms.md](./docs/appdata-migration-mechanisms.md) for why
-the two mechanisms exist and what it would take to unify them.
+At 1.0.0 the accumulated migrations were **squashed** into a single baseline per
+database (`2026-07-23-000000_initial_schema`), and the old hand-maintained
+`upgrade_appdata_schema()` replay was deleted. See
+[database-migrations.md](./docs/database-migrations.md) for the history, the
+non-fatal-failure rule, and the missing-database recovery behaviour.
 
-**IMPORTANT — when you add an `appdata` migration, you MUST also append its
-`up.sql` to the `statements` array in `upgrade_appdata_schema()`
-(`backend/src/db/mod.rs`), in date order.** Otherwise the new tables/columns
-exist only for anyone who re-bootstraps the DB from scratch; every existing
-install fails at runtime with `no such table: …` (the errors surface as `ERROR`
-log lines from the query functions, not from the migration code, so they are
-easy to misread as a query bug).
+Rules for migration `up.sql` files:
 
-```rust
-let statements = [
-    // ...
-    // 2026-07-09: gloss word context cache and phrase selections
-    include_str!("../../migrations/appdata/2026-07-09-160000_create_gloss_word_selection/up.sql"),
-];
-```
+- **Never edit a migration that has already shipped.** The 1.0.0 baselines are
+  frozen; add a new dated folder instead.
+- Folder names must remain **date-ordered**.
+- Delete superseded folders outright — never move them to an `archive/`
+  subdirectory under `backend/migrations/`, because `embed_migrations!` walks
+  that tree.
+- Ordinary multi-statement SQL is fine: statements are separated by `;`, and
+  trigger bodies with `BEGIN … END` are allowed (there is no `;`-splitting and no
+  error suppression any more). FTS5 virtual tables and their sync triggers still
+  belong in the `scripts/` SQL, not in a migration — see the next section.
+- Table rewrites are expressible now, but a rewrite still argues for a DB
+  minor-version bump so installs re-download instead.
 
-Constraints on `appdata` `up.sql` files, imposed by the replay:
-
-- The file is split on `;`, so **no semicolons inside a statement** (no triggers
-  with `BEGIN … END` bodies — those belong in the `scripts/` FTS5 SQL instead).
-- Only `CREATE TABLE` and `ALTER TABLE … ADD COLUMN` failures are suppressed
-  ("already exists" / "duplicate column"). Write everything else with
-  `IF NOT EXISTS` (e.g. `CREATE INDEX IF NOT EXISTS`) or it will log a warning on
-  every launch.
-- Never edit a migration that has already shipped — replaying it must be a no-op
-  on an upgraded DB. Add a new dated folder instead.
-- Migrations that **rewrite** a table (the SQLite `CREATE new` / `INSERT SELECT` /
-  `DROP old` / `RENAME` dance, e.g. `2026-04-14-000001_chanting_is_user_added_default_true`)
-  are **not replayable** and are deliberately left **out** of the array. They only
-  ever run at bootstrap. Prefer additive migrations; if you must rewrite a table,
-  it needs a DB minor-version bump so installs re-download instead.
+**A migration failure at startup is non-fatal by design** — it is logged
+(`run_appdata_migrations(): FAILED: …`), recorded in the `StartupDbReport`
+process-global, surfaced in Database Validation, and startup continues. Do not
+"fix" this by propagating the error: Database Validation is only reachable if
+`DbManager::new()` succeeded, so a fatal migration error destroys the recovery UI
+the user needs.
 
 ### FTS5 fulltext search tables (scripts in `scripts/`)
 

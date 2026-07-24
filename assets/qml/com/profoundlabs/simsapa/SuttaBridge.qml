@@ -265,6 +265,10 @@ Item {
         console.log("rebuild_search_index()");
     }
 
+    function get_startup_db_report(): string {
+        return '{"appdata": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dictionaries": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dpd": {"present_at_start": true, "migration_ok": null, "migration_error": null}}';
+    }
+
     function remove_book(book_uid: string) {
         return;
     }

@@ -16,7 +16,7 @@ both tabs must keep them in sync and future edits to either tab will re-hit them
 
 | Layer | Location |
 |-------|----------|
-| Table `gloss_prompts_history` | migration `backend/migrations/appdata/2026-06-27-131935_create_gloss_prompts_history`, schema `backend/src/db/appdata_schema.rs` |
+| Table `gloss_prompts_history` | migration `backend/migrations/appdata/2026-07-23-000000_initial_schema` (originally `2026-06-27-131935_create_gloss_prompts_history`, since squashed), schema `backend/src/db/appdata_schema.rs` |
 | Model + `HistoryItemType` | `backend/src/db/appdata_models.rs` (`GlossPromptsHistory`, `NewGlossPromptsHistory`) |
 | CRUD helpers + tests | `backend/src/db/appdata.rs` (`get_history_for_type` / `save_new_history` / `update_history` / `delete_history_item` / `clear_history`; `history_tests`) |
 | Bridge (shared, `item_type`-parameterised) | `bridges/src/sutta_bridge.rs` (`save_history_session_impl` + the `*_background` / `*_blocking` fns + `historyListReady`/`historySaved`/`historyChanged` signals) |

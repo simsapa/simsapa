@@ -99,7 +99,7 @@ impl DictionariesDbHandle {
     }
 
     // NOTE: the `dict_words.dictionary_id` FK is `ON DELETE CASCADE`
-    // (see `backend/migrations/dictionaries/2025-05-03-143320_create-tables/up.sql:42`),
+    // (see `backend/migrations/dictionaries/2026-07-23-000000_initial_schema/up.sql`),
     // so deleting the parent `dictionaries` row wipes all child `dict_words`
     // in a single statement. This is the path used by user-dictionary
     // delete — it is simpler than batched deletes and acceptable because the

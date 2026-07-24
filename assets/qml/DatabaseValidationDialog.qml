@@ -11,7 +11,7 @@ ApplicationWindow {
     id: root
     title: "Database Validation"
     width: is_mobile ? Screen.desktopAvailableWidth : 600
-    height: is_mobile ? Screen.desktopAvailableHeight : 400
+    height: is_mobile ? Screen.desktopAvailableHeight : 600
     visible: false
     color: palette.window
     flags: Qt.Dialog
@@ -40,9 +40,24 @@ ApplicationWindow {
     property bool dpd_failed: false
     property bool dictionaries_failed: false
 
+    // Per-database startup report (file presence + migration outcome), read
+    // from the backend for the presentation rows below. A failed migration is
+    // already folded into the database's validation result by the backend, so
+    // this is never used to mutate validation_results.
+    property var startup_db_report: ({})
+
+    // Search index state. The index is NOT downloadable, so its failure is
+    // tracked separately and must never feed has_downloadable_failures /
+    // get_failed_downloadable_list() / handle_redownload() — those would build
+    // a bogus index.tar.bz2 URL.
+    property bool search_index_failed: false
+    property string search_index_message: ""
+
     // Computed properties
     readonly property bool has_downloadable_failures: appdata_failed || dpd_failed || dictionaries_failed
-    readonly property bool has_any_failure: has_downloadable_failures
+    // Migration failures need no term here: the backend folds them into the
+    // database's own result, flipping appdata_failed / dictionaries_failed.
+    readonly property bool has_any_failure: has_downloadable_failures || search_index_failed
 
     // Track if dialog was opened from menu (manual) vs automatic validation failure
     property bool opened_from_menu: false
@@ -73,6 +88,9 @@ ApplicationWindow {
         root.dpd_failed = false;
         root.dictionaries_failed = false;
 
+        root.refresh_startup_db_report();
+        root.refresh_search_index_status();
+
         // Run the first query checks which will emit validation signals.
         // appdata_first_query covers both the sutta query and app_settings read.
         SuttaBridge.appdata_first_query();
@@ -80,7 +98,68 @@ ApplicationWindow {
         SuttaBridge.dictionary_first_query();
     }
 
+    function refresh_startup_db_report() {
+        const json = SuttaBridge.get_startup_db_report();
+        try {
+            root.startup_db_report = JSON.parse(json);
+        } catch (e) {
+            logger.error("Failed to parse startup db report: " + e + " json: " + json);
+            root.startup_db_report = {};
+        }
+    }
+
+    // Presentation rows for the migrated databases. dpd has no migration
+    // folder, so it gets no row.
+    function get_migration_rows() {
+        const databases = [["appdata", "Appdata"], ["dictionaries", "Dictionaries"]];
+        let rows = [];
+        for (let i = 0; i < databases.length; i++) {
+            const key = databases[i][0];
+            const label = databases[i][1];
+            const entry = root.startup_db_report[key];
+            if (!entry) {
+                continue;
+            }
+            let message = "";
+            let ok = true;
+            if (entry.migration_ok === true) {
+                message = "OK";
+            } else if (entry.migration_ok === false) {
+                message = entry.migration_error ? entry.migration_error : "Schema migration failed";
+                ok = false;
+            } else {
+                message = "Not run";
+            }
+            rows.push({name: label + ", schema migrations", message: message, ok: ok});
+        }
+        return rows;
+    }
+
+    function refresh_search_index_status() {
+        const json = SuttaBridge.check_search_index_status();
+        let status = {exists: false, current: false};
+        try {
+            status = JSON.parse(json);
+        } catch (e) {
+            logger.error("Failed to parse search index status: " + e + " json: " + json);
+        }
+
+        if (!status.exists) {
+            root.search_index_message = "Search index is missing";
+            root.search_index_failed = true;
+        } else if (!status.current) {
+            root.search_index_message = "Search index is outdated";
+            root.search_index_failed = true;
+        } else {
+            root.search_index_message = "OK";
+            root.search_index_failed = false;
+        }
+    }
+
     function show_validation_failure(failed_databases) {
+        root.refresh_startup_db_report();
+        root.refresh_search_index_status();
+
         // Parse the failed_databases string (comma-separated list)
         root.appdata_failed = failed_databases.includes("appdata");
         root.dpd_failed = failed_databases.includes("dpd");
@@ -188,6 +267,51 @@ ApplicationWindow {
     // is running the export, so the user cannot re-trigger and knows work
     // is in progress (see PRD §11.2).
     property bool export_in_progress: false
+
+    // Search-index rebuild state. rebuildSearchIndexProgress /
+    // rebuildSearchIndexCompleted are *global* SuttaBridge signals, and the
+    // AppSettingsWindow rebuild dialog listens to them too — so, like
+    // upgrade_initiated_here above, only the window that started the rebuild
+    // reacts to it.
+    property bool rebuild_initiated_here: false
+    property bool is_rebuilding: false
+    property string rebuild_status_message: ""
+
+    AssetManager { id: manager }
+
+    function start_search_index_rebuild() {
+        logger.info("start_search_index_rebuild()");
+        root.rebuild_initiated_here = true;
+        root.is_rebuilding = true;
+        root.rebuild_status_message = "Rebuilding…";
+        // Long operation: keep the screen awake until it actually ends.
+        manager.set_keep_screen_on(true);
+        SuttaBridge.rebuild_search_index();
+    }
+
+    Connections {
+        target: SuttaBridge
+
+        function onRebuildSearchIndexProgress(message) {
+            if (!root.rebuild_initiated_here) return;
+            root.rebuild_status_message = message;
+        }
+
+        function onRebuildSearchIndexCompleted(success, message) {
+            if (!root.rebuild_initiated_here) return;
+            logger.info("onRebuildSearchIndexCompleted: " + success + " " + message);
+            root.rebuild_initiated_here = false;
+            root.is_rebuilding = false;
+            root.rebuild_status_message = message;
+            // Release the screen lock when the rebuild ACTUALLY ends, not when
+            // the dialog closes — the rebuild continues in the background if
+            // the user closes this window.
+            manager.set_keep_screen_on(false);
+            // Refresh the index row in place so it flips to OK (and the
+            // success label appears) without a manual re-run.
+            root.refresh_search_index_status();
+        }
+    }
 
     // Both UpdateNotificationDialog and DatabaseValidationDialog are siblings
     // in SuttaSearchWindow and both receive SuttaBridge signals. The
@@ -509,6 +633,73 @@ ApplicationWindow {
                 }
             }
 
+            // Schema migrations section (presentation only — a failed
+            // migration already marks its database invalid above).
+            ColumnLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Layout.topMargin: 5
+
+                Label {
+                    text: "Schema migrations:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                }
+
+                Repeater {
+                    model: root.get_migration_rows()
+                    delegate: RowLayout {
+                        id: migration_item
+                        required property string name
+                        required property string message
+                        required property bool ok
+                        spacing: 6
+                        Layout.fillWidth: true
+                        Label {
+                            text: "  - " + migration_item.name + ":"
+                            font.pointSize: root.pointSize
+                        }
+                        Label {
+                            text: migration_item.message
+                            font.pointSize: root.pointSize
+                            color: migration_item.ok ? palette.text : palette.mid
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
+            }
+
+            // Search index section. Not a downloadable database — it is
+            // rebuilt locally with the button below.
+            ColumnLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Layout.topMargin: 5
+
+                Label {
+                    text: "Search index:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                }
+
+                Label {
+                    text: "  - " + (root.is_rebuilding
+                                    ? root.rebuild_status_message
+                                    : root.search_index_message)
+                    font.pointSize: root.pointSize
+                    color: (root.search_index_failed && !root.is_rebuilding) ? palette.mid : palette.text
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+
+                BusyIndicator {
+                    visible: root.is_rebuilding
+                    running: visible
+                    Layout.alignment: Qt.AlignLeft
+                }
+            }
+
             Item { Layout.fillHeight: true }
 
             ColumnLayout {
@@ -516,6 +707,17 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 // Extra space on mobile to avoid the bottom bar covering the buttons
                 Layout.bottomMargin: root.is_mobile ? 60 : 5
+
+                Button {
+                    text: root.is_rebuilding ? "Rebuilding Search Index…" : "Rebuild Search Index"
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+                    visible: root.search_index_failed || root.is_rebuilding
+                    enabled: !root.is_rebuilding
+                    onClicked: {
+                        root.start_search_index_rebuild();
+                    }
+                }
 
                 Button {
                     text: "Re-download Failed Databases"
