@@ -1270,17 +1270,6 @@ enum Commands {
         limit: Option<i32>,
     },
 
-    /// Rebuild the application database using the legacy bootstrap implementation.
-    BootstrapOld {
-        /// Write a new .env file even if one already exists
-        #[arg(long, default_value_t = false)]
-        write_new_dotenv: bool,
-
-        /// Skip DPD database initialization and bootstrap
-        #[arg(long, default_value_t = false)]
-        skip_dpd: bool,
-    },
-
     /// Export Dhammapada Tipitaka.net suttas from legacy database
     DhammapadaTipitakaNetExport {
         /// Path to the legacy appdata.sqlite3 database
@@ -1542,7 +1531,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::BootstrapOld { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
             // Skip app data initialization for bootstrap, export, stats, suttacentral, import, and parse commands
         }
         _ => {
