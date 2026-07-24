@@ -191,7 +191,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     against the still-present old folders). `make build -B` for the C++/QML side
     (verifies the `gui.cpp` edit). Confirm no dangling references to removed symbols.
 
-- [ ] 3.0 Squash the appdata and dictionaries migrations into single baseline migrations and verify schema equivalence
+- [x] 3.0 Squash the appdata and dictionaries migrations into single baseline migrations and verify schema equivalence
 
   *Specs / state:*
   - Generate the baseline **from a bootstrapped DB**, not by hand-merging files.
@@ -209,32 +209,32 @@ Each top-level task leaves the app compiling with relevant tests passing.
     before any re-bootstrap, or copy the two DB files aside now — the old-system
     reference must not be lost.
 
-  - [ ] 3.1 **Capture the reference snapshot before anything else in this task.**
+  - [x] 3.1 **Capture the reference snapshot before anything else in this task.**
     Copy the current on-disk `appdata.sqlite3` and `dictionaries.sqlite3` aside (or
     dump immediately), then dump their schema (`sqlite3 … .schema`), excluding
     `__diesel_schema_migrations`, the FTS5 virtual tables/triggers (from
     `scripts/*.sql`), and `sqlite_stat*`. Normalise (sort objects, strip whitespace
     noise) into reference snapshots in the scratchpad. These are the old-system
     ground truth and must not be regenerated later in the task.
-  - [ ] 3.2 Create `backend/migrations/appdata/<YYYY-MM-DD-HHMMSS>_initial_schema/`
+  - [x] 3.2 Create `backend/migrations/appdata/<YYYY-MM-DD-HHMMSS>_initial_schema/`
     with `up.sql` (the normalised full-schema `CREATE`s incl. the chanting
     `DEFAULT 1` and all indexes) and `down.sql` (drop everything `up.sql` creates).
     Observe the up.sql conventions (real Diesel now runs it — `;`-separated
     statements and trigger bodies are allowed, unlike the old replay).
-  - [ ] 3.3 Create `backend/migrations/dictionaries/<…>_initial_schema/` with
+  - [x] 3.3 Create `backend/migrations/dictionaries/<…>_initial_schema/` with
     `up.sql` / `down.sql` the same way (incl. `dict_words.dictionary_id` index and
     the user-dict / `dict_resources` columns from the squashed chain).
-  - [ ] 3.4 Delete the 13 old `backend/migrations/appdata/*` folders and the 4 old
+  - [x] 3.4 Delete the 13 old `backend/migrations/appdata/*` folders and the 4 old
     `backend/migrations/dictionaries/*` folders. Do **not** create an
     `archive/` subfolder under `migrations/` (`embed_migrations!` would walk it).
-  - [ ] 3.5 Bootstrap a fresh DB from the baseline (CLI bootstrap into a temp
+  - [x] 3.5 Bootstrap a fresh DB from the baseline (CLI bootstrap into a temp
     `SIMSAPA_DIR`, or a small test that runs `run_pending_migrations` on an empty
     file). Dump + normalise its schema the same way as 3.1.
-  - [ ] 3.6 Diff the baseline-bootstrapped schema against the reference snapshots
+  - [x] 3.6 Diff the baseline-bootstrapped schema against the reference snapshots
     (3.1) for both DBs. Resolve to **zero diff**; any remaining diff must be
     explained and either fixed in the baseline or recorded as deliberate in the
     PRD/commit message. (One-time dev verification per resolved question 8 — no CI job.)
-  - [ ] 3.7 Confirm `__diesel_schema_migrations` in the freshly-bootstrapped DBs
+  - [x] 3.7 Confirm `__diesel_schema_migrations` in the freshly-bootstrapped DBs
     contains exactly one row each. `cd backend && cargo test` (migration-using
     tests now apply the single baseline).
 

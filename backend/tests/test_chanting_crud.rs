@@ -11,9 +11,11 @@ use helpers as h;
 fn ensure_chanting_tables() {
     let app_data = get_app_data();
 
+    // The 1.0.0 baseline creates the full appdata schema (incl. chanting tables).
+    // Splitting on ';' is safe: the baseline has no trigger bodies, and
+    // "already exists" errors are swallowed below when tables are present.
     let migration_sqls = [
-        include_str!("../migrations/appdata/2026-03-24-000000_create_chanting_tables/up.sql"),
-        include_str!("../migrations/appdata/2026-03-24-100000_add_recording_volume/up.sql"),
+        include_str!("../migrations/appdata/2026-07-23-000000_initial_schema/up.sql"),
     ];
 
     // Execute each statement separately (SQLite doesn't support multi-statement exec)
