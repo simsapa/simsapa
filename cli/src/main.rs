@@ -1466,7 +1466,7 @@ enum Commands {
     /// server does not log it.
     UpdateReleasesFallback {
         /// Release channel to query
-        #[arg(long, value_name = "CHANNEL", default_value = "simsapa-ng")]
+        #[arg(long, value_name = "CHANNEL", default_value = "main")]
         channel: String,
 
         /// Path to write the fallback releases JSON.

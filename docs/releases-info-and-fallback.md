@@ -145,7 +145,7 @@ data is updated *after* a bootstrap/build. Refresh it with the dedicated CLI
 command after updating the server data:
 
 ```sh
-# defaults: --channel simsapa-ng, output → the source-tree assets/ folder
+# defaults: --channel main, output → the source-tree assets/ folder
 cargo run --manifest-path cli/Cargo.toml -- update-releases-fallback
 # equivalently, from inside cli/:
 cargo run -- update-releases-fallback
@@ -178,4 +178,4 @@ The channel sent to the server (and used for the fallback CLI default) comes fro
 
 1. `RELEASE_CHANNEL` environment variable
 2. `release_channel` in `AppSettings`
-3. Default: `"simsapa-ng"`
+3. Default: `"main"`

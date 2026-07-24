@@ -2519,7 +2519,7 @@ impl AppData {
     /// # Returns
     ///
     /// * `Some(String)` - The release channel if configured
-    /// * `None` - If not configured (will default to "simsapa-ng")
+    /// * `None` - If not configured (will default to "main")
     pub fn get_release_channel(&self) -> Option<String> {
         let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
         app_settings.release_channel.clone()

@@ -308,7 +308,7 @@ pub fn get_db_version() -> Option<String> {
 /// Checks in order:
 /// 1. `RELEASE_CHANNEL` environment variable
 /// 2. `release_channel` in AppSettings
-/// 3. Defaults to "simsapa-ng"
+/// 3. Defaults to "main"
 ///
 /// # Returns
 ///
@@ -329,8 +329,8 @@ pub fn get_release_channel() -> String {
             return channel;
         }
 
-    // Default to simsapa-ng
-    "simsapa-ng".to_string()
+    // Default to main
+    "main".to_string()
 }
 
 /// Check if an application version is compatible with a database version.
@@ -379,7 +379,7 @@ const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// Contains system information for analytics (if enabled).
 #[derive(Debug, Clone, Serialize)]
 pub struct ReleasesRequestParams {
-    /// Release channel (e.g., "simsapa-ng")
+    /// Release channel (e.g., "main")
     pub channel: String,
     /// Current application version
     pub app_version: String,

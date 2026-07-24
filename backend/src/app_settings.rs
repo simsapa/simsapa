@@ -183,8 +183,8 @@ pub struct AppSettings {
     pub mobile_top_bar_margin: MobileTopBarMargin,
     /// Whether to show update notifications on startup
     pub notify_about_simsapa_updates: bool,
-    /// Release channel for updates (e.g., "main", "development", "simsapa-ng")
-    /// None means use default "simsapa-ng"
+    /// Release channel for updates (e.g., "main" or "development")
+    /// None means use default "main"
     pub release_channel: Option<String>,
     /// Custom keyboard shortcuts for application actions
     pub app_keybindings: AppKeybindings,

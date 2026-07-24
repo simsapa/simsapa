@@ -219,7 +219,7 @@ Notable feature docs:
   refresh CLI command `update-releases-fallback` (`cli/src/update_releases_fallback.rs`;
   `GET …?channel=…&no_stats=true`, validates before writing, rebuild needed to
   re-embed). The channel comes from `get_release_channel()`
-  (`RELEASE_CHANNEL` env → `AppSettings` → default `simsapa-ng`).
+  (`RELEASE_CHANNEL` env → `AppSettings` → default `main`).
 - [App packaging and identifiers](./docs/app-packaging-and-identifiers.md) — the
   per-platform packaging identifiers and the crucial distinction between the
   **application identifier** (`io.github.simsapa.app` — the store/OS package id,
