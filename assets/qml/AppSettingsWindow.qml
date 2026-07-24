@@ -23,6 +23,8 @@ ApplicationWindow {
 
     KeySequenceDisplay { id: key_seq_display }
 
+    AssetManager { id: manager }
+
     property int top_bar_margin: is_mobile ? 24 : 0
     property var database_validation_dialog: null
 
@@ -245,13 +247,21 @@ ApplicationWindow {
         property bool is_rebuilding: false
         property string status_message: ""
 
+        // rebuildSearchIndexProgress / rebuildSearchIndexCompleted are global
+        // SuttaBridge signals; DatabaseValidationDialog can start a rebuild
+        // too, so only react to a rebuild started here.
+        property bool rebuild_initiated_here: false
+
         standardButtons: rebuild_index_dialog.is_rebuilding ? Dialog.NoButton : (rebuild_index_dialog.status_message !== "" ? Dialog.Ok : Dialog.Yes | Dialog.No)
 
         onAccepted: {
             if (!rebuild_index_dialog.is_rebuilding && rebuild_index_dialog.status_message === "") {
+                rebuild_index_dialog.rebuild_initiated_here = true;
                 rebuild_index_dialog.is_rebuilding = true;
                 rebuild_index_dialog.status_message = "";
                 rebuild_index_dialog.open();
+                // Long operation: keep the screen awake until it actually ends.
+                manager.set_keep_screen_on(true);
                 SuttaBridge.rebuild_search_index();
             }
         }
@@ -303,12 +313,19 @@ ApplicationWindow {
             target: SuttaBridge
 
             function onRebuildSearchIndexProgress(message) {
+                if (!rebuild_index_dialog.rebuild_initiated_here) return;
                 rebuild_index_dialog.status_message = message;
             }
 
             function onRebuildSearchIndexCompleted(success, message) {
+                if (!rebuild_index_dialog.rebuild_initiated_here) return;
+                rebuild_index_dialog.rebuild_initiated_here = false;
                 rebuild_index_dialog.is_rebuilding = false;
                 rebuild_index_dialog.status_message = message;
+                // Release the screen lock only here — when the rebuild
+                // actually ends. Closing the dialog mid-rebuild must not
+                // release it, since the background job continues.
+                manager.set_keep_screen_on(false);
             }
         }
     }

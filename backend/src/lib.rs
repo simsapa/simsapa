@@ -861,27 +861,39 @@ pub extern "C" fn dotenv_c() {
     init_dotenv();
 }
 
+/// Delete zero-byte database files left behind by a previous run, and record
+/// the resulting presence-at-start into the startup report.
+///
+/// This runs from `gui.cpp` before `QApplication`, i.e. before any code can
+/// create a database file, so on the GUI path it is the authoritative first
+/// writer of the presence record (see `db::record_db_presence()`, first write
+/// wins). A stub deleted here is recorded as **missing**, which is what makes
+/// the diagnosis honest across launches. `DbManager::new()` re-records the same
+/// sweep for the non-GUI paths.
 #[unsafe(no_mangle)]
 pub extern "C" fn ensure_no_empty_db_files() {
     let g = get_app_globals();
-    for p in [g.paths.appdata_db_path.clone(),
-              g.paths.dict_db_path.clone(),
-              g.paths.dpd_db_path.clone()] {
+    for (p, kind) in [(g.paths.appdata_db_path.clone(), crate::db::DbKind::Appdata),
+                      (g.paths.dict_db_path.clone(), crate::db::DbKind::Dictionaries),
+                      (g.paths.dpd_db_path.clone(), crate::db::DbKind::Dpd)] {
+        let mut present = false;
         match p.try_exists() {
             Ok(true) => {
                 match fs::metadata(&p) {
                     Ok(metadata) if metadata.len() == 0 => {
                         if let Err(e) = fs::remove_file(&p) {
                             eprintln!("Failed to remove file {:?}: {}", p, e);
+                            present = true;
                         }
                     }
-                    Ok(_) => {}, // File exists but is not empty
+                    Ok(_) => present = true, // File exists but is not empty
                     Err(e) => eprintln!("Failed to get metadata for {:?}: {}", p, e),
                 }
             }
             Ok(false) => {}, // File doesn't exist
             Err(e) => eprintln!("Failed to check if file exists {:?}: {}", p, e),
         }
+        crate::db::record_db_presence(kind, present);
     }
 }
 

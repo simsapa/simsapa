@@ -24,6 +24,7 @@ use simsapa_backend::topic_index;
 use simsapa_backend::update_checker;
 use simsapa_backend::types::SearchResult;
 use simsapa_backend::db::appdata_models::HistoryItemType;
+use simsapa_backend::db::{DbKind, MigrationOutcome, get_startup_db_report};
 
 /// Cache for search result pages to avoid re-querying for previously fetched pages.
 struct ResultsPageCache {
@@ -1097,6 +1098,9 @@ pub mod qobject {
         fn check_search_index_status(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
+        fn get_startup_db_report(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
         fn remove_book(self: &SuttaBridge, book_uid: &QString) -> bool;
 
         #[qinvokable]
@@ -1631,6 +1635,42 @@ pub mod qobject {
     }
 }
 
+/// Fold the startup report (recorded in `DbManager::new()` /
+/// `ensure_no_empty_db_files()`) into a validation error message.
+///
+/// The three `*_first_query` validation functions own **both** invalidations
+/// here, so the `database_validation_result` signal payload stays the single
+/// source of truth and QML never has to post-mutate its results model.
+///
+/// - **File missing** beats everything: without it the downstream query reports
+///   the misleading "Query returned 0 results" for a database that was never
+///   there. A zero-byte stub also reads as missing (see
+///   `docs/appdata-migration-mechanisms.md`).
+/// - **Migration failed** otherwise. dpd has no migration folder, so its
+///   outcome is always `NotApplicable` and only appdata/dictionaries can fail.
+fn startup_report_error(kind: DbKind, label: &str) -> Option<String> {
+    let report = get_startup_db_report();
+    let entry = match kind {
+        DbKind::Appdata => &report.appdata,
+        DbKind::Dictionaries => &report.dictionaries,
+        DbKind::Dpd => &report.dpd,
+    };
+
+    if entry.present_at_start == Some(false) {
+        let msg = "Database file was missing".to_string();
+        error(&format!("Database validation FAILED: {} - {}", label, msg));
+        return Some(msg);
+    }
+
+    if let MigrationOutcome::Failed(err) = &entry.migration {
+        let msg = format!("schema migration failed: {}", err);
+        error(&format!("Database validation FAILED: {} - {}", label, msg));
+        return Some(msg);
+    }
+
+    None
+}
+
 #[derive(Default)]
 pub struct SuttaBridgeRust {
     db_loaded: bool,
@@ -1709,19 +1749,23 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
 
         thread::spawn(move || {
-            let mut error_message = String::new();
+            // Check 0: was the file missing at startup, or did its schema
+            // migrations fail? Both are folded into the result here.
+            let mut error_message = startup_report_error(DbKind::Appdata, "Appdata").unwrap_or_default();
 
-            // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
-            let db_path = get_app_globals().paths.appdata_db_path.clone();
-            match db_path.try_exists() {
-                Ok(true) => {}, // File exists, continue
-                Ok(false) => {
-                    error_message = "Database file not found".to_string();
-                    error("Database validation FAILED: Appdata - Database file not found");
-                },
-                Err(e) => {
-                    error_message = format!("Error checking file existence: {}", e);
-                    error(&format!("Database validation FAILED: Appdata - Error checking file existence: {}", e));
+            if error_message.is_empty() {
+                // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
+                let db_path = get_app_globals().paths.appdata_db_path.clone();
+                match db_path.try_exists() {
+                    Ok(true) => {}, // File exists, continue
+                    Ok(false) => {
+                        error_message = "Database file not found".to_string();
+                        error("Database validation FAILED: Appdata - Database file not found");
+                    },
+                    Err(e) => {
+                        error_message = format!("Error checking file existence: {}", e);
+                        error(&format!("Database validation FAILED: Appdata - Error checking file existence: {}", e));
+                    }
                 }
             }
 
@@ -1808,19 +1852,23 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
 
         thread::spawn(move || {
-            let mut error_message = String::new();
+            // Check 0: was the file missing at startup? (dpd has no migration
+            // folder, so its migration outcome is always NotApplicable.)
+            let mut error_message = startup_report_error(DbKind::Dpd, "DPD").unwrap_or_default();
 
-            // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
-            let db_path = get_app_globals().paths.dpd_db_path.clone();
-            match db_path.try_exists() {
-                Ok(true) => {}, // File exists, continue
-                Ok(false) => {
-                    error_message = "Database file not found".to_string();
-                    error("Database validation FAILED: DPD - Database file not found");
-                },
-                Err(e) => {
-                    error_message = format!("Error checking file existence: {}", e);
-                    error(&format!("Database validation FAILED: DPD - Error checking file existence: {}", e));
+            if error_message.is_empty() {
+                // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
+                let db_path = get_app_globals().paths.dpd_db_path.clone();
+                match db_path.try_exists() {
+                    Ok(true) => {}, // File exists, continue
+                    Ok(false) => {
+                        error_message = "Database file not found".to_string();
+                        error("Database validation FAILED: DPD - Database file not found");
+                    },
+                    Err(e) => {
+                        error_message = format!("Error checking file existence: {}", e);
+                        error(&format!("Database validation FAILED: DPD - Error checking file existence: {}", e));
+                    }
                 }
             }
 
@@ -1860,19 +1908,23 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
 
         thread::spawn(move || {
-            let mut error_message = String::new();
+            // Check 0: was the file missing at startup, or did its schema
+            // migrations fail? Both are folded into the result here.
+            let mut error_message = startup_report_error(DbKind::Dictionaries, "Dictionaries").unwrap_or_default();
 
-            // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
-            let db_path = get_app_globals().paths.dict_db_path.clone();
-            match db_path.try_exists() {
-                Ok(true) => {}, // File exists, continue
-                Ok(false) => {
-                    error_message = "Database file not found".to_string();
-                    error("Database validation FAILED: Dictionaries - Database file not found");
-                },
-                Err(e) => {
-                    error_message = format!("Error checking file existence: {}", e);
-                    error(&format!("Database validation FAILED: Dictionaries - Error checking file existence: {}", e));
+            if error_message.is_empty() {
+                // Check 1: Database file exists (using try_exists() to avoid Android permission crashes)
+                let db_path = get_app_globals().paths.dict_db_path.clone();
+                match db_path.try_exists() {
+                    Ok(true) => {}, // File exists, continue
+                    Ok(false) => {
+                        error_message = "Database file not found".to_string();
+                        error("Database validation FAILED: Dictionaries - Database file not found");
+                    },
+                    Err(e) => {
+                        error_message = format!("Error checking file existence: {}", e);
+                        error(&format!("Database validation FAILED: Dictionaries - Error checking file existence: {}", e));
+                    }
                 }
             }
 
@@ -3719,6 +3771,20 @@ impl qobject::SuttaBridge {
 
         let json = format!(r#"{{"exists": {}, "current": {}}}"#, exists, current);
         QString::from(&json)
+    }
+
+    /// Per-database startup report as JSON, for the Database Validation dialog's
+    /// presentation rows. Shape per database (`appdata`, `dictionaries`, `dpd`):
+    /// `{"present_at_start": bool|null, "migration_ok": bool|null, "migration_error": string|null}`.
+    ///
+    /// `migration_ok` is `null` where no migrations apply — always the case for
+    /// dpd, which has no migration folder.
+    ///
+    /// This is **presentation only**. A failed migration is already folded into
+    /// the `database_validation_result` signal by the `*_first_query` functions,
+    /// so QML must not post-mutate its validation results from this report.
+    pub fn get_startup_db_report(&self) -> QString {
+        QString::from(&simsapa_backend::db::get_startup_db_report_json())
     }
 
     pub fn rebuild_search_index(self: Pin<&mut Self>) {

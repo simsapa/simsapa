@@ -254,15 +254,24 @@ impl DbManager {
         // but no errors are reported.
         //
         // FIXME: Return the errors
-        let _ = check_file_exists_print_err(&g.paths.appdata_db_path);
-        let _ = check_file_exists_print_err(&g.paths.dpd_db_path);
-
+        //
+        // This sweep runs before any file-creating call in this constructor, so
+        // it is the presence-at-start truth on every construction path (GUI,
+        // embedded API server, tests, CLI). On the GUI path
+        // `ensure_no_empty_db_files()` has already recorded presence earlier
+        // (after deleting zero-byte stubs) and first-write-wins keeps that
+        // record; here it is an idempotent re-record. Note that
+        // `check_file_exists_print_err()` reports a zero-byte file as absent, so
+        // a self-healed stub correctly reads as "missing".
+        let appdata_exists = check_file_exists_print_err(&g.paths.appdata_db_path).unwrap_or_default();
+        let dpd_exists = check_file_exists_print_err(&g.paths.dpd_db_path).unwrap_or_default();
         let dictionaries_exists = check_file_exists_print_err(&g.paths.dict_db_path).unwrap_or_default();
 
-        if !dictionaries_exists {
-            initialize_dictionaries(&g.paths.dict_database_url)
-                .with_context(|| format!("Failed to initialize database at '{}'", g.paths.dict_database_url))?;
-        } else {
+        record_db_presence(DbKind::Appdata, appdata_exists);
+        record_db_presence(DbKind::Dpd, dpd_exists);
+        record_db_presence(DbKind::Dictionaries, dictionaries_exists);
+
+        if dictionaries_exists {
             // The dictionaries DB is shipped pre-built (migrations applied at
             // bootstrap), but an already-installed DB may predate a newly-added
             // migration. Run any pending dictionaries migrations on the existing
@@ -280,6 +289,19 @@ impl DbManager {
                     error(&format!("DbManager::new(): failed to connect to dictionaries DB for migrations (non-fatal): {:#}", e));
                 }
             }
+        } else {
+            // Deliberately do NOT create and migrate an empty dictionaries DB
+            // here. Fabricating a schema-bearing file masks the real problem:
+            // it is not zero bytes, so `ensure_no_empty_db_files()` never
+            // reclaims it, and on the next launch the file "exists" — losing
+            // the accurate "was missing" diagnosis for good.
+            //
+            // Instead the absence is recorded above and the pool below opens
+            // the connection like any other DB, leaving a zero-byte stub (only
+            // PRAGMAs run, no schema write) that self-heals on the next launch.
+            // This is exactly how a missing dpd.sqlite3 already behaves. The
+            // user recovers through Database Validation → re-download.
+            error(&format!("DbManager::new(): dictionaries DB missing, not fabricating one: {}", g.paths.dict_database_url));
         }
 
         let appdata = DatabaseHandle::new(&g.paths.appdata_database_url)?;
@@ -340,19 +362,6 @@ impl DbManager {
     pub fn get_sutta_language_labels_with_counts(&self) -> Vec<String> {
         self.appdata.get_sutta_language_labels_with_counts()
     }
-}
-
-fn initialize_dictionaries(database_url: &str) -> Result<()> {
-    info(&format!("initialize_dictionaries(): {}", database_url));
-
-    // Create initial connection to create the database file
-    let mut db_conn = SqliteConnection::establish(database_url)
-        .with_context(|| format!("Failed to create initial database connection to '{}'", database_url))?;
-
-    run_dictionaries_migrations(&mut db_conn)
-        .context("Failed to run database migrations")?;
-
-    Ok(())
 }
 
 pub fn get_app_settings() -> AppSettings {
@@ -482,3 +491,36 @@ pub fn establish_connection() -> (SqliteConnection, SqliteConnection, SqliteConn
     (appdata_conn, dict_conn, dpd_conn)
 }
 
+
+#[cfg(test)]
+mod startup_stub_tests {
+    use super::*;
+
+    /// Opening a `DatabaseHandle` on a missing database path must leave a
+    /// **zero-byte** file, not a schema-bearing one.
+    ///
+    /// This is what makes the missing-dictionaries recovery honest: the pool
+    /// only runs `PRAGMA busy_timeout` / `PRAGMA foreign_keys`, neither of
+    /// which writes a header, so `ensure_no_empty_db_files()` reclaims the stub
+    /// on the next launch and the DB is reported missing again instead of
+    /// silently reading as "present". If this assertion ever fails, the
+    /// recorded-absent database needs an explicit unlink after validation.
+    /// See docs/appdata-migration-mechanisms.md.
+    #[test]
+    fn missing_db_open_leaves_zero_byte_stub() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("missing.sqlite3");
+        let database_url = format!("sqlite://{}", db_path.to_string_lossy());
+
+        let handle = DatabaseHandle::new(&database_url).expect("pool builds");
+        // Take a connection so the lazy pool definitely establishes one.
+        let _conn = handle.get_conn().expect("connection establishes");
+
+        let len = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+        assert_eq!(
+            len, 0,
+            "opening a missing DB fabricated a {}-byte file at {:?}; the stub must stay zero bytes",
+            len, db_path,
+        );
+    }
+}

@@ -83,6 +83,9 @@ Each top-level task leaves the app compiling with relevant tests passing.
 - `backend/src/update_checker.rs` - `is_app_version_compatible_with_db_version()`
   (`:363`), `get_db_version()`, `is_local_db_obsolete()` (used, not changed).
 - `backend/src/db/appdata.rs` - migration-using tests (`:2632/2755`) — must still pass.
+- `backend/tests/test_missing_databases_startup.rs` - end-to-end check that a missing
+  `dictionaries`/`dpd` starts safely, is recorded as missing, and leaves only a
+  self-healing zero-byte stub (own test binary, temp `SIMSAPA_DIR`).
 - `AGENTS.md`, `docs/appdata-migration-mechanisms.md`, `PROJECT_MAP.md` - docs.
 
 ### Notes
@@ -238,7 +241,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     contains exactly one row each. `cd backend && cargo test` (migration-using
     tests now apply the single baseline).
 
-- [ ] 4.0 Make missing/corrupt databases start-safe: record file presence, stop fabricating schema-bearing databases, and report accurately
+- [x] 4.0 Make missing/corrupt databases start-safe: record file presence, stop fabricating schema-bearing databases, and report accurately
 
   *Specs / state:*
   - `ensure_no_empty_db_files()` (`backend/src/lib.rs:865`, called from
@@ -254,7 +257,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     dict and dpd degrade to a **zero-byte** stub that `ensure_no_empty_db_files()`
     reclaims next launch.
 
-  - [ ] 4.1 Record file-presence-at-start into the startup-report global (Task 2.1).
+  - [x] 4.1 Record file-presence-at-start into the startup-report global (Task 2.1).
     **Primary recorder: a `try_exists()` sweep as the first statement of
     `DbManager::new()`, before any file-creating call** — because that runs on
     **every** construction path (GUI, embedded API server `api.rs:2259`, tests/CLI),
@@ -268,7 +271,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     `DbManager::new()` sweep runs before that constructor's own file-creating calls,
     so a self-healed zero-byte stub from a previous launch correctly reads as
     "missing", not "present". (PRD Open Question 2, now resolved.)
-  - [ ] 4.2 In `DbManager::new()`, when `dictionaries.sqlite3` is absent, **do not**
+  - [x] 4.2 In `DbManager::new()`, when `dictionaries.sqlite3` is absent, **do not**
     call `initialize_dictionaries()`. Record the absence (4.1) and let the normal
     `DatabaseHandle::new()` pool open the connection (which leaves a zero-byte
     file, matching `dpd`). This removes `initialize_dictionaries()`'s only caller
@@ -276,12 +279,12 @@ Each top-level task leaves the app compiling with relevant tests passing.
     `run_dictionaries_migrations` call inside it, if not used elsewhere) rather than
     leaving a `dead_code` warning. Confirm `run_dictionaries_migrations` is still
     used for the existing-DB branch before removing anything shared.
-  - [ ] 4.3 Verify the zero-byte-stub assumption (PRD open question 1): after
+  - [x] 4.3 Verify the zero-byte-stub assumption (PRD open question 1): after
     opening a missing `dictionaries`/`dpd` via `DatabaseHandle::new()`, the file is
     0 bytes (only `PRAGMA` runs, no header write). If a write does occur, add an
     explicit unlink of a recorded-absent DB after validation. Encode the finding in
     a small test or a logged assertion.
-  - [ ] 4.4 Update the three validation functions in `bridges/src/sutta_bridge.rs`
+  - [x] 4.4 Update the three validation functions in `bridges/src/sutta_bridge.rs`
     (`appdata_first_query` / `dpd_first_query` / `dictionary_first_query`) so they
     consult the startup-report global (Task 2.1) and **own both** failure-to-invalid
     foldings in one place, emitting the result via the existing
@@ -298,13 +301,13 @@ Each top-level task leaves the app compiling with relevant tests passing.
     Doing both here keeps the QML dialog with a **single source of truth** (the
     signal payload) and means Task 5.2 never has to post-mutate `validation_results`
     — which would otherwise be clobbered on every "Re-run Validation Checks".
-  - [ ] 4.5 Confirm end-to-end at the backend level: delete the on-disk
+  - [x] 4.5 Confirm end-to-end at the backend level: delete the on-disk
     `dictionaries.sqlite3` (then `dpd.sqlite3`), start the app path far enough to
     build `DbManager` (or a targeted test), and verify (a) startup does not panic,
     (b) the startup report marks the DB missing, (c) no schema-bearing file is
     left. `cd backend && cargo test`.
 
-- [ ] 5.0 Extend Database Validation: per-database migration rows, search-index row with local rebuild action, keep-screen-on, and wording fix
+- [x] 5.0 Extend Database Validation: per-database migration rows, search-index row with local rebuild action, keep-screen-on, and wording fix
 
   *Specs / state:*
   - `DatabaseValidationDialog.qml` renders failed DBs via a `Repeater` over
@@ -344,11 +347,11 @@ Each top-level task leaves the app compiling with relevant tests passing.
     while rebuilding (`:248`), so no close/reject fires mid-rebuild; completion-only
     release is correct and avoids the ordering trap.)
 
-  - [ ] 5.1 Add a bridge function exposing the startup report (Task 2.1) to QML —
+  - [x] 5.1 Add a bridge function exposing the startup report (Task 2.1) to QML —
     e.g. `SuttaBridge.get_startup_db_report(): string` returning JSON with per-DB
     `{present_at_start, migration_ok, migration_error}`. Add the matching qmllint
     stub in `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`.
-  - [ ] 5.2 In `DatabaseValidationDialog.qml`, on validation, read
+  - [x] 5.2 In `DatabaseValidationDialog.qml`, on validation, read
     `get_startup_db_report()` and render a **per-migrated-database "schema
     migrations" row** — **only** "Appdata — schema migrations" and "Dictionaries —
     schema migrations" (no dpd row; its report slot is `NotApplicable`) — showing OK
@@ -365,7 +368,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     `get_startup_db_report()` solely to render the presentation rows. Do **not**
     extend the three boolean flags / `get_failed_downloadable_list()` /
     `handle_redownload()` with new keys.
-  - [ ] 5.3 In `DatabaseValidationDialog.qml`, add a **search-index row** populated
+  - [x] 5.3 In `DatabaseValidationDialog.qml`, add a **search-index row** populated
     from `SuttaBridge.check_search_index_status()` showing missing / outdated / OK
     (re-evaluated on "Re-run Validation Checks"). **The index is NOT downloadable
     (review finding 3):** track its failure with a **separate flag** (e.g.
@@ -378,7 +381,7 @@ Each top-level task leaves the app compiling with relevant tests passing.
     (Migration failures need **no** extra term here: Task 4.4 folds them into the
     DB result, so they already flip `appdata_failed` / `dictionaries_failed` →
     `has_downloadable_failures`. The only genuinely new term is `search_index_failed`.)
-  - [ ] 5.4 Add a **"Rebuild Search Index" action button** to the dialog's button
+  - [x] 5.4 Add a **"Rebuild Search Index" action button** to the dialog's button
     stack, visible when `search_index_failed`, wired to
     `SuttaBridge.rebuild_search_index()` with a progress/label state driven by
     `onRebuildSearchIndexProgress` / `onRebuildSearchIndexCompleted` (mirror the
@@ -391,14 +394,14 @@ Each top-level task leaves the app compiling with relevant tests passing.
     successful." label appears without the user pressing "Re-run Validation Checks"
     (review finding 5). A rebuild that succeeds but leaves the row "failed" is a
     reporting bug.
-  - [ ] 5.5 Add an `AssetManager { id: manager }` to `DatabaseValidationDialog.qml`
+  - [x] 5.5 Add an `AssetManager { id: manager }` to `DatabaseValidationDialog.qml`
     and bracket the rebuild with `manager.set_keep_screen_on(true)` when the
     rebuild starts and `false` when it **actually ends** — **release the flag only
     in `onRebuildSearchIndexCompleted`** (success or failure), and **never** in a
     dialog `onClosed` / `onRejected` (review finding 2): the background rebuild
     continues after the dialog closes, so completion-only release is both correct
     and simpler than a `!is_rebuilding` close-guard.
-  - [ ] 5.6 Add an `AssetManager { id: manager }` to `AppSettingsWindow.qml` and
+  - [x] 5.6 Add an `AssetManager { id: manager }` to `AppSettingsWindow.qml` and
     bracket its existing `rebuild_index_dialog` rebuild
     (`SuttaBridge.rebuild_search_index()` at `:255`): set `true` when `is_rebuilding`
     becomes true, and **set `false` only in `onRebuildSearchIndexCompleted`**
@@ -409,10 +412,10 @@ Each top-level task leaves the app compiling with relevant tests passing.
     screen locked until the job reports completion. (`standardButtons` is
     `Dialog.NoButton` while rebuilding — `:248` — so no close/reject can fire
     mid-rebuild anyway; completion-only release removes the hazard regardless.)
-  - [ ] 5.7 Fix the wording in `SuttaSearchWindow.check_search_index_on_startup()`
+  - [x] 5.7 Fix the wording in `SuttaSearchWindow.check_search_index_on_startup()`
     (`:1288`, `:1291`): "Use File > Rebuild Search Index" → "Settings → Database"
     (match the actual button location).
-  - [ ] 5.8 `make build -B`. (QML tests skipped unless asked.) Sanity-check the
+  - [x] 5.8 `make build -B`. (QML tests skipped unless asked.) Sanity-check the
     dialog layout mentally / via the user for the added rows and button.
 
 - [ ] 6.0 Update documentation and perform final end-to-end verification
