@@ -64,7 +64,7 @@ use crate::app_data::AppData;
 use crate::pts_reference_search::ReferenceSearchResult;
 use crate::update_checker::ReleasesInfo;
 
-pub static APP_INFO: AppInfo = AppInfo{name: "simsapa-ng", author: "profound-labs"};
+pub static APP_INFO: AppInfo = AppInfo{name: "simsapa", author: "profound-labs"};
 
 /// Return the directory containing the running executable.
 ///
@@ -646,15 +646,15 @@ pub fn check_file_exists_print_err<P: AsRef<Path>>(path: P) -> Result<bool, Box<
 
 pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>> {
     // AppDataType::UserData
-    // - Android: /data/user/0/io.github.simsapa.app/files/.local/share/simsapa-ng
+    // - Android: /data/user/0/io.github.simsapa.app/files/.local/share/simsapa
     // AppDataType::UserConfig
-    // - Android: /data/user/0/io.github.simsapa.app/files/.config/simsapa-ng
+    // - Android: /data/user/0/io.github.simsapa.app/files/.config/simsapa
     let mut p = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
-    // On Android and iOS, strip .local/share/simsapa-ng from the path, so that
+    // On Android and iOS, strip .local/share/simsapa from the path, so that
     // it is consistent with the storage selection path saved by
     // storage_manager::save_storage_path().
-    if is_mobile() && p.ends_with(".local/share/simsapa-ng") {
+    if is_mobile() && p.ends_with(".local/share/simsapa") {
         p = p.parent().unwrap()
              .parent().unwrap()
              .parent().unwrap()

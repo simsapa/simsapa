@@ -418,7 +418,7 @@ int start(int argc, char* argv[]) {
   // QQuickStyle::setStyle("Basic");
   // QQuickStyle::setStyle("Imagine");
 
-  QCoreApplication::setApplicationName("simsapa-ng");
+  QCoreApplication::setApplicationName("simsapa");
   // NOTE: Don't use setOrganizationName(), because Qt adds it as a folder to the internal storage path.
 
   // TODO :/icons/simsapa-appicon doesn't work, perhaps wrong size?

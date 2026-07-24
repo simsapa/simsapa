@@ -21,7 +21,7 @@ already a Simsapa version in … - installing will update it.") via
   `Desktop\Simsapa`; e.g. a USB drive), keeps all data in a sibling folder next
   to the app, requires no administrator rights, and registers **no** uninstaller.
 
-Both Standard options store user data in `%LOCALAPPDATA%\profound-labs\simsapa-ng`.
+Both Standard options store user data in `%LOCALAPPDATA%\profound-labs\simsapa`.
 
 This document focuses on the portable mode; the rest of this section explains how
 the three options are wired together.
@@ -170,7 +170,7 @@ first (portable), and if that path does **not** exist but the **cwd-relative**
 path does, it falls back to the cwd-relative path. This keeps the dev workflow
 working without breaking portable installs (whose exe-relative data folder is
 created on first run when no cwd-relative match exists). Without this fallback,
-a dev `SIMSAPA_DIR=../bootstrap-assets-resources/dist/simsapa-ng` resolved
+a dev `SIMSAPA_DIR=../bootstrap-assets-resources/dist/simsapa` resolved
 against `build/simsapadhammareader/` to a nonexistent
 `build/bootstrap-assets-resources/...`, so the app saw no databases and showed
 the download window.

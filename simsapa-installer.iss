@@ -437,17 +437,17 @@ begin
 end;
 
 // Get the user data directory where app databases are stored
-// Uses app_dirs2 crate convention: AppInfo{name: "simsapa-ng", author: "profound-labs"}
-// From backend/src/lib.rs:45: APP_INFO: AppInfo = AppInfo{name: "simsapa-ng", author: "profound-labs"}
+// Uses app_dirs2 crate convention: AppInfo{name: "simsapa", author: "profound-labs"}
+// From backend/src/lib.rs:45: APP_INFO: AppInfo = AppInfo{name: "simsapa", author: "profound-labs"}
 // From backend/src/lib.rs:274: get_app_root(AppDataType::UserData, &APP_INFO)
 // On Windows, app_dirs2 creates: %LOCALAPPDATA%\{author}\{name}
-// Result: %LOCALAPPDATA%\profound-labs\simsapa-ng
+// Result: %LOCALAPPDATA%\profound-labs\simsapa
 // This directory contains:
 //   - app-assets/ (appdata.sqlite3, dictionaries, downloaded language databases)
 //   - logs/ (application logs)
 function GetUserDataDir: String;
 begin
-  Result := ExpandConstant('{localappdata}\profound-labs\simsapa-ng');
+  Result := ExpandConstant('{localappdata}\profound-labs\simsapa');
 end;
 
 // Called before uninstall begins - ask user about deleting user data

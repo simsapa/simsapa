@@ -29,7 +29,7 @@ ApplicationWindow {
 
     // FIXME make text selectable
 
-    // Application.displayName is simsapa-ng
+    // Application.displayName is simsapa
     property string app_name: "Simsapa Dhamma Reader"
     // Declared in gui.cpp with app.setApplicationVersion("v0.1.0");
     property string app_version: Application.version

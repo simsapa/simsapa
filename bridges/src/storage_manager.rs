@@ -43,13 +43,13 @@ impl qobject::StorageManager {
         // Write storage_path.txt to the internal storage, in the folder returned
         // by get_create_simsapa_internal_app_root()
         //
-        // On Android the path does not include '.local/share/simsapa-ng':
+        // On Android the path does not include '.local/share/simsapa':
         // /data/user/0/io.github.simsapa.app/files/storage_path.txt
         //
         // Values returned from accepting the StorageDialog:
         //
         // Linux:
-        // /home/gambhiro/.local/share/simsapa-ng, is_internal: true
+        // /home/gambhiro/.local/share/simsapa, is_internal: true
         //
         // Android:
         // /data/user/0/io.github.simsapa.app/files, is_internal: true

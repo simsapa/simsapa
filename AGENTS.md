@@ -703,12 +703,12 @@ as `√path 1`).
 
 **SIMSAPA_DIR** (the runtime data directory) is at:
 ```
-/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa-ng
+/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa
 ```
 
 The SQLite database is at:
 ```
-/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa-ng/app-assets/appdata.sqlite3
+/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3
 ```
 
 Use this path for any tests or experimental scripts that need to query the actual database or access runtime assets.

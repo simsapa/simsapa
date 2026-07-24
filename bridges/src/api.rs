@@ -2352,43 +2352,6 @@ pub extern "C" fn create_linux_desktop_icon_file() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn download_small_database() {
-    let url = "https://github.com/simsapa/simsapa-ng-assets/releases/download/v0.1.0-alpha.1/appdata.sqlite3";
-    let p = get_create_simsapa_appdata_db_path();
-    let save_path = p.to_string_lossy();
-
-    // Check and create directory
-    let dir_error = create_parent_directory(&save_path);
-    if !dir_error.is_empty() {
-        error(&dir_error);
-        return;
-    }
-
-    match ureq::get(url).call() {
-        Ok(mut response) => {
-            if response.status() != http::StatusCode::OK {
-                error(&format!("HTTP request failed with status {}", response.status()));
-                return;
-            }
-
-            // The testing database is small, read it all to memory.
-            match response.body_mut().read_to_vec() {
-                Ok(buffer) => {
-                    let resp = save_to_file(&buffer, &save_path);
-                    info(&resp);
-                },
-                Err(e) => {
-                    error(&format!("Failed to read to vec: {}", e));
-                }
-            }
-        },
-        Err(e) => {
-            error(&format!("HTTP request failed: {}", e));
-        },
-    }
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn shutdown_webserver_tcp() {
     let g = get_app_globals_api();
     match TcpStream::connect(format!("localhost:{}", g.api_port)) {

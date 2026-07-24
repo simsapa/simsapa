@@ -29,7 +29,7 @@ defaults to `../../bootstrap-assets-resources/gloss-data-cache` (override with
 validates every selected uid against the dictionaries):
 
 ```sh
-export SIMSAPA_DIR=/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa-ng
+export SIMSAPA_DIR=/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa
 ```
 
 ## Procedure

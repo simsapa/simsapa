@@ -71,7 +71,7 @@ property var available_languages: []    // List of "code|Name" strings
 4. User enters language codes or "*" for all
 5. User clicks Download button
 6. Validation checks entered codes against available languages
-7. URLs are generated: `https://github.com/simsapa/simsapa-ng-assets/releases/download/{version}/suttas_lang_{lang}.tar.bz2`
+7. URLs are generated: `https://github.com/simsapa/simsapa-assets/releases/download/{version}/suttas_lang_{lang}.tar.bz2`
 8. AssetManager downloads each tar.bz2 file
 9. AssetManager extracts to temp folder
 10. AssetManager detects `suttas_lang_*.sqlite3` files and imports to appdata

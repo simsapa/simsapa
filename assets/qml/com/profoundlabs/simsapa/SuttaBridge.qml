@@ -160,7 +160,7 @@ Item {
     }
 
     function app_data_folder_path(): string {
-        return "~/.local/share/simsapa-ng";
+        return "~/.local/share/simsapa";
     }
 
     function is_app_data_folder_writable(): bool {

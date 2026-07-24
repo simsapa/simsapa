@@ -1,5 +1,4 @@
 pub mod bootstrap;
-pub mod bootstrap_old;
 pub mod gloss_agent_check;
 pub mod gloss_corpus_explore;
 pub mod gloss_ngrams;
@@ -1630,11 +1629,6 @@ fn main() {
 
         Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit } => {
             bootstrap::bootstrap(write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit)
-                .map_err(|e| e.to_string())
-        }
-
-        Commands::BootstrapOld { write_new_dotenv, skip_dpd } => {
-            bootstrap_old::bootstrap(write_new_dotenv, skip_dpd)
                 .map_err(|e| e.to_string())
         }
 

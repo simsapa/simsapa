@@ -96,7 +96,7 @@ impl From<simsapa_backend::db::appdata_models::SuttaVariant> for SerializableSut
 
 // Get database connection to the bootstrapped database
 fn get_new_db() -> SqliteConnection {
-    let db_path = "../../bootstrap-assets-resources/dist/simsapa-ng/app-assets/appdata.sqlite3";
+    let db_path = "../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3";
     SqliteConnection::establish(db_path)
         .unwrap_or_else(|_| panic!("Error connecting to new database at {}", db_path))
 }

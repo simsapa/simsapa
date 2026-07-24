@@ -123,7 +123,7 @@ pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>>
     let mut p = get_app_root(AppDataType::UserData, &APP_INFO)?;
     
     // Mobile-specific path adjustment
-    if is_mobile() && p.ends_with(".local/share/simsapa-ng") {
+    if is_mobile() && p.ends_with(".local/share/simsapa") {
         p = p.parent().unwrap()
              .parent().unwrap()
              .parent().unwrap()
@@ -138,9 +138,9 @@ pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>>
 ```
 
 **Platform-Specific Paths (via app_dirs2):**
-- **Linux:** `~/.local/share/profound-labs/simsapa-ng`
-- **macOS:** `~/Library/Application Support/profound-labs/simsapa-ng`
-- **Windows:** `%LOCALAPPDATA%\profound-labs\simsapa-ng`
+- **Linux:** `~/.local/share/profound-labs/simsapa`
+- **macOS:** `~/Library/Application Support/profound-labs/simsapa`
+- **Windows:** `%LOCALAPPDATA%\profound-labs\simsapa`
 - **Android:** `/data/user/0/com.profoundlabs.simsapa/files/`
 
 **Location:** `backend/src/lib.rs:269-390`
@@ -299,7 +299,7 @@ All critical functionality either:
 When testing on Windows, verify:
 
 - [ ] **Memory Detection:** App correctly detects system RAM
-- [ ] **User Data Directory:** Files created in `%LOCALAPPDATA%\profound-labs\simsapa-ng`
+- [ ] **User Data Directory:** Files created in `%LOCALAPPDATA%\profound-labs\simsapa`
 - [ ] **URL Opening:** External links open in default browser
 - [ ] **File Opening:** Exported files open with default applications
 - [ ] **Clipboard:** Copy/paste works with HTML, Markdown, and plain text

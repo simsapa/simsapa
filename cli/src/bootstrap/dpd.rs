@@ -103,7 +103,7 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
 
 /// Normalize niggahīta (ṃ→ṁ, ŋ→ṁ) in the static DPD `family_*_json.js` assets.
 ///
-/// Runs from the bootstrap cwd (simsapa-ng/cli/), so the repo asset directory is
+/// Runs from the bootstrap cwd (simsapa/cli/), so the repo asset directory is
 /// reached via the same `../` convention used for the FTS5 scripts.
 pub fn convert_dpd_res_niggahita() -> Result<()> {
     logger::info("=== convert_dpd_res_niggahita() ===");

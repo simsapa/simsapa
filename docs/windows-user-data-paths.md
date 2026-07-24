@@ -10,7 +10,7 @@ This document explains how the Windows installer correctly determines the user d
 
 ```rust
 pub static APP_INFO: AppInfo = AppInfo{
-    name: "simsapa-ng",
+    name: "simsapa",
     author: "profound-labs"
 };
 ```
@@ -47,20 +47,20 @@ The `app_dirs2` crate follows platform conventions:
 ### Windows Path Structure
 
 ```
-AppDataType::UserData + AppInfo{name: "simsapa-ng", author: "profound-labs"}
+AppDataType::UserData + AppInfo{name: "simsapa", author: "profound-labs"}
     ↓
-%LOCALAPPDATA%\profound-labs\simsapa-ng
+%LOCALAPPDATA%\profound-labs\simsapa
 ```
 
 **Typical resolved path:**
 ```
-C:\Users\{username}\AppData\Local\profound-labs\simsapa-ng
+C:\Users\{username}\AppData\Local\profound-labs\simsapa
 ```
 
 ### Directory Contents
 
 ```
-%LOCALAPPDATA%\profound-labs\simsapa-ng\
+%LOCALAPPDATA%\profound-labs\simsapa\
 ├── app-assets/               # Application database + downloaded assets
 │   ├── appdata.sqlite3       # Single application database (seeded content + user data)
 │   ├── dpd.sqlite3           # DPD dictionary database
@@ -80,14 +80,14 @@ C:\Users\{username}\AppData\Local\profound-labs\simsapa-ng
 
 ```pascal
 // Get the user data directory where app databases are stored
-// Uses app_dirs2 crate convention: AppInfo{name: "simsapa-ng", author: "profound-labs"}
-// From backend/src/lib.rs:45: APP_INFO: AppInfo = AppInfo{name: "simsapa-ng", author: "profound-labs"}
+// Uses app_dirs2 crate convention: AppInfo{name: "simsapa", author: "profound-labs"}
+// From backend/src/lib.rs:45: APP_INFO: AppInfo = AppInfo{name: "simsapa", author: "profound-labs"}
 // From backend/src/lib.rs:274: get_app_root(AppDataType::UserData, &APP_INFO)
 // On Windows, app_dirs2 creates: %LOCALAPPDATA%\{author}\{name}
-// Result: %LOCALAPPDATA%\profound-labs\simsapa-ng
+// Result: %LOCALAPPDATA%\profound-labs\simsapa
 function GetUserDataDir: String;
 begin
-  Result := ExpandConstant('{localappdata}\profound-labs\simsapa-ng');
+  Result := ExpandConstant('{localappdata}\profound-labs\simsapa');
 end;
 ```
 
@@ -106,7 +106,7 @@ begin
   if CurUninstallStep = usPostUninstall then
     if DeleteUserDataCheckbox.Checked then
       UserDataDir := GetUserDataDir;
-      // Prompts user before deleting %LOCALAPPDATA%\profound-labs\simsapa-ng
+      // Prompts user before deleting %LOCALAPPDATA%\profound-labs\simsapa
 ```
 
 ## Verification During Development
@@ -116,8 +116,8 @@ begin
 After installing and running the application, verify the path:
 
 1. Open File Explorer
-2. Navigate to: `%LOCALAPPDATA%\profound-labs\simsapa-ng`
-   - Or paste in address bar: `C:\Users\YourUsername\AppData\Local\profound-labs\simsapa-ng`
+2. Navigate to: `%LOCALAPPDATA%\profound-labs\simsapa`
+   - Or paste in address bar: `C:\Users\YourUsername\AppData\Local\profound-labs\simsapa`
 3. Confirm presence of:
    - `app-assets/` directory containing `appdata.sqlite3`
    - `logs/` directory
@@ -126,7 +126,7 @@ After installing and running the application, verify the path:
 
 1. Install the application
 2. Download some language databases
-3. Check that files are created in `%LOCALAPPDATA%\profound-labs\simsapa-ng\app-assets\`
+3. Check that files are created in `%LOCALAPPDATA%\profound-labs\simsapa\app-assets\`
 4. Uninstall the application
 5. Verify that the uninstaller:
    - Shows the correct path in the checkbox

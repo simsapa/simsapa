@@ -26,7 +26,7 @@ It auto-detects the response shapes the API returns:
 
 Typical use (PORT from <SIMSAPA_DIR>/api-port.txt, default 4848):
 
-  PORT=$(cat ~/.local/share/simsapa-ng/api-port.txt)
+  PORT=$(cat ~/.local/share/simsapa/api-port.txt)
 
   # Probe the environment first (version, counts, installed dictionaries)
   curl -s "localhost:$PORT/health" | python3 scripts/simsapa_fmt.py

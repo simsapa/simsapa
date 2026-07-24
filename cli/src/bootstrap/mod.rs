@@ -99,8 +99,8 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
         logger::info(&format!("Limit set to {}", lim));
     }
 
-    // Running the binary with 'cargo run', the PWD is simsapa-ng/cli/.
-    // The asset folders are one level above simsapa-ng/.
+    // Running the binary with 'cargo run', the PWD is simsapa/cli/.
+    // The asset folders are one level above simsapa/.
     let bootstrap_assets_dir = PathBuf::from("../../bootstrap-assets-resources");
 
     if !bootstrap_assets_dir.exists() {
@@ -115,10 +115,10 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
     let dist_dir = bootstrap_assets_dir.join("dist");
     let sc_data_dir = bootstrap_assets_dir.join("sc-data");
 
-    // During bootstrap, don't touch the user's Simsapa dir (~/.local/share/simsapa-ng)
+    // During bootstrap, don't touch the user's Simsapa dir (~/.local/share/simsapa)
     // Create files in the dist/ folder instead.
     // Setting the env var here to override any previous value.
-    unsafe { env::set_var("SIMSAPA_DIR", dist_dir.join("simsapa-ng")); }
+    unsafe { env::set_var("SIMSAPA_DIR", dist_dir.join("simsapa")); }
 
     let simsapa_dir = get_create_simsapa_dir()
         .map_err(|e| anyhow::anyhow!("Failed to get simsapa directory: {}", e))?;
@@ -1078,7 +1078,7 @@ r#"
 [[assets.releases]]
 date = "{}"
 version_tag = "v{}"
-github_repo = "simsapa/simsapa-ng-assets"
+github_repo = "simsapa/simsapa-assets"
 suttas_lang = [{}]
 title = "Updates"
 description = ""

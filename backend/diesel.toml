@@ -6,4 +6,4 @@ file = "src/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
 
 [migrations_directory]
-dir = "/home/gambhiro/prods/apps/simsapa-ng-project/simsapa-ng/rust/migrations"
+dir = "/home/gambhiro/prods/apps/simsapa-ng-project/simsapa/rust/migrations"

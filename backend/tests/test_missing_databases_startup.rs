@@ -19,7 +19,7 @@ use simsapa_backend::{ensure_no_empty_db_files, get_app_globals, init_app_global
 #[test]
 fn missing_dictionaries_and_dpd_start_safely() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let simsapa_dir = dir.path().join("simsapa-ng");
+    let simsapa_dir = dir.path().join("simsapa");
     fs::create_dir_all(simsapa_dir.join("app-assets")).expect("create app-assets");
 
     // Must be set before the first `get_app_globals()` call in this process.
