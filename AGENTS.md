@@ -568,6 +568,16 @@ is the **whole** job — there is no second list to register it in.
 Both runners live in `backend/src/db/mod.rs` and are called from
 `DbManager::new()`. `embed_migrations!` picks up whatever folders exist, so a
 **rebuild** is required after adding or editing one.
+(`backend/diesel.toml`'s `[migrations_directory]` is used only by the diesel
+CLI, never at runtime; it names `migrations/appdata`, so a dictionaries
+migration needs `diesel migration --migration-dir migrations/dictionaries
+generate <name>`.)
+
+The runtime **never fabricates** a missing `dictionaries.sqlite3` — the CLI
+bootstrap creates it explicitly (`init_dictionaries_db()` in
+`cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
+ever remove a database's runtime auto-creation, check the bootstrap for a hidden
+dependency on it.
 
 `appdata.sqlite3` is shipped pre-built, downloaded once at first-run setup, and
 then **kept across app updates** because it also holds user data (bookmarks,

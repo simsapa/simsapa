@@ -258,6 +258,41 @@ user-data export paths need. It is never the GUI's problem, because `gui.cpp`
 routes a missing appdata to `DownloadAppdataWindow` before `DbManager::new()` is
 reached.
 
+### The counterpart rule: the CLI bootstrap creates the dictionaries DB itself
+
+Deleting `initialize_dictionaries()` removed the **only** code that ever brought
+`dictionaries.sqlite3` into existence with a schema, and the CLI bootstrap was
+silently relying on it: it starts from an emptied `dist/` folder, and the first
+`init_app_data()` (the DPD step) used to fabricate the DB as a side effect. Once
+the fabrication was gone, the bootstrap failed a few lines later with
+
+```
+ERROR: DbManager::new(): dictionaries DB missing, not fabricating one: sqlite:///…/dictionaries.sqlite3
+ERROR: refresh_dict_source_uid_caches shipped: list_shipped_source_uids failed: no such table: dict_words
+```
+
+The fix is **not** to restore fabrication in `DbManager::new()` (that would undo
+everything above), but to give the dictionaries DB the same explicit bootstrap
+step `appdata.sqlite3` already has:
+
+| Shipped DB | Created during bootstrap by |
+|---|---|
+| `appdata.sqlite3` | `AppdataBootstrap::run()` → `run_migrations()` (`APPDATA_MIGRATIONS`) |
+| `dictionaries.sqlite3` | `init_dictionaries_db()` in `cli/src/bootstrap/mod.rs` (`DICTIONARIES_MIGRATIONS`) |
+| `dpd.sqlite3` | `import_migrate_dpd()` — copied wholesale from upstream DPD, no migrations |
+| `user_dictionaries.sqlite3` (export snapshot) | `export_user_dictionaries()` runs `run_dictionaries_migrations()` on the new file |
+
+`init_dictionaries_db()` runs **immediately after `clean_and_create_folders()`**,
+i.e. earlier than the old implicit creation and before anything can open the
+file — `init_app_data()` queries the dictionaries DB as soon as it runs. It is
+called unconditionally (not under `!skip_dpd`), and re-running the migrations on
+an existing file is a no-op.
+
+**Rule:** whenever a database's runtime auto-creation is removed, check whether
+the CLI bootstrap depended on it. The runtime and the bootstrap have opposite
+requirements — the app must refuse to fabricate, the bootstrap must fabricate
+explicitly.
+
 ### What Database Validation reports
 
 The dialog has six rows: appdata, dpd, dictionaries, "Appdata — schema
@@ -332,6 +367,11 @@ rebuild entry points.
 
 - `up.sql` files are embedded at compile time by `embed_migrations!`, so a
   rebuild is required after editing one.
+- `backend/diesel.toml`'s `[migrations_directory]` is read **only by the diesel
+  CLI**, never at runtime — the embedded paths in `db/mod.rs` are what the app
+  and the bootstrap use. The CLI supports a single directory, so the file points
+  at `migrations/appdata`; generate a dictionaries migration with an explicit
+  override: `diesel migration --migration-dir migrations/dictionaries generate <name>`.
 - Migration folder names must remain date-ordered.
 - Old migration folders must be **deleted**, never moved to an `archive/`
   subdirectory under `backend/migrations/` — `embed_migrations!` walks that tree.

@@ -175,6 +175,23 @@ against `build/simsapadhammareader/` to a nonexistent
 `build/bootstrap-assets-resources/...`, so the app saw no databases and showed
 the download window.
 
+**The dev fallback is not a safety net — set an absolute `SIMSAPA_DIR` from
+code.** The fallback only fires when the exe-relative path does *not* exist; the
+moment `create_dir_all()` has created it (which `get_create_simsapa_dir()` does
+on the miss), the wrong path exists and wins on every later run. The CLI
+bootstrap hit exactly this: it set `SIMSAPA_DIR` to the relative
+`../../bootstrap-assets-resources/dist/simsapa`, and with `cargo run` the exe
+lives in `cli/target/debug/`, so it resolved to
+`simsapa/cli/bootstrap-assets-resources/dist/simsapa` and created it — after
+which the bootstrap read its inputs cwd-relative from the project-level folder
+but wrote all its output under `cli/` (and `clean_and_create_folders()` wiped the
+project-level `dist/`, keeping the exe-relative miss permanent). `bootstrap()` in
+`cli/src/bootstrap/mod.rs` now builds `bootstrap_assets_dir` absolute
+(`normalize_lexically(current_dir()?.join("../../bootstrap-assets-resources"))`),
+which sidesteps the exe-dir rule entirely. **Any code that sets `SIMSAPA_DIR`
+itself should set an absolute path**; the relative form is for portable installs
+and for the hand-edited dev `.env` only.
+
 On **first** portable launch the data folder exists but has no databases, so the
 existing first-run/download flow downloads them into it. On **subsequent**
 launches the existing asset-presence checks find them and load without

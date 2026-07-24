@@ -23,8 +23,8 @@ use std::{fs, env, thread, time};
 use diesel::prelude::*;
 use diesel_migrations::MigrationHarness;
 
-use simsapa_backend::db::{DatabaseHandle, APPDATA_MIGRATIONS};
-use simsapa_backend::{init_app_data, get_app_data, get_app_globals, get_create_simsapa_dir, get_create_simsapa_app_assets_path, logger};
+use simsapa_backend::db::{DatabaseHandle, APPDATA_MIGRATIONS, DICTIONARIES_MIGRATIONS};
+use simsapa_backend::{init_app_data, get_app_data, get_app_globals, get_create_simsapa_dir, get_create_simsapa_app_assets_path, normalize_lexically, logger};
 use simsapa_backend::search::indexer;
 use simsapa_backend::dictionary_manager_core::import_user_zip;
 use simsapa_backend::helpers::analyze_sqlite_db_via_cli;
@@ -57,6 +57,36 @@ pub fn create_database_connection(db_path: &Path) -> Result<SqliteConnection> {
 pub fn run_migrations(conn: &mut SqliteConnection) -> Result<()> {
     conn.run_pending_migrations(APPDATA_MIGRATIONS)
         .map_err(|e| anyhow::anyhow!("Failed to execute pending database migrations: {}", e))?;
+    Ok(())
+}
+
+/// Create `dictionaries.sqlite3` and apply the dictionaries migrations.
+///
+/// The bootstrap starts from an emptied `dist/` folder, so this is the **only**
+/// place the dictionaries schema comes into existence. The runtime deliberately
+/// refuses to fabricate a dictionaries DB when the file is missing
+/// (`DbManager::new()`, see docs/database-migrations.md) — a fabricated file is
+/// not zero bytes, so `ensure_no_empty_db_files()` would never reclaim it and
+/// the "was missing" diagnosis would be lost. That refusal is correct for the
+/// app; it means the bootstrap has to create the DB explicitly, exactly as
+/// `AppdataBootstrap` does for `appdata.sqlite3`.
+///
+/// Must run **before** `init_app_data()`, which opens the dictionaries DB and
+/// immediately queries it (e.g. `refresh_dict_source_uid_caches`).
+pub fn init_dictionaries_db(dict_db_path: &Path) -> Result<()> {
+    logger::info(&format!("=== Create dictionaries.sqlite3: {} ===", dict_db_path.display()));
+
+    if let Some(parent) = dict_db_path.parent() {
+        ensure_directory_exists(parent)?;
+    }
+
+    let mut conn = create_database_connection(dict_db_path)
+        .with_context(|| format!("Failed to connect to {}", dict_db_path.display()))?;
+
+    let applied = conn.run_pending_migrations(DICTIONARIES_MIGRATIONS)
+        .map_err(|e| anyhow::anyhow!("Failed to execute pending dictionaries migrations: {}", e))?;
+    logger::info(&format!("Applied {} dictionaries migration(s)", applied.len()));
+
     Ok(())
 }
 
@@ -101,7 +131,20 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
 
     // Running the binary with 'cargo run', the PWD is simsapa/cli/.
     // The asset folders are one level above simsapa/.
-    let bootstrap_assets_dir = PathBuf::from("../../bootstrap-assets-resources");
+    //
+    // The path is made **absolute against the current working directory** on
+    // purpose. `SIMSAPA_DIR` is derived from it below, and
+    // `get_create_simsapa_dir()` resolves a *relative* `SIMSAPA_DIR` against the
+    // executable's directory first (a Windows portable-install requirement, see
+    // docs/windows-portable-install.md). With `cargo run` the exe lives in
+    // `cli/target/debug/`, so a relative `../../bootstrap-assets-resources/...`
+    // would resolve to `cli/bootstrap-assets-resources/...` and be created
+    // there — inputs read from the project-level folder, outputs written under
+    // `cli/`. An absolute value sidesteps that rule entirely.
+    let bootstrap_assets_dir = normalize_lexically(
+        &env::current_dir()
+            .context("Failed to get current working directory")?
+            .join("../../bootstrap-assets-resources"));
 
     if !bootstrap_assets_dir.exists() {
         anyhow::bail!(
@@ -110,7 +153,11 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
         );
     }
 
-    let release_dir = PathBuf::from(format!("../../releases/{}-dev/", iso_date));
+    let release_dir = bootstrap_assets_dir
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(format!("releases/{}-dev/", iso_date));
     let release_databases_dir = release_dir.join("databases/");
     let dist_dir = bootstrap_assets_dir.join("dist");
     let sc_data_dir = bootstrap_assets_dir.join("sc-data");
@@ -152,6 +199,12 @@ RELEASE_CHANNEL=development
     }
 
     clean_and_create_folders(&simsapa_dir, &assets_dir, &release_dir, &release_databases_dir, &dist_dir)?;
+
+    // Create the dictionaries DB up front, before anything opens it. It is
+    // needed whichever steps are skipped: the DPD/DPPN imports write into it,
+    // and `init_app_data()` queries it as soon as it runs. Re-running the
+    // migrations on an existing file is a no-op.
+    init_dictionaries_db(&assets_dir.join("dictionaries.sqlite3"))?;
 
     if !skip_appdata {
         logger::info("=== Create appdata.sqlite3 ===");

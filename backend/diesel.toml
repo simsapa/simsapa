@@ -5,5 +5,14 @@
 file = "src/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
 
+# The diesel CLI supports a single migrations directory, so this points at the
+# appdata one (the more frequently edited of the two). For dictionaries
+# migrations, pass the path explicitly:
+#
+#   diesel migration --migration-dir migrations/dictionaries generate <name>
+#
+# Note: this key is only used by the diesel CLI. At runtime both sets are
+# embedded at compile time by `embed_migrations!()` in `src/db/mod.rs`
+# (APPDATA_MIGRATIONS / DICTIONARIES_MIGRATIONS), relative to the crate root.
 [migrations_directory]
-dir = "/home/gambhiro/prods/apps/simsapa-ng-project/simsapa/rust/migrations"
+dir = "migrations/appdata"
