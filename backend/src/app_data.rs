@@ -2561,6 +2561,42 @@ impl AppData {
         }
     }
 
+    /// Get whether the user opted out of sending device info and usage stats.
+    ///
+    /// # Returns
+    ///
+    /// `true` if stats should not be sent, `false` otherwise (default)
+    pub fn get_dont_send_stats(&self) -> bool {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.dont_send_stats
+    }
+
+    /// Set whether the user opted out of sending device info and usage stats.
+    ///
+    /// # Arguments
+    ///
+    /// * `enabled` - When true, update checks omit system info and send no_stats = true
+    pub fn set_dont_send_stats(&self, enabled: bool) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.dont_send_stats = enabled;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => (),
+            Err(e) => error(&format!("Failed to update app settings: {}", e)),
+        }
+    }
+
     pub fn get_restore_last_session(&self) -> bool {
         let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
         app_settings.restore_last_session

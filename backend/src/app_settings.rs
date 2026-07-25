@@ -183,6 +183,10 @@ pub struct AppSettings {
     pub mobile_top_bar_margin: MobileTopBarMargin,
     /// Whether to show update notifications on startup
     pub notify_about_simsapa_updates: bool,
+    /// Whether to opt out of sending device info and usage stats when checking
+    /// for updates. When true, the releases API request omits the system info
+    /// fields entirely and sends no_stats = true.
+    pub dont_send_stats: bool,
     /// Release channel for updates (e.g., "main" or "development")
     /// None means use default "main"
     pub release_channel: Option<String>,
@@ -670,6 +674,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             first_time_start: true,
             mobile_top_bar_margin: MobileTopBarMargin::default(),
             notify_about_simsapa_updates: true,
+            dont_send_stats: false,
             release_channel: None,
             app_keybindings: AppKeybindings::default(),
             global_hotkeys: crate::global_hotkeys::GlobalHotkeysConfig::default(),

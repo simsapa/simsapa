@@ -421,23 +421,6 @@ ApplicationWindow {
                             Layout.topMargin: 10
                         }
 
-                        // Updates section
-                        Label {
-                            text: "Updates"
-                            font.pointSize: root.pointSize + 1
-                            font.bold: true
-                            Layout.topMargin: 10
-                        }
-
-                        CheckBox {
-                            id: notify_updates_checkbox
-                            text: "Notify About Simsapa Updates"
-                            font.pointSize: root.pointSize
-                            onCheckedChanged: {
-                                SuttaBridge.set_notify_about_simsapa_updates(checked);
-                            }
-                        }
-
                         Label {
                             text: "Session"
                             font.pointSize: root.pointSize + 1
@@ -492,6 +475,39 @@ ApplicationWindow {
                             text: "Rebuild Search Index..."
                             font.pointSize: root.pointSize
                             onClicked: rebuild_index_dialog.open()
+                        }
+
+                        // Updates section
+                        Label {
+                            text: "Updates"
+                            font.pointSize: root.pointSize + 1
+                            font.bold: true
+                            Layout.topMargin: 10
+                        }
+
+                        CheckBox {
+                            id: notify_updates_checkbox
+                            text: "Notify About Simsapa Updates"
+                            font.pointSize: root.pointSize
+                            onCheckedChanged: {
+                                SuttaBridge.set_notify_about_simsapa_updates(checked);
+                            }
+                        }
+
+                        CheckBox {
+                            id: dont_send_stats_checkbox
+                            text: "Don't send stats"
+                            font.pointSize: root.pointSize
+                            onCheckedChanged: {
+                                SuttaBridge.set_dont_send_stats(checked);
+                            }
+                        }
+
+                        Label {
+                            text: "By default, minimal device info is sent when checking for updates for basic performance and usage analytics. This option opts out."
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
 
                         Item { Layout.fillHeight: true }
@@ -1191,6 +1207,7 @@ ApplicationWindow {
     function reload_settings_from_backend() {
         // Load initial state for General tab settings
         notify_updates_checkbox.checked = SuttaBridge.get_notify_about_simsapa_updates();
+        dont_send_stats_checkbox.checked = SuttaBridge.get_dont_send_stats();
         restore_last_session_checkbox.checked = SuttaBridge.get_restore_last_session();
 
         // Mobile rendering troubleshooting toggles

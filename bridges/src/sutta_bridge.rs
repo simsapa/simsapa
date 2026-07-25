@@ -1364,6 +1364,12 @@ pub mod qobject {
         #[qinvokable]
         fn set_notify_about_simsapa_updates(self: Pin<&mut SuttaBridge>, enabled: bool);
 
+        #[qinvokable]
+        fn get_dont_send_stats(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_dont_send_stats(self: Pin<&mut SuttaBridge>, enabled: bool);
+
         // Keybindings management
         #[qinvokable]
         fn get_keybindings_json(self: &SuttaBridge) -> QString;
@@ -4706,6 +4712,18 @@ impl qobject::SuttaBridge {
     pub fn set_notify_about_simsapa_updates(self: Pin<&mut Self>, enabled: bool) {
         let app_data = get_app_data();
         app_data.set_notify_about_simsapa_updates(enabled);
+    }
+
+    /// Get whether the user opted out of sending device info and usage stats.
+    pub fn get_dont_send_stats(&self) -> bool {
+        let app_data = get_app_data();
+        app_data.get_dont_send_stats()
+    }
+
+    /// Set whether the user opted out of sending device info and usage stats.
+    pub fn set_dont_send_stats(self: Pin<&mut Self>, enabled: bool) {
+        let app_data = get_app_data();
+        app_data.set_dont_send_stats(enabled);
     }
 
     /// Get the current keybindings as a JSON string.

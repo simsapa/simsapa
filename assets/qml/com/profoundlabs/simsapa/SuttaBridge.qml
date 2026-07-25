@@ -933,6 +933,15 @@ Item {
         console.log("set_notify_about_simsapa_updates():", enabled);
     }
 
+    function get_dont_send_stats(): bool {
+        console.log("get_dont_send_stats()");
+        return false;
+    }
+
+    function set_dont_send_stats(enabled: bool) {
+        console.log("set_dont_send_stats():", enabled);
+    }
+
     // Keybindings management functions
     function get_keybindings_json(): string {
         console.log("get_keybindings_json()");

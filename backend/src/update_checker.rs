@@ -376,25 +376,34 @@ const REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// Parameters sent to the releases API endpoint.
 ///
-/// Contains system information for analytics (if enabled).
+/// `channel` and `no_stats` are always sent. The system info fields are
+/// omitted from the request when stats are opted out of (either by the
+/// "Don't send stats" setting or by env variables / caller behaviour).
 #[derive(Debug, Clone, Serialize)]
 pub struct ReleasesRequestParams {
-    /// Release channel (e.g., "main")
+    /// Selects the app release channel (e.g., "main", "development")
     pub channel: String,
     /// Current application version
-    pub app_version: String,
-    /// Operating system (e.g., "linux", "windows", "macos")
-    pub system: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    /// Operating system (e.g., "linux", "windows", "macos", "android", "ios")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
     /// Machine architecture (e.g., "x86_64", "aarch64")
-    pub machine: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
     /// Maximum CPU frequency in MHz (as string)
-    pub cpu_max: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_max: Option<String>,
     /// Number of CPU cores
-    pub cpu_cores: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_cores: Option<String>,
     /// Total system memory in bytes (as string)
-    pub mem_total: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem_total: Option<String>,
     /// Screen resolution (e.g., "1920 x 1080")
-    pub screen: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen: Option<String>,
     /// If true, don't save stats on the server
     pub no_stats: bool,
 }
@@ -465,6 +474,13 @@ pub struct UpdateInfo {
 /// - `Disabled`: Never save stats (no_stats = true)
 /// - `Determine`: Use value from `AppGlobals` (environment variables)
 ///
+/// The user setting "Don't send stats" (`AppSettings::dont_send_stats`) is an
+/// opt-out which overrides all of the above: when it is set, `no_stats` is true.
+///
+/// When `no_stats` is true, the system info fields are left as `None` — they are
+/// not collected at all, and are omitted from the serialized request. Only
+/// `channel` and `no_stats` are sent.
+///
 /// # Arguments
 ///
 /// * `screen_size` - Optional screen resolution string (e.g., "1920 x 1080")
@@ -478,7 +494,7 @@ pub fn collect_system_info(screen_size: Option<&str>, save_stats_behaviour: Save
     use crate::get_app_globals;
 
     // Determine no_stats based on behaviour
-    let no_stats = match save_stats_behaviour {
+    let behaviour_no_stats = match save_stats_behaviour {
         SaveStatsBehaviour::Enabled => false,
         SaveStatsBehaviour::Disabled => true,
         SaveStatsBehaviour::Determine => {
@@ -487,6 +503,24 @@ pub fn collect_system_info(screen_size: Option<&str>, save_stats_behaviour: Save
             !save_stats
         }
     };
+
+    // The user setting is an opt-out, it overrides the behaviour parameter.
+    let no_stats = behaviour_no_stats || get_dont_send_stats();
+
+    if no_stats {
+        // Don't collect system info at all.
+        return ReleasesRequestParams {
+            channel: get_release_channel(),
+            app_version: None,
+            system: None,
+            machine: None,
+            cpu_max: None,
+            cpu_cores: None,
+            mem_total: None,
+            screen: None,
+            no_stats,
+        };
+    }
 
     // Get CPU info using platform-specific implementations
     let cpu_cores = get_cpu_cores()
@@ -504,14 +538,27 @@ pub fn collect_system_info(screen_size: Option<&str>, save_stats_behaviour: Save
 
     ReleasesRequestParams {
         channel: get_release_channel(),
-        app_version: get_app_version(),
-        system: std::env::consts::OS.to_string(),
-        machine: std::env::consts::ARCH.to_string(),
-        cpu_max,
-        cpu_cores,
-        mem_total,
-        screen: screen_size.unwrap_or("").to_string(),
+        app_version: Some(get_app_version()),
+        system: Some(std::env::consts::OS.to_string()),
+        machine: Some(std::env::consts::ARCH.to_string()),
+        cpu_max: Some(cpu_max),
+        cpu_cores: Some(cpu_cores),
+        mem_total: Some(mem_total),
+        screen: Some(screen_size.unwrap_or("").to_string()),
         no_stats,
+    }
+}
+
+/// Read the user's "Don't send stats" opt-out from app settings.
+///
+/// Returns `false` when app data is not initialized yet (e.g. during first-run
+/// setup), matching the default setting value.
+fn get_dont_send_stats() -> bool {
+    use crate::try_get_app_data;
+
+    match try_get_app_data() {
+        Some(app_data) => app_data.get_dont_send_stats(),
+        None => false,
     }
 }
 

@@ -32,6 +32,31 @@ params for optional analytics) and returns `Err` on any network, HTTP-status, or
 parse failure. It does **not** fall back internally — keeping it pure means the
 caller can distinguish "server reachable" from "had to fall back".
 
+#### The `no_stats` opt-out and `ReleasesRequestParams`
+
+`ReleasesRequestParams` (same file) always sends `channel` and `no_stats`. Every
+other field (`app_version`, `system`, `machine`, `cpu_max`, `cpu_cores`,
+`mem_total`, `screen`) is an `Option<String>` with
+`#[serde(skip_serializing_if = "Option::is_none")]`, so an opted-out request
+carries **only** `{"channel": …, "no_stats": true}`.
+
+`collect_system_info()` decides `no_stats` in two steps:
+
+1. the `SaveStatsBehaviour` argument — `Enabled` → false, `Disabled` → true,
+   `Determine` → `!AppGlobals.save_stats` (from the `SAVE_STATS` / `NO_STATS`
+   env variables);
+2. **OR**ed with the user setting `AppSettings::dont_send_stats` — an opt-out, so
+   it overrides the behaviour argument in the "don't send" direction only.
+
+When `no_stats` is true the system info is **not collected at all** (the function
+returns early with `None` fields) — CPU/memory/screen are never read. The setting
+is exposed in **Settings → General → Updates** as the "Don't send stats"
+checkbox (default off), plumbed through
+`SuttaBridge::get_dont_send_stats()` / `set_dont_send_stats()` →
+`AppData::get_dont_send_stats()` / `set_dont_send_stats()`. `collect_system_info()`
+reads it through `try_get_app_data()`, so it degrades to `false` (the default) when
+app data is not initialized yet — mirroring `get_release_channel()`.
+
 ### Embedded fallback — `FALLBACK_RELEASES_INFO_JSON` / `get_fallback_releases_info()`
 
 Also in `backend/src/update_checker.rs`:
