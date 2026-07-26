@@ -111,16 +111,37 @@ able to download the asset**, which is handled and shown separately (below).
 **not** rely on `check_for_updates()` having run. They go through the shared
 helper `compatible_assets_release()` (in `bridges/src/sutta_bridge.rs`), which
 prefers `try_get_releases_info()` (the live global) and **falls back to
-`get_fallback_releases_info()`** when the global is empty:
+`get_fallback_releases_info()`** — both when the global is empty **and when the
+live info yields no compatible assets release**:
 
 ```rust
 fn compatible_assets_release() -> Option<update_checker::ReleaseEntry> {
-    let releases_info = simsapa_backend::try_get_releases_info()
-        .or_else(update_checker::get_fallback_releases_info)?;
     let app_version = update_checker::to_version(&update_checker::get_app_version()).ok()?;
-    update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version).cloned()
+
+    if let Some(releases_info) = simsapa_backend::try_get_releases_info()
+        && let Some(release) =
+            update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version)
+    {
+        return Some(release.clone());
+    }
+
+    let fallback_info = update_checker::get_fallback_releases_info()?;
+    // … log + return the fallback's compatible release, if any
+    update_checker::get_latest_app_compatible_assets_release(&fallback_info, &app_version).cloned()
 }
 ```
+
+**The "live fetch succeeded but has nothing compatible" case is load-bearing,
+not theoretical.** The fetch is scoped to a release **channel**
+(`get_release_channel()`, default `main`), so a build published on `main` while
+its matching assets release is still only announced on `development` gets a
+perfectly successful `POST /releases` response whose `assets.releases` contains
+no entry compatible with the running app version. A testing user has no
+`RELEASE_CHANNEL` env var to switch channels, but the shipped
+`assets/releases-fallback.json` snapshot *does* carry the newer entry — so the
+lookup must retry against the fallback rather than treat the empty live result
+as final. Falling back only on a fetch *error* produced a spurious "Unable to
+retrieve download information." on first run in exactly that situation.
 
 This matters for **`SuttaLanguagesWindow.qml`** (downloading additional sutta
 languages): that window does **not** call `check_for_updates()` — its
