@@ -504,10 +504,17 @@ ApplicationWindow {
                         }
 
                         Label {
-                            text: "By default, minimal device info is sent when checking for updates for basic performance and usage analytics. This option opts out."
+                            text: "<p>By default, minimal device info is sent when checking for updates to help with basic performance and usage analytics. This option opts out. The details can be found in the <a href='https://simsapa.github.io/privacy-policy/'>privacy policy</a>.</p>"
                             font.pointSize: root.pointSize - 2
+                            textFormat: Text.RichText
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
+                            onLinkActivated: (link) => Qt.openUrlExternally(link)
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton // we don't want to eat clicks on the Text
+                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
                         }
 
                         Item { Layout.fillHeight: true }
