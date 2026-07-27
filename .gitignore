@@ -65,6 +65,11 @@ tags
 # MacOS
 .DS_Store
 
+# Android release signing credentials (see android/signing.env.example)
+android/signing.env
+*.jks
+*.keystore
+
 # Environments
 .env
 .venv

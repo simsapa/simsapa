@@ -96,6 +96,16 @@ list(APPEND qt_modules
 if (ANDROID)
     # Detect Android ABI and set appropriate Qt paths
     # ANDROID_ABI is set by the Android toolchain (e.g., armeabi-v7a, arm64-v8a, x86_64)
+    #
+    # MULTI-ABI NOTE: for a multi-ABI build (see build-android.sh /
+    # `make android-aab`), Qt configures one ExternalProject per additional ABI,
+    # re-running CMake over this same source tree with that ABI's toolchain
+    # file. So ANDROID_ABI is correct in each sub-build and the branches below
+    # resolve per-ABI. Qt does NOT forward the parent's CMAKE_PREFIX_PATH to the
+    # sub-builds (only ANDROID_SDK_ROOT / ANDROID_NDK_ROOT and the variables
+    # named in QT_ANDROID_MULTI_ABI_FORWARD_VARS), which is exactly what makes
+    # the `if(NOT CMAKE_PREFIX_PATH)` guard below safe.
+    # See docs/android-multi-abi-and-chromeos.md.
     if(ANDROID_ABI STREQUAL "armeabi-v7a")
         set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_armv7")
     elseif(ANDROID_ABI STREQUAL "arm64-v8a")
@@ -120,6 +130,15 @@ if (ANDROID)
     list(APPEND app_components WebView)
     list(APPEND qt_modules Qt::WebView)
     add_compile_definitions(Q_OS_ANDROID)
+
+    # Android package version. androiddeployqt substitutes these into
+    # android/AndroidManifest.xml's %%INSERT_VERSION_CODE%% / %%INSERT_VERSION_NAME%%
+    # placeholders. Google Play requires a strictly increasing versionCode on
+    # every upload of a given package, so bump it for each release:
+    #   make android-aab ANDROID_VERSION_CODE=3 ANDROID_VERSION_NAME=1.0.0-alpha.3
+    # Without these properties Qt defaults to versionCode 1 / versionName "1.0".
+    set(ANDROID_VERSION_CODE "1" CACHE STRING "Android manifest versionCode")
+    set(ANDROID_VERSION_NAME "1.0.0-alpha.2" CACHE STRING "Android manifest versionName")
 elseif (IOS)
     set(Rust_CARGO_TARGET aarch64-apple-ios)
     set(qmake_path "$ENV{HOME}/Qt/${QT_IOS}/ios/bin/qmake6")
@@ -330,6 +349,13 @@ set_target_properties(simsapadhammareader PROPERTIES
     MACOSX_BUNDLE TRUE
     QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/android
 )
+
+if (ANDROID)
+    set_target_properties(simsapadhammareader PROPERTIES
+        QT_ANDROID_VERSION_CODE "${ANDROID_VERSION_CODE}"
+        QT_ANDROID_VERSION_NAME "${ANDROID_VERSION_NAME}"
+    )
+endif()
 
 # Link to the qml module, which in turn links to the Rust simsapa library
 target_link_libraries(simsapadhammareader

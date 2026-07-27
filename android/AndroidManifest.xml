@@ -1,12 +1,79 @@
 <?xml version="1.0"?>
+<!--
+    DO NOT REMOVE the package= attribute below, despite the Gradle warning
+    "Setting the namespace via the package attribute in the source
+    AndroidManifest.xml is no longer supported, and the value is ignored.
+    Recommendation: remove package=..."
+
+    Following that recommendation would change the application id of a
+    PUBLISHED app, which Google Play treats as a different app entirely.
+
+    androiddeployqt resolves the package name in extractPackageName()
+    (qtbase/src/tools/androiddeployqt/main.cpp): it first reads the `namespace`
+    line out of android/build.gradle, but that line is `namespace
+    androidPackageName` — a Gradle *property* reference, and androiddeployqt
+    parses build.gradle textually, so it sees the literal token
+    "androidPackageName" and explicitly rejects it. It then falls back to THIS
+    attribute, and writes the result into the generated gradle.properties as
+    androidPackageName=io.github.simsapa.app, which is what build.gradle's
+    `namespace` then resolves to.
+
+    So the attribute AGP says it ignores is the actual source of truth for the
+    whole chain. Remove it and androiddeployqt falls through to
+    "org.qtproject.example.simsapadhammareader".
+
+    See docs/android-multi-abi-and-chromeos.md and app-packaging-and-identifiers.md.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.github.simsapa.app"
     android:installLocation="auto"
     android:versionCode="-- %%INSERT_VERSION_CODE%% --"
     android:versionName="-- %%INSERT_VERSION_NAME%% --">
+    <!--
+        Permissions are declared EXPLICITLY here. The androiddeployqt markers
+        `%%INSERT_PERMISSIONS` / `%%INSERT_FEATURES` have been deliberately
+        REMOVED: androiddeployqt substitutes them with the union of the
+        `<permission>` entries in the `Qt6*_<abi>-android-dependencies.xml`
+        files of every linked Qt module, which pulled in CAMERA (Qt6WebView),
+        ACCESS_FINE_LOCATION (Qt6WebView / Qt6Positioning), BLUETOOTH
+        (Qt6Bluetooth) and WRITE_EXTERNAL_STORAGE — none of which Simsapa uses.
+
+        That mattered because Google Play derives *required hardware features*
+        from permissions: CAMERA implies android.hardware.camera +
+        .camera.autofocus, and ACCESS_FINE_LOCATION implies
+        android.hardware.location.gps. All three are on Google's
+        "excludes ChromeOS devices" list, so the app was filtered out of the
+        Play Store on Chromebooks.
+        See docs/android-multi-abi-and-chromeos.md.
+
+        TRADE-OFF: adding a new Qt module that needs a permission will no
+        longer add it automatically — declare it below by hand.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- %%INSERT_PERMISSIONS -->
-    <!-- %%INSERT_FEATURES -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!--
+        Everything below is optional. A `<uses-feature>` with no explicit
+        `required` attribute defaults to required="true", and Play then filters
+        out every device lacking it. Simsapa is a text reader: nothing here is
+        load-bearing, and the microphone is only used by chanting practice,
+        which degrades gracefully.
+    -->
+    <uses-feature android:name="android.hardware.touchscreen"      android:required="false" />
+    <uses-feature android:name="android.hardware.faketouch"        android:required="false" />
+    <uses-feature android:name="android.hardware.microphone"       android:required="false" />
+    <uses-feature android:name="android.hardware.camera"           android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.location"         android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps"     android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth"        android:required="false" />
+    <uses-feature android:name="android.hardware.telephony"        android:required="false" />
+    <uses-feature android:name="android.hardware.wifi"             android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.compass"       android:required="false" />
+
     <supports-screens
         android:anyDensity="true"
         android:largeScreens="true"

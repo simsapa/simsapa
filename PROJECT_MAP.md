@@ -33,8 +33,22 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── res
 ```
 
-- `AndroidManifest.xml` - Android app manifest
-- `build.gradle` - Android build configuration
+- `AndroidManifest.xml` - Android app manifest. Permissions and `<uses-feature>`
+  entries are declared **explicitly**: androiddeployqt's
+  `%%INSERT_PERMISSIONS` / `%%INSERT_FEATURES` markers were deliberately removed
+  because the Qt-module-derived injection (CAMERA, ACCESS_FINE_LOCATION,
+  BLUETOOTH) made Play treat camera/GPS as *required* hardware and filtered the
+  app off Chromebooks. Adding a Qt module that needs a permission now requires a
+  manual edit here. See [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+- `build.gradle` - Android build configuration (`minSdk 27` / `targetSdk 35`;
+  `ndk.abiFilters` is driven by androiddeployqt's `qtTargetAbiList`, so it
+  follows the multi-ABI list automatically). `packagingOptions.jniLibs.excludes`
+  drops libraries androiddeployqt stages into the wrong ABI folder — load-bearing
+  for multi-ABI correctness, see
+  [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md)
+- `signing.env.example` - Template for the gitignored `android/signing.env`
+  holding the `QT_ANDROID_KEYSTORE_*` upload-key credentials used by
+  `build-android.sh`
 - `res/` - Android resources (icons, configurations)
 
 #### `/assets/css/`, `/assets/sass/` - Styling
@@ -361,6 +375,13 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `build-appimage.sh` - Linux AppImage build script
 - `build-macos.sh` - macOS .app bundle and DMG build script
 - `build-windows.ps1` - Windows installer build script (PowerShell)
+- `build-android.sh` - Signed multi-ABI Android AAB/APK build script
+  (`make android-aab` / `android-apk`). Pre-flights the Qt-for-Android kits and
+  Rust targets per ABI, configures with the primary ABI's `qt-cmake` +
+  `-DQT_ANDROID_ABIS`, signs via `QT_ANDROID_SIGN_AAB` and the
+  `QT_ANDROID_KEYSTORE_*` env vars sourced from `android/signing.env`, then
+  verifies the ABIs present in the artifact. See
+  [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 - `simsapa-installer.iss` - Inno Setup installer configuration for Windows
 - `WINDOWS_QUICK_START.md` - Quick reference for Windows builds
 - `WINDOWS_BUILD_GUIDE.md` - Complete Windows build documentation

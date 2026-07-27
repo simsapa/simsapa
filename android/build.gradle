@@ -5,6 +5,11 @@ buildscript {
     }
 
     dependencies {
+        // NOTE: this version is coupled to MAX_JDK_MAJOR in build-android.sh.
+        // AGP 8.6.0's bundled Android Lint cannot parse a JDK 26 version string
+        // and dies with the version number as its only error message, so the
+        // build script pins the JDK to 17-21. Raise both together.
+        // See docs/android-multi-abi-and-chromeos.md.
         //noinspection AndroidGradlePluginVersion
         classpath 'com.android.tools.build:gradle:8.6.0'
     }
@@ -52,6 +57,40 @@ android {
 
     // Extract native libraries from the APK
     packagingOptions.jniLibs.useLegacyPackaging true
+
+    // Drop libraries staged into the wrong ABI directory.
+    //
+    // In a multi-ABI build, the final androiddeployqt pass resolves the
+    // dependency list for every ABI and, for some of them, copies the PRIMARY
+    // ABI's Qt plugins into the other ABIs' staging folders. Verified with
+    // `androiddeployqt --verbose`: during the armeabi-v7a phase it emits
+    //   -- Copied .../libs/armeabi-v7a/libplugins_platforms_qtforandroid_arm64-v8a.so
+    // while the same files are correctly rejected as "architecture mismatch"
+    // in another phase — so its own arch guard is inconsistent, not absent.
+    // Result: 28 aarch64 .so files in base/lib/x86_64/ and base/lib/armeabi-v7a/
+    // of an otherwise correct bundle. Reproducible from a clean build.
+    //
+    // Qt suffixes every library it deploys with the ABI name, so a suffix that
+    // disagrees with its directory is unambiguously wrong. Libraries with no
+    // ABI suffix (libc++_shared.so, …) match nothing here and are kept.
+    //
+    // build-android.sh re-checks the finished artifact and hard-fails if any
+    // survive, so this exclusion cannot silently stop working.
+    // See docs/android-multi-abi-and-chromeos.md.
+    packagingOptions.jniLibs.excludes += [
+        'lib/arm64-v8a/*_armeabi-v7a.so',
+        'lib/arm64-v8a/*_x86_64.so',
+        'lib/arm64-v8a/*_x86.so',
+        'lib/armeabi-v7a/*_arm64-v8a.so',
+        'lib/armeabi-v7a/*_x86_64.so',
+        'lib/armeabi-v7a/*_x86.so',
+        'lib/x86_64/*_arm64-v8a.so',
+        'lib/x86_64/*_armeabi-v7a.so',
+        'lib/x86_64/*_x86.so',
+        'lib/x86/*_arm64-v8a.so',
+        'lib/x86/*_armeabi-v7a.so',
+        'lib/x86/*_x86_64.so',
+    ]
 
     sourceSets {
         main {

@@ -234,6 +234,44 @@ Notable feature docs:
   Play without touching the QML URI (a ~70-site, no-benefit refactor). Covers why
   the Android FileProvider authority and `/data/user/0/<pkg>/` data dir derive
   automatically from the package, and the change checklist.
+- [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
+  how the signed release AAB is built (`make android-aab` → `build-android.sh`,
+  `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
+  packages from the Qt Creator interface** — its kits are single-ABI, and an
+  arm64-only bundle is filtered off Intel/AMD Chromebooks (ARCVM is x86_64).
+  Records the July 2026 "not compatible on Chromebook" incident and its **two
+  independent causes**: the missing x86_64 ABI, *and* the
+  `<!-- %%INSERT_PERMISSIONS -->` marker, which androiddeployqt filled from the
+  linked Qt modules' `Qt6*-android-dependencies.xml` files with CAMERA
+  (Qt6WebView), ACCESS_FINE_LOCATION and BLUETOOTH — from which **Play derives
+  *required* hardware features** (`CAMERA` ⇒ `android.hardware.camera` +
+  `.autofocus`; `ACCESS_FINE_LOCATION` ⇒ `.location.gps`), all on Google's
+  excludes-ChromeOS list. The fix **deletes both androiddeployqt markers** and
+  declares permissions explicitly + every `<uses-feature>` as
+  `required="false"` (a bare `<uses-feature>` defaults to *required*), with the
+  trade-off that **a new Qt module's permissions must now be added by hand**.
+  Covers the ExternalProject-per-ABI mechanism and why the project's
+  `if(NOT CMAKE_PREFIX_PATH)` per-ABI Qt-path guard is safe (Qt does not forward
+  the parent's `CMAKE_PREFIX_PATH` to sub-builds), the **`armeabi-v7a` →
+  `armv7-linux-androideabi`** corrosion mapping gotcha (*not* thumbv7neon — Qt's
+  toolchain sets `CMAKE_ANDROID_ARM_MODE`), why `QT_ANDROID_BUILD_ALL_ABIS` is
+  deliberately avoided, keystore signing via `android/signing.env` (gitignored)
+  + `QT_ANDROID_SIGN_AAB`, and the **strictly-increasing `ANDROID_VERSION_CODE`**
+  Play requires. Also two traps found while getting the first multi-ABI bundle
+  out: (1) **the JDK must be 17–21** — AGP 8.6.0's bundled lint cannot parse a
+  Java 26 version string, and the failure is a `lintVitalAnalyzeRelease` crash
+  whose *entire* error message is the JDK version number, after all three ABIs
+  have already compiled and signed; `build-android.sh` therefore picks a JDK
+  explicitly instead of inheriting `java`. (2) **androiddeployqt stages the
+  primary ABI's Qt plugins into the other ABIs' `lib/` folders** (28 aarch64
+  `.so` files in `base/lib/x86_64/`, reproducible from a clean tree, its own
+  `checkArchitecture` guard firing in some phases but not others) — excluded in
+  `android/build.gradle` via `packagingOptions.jniLibs.excludes` and
+  independently re-checked against the finished artifact by the script. Plus the
+  **never hand-delete `android-build/`** rule (it wedges the tree: the per-ABI
+  ExternalProject copy stamps then consider themselves up to date and never
+  repopulate the staging dir — use `make android-clean`), and the `aapt2 dump
+  badging` / Play device-catalog verification steps.
 - [Gloss / Prompts session history](./docs/gloss-prompts-history.md) — the shared,
   `item_type`-parameterised history feature for the **Gloss** and **Prompts** tabs
   (table `gloss_prompts_history`, the shared bridge fns + signals, the
@@ -434,6 +472,30 @@ audio native library is bundled at all. See
 `cxx` C++ build). Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
 main app `.so` is achieved with `target_link_options(... "-Wl,-z,max-page-size=16384")`
 in `CMakeLists.txt`, not by relying on r28's default. Details in the doc above.
+
+### Adding a Qt module that needs an Android permission
+
+`android/AndroidManifest.xml` no longer carries androiddeployqt's
+`<!-- %%INSERT_PERMISSIONS -->` / `<!-- %%INSERT_FEATURES -->` markers, so
+permissions are **no longer injected automatically** from the linked Qt modules.
+They were removed because that injection pulled in CAMERA, ACCESS_FINE_LOCATION
+and BLUETOOTH, from which Google Play derives *required* hardware features that
+filtered the app off Chromebooks.
+
+If you link a new Qt module and something fails on device with a
+permission-denied error, look up what that module declares:
+
+```sh
+grep -o '<permission name="[^"]*"' \
+  ~/Qt/6.9.3/android_arm64_v8a/lib/Qt6<Module>_arm64-v8a-android-dependencies.xml
+```
+
+and add the entry by hand to `android/AndroidManifest.xml`. Any accompanying
+`<uses-feature>` must be declared `android:required="false"` unless the app
+genuinely cannot function without the hardware — a bare `<uses-feature>`
+defaults to **required** and removes the app from the Play Store on every device
+lacking it. See
+[docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### New QML components
 
@@ -739,7 +801,17 @@ Use this path for any tests or experimental scripts that need to query the actua
   - App bundle only: `make macos-app` (skips DMG creation)
   - Clean only: `make macos-clean`
   - Clean rebuild: `make macos-rebuild`
-- **Android APK:** Build with Qt Creator
+- **Android App Bundle (Google Play):** `make android-aab ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>`
+  - Signed APK for sideloading: `make android-apk`
+  - Unsigned debug APK: `make android-apk-debug`
+  - Clean only / clean rebuild: `make android-clean` / `make android-rebuild`
+  - Multi-ABI (`arm64-v8a;x86_64;armeabi-v7a`) via `build-android.sh`. **Do not
+    build release packages from the Qt Creator interface** — its kits are
+    single-ABI and an arm64-only bundle is filtered off Chromebooks. Signing
+    credentials come from the gitignored `android/signing.env` (template:
+    `android/signing.env.example`); `ANDROID_VERSION_CODE` must strictly
+    increase on every Play upload. See
+    [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing
 - **QML Tests:** `make qml-test` (runs all QML tests with offscreen platform)
