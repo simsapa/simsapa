@@ -9,6 +9,4 @@
 # version in bridges/Cargo.toml.
 #
 # Blank lines and #-comments are ignored; the first remaining line is the value.
-#
-# Currently on Play: 2
 3
