@@ -126,7 +126,46 @@ android {
     defaultConfig {
         resConfig "en"
         minSdkVersion 27
-        targetSdkVersion 35
+
+        // Targeting API 36 opts the app in to three behaviours that Android 16
+        // enforces with no per-app opt-out:
+        //
+        //  1. Edge-to-edge display. The activity is laid out under the status
+        //     and navigation bars; Window.setDecorFitsSystemWindows(false) is
+        //     implied. Clearance comes from Qt's ApplicationWindow safe-area
+        //     padding, NOT from the app's own margin setting — see
+        //     docs/android-edge-to-edge-and-safe-areas.md.
+        //  2. Predictive back is on by default. Opting out again would need
+        //     android:enableOnBackInvokedCallback="false" on the <activity>.
+        //  3. Orientation/resizability attributes are ignored on large screens
+        //     (sw >= 600dp), so the app must tolerate arbitrary resize.
+        //
+        // compileSdk stays whatever androiddeployqt writes (android-36); AGP
+        // 8.6.0 and the JDK 17-21 pin are deliberate and unchanged.
+        // See docs/android-multi-abi-and-chromeos.md.
+        targetSdkVersion 36
         ndk.abiFilters = qtTargetAbiList.split(",")
+    }
+}
+
+// Skip the debug variant entirely during a release build.
+//
+// androiddeployqt appends the bare `bundle` task (not `bundleRelease`), which
+// asks Gradle for every variant's bundle and so drags the whole debug variant
+// through compilation, packaging and signing — 43 :*Debug* tasks whose output
+// is thrown away.
+//
+// The switch has to be conditional because `make android-apk-debug` needs the
+// debug variant to exist. build-android.sh exports
+// ORG_GRADLE_PROJECT_simsapaReleaseOnly=true for release builds only; Gradle
+// maps ORG_GRADLE_PROJECT_<name> environment variables to project properties,
+// which is how the flag reaches here without a -P argument (there is nowhere to
+// pass one — Gradle is invoked by androiddeployqt, not by us).
+//
+// Note hasProperty() is true for ANY value, including "false" and "", so the
+// variable must be left UNSET for debug builds rather than set to false.
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) {
+        it.enable = !project.hasProperty("simsapaReleaseOnly")
     }
 }

@@ -69,9 +69,15 @@ Usage: ./build-android.sh [options]
   --clean           Remove the build directory before configuring
   -h, --help        This message
 
+Version:
+  versionCode comes from android/version.txt — edit that file before a Play
+  upload; Play requires it to strictly increase. versionName comes from the
+  [package] version in bridges/Cargo.toml. Neither needs a command-line
+  argument.
+
 Environment:
-  ANDROID_VERSION_CODE   Play requires this to strictly increase per upload
-  ANDROID_VERSION_NAME   Human-readable version, e.g. 1.0.0-alpha.3
+  ANDROID_VERSION_CODE   Overrides android/version.txt (must be non-empty)
+  ANDROID_VERSION_NAME   Overrides the Cargo.toml version, e.g. 1.0.0-alpha.3
   ANDROID_ABIS, ANDROID_SDK_ROOT, ANDROID_NDK_ROOT, ANDROID_BUILD_DIR,
   QT_ANDROID_VERSION, QT_ANDROID_ROOT, ANDROID_PRIMARY_ABI
 
@@ -273,6 +279,74 @@ if [ "$DO_SIGN" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Package version
+# ---------------------------------------------------------------------------
+#
+# versionCode comes from android/version.txt, versionName from the [package]
+# version in bridges/Cargo.toml. Both are exported and read by CMakeLists.txt
+# via $ENV{} — there are no -D arguments, so an edit to either file takes effect
+# on the next run of this script (which always re-runs `cmake -S . -B`) even in
+# an existing build directory.
+#
+# A non-empty inherited value wins, so `make android-aab ANDROID_VERSION_CODE=9`
+# still overrides. The test must be `-n`, not an is-set test: the Makefile
+# exports both names unconditionally and GNU make exports an undefined variable
+# as the EMPTY STRING, so on a plain `make android-aab` both arrive set-but-empty
+# and an is-set test would read that as a deliberate override.
+
+VERSION_CODE_FILE="android/version.txt"
+CARGO_TOML="bridges/Cargo.toml"
+
+version_code_source="android/version.txt"
+if [ -n "${ANDROID_VERSION_CODE:-}" ]; then
+    version_code_source="environment"
+else
+    [ -f "$VERSION_CODE_FILE" ] \
+        || die "$VERSION_CODE_FILE not found.
+       It holds the Android versionCode (a single positive integer).
+       Restore it, or export ANDROID_VERSION_CODE=<n> for this build."
+
+    # First non-blank, non-comment line. Deliberately parsed rather than
+    # sourced: the file is data, not shell.
+    ANDROID_VERSION_CODE="$(sed -e 's/#.*//' -e 's/[[:space:]]//g' \
+                                "$VERSION_CODE_FILE" | grep -m1 .)" || true
+
+    case "$ANDROID_VERSION_CODE" in
+        ""|*[!0-9]*)
+            die "Could not read a versionCode from $VERSION_CODE_FILE.
+       Expected a single positive integer on its own line, got: '${ANDROID_VERSION_CODE}'
+       Google Play requires it to strictly increase on every upload." ;;
+    esac
+    [ "$ANDROID_VERSION_CODE" -gt 0 ] 2>/dev/null \
+        || die "versionCode in $VERSION_CODE_FILE must be a positive integer, got: $ANDROID_VERSION_CODE"
+fi
+
+version_name_source="bridges/Cargo.toml"
+if [ -n "${ANDROID_VERSION_NAME:-}" ]; then
+    version_name_source="environment"
+else
+    [ -f "$CARGO_TOML" ] || die "$CARGO_TOML not found; cannot determine versionName."
+
+    # The [package] version only — stop at the first table after it so a
+    # dependency's `version = ` cannot be picked up instead.
+    ANDROID_VERSION_NAME="$(awk '
+        /^\[package\]/       { in_pkg = 1; next }
+        /^\[/                { in_pkg = 0 }
+        in_pkg && /^[[:space:]]*version[[:space:]]*=/ {
+            if (match($0, /"[^"]*"/)) {
+                print substr($0, RSTART + 1, RLENGTH - 2)
+                exit
+            }
+        }
+    ' "$CARGO_TOML")"
+
+    [ -n "$ANDROID_VERSION_NAME" ] \
+        || die "Could not parse the [package] version from $CARGO_TOML."
+fi
+
+export ANDROID_VERSION_CODE ANDROID_VERSION_NAME
+
+# ---------------------------------------------------------------------------
 # Configure & build
 # ---------------------------------------------------------------------------
 
@@ -295,26 +369,33 @@ echo "==> NDK         : $ANDROID_NDK_ROOT"
 echo "==> Build type  : $ANDROID_BUILD_TYPE"
 echo "==> Package     : $PACKAGE_TARGET"
 echo "==> Signing     : $([ "$DO_SIGN" -eq 1 ] && echo "yes, alias '$QT_ANDROID_KEYSTORE_ALIAS'" || echo "no")"
-echo "==> versionCode : ${ANDROID_VERSION_CODE:-<CMake default>}"
-echo "==> versionName : ${ANDROID_VERSION_NAME:-<CMake default>}"
+echo "==> versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
+echo "==> versionName : $ANDROID_VERSION_NAME (from $version_name_source)"
 echo
 
-# Google Play rejects an upload whose versionCode is not strictly greater than
-# every previous upload of the package. Unset here means "whatever is already
-# in the CMake cache", which on a fresh build directory is the CMakeLists
-# default of 1 — i.e. an upload Play will refuse.
-if [ "$DO_SIGN" -eq 1 ] && [ "$PACKAGE_TARGET" = "aab" ] && [ -z "${ANDROID_VERSION_CODE:-}" ]; then
-    echo "WARNING: ANDROID_VERSION_CODE is not set. The build will reuse the"
-    echo "         CMake cache value (1 on a fresh build dir). Google Play"
-    echo "         requires it to strictly increase on every upload:"
-    echo "           make android-aab ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>"
-    echo
+# Tell android/build.gradle to disable the debug variant. androiddeployqt
+# appends the bare `bundle` task, which otherwise builds, packages and signs the
+# entire debug variant alongside the release one for nothing.
+#
+# Gradle is invoked by androiddeployqt, so there is no -P argument to pass;
+# Gradle maps ORG_GRADLE_PROJECT_<name> environment variables to project
+# properties instead.
+#
+# For a debug build the variable must be left UNSET, never set to "false":
+# project.hasProperty() is true for any value, including "false" and "".
+if [ "$ANDROID_BUILD_TYPE" != "Debug" ]; then
+    export ORG_GRADLE_PROJECT_simsapaReleaseOnly=true
+    echo "==> Debug variant: disabled (release build)"
+else
+    unset ORG_GRADLE_PROJECT_simsapaReleaseOnly
+    echo "==> Debug variant: enabled"
 fi
+echo
 
-version_args=()
-[ -n "${ANDROID_VERSION_CODE:-}" ] && version_args+=("-DANDROID_VERSION_CODE=$ANDROID_VERSION_CODE")
-[ -n "${ANDROID_VERSION_NAME:-}" ] && version_args+=("-DANDROID_VERSION_NAME=$ANDROID_VERSION_NAME")
-
+# No -DANDROID_VERSION_* arguments: CMakeLists.txt reads the exported
+# environment instead. They used to be CACHE variables, which are written once
+# per build directory and would therefore ignore an edited version.txt on any
+# subsequent build in the same tree.
 "$QT_CMAKE" \
     -S . -B "$ANDROID_BUILD_DIR" \
     -G Ninja \
@@ -323,8 +404,7 @@ version_args=()
     -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
     -DANDROID_NDK_ROOT="$ANDROID_NDK_ROOT" \
     -DQT_ANDROID_SIGN_APK="$sign_flag_apk" \
-    -DQT_ANDROID_SIGN_AAB="$sign_flag_aab" \
-    "${version_args[@]}"
+    -DQT_ANDROID_SIGN_AAB="$sign_flag_aab"
 
 cmake --build "$ANDROID_BUILD_DIR" --target "$PACKAGE_TARGET"
 
@@ -505,3 +585,6 @@ fi
 
 echo
 echo "Done."
+echo "    Artifact    : $artifact"
+echo "    versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
+echo "    versionName : $ANDROID_VERSION_NAME (from $version_name_source)"

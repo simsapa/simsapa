@@ -95,9 +95,18 @@ macos-rebuild: macos-clean
 # of the Play Store on Intel/AMD Chromebooks.
 #
 # Signing credentials come from the gitignored android/signing.env
-# (see android/signing.env.example). Bump the versionCode on every Play upload:
+# (see android/signing.env.example).
 #
-#   make android-aab ANDROID_VERSION_CODE=3 ANDROID_VERSION_NAME=1.0.0-alpha.3
+# Google Play requires a strictly increasing versionCode on every upload. Bump
+# it by editing android/version.txt — the release is then just:
+#
+#   make android-aab
+#
+# build-android.sh reads the versionCode from android/version.txt and the
+# versionName from the [package] version in bridges/Cargo.toml. The exports
+# below stay so that an explicit, NON-EMPTY override still wins:
+#
+#   make android-aab ANDROID_VERSION_CODE=99
 #
 # Full design: docs/android-multi-abi-and-chromeos.md
 

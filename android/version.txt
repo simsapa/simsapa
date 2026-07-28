@@ -1,0 +1,14 @@
+# Android versionCode.
+#
+# A single positive integer, read by build-android.sh and passed to CMake as
+# ANDROID_VERSION_CODE (see docs/android-multi-abi-and-chromeos.md).
+#
+# Google Play refuses an upload whose versionCode is not strictly greater than
+# every previous upload of this package. Bump this by one for each Play
+# release; nothing else needs editing. The versionName comes from the package
+# version in bridges/Cargo.toml.
+#
+# Blank lines and #-comments are ignored; the first remaining line is the value.
+#
+# Currently on Play: 2
+3

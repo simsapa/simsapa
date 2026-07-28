@@ -260,7 +260,7 @@ Increase this only if the app's top elements are still covered on your device.
 
 **Depends on:** 1.0 (bridge API + stubs).
 
-- [ ] 2.0 Update the QML layer: property/API rename, the reworked Settings
+- [x] 2.0 Update the QML layer: property/API rename, the reworked Settings
       section, the unpadded `Drawer`, and removal of dead code
       (PRD 11, 12, 13, 15a, 18)
   - [x] 2.1 Delete `assets/qml/MobileTopMarginDialog.qml` and confirm it is
@@ -337,7 +337,7 @@ Increase this only if the app's top elements are still covered on your device.
 
         None were changed: per PRD 14/15 the fix belongs on the edge that a device
         actually shows a problem on, and a phone screenshot decides it.
-  - [ ] 2.12 **Check the margins visually before moving on** — the whole of 2.0
+  - [x] 2.12 **Check the margins visually before moving on** — the whole of 2.0
         is a spacing change, and neither `make qml-test` nor `qmllint` can see a
         wrong gap. This is the one place a human has to look:
         - **Desktop** (agent-safe to ask for, human-run per the GUI rule): open
@@ -351,6 +351,10 @@ Increase this only if the app's top elements are still covered on your device.
           `24` default differed from the resolved value; `0` matches it). Full
           coverage is task 6.0 — this is the quick "did the rename break
           spacing" pass, not the edge-to-edge audit.
+
+        **Result:** desktop checked and unchanged, as predicted. The mobile
+        half was **deferred to task 6.0** and will be checked against the
+        uploaded build rather than a local deploy.
 
 ---
 
@@ -381,11 +385,11 @@ Gradle's environment mapping instead — `ORG_GRADLE_PROJECT_simsapaReleaseOnly`
 
 - [ ] 3.0 Move the Android build to targetSdk 36 and stop building the debug
       variant during release builds (PRD 1, 2, 3, 20, 35, 36, 37, 38, 39)
-  - [ ] 3.1 Set `targetSdkVersion 36` in `android/build.gradle` `defaultConfig`,
+  - [x] 3.1 Set `targetSdkVersion 36` in `android/build.gradle` `defaultConfig`,
         with a comment recording the three enforced API 36 behaviours
         (edge-to-edge with no opt-out, predictive back by default, large-screen
         orientation attributes ignored).
-  - [ ] 3.2 Add `android.suppressUnsupportedCompileSdk=36` to
+  - [x] 3.2 Add `android.suppressUnsupportedCompileSdk=36` to
         `android/gradle.properties` with a comment pointing at the AGP analysis in
         `AGENTS.md`. **It is not there today** — the file ends at
         `android.useAndroidX=true`, so every build currently prints the warning
@@ -394,18 +398,25 @@ Gradle's environment mapping instead — `ORG_GRADLE_PROJECT_simsapaReleaseOnly`
         generated keys to the copied file rather than overwriting it — the
         generated `android-build/gradle.properties` still carries our
         `org.gradle.parallel` and `android.useAndroidX` lines.)
-  - [ ] 3.3 Add the `androidComponents { beforeVariants(selector().withBuildType(
+  - [x] 3.3 Add the `androidComponents { beforeVariants(selector().withBuildType(
         "debug")) { it.enable = !project.hasProperty("simsapaReleaseOnly") } }`
         block to `android/build.gradle`, with a comment explaining that
         androiddeployqt appends the bare `bundle` task, which otherwise drags in
         the whole debug variant.
-  - [ ] 3.4 In `build-android.sh`, `export
+  - [x] 3.4 In `build-android.sh`, `export
         ORG_GRADLE_PROJECT_simsapaReleaseOnly=true` **only** for release builds.
         Gradle maps `ORG_GRADLE_PROJECT_<name>` env vars to project properties,
         so `project.hasProperty("simsapaReleaseOnly")` works with no
         androiddeployqt plumbing. **For `--debug` the variable must be left
         unset — never set to `false`**, since `hasProperty` is true for any
         value including `false` and the empty string.
+
+  **3.5–3.7 are deferred to the single Android build run scheduled before task
+  6.0** — they are all verification of the edits above and each needs a full
+  multi-ABI build, so they are batched with 4.10/4.11 and 5.0 rather than
+  building three separate times. The "do not touch AGP / the Gradle wrapper /
+  the NDK / the JDK pin" half of 3.7 is already satisfied: none of those files
+  were modified.
   - [ ] 3.5 Build a signed AAB and confirm the log contains **no** `:*Debug*`
         packaging tasks (previously 43), the release AAB is still produced and
         signed, and `build/outputs/bundle/debug/` is not created.
@@ -447,33 +458,33 @@ Creator build reuses the last configure; out of scope, but say so.
 
 - [ ] 4.0 Make the version values flow from `android/version.txt` and
       `bridges/Cargo.toml` through the environment into CMake (PRD 28–34)
-  - [ ] 4.1 Create `android/version.txt` with the comment header and the single
+  - [x] 4.1 Create `android/version.txt` with the comment header and the single
         value `3` (Play currently has 2).
-  - [ ] 4.2 In `build-android.sh`, add a parser that reads the first non-blank,
+  - [x] 4.2 In `build-android.sh`, add a parser that reads the first non-blank,
         non-`#` line of `android/version.txt` and validates it as a positive
         integer; **do not** `source` the file.
-  - [ ] 4.3 In `build-android.sh`, parse the package `version` from
+  - [x] 4.3 In `build-android.sh`, parse the package `version` from
         `bridges/Cargo.toml` (the `[package]` version near the top — not a
         dependency's) with a targeted regex.
-  - [ ] 4.4 Export both as `ANDROID_VERSION_CODE` / `ANDROID_VERSION_NAME`, letting
+  - [x] 4.4 Export both as `ANDROID_VERSION_CODE` / `ANDROID_VERSION_NAME`, letting
         a **non-empty** inherited environment value win (`[ -n "${VAR:-}" ]`, not
         an is-set test — see the spec above), and record which source was used.
-  - [ ] 4.5 Fail **before** the CMake configure with an actionable message if
+  - [x] 4.5 Fail **before** the CMake configure with an actionable message if
         either file is missing or unparseable, or the versionCode is not a positive
         integer (replacing the current warn-only check at build-android.sh:306).
-  - [ ] 4.6 Echo `versionCode` / `versionName` and their sources at the start and
+  - [x] 4.6 Echo `versionCode` / `versionName` and their sources at the start and
         again at the end of the build next to the artifact path (replacing the
         current lines 298–299).
-  - [ ] 4.7 Drop the `-DANDROID_VERSION_*` arguments (build-android.sh:315–316) now
+  - [x] 4.7 Drop the `-DANDROID_VERSION_*` arguments (build-android.sh:315–316) now
         that CMake reads the environment.
-  - [ ] 4.8 In `CMakeLists.txt`, replace the two `CACHE STRING` version variables
+  - [x] 4.8 In `CMakeLists.txt`, replace the two `CACHE STRING` version variables
         (140–141) with plain `$ENV{...}` reads, and guard the
         `QT_ANDROID_VERSION_*` properties (353–357) so they are only set when both
         are **non-empty** (`if(NOT "${X}" STREQUAL "")` — make exports undefined
         variables as empty); emit a `message(STATUS)` otherwise. Also update the
         stale example in the comment at 137 (`make android-aab
         ANDROID_VERSION_CODE=3 …`).
-  - [ ] 4.9 Update the `Makefile` Android targets and comments (90–134) to drop
+  - [x] 4.9 Update the `Makefile` Android targets and comments (90–134) to drop
         `ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>` from the documented
         command line; keep the `export` lines so an explicit override still works.
   - [ ] 4.10 Verify with `aapt2 dump badging`: a build with no arguments carries
@@ -484,6 +495,19 @@ Creator build reuses the last configure; out of scope, but say so.
         work; a bare `cmake --build` is expected to keep the old value.
   - [ ] 4.11 Verify a plain `cmake` configure without the env vars succeeds and
         logs the STATUS message instead of failing.
+
+  **4.10–4.11 are deferred to the single Android build run scheduled before task
+  6.0**, batched with 3.5–3.7 and 5.0.
+
+  Already verified without a build:
+  - Both parsers, against the real files — `android/version.txt` → `3`,
+    `bridges/Cargo.toml` `[package]` version → `1.0.0-alpha.2`.
+  - The versionCode rejection cases: comments-only file, non-numeric, `0`, and
+    whitespace/blank-line padding (`  4  ` → `4`).
+  - `bash -n build-android.sh`, and a full `cmake -S . -B` configure of the
+    edited `CMakeLists.txt` (desktop, throwaway build dir) — parses and
+    configures clean. This does **not** cover the `if (ANDROID)` branch, which
+    is what 4.11 is for.
 
 ---
 
