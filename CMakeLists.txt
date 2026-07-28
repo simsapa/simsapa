@@ -361,6 +361,20 @@ set_target_properties(simsapadhammareader PROPERTIES
 )
 
 if (ANDROID)
+    # The name under the launcher icon, and the title Google Play shows on the
+    # install screen. androiddeployqt substitutes this into the
+    # %%INSERT_APP_NAME%% placeholder in android/AndroidManifest.xml; with the
+    # property unset it falls back to the CMake TARGET name, which shipped as
+    # the unintended "simsapadhammareader".
+    #
+    # Set here rather than hardcoding android:label in the manifest, so the
+    # androiddeployqt placeholder keeps working (unlike the permission/feature
+    # markers, which were deliberately removed — see
+    # docs/android-multi-abi-and-chromeos.md).
+    set_target_properties(simsapadhammareader PROPERTIES
+        QT_ANDROID_APP_NAME "Simsapa"
+    )
+
     # Only set these when both values are actually present, so a developer
     # build configured without build-android.sh still succeeds — Qt then
     # defaults to versionCode 1 / versionName "1.0", which is fine for anything

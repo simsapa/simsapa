@@ -417,13 +417,51 @@ Gradle's environment mapping instead — `ORG_GRADLE_PROJECT_simsapaReleaseOnly`
   building three separate times. The "do not touch AGP / the Gradle wrapper /
   the NDK / the JDK pin" half of 3.7 is already satisfied: none of those files
   were modified.
-  - [ ] 3.5 Build a signed AAB and confirm the log contains **no** `:*Debug*`
+  - [x] 3.5 Build a signed AAB and confirm the log contains **no** `:*Debug*`
         packaging tasks (previously 43), the release AAB is still produced and
         signed, and `build/outputs/bundle/debug/` is not created.
   - [ ] 3.6 Confirm `make android-apk-debug` still succeeds with the debug variant
         enabled.
-  - [ ] 3.7 Do **not** touch AGP, the Gradle wrapper, the NDK or the JDK pin;
+  - [x] 3.7 Do **not** touch AGP, the Gradle wrapper, the NDK or the JDK pin;
         confirm the build still reports AGP 8.6.0 / Gradle 8.12 / JDK 21 (PRD 38).
+
+  - [x] 3.8 **(added during 5.7, not in the original plan)** Fix the launcher
+        name. `aapt2 dump badging` showed `application-label:'simsapadhammareader'`
+        — the name under the launcher icon and on the Play install screen.
+        `android/AndroidManifest.xml:87` is `android:label="-- %%INSERT_APP_NAME%%
+        --"`, and with no `QT_ANDROID_APP_NAME` set androiddeployqt substitutes
+        the **CMake target name**. Fixed by setting the target property in
+        `CMakeLists.txt`'s `if (ANDROID)` block (`QT_ANDROID_APP_NAME "Simsapa"`),
+        which feeds the placeholder through the same deployment-settings path as
+        `QT_ANDROID_VERSION_*` — deliberately *not* by hardcoding
+        `android:label`, so the placeholder mechanism keeps working. Unlike the
+        permission/feature markers, this one is worth keeping. Verified:
+        `application-label:'Simsapa'`, everything else byte-for-byte equivalent.
+
+  **Results of the 2026-07-28 clean `make android-rebuild`** (log
+  `/tmp/aab-build.log`, versionCode 3 / versionName 1.0.0-alpha.3):
+
+  - **3.5 confirmed.** Zero debug-variant Gradle tasks (was 43). The only two
+    log lines matching `Debug` are `:stripReleaseDebugSymbols` and
+    `:mergeReleaseNativeDebugMetadata`, both *release*-variant tasks that merely
+    contain the word — grep for `^> Task .*[Dd]ebug` and read the results, do not
+    just count them. `outputs/bundle/` and `outputs/apk/` contain `release` only.
+    `BUILD SUCCESSFUL`, 55 actionable tasks, AAB signed (v2 + v3 schemes).
+    The script echoed `==> Debug variant: disabled (release build)`.
+  - **3.7 confirmed** with one correction below: Qt 6.9.3, JDK 21.0.11, NDK
+    27.3.13750724, AGP 8.6.0. The AGP "tested up to compileSdk 35" warning is
+    **gone**, which is the positive confirmation that 3.2 took effect.
+  - **The Gradle wrapper is OURS, not Qt's** — `android/gradle/wrapper/` is
+    checked in (tracked since commit f8eaafd) at **8.10**, and androiddeployqt
+    copies it into `android-build/` with the rest of `android/`. All three Qt
+    6.9.3 kits ship 8.12, but that copy is never used. This contradicts
+    `AGENTS.md:521-522` ("The Gradle wrapper is Qt's, not ours … Qt 6.9.3 ships
+    the wrapper at 8.12") and weakens one of the three stated reasons for the AGP
+    pin: bumping the wrapper for AGP 8.11+ (which needs Gradle 8.13) would **not**
+    mean diverging from a Qt-provided file. The other two reasons stand (the
+    JDK/lint coupling, and `build.gradle` being a Qt template using APIs removed
+    in AGP 9). **The pin should still stay** — this changes the rationale, not the
+    decision. Fix `AGENTS.md` in 7.6 along with the line-509 correction.
 
 ---
 
@@ -520,18 +558,18 @@ Record the numbers and the conclusion in the docs (task 7.0) whichever way they 
 
 - [ ] 5.0 Build and statically verify the signed multi-ABI bundle, and close the
       two deferred packaging investigations (PRD 4, 5, 41, 42, 43, 44)
-  - [ ] 5.1 Run a full clean `make android-rebuild` (arm64-v8a; x86_64;
+  - [x] 5.1 Run a full clean `make android-rebuild` (arm64-v8a; x86_64;
         armeabi-v7a) and confirm it completes with Qt 6.9.3 / NDK 27.3 / JDK 21 /
         AGP 8.6.0.
-  - [ ] 5.2 Confirm the existing artifact checks in `build-android.sh` still pass:
+  - [x] 5.2 Confirm the existing artifact checks in `build-android.sh` still pass:
         no cross-ABI staged libraries, correct ELF machine type per ABI,
         `zipalign -c -P 16`.
-  - [ ] 5.3 Investigate the `QML import could not be resolved:
+  - [x] 5.3 Investigate the `QML import could not be resolved:
         com.profoundlabs.simsapa` warning: compare `assets/android_rcc_bundle/qml/`
         in the built package against the QML the app imports, and confirm the app's
         own module is compiled into the binary via `cxx_qt_import_qml_module`
         rather than shipped as a plugin directory.
-  - [ ] 5.4 Classify the remaining import warnings (`QtWebEngine`,
+  - [x] 5.4 Classify the remaining import warnings (`QtWebEngine`,
         `QtWayland.Compositor`, `QtQuick.Controls.{Windows,macOS,iOS}`,
         `QtQuick3D.MaterialEditor`) as harmless-by-construction, with the reason
         for each.
@@ -540,18 +578,75 @@ Record the numbers and the conclusion in the docs (task 7.0) whichever way they 
         app `.so` and a Qt lib. Record the numbers.
   - [ ] 5.6 Decide on `useLegacyPackaging` from those measurements — keep `true`
         unless they favour changing it — and note the decision for task 7.0.
-  - [ ] 5.7 Verify the bundle's device catalogue expectations with
+  - [x] 5.7 Verify the bundle's device catalogue expectations with
         `aapt2 dump badging`: `targetSdkVersion 36`, `minSdkVersion 27`, no
         unexpected `uses-permission`, every `uses-feature` `required="false"`.
         This is the **only** trustworthy check of the target level — the
         generated `gradle.properties` will still read `qtTargetSdkVersion=35`
         (androiddeployqt writes it; `build.gradle` never reads it).
-  - [ ] 5.8 Record the `qtMinSdkVersion=28` finding: Qt **6.9.3** already
+  - [x] 5.8 Record the `qtMinSdkVersion=28` finding: Qt **6.9.3** already
         declares an Android floor of 28 in the generated `gradle.properties`, and
         `build.gradle` overrides it down to 27 — so the app has shipped one level
         below Qt's declared minimum since the 6.9.3 move. Qt 6.10 does not
         introduce that constraint, it removes our ability to keep overriding it.
         Feeds 7.4 and PRD open question 4; no code change here.
+
+  **Results of the 2026-07-28 clean `make android-rebuild`:**
+
+  - **5.1 done.** Clean rebuild (`rm -rf build/android-multiabi` first),
+    arm64-v8a + x86_64 + armeabi-v7a, Qt 6.9.3 / NDK 27.3.13750724 / JDK 21.0.11
+    / AGP 8.6.0. `BUILD SUCCESSFUL in 51s` for the Gradle phase.
+  - **5.2 done, but the sub-task's premise was wrong.** `build-android.sh`
+    contains only **two** artifact checks — the cross-ABI contamination check
+    (filename-suffix based: a lib whose `_<abi>.so` suffix disagrees with its
+    directory) and the ChromeOS merged-manifest audit. There is **no** ELF
+    machine-type check and **no** `zipalign` check in the script. Both were run
+    by hand instead:
+    - ELF machine type is correct per ABI: arm64-v8a → `AArch64`, armeabi-v7a →
+      `ARM`, x86_64 → `Advanced Micro Devices X86-64`, checked on both the app
+      lib and `libQt6Core`.
+    - 16 KB alignment, swept over **every** lib rather than sampled: arm64-v8a
+      139/139 and x86_64 139/139 at `p_align=0x4000`. armeabi-v7a is 4 KB
+      (`0x1000`) for all but the app's own `.so` — **correct and expected**, the
+      16 KB page requirement applies only to 64-bit ABIs.
+    - `zipalign -c -P 16 4 <apk>` → PASS.
+    - Cross-ABI check: OK, every library matches its ABI directory.
+    > If these checks are wanted on every build, they have to be **added** to
+    > `build-android.sh` — they are not there today.
+  - **5.7 done.** `aapt2 dump badging` on the release APK:
+    `package name='io.github.simsapa.app' versionCode='3' versionName='1.0.0-alpha.3'`,
+    `minSdkVersion:'27'`, `targetSdkVersion:'36'`, `native-code: 'arm64-v8a'
+    'armeabi-v7a' 'x86_64'`. Permissions are exactly INTERNET,
+    ACCESS_NETWORK_STATE, RECORD_AUDIO, MODIFY_AUDIO_SETTINGS and the app's own
+    DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION — no CAMERA, no location, no
+    Bluetooth. Every `uses-feature` is reported as `uses-feature-not-required`.
+    This also closes the first half of **4.10** (the version flow reaches the
+    manifest).
+  - **5.8 confirmed** from the generated `android-build/gradle.properties`:
+    `qtMinSdkVersion=28` while `build.gradle` declares `minSdkVersion 27`, and
+    `qtTargetSdkVersion=35` sits there unread next to a manifest that really is
+    targetSdk 36 — exactly the trap 5.7 warns about.
+  - **5.3 answered.** The app's own QML module is **not** shipped as a plugin
+    directory: `assets/android_rcc_bundle/` does not exist in the package at all,
+    and the module lives inside the app binary as Qt resources — `strings` on
+    `libsimsapadhammareader_arm64-v8a.so` shows
+    `:/qt/qml/com/profoundlabs/simsapa/…` paths and the `<qresource
+    prefix="/qt/qml/com/profoundlabs/simsapa/assets/qml">` header, put there by
+    `cxx_qt_import_qml_module` (`bridges/build.rs:109`). androiddeployqt's import
+    scanner walks *disk* import paths, so a compiled-in module is unresolvable by
+    construction. **Harmless; expected to persist.**
+  - **5.4 classified.** None of the five are imported by app QML except
+    `QtWebEngine`:
+    - `QtWebEngine` — imported only by `SuttaHtmlView_Desktop.qml` and
+      `DictionaryHtmlView_Desktop.qml`. Qt WebEngine has no Android port; the
+      desktop-only views are never instantiated there (Android uses QtWebView).
+      The scanner reads every file regardless of platform. Harmless.
+    - `QtQuick.Controls.Windows` / `.macOS` / `.iOS` — other platforms' styles,
+      pulled in by QtQuick.Controls' own module metadata and absent from the
+      Android kit. Harmless.
+    - `QtWayland.Compositor`, `QtQuick3D.MaterialEditor` — not imported by any
+      app QML (`grep -rl "^import …" assets/qml/` returns nothing); transitive
+      references from Qt's own modules. Harmless.
 
 ---
 
