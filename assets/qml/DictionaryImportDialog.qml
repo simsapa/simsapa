@@ -34,7 +34,7 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     // On a narrow window the checklist header buttons would crowd the "Found N"
     // title, so it collapses to two rows.
@@ -67,7 +67,7 @@ ApplicationWindow {
 
     Component.onCompleted: {
         theme_helper.apply();
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
     }
 
     // Public entry point: reset to the source-selection frame and show.
@@ -202,7 +202,7 @@ ApplicationWindow {
     StackLayout {
         id: frames
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: 0
 
         // -------------------------------------------------------------------

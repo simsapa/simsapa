@@ -27,6 +27,12 @@ QString get_app_assets_path() {
     return path;
 }
 
+// Informational only: this reports the Android status bar height, which is NOT
+// the safe area (it excludes the display cutout and the navigation bar, and it
+// is not per-window). Layout insets come from Qt, which binds ApplicationWindow
+// padding to the window's safe area. The value is displayed in Settings next to
+// the "Extra Top Margin" spinbox so a user can see what the platform reports.
+// See docs/android-edge-to-edge-and-safe-areas.md
 int get_status_bar_height() {
 #ifdef Q_OS_ANDROID
     // Get the status bar height from Android system resources

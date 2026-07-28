@@ -24,16 +24,20 @@ PRD: [2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups
   implementations (4469–4510), and `get_status_bar_height` (1059, 3066).
 - `bridges/src/api.rs` — `ffi` block declaring `get_status_bar_height()` (224).
 - `cpp/utils.cpp` / `cpp/utils.h` — `get_status_bar_height()` (utils.cpp:30).
-- `backend/src/app_settings.rs` tests / `backend/tests/` — settings round-trip and
-  migration tests.
+- `backend/src/app_settings.rs` `mod tests` — the serde migration/round-trip tests
+  (1.4), next to the code they cover.
+- `backend/src/db/appdata.rs` `mod app_settings_tests` — **new**; exercises the
+  in-app `get_app_settings()` read path against a throwaway temp appdata DB (1.3).
 
 **QML (task 2.0)**
 
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — qmllint stubs (434–452).
-- `assets/qml/AppSettingsWindow.qml` — the "Mobile Top Margin" section (578–640),
-  `use_system_margin` / `custom_margin_value` state (28, 1235–1240),
-  `marginChanged()` (32, 608, 636, 1269), and its own margin use (189, 356, 930).
-- `assets/qml/SuttaSearchWindow.qml` — property (77), `update_top_bar_margin()`
+- `assets/qml/AppSettingsWindow.qml` — the "Mobile Top Margin" section (578–640)
+  replaced by "Extra Top Margin" (one SpinBox + the live `SafeArea` readout);
+  `use_system_margin` / `custom_margin_value` state deleted in favour of the
+  `window_safe_area_margins` / `system_safe_area_top` readout properties;
+  `marginChanged()` kept, and its own margin use (189, 356, 930).
+- `assets/qml/SuttaSearchWindow.qml` — property (77), `update_extra_top_margin()`
   (294–296), call sites (1332, 2404), pass-downs (2259–2294, 2397), anchor (2482).
 - Windows owning the property: `LibraryWindow.qml` (27, 39–40, 116),
   `DictionariesWindow.qml` (28, 83, 315), `SuttaLanguagesWindow.qml` (28, 109–110, 236),
@@ -43,7 +47,7 @@ PRD: [2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups
   `ChantingPracticeReviewWindow.qml` (26, 76, 308),
   `DictionaryImportDialog.qml` (37, 70, 205),
   `DownloadAppdataWindow.qml` (26–27, 375 — deliberately fixed, runs before app data).
-- Windows receiving `required property int top_bar_margin`: `AboutDialog.qml`,
+- Windows receiving `required property int extra_top_margin`: `AboutDialog.qml`,
   `SystemPromptsDialog.qml`, `ModelsDialog.qml`, `AnkiExportDialog.qml`,
   `DatabaseValidationDialog.qml`, `DhammaTextSourcesDialog.qml`,
   `UpdateNotificationDialog.qml`, `SearchHelpWindow.qml`,
@@ -55,8 +59,8 @@ PRD: [2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups
   window_height`, lives in the window overlay so Qt does **not** pad it; its first
   child is a top-anchored `Label { text: "Menu" }`. Instantiated at
   `SuttaSearchWindow.qml:2249`. Needs its own `topPadding` (PRD 15a).
-- `assets/qml/MobileTopMarginDialog.qml` — **delete** (dead code).
-- `bridges/build.rs` — `qml_files` list; remove the deleted dialog.
+- `assets/qml/MobileTopMarginDialog.qml` — **deleted** (dead code); it was
+  already absent from `bridges/build.rs`'s `qml_files`, so that list is unchanged.
 
 **Android build config (tasks 3.0, 4.0)**
 
@@ -164,15 +168,15 @@ for the informational Settings display (PRD 10, 12).
 
 **Depends on:** nothing.
 
-- [ ] 1.0 Replace the top-bar-margin setting with a single "extra top margin"
+- [x] 1.0 Replace the top-bar-margin setting with a single "extra top margin"
       in the backend and bridge (PRD 8, 9, 10, 19)
-  - [ ] 1.1 In `backend/src/app_settings.rs`, replace the `mobile_top_bar_margin`
+  - [x] 1.1 In `backend/src/app_settings.rs`, replace the `mobile_top_bar_margin`
         field with `mobile_extra_top_margin: u32` (no per-field
         `#[serde(default)]` — the container already has one at line 161), update
         `Default` (line 675) to `0`, and delete the `is_/get_/set_` helpers
         (753–769). Keep `MobileTopBarMargin` (784–788) only as long as the wire
         struct in 1.2 needs it, demoted to `pub(crate)`.
-  - [ ] 1.2 Add the legacy-value migration **inside `Deserialize`**, not as a
+  - [x] 1.2 Add the legacy-value migration **inside `Deserialize`**, not as a
         call-site hook: `#[serde(from = "AppSettingsWire")]` on `AppSettings`
         (or a manual `impl Deserialize`), with the wire struct carrying a
         `#[serde(rename = "mobile_top_bar_margin", skip_serializing)]` capture
@@ -180,36 +184,36 @@ for the informational Settings display (PRD 10, 12).
         carry-over when the new value is `0` (see the spec above for why "when
         the new key is absent" is not expressible). The old key must not be
         re-serialized.
-  - [ ] 1.3 Confirm all three deserialization sites pick the migration up with no
+  - [x] 1.3 Confirm all three deserialization sites pick the migration up with no
         change of their own — `db/appdata.rs:443`, `db/mod.rs:389`,
         `app_data.rs:3237` — and add a test that exercises the `appdata.rs` path
         specifically, since that is the one the running GUI uses.
-  - [ ] 1.4 Add Rust tests in `backend/`: (a) old JSON with `"SystemValue"` → `0`;
+  - [x] 1.4 Add Rust tests in `backend/`: (a) old JSON with `"SystemValue"` → `0`;
         (b) old JSON with `{"CustomValue": 24}` → `24`; (c) new JSON with
         `mobile_extra_top_margin` → unchanged; (d) a settings blob with neither key
         → `0`; (e) round-trip: serialize after migration and confirm the old key is
         gone; (f) a blob carrying **both** keys → the new one wins and the legacy
         one is dropped.
-  - [ ] 1.5 In `backend/src/app_data.rs`, collapse
+  - [x] 1.5 In `backend/src/app_data.rs`, collapse
         `set_mobile_top_bar_margin_system()` (2377) and
         `set_mobile_top_bar_margin_custom()` (2398) into one
         `set_mobile_extra_top_margin(value: u32)` that writes the cache and
         persists the row, keeping the existing error handling.
-  - [ ] 1.6 In `bridges/src/sutta_bridge.rs`, replace the five `#[qinvokable]`
+  - [x] 1.6 In `bridges/src/sutta_bridge.rs`, replace the five `#[qinvokable]`
         declarations (1352–1364) and their implementations (4469–4510) with
         `get_mobile_extra_top_margin() -> i32` and
         `set_mobile_extra_top_margin(value: u32)`; keep the
         "APP_DATA not yet initialized" guard but return **0** as the fallback
         (not 24 — Qt supplies the inset now).
-  - [ ] 1.7 Keep `get_status_bar_height()` (sutta_bridge.rs:1059/3066,
+  - [x] 1.7 Keep `get_status_bar_height()` (sutta_bridge.rs:1059/3066,
         api.rs:224, cpp/utils.cpp:30) **only** as the informational value for
         Settings (task 2.6). Add a comment at `cpp/utils.cpp:30` stating it is no
         longer used for layout, and why (it reports the status bar, not the safe
         area — PRD §6.2).
-  - [ ] 1.8 Update the qmllint stubs in
+  - [x] 1.8 Update the qmllint stubs in
         `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` (434–452): remove the
         five old functions, add the two new ones with correct signatures.
-  - [ ] 1.9 `cd backend && cargo test` must pass. `make build -B` will **not**
+  - [x] 1.9 `cd backend && cargo test` must pass. `make build -B` will **not**
         succeed until 2.0 lands — the QML still calls the old bridge names — so
         1.0 and 2.0 go in the **same commit** (see Notes).
 
@@ -259,12 +263,12 @@ Increase this only if the app's top elements are still covered on your device.
 - [ ] 2.0 Update the QML layer: property/API rename, the reworked Settings
       section, the unpadded `Drawer`, and removal of dead code
       (PRD 11, 12, 13, 15a, 18)
-  - [ ] 2.1 Delete `assets/qml/MobileTopMarginDialog.qml` and confirm it is
+  - [x] 2.1 Delete `assets/qml/MobileTopMarginDialog.qml` and confirm it is
         referenced nowhere and absent from `bridges/build.rs`'s `qml_files`.
-  - [ ] 2.2 Rename the property `top_bar_margin` → `extra_top_margin` across the
+  - [x] 2.2 Rename the property `top_bar_margin` → `extra_top_margin` across the
         ~26 QML files (owners, `required property` receivers, and
         `GlobalHotkeysSection.qml`'s forwarder), keeping the pass-down structure.
-  - [ ] 2.3 Change every owner's default from `is_mobile ? 24 : 0` to `0`, and
+  - [x] 2.3 Change every owner's default from `is_mobile ? 24 : 0` to `0`, and
         replace the `SuttaBridge.get_mobile_top_bar_margin()` reads with
         `SuttaBridge.get_mobile_extra_top_margin()` (`SuttaSearchWindow.qml:295`,
         `LibraryWindow.qml:40`, `DictionariesWindow.qml:83`,
@@ -274,29 +278,29 @@ Increase this only if the app's top elements are still covered on your device.
         `TopicIndexWindow.qml:25` goes to plain `0` as well — its desktop `5` is
         already overwritten at line 100 and must not be re-homed (see the spec
         above).
-  - [ ] 2.4 `DownloadAppdataWindow.qml` (26–27) keeps a fixed value but it must
+  - [x] 2.4 `DownloadAppdataWindow.qml` (26–27) keeps a fixed value but it must
         become `0`: it runs during first-time setup before app data exists, and
         Qt's padding already covers the inset. Update its NOTE comment to say so.
-  - [ ] 2.5 Rework the Settings section (`AppSettingsWindow.qml:578–640`): drop the
+  - [x] 2.5 Rework the Settings section (`AppSettingsWindow.qml:578–640`): drop the
         "use system value" checkbox and the `use_system_margin` /
         `custom_margin_value` state (28, 1235–1240), relabel to "Extra Top Margin"
         with the explanatory text, and leave a single SpinBox (`from: 0`, default
         `0`) that calls `SuttaBridge.set_mobile_extra_top_margin(value)` on
         `onValueModified` and emits `marginChanged()`.
-  - [ ] 2.6 Add the read-only live system-inset readout next to the SpinBox
+  - [x] 2.6 Add the read-only live system-inset readout next to the SpinBox
         (PRD 12). Prefer the window's own `SafeArea.margins.top`; fall back to
         `SuttaBridge.get_status_bar_height()` only if the attached property is
         unavailable, and label it accurately in each case.
-  - [ ] 2.7 Verify the `marginChanged()` → `update_*()` chain still refreshes every
+  - [x] 2.7 Verify the `marginChanged()` → `update_*()` chain still refreshes every
         open window live (`AppSettingsWindow.qml:1269` fires it on
         `onAppSettingsReset` too), and that
         `SuttaSearchWindow.qml:294` `update_top_bar_margin()` is renamed
         consistently at both call sites (1332, 2404).
-  - [ ] 2.8 Grep for stragglers: `grep -rn "top_bar_margin\|mobile_top_bar_margin"
+  - [x] 2.8 Grep for stragglers: `grep -rn "top_bar_margin\|mobile_top_bar_margin"
         assets/ backend/ bridges/ cpp/` must return nothing.
-  - [ ] 2.9 `make build -B` and `make qml-test` must pass; run `qmllint` over the
+  - [x] 2.9 `make build -B` and `make qml-test` must pass; run `qmllint` over the
         changed files to confirm the stubs match.
-  - [ ] 2.10 Fix `assets/qml/DrawerMenu.qml` (PRD 15a): its `Drawer` root is in
+  - [x] 2.10 Fix `assets/qml/DrawerMenu.qml` (PRD 15a): its `Drawer` root is in
         the window overlay and gets **no** Qt padding, yet it is full-height
         (`height: control.window_height`) and its first child is a top-anchored
         `Label { text: "Menu" }` — so on enforced edge-to-edge it lands under the
@@ -304,10 +308,35 @@ Increase this only if the app's top elements are still covered on your device.
         `topPadding: SafeArea.margins.top` on the `Drawer` itself (the attached
         property is relative to the item it is attached to, so this does not
         double-count) rather than plumbing `extra_top_margin` into it.
-  - [ ] 2.11 Sweep the rest of the `Popup` family for the same exposure: any
+  - [x] 2.11 Sweep the rest of the `Popup` family for the same exposure: any
         inline `Dialog`/`Popup`/`Menu` that is top-anchored or tall enough to
         reach a bar. Centered dialogs need nothing. Record which were checked so
         6.7's on-device audit has a list rather than starting cold.
+
+        **Result of the sweep** (all 55 `Dialog`/`Popup`/`Drawer`/`Menu` roots in
+        `assets/qml/`): `DrawerMenu.qml` was the **only** top-anchored one, and it
+        is fixed by 2.10. Every other `Dialog` is centered (`anchors.centerIn:
+        parent`, or `x/y: (parent.w|h - w|h) / 2` in `TabListDialog.qml`), and the
+        `Menu` popups in `SuttaSearchWindow.qml` open from toolbar buttons that sit
+        below the inset. Confirmed in Qt's source that a `Drawer` can take the
+        attachment at all: `QQuickPopup` implements `QQuickSafeAreaAttachable`
+        (`qquickpopup.cpp:3443`, returning `popupItem()`), so `SafeArea` on a
+        `Popup` resolves to the popup item rather than warning.
+
+        Centered is not automatically safe, though — a centered dialog sized to
+        nearly the full window height leaves only a few px of clearance, which is
+        less than a ~34 dp inset. **Watch-list for 6.7**, in descending order of
+        exposure:
+        - `DocumentImportDialog.qml:10` — `height: Math.min(500, parent.height - 40)`
+          → 20 px top clearance whenever the window is under ~540 px tall.
+        - `DocumentMetadataEditDialog.qml:9` — same `parent.height - 40` form.
+        - `TabListDialog.qml:38–41` — up to `parent.height * 0.9` when `!is_tall`.
+        - `GlossTab.qml:3422` — fixed `height: 500`.
+        - `DatabaseValidationDialog.qml:339`, `ChantingPracticeWindow.qml`'s
+          `anchors.fill: parent` content dialogs — tall on a phone.
+
+        None were changed: per PRD 14/15 the fix belongs on the edge that a device
+        actually shows a problem on, and a phone screenshot decides it.
   - [ ] 2.12 **Check the margins visually before moving on** — the whole of 2.0
         is a spacing change, and neither `make qml-test` nor `qmllint` can see a
         wrong gap. This is the one place a human has to look:

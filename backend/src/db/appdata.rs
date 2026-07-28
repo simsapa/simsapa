@@ -3000,3 +3000,71 @@ mod gloss_word_selection_tests {
     }
 }
 
+
+#[cfg(test)]
+mod app_settings_tests {
+    use super::AppdataDbHandle;
+    use crate::app_settings::AppSettings;
+    use crate::db::{DatabaseHandle, APPDATA_MIGRATIONS};
+    use diesel::prelude::*;
+    use diesel_migrations::MigrationHarness;
+
+    // Throwaway temp appdata DB, so writing settings never touches the real one.
+    fn setup() -> AppdataDbHandle {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "simsapa_app_settings_test_{}_{}.sqlite3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let url = path.to_string_lossy().to_string();
+        let handle = DatabaseHandle::new(&url).expect("create temp appdata handle");
+        let mut conn = handle.get_conn().expect("get temp appdata conn");
+        conn.run_pending_migrations(APPDATA_MIGRATIONS)
+            .expect("run appdata migrations on temp db");
+        handle
+    }
+
+    fn store_settings_json(db: &AppdataDbHandle, json: &str) {
+        use crate::db::appdata_schema::app_settings::dsl::*;
+        db.do_write(|db_conn| {
+            diesel::delete(app_settings.filter(key.eq("app_settings"))).execute(db_conn)?;
+            diesel::insert_into(app_settings)
+                .values((key.eq("app_settings"), value.eq(Some(json.to_string()))))
+                .execute(db_conn)
+        })
+        .expect("store app_settings row");
+    }
+
+    /// The migration lives in `AppSettings`' own `Deserialize`, so the in-app
+    /// read path — the one that fills `app_settings_cache` — picks it up with no
+    /// change of its own. See docs/android-edge-to-edge-and-safe-areas.md
+    #[test]
+    fn get_app_settings_migrates_legacy_top_bar_margin() {
+        let db = setup();
+
+        store_settings_json(&db, r#"{"mobile_top_bar_margin": {"CustomValue": 24}}"#);
+        assert_eq!(db.get_app_settings().mobile_extra_top_margin, 24);
+
+        store_settings_json(&db, r#"{"mobile_top_bar_margin": "SystemValue"}"#);
+        assert_eq!(db.get_app_settings().mobile_extra_top_margin, 0);
+    }
+
+    #[test]
+    fn get_app_settings_keeps_new_value_and_drops_legacy_key_on_save() {
+        let db = setup();
+        store_settings_json(&db, r#"{"mobile_extra_top_margin": 12}"#);
+
+        let settings = db.get_app_settings();
+        assert_eq!(settings.mobile_extra_top_margin, 12);
+
+        let json = serde_json::to_string(&settings).expect("serialize settings");
+        assert!(!json.contains("mobile_top_bar_margin"), "{}", json);
+
+        let round_tripped: AppSettings = serde_json::from_str(&json).expect("decode settings");
+        assert_eq!(round_tripped.mobile_extra_top_margin, 12);
+    }
+}

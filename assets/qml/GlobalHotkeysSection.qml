@@ -13,7 +13,7 @@ ColumnLayout {
     Layout.fillWidth: true
 
     property int pointSize: 12
-    property int top_bar_margin: 0
+    property int extra_top_margin: 0
 
     // Action ids → human-readable labels.
     readonly property var action_labels: ({
@@ -76,7 +76,7 @@ ColumnLayout {
 
     KeybindingCaptureDialog {
         id: capture_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
         allow_double_tap: true
 
         onShortcutAccepted: function(shortcut) {

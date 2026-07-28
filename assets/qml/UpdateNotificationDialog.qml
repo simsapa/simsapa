@@ -22,7 +22,7 @@ ApplicationWindow {
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
     readonly property int pointSize: is_mobile ? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     // Dialog type: "app", "db", "obsolete", "no_updates", "closing", "export_failed"
     property string dialog_type: ""
@@ -147,7 +147,7 @@ ApplicationWindow {
     StackLayout {
         id: views_stack
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: {
             switch (root.dialog_type) {
             case "app": return 0;

@@ -22,7 +22,7 @@ ApplicationWindow {
     readonly property string match_bg: root.is_dark ? "#007A31" : "#F6E600"
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 2
-    property int top_bar_margin: is_mobile ? 24 : 5
+    property int extra_top_margin: 0
 
     property bool is_dark: theme_helper.is_dark
 
@@ -55,7 +55,7 @@ ApplicationWindow {
 
     TopicIndexInfoDialog {
         id: info_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     // Search debounce timer
@@ -97,7 +97,7 @@ ApplicationWindow {
 
     Component.onCompleted: {
         theme_helper.apply();
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         SuttaBridge.load_topic_index();
     }
 
@@ -248,7 +248,7 @@ ApplicationWindow {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.topMargin: root.top_bar_margin
+            anchors.topMargin: root.extra_top_margin
             anchors.bottomMargin: root.is_mobile ? 60 : 0
             spacing: 0
 

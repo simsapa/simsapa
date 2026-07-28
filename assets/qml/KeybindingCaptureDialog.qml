@@ -24,7 +24,7 @@ ApplicationWindow {
     readonly property string display_shortcut: key_seq_display.canonical_to_display(root.captured_shortcut)
 
     readonly property int pointSize: is_mobile ? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     // Properties for the dialog
     property string action_name: ""
@@ -323,7 +323,7 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 15
             anchors.fill: parent
-            anchors.topMargin: root.top_bar_margin
+            anchors.topMargin: root.extra_top_margin
             anchors.margins: 15
 
             // Title

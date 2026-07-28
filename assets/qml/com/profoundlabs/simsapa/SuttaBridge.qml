@@ -431,24 +431,12 @@ Item {
         return 0;
     }
 
-    function get_mobile_top_bar_margin(): int {
+    function get_mobile_extra_top_margin(): int {
         return 0;
     }
 
-    function is_mobile_top_bar_margin_system(): bool {
-        return true;
-    }
-
-    function get_mobile_top_bar_margin_custom_value(): int {
-        return 0;
-    }
-
-    function set_mobile_top_bar_margin_system() {
-        console.log("set_mobile_top_bar_margin_system()");
-    }
-
-    function set_mobile_top_bar_margin_custom(value: int) {
-        console.log("set_mobile_top_bar_margin_custom():", value);
+    function set_mobile_extra_top_margin(value: int) {
+        console.log("set_mobile_extra_top_margin():", value);
     }
 
 

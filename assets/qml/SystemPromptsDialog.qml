@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property bool is_desktop: !root.is_mobile
 
     readonly property int pointSize: is_mobile? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     property var current_prompts: ({})
     property string selected_prompt_key: ""
@@ -98,9 +98,9 @@ ApplicationWindow {
 
     Item {
         x: 10
-        y: 10 + root.top_bar_margin
+        y: 10 + root.extra_top_margin
         implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.top_bar_margin
+        implicitHeight: root.height - 20 - root.extra_top_margin
 
         ColumnLayout {
             spacing: 10

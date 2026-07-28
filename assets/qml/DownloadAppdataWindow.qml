@@ -23,8 +23,11 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    // NOTE: Leave top_bar_margin as a fixed default value
-    readonly property int top_bar_margin: is_mobile ? 24 : 0
+    // NOTE: Fixed at 0 and never read from the settings — this window runs during
+    // first-time setup, before app data exists. Qt's ApplicationWindow padding
+    // already covers the system safe area, so 0 is correct here.
+    // See docs/android-edge-to-edge-and-safe-areas.md
+    readonly property int extra_top_margin: 0
 
     Logger { id: logger }
 
@@ -372,7 +375,7 @@ ApplicationWindow {
     StackLayout {
         id: views_stack
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: 0
 
         // Idx 0: Checking sources

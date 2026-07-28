@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
     readonly property int pointSize: is_mobile ? 16 : 12
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     property var collections_list: []
     property string selected_uid: ""
@@ -38,7 +38,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         theme_helper.apply();
         load_collections();
     }
@@ -581,157 +581,165 @@ ApplicationWindow {
 
     // --- Main Layout ---
 
-    ColumnLayout {
-        spacing: 0
+    // Content sits inside a Frame, matching TopicIndexWindow /
+    // ReferenceSearchWindow: the Frame's padding supplies the margin on all
+    // four edges. `extra_top_margin` is the user's own additional space at the
+    // top on mobile; Qt pads the window for the system safe area itself.
+    Frame {
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
 
-        // Toolbar
-        Flow {
-            Layout.fillWidth: true
-            Layout.margins: 10
-            spacing: 10
-
-            Button {
-                text: "Add Collection"
-                visible: !root.export_selection_mode
-                onClicked: add_collection_dialog.open()
-            }
-
-            Button {
-                text: "Add Chant"
-                visible: !root.export_selection_mode
-                enabled: root.selected_type === "collection"
-                onClicked: add_chant_dialog.open()
-            }
-
-            Button {
-                text: "Add Section"
-                visible: !root.export_selection_mode
-                enabled: root.selected_type === "chant"
-                onClicked: add_section_dialog.open()
-            }
-
-            Button {
-                text: "Open"
-                visible: !root.export_selection_mode
-                enabled: root.selected_type === "section"
-                onClicked: {
-                    SuttaBridge.open_chanting_review_window(root.window_id, root.selected_uid);
-                }
-            }
-
-            Button {
-                text: "Edit"
-                visible: !root.export_selection_mode
-                enabled: root.selected_uid !== ""
-                onClicked: {
-                    const item = root.find_selected_item();
-                    if (!item) return;
-                    edit_dialog.edit_type = root.selected_type;
-                    edit_dialog.edit_data = item;
-                    edit_title.text = item.title || "";
-                    edit_description.text = item.description || "";
-                    if (root.selected_type === "section") {
-                        edit_content_pali.text = item.content_pali || "";
-                    }
-                    edit_dialog.open();
-                }
-            }
-
-            Button {
-                text: "Remove"
-                visible: !root.export_selection_mode
-                enabled: root.selected_uid !== ""
-                onClicked: {
-                    const item = root.find_selected_item();
-                    if (!item) return;
-                    remove_dialog.remove_title = item.title || "Untitled";
-                    remove_dialog.open();
-                }
-            }
-
-            Button {
-                text: root.export_selection_mode ? "Export Selected" : "Export"
-                palette.button: root.export_selection_mode ? "#4CAF50" : undefined
-                palette.buttonText: root.export_selection_mode ? "white" : undefined
-
-                onClicked: {
-                    if (!root.export_selection_mode) {
-                        // First click: enter selection mode
-                        export_info_dialog.open();
-                    } else {
-                        // Second click: validate selection and export
-                        const selected_uids = tree_list.get_selected_uids();
-                        if (selected_uids.collections.length === 0 &&
-                            selected_uids.chants.length === 0 &&
-                            selected_uids.sections.length === 0) {
-                            export_no_selection_dialog.open();
-                            return;
-                        }
-                        export_file_dialog.open();
-                    }
-                }
-            }
-
-            Button {
-                text: "Cancel"
-                visible: root.export_selection_mode
-                onClicked: {
-                    root.export_selection_mode = false;
-                    tree_list.clear_selection();
-                }
-            }
-
-            Button {
-                text: "Import"
-                visible: !root.export_selection_mode
-                onClicked: import_file_dialog.open()
-            }
-
-            Button {
-                visible: root.is_desktop && !root.export_selection_mode
-                text: "Close"
-                onClicked: root.close()
-            }
-        }
-
-        // Tree list
-        ScrollView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            contentWidth: availableWidth
-            clip: true
-
-            ChantingTreeList {
-                id: tree_list
-                collections_list: root.collections_list
-                pointSize: root.pointSize
-                selection_mode: root.export_selection_mode
-
-                onSection_clicked: function(section_uid) {
-                    SuttaBridge.open_chanting_review_window(root.window_id, section_uid);
-                }
-
-                onSelection_changed: function(uid, item_type) {
-                    root.selected_uid = uid;
-                    root.selected_type = item_type;
-                }
-            }
-        }
-
-        // Mobile close button
         ColumnLayout {
-            visible: root.is_mobile
-            Layout.fillWidth: true
-            Layout.margins: 10
-            Layout.bottomMargin: 60
-            spacing: 10
+            spacing: 0
+            anchors.fill: parent
 
-            Button {
-                text: "Close"
+            // Toolbar
+            Flow {
                 Layout.fillWidth: true
-                onClicked: root.close()
+                Layout.margins: 10
+                spacing: 10
+
+                Button {
+                    text: "Add Collection"
+                    visible: !root.export_selection_mode
+                    onClicked: add_collection_dialog.open()
+                }
+
+                Button {
+                    text: "Add Chant"
+                    visible: !root.export_selection_mode
+                    enabled: root.selected_type === "collection"
+                    onClicked: add_chant_dialog.open()
+                }
+
+                Button {
+                    text: "Add Section"
+                    visible: !root.export_selection_mode
+                    enabled: root.selected_type === "chant"
+                    onClicked: add_section_dialog.open()
+                }
+
+                Button {
+                    text: "Open"
+                    visible: !root.export_selection_mode
+                    enabled: root.selected_type === "section"
+                    onClicked: {
+                        SuttaBridge.open_chanting_review_window(root.window_id, root.selected_uid);
+                    }
+                }
+
+                Button {
+                    text: "Edit"
+                    visible: !root.export_selection_mode
+                    enabled: root.selected_uid !== ""
+                    onClicked: {
+                        const item = root.find_selected_item();
+                        if (!item) return;
+                        edit_dialog.edit_type = root.selected_type;
+                        edit_dialog.edit_data = item;
+                        edit_title.text = item.title || "";
+                        edit_description.text = item.description || "";
+                        if (root.selected_type === "section") {
+                            edit_content_pali.text = item.content_pali || "";
+                        }
+                        edit_dialog.open();
+                    }
+                }
+
+                Button {
+                    text: "Remove"
+                    visible: !root.export_selection_mode
+                    enabled: root.selected_uid !== ""
+                    onClicked: {
+                        const item = root.find_selected_item();
+                        if (!item) return;
+                        remove_dialog.remove_title = item.title || "Untitled";
+                        remove_dialog.open();
+                    }
+                }
+
+                Button {
+                    text: root.export_selection_mode ? "Export Selected" : "Export"
+                    palette.button: root.export_selection_mode ? "#4CAF50" : undefined
+                    palette.buttonText: root.export_selection_mode ? "white" : undefined
+
+                    onClicked: {
+                        if (!root.export_selection_mode) {
+                            // First click: enter selection mode
+                            export_info_dialog.open();
+                        } else {
+                            // Second click: validate selection and export
+                            const selected_uids = tree_list.get_selected_uids();
+                            if (selected_uids.collections.length === 0 &&
+                                selected_uids.chants.length === 0 &&
+                                selected_uids.sections.length === 0) {
+                                export_no_selection_dialog.open();
+                                return;
+                            }
+                            export_file_dialog.open();
+                        }
+                    }
+                }
+
+                Button {
+                    text: "Cancel"
+                    visible: root.export_selection_mode
+                    onClicked: {
+                        root.export_selection_mode = false;
+                        tree_list.clear_selection();
+                    }
+                }
+
+                Button {
+                    text: "Import"
+                    visible: !root.export_selection_mode
+                    onClicked: import_file_dialog.open()
+                }
+
+                Button {
+                    visible: root.is_desktop && !root.export_selection_mode
+                    text: "Close"
+                    onClicked: root.close()
+                }
+            }
+
+            // Tree list
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                contentWidth: availableWidth
+                clip: true
+
+                ChantingTreeList {
+                    id: tree_list
+                    collections_list: root.collections_list
+                    pointSize: root.pointSize
+                    selection_mode: root.export_selection_mode
+
+                    onSection_clicked: function(section_uid) {
+                        SuttaBridge.open_chanting_review_window(root.window_id, section_uid);
+                    }
+
+                    onSelection_changed: function(uid, item_type) {
+                        root.selected_uid = uid;
+                        root.selected_type = item_type;
+                    }
+                }
+            }
+
+            // Mobile close button
+            ColumnLayout {
+                visible: root.is_mobile
+                Layout.fillWidth: true
+                Layout.margins: 10
+                Layout.bottomMargin: 60
+                spacing: 10
+
+                Button {
+                    text: "Close"
+                    Layout.fillWidth: true
+                    onClicked: root.close()
+                }
             }
         }
     }

@@ -22,7 +22,7 @@ ApplicationWindow {
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
     readonly property int pointSize: is_mobile ? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     // Theme support
     property bool is_dark: theme_helper.is_dark
@@ -556,9 +556,9 @@ ApplicationWindow {
 
     Item {
         x: 10
-        y: 10 + root.top_bar_margin
+        y: 10 + root.extra_top_margin
         implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.top_bar_margin
+        implicitHeight: root.height - 20 - root.extra_top_margin
 
         ColumnLayout {
             spacing: 15

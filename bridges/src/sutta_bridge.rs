@@ -1349,19 +1349,10 @@ pub mod qobject {
         fn set_last_search_mode(self: &SuttaBridge, area: &QString, mode: &QString);
 
         #[qinvokable]
-        fn get_mobile_top_bar_margin(self: &SuttaBridge) -> i32;
+        fn get_mobile_extra_top_margin(self: &SuttaBridge) -> i32;
 
         #[qinvokable]
-        fn is_mobile_top_bar_margin_system(self: &SuttaBridge) -> bool;
-
-        #[qinvokable]
-        fn get_mobile_top_bar_margin_custom_value(self: &SuttaBridge) -> u32;
-
-        #[qinvokable]
-        fn set_mobile_top_bar_margin_system(self: Pin<&mut SuttaBridge>);
-
-        #[qinvokable]
-        fn set_mobile_top_bar_margin_custom(self: Pin<&mut SuttaBridge>, value: u32);
+        fn set_mobile_extra_top_margin(self: Pin<&mut SuttaBridge>, value: u32);
 
         #[qinvokable]
         fn get_sutta_language_labels_with_counts(self: &SuttaBridge) -> QStringList;
@@ -3063,6 +3054,9 @@ impl qobject::SuttaBridge {
 
     /// Get the status bar height in density-independent pixels (dp)
     /// Returns 0 on non-mobile platforms, actual height on Android
+    ///
+    /// Informational only — this is not used to lay anything out. Qt supplies
+    /// the safe-area inset; see docs/android-edge-to-edge-and-safe-areas.md
     pub fn get_status_bar_height(&self) -> i32 {
         use crate::api::ffi;
         ffi::get_status_bar_height()
@@ -4463,59 +4457,25 @@ impl qobject::SuttaBridge {
         get_app_data().set_last_search_mode(&area.to_string(), &mode.to_string());
     }
 
-    /// Get the mobile top bar margin value
-    /// Returns either system value (from get_status_bar_height) or custom value
-    /// Returns a default value of 24 if APP_DATA is not yet initialized
-    pub fn get_mobile_top_bar_margin(&self) -> i32 {
-        // Return default value if APP_DATA is not yet initialized
-        // This can happen when QML components load before init_app_data() is called
+    /// The extra top margin (dp) the user wants below the system safe area on
+    /// mobile. Qt's ApplicationWindow already pads the window by the safe-area
+    /// inset, so 0 means "the system inset alone" — which is also the fallback
+    /// when APP_DATA is not yet initialized (QML components can load before
+    /// init_app_data()).
+    /// See docs/android-edge-to-edge-and-safe-areas.md
+    pub fn get_mobile_extra_top_margin(&self) -> i32 {
         let app_data = match try_get_app_data() {
             Some(data) => data,
-            None => return 24,
+            None => return 0,
         };
 
         let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-        use simsapa_backend::app_settings::MobileTopBarMargin;
-        match app_settings.mobile_top_bar_margin {
-            MobileTopBarMargin::SystemValue => {
-                use crate::api::ffi;
-                ffi::get_status_bar_height()
-            }
-            MobileTopBarMargin::CustomValue(value) => value as i32,
-        }
+        app_settings.mobile_extra_top_margin as i32
     }
 
-    pub fn is_mobile_top_bar_margin_system(&self) -> bool {
-        // Return default (true for system value) if APP_DATA is not yet initialized
-        let app_data = match try_get_app_data() {
-            Some(data) => data,
-            None => return true,
-        };
-
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.is_mobile_top_bar_margin_system()
-    }
-
-    pub fn get_mobile_top_bar_margin_custom_value(&self) -> u32 {
-        // Return default custom value of 24 if APP_DATA is not yet initialized
-        let app_data = match try_get_app_data() {
-            Some(data) => data,
-            None => return 24,
-        };
-
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.get_mobile_top_bar_margin_custom_value()
-    }
-
-    pub fn set_mobile_top_bar_margin_system(self: Pin<&mut Self>) {
+    pub fn set_mobile_extra_top_margin(self: Pin<&mut Self>, value: u32) {
         let app_data = get_app_data();
-        app_data.set_mobile_top_bar_margin_system();
-    }
-
-    pub fn set_mobile_top_bar_margin_custom(self: Pin<&mut Self>, value: u32) {
-        let app_data = get_app_data();
-        app_data.set_mobile_top_bar_margin_custom(value);
+        app_data.set_mobile_extra_top_margin(value);
     }
 
     pub fn search_reference(&self, query: &QString, field: &QString) -> QString {

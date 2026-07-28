@@ -22,7 +22,7 @@ ApplicationWindow {
     readonly property bool is_desktop: !root.is_mobile
 
     readonly property int pointSize: is_mobile? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     readonly property bool is_wide: is_desktop ? (root.width > 650) : (root.width > 800)
     readonly property bool is_tall: root.height > 810
@@ -130,9 +130,9 @@ ApplicationWindow {
 
     Item {
         x: 10
-        y: 10 + root.top_bar_margin
+        y: 10 + root.extra_top_margin
         implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.top_bar_margin
+        implicitHeight: root.height - 20 - root.extra_top_margin
 
         ColumnLayout {
             spacing: root.is_wide ? 10 : 6

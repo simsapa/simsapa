@@ -74,7 +74,7 @@ ApplicationWindow {
 
     // Add extra top margin on mobile to account for status bar
     // Get the actual status bar height from the system and add base margin
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     property bool is_dark: false
     property bool is_reading_mode: false
@@ -291,8 +291,8 @@ ApplicationWindow {
         root.setTitle(`${title} - Simsapa`);
     }
 
-    function update_top_bar_margin() {
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+    function update_extra_top_margin() {
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
     }
 
     function apply_theme() {
@@ -1327,9 +1327,9 @@ ${query_text}`;
             // validation is skipped — the DB upgrade will replace everything
             // anyway and showing both dialogs would be confusing.
 
-            // Update top_bar_margin after app data is initialized
+            // Update extra_top_margin after app data is initialized
             // This will automatically update all child dialogs via property bindings
-            root.update_top_bar_margin();
+            root.update_extra_top_margin();
 
             // Start delayed update check timer
             update_check_timer.start();
@@ -2256,42 +2256,42 @@ ${query_text}`;
 
     AboutDialog {
         id: about_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     SystemPromptsDialog {
         id: system_prompts_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     ModelsDialog {
         id: models_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     AnkiExportDialog {
         id: anki_export_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     DatabaseValidationDialog {
         id: database_validation_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     DhammaTextSourcesDialog {
         id: dhamma_text_sources_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     SearchHelpWindow {
         id: search_help_window
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     UpdateNotificationDialog {
         id: update_notification_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
     }
 
     Dialog {
@@ -2394,14 +2394,14 @@ ${query_text}`;
 
     AppSettingsWindow {
         id: app_settings_window
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
         database_validation_dialog: database_validation_dialog
         onThemeChanged: function(theme_name) {
             SuttaBridge.set_theme_name(theme_name);
             root.apply_theme();
         }
         onMarginChanged: {
-            root.update_top_bar_margin();
+            root.update_extra_top_margin();
         }
         onKeybindingsChanged: {
             root.load_keybindings();
@@ -2479,7 +2479,7 @@ ${query_text}`;
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
 
         RowLayout {
             id: search_ui_row

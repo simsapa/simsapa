@@ -25,7 +25,7 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     property var available_languages: []
     property var installed_languages_with_counts: []
@@ -106,8 +106,8 @@ ApplicationWindow {
     Component.onCompleted: {
         theme_helper.apply();
 
-        // Update top_bar_margin after app data is initialized
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        // Update extra_top_margin after app data is initialized
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
 
         // Populate language lists
         available_languages = manager.get_available_languages();
@@ -233,7 +233,7 @@ ApplicationWindow {
     StackLayout {
         id: views_stack
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: 0
 
         // Idx 0: Main language selection frame
@@ -244,6 +244,9 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 0
                 anchors.fill: parent
+                // Inside the Frame's own padding, matching the content inset of
+                // TopicIndexWindow / ReferenceSearchWindow.
+                anchors.margins: 10
 
                 // Scrollable content area
                 ScrollView {
