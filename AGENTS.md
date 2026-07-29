@@ -234,6 +234,38 @@ Notable feature docs:
   Play without touching the QML URI (a ~70-site, no-benefit refactor). Covers why
   the Android FileProvider authority and `/data/user/0/<pkg>/` data dir derive
   automatically from the package, and the change checklist.
+- [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
+  why the app's top-margin setting is only *extra* space: Qt's
+  `ApplicationWindow` already binds its four padding properties to the window
+  safe area (`qquickapplicationwindow.cpp:802-805`), which is why the old 24 dp
+  default produced a **doubled top gap** on every Android 15+ device and had to
+  become `0`. Two rules stated as rules: **never assign `topPadding`/`padding` on
+  an `ApplicationWindow` root** (the binding is installed with
+  `binding.installOn()` at `:793`, so an assignment silently replaces it and the
+  inset vanishes), and **the `Popup` family gets no padding** — `Popup`/`Dialog`/
+  `Menu`/`Drawer` live in the window overlay, with `DrawerMenu.qml`
+  (`topPadding: SafeArea.margins.top`) as the worked example and a watch-list of
+  tall centered dialogs. Also: why `status_bar_height` is **not** the safe area
+  (no cutout, no nav bar, not per-window — informational display only), the
+  three-site serde migration that carries old `CustomValue(v)` settings over,
+  the **predictive-back opt-out** (targetSdk 36 enables it; Qt 6.9.3 registers no
+  `OnBackInvokedCallback` and neither does the app, so back **closed the whole
+  app** from every dialog and secondary window), the three deprecated
+  bar-colour APIs in Play's report that live in Qt's own Java and are no-ops at
+  API 36, and the device test plan (an Android 15 phone **cannot** validate any
+  of this).
+- [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
+  work deliberately deferred to the eventual Qt upgrade, with the reasons and the
+  pitfalls. Covers removing the predictive-back opt-out (and why Qt implementing
+  the callback may still not be sufficient for Qt Quick popups), the **decision
+  to raise `minSdkVersion` to 28 with the upgrade** (Qt 6.9.3 *already* declares
+  `qtMinSdkVersion=28` and we override it down to 27 — the floor does not
+  "arrive" with 6.10, it just stops being ignorable), the deprecated Java APIs,
+  the AGP / Gradle-wrapper / JDK coupling (**the wrapper is ours at 8.10, not
+  Qt's at 8.12** — correcting an earlier note), the 16 KB link flag Qt 6.10 makes
+  redundant, and that the x86_64 and armeabi-v7a slices have still never been
+  *run*. Pitfalls include the measured Qt 6.10.1 AppImage breakage (libtiff
+  SONAME, WebEngine-on-FUSE SIGSEGV) that is why 6.10.1 was not adopted.
 - [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
   how the signed release AAB is built (`make android-aab` → `build-android.sh`,
   `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
@@ -506,7 +538,9 @@ lacking it. See
 > This Android Gradle plugin (8.6.0) was tested up to compileSdk = 35.
 
 **That warning is expected and suppressed** via
-`android.suppressUnsupportedCompileSdk=36` in `android/gradle.properties`. Do not
+`android.suppressUnsupportedCompileSdk=36` in `android/gradle.properties` (added
+2026-07-28 — before that the suppression was documented here but was **not**
+actually in the file, so the warning really did print on every build). Do not
 "fix" it by bumping AGP.
 
 **Targeting a newer API level does not require a newer AGP.**
@@ -518,10 +552,18 @@ platform). AGP 8.6.0 accepts that with the warning above and builds fine.
 An AGP upgrade touches three coupled things, each of which fails late and
 unhelpfully:
 
-1. **The Gradle wrapper is Qt's, not ours.** Qt 6.9.3 ships the wrapper at
-   **8.12** (`~/Qt/6.9.3/android_arm64_v8a/src/3rdparty/gradle/gradle/wrapper/`).
-   AGP 8.10 needs Gradle ≥ 8.11.1 (compatible); AGP **8.11+ needs Gradle 8.13**,
-   i.e. diverging from the Qt-provided wrapper.
+1. **The Gradle wrapper version.** AGP 8.10 needs Gradle ≥ 8.11.1; AGP **8.11+
+   needs Gradle 8.13**. The wrapper in use is **ours**, checked into
+   `android/gradle/wrapper/` at **8.10**, and androiddeployqt copies it into
+   `android-build/` with the rest of `android/`. Qt's kits do ship a wrapper —
+   at 8.12, in `~/Qt/6.9.3/android_*/src/3rdparty/gradle/gradle/wrapper/` — but
+   **that copy is never used** (verified 2026-07-28 by reading the generated
+   `android-build/gradle/wrapper/gradle-wrapper.properties`).
+
+   > An earlier version of this note claimed the wrapper was Qt's and that
+   > bumping it would mean diverging from Qt. **That is wrong** — the wrapper is
+   > ours to bump. This weakens reason 1, but reasons 2 and 3 still stand, so the
+   > pin remains.
 2. **The JDK pin exists because of AGP's bundled lint.** AGP 8.6.0's lint cannot
    parse a Java 26 version string; `lintVitalAnalyzeRelease` dies with `> 26.0.1`
    as its *entire* error message, **after** all three ABIs have compiled and
@@ -843,16 +885,26 @@ Use this path for any tests or experimental scripts that need to query the actua
   - App bundle only: `make macos-app` (skips DMG creation)
   - Clean only: `make macos-clean`
   - Clean rebuild: `make macos-rebuild`
-- **Android App Bundle (Google Play):** `make android-aab ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>`
+- **Android App Bundle (Google Play):** `make android-aab` — **no version
+  arguments.** To make a release: bump the integer in `android/version.txt`
+  (Play requires a strictly increasing versionCode), then run it. The
+  versionName comes from the `[package]` version in `bridges/Cargo.toml`.
   - Signed APK for sideloading: `make android-apk`
   - Unsigned debug APK: `make android-apk-debug`
   - Clean only / clean rebuild: `make android-clean` / `make android-rebuild`
+  - `targetSdkVersion 36` / `minSdkVersion 27`. targetSdk 36 enforces
+    edge-to-edge and predictive back; the app opts out of the latter with
+    `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
+    `OnBackInvokedCallback` and back otherwise closes the whole app. See
+    [docs/android-edge-to-edge-and-safe-areas.md](./docs/android-edge-to-edge-and-safe-areas.md).
+  - Verify a build with `aapt2 dump badging`, **not** by reading the generated
+    `gradle.properties` — androiddeployqt writes a stale `qtTargetSdkVersion=35`
+    there that `build.gradle` never reads.
   - Multi-ABI (`arm64-v8a;x86_64;armeabi-v7a`) via `build-android.sh`. **Do not
     build release packages from the Qt Creator interface** — its kits are
     single-ABI and an arm64-only bundle is filtered off Chromebooks. Signing
     credentials come from the gitignored `android/signing.env` (template:
-    `android/signing.env.example`); `ANDROID_VERSION_CODE` must strictly
-    increase on every Play upload. See
+    `android/signing.env.example`). See
     [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing

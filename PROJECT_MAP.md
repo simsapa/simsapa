@@ -40,12 +40,21 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   BLUETOOTH) made Play treat camera/GPS as *required* hardware and filtered the
   app off Chromebooks. Adding a Qt module that needs a permission now requires a
   manual edit here. See [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
-- `build.gradle` - Android build configuration (`minSdk 27` / `targetSdk 35`;
+- `build.gradle` - Android build configuration (`minSdk 27` / `targetSdk 36`;
   `ndk.abiFilters` is driven by androiddeployqt's `qtTargetAbiList`, so it
   follows the multi-ABI list automatically). `packagingOptions.jniLibs.excludes`
   drops libraries androiddeployqt stages into the wrong ABI folder — load-bearing
   for multi-ABI correctness, see
-  [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md)
+  [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+  The `androidComponents { beforeVariants }` block disables the debug variant
+  during release builds, keyed off `ORG_GRADLE_PROJECT_simsapaReleaseOnly`.
+- `version.txt` - The Android versionCode, a single integer. Bump before each
+  Play upload; `build-android.sh` reads it (the versionName comes from
+  `bridges/Cargo.toml`), so `make android-aab` needs no version arguments.
+- Work deferred to the eventual Qt upgrade — the predictive-back opt-out, the
+  `minSdk 27` vs Qt's declared 28, the deprecated Java APIs in Play's report,
+  the AGP/Gradle/JDK coupling — is recorded in
+  [docs/android-qt-upgrade-considerations.md](./docs/android-qt-upgrade-considerations.md)
 - `signing.env.example` - Template for the gitignored `android/signing.env`
   holding the `QT_ANDROID_KEYSTORE_*` upload-key credentials used by
   `build-android.sh`

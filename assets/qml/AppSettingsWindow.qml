@@ -624,17 +624,23 @@ ApplicationWindow {
                                 }
                             }
 
-                            // Read-only, live: what the platform reports, so a user
-                            // troubleshooting a covered toolbar can see the number.
-                            Label {
-                                Layout.leftMargin: 10
-                                Layout.fillWidth: true
-                                text: root.system_safe_area_top >= 0
-                                    ? "System safe area: " + root.system_safe_area_top + " dp"
-                                    : "Status bar: " + SuttaBridge.get_status_bar_height() + " dp"
-                                font.pointSize: root.pointSize - 2
-                                wrapMode: Text.WordWrap
-                            }
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // Read-only, live: what the platform reports, so a user
+                        // troubleshooting a covered toolbar can see the number.
+                        //
+                        // On its own row BELOW the SpinBox, not beside it: in
+                        // portrait the leftover width next to the label and
+                        // spinner is too narrow for this text.
+                        Label {
+                            visible: root.is_mobile
+                            Layout.fillWidth: true
+                            text: root.system_safe_area_top >= 0
+                                ? "System safe area: " + root.system_safe_area_top + " dp"
+                                : "Status bar: " + SuttaBridge.get_status_bar_height() + " dp"
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
                         }
 
                         // Display section

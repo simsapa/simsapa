@@ -87,11 +87,32 @@
         android:label="-- %%INSERT_APP_NAME%% --"
         android:allowBackup="true"
         android:fullBackupOnly="false">
+        <!-- TEMPORARY opt-out of predictive back (android:enableOnBackInvokedCallback below).
+
+             targetSdk 36 enables the predictive back gesture by default, which
+             stops the system dispatching legacy KEYCODE_BACK key events and
+             instead expects an OnBackInvokedCallback. Qt 6.9.3 registers none —
+             there is no back handling anywhere in its Java (verified: no
+             onBackPressed and no OnBackInvokedCallback in Qt's android/java
+             sources) — and this app has no explicit back handling either,
+             because Qt Quick Controls close a Dialog/Popup/Window off the
+             Qt::Key_Back event that the legacy path delivers.
+
+             With predictive back on, that event never arrives, nothing handles
+             back, and the system default finishes the activity: back CLOSED THE
+             APP from the sutta reader, the tab list dialog, the search help
+             dialog and the Chanting Practice window (measured on Android 16,
+             2026-07-28).
+
+             Remove this once Qt implements OnBackInvokedCallback — then the
+             dialogs must be re-tested, since predictive back also changes the
+             gesture animation. See docs/android-edge-to-edge-and-safe-areas.md. -->
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density"
             android:launchMode="singleTop"
             android:screenOrientation="unspecified"
+            android:enableOnBackInvokedCallback="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

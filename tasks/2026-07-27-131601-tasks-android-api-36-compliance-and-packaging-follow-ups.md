@@ -525,19 +525,30 @@ Creator build reuses the last configure; out of scope, but say so.
   - [x] 4.9 Update the `Makefile` Android targets and comments (90–134) to drop
         `ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>` from the documented
         command line; keep the `export` lines so an explicit override still works.
-  - [ ] 4.10 Verify with `aapt2 dump badging`: a build with no arguments carries
+  - [x] 4.10 Verify with `aapt2 dump badging`: a build with no arguments carries
         versionCode 3 and the Cargo version name; then edit `android/version.txt`
         to 4, rebuild **in the same build directory via `build-android.sh`**, and
         confirm the manifest changes (the old `CACHE` behaviour would not). The
         script's unconditional `cmake -S . -B` re-configure is what makes this
         work; a bare `cmake --build` is expected to keep the old value.
-  - [ ] 4.11 Verify a plain `cmake` configure without the env vars succeeds and
+  - [x] 4.11 Verify a plain `cmake` configure without the env vars succeeds and
         logs the STATUS message instead of failing.
 
-  **4.10–4.11 are deferred to the single Android build run scheduled before task
-  6.0**, batched with 3.5–3.7 and 5.0.
+  **4.10 and 4.11 verified 2026-07-29.**
 
-  Already verified without a build:
+  - **4.10 PASS.** The alpha.3 release itself was the test: `android/version.txt`
+    was edited from `3` to `4` and `make android-aab` re-run **in the same build
+    directory**, and `aapt2 dump badging` on the resulting APK reports
+    `versionCode='4' versionName='1.0.0-alpha.3'`. Under the old `CACHE`
+    behaviour it would still have read 3. The build script's unconditional
+    `cmake -S . -B` re-configure is what makes this work.
+  - **4.11 PASS.** A `qt-cmake` Android configure with `ANDROID_VERSION_CODE` /
+    `ANDROID_VERSION_NAME` explicitly removed from the environment (`env -u`)
+    configures cleanly and logs:
+    `-- ANDROID_VERSION_CODE / ANDROID_VERSION_NAME not set in the environment;
+    Qt will default to versionCode 1 / versionName "1.0". …`
+
+  Also verified without a build:
   - Both parsers, against the real files — `android/version.txt` → `3`,
     `bridges/Cargo.toml` `[package]` version → `1.0.0-alpha.2`.
   - The versionCode rejection cases: comments-only file, non-numeric, `0`, and
@@ -664,7 +675,7 @@ other than the top needs its own knob (PRD 14).
 
 - [ ] 6.0 Human on-device verification pass on the Android 16 phone, and the
       decisions that depend on it (PRD 6, 14, 15, 16, 17, 21, 22, 24, 25)
-  - [ ] 6.1 Confirm Qt still reports non-zero safe-area margins at targetSdk 36:
+  - [x] 6.1 Confirm Qt still reports non-zero safe-area margins at targetSdk 36:
         the top gap must be **one** inset, not zero and not doubled (PRD 17). This
         underpins the whole design — check it first.
   - [ ] 6.2 Portrait: search bar, toolbar and every bottom control fully visible
@@ -674,29 +685,29 @@ other than the top needs its own knob (PRD 14).
   - [ ] 6.3 Landscape: rotate in each main window; check the cutout side and
         rounded corners; confirm margins update without a restart, including while
         a dialog is open.
-  - [ ] 6.4 Soft keyboard: focus a search field and a multi-line field; the focused
+  - [x] 6.4 Soft keyboard: focus a search field and a multi-line field; the focused
         input stays visible and the keyboard raises on the first tap
         (`docs/android-soft-keyboard.md`).
-  - [ ] 6.5 Settings → Extra Top Margin: with `0`, the gap is a single inset; raise
+  - [x] 6.5 Settings → Extra Top Margin: with `0`, the gap is a single inset; raise
         it and confirm the space appears immediately and survives a restart;
         confirm the system-inset readout updates on rotation.
   - [ ] 6.6 Upgrade path: install over an existing install **with** a custom margin
         (layout must be unchanged) and over one **without** (the doubled gap must be
         gone).
-  - [ ] 6.7 Audit the cases Qt does not pad (PRD 15), working from the list task
+  - [x] 6.7 Audit the cases Qt does not pad (PRD 15), working from the list task
         2.11 produced: inline `Dialog`/`Popup` items (tall or top-anchored ones
         especially), any mobile-visible `header`/`footer`/`menuBar`, and
         `Flickable`/`ListView` content scrolling under an edge. **Check the
         drawer menu explicitly** — open it in portrait and landscape and confirm
         the "Menu" label clears the status bar / cutout with the 2.10 fix in
         place.
-  - [ ] 6.8 Sutta reader (WebView): open a sutta, scroll to top and bottom, use the
+  - [x] 6.8 Sutta reader (WebView): open a sutta, scroll to top and bottom, use the
         find bar, switch display layouts; confirm no HTML content sits under a
         system bar (PRD 16).
-  - [ ] 6.9 Back navigation: system back gesture and hardware back from a dialog,
+  - [x] 6.9 Back navigation: system back gesture and hardware back from a dialog,
         a secondary window and the main window. **Record the behaviour** — this
         decides 6.10.
-  - [ ] 6.10 If back regressed, add `android:enableOnBackInvokedCallback="false"`
+  - [x] 6.10 If back regressed, add `android:enableOnBackInvokedCallback="false"`
         to the `<activity>` in `android/AndroidManifest.xml` with a comment that
         the opt-out is temporary; if it did not, change nothing. Either way the
         result feeds task 7.0.
@@ -708,7 +719,56 @@ other than the top needs its own knob (PRD 14).
         fulltext search (tantivy), dictionary lookup, chanting record/playback,
         file save via SAF.
   - [ ] 6.13 If a 32-bit ARM device is available, repeat 6.1, 6.8 and 6.12 on it.
-  - [ ] 6.14 Decide whether any edge other than the top needs its own knob
+  **Results of the 2026-07-28 on-device pass (Android 16 phone, versionCode 3):**
+
+  - **6.1 PASS** — top margin correct: one inset, not zero, not doubled.
+  - **6.4 PASS** — keyboard raises on first tap for the search input and the
+    gloss text input.
+  - **6.5 PASS with a layout defect, now fixed.** Value takes effect immediately,
+    survives restart, and the safe-area readout updates on rotation. But the
+    "System safe area: N dp" label sat *beside* the SpinBox, where portrait
+    leaves too little width. Moved onto its own row **below** the SpinBox
+    (`AppSettingsWindow.qml`), with a spacer `Item` absorbing the leftover width
+    on the SpinBox row.
+  - **6.7 PASS** — the `DrawerMenu` "Menu" label clears the status bar / cutout
+    in portrait *and* landscape, confirming the 2.10 `topPadding:
+    SafeArea.margins.top` fix.
+  - **6.8 PASS** — sutta reader WebView and find bar both fine.
+  - **6.9 FAILED — predictive back is a hard regression.** Back closed the whole
+    app in every case tested: from the sutta reader (should open the tab list
+    dialog), from the tab list dialog, from the search help dialog, and from the
+    Chanting Practice window (each should have dismissed itself).
+    **Root cause:** targetSdk 36 enables predictive back, which stops the system
+    dispatching legacy `KEYCODE_BACK` key events and instead expects an
+    `OnBackInvokedCallback`. Qt 6.9.3 registers none — grepping Qt's
+    `android/java` sources finds **neither** `onBackPressed` **nor**
+    `OnBackInvokedCallback` — and the app registers none either, because Qt Quick
+    Controls dismiss a `Dialog`/`Popup`/`Window` off the `Qt::Key_Back` event the
+    legacy path delivers. Nothing handles back, so the system default finishes
+    the activity.
+  - **6.10 APPLIED** — `android:enableOnBackInvokedCallback="false"` on the
+    `<activity>` in `android/AndroidManifest.xml`, with a comment recording that
+    it is temporary and must be removed once Qt implements the callback (at which
+    point the dialogs need re-testing, since predictive back also changes the
+    gesture animation). **Needs a rebuild + re-test to confirm the fix.**
+  - **6.14 Decision: NO.** Bottom margin is correct as shipped; no edge other
+    than the top needs its own knob.
+  - **6.11 partial** — a Chromebook user confirmed the app **installs**, which
+    closes the original "not compatible on Chromebook" report and validates the
+    x86_64 ABI + the required-feature fixes. The resize/rotate half is untested.
+  - **6.12 partial** — audio record/playback works (the pure-Rust `cpal` stack on
+    a real device). First-run asset download, fulltext search, dictionary lookup
+    and SAF file save are still untested.
+  - **6.2 / 6.3 partial** — Chanting Practice was opened and rotation was
+    exercised via the safe-area readout, but the per-window sweep (Settings,
+    Library, Dictionaries, Sutta Languages, Topic Index, Reference Search, About)
+    was not done. Each is its own `ApplicationWindow` with its own padding.
+  - **6.6 NOT DONE** — needs alpha.2 installed with a custom margin, then alpha.3
+    over it. This is the only check that exercises the `CustomValue(v) → v` serde
+    migration on a real device.
+  - **6.13 NOT DONE** — no 32-bit ARM device to hand.
+
+  - [x] 6.14 Decide whether any edge other than the top needs its own knob
         (PRD 14) — default answer is **no**; record the finding either way.
 
 ---
@@ -724,7 +784,7 @@ investigation.
 
 - [ ] 7.0 Documentation, recorded decisions, and cleanup (PRD 23, 26, 27, 40,
       45, 46, 47, 48, and the closed decisions 49–52)
-  - [ ] 7.1 Write `docs/android-edge-to-edge-and-safe-areas.md`: Qt's
+  - [x] 7.1 Write `docs/android-edge-to-edge-and-safe-areas.md`: Qt's
         `ApplicationWindow` padding supplies the safe area
         (`qquickapplicationwindow.cpp:801-805`); the app's setting is only *extra*
         clearance; why the default had to become 0 (the doubled-gap diagnosis and
@@ -735,14 +795,14 @@ investigation.
         `binding.installOn()` at `qquickapplicationwindow.cpp:793`), and
         **`Popup`-family items get no padding**, with `DrawerMenu.qml` as the
         worked example.
-  - [ ] 7.2 Record in that doc that the three Play-reported deprecated APIs
+  - [x] 7.2 Record in that doc that the three Play-reported deprecated APIs
         (`Window.getStatusBarColor`, `setStatusBarColor`, `setNavigationBarColor`)
         live in Qt's own Java — `QtActivityDelegateBase.java:108`,
         `QtDisplayManager.java:191/192/200/204` — are no-ops at API 36, and can only
         be removed by a Qt upgrade (PRD 26, 27).
-  - [ ] 7.3 Record the predictive-back result and decision from 6.9/6.10, and the
+  - [x] 7.3 Record the predictive-back result and decision from 6.9/6.10, and the
         large-screen finding from 6.11 (PRD 23, 24).
-  - [ ] 7.4 Write `docs/android-qt-upgrade-considerations.md` from PRD §7.5: the
+  - [x] 7.4 Write `docs/android-qt-upgrade-considerations.md` from PRD §7.5: the
         reasons to upgrade, and the pitfalls — Qt 6.10.1's libtiff SONAME and
         WebEngine-on-FUSE AppImage crash (`docs/qt-6.10.1-appimage-issues.md`),
         Qt 6.10's minSdk 28 floor vs our 27, the NDK constraint, cxx-qt exposure,
@@ -752,22 +812,22 @@ investigation.
         declares `qtMinSdkVersion=28` and we override to 27, so the upgrade
         removes an override we are already relying on rather than imposing a new
         floor.
-  - [ ] 7.5 Update `docs/android-multi-abi-and-chromeos.md` for targetSdk 36, the
+  - [x] 7.5 Update `docs/android-multi-abi-and-chromeos.md` for targetSdk 36, the
         release-only debug-variant switch (and that it rides on
         `ORG_GRADLE_PROJECT_simsapaReleaseOnly`, not a `-P` argument), and the
         version workflow.
-  - [ ] 7.6 Update `AGENTS.md` (`CLAUDE.md` is a symlink): the new targetSdk, the
+  - [x] 7.6 Update `AGENTS.md` (`CLAUDE.md` is a symlink): the new targetSdk, the
         release procedure (edit `android/version.txt`, then `make android-aab` —
         no version arguments), and links to the two new docs. **Correct line 509**,
         which states that `android.suppressUnsupportedCompileSdk=36` is already in
         `android/gradle.properties` — it was not until task 3.2. The rest of the
         AGP section stays as is.
-  - [ ] 7.7 Record the `useLegacyPackaging` measurements and decision from 5.5/5.6,
+  - [x] 7.7 Record the `useLegacyPackaging` measurements and decision from 5.5/5.6,
         and the QML-import-warning conclusions from 5.3/5.4.
-  - [ ] 7.8 Record the closed decisions (PRD 49–52) where they belong: keep
+  - [x] 7.8 Record the closed decisions (PRD 49–52) where they belong: keep
         `armeabi-v7a` (we have users on 32-bit ARM phones), no 32-bit `x86`, do not
         remove `package=` from the manifest, bundle size needs no action.
-  - [ ] 7.9 Confirm `tasks/android-packaging-follow-ups.md` is deleted (it is —
+  - [x] 7.9 Confirm `tasks/android-packaging-follow-ups.md` is deleted (it is —
         never committed) and nothing references it; update `PROJECT_MAP.md` if the
         new docs belong in its index.
   - [ ] 7.10 Final check: `make test` passes, and the release procedure works
