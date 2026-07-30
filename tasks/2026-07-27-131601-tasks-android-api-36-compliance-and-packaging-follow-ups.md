@@ -420,8 +420,14 @@ Gradle's environment mapping instead — `ORG_GRADLE_PROJECT_simsapaReleaseOnly`
   - [x] 3.5 Build a signed AAB and confirm the log contains **no** `:*Debug*`
         packaging tasks (previously 43), the release AAB is still produced and
         signed, and `build/outputs/bundle/debug/` is not created.
-  - [ ] 3.6 Confirm `make android-apk-debug` still succeeds with the debug variant
+  - [x] 3.6 Confirm `make android-apk-debug` still succeeds with the debug variant
         enabled.
+
+        **Confirmed 2026-07-30.** The debug variant builds, packages and (with
+        the new `--sign`) signs. Note the debug variant is now also the local
+        **beta** build — see the 8.0 section below — so its package id is
+        `io.github.simsapa.app.beta`. `make android-apk-debug` itself is
+        unchanged and still produces the unsigned artifact.
   - [x] 3.7 Do **not** touch AGP, the Gradle wrapper, the NDK or the JDK pin;
         confirm the build still reports AGP 8.6.0 / Gradle 8.12 / JDK 21 (PRD 38).
 
@@ -830,6 +836,129 @@ investigation.
   - [x] 7.9 Confirm `tasks/android-packaging-follow-ups.md` is deleted (it is —
         never committed) and nothing references it; update `PROJECT_MAP.md` if the
         new docs belong in its index.
+  - [x] 7.11 **(added 2026-07-30)** Document the beta package, the
+        `make android-beta-*` targets and the Play update-policy gating —
+        `docs/android-beta-distribution-and-play-policy.md`, plus index entries
+        in `AGENTS.md`, `PROJECT_MAP.md` and
+        `docs/android-multi-abi-and-chromeos.md`. See section 8.0.
   - [ ] 7.10 Final check: `make test` passes, and the release procedure works
         end-to-end from a clean tree — edit `android/version.txt`, `make
         android-aab`, verify with `aapt2 dump badging`.
+
+---
+
+### 8.0 — beta package, on-device debugging, Play update policy
+
+**Added 2026-07-30, not in the original PRD.** It came out of trying to run task
+3.6's debug APK on the test phone: the phone carries the closed-testing build
+from Play, and nothing locally built can be installed over it.
+
+Full write-up:
+[docs/android-beta-distribution-and-play-policy.md](../docs/android-beta-distribution-and-play-policy.md).
+
+**The finding that forced the design.** A Play install is signed by **Play App
+Signing** — Google's key (`CN=Android, O=Google Inc.`, `fdf35925…`), not our
+upload key (`CN=Simsapa, O=Profound Labs`, `fef4991a…`). Android has no key-swap
+path, so no local build can replace it, whatever key it carries. Two non-causes,
+checked so they are not re-checked: Play does **not** rename the package for a
+testing track (the id is plain `io.github.simsapa.app`; it is a split install
+with `installerPackageName=com.android.vending`), and the mismatch has nothing to
+do with debuggable-vs-release. Uninstalling would have wiped the downloaded
+`appdata.sqlite3` and the state task 6.6 needs.
+
+- [x] 8.1 Beta package `io.github.simsapa.app.beta`, label "Simsapa (beta)",
+      installing **alongside** the released app —
+      `applicationIdSuffix` / `versionNameSuffix` in `android/build.gradle` plus
+      the new `android/AndroidManifest.beta.xml` label overlay. The FileProvider
+      authority (`${applicationId}.qtprovider`) and `androidx-startup` follow the
+      suffix automatically; verified no collision. Trade-off accepted: the beta
+      gets its own data dir and runs first-time asset setup.
+- [x] 8.2 `build-android.sh --sign` — signs a `--debug` build with the release
+      keystore, order-independent with `--debug`/`--no-sign`. Signing is done
+      **after** the build with `apksigner` (androiddeployqt's `--sign` path is
+      release-only; Gradle's debug-keystore signature is replaced), and the
+      resulting signer is printed as proof. Verified: `CN=Android Debug` →
+      `CN=Simsapa`, `debuggable` retained, `zipalign -c -P 16` still PASS.
+- [x] 8.3 `build-android.sh --beta` — the **not-debuggable** dist beta, via
+      `ORG_GRADLE_PROJECT_simsapaBeta` on the *release* build type. A third
+      Gradle build type is impossible: androiddeployqt only ever invokes
+      `assembleDebug`/`assembleRelease`. `--aab --beta` and `--aab --debug
+      --sign` are rejected.
+- [x] 8.4 **Package-identity guard.** ninja's `apk` target does not depend on a
+      Gradle property, so `--beta` followed by plain `--apk` in one build
+      directory skipped androiddeployqt and reported the previous artifact —
+      observed as a plain release build printing
+      `package: name='io.github.simsapa.app.beta'`. The script now records
+      `<BuildType>-beta<0|1>` in `$ANDROID_BUILD_DIR/.simsapa-package-identity`
+      after each successful package and force-deletes the packaging **outputs**
+      when it changes or is **unknown** (an unknown marker must not count as a
+      match). Never `android-build/` itself — that wedges the ExternalProject
+      stamps.
+- [x] 8.5 Makefile targets: `android-beta-debug`, `android-beta-debug-install`,
+      `android-beta-debug-run` (launch + `adb logcat`, filtered by **tag** not
+      pid so startup messages are not lost), and `android-beta-dist` (copies to
+      `dist/Simsapa-<version>-beta.apk`).
+- [x] 8.6 **Play update-policy gating.** An app distributed through Play must
+      update only through Play (Device and Network Abuse), but
+      `UpdateNotificationDialog` offered an off-Play download link on Android
+      with no gate — a pre-existing exposure, independent of the beta.
+      Now `SuttaBridge.is_installed_from_play_store()` /
+      `get_play_store_url()` (backed by `get_installer_package_name()` /
+      `get_android_package_name()` in `cpp/utils.cpp`) switch the dialog between
+      a `market://` **Open Google Play** button and the usual release-page link.
+      Keyed on the **install**, not the build, so a sideloaded release APK keeps
+      the link; false off Android, so desktop is unchanged. `open_visit_url()`
+      routes through the same gate.
+- [x] 8.7 Verification: `aapt2 dump badging` on real artifacts — dist beta
+      (`.beta`, `Simsapa (beta)`, **no** `application-debuggable`, upload-key
+      signed), debug beta (same id, `-beta-debug`, debuggable), plain release
+      (`io.github.simsapa.app`, `Simsapa`, not debuggable). Identities
+      round-tripped release → beta → release → debug-beta in one build directory,
+      correct each time. Debug beta installed on the phone next to the untouched
+      Play copy, log streaming confirmed live. Desktop `make build -B` passes;
+      `qmllint` clean on the changed dialog; `make qml-test` 103 passed / 1
+      pre-existing failure.
+- [x] 8.10 **Beta launcher icon** (2026-07-30). Two installs sharing an icon are
+      as confusing as two sharing a name. `android/res-beta/` overrides the
+      launcher mipmaps for the beta variant only (`res.srcDirs += ['res-beta']`
+      — *added to* the main dirs, since a variant source set already takes
+      priority for same-named resources, so `values/`/`xml/` still come from
+      `res/`). Generated by `scripts/generate_beta_app_icons.sh` from
+      `assets/icons/appicons/simsapa-beta_w512.png`; the script derives its
+      geometry from the shipped release icons rather than inventing it — both
+      sources trim to the same 440x440 box at +36+36, so the release transform
+      applies unchanged and the art lands inside the adaptive-icon safe zone.
+      Verified by extracting `res/*.png` from both finished APKs and
+      pixel-comparing: the beta package's 432 px layers are a 0-pixel match for
+      the beta foreground and differ from the release art by exactly the badge;
+      the plain release package is the inverse (0 vs release, badge-sized diff
+      vs beta). Label and icon both confirmed via `aapt2 dump badging`.
+- [x] 8.9 **Review pass (2026-07-30), two gaps found and closed:**
+      1. **The release-notes pane defeated the button gating.** The app-update
+         view renders the server-supplied GitHub release *description* as
+         RichText with a live `onLinkActivated` handler, so a link in that
+         description would still take a Play user to the download page even with
+         the "Open Link" button hidden. All three link handlers in the dialog now
+         go through `open_release_link()`, inert on a Play install. Trade-off
+         recorded: on Play installs release-notes links are not clickable.
+      2. **The identity marker ignored the signing state.** `make
+         android-apk-debug` (unsigned) straight after `make android-beta-debug`
+         (release-signed) yields the same package id, so ninja stayed up to date
+         and the script would report the still-release-signed APK as unsigned —
+         invisible, since the re-sign is applied in place. The marker is now
+         `<BuildType>-beta<0|1>-sign<0|1>`.
+
+      Also checked and found sound: the `obsolete` and `db` views offer no app
+      download (their "Download Now" fetches **data**, outside the policy); no
+      other QML file offers an app download link; `visit_url` is confirmed to be
+      a GitHub release-tag URL (`update_checker.rs:647`); the Gradle beta
+      conditionals fire in both directions; the `dist/` version parse yields
+      `1.0.0-alpha.3`. One footgun noted in the Makefile rather than changed:
+      `make macos-clean` does `rm -rf ./dist` and will delete the beta APK.
+- [ ] 8.8 **Not runtime-verified: the Play branch of the update dialog.** It only
+      appears when an update is actually available, so the QML branch has not
+      been exercised on device. The JNI follows the proven
+      `get_status_bar_height()` pattern and `dumpsys` independently confirms both
+      installer values (`com.android.vending` for the Play copy, `null` for the
+      sideloaded beta), but the branch itself is untested. Check it at the next
+      release that offers an update.

@@ -29,8 +29,10 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 ```
 ├── android
 │   ├── AndroidManifest.xml
+│   ├── AndroidManifest.beta.xml
 │   ├── build.gradle
 │   ├── res
+│   ├── res-beta
 ```
 
 - `AndroidManifest.xml` - Android app manifest. Permissions and `<uses-feature>`
@@ -40,6 +42,13 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   BLUETOOTH) made Play treat camera/GPS as *required* hardware and filtered the
   app off Chromebooks. Adding a Qt module that needs a permission now requires a
   manual edit here. See [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+- `AndroidManifest.beta.xml` - Manifest overlay merged into the **beta** package
+  only, relabelling the launcher icon "Simsapa (beta)" via `tools:replace` so a
+  beta install is distinguishable from the released app sitting next to it. (Do
+  not write androiddeployqt's `INSERT_APP_NAME` placeholder verbatim in an XML
+  comment here — the double hyphen is illegal in XML and the manifest merger
+  fails with a bare parse error.) See
+  [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
 - `build.gradle` - Android build configuration (`minSdk 27` / `targetSdk 36`;
   `ndk.abiFilters` is driven by androiddeployqt's `qtTargetAbiList`, so it
   follows the multi-ABI list automatically). `packagingOptions.jniLibs.excludes`
@@ -48,6 +57,13 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
   The `androidComponents { beforeVariants }` block disables the debug variant
   during release builds, keyed off `ORG_GRADLE_PROJECT_simsapaReleaseOnly`.
+  `buildTypes` carries the **beta** identity (`applicationIdSuffix ".beta"`,
+  label overlay): unconditionally for the debug type, and for the release type
+  when `ORG_GRADLE_PROJECT_simsapaBeta` is set — a third build type is not
+  possible because androiddeployqt only invokes `assembleDebug`/`assembleRelease`.
+  Both properties follow the unset-not-`false` rule (`hasProperty()` is true for
+  any value). See
+  [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
 - `version.txt` - The Android versionCode, a single integer. Bump before each
   Play upload; `build-android.sh` reads it (the versionName comes from
   `bridges/Cargo.toml`), so `make android-aab` needs no version arguments.
@@ -59,6 +75,12 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   holding the `QT_ANDROID_KEYSTORE_*` upload-key credentials used by
   `build-android.sh`
 - `res/` - Android resources (icons, configurations)
+- `res-beta/` - Launcher icon set for the **beta** variant only (the S mark with
+  a B badge), merged over `res/` via `res.srcDirs += ['res-beta']` in
+  `build.gradle`. Generated — do not hand-edit or hand-place the art; run
+  `scripts/generate_beta_app_icons.sh`, which derives its geometry from the
+  release icons so both marks sit identically on the launcher. See
+  [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
 
 #### `/assets/css/`, `/assets/sass/` - Styling
 
@@ -333,6 +355,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `sutta_search_window.cpp/.h` - Sutta search interface
   - `download_appdata_window.cpp/.h` - Data download interface
   - `system_palette.cpp/.h` - System theme integration
+  - `utils.cpp/.h` - Storage paths, APK/qrc asset copying, `content://` URI copying, and the Android JNI accessors: `get_status_bar_height()` (informational only — Qt supplies layout insets), plus `get_android_package_name()` / `get_installer_package_name()`, which back `SuttaBridge.is_installed_from_play_store()` and `get_play_store_url()`. Those decide whether the in-app update notice may show an off-Play download link — a Play-installed copy is sent to its Play listing instead. See [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
   - `errors.cpp/.h` - Custom exception handling
   - `global_hotkey_manager.cpp/.h`, `global_hotkey_x11.cpp` - Cross-platform OS-level global hotkey manager (`Ctrl+C+C` double-tap state machine, `hotkeyActivated(int)` signal). Linux X11 backend uses `XRecord` on a worker QThread. Windows/macOS backends are stubs pending tasks 5/6. Settings: `backend/src/global_hotkeys.rs`; QML bridge: `bridges/src/global_hotkey_manager.rs`; UI: `assets/qml/GlobalHotkeysSection.qml` and `GlobalHotkeysWaylandNote.qml`. End-user docs: `docs/global-hotkeys.md`.
 

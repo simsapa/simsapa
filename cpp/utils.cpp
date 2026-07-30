@@ -353,6 +353,87 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
 #endif
 }
 
+// The package name this app is installed under, e.g. "io.github.simsapa.app"
+// or "io.github.simsapa.app.beta" for a beta build. Empty off Android.
+QString get_android_package_name() {
+#ifdef Q_OS_ANDROID
+    QJniEnvironment env;
+    QJniObject activity = QJniObject::callStaticObjectMethod(
+        "org/qtproject/qt/android/QtNative",
+        "activity",
+        "()Landroid/app/Activity;");
+
+    if (activity.isValid()) {
+        QJniObject name = activity.callObjectMethod("getPackageName", "()Ljava/lang/String;");
+        if (name.isValid()) {
+            env.checkAndClearExceptions();
+            return name.toString();
+        }
+    }
+
+    env.checkAndClearExceptions();
+    return QString();
+#else
+    return QString();
+#endif
+}
+
+// Which store or app installed this copy: "com.android.vending" for Google
+// Play, something else for another store, and empty for a sideloaded APK (or
+// off Android entirely).
+//
+// This is what decides whether the in-app update notice may offer a download
+// link. An app distributed THROUGH Play must not update itself from anywhere
+// else — Play's Device and Network Abuse policy — so a Play-installed copy is
+// sent to its Play listing instead. A sideloaded copy (a GitHub Releases beta,
+// say) is not covered by that policy and keeps the direct link.
+//
+// Deliberately a property of the INSTALL, not of the build: a release APK
+// downloaded from GitHub and sideloaded is the same artifact that Play serves,
+// and it should get the link. Only the copy that actually came from Play is
+// restricted.
+//
+// getInstallSourceInfo() replaced getInstallerPackageName() in API 30. The
+// latter is deprecated but still functional and works on every level the app
+// supports (minSdk 27), so it is used directly rather than branched on.
+QString get_installer_package_name() {
+#ifdef Q_OS_ANDROID
+    QJniEnvironment env;
+    QJniObject activity = QJniObject::callStaticObjectMethod(
+        "org/qtproject/qt/android/QtNative",
+        "activity",
+        "()Landroid/app/Activity;");
+
+    if (activity.isValid()) {
+        QJniObject package_manager = activity.callObjectMethod(
+            "getPackageManager",
+            "()Landroid/content/pm/PackageManager;");
+        QJniObject package_name = activity.callObjectMethod(
+            "getPackageName",
+            "()Ljava/lang/String;");
+
+        if (package_manager.isValid() && package_name.isValid()) {
+            QJniObject installer = package_manager.callObjectMethod(
+                "getInstallerPackageName",
+                "(Ljava/lang/String;)Ljava/lang/String;",
+                package_name.object<jstring>());
+
+            // Returns null for a sideloaded package; QJniObject wraps that as
+            // an invalid object rather than an empty string.
+            if (installer.isValid()) {
+                env.checkAndClearExceptions();
+                return installer.toString();
+            }
+        }
+    }
+
+    env.checkAndClearExceptions();
+    return QString();
+#else
+    return QString();
+#endif
+}
+
 QString get_qt_platform_name() {
     if (QGuiApplication::instance()) {
         return QGuiApplication::platformName();

@@ -704,6 +704,8 @@ pub mod qobject {
         include!("utils.h");
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
         fn get_qt_version() -> QString;
+        fn get_android_package_name() -> QString;
+        fn get_installer_package_name() -> QString;
     }
 
     impl cxx_qt::Threading for SuttaBridge{}
@@ -1057,6 +1059,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn get_status_bar_height(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn is_installed_from_play_store(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn get_play_store_url(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
         fn run_gloss_in_sutta_window(self: &SuttaBridge, window_id: &QString, query_text: &QString);
@@ -3060,6 +3068,33 @@ impl qobject::SuttaBridge {
     pub fn get_status_bar_height(&self) -> i32 {
         use crate::api::ffi;
         ffi::get_status_bar_height()
+    }
+
+    /// True only when this copy was installed by the Google Play Store.
+    ///
+    /// Used by the app-update notification to stay inside Play's Device and
+    /// Network Abuse policy, which requires an app distributed through Play to
+    /// update only through Play. A Play-installed copy is offered its Play
+    /// listing; any other copy (sideloaded release, GitHub Releases beta,
+    /// desktop) keeps the direct download link.
+    ///
+    /// False off Android, so desktop behaviour is unchanged.
+    pub fn is_installed_from_play_store(&self) -> bool {
+        qobject::get_installer_package_name().to_string() == "com.android.vending"
+    }
+
+    /// A `market://` URL for this app's own Play listing, built from the
+    /// running package name so the beta id resolves to the beta listing rather
+    /// than being hardcoded to the release one.
+    ///
+    /// Empty off Android, or if the package name cannot be read — callers must
+    /// treat empty as "no Play link available" rather than opening it blindly.
+    pub fn get_play_store_url(&self) -> QString {
+        let package_name = qobject::get_android_package_name().to_string();
+        if package_name.is_empty() {
+            return QString::from("");
+        }
+        QString::from(&format!("market://details?id={}", package_name))
     }
 
     /// Enable or disable a provider

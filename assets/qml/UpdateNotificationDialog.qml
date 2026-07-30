@@ -27,6 +27,21 @@ ApplicationWindow {
     // Dialog type: "app", "db", "obsolete", "no_updates", "closing", "export_failed"
     property string dialog_type: ""
 
+    // True only when this copy was installed by the Google Play Store.
+    //
+    // Google Play's Device and Network Abuse policy requires an app
+    // distributed through Play to update only through Play, so a Play-installed
+    // copy must not be offered a download link to an APK hosted elsewhere.
+    // Instead it is sent to its own Play listing, where the user taps Update.
+    //
+    // This is a property of the INSTALL, not of the build: the same release APK
+    // sideloaded from GitHub Releases is not covered by the policy and keeps
+    // the direct link, as does every desktop build (false off Android).
+    //
+    // Evaluated once — an app cannot change its installer while running.
+    readonly property bool is_play_install: SuttaBridge.is_installed_from_play_store()
+    readonly property string play_store_url: SuttaBridge.get_play_store_url()
+
     // Export-failure state (populated when SuttaBridge.exportFailed fires)
     property string export_failed_reason: ""
     property string export_failed_path: ""
@@ -138,7 +153,51 @@ ApplicationWindow {
         root.requestActivate();
     }
 
+    // Opens the app's own Play listing. `market://` hands straight to the Play
+    // Store app; the https form is the fallback for a device where no app
+    // claims that scheme (a Play-installed copy on such a device is unlikely
+    // but not impossible, e.g. Play Store disabled after install).
+    function open_play_store_url() {
+        if (!root.play_store_url || root.play_store_url.length === 0) {
+            logger.warn("open_play_store_url(): no Play URL available");
+            return;
+        }
+        if (!Qt.openUrlExternally(root.play_store_url)) {
+            const web_url = root.play_store_url.replace(
+                "market://details?id=",
+                "https://play.google.com/store/apps/details?id=");
+            logger.warn("open_play_store_url(): market:// failed, trying " + web_url);
+            Qt.openUrlExternally(web_url);
+        }
+    }
+
+    // Every link inside this dialog goes through here.
+    //
+    // The release notes are server-supplied HTML (the GitHub release
+    // description, via update_checker.rs) rendered as RichText with a live
+    // link handler, so hiding the "Open Link" button alone does NOT close the
+    // off-Play path: a link written into the release description would still
+    // reach the download page from a Play install. On a Play install links are
+    // therefore inert, and the "Open Google Play" button is the only way out of
+    // the dialog.
+    //
+    // Consequence worth knowing when writing release descriptions: on Play
+    // installs their links are not clickable. The URL text is still visible.
+    function open_release_link(link: string) {
+        if (root.is_play_install) {
+            logger.info("open_release_link(): suppressed on a Play install: " + link);
+            return;
+        }
+        Qt.openUrlExternally(link);
+    }
+
+    // Routed through the same policy gate as the buttons, so a future caller
+    // cannot reintroduce an off-Play download link on a Play install.
     function open_visit_url() {
+        if (root.is_play_install) {
+            root.open_play_store_url();
+            return;
+        }
         if (root.visit_url && root.visit_url.length > 0) {
             Qt.openUrlExternally(root.visit_url);
         }
@@ -249,7 +308,7 @@ ApplicationWindow {
                                     background: null
 
                                     onLinkActivated: function(link) {
-                                        Qt.openUrlExternally(link);
+                                        root.open_release_link(link);
                                     }
 
                                     MouseArea {
@@ -262,7 +321,9 @@ ApplicationWindow {
                         }
 
                         Label {
-                            text: "Downloads available at:"
+                            text: root.is_play_install
+                                ? "Update through Google Play:"
+                                : "Downloads available at:"
                             font.pointSize: root.pointSize
                             font.bold: true
                             wrapMode: Text.WordWrap
@@ -270,8 +331,18 @@ ApplicationWindow {
                             Layout.topMargin: 10
                         }
 
+                        // Play-installed copies are told where to update, with
+                        // no off-Play link: see root.is_play_install.
+                        Label {
+                            visible: root.is_play_install
+                            text: "This copy was installed from Google Play. Open the Simsapa page in the Play Store and tap Update there."
+                            font.pointSize: root.pointSize
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
                         Text {
-                            visible: root.visit_url.length > 0
+                            visible: !root.is_play_install && root.visit_url.length > 0
                             text: `<a href="${root.visit_url}">${root.visit_url}</a>`
                             textFormat: Text.RichText
                             font.pointSize: root.pointSize
@@ -279,7 +350,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             color: palette.text
                             onLinkActivated: function(link) {
-                                Qt.openUrlExternally(link);
+                                root.open_release_link(link);
                             }
 
                             MouseArea {
@@ -301,11 +372,26 @@ ApplicationWindow {
 
                     Item { Layout.fillWidth: true }
 
+                    // Play install: the only outbound action is the app's own
+                    // Play listing. Non-Play install: the release page.
                     Button {
+                        visible: root.is_play_install && root.play_store_url.length > 0
+                        text: "Open Google Play"
+                        font.pointSize: root.pointSize
+                        onClicked: {
+                            root.open_play_store_url();
+                            root.close();
+                        }
+                    }
+
+                    Button {
+                        visible: !root.is_play_install
                         text: "Open Link"
                         font.pointSize: root.pointSize
                         onClicked: {
-                            Qt.openUrlExternally(root.visit_url);
+                            // Gated twice on purpose: `visible` above, and the
+                            // policy check inside open_visit_url().
+                            root.open_visit_url();
                             root.close();
                         }
                     }
@@ -429,7 +515,7 @@ ApplicationWindow {
                                     background: null
 
                                     onLinkActivated: function(link) {
-                                        Qt.openUrlExternally(link);
+                                        root.open_release_link(link);
                                     }
 
                                     MouseArea {

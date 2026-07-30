@@ -52,6 +52,10 @@ SIGNING_ENV="${SIGNING_ENV:-android/signing.env}"
 PACKAGE_TARGET="aab"
 DO_CLEAN=0
 DO_SIGN=1
+DO_BETA=0
+# Explicit --sign / --no-sign wins over the default that --debug implies,
+# regardless of argument order. Empty = not given.
+SIGN_OVERRIDE=""
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -64,10 +68,27 @@ Usage: ./build-android.sh [options]
   --aab             Build an Android App Bundle (default; for Google Play)
   --apk             Build an APK instead (for sideloading / local testing)
   --abis "a;b;c"    Override the ABI list (default: arm64-v8a;x86_64;armeabi-v7a)
-  --debug           CMAKE_BUILD_TYPE=Debug (implies --no-sign)
+  --debug           CMAKE_BUILD_TYPE=Debug (defaults to --no-sign)
+  --beta            Build the BETA package (io.github.simsapa.app.beta, label
+                    "Simsapa (beta)", versionName suffixed "-beta"), which
+                    installs alongside the released app instead of replacing
+                    it. With --apk alone this is the NOT-debuggable artifact
+                    for GitHub Releases; combine --debug --sign instead for a
+                    debuggable local build of the same package.
+  --sign            Sign even a --debug build, with the release keystore. The
+                    APK is re-signed after the build (apksigner replaces the
+                    debug-keystore signature), so a debuggable build installs
+                    over a sideloaded release APK instead of being rejected
+                    for a signature mismatch. Order-independent: --debug --sign
+                    and --sign --debug are the same.
   --no-sign         Skip signing; produce an unsigned package
   --clean           Remove the build directory before configuring
   -h, --help        This message
+
+Note: this only helps against packages signed with the SAME key. An install
+that came from Google Play is signed by Play App Signing (Google's key, not
+the upload key in android/signing.env), so no locally built package can ever
+replace it — the Play copy has to be uninstalled first.
 
 Version:
   versionCode comes from android/version.txt — edit that file before a Play
@@ -92,13 +113,41 @@ while [ $# -gt 0 ]; do
         --apk)   PACKAGE_TARGET="apk" ;;
         --abis)  ANDROID_ABIS="$2"; shift ;;
         --debug) ANDROID_BUILD_TYPE="Debug"; DO_SIGN=0 ;;
-        --no-sign) DO_SIGN=0 ;;
+        --beta) DO_BETA=1 ;;
+        --sign) SIGN_OVERRIDE=1 ;;
+        --no-sign) SIGN_OVERRIDE=0 ;;
         --clean) DO_CLEAN=1 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
+
+[ -n "$SIGN_OVERRIDE" ] && DO_SIGN="$SIGN_OVERRIDE"
+
+# A signed Debug build is signed by this script after the build, not by
+# androiddeployqt: Gradle's debug variant already carries a debug-keystore
+# signature, and androiddeployqt's --sign path is only exercised for release
+# variants. apksigner replaces any existing signature, so re-signing the
+# finished artifact is the deterministic route.
+RESIGN_AFTER_BUILD=0
+if [ "$DO_SIGN" -eq 1 ] && [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+    RESIGN_AFTER_BUILD=1
+fi
+
+# The debug build type carries the beta id unconditionally (build.gradle), so
+# --beta only means something for a release-type build.
+if [ "$DO_BETA" -eq 1 ] && [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+    DO_BETA=0
+fi
+
+# The beta package is distributed as an APK from GitHub Releases. An AAB is a
+# Play upload format, and the Play listing is the plain io.github.simsapa.app
+# id — a beta bundle has nowhere to go.
+if [ "$DO_BETA" -eq 1 ] && [ "$PACKAGE_TARGET" = "aab" ]; then
+    echo "ERROR: --beta builds an APK for direct distribution; --aab is for the Play upload of the release package." >&2
+    exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -357,7 +406,7 @@ fi
 
 sign_flag_apk="OFF"
 sign_flag_aab="OFF"
-if [ "$DO_SIGN" -eq 1 ]; then
+if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 0 ]; then
     sign_flag_apk="ON"
     sign_flag_aab="ON"
 fi
@@ -368,7 +417,11 @@ echo "==> ABIs        : $ANDROID_ABIS"
 echo "==> NDK         : $ANDROID_NDK_ROOT"
 echo "==> Build type  : $ANDROID_BUILD_TYPE"
 echo "==> Package     : $PACKAGE_TARGET"
-echo "==> Signing     : $([ "$DO_SIGN" -eq 1 ] && echo "yes, alias '$QT_ANDROID_KEYSTORE_ALIAS'" || echo "no")"
+if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then
+    echo "==> Signing     : yes, alias '$QT_ANDROID_KEYSTORE_ALIAS' (re-signed after the build)"
+else
+    echo "==> Signing     : $([ "$DO_SIGN" -eq 1 ] && echo "yes, alias '$QT_ANDROID_KEYSTORE_ALIAS'" || echo "no")"
+fi
 echo "==> versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
 echo "==> versionName : $ANDROID_VERSION_NAME (from $version_name_source)"
 echo
@@ -390,7 +443,62 @@ else
     unset ORG_GRADLE_PROJECT_simsapaReleaseOnly
     echo "==> Debug variant: enabled"
 fi
+
+# Beta identity for a release-type build. Same mechanism and the same
+# unset-not-false rule as simsapaReleaseOnly above; build.gradle applies the
+# ".beta" applicationIdSuffix and the "Simsapa (beta)" manifest overlay to the
+# release variant only when this property is present.
+if [ "$DO_BETA" -eq 1 ]; then
+    export ORG_GRADLE_PROJECT_simsapaBeta=true
+    echo "==> Package id  : io.github.simsapa.app.beta (beta, not debuggable)"
+else
+    unset ORG_GRADLE_PROJECT_simsapaBeta
+    if [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+        echo "==> Package id  : io.github.simsapa.app.beta (beta, DEBUGGABLE — do not distribute)"
+    else
+        echo "==> Package id  : io.github.simsapa.app"
+    fi
+fi
 echo
+
+# --- package-identity guard -------------------------------------------------
+#
+# The packaging step is driven by ninja, whose `apk` target is up to date as
+# soon as android-build/simsapadhammareader.apk exists and no source changed.
+# The beta identity, though, arrives through a Gradle project property, which
+# is not one of ninja's inputs — so building --beta and then plain --apk in the
+# same directory would skip androiddeployqt entirely and report the PREVIOUS
+# build's artifact, with the wrong applicationId. Observed exactly that: a
+# plain release build reporting io.github.simsapa.app.beta.
+#
+# So remember what identity this directory was last packaged with, and when it
+# changes, delete the packaging outputs to force androiddeployqt and Gradle to
+# run again.
+#
+# This deletes only *outputs*. It must never delete android-build/ itself: the
+# per-ABI ExternalProject copy stamps live outside it and would then consider
+# themselves up to date, leaving the staging directory unpopulated and the tree
+# permanently wedged (use `make android-clean` for that).
+#
+# The signing state is part of the identity as well. `make android-apk-debug`
+# (unsigned) straight after `make android-beta-debug` (release-signed) produces
+# the same package id, so without it ninja stays up to date and the script
+# reports the still-release-signed APK as an unsigned debug build. The re-sign
+# is applied to the artifact in place, so nothing else would reveal it.
+package_identity="$ANDROID_BUILD_TYPE-beta$DO_BETA-sign$DO_SIGN"
+identity_marker="$ANDROID_BUILD_DIR/.simsapa-package-identity"
+
+# A MISSING marker forces the re-package too: an existing build directory from
+# before this guard existed, or one left by a build that was interrupted, has
+# an unknown identity, and "unknown" must not be treated as "matching".
+if [ -d "$ANDROID_BUILD_DIR/android-build" ] \
+       && { [ ! -f "$identity_marker" ] || [ "$(cat "$identity_marker")" != "$package_identity" ]; }; then
+    echo "==> Package identity is $(if [ -f "$identity_marker" ]; then cat "$identity_marker"; else echo unknown; fi), want $package_identity; forcing a re-package"
+    rm -rf "$ANDROID_BUILD_DIR/android-build/build/outputs"
+    rm -f  "$ANDROID_BUILD_DIR/android-build/simsapadhammareader.apk" \
+           "$ANDROID_BUILD_DIR/android-build/simsapadhammareader.aab"
+    echo
+fi
 
 # No -DANDROID_VERSION_* arguments: CMakeLists.txt reads the exported
 # environment instead. They used to be CACHE variables, which are written once
@@ -407,6 +515,11 @@ echo
     -DQT_ANDROID_SIGN_AAB="$sign_flag_aab"
 
 cmake --build "$ANDROID_BUILD_DIR" --target "$PACKAGE_TARGET"
+
+# Recorded only after a successful package, so an interrupted build does not
+# leave the marker claiming an identity that was never produced.
+mkdir -p "$ANDROID_BUILD_DIR"
+printf '%s' "$package_identity" > "$identity_marker"
 
 # ---------------------------------------------------------------------------
 # Locate and verify the artifact
@@ -440,6 +553,41 @@ fi
 
 echo "==> Artifact: $artifact"
 echo "==> Modified: $(date -r "$artifact" '+%Y-%m-%d %H:%M:%S')"
+
+# --- re-sign a Debug build with the release keystore ------------------------
+#
+# Only reached for `--debug --sign`. Purpose: a debuggable APK that carries the
+# SAME signature as a sideloaded release APK, so `adb install -r` replaces it
+# instead of failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE. The debuggable
+# flag lives in the manifest and is untouched by signing.
+#
+# Does NOT let the package replace a Play-installed copy: Play App Signing
+# re-signs uploads with Google's key, which is not the upload key here.
+if [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then
+    if [ "$PACKAGE_TARGET" != "apk" ]; then
+        die "--debug --sign is only supported for --apk (an AAB is signed for upload, and Play re-signs it anyway)."
+    fi
+
+    apksigner_bin="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+    [ -x "$apksigner_bin" ] \
+        || die "apksigner not found under $ANDROID_SDK_ROOT/build-tools — needed for --debug --sign."
+
+    echo "==> Re-signing the debug APK with the release keystore (alias '$QT_ANDROID_KEYSTORE_ALIAS')"
+    "$apksigner_bin" sign \
+        --ks "$QT_ANDROID_KEYSTORE_PATH" \
+        --ks-key-alias "$QT_ANDROID_KEYSTORE_ALIAS" \
+        --ks-pass "pass:$QT_ANDROID_KEYSTORE_STORE_PASS" \
+        --key-pass "pass:$QT_ANDROID_KEYSTORE_KEY_PASS" \
+        "$artifact" \
+        || die "apksigner failed to sign $artifact"
+
+    # Prove it took, rather than trusting the exit status: print the signer the
+    # device will actually see.
+    "$apksigner_bin" verify --print-certs "$artifact" \
+        | grep -E 'Signer #1 certificate (DN|SHA-256 digest)' \
+        | sed 's/^/      /' \
+        || die "apksigner could not verify the signature it just wrote to $artifact"
+fi
 echo "==> ABIs in the package:"
 unzip -l "$artifact" \
     | grep -oE '(base/)?lib/[a-z0-9_-]+/' \

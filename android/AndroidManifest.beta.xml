@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Beta-variant manifest overlay, merged on top of AndroidManifest.xml.
+
+    It is wired to Gradle's *debug* build type (sourceSets.debug in
+    build.gradle) because that is the variant name AGP gives us; "beta" is what
+    the build is for. The beta package installs alongside the released app
+    (applicationIdSuffix ".beta"), so without this overlay the home screen shows
+    two identically named "Simsapa" icons and there is no way to tell which
+    build is being tested.
+
+    The main manifest's android:label is the androiddeployqt INSERT_APP_NAME
+    placeholder, substituted from QT_ANDROID_APP_NAME in CMakeLists.txt.
+    tools:replace overrides the substituted value for this variant only; the
+    release manifest is untouched. (The placeholder is not written out verbatim
+    here because it contains a double hyphen, which XML forbids in a comment.)
+
+    No package= attribute here: AGP takes the id from `namespace` plus the beta
+    suffix, and repeating it would only be another thing to keep in sync.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:label="Simsapa (beta)"
+        tools:replace="android:label" />
+
+</manifest>

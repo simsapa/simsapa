@@ -315,12 +315,26 @@ make android-apk
 # unsigned debug APK
 make android-apk-debug
 
+# the beta package (io.github.simsapa.app.beta) — installs ALONGSIDE the
+# released app, which is the only way to test a local build on a device that
+# carries the Play install (see the beta doc in §7)
+make android-beta-dist          # not debuggable, for GitHub Releases
+make android-beta-debug         # debuggable, local only — never distribute
+make android-beta-debug-install # adb install -r
+make android-beta-debug-run     # launch + stream the log messages
+
 # removes the whole build directory (never delete android-build/ by hand)
 make android-clean
 ```
 
 `build-android.sh` also takes `--aab` / `--apk` / `--abis "a;b;c"` / `--debug` /
-`--no-sign` / `--clean` directly.
+`--beta` / `--sign` / `--no-sign` / `--clean` directly.
+
+Switching a build directory between beta and non-beta is safe: the script
+records the package identity in `.simsapa-package-identity` and forces a
+re-package when it changes. Without that, ninja's `apk` target — which does not
+depend on the Gradle property carrying the beta id — is up to date and the
+script reports the *previous* build's artifact under the wrong applicationId.
 
 ### Signing
 
@@ -633,6 +647,12 @@ a Qt lib.
 - [app-packaging-and-identifiers.md](./app-packaging-and-identifiers.md) — the
   `io.github.simsapa.app` application id vs. the `com.profoundlabs.simsapa` QML
   module URI, which are unrelated and must not be conflated.
+- [android-beta-distribution-and-play-policy.md](./android-beta-distribution-and-play-policy.md)
+  — the `io.github.simsapa.app.beta` package and why it exists (a Play install
+  is signed by Play App Signing and can never be replaced by a local build), the
+  `make android-beta-*` targets, reading log messages with `adb logcat` instead
+  of deploying from Qt Creator, and the in-app update notice's Play-policy
+  gating.
 - [android-file-saving-saf.md](./android-file-saving-saf.md) — scoped storage,
   which is why `WRITE_EXTERNAL_STORAGE` is not needed.
 - `CLAUDE.md` § *Android "isn't 16 KB compatible" warning* — that dialog is

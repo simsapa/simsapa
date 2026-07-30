@@ -431,6 +431,14 @@ Item {
         return 0;
     }
 
+    function is_installed_from_play_store(): bool {
+        return false;
+    }
+
+    function get_play_store_url(): string {
+        return 'market://details?id=io.github.simsapa.app';
+    }
+
     function get_mobile_extra_top_margin(): int {
         return 0;
     }

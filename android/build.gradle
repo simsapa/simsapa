@@ -103,6 +103,31 @@ android {
             assets.srcDirs = ['assets']
             jniLibs.srcDirs = ['libs']
        }
+
+        // Beta identity for the launcher: the "Simsapa (beta)" label overlay
+        // (AndroidManifest.beta.xml) and the badged icon set (res-beta/,
+        // regenerate with scripts/generate_beta_app_icons.sh). The beta package
+        // installs alongside the released app, so without both it is
+        // indistinguishable on the home screen.
+        //
+        // res-beta/ is added *in addition to* the main res dirs, not instead of
+        // them: a variant source set takes priority over main for same-named
+        // resources, so res-beta/ overrides the ic_launcher* mipmaps and
+        // everything else (values/, xml/) still comes from res/.
+        //
+        // Always for the debug type; for the release type only when building a
+        // beta, otherwise the shipped app would be labelled and badged "beta".
+        debug {
+            manifest.srcFile 'AndroidManifest.beta.xml'
+            res.srcDirs += ['res-beta']
+        }
+
+        if (project.hasProperty("simsapaBeta")) {
+            release {
+                manifest.srcFile 'AndroidManifest.beta.xml'
+                res.srcDirs += ['res-beta']
+            }
+        }
     }
 
     tasks.withType(JavaCompile) {
@@ -145,6 +170,69 @@ android {
         // See docs/android-multi-abi-and-chromeos.md.
         targetSdkVersion 36
         ndk.abiFilters = qtTargetAbiList.split(",")
+    }
+
+    buildTypes {
+        // The BETA package id, io.github.simsapa.app.beta, is produced by two
+        // different variants:
+        //
+        //   make android-beta-debug — Gradle's debug type, debuggable, for
+        //       local testing with adb logcat. NEVER distribute this: a
+        //       debuggable package lets anything with adb access read its
+        //       private data and attach a debugger.
+        //   make android-beta-dist  — the release type plus the simsapaBeta
+        //       property, NOT debuggable, for GitHub Releases.
+        //
+        // Both carry the same id, so one replaces the other on a device and a
+        // developer never ends up with two betas installed. They are told apart
+        // by versionName ("-beta" vs "-beta-debug") and by whether the package
+        // is debuggable.
+        //
+        // Gradle build types cannot simply be renamed here: androiddeployqt
+        // invokes assembleDebug or assembleRelease according to
+        // CMAKE_BUILD_TYPE, so a third build type would never be built. The
+        // beta identity is therefore applied to the release type on demand, via
+        // the same ORG_GRADLE_PROJECT_* mechanism as simsapaReleaseOnly below.
+        release {
+            if (project.hasProperty("simsapaBeta")) {
+                applicationIdSuffix ".beta"
+                versionNameSuffix "-beta"
+            }
+        }
+
+        debug {
+            // Beta builds install ALONGSIDE the released app instead of
+            // replacing it.
+            //
+            // Why this is necessary rather than merely convenient: a copy
+            // installed from Google Play is signed by Play App Signing, i.e.
+            // Google's key — not the upload key in android/signing.env. Android
+            // has no key-swap path, so a locally built package can never
+            // replace a Play install, whatever key it is signed with. Without a
+            // distinct id the only way to test a local build on a device that
+            // has the Play (or internal-testing) build is to uninstall that
+            // build first, which wipes its app-private data — including the
+            // multi-hundred-MB downloaded appdata.
+            //
+            // applicationId is not set explicitly anywhere; it defaults to
+            // `namespace` (androidPackageName, from the generated
+            // gradle.properties), and this suffix is appended to it. The
+            // manifest's package= attribute is ignored by AGP 8 for this
+            // purpose — it is kept only because androiddeployqt reads it.
+            //
+            // The FileProvider authority is declared as
+            // "${applicationId}.qtprovider" in android/AndroidManifest.xml, so
+            // it follows the suffix automatically and the two installs do not
+            // collide on it. The data directory follows the package name for
+            // free (/data/user/0/io.github.simsapa.app.beta/), which is the
+            // whole point — but it also means the beta install starts empty
+            // and runs first-time asset setup of its own.
+            //
+            // Release builds are untouched: the uploaded artifact keeps the
+            // plain io.github.simsapa.app id.
+            applicationIdSuffix ".beta"
+            versionNameSuffix "-beta-debug"
+        }
     }
 }
 

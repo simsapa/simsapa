@@ -304,6 +304,32 @@ Notable feature docs:
   ExternalProject copy stamps then consider themselves up to date and never
   repopulate the staging dir — use `make android-clean`), and the `aapt2 dump
   badging` / Play device-catalog verification steps.
+- [Android beta package, on-device debugging, and the Play update policy](./docs/android-beta-distribution-and-play-policy.md) —
+  how to get a local build onto a phone that already has the released app, and
+  what the in-app update notice is allowed to offer. Starts from the fact that
+  forces everything else: a **Play install is signed by Play App Signing**
+  (Google's key, `fdf35925…`, not our upload key `fef4991a…`), Android has no
+  key-swap path, so **no local build can ever replace it** — and Play does *not*
+  rename the package for a testing track (the id really is
+  `io.github.simsapa.app`; what differs is the split install and
+  `installerPackageName=com.android.vending`). Hence the **beta package**
+  `io.github.simsapa.app.beta` / "Simsapa (beta)", which installs alongside it:
+  the two variants (`make android-beta-dist`, not debuggable, for GitHub
+  Releases vs. `make android-beta-debug`, debuggable, **never** distributed),
+  why the dist beta is the *release* build type plus an
+  `ORG_GRADLE_PROJECT_simsapaBeta` property (androiddeployqt only ever invokes
+  `assembleDebug`/`assembleRelease`, so a third build type would never build),
+  the `--sign` post-build `apksigner` re-sign, and the
+  **`.simsapa-package-identity` guard** — ninja's `apk` target does not depend on
+  a Gradle property, so switching beta↔non-beta in one build directory silently
+  reported the *previous* artifact until the script learned to force a
+  re-package. Also the `adb logcat` tag set (`simsapa` for the Rust backend,
+  `Qt`/`QtCore`/`QtQml` for Qt and the QML `Logger`) and why it filters by tag
+  rather than pid, and the **Play update-policy gating**: an app distributed
+  through Play must update only through Play, so
+  `SuttaBridge.is_installed_from_play_store()` (installer package, a property of
+  the *install*, not the build) switches `UpdateNotificationDialog` between a
+  `market://` button and the usual release-page link.
 - [Gloss / Prompts session history](./docs/gloss-prompts-history.md) — the shared,
   `item_type`-parameterised history feature for the **Gloss** and **Prompts** tabs
   (table `gloss_prompts_history`, the shared bridge fns + signals, the
@@ -890,8 +916,28 @@ Use this path for any tests or experimental scripts that need to query the actua
   (Play requires a strictly increasing versionCode), then run it. The
   versionName comes from the `[package]` version in `bridges/Cargo.toml`.
   - Signed APK for sideloading: `make android-apk`
-  - Unsigned debug APK: `make android-apk-debug`
+  - Unsigned debug APK: `make android-apk-debug` — note the debug variant now
+    carries the **beta** package id (`io.github.simsapa.app.beta`), so this is
+    an unsigned beta; `make android-beta-debug` is the signed, installable one.
   - Clean only / clean rebuild: `make android-clean` / `make android-rebuild`
+  - **Beta package** (`io.github.simsapa.app.beta`, label "Simsapa (beta)") —
+    installs *alongside* the released app, because a copy installed from Google
+    Play is signed by Play App Signing and **cannot** be replaced by any local
+    build, whatever key it is signed with:
+    - `make android-beta-dist` — not debuggable, release-signed, copied to
+      `dist/Simsapa-<version>-beta.apk` for GitHub Releases.
+    - `make android-beta-debug` — debuggable, release-signed, for local
+      testing. **Never distribute it.**
+    - `make android-beta-debug-install` — `adb install -r`.
+    - `make android-beta-debug-run` — launches it and streams the log messages
+      (Rust `simsapa` tag + Qt/QML tags) to the console; this is the same thing
+      Qt Creator's "Application Output" pane shows.
+
+    Switching a build directory between beta and non-beta is safe: the script
+    keys off `.simsapa-package-identity` and forces a re-package, because ninja
+    would otherwise skip androiddeployqt and report the previous artifact.
+    See
+    [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
   - `targetSdkVersion 36` / `minSdkVersion 27`. targetSdk 36 enforces
     edge-to-edge and predictive back; the app opts out of the latter with
     `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
