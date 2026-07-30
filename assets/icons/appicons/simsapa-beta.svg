@@ -28,16 +28,17 @@
      inkscape:pageopacity="0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#505050"
-     inkscape:zoom="0.87525178"
-     inkscape:cx="162.8103"
-     inkscape:cy="333.04702"
+     inkscape:zoom="0.61889647"
+     inkscape:cx="155.1148"
+     inkscape:cy="277.10612"
      inkscape:window-width="1920"
      inkscape:window-height="1056"
      inkscape:window-x="0"
      inkscape:window-y="24"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer1"
-     showguides="true">
+     showguides="true"
+     showgrid="false">
     <sodipodi:guide
        position="345.27181,48.57436"
        orientation="0,-1"
@@ -47,6 +48,26 @@
        position="634.59726,310.02762"
        orientation="1,0"
        id="guide2"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="538.27111,138.35814"
+       orientation="1,0"
+       id="guide3"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="538.27111,138.35814"
+       orientation="0,-1"
+       id="guide4"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="542.27112,159.46716"
+       orientation="0,-1"
+       id="guide5"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="542.27112,159.46716"
+       orientation="1,0"
+       id="guide6"
        inkscape:locked="false" />
   </sodipodi:namedview>
   <g
@@ -67,18 +88,18 @@
     <circle
        style="fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:10;stroke-dasharray:none;stroke-opacity:1"
        id="path2"
-       cx="542.27112"
-       cy="541.76617"
-       r="87.326157" />
+       cx="544.27112"
+       cy="533.19952"
+       r="77.325996" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:180px;line-height:120%;font-family:Alegreya;-inkscape-font-specification:Alegreya;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;direction:ltr;fill:#000000;fill-opacity:1;stroke-width:0"
-       x="488.27109"
-       y="598.37634"
+       style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:160px;line-height:120%;font-family:Alegreya;-inkscape-font-specification:'Alegreya, Italic';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;direction:ltr;fill:#000000;fill-opacity:1;stroke-width:0"
+       x="504.1911"
+       y="594.38849"
        id="text1"><tspan
          sodipodi:role="line"
          id="tspan1"
-         x="488.27109"
-         y="598.37634">B</tspan></text>
+         x="504.1911"
+         y="594.38849">β</tspan></text>
   </g>
 </svg>
