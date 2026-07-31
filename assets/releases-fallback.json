@@ -2,6 +2,13 @@
   "application": {
     "releases": [
       {
+        "date": "2026-07-31T09:30:00",
+        "description": "New app version\n",
+        "github_repo": "simsapa/simsapa",
+        "title": "New app version",
+        "version_tag": "v1.0.0-alpha.4"
+      },
+      {
         "date": "2026-07-24T18:00:00",
         "description": "New app version\n",
         "github_repo": "simsapa/simsapa",
