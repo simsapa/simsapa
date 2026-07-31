@@ -200,6 +200,23 @@ Chromium under ARCVM.
 A Qt upgrade changes all of these surfaces at once, so this is the moment to do
 the runs that were skipped.
 
+### 2.7 Re-examine `useLegacyPackaging`
+
+`android/build.gradle:59` keeps `packagingOptions.jniLibs.useLegacyPackaging
+true` — native libraries stored compressed and extracted to disk at install
+time. The decision to keep it, with the full trade-off analysis, is in
+[android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md)
+§ *`useLegacyPackaging` stays `true`*: the only benefit on offer is on-device
+footprint, no current constraint is tight, and flipping it changes the loading
+path of every native library.
+
+It belongs with the upgrade for two reasons: the line is part of the
+Qt-provided `build.gradle` template that has to be re-merged anyway, and the
+"does every library still load on all three ABIs?" question it raises is the
+same runtime validation §2.6 already demands. If it is flipped, measure both
+ways — AAB/APK size, on-device install footprint, `zipalign -c -P 16`, and
+`readelf -lW` `p_align` for the app `.so` and a Qt library.
+
 ---
 
 ## 3. Reasons to upgrade

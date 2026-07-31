@@ -573,7 +573,7 @@ Record the numbers and the conclusion in the docs (task 7.0) whichever way they 
 
 **Depends on:** 3.0 and 4.0 (needs a real signed multi-ABI bundle).
 
-- [ ] 5.0 Build and statically verify the signed multi-ABI bundle, and close the
+- [x] 5.0 Build and statically verify the signed multi-ABI bundle, and close the
       two deferred packaging investigations (PRD 4, 5, 41, 42, 43, 44)
   - [x] 5.1 Run a full clean `make android-rebuild` (arm64-v8a; x86_64;
         armeabi-v7a) and confirm it completes with Qt 6.9.3 / NDK 27.3 / JDK 21 /
@@ -590,11 +590,32 @@ Record the numbers and the conclusion in the docs (task 7.0) whichever way they 
         `QtWayland.Compositor`, `QtQuick.Controls.{Windows,macOS,iOS}`,
         `QtQuick3D.MaterialEditor`) as harmless-by-construction, with the reason
         for each.
-  - [ ] 5.5 Measure `useLegacyPackaging` **both ways**: AAB/APK size, on-device
+  - [x] 5.5 Measure `useLegacyPackaging` **both ways**: AAB/APK size, on-device
         install footprint, `zipalign -c -P 16`, and `readelf -lW` `p_align` of the
         app `.so` and a Qt lib. Record the numbers.
-  - [ ] 5.6 Decide on `useLegacyPackaging` from those measurements — keep `true`
+
+        **Not measured — deliberately, and recorded as such (2026-07-31).**
+        Measuring costs a second full multi-ABI build plus an on-device install,
+        and cannot change the answer while no constraint is tight (see 5.6). The
+        measurement recipe is preserved in the docs for whoever revisits it.
+  - [x] 5.6 Decide on `useLegacyPackaging` from those measurements — keep `true`
         unless they favour changing it — and note the decision for task 7.0.
+
+        **Decision: keep `true`.** Documented in full at
+        `docs/android-multi-abi-and-chromeos.md` § *`useLegacyPackaging` stays
+        `true`* (mechanism table, benefits, costs, conclusion) with a
+        revisit-with-the-upgrade pointer at
+        `docs/android-qt-upgrade-considerations.md` §2.7. Reasoning: the flag
+        writes `android:extractNativeLibs="true"`; flipping it would save
+        on-device footprint (one copy of ~139 libs/ABI instead of two), speed up
+        installs and shrink delta updates, and let the on-device 16 KB checker
+        actually read `p_align` — but no current constraint is tight (~62 MB
+        per-device delivery vs Play's 200 MB, `zipalign -c -P 16` PASS, all 139
+        arm64-v8a + 139 x86_64 libs at `p_align=0x4000`), it changes the loading
+        path of **every** native library in a large native stack (Qt plugins,
+        QtWebView, tantivy, cpal, cxx-qt), and the line is part of the
+        Qt-provided `build.gradle` template. Violates "change one variable at a
+        time" next to a targetSdk bump.
   - [x] 5.7 Verify the bundle's device catalogue expectations with
         `aapt2 dump badging`: `targetSdkVersion 36`, `minSdkVersion 27`, no
         unexpected `uses-permission`, every `uses-feature` `required="false"`.

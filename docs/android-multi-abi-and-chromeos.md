@@ -698,20 +698,76 @@ shipping official ProGuard keep-rules for its Android port.
 
 ### `useLegacyPackaging` stays `true`
 
-`packagingOptions.jniLibs.useLegacyPackaging true` extracts native libraries from
-the APK at install time rather than loading them compressed and page-mapped.
+`packagingOptions.jniLibs.useLegacyPackaging true` (`android/build.gradle:59`,
+a **Qt-provided template line**, not ours) writes
+`android:extractNativeLibs="true"` into the merged manifest. It controls exactly
+one thing: how the ~139 `.so` files per ABI are stored in the package and how the
+dynamic loader reaches them.
 
-It has **not** been measured both ways, and is deliberately left alone. The
-motivation for flipping it would be install footprint, but the 2026-07-28 build
-already satisfies every constraint that matters: per-device download is ~62 MB
-against Play's 200 MB limit, `zipalign -c -P 16` passes, and **all** 139
-arm64-v8a and 139 x86_64 libraries carry `p_align=0x4000`. Changing it would
-alter the on-device layout of every native library for no identified benefit,
-which is not a change worth making next to a targetSdk bump.
+| | `true` (current, "legacy") | `false` (AGP's default for new projects since 4.2) |
+|---|---|---|
+| storage in the APK | **compressed** (`Defl:N`) | **uncompressed**, page-aligned |
+| at install time | extracted to `/data/app/…/lib/<abi>/` | nothing extracted |
+| at load time | `dlopen` of a real file on disk | `mmap`ed straight out of the APK zip |
+| copies on device | two (retained APK + extracted `lib/`) | one |
+| minimum API | any | 23 (we are at 27, so not a constraint) |
 
-If it is ever revisited, measure both ways: AAB/APK size, on-device install
-footprint, `zipalign -c -P 16`, and `readelf -lW` `p_align` for the app `.so` and
-a Qt lib.
+**What flipping it to `false` would buy.**
+
+- **On-device footprint.** This is the only argument with real weight. Legacy
+  keeps the libraries twice — compressed inside the retained APK *and*
+  uncompressed in the extracted `lib/` directory. `false` keeps one copy. With
+  ~139 Qt/Rust libraries per ABI the saving is roughly the size of the extracted
+  `lib/` directory.
+- **Faster installs, smaller delta updates.** No extraction pass, and
+  uncompressed libraries diff far better between versions than deflated ones, so
+  Play's incremental update patches shrink.
+- **The 16 KB checker could actually verify the libraries.** The
+  "This app isn't 16 KB compatible … Unknown error" dialog (see `AGENTS.md`
+  § *Android "isn't 16 KB compatible" warning*) lists libraries **because** they
+  are stored compressed and the on-device checker cannot inspect them.
+  Uncompressed + aligned would let it read the real `p_align`. Cosmetic — the
+  dialog is already known to be gated on the install path, not the contents —
+  but it would stop being a recurring question.
+
+**What it would cost.**
+
+- **A bigger APK/AAB**, since the libraries are no longer deflated. Play
+  re-compresses for delivery so the *download* penalty is usually small — but
+  "usually" is unmeasured here, and that is precisely the number that would have
+  to be taken.
+- **It changes the on-device layout of every native library** in an app with an
+  unusually large native surface: Qt platform and QML plugins, QtWebView,
+  tantivy, the pure-Rust `cpal` audio stack, the cxx-qt bridge. Anything that
+  resolves a library by filesystem path rather than by name breaks. Qt 6 loads by
+  name and should be unaffected — but "should be" has not been tested on this
+  app, on three ABIs.
+- **`android/build.gradle` is a Qt-provided template** (the same fact that keeps
+  AGP pinned at 8.6.0). Diverging from it adds another line to re-merge on every
+  Qt upgrade.
+- **No constraint is currently being violated**, so there is no problem to fix —
+  see the numbers below.
+
+**Conclusion: keep `true`.** The 2026-07-28 build already satisfies every
+constraint that matters: per-device download is ~62 MB against Play's 200 MB
+limit, `zipalign -c -P 16` passes, and **all** 139 arm64-v8a and 139 x86_64
+libraries carry `p_align=0x4000`. The only benefit on offer is install
+footprint, which nobody has reported as a problem, weighed against changing the
+loading path of every native library in the app. That is not a change worth
+making next to a targetSdk bump — it violates the project's own **change one
+variable at a time** rule.
+
+**It has deliberately not been measured both ways.** The decision above is made
+on the reasoning, not on numbers: measuring costs a second full multi-ABI build
+plus an on-device install, and would not change the answer while no constraint is
+tight. Recorded so the omission is not mistaken for an oversight.
+
+**Revisit it with the Qt upgrade**, when `build.gradle` has to be re-merged
+anyway and the native stack is being re-validated regardless. At that point take
+the measurements both ways: AAB/APK size, on-device install footprint (`du` of
+the installed app), `zipalign -c -P 16`, and `readelf -lW` `p_align` for the app
+`.so` and a Qt library. Flip it only if the footprint saving is material *and*
+all three ABIs still load.
 
 ---
 
