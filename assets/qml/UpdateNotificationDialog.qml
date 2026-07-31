@@ -368,7 +368,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
 
                     Item { Layout.fillWidth: true }
 
@@ -552,7 +552,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
 
                     Item { Layout.fillWidth: true }
 
@@ -639,7 +639,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
 
                     Item { Layout.fillWidth: true }
 
@@ -717,7 +717,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
 
                     Item { Layout.fillWidth: true }
 
@@ -777,7 +777,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
 
                     Item { Layout.fillWidth: true }
 
@@ -886,7 +886,7 @@ ApplicationWindow {
                 GridLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: root.is_mobile ? 60 : 10
+                    Layout.bottomMargin: 10
                     columns: 2
                     rowSpacing: 6
                     columnSpacing: 6

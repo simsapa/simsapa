@@ -500,6 +500,10 @@ Item {
         return '{}';
     }
 
+    function apply_theme_link_colors() {
+        console.log('apply_theme_link_colors');
+    }
+
     function get_ai_models_auto_retry(): bool {
         return false;
     }

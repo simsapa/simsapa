@@ -383,7 +383,7 @@ Gradle's environment mapping instead — `ORG_GRADLE_PROJECT_simsapaReleaseOnly`
 
 **Depends on:** nothing (independent of 1.0/2.0).
 
-- [ ] 3.0 Move the Android build to targetSdk 36 and stop building the debug
+- [x] 3.0 Move the Android build to targetSdk 36 and stop building the debug
       variant during release builds (PRD 1, 2, 3, 20, 35, 36, 37, 38, 39)
   - [x] 3.1 Set `targetSdkVersion 36` in `android/build.gradle` `defaultConfig`,
         with a comment recording the three enforced API 36 behaviours
@@ -500,7 +500,7 @@ Creator build reuses the last configure; out of scope, but say so.
 
 **Depends on:** nothing.
 
-- [ ] 4.0 Make the version values flow from `android/version.txt` and
+- [x] 4.0 Make the version values flow from `android/version.txt` and
       `bridges/Cargo.toml` through the environment into CMake (PRD 28–34)
   - [x] 4.1 Create `android/version.txt` with the comment header and the single
         value `3` (Play currently has 2).
@@ -697,7 +697,7 @@ other than the top needs its own knob (PRD 14).
   - [x] 6.5 Settings → Extra Top Margin: with `0`, the gap is a single inset; raise
         it and confirm the space appears immediately and survives a restart;
         confirm the system-inset readout updates on rotation.
-  - [ ] 6.6 Upgrade path: install over an existing install **with** a custom margin
+  - [x] 6.6 Upgrade path: install over an existing install **with** a custom margin
         (layout must be unchanged) and over one **without** (the doubled gap must be
         gone).
   - [x] 6.7 Audit the cases Qt does not pad (PRD 15), working from the list task
@@ -721,7 +721,7 @@ other than the top needs its own knob (PRD 14).
         rotate; confirm nothing depends on a fixed orientation. Do **not** add
         `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` unless a concrete problem
         appears (PRD 25).
-  - [ ] 6.12 Exercise the remaining ABI-sensitive paths: first-run asset download,
+  - [x] 6.12 Exercise the remaining ABI-sensitive paths: first-run asset download,
         fulltext search (tantivy), dictionary lookup, chanting record/playback,
         file save via SAF.
   - [ ] 6.13 If a 32-bit ARM device is available, repeat 6.1, 6.8 and 6.12 on it.
@@ -788,7 +788,7 @@ investigation.
 
 **Depends on:** 5.0 and 6.0 (their results are what gets written down).
 
-- [ ] 7.0 Documentation, recorded decisions, and cleanup (PRD 23, 26, 27, 40,
+- [x] 7.0 Documentation, recorded decisions, and cleanup (PRD 23, 26, 27, 40,
       45, 46, 47, 48, and the closed decisions 49–52)
   - [x] 7.1 Write `docs/android-edge-to-edge-and-safe-areas.md`: Qt's
         `ApplicationWindow` padding supplies the safe area
@@ -841,7 +841,7 @@ investigation.
         `docs/android-beta-distribution-and-play-policy.md`, plus index entries
         in `AGENTS.md`, `PROJECT_MAP.md` and
         `docs/android-multi-abi-and-chromeos.md`. See section 8.0.
-  - [ ] 7.10 Final check: `make test` passes, and the release procedure works
+  - [x] 7.10 Final check: `make test` passes, and the release procedure works
         end-to-end from a clean tree — edit `android/version.txt`, `make
         android-aab`, verify with `aapt2 dump badging`.
 
@@ -962,3 +962,118 @@ do with debuggable-vs-release. Uninstalling would have wiped the downloaded
       installer values (`com.android.vending` for the Play copy, `null` for the
       sideloaded beta), but the branch itself is untested. Check it at the next
       release that offers an update.
+
+---
+
+### 9.0 — visual-verification fixes from the 6.2 per-window sweep
+
+**Added 2026-07-30**, from screenshots of the beta build on the Android 16 phone
+while working through 6.2.
+
+- [x] 9.1 **Rich-text link colour was unreadable in light mode** — Dictionaries
+      window, AI Models' "API Keys" / "Pricing", Search Help, and in fact every
+      `Text { textFormat: Text.RichText }` with an `<a href>` in the app.
+
+      **Two wrong diagnoses were tried first; both are recorded so they are not
+      tried again.** (a) "`palette.link` comes from the platform under a
+      *system* theme" — there **is no** system theme: `ThemeName` is
+      `Light | Dark` only, and `theme_colors_light.json` sets `link` to
+      `#0000FF`. (b) "set `Text.linkColor` instead" — that had no effect at all,
+      which is what forced reading Qt's source.
+
+      **Actual cause**, from Qt 6.9.3:
+      - `QTextHtmlParser` gives every `<a href>` an injected CSS declaration
+        `color: palette(link)` (`qtexthtmlparser.cpp:2062-2065`), so the anchor
+        ends up with an **explicit** `charFormat` foreground.
+      - That declaration is resolved by `QCss::ValueExtractor`, constructed at
+        `qtexthtmlparser.cpp:1182` **without a palette argument**, so it falls
+        back to a default-constructed `QPalette` — i.e. **`QGuiApplication`'s**.
+        `ThemeHelper.apply()` only ever assigns each *window's* QML palette, so
+        the theme's `link` value was never consulted.
+      - `Text.linkColor` is applied by `QQuickTextNodeEngine` only when the char
+        format has **no** foreground of its own
+        (`qquicktextnodeengine.cpp:1098-1101`) — and the injected declaration
+        gives it one. So `linkColor` is dead for `<a href>` in `RichText`.
+
+      **Fix:** `set_app_palette_link_colors()` in `cpp/system_palette.cpp` sets
+      the `Link` / `LinkVisited` roles (all three colour groups) on the
+      application palette. One place, every window, including HTML that the Rust
+      side generates (the AI-provider descriptions). Only those two roles are
+      written, to keep the blast radius small.
+
+      **The timing is load-bearing, and that took a second pass to get right.**
+      Wiring it only into `ThemeHelper.apply()` fixed `DictionariesWindow` (a
+      separate `ApplicationWindow` created later by
+      `WindowManager::create_dictionaries_window()`) but **not** `SearchHelpWindow`
+      or `DhammaTextSourcesDialog` — those are **inline children of
+      `SuttaSearchWindow`** (`SuttaSearchWindow.qml:2282`, `:2287`), so their HTML
+      is parsed during the engine load, and the anchor colour is baked into the
+      char format at that moment. A palette fixed moments later does not
+      retroactively recolour them. So the colours are now applied in `gui.cpp`
+      immediately after `QApplication` is constructed and **before** the engine
+      loads, from a standalone settings read (`theme_link_colors_c()` in
+      `backend/src/lib.rs`, reusing the `render_settings()` cache that
+      `render_loop_basic_c()` already uses). The `ThemeHelper.apply()` call is
+      kept for windows created after a runtime theme change.
+
+      **Known limitation:** changing the theme at runtime does not recolour links
+      in already-parsed rich text — those windows need an app restart. Same root
+      cause (the colour is baked at parse time), not worth extra machinery.
+- [x] 9.2 **"Links:" was black in dark mode** (AI Models). Unrelated to 9.1: the
+      provider `description` `Text` set no `color`, and `Text` defaults to black
+      rather than `palette.text` — invisible against the dark window. Set
+      `color: palette.text`.
+- [x] 9.3 **Bottom button area too tall on mobile** (Sutta Languages, Library,
+      Chanting Practice, About; Settings was correct because it never had the
+      extra). Every one of these was `Layout.bottomMargin: root.is_mobile ? 60 :
+      N` (or a bare `60`) with the comment "Extra space on mobile to avoid the
+      bottom bar covering the button" — the **bottom** twin of the doubled top
+      gap fixed in 1.0/2.0. All 15 files with the idiom root an
+      `ApplicationWindow`, which Qt already pads by the bottom safe-area inset
+      (`qquickapplicationwindow.cpp:802-805`), so the 60 was additive. Dropped
+      to the desktop value throughout, and the stale comments removed. Files:
+      `AboutDialog`, `ChantingPracticeWindow`, `DatabaseValidationDialog`,
+      `DhammaTextSourcesDialog`, `DictionariesWindow`, `DownloadAppdataWindow`,
+      `DownloadProgressFrame` (a `Frame`, but only ever inside such a window),
+      `KeybindingCaptureDialog`, `LibraryWindow`, `ReferenceSearchInfoDialog`,
+      `SearchHelpWindow`, `SuttaLanguagesWindow`, `TopicIndexInfoDialog`,
+      `TopicIndexWindow`, `UpdateNotificationDialog`.
+- [x] 9.4 **System Prompts window did not collapse to one column in portrait** —
+      its `SplitView` was hardcoded `orientation: Qt.Horizontal`, so a portrait
+      phone showed a squeezed list beside a ~10-character-wide editor. Adopted
+      `ModelsDialog`'s rule verbatim (`is_wide` / `is_tall`, orientation
+      switched on `is_wide`, `SplitView.preferredHeight`/`minimumHeight` on the
+      list pane, `SplitView.fillHeight` on the editor pane) so the list moves
+      **above** the editor when narrow.
+- [x] 9.6 **Four windows bypassed the safe area entirely** — found when 9.3's
+      smaller bottom margin exposed it: the Database Validation window's lowest
+      buttons ended up *under* the navigation bar. `AnkiExportDialog`,
+      `DatabaseValidationDialog`, `SystemPromptsDialog` and `ModelsDialog` sized
+      their root content item from the **window**:
+
+      ```qml
+      Item {
+          x: 10
+          y: 10 + root.extra_top_margin
+          implicitWidth: root.width - 20
+          implicitHeight: root.height - 20 - root.extra_top_margin
+      ```
+
+      A direct child of an `ApplicationWindow` is reparented to `contentItem`,
+      which Qt has **already** inset by the safe-area margins — its height is
+      `root.height - topPadding - bottomPadding`. Sizing from `root.height`
+      therefore overflows the bottom by `topPadding + bottomPadding - 10`
+      (≈ 70 px on the test phone), regardless of `extra_top_margin`. The old
+      `is_mobile ? 60` bottom margin had been masking almost exactly that
+      overflow, which is why removing it made the defect visible rather than
+      causing it. All four now use `anchors.fill: parent` +
+      `anchors.margins: 10` + `anchors.topMargin: 10 + root.extra_top_margin`.
+
+      Every other window was checked and is sound: they root their content in a
+      `Frame`/`StackLayout` with `anchors.fill: parent`, so they were always
+      inside the padding. **Rule for the doc:** a window's root content item
+      must be anchored to its parent, never sized from `root.width`/
+      `root.height` — that is the third way to defeat Qt's safe-area handling,
+      alongside assigning `topPadding` on an `ApplicationWindow` root and the
+      `Popup` family getting no padding at all.
+- [x] 9.5 Re-check all four on device against a new beta build.

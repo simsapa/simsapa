@@ -22,6 +22,11 @@ ApplicationWindow {
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
 
+    // Same responsive rule as ModelsDialog: a portrait phone is too narrow for
+    // two side-by-side columns, so the list moves above the editor.
+    readonly property bool is_wide: is_desktop ? (root.width > 650) : (root.width > 800)
+    readonly property bool is_tall: root.height > 810
+
     readonly property int pointSize: is_mobile? 14 : 12
     required property int extra_top_margin
 
@@ -97,10 +102,13 @@ ApplicationWindow {
     ListModel { id: prompt_names_model }
 
     Item {
-        x: 10
-        y: 10 + root.extra_top_margin
-        implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.extra_top_margin
+        // Anchor to the window's contentItem, which Qt has already inset by the
+        // safe-area margins. Sizing from root.width / root.height instead
+        // overflows the content past the navigation bar by exactly the bottom
+        // inset, which is what put the lowest buttons under it.
+        anchors.fill: parent
+        anchors.margins: 10
+        anchors.topMargin: 10 + root.extra_top_margin
 
         ColumnLayout {
             spacing: 10
@@ -123,12 +131,14 @@ ApplicationWindow {
             SplitView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                orientation: Qt.Horizontal
+                orientation: root.is_wide ? Qt.Horizontal : Qt.Vertical
 
-                // Left side - Prompt list
+                // Prompt list — left side when wide, on top when narrow
                 Item {
                     SplitView.preferredWidth: 250
                     SplitView.minimumWidth: 200
+                    SplitView.preferredHeight: root.is_tall ? 240 : 180
+                    SplitView.minimumHeight: 120
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -189,9 +199,10 @@ ApplicationWindow {
                     }
                 }
 
-                // Right side - Prompt editor
+                // Prompt editor — right side when wide, below when narrow
                 Item {
                     SplitView.fillWidth: true
+                    SplitView.fillHeight: true
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -263,7 +274,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
 
                 Button {
-                    text: "OK"
+                    text: "Close"
                     onClicked: root.close()
                 }
             }

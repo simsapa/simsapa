@@ -700,6 +700,7 @@ pub mod qobject {
 
         include!("system_palette.h");
         fn get_system_palette_json() -> QString;
+        fn set_app_palette_link_colors(link: &QString, link_visited: &QString);
 
         include!("utils.h");
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
@@ -1212,6 +1213,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn get_saved_theme(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn apply_theme_link_colors(self: &SuttaBridge);
 
         #[qinvokable]
         fn get_theme(self: &SuttaBridge, theme_name: &QString) -> QString;
@@ -3153,6 +3157,32 @@ impl qobject::SuttaBridge {
 
     pub fn get_saved_theme(&self) -> QString {
         self.get_theme(&self.get_theme_name())
+    }
+
+    /// Push the saved theme's `link` / `linkVisited` colours into the
+    /// *application* palette.
+    ///
+    /// `ThemeHelper.apply()` assigns the theme to each window's QML palette,
+    /// but rich-text `<a href>` anchors are coloured by QTextDocument from
+    /// `QGuiApplication`'s palette instead — and that explicit foreground also
+    /// overrides `Text.linkColor`. Without this the links keep whatever the
+    /// platform's default Link role is (on Android, a pale lavender that is
+    /// unreadable on the light background). See the comment in
+    /// `cpp/system_palette.h` for the Qt source references.
+    pub fn apply_theme_link_colors(&self) {
+        let theme_json = self.get_saved_theme().to_string();
+        let d: serde_json::Value = match serde_json::from_str(&theme_json) {
+            Ok(v) => v,
+            Err(e) => {
+                error(&format!("apply_theme_link_colors(): can't parse theme JSON: {}", e));
+                return;
+            }
+        };
+
+        let link = d["active"]["link"].as_str().unwrap_or("");
+        let link_visited = d["active"]["linkVisited"].as_str().unwrap_or("");
+
+        qobject::set_app_palette_link_colors(&QString::from(link), &QString::from(link_visited));
     }
 
     /// Get theme colors as JSON string

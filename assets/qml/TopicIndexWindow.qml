@@ -249,7 +249,7 @@ ApplicationWindow {
         ColumnLayout {
             anchors.fill: parent
             anchors.topMargin: root.extra_top_margin
-            anchors.bottomMargin: root.is_mobile ? 60 : 0
+            anchors.bottomMargin: 0
             spacing: 0
 
             // Header with Info and Close buttons

@@ -732,7 +732,7 @@ ApplicationWindow {
                 visible: root.is_mobile
                 Layout.fillWidth: true
                 Layout.margins: 10
-                Layout.bottomMargin: 60
+                Layout.bottomMargin: 20
                 spacing: 10
 
                 Button {

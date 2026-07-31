@@ -90,8 +90,7 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 20
-                // Extra space on mobile to avoid the bottom bar covering the button.
-                Layout.bottomMargin: root.is_mobile ? 60 : 20
+                Layout.bottomMargin: 20
 
                 Item { Layout.fillWidth: true }
 

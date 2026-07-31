@@ -59,6 +59,50 @@ inner control. **This is the first thing to check if an inset ever goes
 missing.** Apply extra space as an anchor margin on the window's root layout,
 inside Qt's padding, which is what `extra_top_margin` does.
 
+### Rule 1a — anchor the root content item; never size it from `root.width` / `root.height`
+
+A direct child of an `ApplicationWindow` is reparented to its **`contentItem`**,
+which Qt has already inset: its height is `root.height - topPadding -
+bottomPadding`. Computing a size from the *window* dimensions therefore hands the
+item more space than the content area has, and it overflows the bottom by
+`topPadding + bottomPadding` minus whatever margin was subtracted — about **70 px**
+on a phone with a ~34 dp status bar and a ~48 dp navigation bar. The top looks
+correct (`y` is measured from the already-inset origin), so the symptom is
+one-sided and easy to misread as a missing bottom margin.
+
+```qml
+ApplicationWindow {
+    Item {
+        x: 10
+        y: 10 + root.extra_top_margin
+        implicitWidth: root.width - 20                            // ❌
+        implicitHeight: root.height - 20 - root.extra_top_margin  // ❌ overflows
+    }
+}
+```
+
+```qml
+ApplicationWindow {
+    Item {
+        anchors.fill: parent                                 // ✅ the contentItem
+        anchors.margins: 10
+        anchors.topMargin: 10 + root.extra_top_margin
+    }
+}
+```
+
+`AnkiExportDialog.qml`, `DatabaseValidationDialog.qml`, `SystemPromptsDialog.qml`
+and `ModelsDialog.qml` all had the broken form (fixed 2026-07-30). It went
+unnoticed for a while because those windows also carried a mobile-only
+`Layout.bottomMargin: 60` on their button rows — added back when the app produced
+its own insets — which happened to cancel most of the overflow. Removing that 60
+(now redundant, see §2) is what made the Database Validation window's lowest
+buttons appear *under* the navigation bar. **The 60 was not the fix and its
+removal was not the bug**; the anchoring was.
+
+Every other window roots its content in a `Frame` or `StackLayout` with
+`anchors.fill: parent` and was never affected.
+
 ---
 
 ## 2. Why the default had to become 0 — the doubled-gap diagnosis

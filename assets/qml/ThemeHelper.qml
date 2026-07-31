@@ -12,6 +12,14 @@ QtObject {
 
     function apply() {
         is_dark = SuttaBridge.get_theme_name() === "dark";
+
+        // Rich-text <a href> links are coloured by QTextDocument from the
+        // *application* palette, not from the window palette assigned below,
+        // and that also overrides Text.linkColor. This is the only thing that
+        // makes them follow the theme. Idempotent, so calling it from every
+        // window is fine.
+        SuttaBridge.apply_theme_link_colors();
+
         var theme_json = SuttaBridge.get_saved_theme();
         if (theme_json.length === 0 || theme_json === "{}") {
             logger.error("Couldn't get theme JSON.")

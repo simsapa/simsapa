@@ -555,10 +555,13 @@ ApplicationWindow {
 
 
     Item {
-        x: 10
-        y: 10 + root.extra_top_margin
-        implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.extra_top_margin
+        // Anchor to the window's contentItem, which Qt has already inset by the
+        // safe-area margins. Sizing from root.width / root.height instead
+        // overflows the content past the navigation bar by exactly the bottom
+        // inset, which is what put the lowest buttons under it.
+        anchors.fill: parent
+        anchors.margins: 10
+        anchors.topMargin: 10 + root.extra_top_margin
 
         ColumnLayout {
             spacing: 15
@@ -705,8 +708,7 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 10
                 Layout.fillWidth: true
-                // Extra space on mobile to avoid the bottom bar covering the buttons
-                Layout.bottomMargin: root.is_mobile ? 60 : 5
+                Layout.bottomMargin: 5
 
                 Button {
                     text: root.is_rebuilding ? "Rebuilding Search Index…" : "Rebuild Search Index"

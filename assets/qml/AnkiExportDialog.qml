@@ -129,10 +129,13 @@ ApplicationWindow {
     ListModel { id: template_names_model }
 
     Item {
-        x: 10
-        y: 10 + root.extra_top_margin
-        implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.extra_top_margin
+        // Anchor to the window's contentItem, which Qt has already inset by the
+        // safe-area margins. Sizing from root.width / root.height instead
+        // overflows the content past the navigation bar by exactly the bottom
+        // inset, which is what put the lowest buttons under it.
+        anchors.fill: parent
+        anchors.margins: 10
+        anchors.topMargin: 10 + root.extra_top_margin
 
         ColumnLayout {
             spacing: root.is_wide ? 10 : 6
@@ -409,7 +412,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
 
                 Button {
-                    text: "OK"
+                    text: "Close"
                     onClicked: root.close()
                 }
             }

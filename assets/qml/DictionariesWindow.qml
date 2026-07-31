@@ -371,7 +371,6 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             color: palette.text
-                            linkColor: palette.link
                             Layout.alignment: Qt.AlignHCenter
                             Layout.topMargin: 30
                             onLinkActivated: function(link) {
@@ -558,7 +557,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 
@@ -703,7 +702,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 
@@ -791,7 +790,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 

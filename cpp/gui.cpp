@@ -28,6 +28,7 @@
 #include "window_manager.h"
 #include "sutta_search_window.h"
 #include "global_hotkey_manager.h"
+#include "system_palette.h"
 
 #include <QClipboard>
 #include <QKeySequence>
@@ -76,6 +77,11 @@ extern "C" char* get_global_hotkey_dictionary_lookup_c();
 // "Rendering" section). Each maps to a Qt env var that must be set before
 // QApplication, so changes only take effect after an app restart.
 extern "C" bool render_loop_basic_c();
+
+// Theme link colours, applied to the application palette before the QML engine
+// loads. See the comment on `theme_link_colors_c()` in backend/src/lib.rs and
+// on `set_app_palette_link_colors()` in cpp/system_palette.h.
+extern "C" char* theme_link_colors_c();
 
 struct AppGlobals {
     static WindowManager* manager;
@@ -395,6 +401,26 @@ int start(int argc, char* argv[]) {
 
   // QApplication has to be constructed before other windows or dialogs.
   QApplication app(argc, argv);
+
+  // Apply the theme's link colours to the *application* palette immediately.
+  // This must happen before the QML engine loads: rich-text <a href> anchors
+  // take their colour from this palette when the HTML is parsed, and it is
+  // baked into the char format from then on. Windows whose QML is parsed during
+  // the engine load (SearchHelpWindow and DhammaTextSourcesDialog are inline
+  // children of SuttaSearchWindow) would otherwise keep the platform default —
+  // on Android a pale lavender that is unreadable on the light background —
+  // even though ThemeHelper.apply() fixes the palette moments later.
+  if (appdata_db_exists()) {
+    char* link_colors_c = theme_link_colors_c();
+    if (link_colors_c) {
+      const QString link_colors = QString::fromUtf8(link_colors_c);
+      free_rust_string(link_colors_c);
+      const QStringList parts = link_colors.split(',');
+      if (parts.size() == 2) {
+        set_app_palette_link_colors(parts.at(0), parts.at(1));
+      }
+    }
+  }
 
 #ifdef Q_OS_ANDROID
   // Register the JavaVM + Activity context with ndk_context so cpal's AAudio

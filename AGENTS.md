@@ -239,10 +239,15 @@ Notable feature docs:
   `ApplicationWindow` already binds its four padding properties to the window
   safe area (`qquickapplicationwindow.cpp:802-805`), which is why the old 24 dp
   default produced a **doubled top gap** on every Android 15+ device and had to
-  become `0`. Two rules stated as rules: **never assign `topPadding`/`padding` on
+  become `0`. Three rules stated as rules: **never assign `topPadding`/`padding` on
   an `ApplicationWindow` root** (the binding is installed with
   `binding.installOn()` at `:793`, so an assignment silently replaces it and the
-  inset vanishes), and **the `Popup` family gets no padding** — `Popup`/`Dialog`/
+  inset vanishes); **anchor a window's root content item to its parent — never
+  size it from `root.width`/`root.height`** (a direct child is reparented to the
+  already-inset `contentItem`, so sizing from the window overflows the bottom by
+  ~70 px; four dialogs did this and a redundant mobile-only
+  `Layout.bottomMargin: 60` was masking it); and **the `Popup` family gets no
+  padding** — `Popup`/`Dialog`/
   `Menu`/`Drawer` live in the window overlay, with `DrawerMenu.qml`
   (`topPadding: SafeArea.margins.top`) as the worked example and a watch-list of
   tall centered dialogs. Also: why `status_bar_height` is **not** the safe area
@@ -640,6 +645,32 @@ Two rules for the release:
   `rebuildSearchIndexCompleted` on `SuttaBridge`, which several windows listen
   to), guard the handlers with an "initiated here" boolean so only the window
   that started the operation updates its state and releases its own lock.
+
+### Rich-text `<a href>` links are coloured by the *application* palette
+
+Setting `Text.linkColor`, or the window's `palette.link`, does **nothing** for a
+link inside `Text { textFormat: Text.RichText }`. Qt's HTML parser injects
+`color: palette(link)` for every `<a href>` (`qtexthtmlparser.cpp:2062-2065`),
+resolving it against a default-constructed `QPalette` — `QGuiApplication`'s, not
+the window's (`qtexthtmlparser.cpp:1182`) — and the resulting explicit foreground
+then **overrides** `linkColor`, which `QQuickTextNodeEngine` applies only when
+the char format has none (`qquicktextnodeengine.cpp:1098-1101`).
+
+The colour is therefore pushed into the application palette by
+`set_app_palette_link_colors()` (`cpp/system_palette.cpp`). That is the **only**
+knob; do not add per-item `linkColor` bindings expecting them to work. If a link
+renders in the wrong colour, the theme JSONs
+(`backend/src/theme_colors_{light,dark}.json`) are what to edit.
+
+**It is applied in `gui.cpp` right after `QApplication` and before the QML engine
+loads**, via `theme_link_colors_c()` (`backend/src/lib.rs`, a standalone settings
+read sharing `render_loop_basic_c()`'s cache). That ordering is load-bearing: the
+anchor colour is baked into the char format when the HTML is **parsed**, so any
+window whose QML is parsed during the engine load — `SearchHelpWindow` and
+`DhammaTextSourcesDialog` are inline children of `SuttaSearchWindow` — keeps the
+platform default if the palette is only fixed afterwards from
+`ThemeHelper.apply()`. (That call is kept too, for windows created after a
+runtime theme change; already-parsed rich text needs a restart to recolour.)
 
 ### Logging in QML (no console API)
 

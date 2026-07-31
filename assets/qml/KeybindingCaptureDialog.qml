@@ -544,7 +544,7 @@ ApplicationWindow {
             RowLayout {
                 spacing: 10
                 Layout.fillWidth: true
-                Layout.bottomMargin: root.is_mobile ? 60 : 10
+                Layout.bottomMargin: 10
 
                 Button {
                     text: "Clear"
