@@ -700,10 +700,13 @@ pub mod qobject {
 
         include!("system_palette.h");
         fn get_system_palette_json() -> QString;
+        fn set_app_palette_link_colors(link: &QString, link_visited: &QString);
 
         include!("utils.h");
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
         fn get_qt_version() -> QString;
+        fn get_android_package_name() -> QString;
+        fn get_installer_package_name() -> QString;
     }
 
     impl cxx_qt::Threading for SuttaBridge{}
@@ -1059,6 +1062,12 @@ pub mod qobject {
         fn get_status_bar_height(self: &SuttaBridge) -> i32;
 
         #[qinvokable]
+        fn is_installed_from_play_store(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn get_play_store_url(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
         fn run_gloss_in_sutta_window(self: &SuttaBridge, window_id: &QString, query_text: &QString);
 
         #[qinvokable]
@@ -1206,6 +1215,9 @@ pub mod qobject {
         fn get_saved_theme(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
+        fn apply_theme_link_colors(self: &SuttaBridge);
+
+        #[qinvokable]
         fn get_theme(self: &SuttaBridge, theme_name: &QString) -> QString;
 
         #[qinvokable]
@@ -1349,19 +1361,10 @@ pub mod qobject {
         fn set_last_search_mode(self: &SuttaBridge, area: &QString, mode: &QString);
 
         #[qinvokable]
-        fn get_mobile_top_bar_margin(self: &SuttaBridge) -> i32;
+        fn get_mobile_extra_top_margin(self: &SuttaBridge) -> i32;
 
         #[qinvokable]
-        fn is_mobile_top_bar_margin_system(self: &SuttaBridge) -> bool;
-
-        #[qinvokable]
-        fn get_mobile_top_bar_margin_custom_value(self: &SuttaBridge) -> u32;
-
-        #[qinvokable]
-        fn set_mobile_top_bar_margin_system(self: Pin<&mut SuttaBridge>);
-
-        #[qinvokable]
-        fn set_mobile_top_bar_margin_custom(self: Pin<&mut SuttaBridge>, value: u32);
+        fn set_mobile_extra_top_margin(self: Pin<&mut SuttaBridge>, value: u32);
 
         #[qinvokable]
         fn get_sutta_language_labels_with_counts(self: &SuttaBridge) -> QStringList;
@@ -3063,9 +3066,39 @@ impl qobject::SuttaBridge {
 
     /// Get the status bar height in density-independent pixels (dp)
     /// Returns 0 on non-mobile platforms, actual height on Android
+    ///
+    /// Informational only — this is not used to lay anything out. Qt supplies
+    /// the safe-area inset; see docs/android-edge-to-edge-and-safe-areas.md
     pub fn get_status_bar_height(&self) -> i32 {
         use crate::api::ffi;
         ffi::get_status_bar_height()
+    }
+
+    /// True only when this copy was installed by the Google Play Store.
+    ///
+    /// Used by the app-update notification to stay inside Play's Device and
+    /// Network Abuse policy, which requires an app distributed through Play to
+    /// update only through Play. A Play-installed copy is offered its Play
+    /// listing; any other copy (sideloaded release, GitHub Releases beta,
+    /// desktop) keeps the direct download link.
+    ///
+    /// False off Android, so desktop behaviour is unchanged.
+    pub fn is_installed_from_play_store(&self) -> bool {
+        qobject::get_installer_package_name().to_string() == "com.android.vending"
+    }
+
+    /// A `market://` URL for this app's own Play listing, built from the
+    /// running package name so the beta id resolves to the beta listing rather
+    /// than being hardcoded to the release one.
+    ///
+    /// Empty off Android, or if the package name cannot be read — callers must
+    /// treat empty as "no Play link available" rather than opening it blindly.
+    pub fn get_play_store_url(&self) -> QString {
+        let package_name = qobject::get_android_package_name().to_string();
+        if package_name.is_empty() {
+            return QString::from("");
+        }
+        QString::from(&format!("market://details?id={}", package_name))
     }
 
     /// Enable or disable a provider
@@ -3124,6 +3157,32 @@ impl qobject::SuttaBridge {
 
     pub fn get_saved_theme(&self) -> QString {
         self.get_theme(&self.get_theme_name())
+    }
+
+    /// Push the saved theme's `link` / `linkVisited` colours into the
+    /// *application* palette.
+    ///
+    /// `ThemeHelper.apply()` assigns the theme to each window's QML palette,
+    /// but rich-text `<a href>` anchors are coloured by QTextDocument from
+    /// `QGuiApplication`'s palette instead — and that explicit foreground also
+    /// overrides `Text.linkColor`. Without this the links keep whatever the
+    /// platform's default Link role is (on Android, a pale lavender that is
+    /// unreadable on the light background). See the comment in
+    /// `cpp/system_palette.h` for the Qt source references.
+    pub fn apply_theme_link_colors(&self) {
+        let theme_json = self.get_saved_theme().to_string();
+        let d: serde_json::Value = match serde_json::from_str(&theme_json) {
+            Ok(v) => v,
+            Err(e) => {
+                error(&format!("apply_theme_link_colors(): can't parse theme JSON: {}", e));
+                return;
+            }
+        };
+
+        let link = d["active"]["link"].as_str().unwrap_or("");
+        let link_visited = d["active"]["linkVisited"].as_str().unwrap_or("");
+
+        qobject::set_app_palette_link_colors(&QString::from(link), &QString::from(link_visited));
     }
 
     /// Get theme colors as JSON string
@@ -4463,59 +4522,25 @@ impl qobject::SuttaBridge {
         get_app_data().set_last_search_mode(&area.to_string(), &mode.to_string());
     }
 
-    /// Get the mobile top bar margin value
-    /// Returns either system value (from get_status_bar_height) or custom value
-    /// Returns a default value of 24 if APP_DATA is not yet initialized
-    pub fn get_mobile_top_bar_margin(&self) -> i32 {
-        // Return default value if APP_DATA is not yet initialized
-        // This can happen when QML components load before init_app_data() is called
+    /// The extra top margin (dp) the user wants below the system safe area on
+    /// mobile. Qt's ApplicationWindow already pads the window by the safe-area
+    /// inset, so 0 means "the system inset alone" — which is also the fallback
+    /// when APP_DATA is not yet initialized (QML components can load before
+    /// init_app_data()).
+    /// See docs/android-edge-to-edge-and-safe-areas.md
+    pub fn get_mobile_extra_top_margin(&self) -> i32 {
         let app_data = match try_get_app_data() {
             Some(data) => data,
-            None => return 24,
+            None => return 0,
         };
 
         let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-
-        use simsapa_backend::app_settings::MobileTopBarMargin;
-        match app_settings.mobile_top_bar_margin {
-            MobileTopBarMargin::SystemValue => {
-                use crate::api::ffi;
-                ffi::get_status_bar_height()
-            }
-            MobileTopBarMargin::CustomValue(value) => value as i32,
-        }
+        app_settings.mobile_extra_top_margin as i32
     }
 
-    pub fn is_mobile_top_bar_margin_system(&self) -> bool {
-        // Return default (true for system value) if APP_DATA is not yet initialized
-        let app_data = match try_get_app_data() {
-            Some(data) => data,
-            None => return true,
-        };
-
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.is_mobile_top_bar_margin_system()
-    }
-
-    pub fn get_mobile_top_bar_margin_custom_value(&self) -> u32 {
-        // Return default custom value of 24 if APP_DATA is not yet initialized
-        let app_data = match try_get_app_data() {
-            Some(data) => data,
-            None => return 24,
-        };
-
-        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.get_mobile_top_bar_margin_custom_value()
-    }
-
-    pub fn set_mobile_top_bar_margin_system(self: Pin<&mut Self>) {
+    pub fn set_mobile_extra_top_margin(self: Pin<&mut Self>, value: u32) {
         let app_data = get_app_data();
-        app_data.set_mobile_top_bar_margin_system();
-    }
-
-    pub fn set_mobile_top_bar_margin_custom(self: Pin<&mut Self>, value: u32) {
-        let app_data = get_app_data();
-        app_data.set_mobile_top_bar_margin_custom(value);
+        app_data.set_mobile_extra_top_margin(value);
     }
 
     pub fn search_reference(&self, query: &QString, field: &QString) -> QString {

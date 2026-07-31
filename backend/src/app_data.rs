@@ -2374,32 +2374,11 @@ impl AppData {
         });
     }
 
-    pub fn set_mobile_top_bar_margin_system(&self) {
+    pub fn set_mobile_extra_top_margin(&self, value: u32) {
         use crate::db::appdata_schema::app_settings;
 
         let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
-        app_settings.set_mobile_top_bar_margin_system();
-
-        let a = app_settings.clone();
-        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
-
-        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
-
-        match diesel::update(app_settings::table)
-            .filter(app_settings::key.eq("app_settings"))
-            .set(app_settings::value.eq(Some(settings_json)))
-            .execute(db_conn)
-        {
-            Ok(_) => (),
-            Err(e) => error(&format!("Failed to update app settings: {}", e)),
-        }
-    }
-
-    pub fn set_mobile_top_bar_margin_custom(&self, value: u32) {
-        use crate::db::appdata_schema::app_settings;
-
-        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
-        app_settings.set_mobile_top_bar_margin_custom(value);
+        app_settings.mobile_extra_top_margin = value;
 
         let a = app_settings.clone();
         let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");

@@ -18,7 +18,7 @@ ApplicationWindow {
     readonly property bool is_desktop: !root.is_mobile
 
     readonly property int pointSize: is_mobile ? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
     property bool is_dark: theme_helper.is_dark
 
     // The Search Queries documentation page. Shown as a link in the body and
@@ -43,7 +43,7 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 0
             anchors.fill: parent
-            anchors.topMargin: root.top_bar_margin
+            anchors.topMargin: root.extra_top_margin
             anchors.leftMargin: 10
             anchors.rightMargin: 10
 
@@ -180,8 +180,7 @@ first option) means no filter — results from all languages are shown.</p>
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 20
-                // Extra space on mobile to avoid the bottom bar covering the buttons.
-                Layout.bottomMargin: root.is_mobile ? 60 : 20
+                Layout.bottomMargin: 20
 
                 Item { Layout.fillWidth: true }
 

@@ -25,7 +25,7 @@ ApplicationWindow {
     readonly property bool is_desktop: !root.is_mobile
 
     readonly property int pointSize: is_mobile? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     // FIXME make text selectable
 
@@ -77,7 +77,7 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 0
             anchors.fill: parent
-            anchors.topMargin: root.top_bar_margin
+            anchors.topMargin: root.extra_top_margin
             anchors.margins: 10
 
             // Scrollable content area
@@ -248,8 +248,7 @@ ApplicationWindow {
                 spacing: 10
                 Layout.fillWidth: true
                 Layout.margins: 20
-                // Extra space on mobile to avoid the bottom bar covering the button.
-                Layout.bottomMargin: root.is_mobile ? 60 : 20
+                Layout.bottomMargin: 20
 
                 Item { Layout.fillWidth: true }
 

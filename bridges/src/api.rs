@@ -9,7 +9,6 @@ use rocket::serde::{Deserialize, Serialize};
 use rocket::serde::json::Json;
 use rocket::futures::{SinkExt, StreamExt};
 
-use http;
 use ureq;
 use rocket::{get, post, routes, State, Shutdown};
 use rocket::response::content::RawHtml;
@@ -17,7 +16,7 @@ use rocket::http::{ContentType, Status};
 use rocket_cors::CorsOptions;
 use rocket_ws as ws;
 
-use simsapa_backend::{AppGlobals, get_app_data, get_create_simsapa_dir, get_create_simsapa_appdata_db_path, save_to_file, create_parent_directory};
+use simsapa_backend::{AppGlobals, get_app_data, get_create_simsapa_dir};
 use simsapa_backend::html_content::sutta_html_page;
 use simsapa_backend::dir_list::generate_html_directory_listing;
 use simsapa_backend::db::DbManager;

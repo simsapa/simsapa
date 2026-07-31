@@ -37,13 +37,14 @@ fn test_pali_exception_list() {
 
 #[test]
 fn test_pali_consonantal_stem() {
-    pali_stems_to("bhagavantaṁ", "bhagavant");
+    // accept 'bhagavanta' token instead of 'bhagavant'
+    pali_stems_to("bhagavantaṁ", "bhagavanta");
 }
 
 #[test]
 fn test_pali_verb_forms() {
-    // "vadeyya" strips "eyya" leaving "vad" (3 chars), below p1 minimum — passes through unchanged.
-    pali_stems_to("vadeyya", "vadeyya");
+    // a-conjugation verb
+    pali_stems_to("vadeyya", "vadati");
 }
 
 #[test]

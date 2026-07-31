@@ -65,6 +65,74 @@ that is the fastest way to see this.
 
 ---
 
+## 1a. targetSdk 36 (July 2026)
+
+`android/build.gradle`'s `defaultConfig` declares `targetSdkVersion 36`
+(`minSdkVersion` stays 27). That one line opts the app in to three behaviours
+Android 16 enforces with **no per-app opt-out**:
+
+1. **Edge-to-edge display** — the activity is laid out under the status and
+   navigation bars. Clearance comes from Qt's `ApplicationWindow` safe-area
+   padding, *not* from any app setting. See
+   [android-edge-to-edge-and-safe-areas.md](./android-edge-to-edge-and-safe-areas.md).
+2. **Predictive back is on by default** — this **broke back navigation
+   outright** (Qt 6.9.3 registers no `OnBackInvokedCallback`, so back closed the
+   whole app from every dialog and secondary window). The app opts out with
+   `android:enableOnBackInvokedCallback="false"` on the `<activity>`; the
+   diagnosis and removal criteria are in the edge-to-edge doc §5.
+3. **Orientation and resizability attributes are ignored on large screens**
+   (sw ≥ 600 dp), so the app must tolerate arbitrary resize.
+
+`defaultConfig` is the **only** source of the target level: there is no
+`<uses-sdk>` in `android/AndroidManifest.xml` and no
+`QT_ANDROID_TARGET_SDK_VERSION` in `CMakeLists.txt`.
+
+> **Verify with `aapt2 dump badging`, never by reading the generated
+> `gradle.properties`.** androiddeployqt writes `qtTargetSdkVersion=35` into
+> `android-build/gradle.properties` and `build.gradle` never reads it — that
+> line will still say 35 on a correctly-targeted build and means nothing.
+> The same file also carries `qtMinSdkVersion=28`, which our `minSdkVersion 27`
+> overrides; see
+> [android-qt-upgrade-considerations.md §2.2](./android-qt-upgrade-considerations.md).
+
+`compileSdk` keeps coming from androiddeployqt (`android-36`; it picks the newest
+installed platform). AGP 8.6.0 was only tested to 35, so the resulting
+"we recommend a newer Android Gradle plugin" warning is suppressed with
+`android.suppressUnsupportedCompileSdk=36` in `android/gradle.properties`.
+**Targeting a newer API level does not require a newer AGP** — `targetSdkVersion`
+is just a value written into the manifest, and AGP does not gate it.
+
+### The debug variant is skipped during release builds
+
+androiddeployqt appends the bare `bundle` task, not `bundleRelease`, so Gradle
+built, packaged and signed the **entire debug variant** alongside the release one
+— 43 wasted `:*Debug*` tasks. `android/build.gradle` now disables it:
+
+```groovy
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) {
+        it.enable = !project.hasProperty("simsapaReleaseOnly")
+    }
+}
+```
+
+It must be conditional, because `make android-apk-debug` needs the debug variant
+to exist. There is **no `-P` argument to pass** — Gradle is invoked by
+androiddeployqt, not by us — so `build-android.sh` delivers the flag through
+Gradle's environment mapping instead, exporting
+`ORG_GRADLE_PROJECT_simsapaReleaseOnly=true` for release builds only.
+
+> For a debug build the variable must be left **unset**, never set to `false`:
+> `project.hasProperty()` is true for *any* value, including `"false"` and the
+> empty string.
+
+To confirm it is working, grep the build log for `^> Task .*[Dd]ebug` and **read
+the matches, don't count them** — `:stripReleaseDebugSymbols` and
+`:mergeReleaseNativeDebugMetadata` are release-variant tasks that merely contain
+the word.
+
+---
+
 ## 2. The manifest contract
 
 `android/AndroidManifest.xml` now declares permissions **explicitly** and the
@@ -238,8 +306,8 @@ make android-aab ANDROID_ABIS='arm64-v8a;x86_64'
 single-ABI, which is what caused this whole problem.
 
 ```sh
-# signed App Bundle for Google Play
-make android-aab ANDROID_VERSION_CODE=3 ANDROID_VERSION_NAME=1.0.0-alpha.3
+# signed App Bundle for Google Play (no version arguments — see §5)
+make android-aab
 
 # signed APK for sideloading
 make android-apk
@@ -247,12 +315,26 @@ make android-apk
 # unsigned debug APK
 make android-apk-debug
 
+# the beta package (io.github.simsapa.app.beta) — installs ALONGSIDE the
+# released app, which is the only way to test a local build on a device that
+# carries the Play install (see the beta doc in §7)
+make android-beta-dist          # not debuggable, for GitHub Releases
+make android-beta-debug         # debuggable, local only — never distribute
+make android-beta-debug-install # adb install -r
+make android-beta-debug-run     # launch + stream the log messages
+
 # removes the whole build directory (never delete android-build/ by hand)
 make android-clean
 ```
 
 `build-android.sh` also takes `--aab` / `--apk` / `--abis "a;b;c"` / `--debug` /
-`--no-sign` / `--clean` directly.
+`--beta` / `--sign` / `--no-sign` / `--clean` directly.
+
+Switching a build directory between beta and non-beta is safe: the script
+records the package identity in `.simsapa-package-identity` and forces a
+re-package when it changes. Without that, ninja's `apk` target — which does not
+depend on the Gradle property carrying the beta id — is up to date and the
+script reports the *previous* build's artifact under the wrong applicationId.
 
 ### Signing
 
@@ -368,10 +450,45 @@ Use **`make android-clean`** (removes the entire build directory) or
 
 Google Play requires a **strictly increasing `versionCode`** on every upload of
 a package. Qt defaults to `versionCode 1` / `versionName "1.0"` when the target
-properties are unset — which is what Simsapa was shipping. `CMakeLists.txt` now
-wires `QT_ANDROID_VERSION_CODE` / `QT_ANDROID_VERSION_NAME` from the
-`ANDROID_VERSION_CODE` / `ANDROID_VERSION_NAME` cache variables, forwarded by
-`build-android.sh`. **Bump `ANDROID_VERSION_CODE` for every Play upload.**
+properties are unset — which is what Simsapa was shipping.
+
+The values now flow from two files, so a release needs **no version arguments**:
+
+```
+android/version.txt      ─┐
+                          ├─ build-android.sh parses & exports ─┐
+bridges/Cargo.toml        │   ANDROID_VERSION_CODE / _NAME      │
+  [package] version      ─┘                                     │
+                                                                v
+                              CMakeLists.txt reads $ENV{...} ──> QT_ANDROID_VERSION_*
+                                                                     │
+                                                                     v
+                                              androiddeployqt ──> AndroidManifest.xml
+```
+
+**To make a release: edit `android/version.txt`, then `make android-aab`.**
+The versionName comes from the `[package]` version in `bridges/Cargo.toml`,
+which is bumped every release anyway. A **non-empty** `ANDROID_VERSION_CODE` /
+`ANDROID_VERSION_NAME` in the environment still overrides both.
+
+Two things are load-bearing here:
+
+- **The CMake variables are NOT `CACHE`.** A cache entry is written once per
+  build directory, so with `CACHE` an edited `version.txt` would be ignored on
+  every subsequent build in the same tree. They are plain `$ENV{}` reads, and
+  the `QT_ANDROID_VERSION_*` properties are set only when both are non-empty
+  (otherwise CMake logs a `STATUS` message and Qt's defaults apply, so a plain
+  developer `cmake` configure still succeeds).
+- **"Absent" means empty, not unset.** The `Makefile` exports both names
+  unconditionally and GNU make exports an *undefined* variable as the **empty
+  string**, so every plain `make android-aab` arrives with both set and empty.
+  Tests are `[ -n "${VAR:-}" ]` in the shell and
+  `if(NOT "${X}" STREQUAL "")` in CMake; an is-set test would read make's empty
+  export as a deliberate override and defeat the file parsing.
+
+`build-android.sh` re-runs `cmake -S . -B` on every invocation, which is what
+makes an edited `version.txt` take effect. A bare `cmake --build` or a Qt
+Creator build reuses the previous configure and keeps the old value.
 
 (The version reaches the package through the primary build only — the ABI
 sub-builds just produce `.so` files, so it does not need forwarding.)
@@ -397,9 +514,10 @@ compile, on:
   uses jarsigner (from the JDK, *not* the Android SDK) and only looks for it at
   the very end of the build
 - missing keystore credentials
-- **`ANDROID_VERSION_CODE` unset** for a signed AAB — a warning, since the build
-  would otherwise reuse the CMake cache value (1 on a fresh build directory) and
-  Play would reject the upload
+- **an unreadable or invalid `android/version.txt`** — a hard failure before the
+  CMake configure, naming the file. The versionCode must be a positive integer;
+  the file is *parsed*, never sourced. Likewise an unparseable `[package]`
+  version in `bridges/Cargo.toml`
 
 Afterwards it prints the artifact path and mtime and the ABIs present, then runs
 two audits:
@@ -451,14 +569,228 @@ After upload, **Play Console → Release → App bundle explorer → Device
 catalog**, filtered by form factor "Chromebook", states the per-device exclusion
 reason directly. Use it instead of guessing.
 
+## 6a. Build warnings that are harmless by construction
+
+Every Android build prints seven `QML import could not be resolved` warnings.
+All were investigated in July 2026 and none indicate a problem.
+
+- **`com.profoundlabs.simsapa`** — the app's *own* module. It is **not** shipped
+  as a plugin directory: there is no `assets/android_rcc_bundle/` in the package
+  at all, and the module is compiled into the app binary as Qt resources
+  (`strings` on `libsimsapadhammareader_arm64-v8a.so` shows
+  `:/qt/qml/com/profoundlabs/simsapa/…` paths and the matching `<qresource
+  prefix=…>` header), put there by `cxx_qt_import_qml_module` in
+  `bridges/build.rs`. androiddeployqt's import scanner walks **on-disk** import
+  paths, so a compiled-in module is unresolvable by construction. Expect this
+  warning to persist permanently.
+- **`QtWebEngine`** — imported only by `SuttaHtmlView_Desktop.qml` and
+  `DictionaryHtmlView_Desktop.qml`. Qt WebEngine has no Android port and those
+  desktop-only views are never instantiated there (Android uses QtWebView). The
+  scanner reads every QML file regardless of platform.
+- **`QtQuick.Controls.Windows` / `.macOS` / `.iOS`** — other platforms' control
+  styles, referenced by QtQuick.Controls' own module metadata and absent from the
+  Android kit.
+- **`QtWayland.Compositor`, `QtQuick3D.MaterialEditor`** — not imported by any app
+  QML; transitive references from Qt's own modules.
+
+### Closed decisions (July 2026) — do not re-litigate without new evidence
+
+- **Keep `armeabi-v7a`.** There are users on 32-bit ARM phones. The cost is ~1/3
+  of the multi-ABI build time and an extra slice in the bundle that **no user
+  downloads** — Play delivers one ABI per device.
+- **Do not add the 32-bit `x86` ABI.** Unused; Chromebook ARCVM is 64-bit; it
+  would need the `i686-linux-android` Rust target, which is not installed. This
+  is also why `build-android.sh` deliberately avoids `QT_ANDROID_BUILD_ALL_ABIS`
+  — it would autodetect the installed `android_x86` Qt kit and fail.
+- **Do not remove `package=` from `AndroidManifest.xml`**, despite Gradle
+  recommending it on every build. It is androiddeployqt's actual source of truth
+  for the application id (`extractPackageName()` rejects the literal token
+  `androidPackageName` from `build.gradle`'s `namespace` line and falls back to
+  this attribute), and changing it would change the application id of a
+  published app. The reasoning is also a comment in the manifest itself.
+- **Bundle size needs no action.** The 2026-07-28 AAB is 284 MB, but per-device
+  delivery is ~62 MB compressed (one ABI + dex + resources), against Play's
+  200 MB limit. The 105 MB `BUNDLE-METADATA` entry is native debug symbols:
+  Play strips it from delivery and uses it to symbolicate native crashes, so it
+  is worth keeping.
+
+### R8 / ProGuard stays **off** — the "no deobfuscation file" warning is expected
+
+Every upload to the Play Console raises:
+
+> There is no deobfuscation file associated with this App Bundle. If you use
+> obfuscated code (R8/proguard), uploading a deobfuscation file will make crashes
+> and ANRs easier to analyse and debug. Using R8/proguard can help reduce app
+> size.
+
+**This warning is expected and is not acted on.** It is informational and never
+blocks a release. It refers *only* to R8's `mapping.txt` for **Java/Kotlin
+bytecode** — it has nothing to do with native code, and the app is Rust + C++ +
+QML.
+
+There is no `minifyEnabled` line in `android/build.gradle` and no
+`proguard-rules.pro` anywhere in the tree. That is deliberate, for three reasons.
+
+**1. The size argument does not apply to this app.** Uncompressed content of the
+release bundle (2026-07-29 build):
+
+| | uncompressed |
+|---|---|
+| native `.so` (3 ABIs) | 521.6 MB |
+| assets / resources / other | 356.1 MB |
+| **`base/dex/classes.dex`** | **4.25 MB** |
+
+Dex is ~0.5% of the bundle; `libsimsapadhammareader_arm64-v8a.so` alone is
+108 MB. R8 might remove a megabyte or two of dex — against a bundle whose
+per-device delivery is ~62 MB compressed, well under Play's 200 MB limit
+(see *Bundle size needs no action* above). There is no meaningful size win
+available in the Java layer.
+
+**2. The breakage risk is real, and recurring.** Almost all of that dex is
+**Qt's own Java**, not ours — `Qt6Android.jar`, `Qt6AndroidQuick.jar`,
+`QtAndroidWebView.jar` and friends. Qt's Android port is driven end to end by
+JNI reflection: `QtNative`, `QtLoader`, `QtActivityDelegate` method lookups, and
+the activity/service classes named **as strings** in `AndroidManifest.xml`.
+Shrinking and obfuscation are exactly what breaks reflective lookup.
+
+Qt 6.9.3 ships **no ProGuard keep-rules file** — verified, there is no
+`*proguard*` file anywhere in the Android kits. So enabling R8 means authoring
+the keep set by hand against Qt internals, with:
+
+- a failure mode of `ClassNotFoundException` / `NoSuchMethodError` **at runtime,
+  in release builds only** — i.e. after a three-ABI compile-and-sign, and
+  plausibly not until a specific screen is opened on a device;
+- re-validation required on **every Qt upgrade**, since the keep set tracks Qt's
+  internal class and method names.
+
+This is also the same one-variable-at-a-time discipline that keeps the AGP and
+JDK pins where they are: minification is a release-only code transform, and it
+does not belong next to an SDK bump.
+
+**3. The half of the warning that actually matters is already satisfied.**
+Crashes in this app land in native code, not Java — and the bundle **already
+ships native debug symbols**. AGP's `extractReleaseNativeSymbolTables` runs
+implicitly (nothing sets `debugSymbolLevel` in `android/build.gradle`,
+`build-android.sh` or `CMakeLists.txt`), producing:
+
+```
+BUNDLE-METADATA/com.android.tools.build.debugsymbols/arm64-v8a/libsimsapadhammareader_arm64-v8a.so.sym   129.9 MB
+                                            .../x86_64/…                                                 127.9 MB
+                                            .../armeabi-v7a/…                                            110.6 MB
+```
+
+(~368 MB uncompressed; the ~105 MB `BUNDLE-METADATA` entry noted under *Bundle
+size needs no action*.) Play strips these from delivery and uses them to
+symbolicate native stack traces. The app `.so` is built unstripped —
+`file` reports `with debug_info, not stripped` — which is what makes the symbol
+tables extractable.
+
+**Verify once per release cycle** that the Play Console's Crashes & ANRs page
+shows *symbolicated* native frames. Play has historically capped the native
+debug symbols payload, so if that ever regresses, the fix is to reduce symbol
+coverage (`debugSymbolLevel 'SYMBOL_TABLE'` on fewer ABIs, dropping x86_64
+first as the least-used slice) — **not** to enable R8, which would not help
+native symbolication at all.
+
+**Do not re-litigate without new evidence.** New evidence would be: the Java
+layer growing to a size where dex is a material fraction of the download, or Qt
+shipping official ProGuard keep-rules for its Android port.
+
+### `useLegacyPackaging` stays `true`
+
+`packagingOptions.jniLibs.useLegacyPackaging true` (`android/build.gradle:59`,
+a **Qt-provided template line**, not ours) writes
+`android:extractNativeLibs="true"` into the merged manifest. It controls exactly
+one thing: how the ~139 `.so` files per ABI are stored in the package and how the
+dynamic loader reaches them.
+
+| | `true` (current, "legacy") | `false` (AGP's default for new projects since 4.2) |
+|---|---|---|
+| storage in the APK | **compressed** (`Defl:N`) | **uncompressed**, page-aligned |
+| at install time | extracted to `/data/app/…/lib/<abi>/` | nothing extracted |
+| at load time | `dlopen` of a real file on disk | `mmap`ed straight out of the APK zip |
+| copies on device | two (retained APK + extracted `lib/`) | one |
+| minimum API | any | 23 (we are at 27, so not a constraint) |
+
+**What flipping it to `false` would buy.**
+
+- **On-device footprint.** This is the only argument with real weight. Legacy
+  keeps the libraries twice — compressed inside the retained APK *and*
+  uncompressed in the extracted `lib/` directory. `false` keeps one copy. With
+  ~139 Qt/Rust libraries per ABI the saving is roughly the size of the extracted
+  `lib/` directory.
+- **Faster installs, smaller delta updates.** No extraction pass, and
+  uncompressed libraries diff far better between versions than deflated ones, so
+  Play's incremental update patches shrink.
+- **The 16 KB checker could actually verify the libraries.** The
+  "This app isn't 16 KB compatible … Unknown error" dialog (see `AGENTS.md`
+  § *Android "isn't 16 KB compatible" warning*) lists libraries **because** they
+  are stored compressed and the on-device checker cannot inspect them.
+  Uncompressed + aligned would let it read the real `p_align`. Cosmetic — the
+  dialog is already known to be gated on the install path, not the contents —
+  but it would stop being a recurring question.
+
+**What it would cost.**
+
+- **A bigger APK/AAB**, since the libraries are no longer deflated. Play
+  re-compresses for delivery so the *download* penalty is usually small — but
+  "usually" is unmeasured here, and that is precisely the number that would have
+  to be taken.
+- **It changes the on-device layout of every native library** in an app with an
+  unusually large native surface: Qt platform and QML plugins, QtWebView,
+  tantivy, the pure-Rust `cpal` audio stack, the cxx-qt bridge. Anything that
+  resolves a library by filesystem path rather than by name breaks. Qt 6 loads by
+  name and should be unaffected — but "should be" has not been tested on this
+  app, on three ABIs.
+- **`android/build.gradle` is a Qt-provided template** (the same fact that keeps
+  AGP pinned at 8.6.0). Diverging from it adds another line to re-merge on every
+  Qt upgrade.
+- **No constraint is currently being violated**, so there is no problem to fix —
+  see the numbers below.
+
+**Conclusion: keep `true`.** The 2026-07-28 build already satisfies every
+constraint that matters: per-device download is ~62 MB against Play's 200 MB
+limit, `zipalign -c -P 16` passes, and **all** 139 arm64-v8a and 139 x86_64
+libraries carry `p_align=0x4000`. The only benefit on offer is install
+footprint, which nobody has reported as a problem, weighed against changing the
+loading path of every native library in the app. That is not a change worth
+making next to a targetSdk bump — it violates the project's own **change one
+variable at a time** rule.
+
+**It has deliberately not been measured both ways.** The decision above is made
+on the reasoning, not on numbers: measuring costs a second full multi-ABI build
+plus an on-device install, and would not change the answer while no constraint is
+tight. Recorded so the omission is not mistaken for an oversight.
+
+**Revisit it with the Qt upgrade**, when `build.gradle` has to be re-merged
+anyway and the native stack is being re-validated regardless. At that point take
+the measurements both ways: AAB/APK size, on-device install footprint (`du` of
+the installed app), `zipalign -c -P 16`, and `readelf -lW` `p_align` for the app
+`.so` and a Qt library. Flip it only if the footprint saving is material *and*
+all three ABIs still load.
+
+---
+
 ## 7. Related
 
+- [android-edge-to-edge-and-safe-areas.md](./android-edge-to-edge-and-safe-areas.md)
+  — targetSdk 36's edge-to-edge enforcement, safe-area padding, the
+  predictive-back opt-out and the deprecated bar-colour APIs in Play's report.
+- [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)
+  — work deferred to the Qt upgrade: removing the predictive-back opt-out,
+  raising `minSdkVersion` to 28, and the AGP / Gradle-wrapper / JDK coupling.
 - [pure-rust-audio-backend.md](./pure-rust-audio-backend.md) — why the NDK is
   pinned to r26b/r27 (r28 breaks the `cxx` C++ build at minSdk 27) and why 16 KB
   alignment is done with `-Wl,-z,max-page-size=16384` in `CMakeLists.txt`.
 - [app-packaging-and-identifiers.md](./app-packaging-and-identifiers.md) — the
   `io.github.simsapa.app` application id vs. the `com.profoundlabs.simsapa` QML
   module URI, which are unrelated and must not be conflated.
+- [android-beta-distribution-and-play-policy.md](./android-beta-distribution-and-play-policy.md)
+  — the `io.github.simsapa.app.beta` package and why it exists (a Play install
+  is signed by Play App Signing and can never be replaced by a local build), the
+  `make android-beta-*` targets, reading log messages with `adb logcat` instead
+  of deploying from Qt Creator, and the in-app update notice's Play-policy
+  gating.
 - [android-file-saving-saf.md](./android-file-saving-saf.md) — scoped storage,
   which is why `WRITE_EXTERNAL_STORAGE` is not needed.
 - `CLAUDE.md` § *Android "isn't 16 KB compatible" warning* — that dialog is

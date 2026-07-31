@@ -95,9 +95,18 @@ macos-rebuild: macos-clean
 # of the Play Store on Intel/AMD Chromebooks.
 #
 # Signing credentials come from the gitignored android/signing.env
-# (see android/signing.env.example). Bump the versionCode on every Play upload:
+# (see android/signing.env.example).
 #
-#   make android-aab ANDROID_VERSION_CODE=3 ANDROID_VERSION_NAME=1.0.0-alpha.3
+# Google Play requires a strictly increasing versionCode on every upload. Bump
+# it by editing android/version.txt — the release is then just:
+#
+#   make android-aab
+#
+# build-android.sh reads the versionCode from android/version.txt and the
+# versionName from the [package] version in bridges/Cargo.toml. The exports
+# below stay so that an explicit, NON-EMPTY override still wins:
+#
+#   make android-aab ANDROID_VERSION_CODE=99
 #
 # Full design: docs/android-multi-abi-and-chromeos.md
 
@@ -122,6 +131,74 @@ android-apk:
 # Unsigned debug APK for local testing.
 android-apk-debug:
 	./build-android.sh --apk --debug
+
+# --- Beta package ----------------------------------------------------------
+#
+# The beta package has its own application id — io.github.simsapa.app.beta,
+# label "Simsapa (beta)" — so it installs ALONGSIDE the released app instead of
+# replacing it. Both are signed with the release keystore.
+#
+# Why a separate id: a copy installed from Google Play is signed by Play App
+# Signing (Google's key, not our upload key), and Android has no key-swap path,
+# so a locally built package can NEVER replace a Play install. Without the
+# suffix the only way to test a local build on a device carrying the Play build
+# is to uninstall it, wiping its app-private data including the downloaded
+# appdata. With the suffix both coexist — at the cost of the beta install
+# running first-time asset setup of its own.
+#
+# Two variants of that same package:
+#
+#   android-beta-debug   debuggable, for local testing with adb logcat.
+#                        NEVER distribute it — a debuggable package lets
+#                        anything with adb access read its private data and
+#                        attach a debugger.
+#   android-beta-dist    not debuggable, for GitHub Releases.
+#
+# They share the id, so one replaces the other on a device; versionName tells
+# them apart ("-beta-debug" vs "-beta"). The suffixes live in
+# android/build.gradle and android/AndroidManifest.beta.xml, not here.
+
+APK_BETA_DEBUG := $(ANDROID_BUILD_DIR)/android-build/build/outputs/apk/debug/android-build-debug.apk
+ANDROID_BETA_PKG := io.github.simsapa.app.beta
+
+android-beta-debug:
+	./build-android.sh --apk --debug --sign
+
+# Installs the debuggable beta alongside whatever release build is on the device.
+android-beta-debug-install:
+	@test -f "$(APK_BETA_DEBUG)" || { echo "Not built yet: $(APK_BETA_DEBUG) — run 'make android-beta-debug'"; exit 1; }
+	adb install -r "$(APK_BETA_DEBUG)"
+
+# Launches the beta app and streams its log messages to this console — the same
+# output Qt Creator shows in its "Application Output" pane, which is a filtered
+# logcat and nothing more.
+#
+# Tags: `simsapa` is the Rust backend (android_logger, set in
+# backend/src/logger.rs), `Qt`/`QtCore`/`QtQml` are Qt's own message handler,
+# which is also where the QML Logger module's output arrives. AndroidRuntime
+# and DEBUG carry Java exceptions and native crash traces.
+#
+# Filtering by tag rather than by pid deliberately: a pid filter cannot be
+# established until the process exists, which loses the startup messages.
+# Ctrl-C to stop; the app keeps running.
+android-beta-debug-run:
+	adb logcat -c
+	adb shell monkey -p $(ANDROID_BETA_PKG) -c android.intent.category.LAUNCHER 1 >/dev/null
+	adb logcat -v brief simsapa:V Qt:V QtCore:V QtQml:V AndroidRuntime:E DEBUG:E '*:S'
+
+# The distributable beta: release build type, NOT debuggable, release-signed.
+# Copied out under a version-stamped name ready to attach to a GitHub release.
+#
+# Note dist/ is shared with the macOS packaging, and `make macos-clean` does
+# `rm -rf ./dist` — so it will take the beta APK with it. Re-run this target.
+android-beta-dist:
+	./build-android.sh --apk --beta
+	@mkdir -p dist
+	@version=$$(sed -n '/^\[package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' bridges/Cargo.toml | head -1); \
+	  src="$(ANDROID_BUILD_DIR)/android-build/build/outputs/apk/release/android-build-release-signed.apk"; \
+	  test -f "$$src" || { echo "Not found: $$src"; exit 1; }; \
+	  cp "$$src" "dist/Simsapa-$$version-beta.apk"; \
+	  echo "==> dist/Simsapa-$$version-beta.apk"
 
 # Removes the WHOLE build directory. Do not hand-delete just android-build/ —
 # the per-ABI copy steps are driven by ExternalProject stamps in the sub-build

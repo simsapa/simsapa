@@ -23,8 +23,11 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    // NOTE: Leave top_bar_margin as a fixed default value
-    readonly property int top_bar_margin: is_mobile ? 24 : 0
+    // NOTE: Fixed at 0 and never read from the settings — this window runs during
+    // first-time setup, before app data exists. Qt's ApplicationWindow padding
+    // already covers the system safe area, so 0 is correct here.
+    // See docs/android-edge-to-edge-and-safe-areas.md
+    readonly property int extra_top_margin: 0
 
     Logger { id: logger }
 
@@ -187,7 +190,10 @@ ApplicationWindow {
 
         ColumnLayout {
             spacing: 10
-            width: 400
+            // A Dialog is a Popup: it is centered in the window overlay and gets
+            // no safe-area padding, so a fixed 400 would hang off both edges of
+            // a portrait phone (~411 dp wide, before the Dialog's own padding).
+            width: Math.min(400, root.width - 80)
 
             Label {
                 text: error_dialog.error_message
@@ -209,7 +215,7 @@ ApplicationWindow {
 
         ColumnLayout {
             spacing: 10
-            width: 400
+            width: Math.min(400, root.width - 80)
 
             Label {
                 text: "An operation is in progress. Closing the window now will interrupt it. Close anyway?"
@@ -372,7 +378,7 @@ ApplicationWindow {
     StackLayout {
         id: views_stack
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: 0
 
         // Idx 0: Checking sources
@@ -443,8 +449,6 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    // Extra space on mobile to avoid the bottom bar covering the button.
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
 
                     Item { Layout.fillWidth: true }
 
@@ -612,8 +616,7 @@ ApplicationWindow {
                     visible: root.is_mobile
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    // Extra space on mobile to avoid the bottom bar covering the button.
-                    Layout.bottomMargin: 60
+                    Layout.bottomMargin: 20
                     spacing: 10
 
                     Button {
@@ -697,7 +700,7 @@ ApplicationWindow {
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
-                    Layout.bottomMargin: 60
+                    Layout.bottomMargin: 20
                     spacing: 10
 
                     Button {
@@ -784,8 +787,6 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    // Extra space on mobile to avoid the bottom bar covering the button.
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
 
                     Item { Layout.fillWidth: true }
 

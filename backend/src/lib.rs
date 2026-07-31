@@ -1398,6 +1398,42 @@ pub extern "C" fn render_loop_basic_c() -> bool {
     render_settings().render_loop_basic
 }
 
+/// FFI: the saved theme's `link` / `linkVisited` colours, as
+/// `"#RRGGBB,#RRGGBB"`. Caller must call `free_rust_string`.
+///
+/// Read in `gui.cpp` right after the QApplication is constructed and **before**
+/// the QML engine loads anything. Rich-text `<a href>` anchors are coloured from
+/// the *application* palette at HTML-parse time and the colour is then baked
+/// into the char format, so a window whose QML is parsed during the engine load
+/// (`SearchHelpWindow`, `DhammaTextSourcesDialog` — inline children of
+/// `SuttaSearchWindow`) keeps whatever the platform default was if the palette
+/// is only fixed later from `ThemeHelper.apply()`. See `cpp/system_palette.h`.
+#[unsafe(no_mangle)]
+pub extern "C" fn theme_link_colors_c() -> *mut std::os::raw::c_char {
+    use std::ffi::CString;
+
+    let theme_json = match render_settings().theme_name_as_string().as_str() {
+        "dark" => crate::theme_colors::ThemeColors::dark_json(),
+        _ => crate::theme_colors::ThemeColors::light_json(),
+    };
+
+    let d: serde_json::Value = match serde_json::from_str(&theme_json) {
+        Ok(v) => v,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let link = d["active"]["link"].as_str().unwrap_or("");
+    let link_visited = d["active"]["linkVisited"].as_str().unwrap_or("");
+    if link.is_empty() && link_visited.is_empty() {
+        return std::ptr::null_mut();
+    }
+
+    match CString::new(format!("{},{}", link, link_visited)) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
 /// FFI: returns the configured key sequence for the `dictionary_lookup`
 /// global hotkey action as a C string. Caller must call `free_rust_string`.
 /// Returns null if not configured.

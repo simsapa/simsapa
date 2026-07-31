@@ -103,6 +103,31 @@ android {
             assets.srcDirs = ['assets']
             jniLibs.srcDirs = ['libs']
        }
+
+        // Beta identity for the launcher: the "Simsapa (beta)" label overlay
+        // (AndroidManifest.beta.xml) and the badged icon set (res-beta/,
+        // regenerate with scripts/generate_beta_app_icons.sh). The beta package
+        // installs alongside the released app, so without both it is
+        // indistinguishable on the home screen.
+        //
+        // res-beta/ is added *in addition to* the main res dirs, not instead of
+        // them: a variant source set takes priority over main for same-named
+        // resources, so res-beta/ overrides the ic_launcher* mipmaps and
+        // everything else (values/, xml/) still comes from res/.
+        //
+        // Always for the debug type; for the release type only when building a
+        // beta, otherwise the shipped app would be labelled and badged "beta".
+        debug {
+            manifest.srcFile 'AndroidManifest.beta.xml'
+            res.srcDirs += ['res-beta']
+        }
+
+        if (project.hasProperty("simsapaBeta")) {
+            release {
+                manifest.srcFile 'AndroidManifest.beta.xml'
+                res.srcDirs += ['res-beta']
+            }
+        }
     }
 
     tasks.withType(JavaCompile) {
@@ -126,7 +151,120 @@ android {
     defaultConfig {
         resConfig "en"
         minSdkVersion 27
-        targetSdkVersion 35
+
+        // Targeting API 36 opts the app in to three behaviours that Android 16
+        // enforces with no per-app opt-out:
+        //
+        //  1. Edge-to-edge display. The activity is laid out under the status
+        //     and navigation bars; Window.setDecorFitsSystemWindows(false) is
+        //     implied. Clearance comes from Qt's ApplicationWindow safe-area
+        //     padding, NOT from the app's own margin setting — see
+        //     docs/android-edge-to-edge-and-safe-areas.md.
+        //  2. Predictive back is on by default. Opting out again would need
+        //     android:enableOnBackInvokedCallback="false" on the <activity>.
+        //  3. Orientation/resizability attributes are ignored on large screens
+        //     (sw >= 600dp), so the app must tolerate arbitrary resize.
+        //
+        // compileSdk stays whatever androiddeployqt writes (android-36); AGP
+        // 8.6.0 and the JDK 17-21 pin are deliberate and unchanged.
+        // See docs/android-multi-abi-and-chromeos.md.
+        targetSdkVersion 36
         ndk.abiFilters = qtTargetAbiList.split(",")
+    }
+
+    buildTypes {
+        // The BETA package id, io.github.simsapa.app.beta, is produced by two
+        // different variants:
+        //
+        //   make android-beta-debug — Gradle's debug type, debuggable, for
+        //       local testing with adb logcat. NEVER distribute this: a
+        //       debuggable package lets anything with adb access read its
+        //       private data and attach a debugger.
+        //   make android-beta-dist  — the release type plus the simsapaBeta
+        //       property, NOT debuggable, for GitHub Releases.
+        //
+        // Both carry the same id, so one replaces the other on a device and a
+        // developer never ends up with two betas installed. They are told apart
+        // by versionName ("-beta" vs "-beta-debug") and by whether the package
+        // is debuggable.
+        //
+        // Gradle build types cannot simply be renamed here: androiddeployqt
+        // invokes assembleDebug or assembleRelease according to
+        // CMAKE_BUILD_TYPE, so a third build type would never be built. The
+        // beta identity is therefore applied to the release type on demand, via
+        // the same ORG_GRADLE_PROJECT_* mechanism as simsapaReleaseOnly below.
+        // There is deliberately NO minifyEnabled / proguardFiles here. The Play
+        // Console warns on every upload that the bundle has no deobfuscation
+        // file; that warning is informational, concerns Java bytecode only, and
+        // is accepted permanently. classes.dex is 4.25 MB against 521 MB of
+        // native .so, so R8 has no size to reclaim, while nearly all of that dex
+        // is Qt's own reflection-driven Android Java, for which Qt ships no
+        // ProGuard keep-rules — the failure mode is a runtime
+        // ClassNotFoundException in release builds only. Native crashes are
+        // already symbolicated: AGP emits BUNDLE-METADATA debug symbols
+        // implicitly (nothing sets debugSymbolLevel).
+        // See docs/android-multi-abi-and-chromeos.md § R8 / ProGuard stays off.
+        release {
+            if (project.hasProperty("simsapaBeta")) {
+                applicationIdSuffix ".beta"
+                versionNameSuffix "-beta"
+            }
+        }
+
+        debug {
+            // Beta builds install ALONGSIDE the released app instead of
+            // replacing it.
+            //
+            // Why this is necessary rather than merely convenient: a copy
+            // installed from Google Play is signed by Play App Signing, i.e.
+            // Google's key — not the upload key in android/signing.env. Android
+            // has no key-swap path, so a locally built package can never
+            // replace a Play install, whatever key it is signed with. Without a
+            // distinct id the only way to test a local build on a device that
+            // has the Play (or internal-testing) build is to uninstall that
+            // build first, which wipes its app-private data — including the
+            // multi-hundred-MB downloaded appdata.
+            //
+            // applicationId is not set explicitly anywhere; it defaults to
+            // `namespace` (androidPackageName, from the generated
+            // gradle.properties), and this suffix is appended to it. The
+            // manifest's package= attribute is ignored by AGP 8 for this
+            // purpose — it is kept only because androiddeployqt reads it.
+            //
+            // The FileProvider authority is declared as
+            // "${applicationId}.qtprovider" in android/AndroidManifest.xml, so
+            // it follows the suffix automatically and the two installs do not
+            // collide on it. The data directory follows the package name for
+            // free (/data/user/0/io.github.simsapa.app.beta/), which is the
+            // whole point — but it also means the beta install starts empty
+            // and runs first-time asset setup of its own.
+            //
+            // Release builds are untouched: the uploaded artifact keeps the
+            // plain io.github.simsapa.app id.
+            applicationIdSuffix ".beta"
+            versionNameSuffix "-beta-debug"
+        }
+    }
+}
+
+// Skip the debug variant entirely during a release build.
+//
+// androiddeployqt appends the bare `bundle` task (not `bundleRelease`), which
+// asks Gradle for every variant's bundle and so drags the whole debug variant
+// through compilation, packaging and signing — 43 :*Debug* tasks whose output
+// is thrown away.
+//
+// The switch has to be conditional because `make android-apk-debug` needs the
+// debug variant to exist. build-android.sh exports
+// ORG_GRADLE_PROJECT_simsapaReleaseOnly=true for release builds only; Gradle
+// maps ORG_GRADLE_PROJECT_<name> environment variables to project properties,
+// which is how the flag reaches here without a -P argument (there is nowhere to
+// pass one — Gradle is invoked by androiddeployqt, not by us).
+//
+// Note hasProperty() is true for ANY value, including "false" and "", so the
+// variable must be left UNSET for debug builds rather than set to false.
+androidComponents {
+    beforeVariants(selector().withBuildType("debug")) {
+        it.enable = !project.hasProperty("simsapaReleaseOnly")
     }
 }

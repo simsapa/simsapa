@@ -234,6 +234,43 @@ Notable feature docs:
   Play without touching the QML URI (a ~70-site, no-benefit refactor). Covers why
   the Android FileProvider authority and `/data/user/0/<pkg>/` data dir derive
   automatically from the package, and the change checklist.
+- [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
+  why the app's top-margin setting is only *extra* space: Qt's
+  `ApplicationWindow` already binds its four padding properties to the window
+  safe area (`qquickapplicationwindow.cpp:802-805`), which is why the old 24 dp
+  default produced a **doubled top gap** on every Android 15+ device and had to
+  become `0`. Three rules stated as rules: **never assign `topPadding`/`padding` on
+  an `ApplicationWindow` root** (the binding is installed with
+  `binding.installOn()` at `:793`, so an assignment silently replaces it and the
+  inset vanishes); **anchor a window's root content item to its parent — never
+  size it from `root.width`/`root.height`** (a direct child is reparented to the
+  already-inset `contentItem`, so sizing from the window overflows the bottom by
+  ~70 px; four dialogs did this and a redundant mobile-only
+  `Layout.bottomMargin: 60` was masking it); and **the `Popup` family gets no
+  padding** — `Popup`/`Dialog`/
+  `Menu`/`Drawer` live in the window overlay, with `DrawerMenu.qml`
+  (`topPadding: SafeArea.margins.top`) as the worked example and a watch-list of
+  tall centered dialogs. Also: why `status_bar_height` is **not** the safe area
+  (no cutout, no nav bar, not per-window — informational display only), the
+  three-site serde migration that carries old `CustomValue(v)` settings over,
+  the **predictive-back opt-out** (targetSdk 36 enables it; Qt 6.9.3 registers no
+  `OnBackInvokedCallback` and neither does the app, so back **closed the whole
+  app** from every dialog and secondary window), the three deprecated
+  bar-colour APIs in Play's report that live in Qt's own Java and are no-ops at
+  API 36, and the device test plan (an Android 15 phone **cannot** validate any
+  of this).
+- [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
+  work deliberately deferred to the eventual Qt upgrade, with the reasons and the
+  pitfalls. Covers removing the predictive-back opt-out (and why Qt implementing
+  the callback may still not be sufficient for Qt Quick popups), the **decision
+  to raise `minSdkVersion` to 28 with the upgrade** (Qt 6.9.3 *already* declares
+  `qtMinSdkVersion=28` and we override it down to 27 — the floor does not
+  "arrive" with 6.10, it just stops being ignorable), the deprecated Java APIs,
+  the AGP / Gradle-wrapper / JDK coupling (**the wrapper is ours at 8.10, not
+  Qt's at 8.12** — correcting an earlier note), the 16 KB link flag Qt 6.10 makes
+  redundant, and that the x86_64 and armeabi-v7a slices have still never been
+  *run*. Pitfalls include the measured Qt 6.10.1 AppImage breakage (libtiff
+  SONAME, WebEngine-on-FUSE SIGSEGV) that is why 6.10.1 was not adopted.
 - [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
   how the signed release AAB is built (`make android-aab` → `build-android.sh`,
   `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
@@ -271,7 +308,40 @@ Notable feature docs:
   **never hand-delete `android-build/`** rule (it wedges the tree: the per-ABI
   ExternalProject copy stamps then consider themselves up to date and never
   repopulate the staging dir — use `make android-clean`), and the `aapt2 dump
-  badging` / Play device-catalog verification steps.
+  badging` / Play device-catalog verification steps. Also **why R8/ProGuard
+  stays off** and the Play Console's *"no deobfuscation file"* warning is
+  expected forever: dex is 4.25 MB against 521 MB of native `.so`, so there is
+  no size win, while almost all of it is **Qt's reflection-driven Android Java**
+  for which Qt ships **no keep-rules** — and the useful half is already covered,
+  since the AAB **already carries native debug symbols** (AGP's
+  `extractReleaseNativeSymbolTables` runs implicitly; nothing sets
+  `debugSymbolLevel`).
+- [Android beta package, on-device debugging, and the Play update policy](./docs/android-beta-distribution-and-play-policy.md) —
+  how to get a local build onto a phone that already has the released app, and
+  what the in-app update notice is allowed to offer. Starts from the fact that
+  forces everything else: a **Play install is signed by Play App Signing**
+  (Google's key, `fdf35925…`, not our upload key `fef4991a…`), Android has no
+  key-swap path, so **no local build can ever replace it** — and Play does *not*
+  rename the package for a testing track (the id really is
+  `io.github.simsapa.app`; what differs is the split install and
+  `installerPackageName=com.android.vending`). Hence the **beta package**
+  `io.github.simsapa.app.beta` / "Simsapa (beta)", which installs alongside it:
+  the two variants (`make android-beta-dist`, not debuggable, for GitHub
+  Releases vs. `make android-beta-debug`, debuggable, **never** distributed),
+  why the dist beta is the *release* build type plus an
+  `ORG_GRADLE_PROJECT_simsapaBeta` property (androiddeployqt only ever invokes
+  `assembleDebug`/`assembleRelease`, so a third build type would never build),
+  the `--sign` post-build `apksigner` re-sign, and the
+  **`.simsapa-package-identity` guard** — ninja's `apk` target does not depend on
+  a Gradle property, so switching beta↔non-beta in one build directory silently
+  reported the *previous* artifact until the script learned to force a
+  re-package. Also the `adb logcat` tag set (`simsapa` for the Rust backend,
+  `Qt`/`QtCore`/`QtQml` for Qt and the QML `Logger`) and why it filters by tag
+  rather than pid, and the **Play update-policy gating**: an app distributed
+  through Play must update only through Play, so
+  `SuttaBridge.is_installed_from_play_store()` (installer package, a property of
+  the *install*, not the build) switches `UpdateNotificationDialog` between a
+  `market://` button and the usual release-page link.
 - [Gloss / Prompts session history](./docs/gloss-prompts-history.md) — the shared,
   `item_type`-parameterised history feature for the **Gloss** and **Prompts** tabs
   (table `gloss_prompts_history`, the shared bridge fns + signals, the
@@ -497,6 +567,58 @@ defaults to **required** and removes the app from the Play Store on every device
 lacking it. See
 [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
+### Android Gradle Plugin — pinned at 8.6.0, do NOT upgrade opportunistically
+
+`android/build.gradle` pins AGP **8.6.0** and `build-android.sh` pins the JDK to
+17–21 (`MAX_JDK_MAJOR=21`). Both are deliberate. Every Android build prints
+
+> WARNING: We recommend using a newer Android Gradle plugin to use compileSdk = 36
+> This Android Gradle plugin (8.6.0) was tested up to compileSdk = 35.
+
+**That warning is expected and suppressed** via
+`android.suppressUnsupportedCompileSdk=36` in `android/gradle.properties` (added
+2026-07-28 — before that the suppression was documented here but was **not**
+actually in the file, so the warning really did print on every build). Do not
+"fix" it by bumping AGP.
+
+**Targeting a newer API level does not require a newer AGP.**
+`targetSdkVersion` is just a value written into the manifest; AGP does not gate
+it. `compileSdk` is what AGP validates against, and androiddeployqt writes
+`androidCompileSdkVersion=android-36` on its own (it picks the newest installed
+platform). AGP 8.6.0 accepts that with the warning above and builds fine.
+
+An AGP upgrade touches three coupled things, each of which fails late and
+unhelpfully:
+
+1. **The Gradle wrapper version.** AGP 8.10 needs Gradle ≥ 8.11.1; AGP **8.11+
+   needs Gradle 8.13**. The wrapper in use is **ours**, checked into
+   `android/gradle/wrapper/` at **8.10**, and androiddeployqt copies it into
+   `android-build/` with the rest of `android/`. Qt's kits do ship a wrapper —
+   at 8.12, in `~/Qt/6.9.3/android_*/src/3rdparty/gradle/gradle/wrapper/` — but
+   **that copy is never used** (verified 2026-07-28 by reading the generated
+   `android-build/gradle/wrapper/gradle-wrapper.properties`).
+
+   > An earlier version of this note claimed the wrapper was Qt's and that
+   > bumping it would mean diverging from Qt. **That is wrong** — the wrapper is
+   > ours to bump. This weakens reason 1, but reasons 2 and 3 still stand, so the
+   > pin remains.
+2. **The JDK pin exists because of AGP's bundled lint.** AGP 8.6.0's lint cannot
+   parse a Java 26 version string; `lintVitalAnalyzeRelease` dies with `> 26.0.1`
+   as its *entire* error message, **after** all three ABIs have compiled and
+   signed. The system default `java` on this machine is 26, which is why
+   `build-android.sh` selects a JDK itself instead of inheriting one. Any AGP
+   change must re-verify this pin — and the pin should stay regardless.
+3. **`android/build.gradle` is a Qt-provided template** using `lintOptions`,
+   `aaptOptions` and `packagingOptions` — deprecated through AGP 8.x and
+   **removed in AGP 9.x**. Moving to AGP 9 means rewriting a file that has to be
+   re-merged on every Qt upgrade.
+
+**Rule: change one variable at a time.** The AGP/Gradle-wrapper bump belongs
+with the eventual **Qt upgrade**, when the Qt-provided template and wrapper
+change anyway — not with an SDK or targetSdk bump. See
+[docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md)
+and `tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`.
+
 ### New QML components
 
 When you create a new QML component such as `SearchBarInput.qml`, the file has to be added to the `qml_files` list in `bridges/build.rs`.
@@ -530,6 +652,32 @@ Two rules for the release:
   `rebuildSearchIndexCompleted` on `SuttaBridge`, which several windows listen
   to), guard the handlers with an "initiated here" boolean so only the window
   that started the operation updates its state and releases its own lock.
+
+### Rich-text `<a href>` links are coloured by the *application* palette
+
+Setting `Text.linkColor`, or the window's `palette.link`, does **nothing** for a
+link inside `Text { textFormat: Text.RichText }`. Qt's HTML parser injects
+`color: palette(link)` for every `<a href>` (`qtexthtmlparser.cpp:2062-2065`),
+resolving it against a default-constructed `QPalette` — `QGuiApplication`'s, not
+the window's (`qtexthtmlparser.cpp:1182`) — and the resulting explicit foreground
+then **overrides** `linkColor`, which `QQuickTextNodeEngine` applies only when
+the char format has none (`qquicktextnodeengine.cpp:1098-1101`).
+
+The colour is therefore pushed into the application palette by
+`set_app_palette_link_colors()` (`cpp/system_palette.cpp`). That is the **only**
+knob; do not add per-item `linkColor` bindings expecting them to work. If a link
+renders in the wrong colour, the theme JSONs
+(`backend/src/theme_colors_{light,dark}.json`) are what to edit.
+
+**It is applied in `gui.cpp` right after `QApplication` and before the QML engine
+loads**, via `theme_link_colors_c()` (`backend/src/lib.rs`, a standalone settings
+read sharing `render_loop_basic_c()`'s cache). That ordering is load-bearing: the
+anchor colour is baked into the char format when the HTML is **parsed**, so any
+window whose QML is parsed during the engine load — `SearchHelpWindow` and
+`DhammaTextSourcesDialog` are inline children of `SuttaSearchWindow` — keeps the
+platform default if the palette is only fixed afterwards from
+`ThemeHelper.apply()`. (That call is kept too, for windows created after a
+runtime theme change; already-parsed rich text needs a restart to recolour.)
 
 ### Logging in QML (no console API)
 
@@ -801,16 +949,46 @@ Use this path for any tests or experimental scripts that need to query the actua
   - App bundle only: `make macos-app` (skips DMG creation)
   - Clean only: `make macos-clean`
   - Clean rebuild: `make macos-rebuild`
-- **Android App Bundle (Google Play):** `make android-aab ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>`
+- **Android App Bundle (Google Play):** `make android-aab` — **no version
+  arguments.** To make a release: bump the integer in `android/version.txt`
+  (Play requires a strictly increasing versionCode), then run it. The
+  versionName comes from the `[package]` version in `bridges/Cargo.toml`.
   - Signed APK for sideloading: `make android-apk`
-  - Unsigned debug APK: `make android-apk-debug`
+  - Unsigned debug APK: `make android-apk-debug` — note the debug variant now
+    carries the **beta** package id (`io.github.simsapa.app.beta`), so this is
+    an unsigned beta; `make android-beta-debug` is the signed, installable one.
   - Clean only / clean rebuild: `make android-clean` / `make android-rebuild`
+  - **Beta package** (`io.github.simsapa.app.beta`, label "Simsapa (beta)") —
+    installs *alongside* the released app, because a copy installed from Google
+    Play is signed by Play App Signing and **cannot** be replaced by any local
+    build, whatever key it is signed with:
+    - `make android-beta-dist` — not debuggable, release-signed, copied to
+      `dist/Simsapa-<version>-beta.apk` for GitHub Releases.
+    - `make android-beta-debug` — debuggable, release-signed, for local
+      testing. **Never distribute it.**
+    - `make android-beta-debug-install` — `adb install -r`.
+    - `make android-beta-debug-run` — launches it and streams the log messages
+      (Rust `simsapa` tag + Qt/QML tags) to the console; this is the same thing
+      Qt Creator's "Application Output" pane shows.
+
+    Switching a build directory between beta and non-beta is safe: the script
+    keys off `.simsapa-package-identity` and forces a re-package, because ninja
+    would otherwise skip androiddeployqt and report the previous artifact.
+    See
+    [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
+  - `targetSdkVersion 36` / `minSdkVersion 27`. targetSdk 36 enforces
+    edge-to-edge and predictive back; the app opts out of the latter with
+    `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
+    `OnBackInvokedCallback` and back otherwise closes the whole app. See
+    [docs/android-edge-to-edge-and-safe-areas.md](./docs/android-edge-to-edge-and-safe-areas.md).
+  - Verify a build with `aapt2 dump badging`, **not** by reading the generated
+    `gradle.properties` — androiddeployqt writes a stale `qtTargetSdkVersion=35`
+    there that `build.gradle` never reads.
   - Multi-ABI (`arm64-v8a;x86_64;armeabi-v7a`) via `build-android.sh`. **Do not
     build release packages from the Qt Creator interface** — its kits are
     single-ABI and an arm64-only bundle is filtered off Chromebooks. Signing
     credentials come from the gitignored `android/signing.env` (template:
-    `android/signing.env.example`); `ANDROID_VERSION_CODE` must strictly
-    increase on every Play upload. See
+    `android/signing.env.example`). See
     [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing

@@ -52,6 +52,10 @@ SIGNING_ENV="${SIGNING_ENV:-android/signing.env}"
 PACKAGE_TARGET="aab"
 DO_CLEAN=0
 DO_SIGN=1
+DO_BETA=0
+# Explicit --sign / --no-sign wins over the default that --debug implies,
+# regardless of argument order. Empty = not given.
+SIGN_OVERRIDE=""
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -64,14 +68,37 @@ Usage: ./build-android.sh [options]
   --aab             Build an Android App Bundle (default; for Google Play)
   --apk             Build an APK instead (for sideloading / local testing)
   --abis "a;b;c"    Override the ABI list (default: arm64-v8a;x86_64;armeabi-v7a)
-  --debug           CMAKE_BUILD_TYPE=Debug (implies --no-sign)
+  --debug           CMAKE_BUILD_TYPE=Debug (defaults to --no-sign)
+  --beta            Build the BETA package (io.github.simsapa.app.beta, label
+                    "Simsapa (beta)", versionName suffixed "-beta"), which
+                    installs alongside the released app instead of replacing
+                    it. With --apk alone this is the NOT-debuggable artifact
+                    for GitHub Releases; combine --debug --sign instead for a
+                    debuggable local build of the same package.
+  --sign            Sign even a --debug build, with the release keystore. The
+                    APK is re-signed after the build (apksigner replaces the
+                    debug-keystore signature), so a debuggable build installs
+                    over a sideloaded release APK instead of being rejected
+                    for a signature mismatch. Order-independent: --debug --sign
+                    and --sign --debug are the same.
   --no-sign         Skip signing; produce an unsigned package
   --clean           Remove the build directory before configuring
   -h, --help        This message
 
+Note: this only helps against packages signed with the SAME key. An install
+that came from Google Play is signed by Play App Signing (Google's key, not
+the upload key in android/signing.env), so no locally built package can ever
+replace it — the Play copy has to be uninstalled first.
+
+Version:
+  versionCode comes from android/version.txt — edit that file before a Play
+  upload; Play requires it to strictly increase. versionName comes from the
+  [package] version in bridges/Cargo.toml. Neither needs a command-line
+  argument.
+
 Environment:
-  ANDROID_VERSION_CODE   Play requires this to strictly increase per upload
-  ANDROID_VERSION_NAME   Human-readable version, e.g. 1.0.0-alpha.3
+  ANDROID_VERSION_CODE   Overrides android/version.txt (must be non-empty)
+  ANDROID_VERSION_NAME   Overrides the Cargo.toml version, e.g. 1.0.0-alpha.3
   ANDROID_ABIS, ANDROID_SDK_ROOT, ANDROID_NDK_ROOT, ANDROID_BUILD_DIR,
   QT_ANDROID_VERSION, QT_ANDROID_ROOT, ANDROID_PRIMARY_ABI
 
@@ -86,13 +113,41 @@ while [ $# -gt 0 ]; do
         --apk)   PACKAGE_TARGET="apk" ;;
         --abis)  ANDROID_ABIS="$2"; shift ;;
         --debug) ANDROID_BUILD_TYPE="Debug"; DO_SIGN=0 ;;
-        --no-sign) DO_SIGN=0 ;;
+        --beta) DO_BETA=1 ;;
+        --sign) SIGN_OVERRIDE=1 ;;
+        --no-sign) SIGN_OVERRIDE=0 ;;
         --clean) DO_CLEAN=1 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
+
+[ -n "$SIGN_OVERRIDE" ] && DO_SIGN="$SIGN_OVERRIDE"
+
+# A signed Debug build is signed by this script after the build, not by
+# androiddeployqt: Gradle's debug variant already carries a debug-keystore
+# signature, and androiddeployqt's --sign path is only exercised for release
+# variants. apksigner replaces any existing signature, so re-signing the
+# finished artifact is the deterministic route.
+RESIGN_AFTER_BUILD=0
+if [ "$DO_SIGN" -eq 1 ] && [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+    RESIGN_AFTER_BUILD=1
+fi
+
+# The debug build type carries the beta id unconditionally (build.gradle), so
+# --beta only means something for a release-type build.
+if [ "$DO_BETA" -eq 1 ] && [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+    DO_BETA=0
+fi
+
+# The beta package is distributed as an APK from GitHub Releases. An AAB is a
+# Play upload format, and the Play listing is the plain io.github.simsapa.app
+# id — a beta bundle has nowhere to go.
+if [ "$DO_BETA" -eq 1 ] && [ "$PACKAGE_TARGET" = "aab" ]; then
+    echo "ERROR: --beta builds an APK for direct distribution; --aab is for the Play upload of the release package." >&2
+    exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -273,6 +328,74 @@ if [ "$DO_SIGN" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Package version
+# ---------------------------------------------------------------------------
+#
+# versionCode comes from android/version.txt, versionName from the [package]
+# version in bridges/Cargo.toml. Both are exported and read by CMakeLists.txt
+# via $ENV{} — there are no -D arguments, so an edit to either file takes effect
+# on the next run of this script (which always re-runs `cmake -S . -B`) even in
+# an existing build directory.
+#
+# A non-empty inherited value wins, so `make android-aab ANDROID_VERSION_CODE=9`
+# still overrides. The test must be `-n`, not an is-set test: the Makefile
+# exports both names unconditionally and GNU make exports an undefined variable
+# as the EMPTY STRING, so on a plain `make android-aab` both arrive set-but-empty
+# and an is-set test would read that as a deliberate override.
+
+VERSION_CODE_FILE="android/version.txt"
+CARGO_TOML="bridges/Cargo.toml"
+
+version_code_source="android/version.txt"
+if [ -n "${ANDROID_VERSION_CODE:-}" ]; then
+    version_code_source="environment"
+else
+    [ -f "$VERSION_CODE_FILE" ] \
+        || die "$VERSION_CODE_FILE not found.
+       It holds the Android versionCode (a single positive integer).
+       Restore it, or export ANDROID_VERSION_CODE=<n> for this build."
+
+    # First non-blank, non-comment line. Deliberately parsed rather than
+    # sourced: the file is data, not shell.
+    ANDROID_VERSION_CODE="$(sed -e 's/#.*//' -e 's/[[:space:]]//g' \
+                                "$VERSION_CODE_FILE" | grep -m1 .)" || true
+
+    case "$ANDROID_VERSION_CODE" in
+        ""|*[!0-9]*)
+            die "Could not read a versionCode from $VERSION_CODE_FILE.
+       Expected a single positive integer on its own line, got: '${ANDROID_VERSION_CODE}'
+       Google Play requires it to strictly increase on every upload." ;;
+    esac
+    [ "$ANDROID_VERSION_CODE" -gt 0 ] 2>/dev/null \
+        || die "versionCode in $VERSION_CODE_FILE must be a positive integer, got: $ANDROID_VERSION_CODE"
+fi
+
+version_name_source="bridges/Cargo.toml"
+if [ -n "${ANDROID_VERSION_NAME:-}" ]; then
+    version_name_source="environment"
+else
+    [ -f "$CARGO_TOML" ] || die "$CARGO_TOML not found; cannot determine versionName."
+
+    # The [package] version only — stop at the first table after it so a
+    # dependency's `version = ` cannot be picked up instead.
+    ANDROID_VERSION_NAME="$(awk '
+        /^\[package\]/       { in_pkg = 1; next }
+        /^\[/                { in_pkg = 0 }
+        in_pkg && /^[[:space:]]*version[[:space:]]*=/ {
+            if (match($0, /"[^"]*"/)) {
+                print substr($0, RSTART + 1, RLENGTH - 2)
+                exit
+            }
+        }
+    ' "$CARGO_TOML")"
+
+    [ -n "$ANDROID_VERSION_NAME" ] \
+        || die "Could not parse the [package] version from $CARGO_TOML."
+fi
+
+export ANDROID_VERSION_CODE ANDROID_VERSION_NAME
+
+# ---------------------------------------------------------------------------
 # Configure & build
 # ---------------------------------------------------------------------------
 
@@ -283,7 +406,7 @@ fi
 
 sign_flag_apk="OFF"
 sign_flag_aab="OFF"
-if [ "$DO_SIGN" -eq 1 ]; then
+if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 0 ]; then
     sign_flag_apk="ON"
     sign_flag_aab="ON"
 fi
@@ -294,27 +417,93 @@ echo "==> ABIs        : $ANDROID_ABIS"
 echo "==> NDK         : $ANDROID_NDK_ROOT"
 echo "==> Build type  : $ANDROID_BUILD_TYPE"
 echo "==> Package     : $PACKAGE_TARGET"
-echo "==> Signing     : $([ "$DO_SIGN" -eq 1 ] && echo "yes, alias '$QT_ANDROID_KEYSTORE_ALIAS'" || echo "no")"
-echo "==> versionCode : ${ANDROID_VERSION_CODE:-<CMake default>}"
-echo "==> versionName : ${ANDROID_VERSION_NAME:-<CMake default>}"
+if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then
+    echo "==> Signing     : yes, alias '$QT_ANDROID_KEYSTORE_ALIAS' (re-signed after the build)"
+else
+    echo "==> Signing     : $([ "$DO_SIGN" -eq 1 ] && echo "yes, alias '$QT_ANDROID_KEYSTORE_ALIAS'" || echo "no")"
+fi
+echo "==> versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
+echo "==> versionName : $ANDROID_VERSION_NAME (from $version_name_source)"
 echo
 
-# Google Play rejects an upload whose versionCode is not strictly greater than
-# every previous upload of the package. Unset here means "whatever is already
-# in the CMake cache", which on a fresh build directory is the CMakeLists
-# default of 1 — i.e. an upload Play will refuse.
-if [ "$DO_SIGN" -eq 1 ] && [ "$PACKAGE_TARGET" = "aab" ] && [ -z "${ANDROID_VERSION_CODE:-}" ]; then
-    echo "WARNING: ANDROID_VERSION_CODE is not set. The build will reuse the"
-    echo "         CMake cache value (1 on a fresh build dir). Google Play"
-    echo "         requires it to strictly increase on every upload:"
-    echo "           make android-aab ANDROID_VERSION_CODE=<n> ANDROID_VERSION_NAME=<v>"
+# Tell android/build.gradle to disable the debug variant. androiddeployqt
+# appends the bare `bundle` task, which otherwise builds, packages and signs the
+# entire debug variant alongside the release one for nothing.
+#
+# Gradle is invoked by androiddeployqt, so there is no -P argument to pass;
+# Gradle maps ORG_GRADLE_PROJECT_<name> environment variables to project
+# properties instead.
+#
+# For a debug build the variable must be left UNSET, never set to "false":
+# project.hasProperty() is true for any value, including "false" and "".
+if [ "$ANDROID_BUILD_TYPE" != "Debug" ]; then
+    export ORG_GRADLE_PROJECT_simsapaReleaseOnly=true
+    echo "==> Debug variant: disabled (release build)"
+else
+    unset ORG_GRADLE_PROJECT_simsapaReleaseOnly
+    echo "==> Debug variant: enabled"
+fi
+
+# Beta identity for a release-type build. Same mechanism and the same
+# unset-not-false rule as simsapaReleaseOnly above; build.gradle applies the
+# ".beta" applicationIdSuffix and the "Simsapa (beta)" manifest overlay to the
+# release variant only when this property is present.
+if [ "$DO_BETA" -eq 1 ]; then
+    export ORG_GRADLE_PROJECT_simsapaBeta=true
+    echo "==> Package id  : io.github.simsapa.app.beta (beta, not debuggable)"
+else
+    unset ORG_GRADLE_PROJECT_simsapaBeta
+    if [ "$ANDROID_BUILD_TYPE" = "Debug" ]; then
+        echo "==> Package id  : io.github.simsapa.app.beta (beta, DEBUGGABLE — do not distribute)"
+    else
+        echo "==> Package id  : io.github.simsapa.app"
+    fi
+fi
+echo
+
+# --- package-identity guard -------------------------------------------------
+#
+# The packaging step is driven by ninja, whose `apk` target is up to date as
+# soon as android-build/simsapadhammareader.apk exists and no source changed.
+# The beta identity, though, arrives through a Gradle project property, which
+# is not one of ninja's inputs — so building --beta and then plain --apk in the
+# same directory would skip androiddeployqt entirely and report the PREVIOUS
+# build's artifact, with the wrong applicationId. Observed exactly that: a
+# plain release build reporting io.github.simsapa.app.beta.
+#
+# So remember what identity this directory was last packaged with, and when it
+# changes, delete the packaging outputs to force androiddeployqt and Gradle to
+# run again.
+#
+# This deletes only *outputs*. It must never delete android-build/ itself: the
+# per-ABI ExternalProject copy stamps live outside it and would then consider
+# themselves up to date, leaving the staging directory unpopulated and the tree
+# permanently wedged (use `make android-clean` for that).
+#
+# The signing state is part of the identity as well. `make android-apk-debug`
+# (unsigned) straight after `make android-beta-debug` (release-signed) produces
+# the same package id, so without it ninja stays up to date and the script
+# reports the still-release-signed APK as an unsigned debug build. The re-sign
+# is applied to the artifact in place, so nothing else would reveal it.
+package_identity="$ANDROID_BUILD_TYPE-beta$DO_BETA-sign$DO_SIGN"
+identity_marker="$ANDROID_BUILD_DIR/.simsapa-package-identity"
+
+# A MISSING marker forces the re-package too: an existing build directory from
+# before this guard existed, or one left by a build that was interrupted, has
+# an unknown identity, and "unknown" must not be treated as "matching".
+if [ -d "$ANDROID_BUILD_DIR/android-build" ] \
+       && { [ ! -f "$identity_marker" ] || [ "$(cat "$identity_marker")" != "$package_identity" ]; }; then
+    echo "==> Package identity is $(if [ -f "$identity_marker" ]; then cat "$identity_marker"; else echo unknown; fi), want $package_identity; forcing a re-package"
+    rm -rf "$ANDROID_BUILD_DIR/android-build/build/outputs"
+    rm -f  "$ANDROID_BUILD_DIR/android-build/simsapadhammareader.apk" \
+           "$ANDROID_BUILD_DIR/android-build/simsapadhammareader.aab"
     echo
 fi
 
-version_args=()
-[ -n "${ANDROID_VERSION_CODE:-}" ] && version_args+=("-DANDROID_VERSION_CODE=$ANDROID_VERSION_CODE")
-[ -n "${ANDROID_VERSION_NAME:-}" ] && version_args+=("-DANDROID_VERSION_NAME=$ANDROID_VERSION_NAME")
-
+# No -DANDROID_VERSION_* arguments: CMakeLists.txt reads the exported
+# environment instead. They used to be CACHE variables, which are written once
+# per build directory and would therefore ignore an edited version.txt on any
+# subsequent build in the same tree.
 "$QT_CMAKE" \
     -S . -B "$ANDROID_BUILD_DIR" \
     -G Ninja \
@@ -323,10 +512,14 @@ version_args=()
     -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" \
     -DANDROID_NDK_ROOT="$ANDROID_NDK_ROOT" \
     -DQT_ANDROID_SIGN_APK="$sign_flag_apk" \
-    -DQT_ANDROID_SIGN_AAB="$sign_flag_aab" \
-    "${version_args[@]}"
+    -DQT_ANDROID_SIGN_AAB="$sign_flag_aab"
 
 cmake --build "$ANDROID_BUILD_DIR" --target "$PACKAGE_TARGET"
+
+# Recorded only after a successful package, so an interrupted build does not
+# leave the marker claiming an identity that was never produced.
+mkdir -p "$ANDROID_BUILD_DIR"
+printf '%s' "$package_identity" > "$identity_marker"
 
 # ---------------------------------------------------------------------------
 # Locate and verify the artifact
@@ -360,6 +553,41 @@ fi
 
 echo "==> Artifact: $artifact"
 echo "==> Modified: $(date -r "$artifact" '+%Y-%m-%d %H:%M:%S')"
+
+# --- re-sign a Debug build with the release keystore ------------------------
+#
+# Only reached for `--debug --sign`. Purpose: a debuggable APK that carries the
+# SAME signature as a sideloaded release APK, so `adb install -r` replaces it
+# instead of failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE. The debuggable
+# flag lives in the manifest and is untouched by signing.
+#
+# Does NOT let the package replace a Play-installed copy: Play App Signing
+# re-signs uploads with Google's key, which is not the upload key here.
+if [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then
+    if [ "$PACKAGE_TARGET" != "apk" ]; then
+        die "--debug --sign is only supported for --apk (an AAB is signed for upload, and Play re-signs it anyway)."
+    fi
+
+    apksigner_bin="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+    [ -x "$apksigner_bin" ] \
+        || die "apksigner not found under $ANDROID_SDK_ROOT/build-tools — needed for --debug --sign."
+
+    echo "==> Re-signing the debug APK with the release keystore (alias '$QT_ANDROID_KEYSTORE_ALIAS')"
+    "$apksigner_bin" sign \
+        --ks "$QT_ANDROID_KEYSTORE_PATH" \
+        --ks-key-alias "$QT_ANDROID_KEYSTORE_ALIAS" \
+        --ks-pass "pass:$QT_ANDROID_KEYSTORE_STORE_PASS" \
+        --key-pass "pass:$QT_ANDROID_KEYSTORE_KEY_PASS" \
+        "$artifact" \
+        || die "apksigner failed to sign $artifact"
+
+    # Prove it took, rather than trusting the exit status: print the signer the
+    # device will actually see.
+    "$apksigner_bin" verify --print-certs "$artifact" \
+        | grep -E 'Signer #1 certificate (DN|SHA-256 digest)' \
+        | sed 's/^/      /' \
+        || die "apksigner could not verify the signature it just wrote to $artifact"
+fi
 echo "==> ABIs in the package:"
 unzip -l "$artifact" \
     | grep -oE '(base/)?lib/[a-z0-9_-]+/' \
@@ -505,3 +733,6 @@ fi
 
 echo
 echo "Done."
+echo "    Artifact    : $artifact"
+echo "    versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
+echo "    versionName : $ANDROID_VERSION_NAME (from $version_name_source)"

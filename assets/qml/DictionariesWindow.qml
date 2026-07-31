@@ -25,7 +25,7 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     // On a narrow window the title and "Import StarDict..." button would
     // overlap, so the header collapses to two rows.
@@ -80,7 +80,7 @@ ApplicationWindow {
 
     Component.onCompleted: {
         theme_helper.apply();
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.refresh_list();
     }
 
@@ -312,7 +312,7 @@ ApplicationWindow {
     StackLayout {
         id: views_stack
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
         currentIndex: 0
 
         // -------------------------------------------------------------------
@@ -371,7 +371,6 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             color: palette.text
-                            linkColor: palette.link
                             Layout.alignment: Qt.AlignHCenter
                             Layout.topMargin: 30
                             onLinkActivated: function(link) {
@@ -558,7 +557,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 
@@ -703,7 +702,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 
@@ -791,7 +790,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    Layout.bottomMargin: root.is_mobile ? 60 : 20
+                    Layout.bottomMargin: 20
 
                     Item { Layout.fillWidth: true }
 

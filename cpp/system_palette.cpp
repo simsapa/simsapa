@@ -5,6 +5,29 @@
 #include <QJsonDocument>
 #include <QGuiApplication>
 
+void set_app_palette_link_colors(const QString &link, const QString &link_visited) {
+    QColor link_color(link);
+    QColor link_visited_color(link_visited);
+    if (!link_color.isValid() && !link_visited_color.isValid()) {
+        return;
+    }
+
+    QPalette palette = QGuiApplication::palette();
+
+    // Set every colour group: QTextDocument's anchor lookup does not use the
+    // group of the window that happens to be focused.
+    for (auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
+        if (link_color.isValid()) {
+            palette.setColor(group, QPalette::Link, link_color);
+        }
+        if (link_visited_color.isValid()) {
+            palette.setColor(group, QPalette::LinkVisited, link_visited_color);
+        }
+    }
+
+    QGuiApplication::setPalette(palette);
+}
+
 QString get_system_palette_json() {
     // Get the application's palette
     QPalette palette = QGuiApplication::palette();

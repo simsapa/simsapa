@@ -24,7 +24,7 @@ ApplicationWindow {
 
     readonly property int pointSize: is_mobile ? 16 : 12
     readonly property int largePointSize: pointSize + 5
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     property var books_list: []
     property var selected_book_uid: ""
@@ -36,8 +36,8 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        // Update top_bar_margin after app data is initialized
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        // Update extra_top_margin after app data is initialized
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
 
         theme_helper.apply();
         load_library_books();
@@ -110,91 +110,99 @@ ApplicationWindow {
         }
     }
 
-    ColumnLayout {
-        spacing: 0
+    // Content sits inside a Frame, matching TopicIndexWindow /
+    // ReferenceSearchWindow: the Frame's padding supplies the margin on all
+    // four edges. `extra_top_margin` is the user's own additional space at the
+    // top on mobile; Qt pads the window for the system safe area itself.
+    Frame {
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
 
-        // Toolbar with action buttons
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.margins: 10
-            spacing: 10
+        ColumnLayout {
+            spacing: 0
+            anchors.fill: parent
 
-            Button {
-                text: "Import Document..."
-                onClicked: {
-                    import_dialog.open();
+            // Toolbar with action buttons
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 10
+                spacing: 10
+
+                Button {
+                    text: "Import Document..."
+                    onClicked: {
+                        import_dialog.open();
+                    }
                 }
-            }
 
-            Button {
-                text: "Edit Metadata"
-                enabled: root.selected_book_uid !== ""
-                onClicked: {
-                    metadata_edit_dialog.load_metadata(root.selected_book_uid);
-                    metadata_edit_dialog.open();
+                Button {
+                    text: "Edit Metadata"
+                    enabled: root.selected_book_uid !== ""
+                    onClicked: {
+                        metadata_edit_dialog.load_metadata(root.selected_book_uid);
+                        metadata_edit_dialog.open();
+                    }
                 }
-            }
 
-            Button {
-                text: "Remove"
-                enabled: root.selected_book_uid !== ""
-                onClicked: {
-                    // Find the selected book to get its title
-                    const selected_book = root.books_list.find(book => book.uid === root.selected_book_uid);
-                    if (selected_book) {
-                        remove_confirmation_dialog.book_title = selected_book.title || "Untitled";
-                        remove_confirmation_dialog.book_uid = root.selected_book_uid;
-                        remove_confirmation_dialog.open();
+                Button {
+                    text: "Remove"
+                    enabled: root.selected_book_uid !== ""
+                    onClicked: {
+                        // Find the selected book to get its title
+                        const selected_book = root.books_list.find(book => book.uid === root.selected_book_uid);
+                        if (selected_book) {
+                            remove_confirmation_dialog.book_title = selected_book.title || "Untitled";
+                            remove_confirmation_dialog.book_uid = root.selected_book_uid;
+                            remove_confirmation_dialog.open();
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    visible: root.is_desktop
+                    text: "Close"
+                    onClicked: {
+                        root.close();
                     }
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
-            Button {
-                visible: root.is_desktop
-                text: "Close"
-                onClicked: {
-                    root.close();
-                }
-            }
-        }
-
-        // Main content area
-        ScrollView {
-            id: scroll_view
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            contentWidth: availableWidth
-            clip: true
-
-            BooksList {
-                books_list: root.books_list
-                selected_book_uid: root.selected_book_uid
-                pointSize: root.pointSize
-                window_id: ""  // Empty string means use the last window
-
-                onSelected_book_uid_changed: function(uid) {
-                    root.selected_book_uid = uid;
-                }
-            }
-        }
-
-        // Mobile close button
-        ColumnLayout {
-            visible: root.is_mobile
-            Layout.fillWidth: true
-            Layout.margins: 10
-            Layout.bottomMargin: 60
-            spacing: 10
-
-            Button {
-                text: "Close"
+            // Main content area
+            ScrollView {
+                id: scroll_view
                 Layout.fillWidth: true
-                onClicked: {
-                    root.close();
+                Layout.fillHeight: true
+                contentWidth: availableWidth
+                clip: true
+
+                BooksList {
+                    books_list: root.books_list
+                    selected_book_uid: root.selected_book_uid
+                    pointSize: root.pointSize
+                    window_id: ""  // Empty string means use the last window
+
+                    onSelected_book_uid_changed: function(uid) {
+                        root.selected_book_uid = uid;
+                    }
+                }
+            }
+
+            // Mobile close button
+            ColumnLayout {
+                visible: root.is_mobile
+                Layout.fillWidth: true
+                Layout.margins: 10
+                Layout.bottomMargin: 20
+                spacing: 10
+
+                Button {
+                    text: "Close"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        root.close();
+                    }
                 }
             }
         }

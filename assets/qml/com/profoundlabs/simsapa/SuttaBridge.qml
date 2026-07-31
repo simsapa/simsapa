@@ -431,24 +431,20 @@ Item {
         return 0;
     }
 
-    function get_mobile_top_bar_margin(): int {
+    function is_installed_from_play_store(): bool {
+        return false;
+    }
+
+    function get_play_store_url(): string {
+        return 'market://details?id=io.github.simsapa.app';
+    }
+
+    function get_mobile_extra_top_margin(): int {
         return 0;
     }
 
-    function is_mobile_top_bar_margin_system(): bool {
-        return true;
-    }
-
-    function get_mobile_top_bar_margin_custom_value(): int {
-        return 0;
-    }
-
-    function set_mobile_top_bar_margin_system() {
-        console.log("set_mobile_top_bar_margin_system()");
-    }
-
-    function set_mobile_top_bar_margin_custom(value: int) {
-        console.log("set_mobile_top_bar_margin_custom():", value);
+    function set_mobile_extra_top_margin(value: int) {
+        console.log("set_mobile_extra_top_margin():", value);
     }
 
 
@@ -502,6 +498,10 @@ Item {
 
     function get_saved_theme(): string {
         return '{}';
+    }
+
+    function apply_theme_link_colors() {
+        console.log('apply_theme_link_colors');
     }
 
     function get_ai_models_auto_retry(): bool {

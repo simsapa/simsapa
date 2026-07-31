@@ -134,11 +134,21 @@ if (ANDROID)
     # Android package version. androiddeployqt substitutes these into
     # android/AndroidManifest.xml's %%INSERT_VERSION_CODE%% / %%INSERT_VERSION_NAME%%
     # placeholders. Google Play requires a strictly increasing versionCode on
-    # every upload of a given package, so bump it for each release:
-    #   make android-aab ANDROID_VERSION_CODE=3 ANDROID_VERSION_NAME=1.0.0-alpha.3
-    # Without these properties Qt defaults to versionCode 1 / versionName "1.0".
-    set(ANDROID_VERSION_CODE "1" CACHE STRING "Android manifest versionCode")
-    set(ANDROID_VERSION_NAME "1.0.0-alpha.2" CACHE STRING "Android manifest versionName")
+    # every upload of a given package; bump it by editing android/version.txt,
+    # then just:
+    #   make android-aab
+    #
+    # build-android.sh reads android/version.txt and the [package] version in
+    # bridges/Cargo.toml and exports both. Read from the ENVIRONMENT rather than
+    # taking a CACHE variable or a -D argument: a cache entry is written once per
+    # build directory, so an edited version.txt would be ignored on every
+    # subsequent build in the same tree.
+    #
+    # Configure-time only. build-android.sh always re-runs `cmake -S . -B`, so
+    # the release path always picks up an edit; a bare `cmake --build` or a Qt
+    # Creator build reuses the previous configure and keeps the old value.
+    set(ANDROID_VERSION_CODE "$ENV{ANDROID_VERSION_CODE}")
+    set(ANDROID_VERSION_NAME "$ENV{ANDROID_VERSION_NAME}")
 elseif (IOS)
     set(Rust_CARGO_TARGET aarch64-apple-ios)
     set(qmake_path "$ENV{HOME}/Qt/${QT_IOS}/ios/bin/qmake6")
@@ -351,10 +361,40 @@ set_target_properties(simsapadhammareader PROPERTIES
 )
 
 if (ANDROID)
+    # The name under the launcher icon, and the title Google Play shows on the
+    # install screen. androiddeployqt substitutes this into the
+    # %%INSERT_APP_NAME%% placeholder in android/AndroidManifest.xml; with the
+    # property unset it falls back to the CMake TARGET name, which shipped as
+    # the unintended "simsapadhammareader".
+    #
+    # Set here rather than hardcoding android:label in the manifest, so the
+    # androiddeployqt placeholder keeps working (unlike the permission/feature
+    # markers, which were deliberately removed — see
+    # docs/android-multi-abi-and-chromeos.md).
     set_target_properties(simsapadhammareader PROPERTIES
-        QT_ANDROID_VERSION_CODE "${ANDROID_VERSION_CODE}"
-        QT_ANDROID_VERSION_NAME "${ANDROID_VERSION_NAME}"
+        QT_ANDROID_APP_NAME "Simsapa"
     )
+
+    # Only set these when both values are actually present, so a developer
+    # build configured without build-android.sh still succeeds — Qt then
+    # defaults to versionCode 1 / versionName "1.0", which is fine for anything
+    # that is not a Play upload.
+    #
+    # Tested with STREQUAL "" rather than if(DEFINED ...): the Makefile exports
+    # both names unconditionally and GNU make exports an undefined variable as
+    # the empty string, so on a plain `make android-aab` they arrive set-but-empty.
+    if(NOT "${ANDROID_VERSION_CODE}" STREQUAL "" AND NOT "${ANDROID_VERSION_NAME}" STREQUAL "")
+        set_target_properties(simsapadhammareader PROPERTIES
+            QT_ANDROID_VERSION_CODE "${ANDROID_VERSION_CODE}"
+            QT_ANDROID_VERSION_NAME "${ANDROID_VERSION_NAME}"
+        )
+        message(STATUS "Android package version: code ${ANDROID_VERSION_CODE}, name ${ANDROID_VERSION_NAME}")
+    else()
+        message(STATUS
+            "ANDROID_VERSION_CODE / ANDROID_VERSION_NAME not set in the environment; "
+            "Qt will default to versionCode 1 / versionName \"1.0\". "
+            "Build with ./build-android.sh (or make android-aab) for a Play-ready package.")
+    endif()
 endif()
 
 # Link to the qml module, which in turn links to the Rust simsapa library

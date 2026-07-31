@@ -123,21 +123,44 @@ Item {
             compare(result, null); // Should return null for common word
         }
 
+        // The paragraph-level loop moved to Rust (helpers.rs:process_all_paragraphs)
+        // when GlossTab.process_paragraph_for_glossing was removed; the QML side
+        // keeps only the per-word step. This mirrors that loop so the word-level
+        // dedup behaviour stays covered here.
+        function process_paragraph(paragraph_text, paragraph_stems, global_stems, check_global) {
+            var words = SuttaBridge.extract_words(paragraph_text);
+            var glossed_words = [];
+
+            for (var i = 0; i < words.length; i++) {
+                var processed_word = gloss_tab.process_word_for_glossing(
+                    { word: words[i], sentence: "" },
+                    paragraph_stems,
+                    global_stems,
+                    check_global,
+                );
+
+                if (processed_word && !processed_word.is_unrecognized) {
+                    glossed_words.push(processed_word);
+                }
+            }
+
+            return glossed_words;
+        }
+
         function test_process_paragraph_for_glossing() {
             var paragraph = "Idha, bhikkhave, ariyasāvako vossaggārammaṇaṁ karitvā labhati samādhiṁ, labhati cittassa ekaggataṁ.";
             var paragraph_stems = {};
             var global_stems = {};
             var all_results = [];
 
-            var result = gloss_tab.process_paragraph_for_glossing(paragraph,
-                                                                  paragraph_stems,
-                                                                  global_stems,
-                                                                  true);
+            var result = process_paragraph(paragraph,
+                                          paragraph_stems,
+                                          global_stems,
+                                          true);
             all_results.push(...result);
 
             var result_words = result.map(i => i.original_word);
-            // logger.info(result_words);
-            // [ariyasāvako,vossaggārammaṇaṁ,karitvā,labhati,samādhiṁ,,cittassa,ekaggataṁ.]
+            // [ariyasāvako,vossaggārammaṇaṁ,karitvā,labhati,samādhiṁ,cittassa,ekaggataṁ]
 
             // Should skip common words and local duplicates
             compare(result.length, 7);
@@ -148,14 +171,14 @@ Item {
             // Test with global duplicates
             paragraph = "Saddhassa hi, sāriputta, ariyasāvakassa āraddhavīriyassa upaṭṭhitassatino etaṁ pāṭikaṅkhaṁ yaṁ vossaggārammaṇaṁ karitvā labhissati samādhiṁ, labhissati cittassa ekaggataṁ. Yo hissa, sāriputta, samādhi tadassa samādhindriyaṁ.";
             paragraph_stems = {};
-            result = gloss_tab.process_paragraph_for_glossing(paragraph,
-                                                              paragraph_stems,
-                                                              global_stems,
-                                                              true);
+            result = process_paragraph(paragraph,
+                                      paragraph_stems,
+                                      global_stems,
+                                      true);
             all_results.push(...result);
 
             result_words = result.map(i => i.original_word);
-            // [Saddhassa,āraddhavīriyassa,upaṭṭhitassatino,pāṭikaṅkhaṁ,labhissati,hissa,,tadassa,samādhindriyaṁ.]
+            // [saddhassa,āraddhavīriyassa,upaṭṭhitassatino,pāṭikaṅkhaṁ,labhissati,hissa,tadassa,samādhindriyaṁ]
 
             // labhissati should be skipped as inflected form of labhati seen before.
             // FIXME should skip labhissati, but currently dpd_lookup.json has a direct entry for it.

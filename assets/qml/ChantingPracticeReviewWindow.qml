@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     readonly property bool is_desktop: !root.is_mobile
     readonly property int pointSize: is_mobile ? 16 : 12
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
 
     property string window_id
     property bool is_dark: theme_helper.is_dark
@@ -73,7 +73,7 @@ ApplicationWindow {
         if (root.is_mobile) {
             screen_manager.set_keep_screen_on(true);
         }
-        root.top_bar_margin = root.is_mobile ? SuttaBridge.get_mobile_top_bar_margin() : 0;
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         // Only load if current_section_uid is already set (may not be if set by C++ after this)
         if (root.current_section_uid !== "") {
             load_section_data();
@@ -305,13 +305,16 @@ ApplicationWindow {
 
     Frame {
         anchors.fill: parent
-        anchors.topMargin: root.top_bar_margin
+        anchors.topMargin: root.extra_top_margin
 
         ColumnLayout {
             anchors.fill: parent
+            // Inside the Frame's own padding, matching the content inset of
+            // TopicIndexWindow / ReferenceSearchWindow.
+            anchors.margins: 10
             spacing: 8
 
-            // 7.3 Header showing section title, parent chant, and collection
+            // Header showing section title, parent chant, and collection
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2

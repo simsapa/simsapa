@@ -25,16 +25,22 @@ ApplicationWindow {
 
     AssetManager { id: manager }
 
-    property int top_bar_margin: is_mobile ? 24 : 0
+    property int extra_top_margin: 0
     property var database_validation_dialog: null
 
     signal themeChanged(string theme_name)
     signal marginChanged()
     signal keybindingsChanged()
 
-    // State properties for mobile margin settings
-    property bool use_system_margin: true
-    property int custom_margin_value: 24
+    // The live system inset, for the read-only Settings readout. `SafeArea` is
+    // attached to the window itself: attached to a nested item it reports only
+    // the part of *that* item which is covered, which is 0 inside the content
+    // area Qt has already padded. -1 means the attached property is unavailable,
+    // and the readout falls back to the (less accurate) status bar height.
+    readonly property var window_safe_area_margins: root.SafeArea.margins
+    readonly property int system_safe_area_top: root.window_safe_area_margins
+        ? Math.round(root.window_safe_area_margins.top)
+        : -1
 
     // Keybindings data
     property var keybindings_data: ({})
@@ -186,7 +192,7 @@ ApplicationWindow {
     // Keybinding capture dialog
     KeybindingCaptureDialog {
         id: keybinding_capture_dialog
-        top_bar_margin: root.top_bar_margin
+        extra_top_margin: root.extra_top_margin
 
         onShortcutAccepted: function(shortcut) {
             root.handle_shortcut_accepted(shortcut);
@@ -353,7 +359,7 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 0
             anchors.fill: parent
-            anchors.topMargin: root.top_bar_margin
+            anchors.topMargin: root.extra_top_margin
             anchors.margins: 10
 
             TabBar {
@@ -575,10 +581,13 @@ ApplicationWindow {
                             }
                         }
 
-                        // Mobile Top Margin section (only visible on mobile)
+                        // Extra Top Margin section (only visible on mobile).
+                        // Qt's ApplicationWindow already pads the window by the
+                        // system safe area; this is only what the user wants in
+                        // addition. See docs/android-edge-to-edge-and-safe-areas.md
                         Label {
                             visible: root.is_mobile
-                            text: "Mobile Top Margin"
+                            text: "Extra Top Margin"
                             font.pointSize: root.pointSize + 1
                             font.bold: true
                             Layout.topMargin: 10
@@ -586,57 +595,52 @@ ApplicationWindow {
 
                         Label {
                             visible: root.is_mobile
-                            text: "The spacing between the mobile's UI status bar and the app's top elements."
+                            text: "The system status bar and camera cutout are accounted for automatically. Increase this only if the app's top elements are still covered on your device."
                             font.pointSize: root.pointSize - 2
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                        }
-
-                        CheckBox {
-                            visible: root.is_mobile
-                            id: use_system_margin_checkbox
-                            text: "Use system value (" + SuttaBridge.get_status_bar_height() + " dp)"
-                            font.pointSize: root.pointSize
-                            checked: root.use_system_margin
-                            onCheckedChanged: {
-                                root.use_system_margin = checked;
-                                if (checked) {
-                                    SuttaBridge.set_mobile_top_bar_margin_system();
-                                } else {
-                                    SuttaBridge.set_mobile_top_bar_margin_custom(root.custom_margin_value);
-                                }
-                                root.marginChanged();
-                            }
                         }
 
                         RowLayout {
                             visible: root.is_mobile
                             Layout.fillWidth: true
                             spacing: 10
-                            enabled: !root.use_system_margin
 
                             Label {
-                                text: "Custom value (dp):"
+                                text: "Extra space (dp):"
                                 font.pointSize: root.pointSize
-                                opacity: root.use_system_margin ? 0.5 : 1.0
                             }
 
                             SpinBox {
-                                id: custom_margin_spinbox
+                                id: extra_top_margin_spinbox
                                 from: 0
                                 to: 100
-                                value: root.custom_margin_value
+                                value: 0
                                 editable: true
                                 font.pointSize: root.pointSize
-                                opacity: root.use_system_margin ? 0.5 : 1.0
                                 onValueModified: {
-                                    root.custom_margin_value = value;
-                                    if (!root.use_system_margin) {
-                                        SuttaBridge.set_mobile_top_bar_margin_custom(value);
-                                        root.marginChanged();
-                                    }
+                                    SuttaBridge.set_mobile_extra_top_margin(value);
+                                    root.marginChanged();
                                 }
                             }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // Read-only, live: what the platform reports, so a user
+                        // troubleshooting a covered toolbar can see the number.
+                        //
+                        // On its own row BELOW the SpinBox, not beside it: in
+                        // portrait the leftover width next to the label and
+                        // spinner is too narrow for this text.
+                        Label {
+                            visible: root.is_mobile
+                            Layout.fillWidth: true
+                            text: root.system_safe_area_top >= 0
+                                ? "System safe area: " + root.system_safe_area_top + " dp"
+                                : "Status bar: " + SuttaBridge.get_status_bar_height() + " dp"
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
                         }
 
                         // Display section
@@ -927,7 +931,7 @@ ApplicationWindow {
                         GlobalHotkeysSection {
                             visible: !global_hotkey_helper.is_wayland()
                             pointSize: root.pointSize
-                            top_bar_margin: root.top_bar_margin
+                            extra_top_margin: root.extra_top_margin
                             Layout.fillWidth: true
                         }
 
@@ -1230,12 +1234,9 @@ ApplicationWindow {
             dark_theme_radio.checked = true;
         }
 
-        // Load mobile margin settings into root properties
+        // Load the mobile extra top margin
         if (root.is_mobile) {
-            root.use_system_margin = SuttaBridge.is_mobile_top_bar_margin_system();
-            if (!root.use_system_margin) {
-                root.custom_margin_value = SuttaBridge.get_mobile_top_bar_margin_custom_value();
-            }
+            extra_top_margin_spinbox.value = SuttaBridge.get_mobile_extra_top_margin();
         }
 
         // Load footnotes setting

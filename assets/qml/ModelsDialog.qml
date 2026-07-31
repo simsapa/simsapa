@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property bool is_desktop: !root.is_mobile
 
     readonly property int pointSize: is_mobile? 14 : 12
-    required property int top_bar_margin
+    required property int extra_top_margin
 
     readonly property bool is_wide: is_desktop ? (root.width > 650) : (root.width > 800)
     readonly property bool is_tall: root.height > 810
@@ -312,10 +312,13 @@ ApplicationWindow {
     }
 
     Item {
-        x: 10
-        y: 10 + root.top_bar_margin
-        implicitWidth: root.width - 20
-        implicitHeight: root.height - 20 - root.top_bar_margin
+        // Anchor to the window's contentItem, which Qt has already inset by the
+        // safe-area margins. Sizing from root.width / root.height instead
+        // overflows the content past the navigation bar by exactly the bottom
+        // inset, which is what put the lowest buttons under it.
+        anchors.fill: parent
+        anchors.margins: 10
+        anchors.topMargin: 10 + root.extra_top_margin
 
         ColumnLayout {
             spacing: root.is_wide ? 15 : 8
@@ -595,6 +598,9 @@ ApplicationWindow {
                                 text: root.selected_provider ? root.current_providers[root.selected_provider_index].description : ""
                                 textFormat: Text.RichText
                                 wrapMode: Text.WordWrap
+                                // Text defaults to black, which is unreadable
+                                // on the dark theme's background.
+                                color: palette.text
                                 Layout.fillWidth: true
                                 onLinkActivated: function(link) {
                                     Qt.openUrlExternally(link);
@@ -819,7 +825,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
 
                 Button {
-                    text: "OK"
+                    text: "Close"
                     onClicked: root.close()
                 }
             }

@@ -11,6 +11,14 @@ Drawer {
     edge: Qt.LeftEdge
     modal: true
 
+    // A Drawer is a Popup: it lives in the window overlay, not in the
+    // contentItem, so it receives none of ApplicationWindow's safe-area padding.
+    // Being full-height, its "Menu" label would sit under the status bar /
+    // cutout on an edge-to-edge device. The attached property is relative to the
+    // item it is attached to (this drawer), so this does not double-count.
+    // See docs/android-edge-to-edge-and-safe-areas.md
+    topPadding: control.SafeArea.margins.top
+
     required property int window_width
     required property int window_height
     required property list<Menu> menu_list
