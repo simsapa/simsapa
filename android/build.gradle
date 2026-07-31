@@ -193,6 +193,17 @@ android {
         // CMAKE_BUILD_TYPE, so a third build type would never be built. The
         // beta identity is therefore applied to the release type on demand, via
         // the same ORG_GRADLE_PROJECT_* mechanism as simsapaReleaseOnly below.
+        // There is deliberately NO minifyEnabled / proguardFiles here. The Play
+        // Console warns on every upload that the bundle has no deobfuscation
+        // file; that warning is informational, concerns Java bytecode only, and
+        // is accepted permanently. classes.dex is 4.25 MB against 521 MB of
+        // native .so, so R8 has no size to reclaim, while nearly all of that dex
+        // is Qt's own reflection-driven Android Java, for which Qt ships no
+        // ProGuard keep-rules — the failure mode is a runtime
+        // ClassNotFoundException in release builds only. Native crashes are
+        // already symbolicated: AGP emits BUNDLE-METADATA debug symbols
+        // implicitly (nothing sets debugSymbolLevel).
+        // See docs/android-multi-abi-and-chromeos.md § R8 / ProGuard stays off.
         release {
             if (project.hasProperty("simsapaBeta")) {
                 applicationIdSuffix ".beta"

@@ -494,6 +494,25 @@ the first place.
     a published app. The reasoning is already a comment in the manifest.
 52. **Bundle size needs no action.** A 284 MB AAB is fine; per-device delivery
     is 59–66 MB compressed.
+53. **Leave R8 / ProGuard off**, and accept the Play Console's *"There is no
+    deobfuscation file associated with this App Bundle"* warning permanently.
+    The warning is informational, never blocks a release, and concerns only
+    Java/Kotlin bytecode. Measured on the release bundle: `base/dex/classes.dex`
+    is **4.25 MB** uncompressed against 521.6 MB of native `.so` and 356.1 MB of
+    assets — R8 could reclaim a megabyte or two of a bundle that already
+    delivers at ~62 MB per device. Against that, almost all the dex is **Qt's
+    own Java**, whose Android port is driven by JNI reflection (`QtNative`,
+    `QtLoader`, manifest activity/service class *strings*), and Qt 6.9.3 ships
+    **no ProGuard keep-rules file** — so we would author the keep set by hand,
+    with runtime `ClassNotFoundException` in release-only builds as the failure
+    mode, re-validated on every Qt upgrade. The useful half of the warning is
+    already satisfied: the AAB **already carries native debug symbols**
+    (`BUNDLE-METADATA/com.android.tools.build.debugsymbols/*.sym`, ~368 MB
+    uncompressed, emitted implicitly by AGP's `extractReleaseNativeSymbolTables`
+    — nothing sets `debugSymbolLevel`), which is what symbolicates the crashes
+    this app will actually produce. Full reasoning in
+    [docs/android-multi-abi-and-chromeos.md](../docs/android-multi-abi-and-chromeos.md)
+    § *R8 / ProGuard stays off*.
 
 ---
 
@@ -513,6 +532,8 @@ the first place.
 - **Emulator-based verification.** Testing is on a real Android phone
   (see §9).
 - **Dropping `armeabi-v7a`** (requirement 50).
+- **Enabling R8 / ProGuard minification** to satisfy the Play Console's
+  "no deobfuscation file" warning (requirement 53).
 - **Any change to the application id or the QML module URI.** They are
   unrelated identifiers and both stay as they are.
 

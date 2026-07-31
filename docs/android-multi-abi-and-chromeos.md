@@ -614,6 +614,88 @@ All were investigated in July 2026 and none indicate a problem.
   Play strips it from delivery and uses it to symbolicate native crashes, so it
   is worth keeping.
 
+### R8 / ProGuard stays **off** — the "no deobfuscation file" warning is expected
+
+Every upload to the Play Console raises:
+
+> There is no deobfuscation file associated with this App Bundle. If you use
+> obfuscated code (R8/proguard), uploading a deobfuscation file will make crashes
+> and ANRs easier to analyse and debug. Using R8/proguard can help reduce app
+> size.
+
+**This warning is expected and is not acted on.** It is informational and never
+blocks a release. It refers *only* to R8's `mapping.txt` for **Java/Kotlin
+bytecode** — it has nothing to do with native code, and the app is Rust + C++ +
+QML.
+
+There is no `minifyEnabled` line in `android/build.gradle` and no
+`proguard-rules.pro` anywhere in the tree. That is deliberate, for three reasons.
+
+**1. The size argument does not apply to this app.** Uncompressed content of the
+release bundle (2026-07-29 build):
+
+| | uncompressed |
+|---|---|
+| native `.so` (3 ABIs) | 521.6 MB |
+| assets / resources / other | 356.1 MB |
+| **`base/dex/classes.dex`** | **4.25 MB** |
+
+Dex is ~0.5% of the bundle; `libsimsapadhammareader_arm64-v8a.so` alone is
+108 MB. R8 might remove a megabyte or two of dex — against a bundle whose
+per-device delivery is ~62 MB compressed, well under Play's 200 MB limit
+(see *Bundle size needs no action* above). There is no meaningful size win
+available in the Java layer.
+
+**2. The breakage risk is real, and recurring.** Almost all of that dex is
+**Qt's own Java**, not ours — `Qt6Android.jar`, `Qt6AndroidQuick.jar`,
+`QtAndroidWebView.jar` and friends. Qt's Android port is driven end to end by
+JNI reflection: `QtNative`, `QtLoader`, `QtActivityDelegate` method lookups, and
+the activity/service classes named **as strings** in `AndroidManifest.xml`.
+Shrinking and obfuscation are exactly what breaks reflective lookup.
+
+Qt 6.9.3 ships **no ProGuard keep-rules file** — verified, there is no
+`*proguard*` file anywhere in the Android kits. So enabling R8 means authoring
+the keep set by hand against Qt internals, with:
+
+- a failure mode of `ClassNotFoundException` / `NoSuchMethodError` **at runtime,
+  in release builds only** — i.e. after a three-ABI compile-and-sign, and
+  plausibly not until a specific screen is opened on a device;
+- re-validation required on **every Qt upgrade**, since the keep set tracks Qt's
+  internal class and method names.
+
+This is also the same one-variable-at-a-time discipline that keeps the AGP and
+JDK pins where they are: minification is a release-only code transform, and it
+does not belong next to an SDK bump.
+
+**3. The half of the warning that actually matters is already satisfied.**
+Crashes in this app land in native code, not Java — and the bundle **already
+ships native debug symbols**. AGP's `extractReleaseNativeSymbolTables` runs
+implicitly (nothing sets `debugSymbolLevel` in `android/build.gradle`,
+`build-android.sh` or `CMakeLists.txt`), producing:
+
+```
+BUNDLE-METADATA/com.android.tools.build.debugsymbols/arm64-v8a/libsimsapadhammareader_arm64-v8a.so.sym   129.9 MB
+                                            .../x86_64/…                                                 127.9 MB
+                                            .../armeabi-v7a/…                                            110.6 MB
+```
+
+(~368 MB uncompressed; the ~105 MB `BUNDLE-METADATA` entry noted under *Bundle
+size needs no action*.) Play strips these from delivery and uses them to
+symbolicate native stack traces. The app `.so` is built unstripped —
+`file` reports `with debug_info, not stripped` — which is what makes the symbol
+tables extractable.
+
+**Verify once per release cycle** that the Play Console's Crashes & ANRs page
+shows *symbolicated* native frames. Play has historically capped the native
+debug symbols payload, so if that ever regresses, the fix is to reduce symbol
+coverage (`debugSymbolLevel 'SYMBOL_TABLE'` on fewer ABIs, dropping x86_64
+first as the least-used slice) — **not** to enable R8, which would not help
+native symbolication at all.
+
+**Do not re-litigate without new evidence.** New evidence would be: the Java
+layer growing to a size where dex is a material fraction of the download, or Qt
+shipping official ProGuard keep-rules for its Android port.
+
 ### `useLegacyPackaging` stays `true`
 
 `packagingOptions.jniLibs.useLegacyPackaging true` extracts native libraries from

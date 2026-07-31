@@ -308,7 +308,14 @@ Notable feature docs:
   **never hand-delete `android-build/`** rule (it wedges the tree: the per-ABI
   ExternalProject copy stamps then consider themselves up to date and never
   repopulate the staging dir — use `make android-clean`), and the `aapt2 dump
-  badging` / Play device-catalog verification steps.
+  badging` / Play device-catalog verification steps. Also **why R8/ProGuard
+  stays off** and the Play Console's *"no deobfuscation file"* warning is
+  expected forever: dex is 4.25 MB against 521 MB of native `.so`, so there is
+  no size win, while almost all of it is **Qt's reflection-driven Android Java**
+  for which Qt ships **no keep-rules** — and the useful half is already covered,
+  since the AAB **already carries native debug symbols** (AGP's
+  `extractReleaseNativeSymbolTables` runs implicitly; nothing sets
+  `debugSymbolLevel`).
 - [Android beta package, on-device debugging, and the Play update policy](./docs/android-beta-distribution-and-play-policy.md) —
   how to get a local build onto a phone that already has the released app, and
   what the in-app update notice is allowed to offer. Starts from the fact that
