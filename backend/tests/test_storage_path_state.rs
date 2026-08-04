@@ -112,6 +112,28 @@ fn predicate_is_read_only_and_stable_across_calls() {
     }
 }
 
+#[test]
+fn startup_report_carries_the_storage_path_at_the_top_level() {
+    use simsapa_backend::db::{get_startup_db_report_json, record_storage_path_state};
+
+    record_storage_path_state("unreachable", Some("/storage/DEAD-BEEF/files".to_string()));
+
+    let json: serde_json::Value =
+        serde_json::from_str(&get_startup_db_report_json()).expect("report json");
+
+    // Top-level, not per-database: it describes the location all three
+    // databases were looked for in.
+    assert_eq!(json["storage_path"]["state"], "unreachable");
+    assert_eq!(json["storage_path"]["recorded"], "/storage/DEAD-BEEF/files");
+
+    // First write wins, matching record_db_presence().
+    record_storage_path_state("ok", Some("/somewhere/else".to_string()));
+    let json: serde_json::Value =
+        serde_json::from_str(&get_startup_db_report_json()).expect("report json");
+    assert_eq!(json["storage_path"]["state"], "unreachable");
+    assert_eq!(json["storage_path"]["recorded"], "/storage/DEAD-BEEF/files");
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[test]
 fn desktop_predicate_is_absent_without_reading_the_file() {

@@ -10,13 +10,13 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 
 - `backend/src/lib.rs` - `get_create_simsapa_dir()` (mobile branch `:735-790`), `ensure_no_empty_db_files()` (`:864-897`), new `storage_path_state()` predicate, new scan helpers; the heart of tasks 1.0 and 3.0. **Done in 1.0:** `get_simsapa_internal_app_root_path()` (non-creating root), `StorageState`, `has_usable_installation()`, `storage_path_state_of_file()` / `storage_path_state()`, trim + no-create fallback in `get_create_simsapa_dir()`, `ensure_no_empty_db_files(sweep)`, FFI `storage_path_state_c()` / `recorded_storage_path_c()`.
 - `backend/tests/test_storage_path_state.rs` - **new**: predicate tests (trim, whitespace-only, zero-byte stub, read-only/stable-across-launches, desktop gate).
-- `backend/tests/test_ensure_no_empty_db_files_no_sweep.rs` - **new**: `sweep = false` records a zero-byte stub as missing without deleting it (own test binary — sets `SIMSAPA_DIR` before the `OnceLock`).
-- `backend/src/db/mod.rs` - `StartupDbReport` struct, `record_db_presence()`, `get_startup_db_report_json()` (`:80-153`); gains the top-level `storage_path` field (FR-22).
+- `backend/tests/test_ensure_no_empty_db_files_no_sweep.rs` - **new**: `sweep = false` records a zero-byte stub as missing without deleting it (own test binary — sets `SIMSAPA_DIR` before the `OnceLock`). Task 2.0 added `startup_report_carries_the_storage_path_at_the_top_level` to `test_storage_path_state.rs` (JSON shape + first-write-wins).
+- `backend/src/db/mod.rs` - `StartupDbReport` struct, `record_db_presence()`, `get_startup_db_report_json()` (`:80-153`); gains the top-level `storage_path` field (FR-22). **Done in 2.0:** `StoragePathReport`, `record_storage_path_state()` (first-write-wins), `"storage_path"` in the JSON.
 - `backend/src/lib.rs` (tests module) / `backend/tests/` - Rust unit tests for the predicate, trim, fallback, scan classification, and probe cleanup.
 - `bridges/src/storage_manager.rs` - `save_storage_path()` signature change (FR-37); new `find_storage_candidates_json()`, `probe_storage_candidate_json()`, `storage_path_state()` bridge methods.
 - `bridges/src/asset_manager.rs` - `should_auto_start_download()` (`:249-263`): `.exists()` → `try_exists()` fix; new non-consuming `peek_auto_start_download()`.
 - `bridges/src/sutta_bridge.rs` - `get_startup_db_report()` wrapper (`:3875`) passes the extended JSON through unchanged; verify only.
-- `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`.
+- `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`. **Done in 2.0:** `StoragePathState` enum mirroring the FFI ints, predicate + record before `init_app_globals()`, `ensure_no_empty_db_files(!unreachable)`, the two destructive sweeps wrapped with a logged skip, FR-2 exemption comments.
 - `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only).
 - `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation).
 - `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`).
@@ -94,13 +94,13 @@ Update the file after completing each sub-task, not just after completing an ent
 
 **Dependencies:** 1.1 (predicate), 1.3 (`sweep` parameter), 1.6 (FFI).
 
-- [ ] 2.1 Add a `record_storage_path_state(state, recorded)` writer and the `storage_path` field to `StartupDbReport` (`backend/src/db/mod.rs`): write-once semantics matching `record_db_presence()`'s convention; extend `get_startup_db_report_json()` with the top-level `"storage_path"` object (FR-22).
-- [ ] 2.2 Expose the recorder through FFI so `gui.cpp` can call predicate-then-record in one place before `init_app_globals()` (or have the single `storage_path_state_c()` FFI from 1.6 also record, documented as such — one call site, one evaluation).
-- [ ] 2.3 In `gui.cpp::start()`: call the predicate + recorder immediately after `find_port_set_env_c()` and **before** `init_app_globals()` (FR-36), stashing the state and recorded path in locals for later branches.
-- [ ] 2.4 Gate the sweeps: `remove_download_temp_folder()` unconditional; `ensure_no_empty_db_files(state != UNREACHABLE)`; wrap `check_delete_files_for_upgrade()` and `check_remove_lang_index_dirs()` in `state != UNREACHABLE`, logging the skip with the unreachable path. Add the FR-36 rationale comment at the call site (the PRD requires the ordering and reason to be stated there).
-- [ ] 2.5 Add the FR-2 exemption comments at `gui.cpp:395` and `:413` (these reads may consult a fallback DB; they adopt nothing).
-- [ ] 2.6 Update `DatabaseValidationDialog.qml`'s report consumer (`:102` area) to read `storage_path` and, when `state == "unreachable"`, show "configured storage location is unavailable" naming the recorded path instead of the generic missing-database message (FR-22). Update the `SuttaBridge.qml:268` stub's documented return shape.
-- [ ] 2.7 Build + tests; on-device sanity check optional here (test 8e's data-loss scenario becomes verifiable after this stage).
+- [x] 2.1 Add a `record_storage_path_state(state, recorded)` writer and the `storage_path` field to `StartupDbReport` (`backend/src/db/mod.rs`): write-once semantics matching `record_db_presence()`'s convention; extend `get_startup_db_report_json()` with the top-level `"storage_path"` object (FR-22).
+- [x] 2.2 Expose the recorder through FFI so `gui.cpp` can call predicate-then-record in one place before `init_app_globals()` (or have the single `storage_path_state_c()` FFI from 1.6 also record, documented as such — one call site, one evaluation).
+- [x] 2.3 In `gui.cpp::start()`: call the predicate + recorder immediately after `find_port_set_env_c()` and **before** `init_app_globals()` (FR-36), stashing the state and recorded path in locals for later branches.
+- [x] 2.4 Gate the sweeps: `remove_download_temp_folder()` unconditional; `ensure_no_empty_db_files(state != UNREACHABLE)`; wrap `check_delete_files_for_upgrade()` and `check_remove_lang_index_dirs()` in `state != UNREACHABLE`, logging the skip with the unreachable path. Add the FR-36 rationale comment at the call site (the PRD requires the ordering and reason to be stated there).
+- [x] 2.5 Add the FR-2 exemption comments at `gui.cpp:395` and `:413` (these reads may consult a fallback DB; they adopt nothing).
+- [x] 2.6 Update `DatabaseValidationDialog.qml`'s report consumer (`:102` area) to read `storage_path` and, when `state == "unreachable"`, show "configured storage location is unavailable" naming the recorded path instead of the generic missing-database message (FR-22). Update the `SuttaBridge.qml:268` stub's documented return shape.
+- [x] 2.7 Build + tests; on-device sanity check optional here (test 8e's data-loss scenario becomes verifiable after this stage).
 
 ### 3.0 Tier-1 storage enumeration and scan
 

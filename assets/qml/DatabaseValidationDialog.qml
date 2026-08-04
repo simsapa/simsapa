@@ -46,6 +46,23 @@ ApplicationWindow {
     // this is never used to mutate validation_results.
     property var startup_db_report: ({})
 
+    // The top-level storage_path entry of the same report: where the databases
+    // were looked for, and whether that location was reachable at startup. When
+    // it was not, the databases are not corrupted — they are simply somewhere
+    // the app cannot currently see, and saying "may need to be re-downloaded"
+    // would send the user to re-download data they still have.
+    // See docs/relocated-storage-recovery.md.
+    readonly property var storage_path_report: root.startup_db_report.storage_path
+                                                   ? root.startup_db_report.storage_path
+                                                   : ({})
+    readonly property string storage_path_state: root.storage_path_report.state
+                                                     ? root.storage_path_report.state
+                                                     : ""
+    readonly property string recorded_storage_path: root.storage_path_report.recorded
+                                                        ? root.storage_path_report.recorded
+                                                        : ""
+    readonly property bool storage_unreachable: root.storage_path_state === "unreachable"
+
     // Search index state. The index is NOT downloadable, so its failure is
     // tracked separately and must never feed has_downloadable_failures /
     // get_failed_downloadable_list() / handle_redownload() — those would build
@@ -597,10 +614,44 @@ ApplicationWindow {
                 visible: root.has_any_failure
             }
 
+            // Unavailable storage location. Replaces the re-download message
+            // below, which would be a false diagnosis here.
+            ColumnLayout {
+                spacing: 6
+                visible: root.storage_unreachable
+                Layout.fillWidth: true
+
+                Label {
+                    text: "The configured storage location is unavailable:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: "  " + root.recorded_storage_path
+                    font.pointSize: root.pointSize - 1
+                    color: palette.mid
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: "Simsapa's app data is stored there, and that location is not currently available. "
+                        + "If it is on a memory card, make sure the card is inserted in the phone's own card slot — "
+                        + "a card in a USB card reader may not be usable for app data. "
+                        + "The databases are most likely intact; they are simply not reachable from here."
+                    font.pointSize: root.pointSize
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+            }
+
             // Downloadable databases section
             ColumnLayout {
                 spacing: 10
-                visible: root.has_downloadable_failures
+                visible: root.has_downloadable_failures && !root.storage_unreachable
                 Layout.fillWidth: true
 
                 Label {

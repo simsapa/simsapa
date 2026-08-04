@@ -1527,11 +1527,26 @@ pub extern "C" fn find_port_set_env_c() -> bool {
 // side-effect-free, which is what lets `gui.cpp` evaluate it before anything
 // resolves or creates a path.
 
-/// FFI: the recorded storage path's state, as an int matching `StorageState`:
+/// FFI: evaluate the predicate **and** record it into the `StartupDbReport`,
+/// returning the state as an int matching `StorageState`:
 /// 0 = absent, 1 = unreachable, 2 = reachable_empty, 3 = ok.
+///
+/// One call site, one evaluation: `gui.cpp` calls this immediately after
+/// `find_port_set_env_c()` and **before** `init_app_globals()`, which is the
+/// last point at which the answer is still the one the app found rather than
+/// one it produced. The recording is first-write-wins, so calling this again
+/// (which nothing does) cannot falsify the report. Pair it with
+/// `recorded_storage_path_c()` for the path itself.
 #[unsafe(no_mangle)]
 pub extern "C" fn storage_path_state_c() -> i32 {
-    match storage_path_state().0 {
+    let (state, recorded) = storage_path_state();
+
+    crate::db::record_storage_path_state(
+        state.as_str(),
+        recorded.as_ref().and_then(|p| p.to_str()).map(|s| s.to_string()),
+    );
+
+    match state {
         StorageState::Absent => 0,
         StorageState::Unreachable => 1,
         StorageState::ReachableEmpty => 2,
