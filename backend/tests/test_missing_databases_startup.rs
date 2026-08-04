@@ -31,7 +31,7 @@ fn missing_dictionaries_and_dpd_start_safely() {
     assert!(!g.paths.dpd_db_path.try_exists().unwrap_or(true), "dpd must start absent");
 
     // The GUI path runs this before QApplication; it is the first presence writer.
-    ensure_no_empty_db_files();
+    ensure_no_empty_db_files(true);
 
     // (a) Construction must not fail on missing databases.
     let dbm = DbManager::new().expect("DbManager::new() must not fail on missing databases");
@@ -53,7 +53,7 @@ fn missing_dictionaries_and_dpd_start_safely() {
     }
 
     // The stub self-heals: a second `ensure_no_empty_db_files()` removes it.
-    ensure_no_empty_db_files();
+    ensure_no_empty_db_files(true);
     for path in [&g.paths.dict_db_path, &g.paths.dpd_db_path] {
         assert!(!path.try_exists().unwrap_or(true),
                 "zero-byte stub was not reclaimed: {:?}", path);

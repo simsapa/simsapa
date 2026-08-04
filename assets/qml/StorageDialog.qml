@@ -20,8 +20,36 @@ Dialog {
     readonly property int font_point_size: 12
     readonly property bool is_qml_preview: Qt.application.name === "Qml Runtime"
 
+    Logger { id: logger }
     StorageManager { id: sm }
     ListModel { id: storage_locations_model }
+
+    // Shown when storage-path.txt could not be written. The dialog stays open,
+    // so the user can pick another location instead of silently downloading to
+    // a location they did not choose.
+    Dialog {
+        id: save_error_dialog
+        title: "Could Not Save the Storage Location"
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+
+        property string storage_path: ""
+
+        ColumnLayout {
+            spacing: 10
+            width: Math.min(400, root.width - 40)
+
+            Label {
+                text: "Simsapa could not record the selected storage location:\n\n"
+                    + save_error_dialog.storage_path
+                    + "\n\nThe download was not started. Please try another location."
+                font.pointSize: root.font_point_size
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+        }
+    }
 
     Component.onCompleted: {
         if (root.is_qml_preview) return;
@@ -187,8 +215,19 @@ Dialog {
                 onClicked: {
                     if (root.selectedIndex >= 0) {
                         var idx = root.selectedIndex;
-                        sm.save_storage_path(storage_locations_model.get(idx).path,
-                                             storage_locations_model.get(idx).is_internal);
+                        var selected_path = storage_locations_model.get(idx).path;
+                        // A failed write must not proceed to the download: the
+                        // app would download into whatever location it resolves
+                        // on its own, which is not the one the user chose.
+                        // See docs/relocated-storage-recovery.md.
+                        var saved = sm.save_storage_path(selected_path,
+                                                         storage_locations_model.get(idx).is_internal);
+                        if (!saved) {
+                            logger.error("save_storage_path() failed for: " + selected_path);
+                            save_error_dialog.storage_path = selected_path;
+                            save_error_dialog.open();
+                            return;
+                        }
                         root.accept()
                     }
                 }

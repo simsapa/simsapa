@@ -6,7 +6,18 @@ Item {
         return "[{}]";
     }
 
-    function save_storage_path(path: string, is_internal: bool) {
+    function save_storage_path(path: string, is_internal: bool): bool {
         console.log("save_storage_path(): " + path + ", is_internal: " + is_internal);
+        return true;
+    }
+
+    function storage_path_state(): string {
+        console.log("storage_path_state()");
+        return "absent";
+    }
+
+    function recorded_storage_path(): string {
+        console.log("recorded_storage_path()");
+        return "";
     }
 }

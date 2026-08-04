@@ -644,11 +644,21 @@ pub fn check_file_exists_print_err<P: AsRef<Path>>(path: P) -> Result<bool, Box<
     Ok(true)
 }
 
-pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>> {
+/// Derive the internal app root **without creating it**.
+///
+/// `get_create_simsapa_internal_app_root()` is this plus a `create_dir_all()`.
+/// The non-creating variant exists so that the read-only storage-path predicate
+/// (`storage_path_state()`) can locate `storage-path.txt` without touching the
+/// filesystem — see docs/relocated-storage-recovery.md. The internal root is
+/// created moments later anyway, by `init_app_globals()`.
+pub fn get_simsapa_internal_app_root_path() -> Result<PathBuf, Box<dyn Error>> {
     // AppDataType::UserData
     // - Android: /data/user/0/io.github.simsapa.app/files/.local/share/simsapa
     // AppDataType::UserConfig
     // - Android: /data/user/0/io.github.simsapa.app/files/.config/simsapa
+    //
+    // app_dirs2's `get_` prefixed functions only derive the path; the
+    // unprefixed ones create it.
     let mut p = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
     // On Android and iOS, strip .local/share/simsapa from the path, so that
@@ -661,10 +671,133 @@ pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>>
              .to_path_buf()
     }
 
+    Ok(p)
+}
+
+pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>> {
+    let p = get_simsapa_internal_app_root_path()?;
+
     if !p.try_exists()? {
         create_dir_all(&p)?;
     }
     Ok(p)
+}
+
+/// The four states of the recorded storage path (`storage-path.txt`).
+///
+/// See docs/relocated-storage-recovery.md. The states must not be collapsed:
+/// a recorded path is written when the user *selects* a location, before any
+/// download runs, so "a path is recorded" does not imply "an installation was
+/// ever completed".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageState {
+    /// No `storage-path.txt`, or it is empty/whitespace-only after trimming.
+    Absent,
+    /// The recorded path does not exist, or its metadata cannot be read.
+    Unreachable,
+    /// The recorded path exists but holds no usable installation.
+    ReachableEmpty,
+    /// The recorded path exists and holds a usable installation.
+    Ok,
+}
+
+impl StorageState {
+    /// The string form used in JSON and QML.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StorageState::Absent => "absent",
+            StorageState::Unreachable => "unreachable",
+            StorageState::ReachableEmpty => "reachable_empty",
+            StorageState::Ok => "ok",
+        }
+    }
+}
+
+/// Whether `dir` holds a usable installation: `app-assets/appdata.sqlite3`
+/// exists and is non-zero length.
+///
+/// Existence alone is not enough — a zero-byte file is left behind by a failed
+/// connection attempt. Errors classify as "no" and are never propagated.
+pub fn has_usable_installation<P: AsRef<Path>>(dir: P) -> bool {
+    let db_path = dir.as_ref().join("app-assets").join("appdata.sqlite3");
+    match db_path.try_exists() {
+        Ok(true) => match fs::metadata(&db_path) {
+            Ok(m) => m.len() > 0,
+            Err(e) => {
+                warn(&format!("Cannot read metadata for {}: {}", db_path.display(), e));
+                false
+            }
+        },
+        Ok(false) => false,
+        Err(e) => {
+            warn(&format!("Cannot check existence of {}: {}", db_path.display(), e));
+            false
+        }
+    }
+}
+
+/// Classify the recorded storage path, given the location of
+/// `storage-path.txt`. The testable core of `storage_path_state()`; it does no
+/// `is_mobile()` gating and never creates anything.
+pub fn storage_path_state_of_file(storage_config_path: &Path) -> (StorageState, Option<PathBuf>) {
+    let contents = match fs::read_to_string(storage_config_path) {
+        Ok(s) => s,
+        // Missing or unreadable: there is no usable recorded path either way.
+        Err(_) => return (StorageState::Absent, None),
+    };
+
+    // Trim: a stray trailing newline (from a hand-written or scripted file)
+    // would otherwise produce a path that can never resolve.
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return (StorageState::Absent, None);
+    }
+
+    let recorded = PathBuf::from(trimmed);
+
+    // Read-only classification: try_exists() + metadata() only. Creating the
+    // directory here would reclassify Unreachable as ReachableEmpty and
+    // suppress the very message this predicate exists to trigger.
+    let reachable = match recorded.try_exists() {
+        Ok(true) => fs::metadata(&recorded).is_ok(),
+        Ok(false) => false,
+        Err(_) => false,
+    };
+
+    if !reachable {
+        return (StorageState::Unreachable, Some(recorded));
+    }
+
+    if has_usable_installation(&recorded) {
+        (StorageState::Ok, Some(recorded))
+    } else {
+        (StorageState::ReachableEmpty, Some(recorded))
+    }
+}
+
+/// The single definition of the recorded-storage-path condition.
+///
+/// Free of side effects (no `create_dir_all()`, no writes, no database opens),
+/// which is what makes it safe to call at the earliest point of startup, before
+/// `init_app_globals()` resolves and creates any path.
+///
+/// Gated on `is_mobile()` internally: on desktop `get_create_simsapa_dir()`
+/// ignores `storage-path.txt` entirely, so a stray file there must not be able
+/// to reach any consumer of this predicate.
+pub fn storage_path_state() -> (StorageState, Option<PathBuf>) {
+    if !is_mobile() {
+        return (StorageState::Absent, None);
+    }
+
+    let internal_app_root = match get_simsapa_internal_app_root_path() {
+        Ok(p) => p,
+        Err(e) => {
+            warn(&format!("storage_path_state(): cannot derive internal app root: {}", e));
+            return (StorageState::Absent, None);
+        }
+    };
+
+    storage_path_state_of_file(&internal_app_root.join("storage-path.txt"))
 }
 
 pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
@@ -780,11 +913,46 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 println!("{}", msg);
             }
 
-            // storage path
-            let p = PathBuf::from(contents);
-            if !p.try_exists()? {
-                create_dir_all(&p)?;
+            // Trim: a file written by hand, by a script or by `adb` carries a
+            // trailing newline, which would produce a path that can never
+            // resolve. An empty result means "no recorded path".
+            let trimmed = contents.trim();
+            if trimmed.is_empty() {
+                let msg = format!("Empty storage path recorded in {}, using the internal app root.",
+                                  &storage_config_path.to_str().unwrap_or_default());
+                if logger_initialized {
+                    warn(&msg);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return Ok(internal_app_root);
             }
+
+            // storage path
+            let p = PathBuf::from(trimmed);
+
+            // A recorded path that no longer resolves is NOT created here. The
+            // classification must stay stable across launches, or the recovery
+            // flow's "unreachable" diagnosis erases itself: launch 1 reports it,
+            // this call creates the directory, launch 2 sees an empty but
+            // reachable path and says nothing. Creating a directory is only ever
+            // correct immediately after the user chooses a location, which is
+            // save_storage_path() / the download flow's job (the asset
+            // directories are created by get_create_simsapa_app_assets_path()).
+            //
+            // See docs/relocated-storage-recovery.md.
+            if !p.try_exists().unwrap_or(false) {
+                let msg = format!("Recorded storage path is not available: {} — falling back to the internal app root: {}",
+                                  p.to_str().unwrap_or_default(),
+                                  internal_app_root.to_str().unwrap_or_default());
+                if logger_initialized {
+                    warn(&msg);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return Ok(internal_app_root);
+            }
+
             Ok(p)
         }
     }
@@ -870,8 +1038,18 @@ pub extern "C" fn dotenv_c() {
 /// wins). A stub deleted here is recorded as **missing**, which is what makes
 /// the diagnosis honest across launches. `DbManager::new()` re-records the same
 /// sweep for the non-GUI paths.
+///
+/// `sweep` gates **only the deletion**. With `sweep = false` (the recorded
+/// storage path is unreachable, so the resolved path is an internal fallback the
+/// user never chose) a zero-byte file is left in place but still recorded as
+/// **missing** — len == 0 is not a usable database, so the record means the same
+/// thing in both modes. The recording is never skipped: in that state the app
+/// never reaches `DbManager::new()`, so nothing else would ever write it and
+/// Database Validation would report `present_at_start: null` in exactly the
+/// session that needs diagnosing. The per-database order stays sweep-then-record
+/// for the same reason. See docs/relocated-storage-recovery.md.
 #[unsafe(no_mangle)]
-pub extern "C" fn ensure_no_empty_db_files() {
+pub extern "C" fn ensure_no_empty_db_files(sweep: bool) {
     let g = get_app_globals();
     for (p, kind) in [(g.paths.appdata_db_path.clone(), crate::db::DbKind::Appdata),
                       (g.paths.dict_db_path.clone(), crate::db::DbKind::Dictionaries),
@@ -881,7 +1059,8 @@ pub extern "C" fn ensure_no_empty_db_files() {
             Ok(true) => {
                 match fs::metadata(&p) {
                     Ok(metadata) if metadata.len() == 0 => {
-                        if let Err(e) = fs::remove_file(&p) {
+                        // Recorded as missing whether or not it is deleted.
+                        if sweep && let Err(e) = fs::remove_file(&p) {
                             eprintln!("Failed to remove file {:?}: {}", p, e);
                             present = true;
                         }
@@ -1340,6 +1519,39 @@ fn is_port_available(port: u16) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn find_port_set_env_c() -> bool {
     find_port_set_env()
+}
+
+// --- Recorded storage path predicate (read before init_app_globals()) ---
+//
+// See docs/relocated-storage-recovery.md. `storage_path_state()` is
+// side-effect-free, which is what lets `gui.cpp` evaluate it before anything
+// resolves or creates a path.
+
+/// FFI: the recorded storage path's state, as an int matching `StorageState`:
+/// 0 = absent, 1 = unreachable, 2 = reachable_empty, 3 = ok.
+#[unsafe(no_mangle)]
+pub extern "C" fn storage_path_state_c() -> i32 {
+    match storage_path_state().0 {
+        StorageState::Absent => 0,
+        StorageState::Unreachable => 1,
+        StorageState::ReachableEmpty => 2,
+        StorageState::Ok => 3,
+    }
+}
+
+/// FFI: the recorded storage path (trimmed), or null when there is none.
+/// Caller must call `free_rust_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn recorded_storage_path_c() -> *mut std::os::raw::c_char {
+    use std::ffi::CString;
+
+    match storage_path_state().1 {
+        Some(p) => match p.to_str().map(CString::new) {
+            Some(Ok(s)) => s.into_raw(),
+            _ => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
 }
 
 /// FFI function to create or update Linux desktop icon file

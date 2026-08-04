@@ -23,6 +23,11 @@ Item {
         return false;
     }
 
+    function peek_auto_start_download(): bool {
+        console.log("peek_auto_start_download()");
+        return false;
+    }
+
     function set_keep_screen_on(on: bool) {
         console.log("set_keep_screen_on(" + on + ")");
     }
