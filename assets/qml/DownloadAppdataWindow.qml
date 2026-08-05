@@ -38,7 +38,19 @@ ApplicationWindow {
 
         // Check if auto_start_download.txt marker file exists
         // This is set during database upgrades to automatically start the download
-        root.auto_start_download = manager.should_auto_start_download();
+        //
+        // The marker is left alone when the user has just asked to set up a new
+        // database: consulting it here CONSUMES it, and its answer would send
+        // this window straight into a download at whatever location resolves on
+        // its own — which is the location the user is in the middle of
+        // rejecting. See docs/relocated-storage-recovery.md.
+        if (root.skip_auto_start_download) {
+            logger.info("Setting up a new database; not consulting the "
+                        + "auto_start_download.txt marker.");
+            root.auto_start_download = false;
+        } else {
+            root.auto_start_download = manager.should_auto_start_download();
+        }
 
         // Initialize language selection from download_languages.txt if it exists
         init_add_languages = manager.get_init_languages();
@@ -89,9 +101,33 @@ ApplicationWindow {
                     root.run_download();
                 }
             });
-        } else if (root.is_mobile) {
-            // On mobile, show storage dialog for initial setup (not upgrade)
-            storage_dialog.open();
+        } else if (root.skip_storage_dialog) {
+            logger.info("Storage location already chosen in the recovery dialog; "
+                        + "not asking again.");
+        } else if (root.is_mobile && root.is_initial_setup) {
+            // On mobile, show storage dialog for initial setup (not upgrade).
+            //
+            // `is_initial_setup` is load-bearing, not decoration:
+            // DatabaseValidationDialog keeps a permanently hidden
+            // DownloadAppdataWindow for re-downloads, and its releases check
+            // completes on every ordinary launch — so without this gate the
+            // hidden window reached this branch and auto_select_single_location()
+            // rewrote storage-path.txt behind the user's back on a healthy
+            // install (observed on device, 2026-08-05). The write happened to be
+            // idempotent there, but a hidden window silently recording the app's
+            // storage location is not something to leave in place.
+            //
+            // Unless there is only one location to offer — a device with no
+            // memory card has exactly one, once the emulated view of the
+            // internal storage has been de-duplicated away — in which case the
+            // dialog would be a modal asking the user to choose between one
+            // option. auto_select_single_location() records it and returns
+            // true; anything else (several locations, or a failed write) falls
+            // through to the dialog.
+            // See docs/relocated-storage-recovery.md.
+            if (!storage_dialog.auto_select_single_location()) {
+                storage_dialog.open();
+            }
         }
     }
 
@@ -112,6 +148,31 @@ ApplicationWindow {
 
     property bool is_initial_setup: true
     property bool auto_start_download: false
+
+    // Set from C++ (StorageRecoveryWindow's group-2 handoff) when the user has
+    // just chosen a storage location in the recovery dialog, so this window must
+    // not ask for one again.
+    //
+    // It is never set on the "recorded location is reachable but empty"
+    // fall-through, where the location was chosen in a previous session before a
+    // download that then failed and is itself the prime suspect.
+    // See docs/relocated-storage-recovery.md.
+    property bool skip_storage_dialog: false
+
+    // Set from C++ when this window was opened by the recovery flow's "set up a
+    // new database" outcome (Set Up Again / Create New Location). A pending
+    // upgrade marker must not hijack that: auto-starting would skip the storage
+    // dialog and download to whatever location the app resolves on its own,
+    // which in the unreachable state is the internal fallback — a location the
+    // user never chose, and one they have just declined to keep.
+    //
+    // Both this and skip_storage_dialog are passed as INITIAL properties
+    // (QQmlApplicationEngine::setInitialProperties), so they are in place before
+    // Component.onCompleted runs. That ordering is load-bearing for this one:
+    // should_auto_start_download() deletes the marker as a side effect of
+    // reporting it, so a flag applied after construction would come too late to
+    // prevent the consumption. See docs/relocated-storage-recovery.md.
+    property bool skip_auto_start_download: false
     property string init_add_languages: ""
     property var available_languages: []
     property var selected_languages: []

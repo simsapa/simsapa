@@ -25,7 +25,9 @@
 // #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "errors.h"
+#include "utils.h"
 #include "window_manager.h"
+#include "storage_recovery_window.h"
 #include "sutta_search_window.h"
 #include "global_hotkey_manager.h"
 #include "system_palette.h"
@@ -45,7 +47,12 @@
 extern "C" void start_webserver();
 extern "C" void shutdown_webserver();
 extern "C" bool appdata_db_exists();
-extern "C" void ensure_no_empty_db_files();
+extern "C" void ensure_no_empty_db_files(bool sweep);
+extern "C" int storage_path_state_c();
+extern "C" char* recorded_storage_path_c();
+extern "C" bool storage_scan_log_requested_c();
+extern "C" bool peek_auto_start_download_c();
+extern "C" void log_storage_scan_c(const char* enumeration_json);
 extern "C" void check_delete_files_for_upgrade();
 extern "C" void check_remove_lang_index_dirs();
 extern "C" void remove_download_temp_folder();
@@ -82,6 +89,26 @@ extern "C" bool render_loop_basic_c();
 // loads. See the comment on `theme_link_colors_c()` in backend/src/lib.rs and
 // on `set_app_palette_link_colors()` in cpp/system_palette.h.
 extern "C" char* theme_link_colors_c();
+
+// The four states of the recorded storage path, mirroring `StorageState` in
+// backend/src/lib.rs. The integers are the FFI contract of
+// `storage_path_state_c()`. See docs/relocated-storage-recovery.md.
+enum class StoragePathState : int {
+    Absent = 0,
+    Unreachable = 1,
+    ReachableEmpty = 2,
+    Ok = 3,
+};
+
+static const char* storage_path_state_name(StoragePathState state) {
+    switch (state) {
+        case StoragePathState::Absent: return "absent";
+        case StoragePathState::Unreachable: return "unreachable";
+        case StoragePathState::ReachableEmpty: return "reachable_empty";
+        case StoragePathState::Ok: return "ok";
+    }
+    return "unknown";
+}
 
 struct AppGlobals {
     static WindowManager* manager;
@@ -345,25 +372,83 @@ int start(int argc, char* argv[]) {
   dotenv_c();
   log_info_with_options_c("gui::start()", true);
   find_port_set_env_c();
+
+  // Evaluate the recorded storage path (storage-path.txt) and record it into
+  // the startup report, BEFORE anything resolves or creates a path.
+  //
+  // This is the last point at which the answer is the one the app *found*
+  // rather than one it produced: init_app_globals() below calls
+  // get_create_simsapa_dir(), which falls back to the internal app root when
+  // the recorded path is unreachable. The predicate is read-only (try_exists()
+  // + metadata() only) and is_mobile()-gated internally, so on desktop it
+  // returns Absent without reading the file at all.
+  //
+  // The state is a deliberate PRE-SWEEP snapshot — it is not re-evaluated after
+  // the sweeps below, which can themselves change the on-disk truth (a normal
+  // upgrade launch sees Ok here and has its databases deleted moments later by
+  // check_delete_files_for_upgrade(); that reaches the upgrade download through
+  // `!appdata_db_exists()`, not through the recovery flow).
+  //
+  // See docs/relocated-storage-recovery.md.
+  const StoragePathState storage_state = static_cast<StoragePathState>(storage_path_state_c());
+  QString recorded_storage_path;
+  {
+    char* recorded_c = recorded_storage_path_c();
+    if (recorded_c) {
+      recorded_storage_path = QString::fromUtf8(recorded_c);
+      free_rust_string(recorded_c);
+    }
+  }
+
   init_app_globals();
   remove_download_temp_folder();
 
+  // The three startup sweeps below are gated on the storage-path state.
+  //
+  // They all resolve their paths through get_create_simsapa_dir(), which with an
+  // unreachable recorded path now returns the INTERNAL FALLBACK — a location the
+  // user never chose, and one that may hold the very installation the recovery
+  // flow is about to offer to adopt. check_delete_files_for_upgrade() deletes
+  // database files, so a stale internal delete_files_for_upgrade.txt plus an
+  // unreachable recorded path would destroy it. remove_download_temp_folder()
+  // above is non-destructive to installed data and always runs.
+  const bool storage_unreachable = (storage_state == StoragePathState::Unreachable);
+
   // There may be a 0-byte size db file remaining from a failed
   // install attempt.
-  ensure_no_empty_db_files();
+  //
+  // Only the DELETION is gated: this function is also the authoritative first
+  // writer of the per-database presence record, and in the unreachable state the
+  // app never reaches DbManager::new(), so skipping it wholesale would leave
+  // Database Validation reporting `present_at_start: null` in exactly the
+  // session that needs diagnosing.
+  ensure_no_empty_db_files(!storage_unreachable);
 
-  // Check if database files should be deleted for an upgrade.
-  // This is triggered by the delete_files_for_upgrade.txt marker file
-  // created by prepare_for_database_upgrade().
-  check_delete_files_for_upgrade();
+  if (storage_unreachable) {
+    log_info_c(QString("Skipping destructive startup sweeps; recorded storage path unreachable: %1")
+                   .arg(recorded_storage_path)
+                   .toUtf8()
+                   .constData());
+  } else {
+    // Check if database files should be deleted for an upgrade.
+    // This is triggered by the delete_files_for_upgrade.txt marker file
+    // created by prepare_for_database_upgrade().
+    check_delete_files_for_upgrade();
 
-  // Remove per-language fulltext index folders orphaned by an in-app
-  // language removal. This is triggered by the remove_lang_index_dirs.txt
-  // marker file written by remove_sutta_languages(). Must run before any
-  // fulltext searcher is opened so no Tantivy files are held open.
-  check_remove_lang_index_dirs();
+    // Remove per-language fulltext index folders orphaned by an in-app
+    // language removal. This is triggered by the remove_lang_index_dirs.txt
+    // marker file written by remove_sutta_languages(). Must run before any
+    // fulltext searcher is opened so no Tantivy files are held open.
+    check_remove_lang_index_dirs();
+  }
 
   QString os(QSysInfo::productType());
+
+  // The storage recovery flow is mobile-only. The predicate is already
+  // is_mobile()-gated in Rust (desktop always reports "absent"), so this is
+  // belt and braces — but the branch it guards is the one that decides whether
+  // the app boots at all, so it states the condition rather than relying on it.
+  const bool is_mobile = (os == "android" || os == "ios");
 
   // Initialize a QtWebView / QtWebEngineView. Otherwise the app errors:
   //
@@ -392,6 +477,11 @@ int start(int argc, char* argv[]) {
   // drivers. The corresponding Qt env vars must be set before the QApplication
   // is constructed. Settings are read directly from the DB here (before
   // init_app_data()), so we only read them when the appdata DB already exists.
+  //
+  // Exempt from the rule that the app must not consult a fallback database
+  // while the recorded storage path is unreachable: this read adopts nothing —
+  // it sets one environment variable — and skipping it would degrade the very
+  // recovery screens that are about to be shown.
   if (appdata_db_exists()) {
     if (render_loop_basic_c()) {
       log_info_c("Rendering: QSG_RENDER_LOOP=basic");
@@ -402,6 +492,19 @@ int start(int argc, char* argv[]) {
   // QApplication has to be constructed before other windows or dialogs.
   QApplication app(argc, argv);
 
+  // Diagnostic: with a log-storage-scan.txt marker in the internal app root,
+  // dump the storage enumeration and the tier-1 scan to the log. The
+  // enumeration is otherwise only reachable from the storage dialogs, so on a
+  // healthy install there is no way to see what the app makes of the device's
+  // volumes — and the Android getStorageVolumes() pass fails silently when a
+  // JNI signature is wrong. Costs one try_exists() when the marker is absent.
+  // The marker is not consumed; delete it to stop dumping.
+  // See docs/relocated-storage-recovery.md.
+  if (storage_scan_log_requested_c()) {
+    const QByteArray enumeration = get_app_data_storage_paths_json().toUtf8();
+    log_storage_scan_c(enumeration.constData());
+  }
+
   // Apply the theme's link colours to the *application* palette immediately.
   // This must happen before the QML engine loads: rich-text <a href> anchors
   // take their colour from this palette when the HTML is parsed, and it is
@@ -410,6 +513,10 @@ int start(int argc, char* argv[]) {
   // children of SuttaSearchWindow) would otherwise keep the platform default —
   // on Android a pale lavender that is unreadable on the light background —
   // even though ThemeHelper.apply() fixes the palette moments later.
+  //
+  // Exempt from the unreachable-storage rule for the same reason as the render
+  // loop read above: it adopts nothing, it sets a palette colour, and the
+  // screens it affects are the recovery screens themselves.
   if (appdata_db_exists()) {
     char* link_colors_c = theme_link_colors_c();
     if (link_colors_c) {
@@ -482,6 +589,65 @@ int start(int argc, char* argv[]) {
   // DownloadAppdataWindow instead of the main app.
 
   AppGlobals::manager = &WindowManager::instance(&app);
+
+  // The startup branch is keyed on the storage-path STATE, not on
+  // appdata_db_exists(): with an unreachable recorded path, get_create_simsapa_dir()
+  // falls back to the internal app root, so appdata_db_exists() can be true at a
+  // location the user never chose — which is exactly the case this flow exists
+  // to catch. A moved memory card must never look like a fresh install.
+  //
+  // The upgrade marker suppresses recovery only in the reachable-empty state. In
+  // the unreachable state it must not: the upgrade download would silently land
+  // in the internal fallback, write no storage-path.txt, and leave the next
+  // launch unreachable all over again with the fresh copy showing up as a
+  // recovery hit. The peek never consumes the marker —
+  // DownloadAppdataWindow.qml's Component.onCompleted remains its single point
+  // of deletion — so the intended upgrade download still auto-starts on the
+  // launch after the user has resolved where their data lives.
+  //
+  // See docs/relocated-storage-recovery.md.
+  const bool storage_needs_recovery = (storage_state == StoragePathState::Unreachable
+                                       || storage_state == StoragePathState::ReachableEmpty);
+  const bool skip_for_upgrade = (storage_state == StoragePathState::ReachableEmpty
+                                 && peek_auto_start_download_c());
+
+  bool recovery_window_shown = false;
+
+  if (is_mobile && storage_needs_recovery && !skip_for_upgrade) {
+
+    log_info_c(QString("Starting the storage recovery flow; recorded path state: %1")
+                   .arg(storage_path_state_name(storage_state))
+                   .toUtf8()
+                   .constData());
+
+    // The recovery window resolves the flow itself and hands off to
+    // DownloadAppdataWindow (created by its C++ host) for the outcomes that need
+    // a download — all within this single app.exec() lifetime.
+    StorageRecoveryWindow* recovery = AppGlobals::manager->create_storage_recovery_window();
+
+    // If the QML failed to load there is no window at all, and entering
+    // app.exec() would hang on a blank screen forever: with nothing on screen no
+    // window can ever close, so quitOnLastWindowClosed never fires. Fall through
+    // to the ordinary first-run window instead — the recovery flow is lost for
+    // this launch, but the user still reaches a working setup screen.
+    recovery_window_shown = (recovery != nullptr && recovery->m_root != nullptr);
+    if (!recovery_window_shown) {
+      log_error_c("The storage recovery window could not be created; "
+                  "falling back to the first-run download window.");
+    }
+  }
+
+  if (recovery_window_shown) {
+
+    log_info_c("app.exec()");
+    int status = app.exec();
+
+    std::ostringstream msg;
+    msg << "Exiting with status " << status << ".";
+    log_info_c(msg.str().c_str());
+
+    throw NormalExit("Exiting after StorageRecoveryWindow", status);
+  }
 
   if (!appdata_db_exists()) {
 

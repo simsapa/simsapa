@@ -265,8 +265,10 @@ Item {
         console.log("rebuild_search_index()");
     }
 
+    // One entry per database, plus a top-level "storage_path" object:
+    // { "recorded": string|null, "state": "absent"|"unreachable"|"reachable_empty"|"ok"|null }
     function get_startup_db_report(): string {
-        return '{"appdata": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dictionaries": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dpd": {"present_at_start": true, "migration_ok": null, "migration_error": null}}';
+        return '{"appdata": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dictionaries": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dpd": {"present_at_start": true, "migration_ok": null, "migration_error": null}, "storage_path": {"recorded": null, "state": "absent"}}';
     }
 
     function remove_book(book_uid: string) {

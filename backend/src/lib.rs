@@ -42,6 +42,7 @@ pub mod search;
 pub mod waveform;
 pub mod audio;
 pub mod global_hotkeys;
+pub mod storage_probe;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 
@@ -644,11 +645,21 @@ pub fn check_file_exists_print_err<P: AsRef<Path>>(path: P) -> Result<bool, Box<
     Ok(true)
 }
 
-pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>> {
+/// Derive the internal app root **without creating it**.
+///
+/// `get_create_simsapa_internal_app_root()` is this plus a `create_dir_all()`.
+/// The non-creating variant exists so that the read-only storage-path predicate
+/// (`storage_path_state()`) can locate `storage-path.txt` without touching the
+/// filesystem — see docs/relocated-storage-recovery.md. The internal root is
+/// created moments later anyway, by `init_app_globals()`.
+pub fn get_simsapa_internal_app_root_path() -> Result<PathBuf, Box<dyn Error>> {
     // AppDataType::UserData
     // - Android: /data/user/0/io.github.simsapa.app/files/.local/share/simsapa
     // AppDataType::UserConfig
     // - Android: /data/user/0/io.github.simsapa.app/files/.config/simsapa
+    //
+    // app_dirs2's `get_` prefixed functions only derive the path; the
+    // unprefixed ones create it.
     let mut p = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
     // On Android and iOS, strip .local/share/simsapa from the path, so that
@@ -661,10 +672,424 @@ pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>>
              .to_path_buf()
     }
 
+    Ok(p)
+}
+
+pub fn get_create_simsapa_internal_app_root() -> Result<PathBuf, Box<dyn Error>> {
+    let p = get_simsapa_internal_app_root_path()?;
+
     if !p.try_exists()? {
         create_dir_all(&p)?;
     }
     Ok(p)
+}
+
+/// The four states of the recorded storage path (`storage-path.txt`).
+///
+/// See docs/relocated-storage-recovery.md. The states must not be collapsed:
+/// a recorded path is written when the user *selects* a location, before any
+/// download runs, so "a path is recorded" does not imply "an installation was
+/// ever completed".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageState {
+    /// No `storage-path.txt`, or it is empty/whitespace-only after trimming.
+    Absent,
+    /// The recorded path does not exist, or its metadata cannot be read.
+    Unreachable,
+    /// The recorded path exists but holds no usable installation.
+    ReachableEmpty,
+    /// The recorded path exists and holds a usable installation.
+    Ok,
+}
+
+impl StorageState {
+    /// The string form used in JSON and QML.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StorageState::Absent => "absent",
+            StorageState::Unreachable => "unreachable",
+            StorageState::ReachableEmpty => "reachable_empty",
+            StorageState::Ok => "ok",
+        }
+    }
+}
+
+/// Whether `dir` holds a usable installation: `app-assets/appdata.sqlite3`
+/// exists and is non-zero length.
+///
+/// Existence alone is not enough — a zero-byte file is left behind by a failed
+/// connection attempt. Errors classify as "no" and are never propagated.
+pub fn has_usable_installation<P: AsRef<Path>>(dir: P) -> bool {
+    let db_path = dir.as_ref().join("app-assets").join("appdata.sqlite3");
+    match db_path.try_exists() {
+        Ok(true) => match fs::metadata(&db_path) {
+            Ok(m) => m.len() > 0,
+            Err(e) => {
+                warn(&format!("Cannot read metadata for {}: {}", db_path.display(), e));
+                false
+            }
+        },
+        Ok(false) => false,
+        Err(e) => {
+            warn(&format!("Cannot check existence of {}: {}", db_path.display(), e));
+            false
+        }
+    }
+}
+
+/// Classify the recorded storage path, given the location of
+/// `storage-path.txt`. The testable core of `storage_path_state()`; it does no
+/// `is_mobile()` gating and never creates anything.
+pub fn storage_path_state_of_file(storage_config_path: &Path) -> (StorageState, Option<PathBuf>) {
+    let contents = match fs::read_to_string(storage_config_path) {
+        Ok(s) => s,
+        // Missing or unreadable: there is no usable recorded path either way.
+        Err(_) => return (StorageState::Absent, None),
+    };
+
+    // Trim: a stray trailing newline (from a hand-written or scripted file)
+    // would otherwise produce a path that can never resolve.
+    let trimmed = contents.trim();
+    if trimmed.is_empty() {
+        return (StorageState::Absent, None);
+    }
+
+    let recorded = PathBuf::from(trimmed);
+
+    // Read-only classification: try_exists() + metadata() only. Creating the
+    // directory here would reclassify Unreachable as ReachableEmpty and
+    // suppress the very message this predicate exists to trigger.
+    let reachable = match recorded.try_exists() {
+        Ok(true) => fs::metadata(&recorded).is_ok(),
+        Ok(false) => false,
+        Err(_) => false,
+    };
+
+    if !reachable {
+        return (StorageState::Unreachable, Some(recorded));
+    }
+
+    if has_usable_installation(&recorded) {
+        (StorageState::Ok, Some(recorded))
+    } else {
+        (StorageState::ReachableEmpty, Some(recorded))
+    }
+}
+
+/// Below this much free space a storage location is shown with a warning — it
+/// is never disqualified. The required size is not knowable when the dialog
+/// opens (it depends on which languages and bundles the user has not chosen
+/// yet), so a conservative estimate treated as a hard block risks locking a
+/// user out of the only card that would in fact have worked. The download
+/// already fails loudly and recoverably if space really runs out.
+pub const LOW_SPACE_THRESHOLD_MB: i64 = 2048;
+
+/// The three databases a complete installation holds. `appdata.sqlite3` alone
+/// is enough to *offer* a location (see `has_usable_installation()`); the other
+/// two decide the "Partial" marker.
+const INSTALLATION_DB_FILENAMES: [&str; 3] =
+    ["appdata.sqlite3", "dictionaries.sqlite3", "dpd.sqlite3"];
+
+/// Compare two paths for identity, tolerantly but without touching the
+/// filesystem: trim, drop trailing separators, compare by path components.
+///
+/// A raw string compare silently fails on a trailing slash — producing a
+/// duplicated candidate row or an unmarked current selection, with no error
+/// anywhere. `canonicalize()` is not usable here: it fails on a path that does
+/// not exist, which is precisely the case that matters.
+pub fn same_path(a: &str, b: &str) -> bool {
+    fn components(s: &str) -> Option<Vec<std::path::Component<'_>>> {
+        let t = s.trim();
+        if t.is_empty() {
+            return None;
+        }
+        Some(Path::new(t).components().collect())
+    }
+
+    match (components(a), components(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Tier-1 scan of the storage candidates: cheap, non-probing classification of
+/// every location the app can see.
+///
+/// `enumeration_json` is `get_app_data_storage_paths_json()`'s array (the
+/// platform enumeration, which on Android also carries the `is_usable` /
+/// `unusable_reason` flags). `recorded` is the recorded storage path, which is
+/// appended as an extra candidate when the enumeration does not already contain
+/// it — when it is unreachable it is by definition not enumerated, so without
+/// this the "test the recorded path like any other candidate" rule is a no-op.
+///
+/// Kept free of write probes and database opens on purpose: this runs on the
+/// startup path and inside `StorageDialog`'s `Component.onCompleted`. The
+/// write/SQLite probe is tier 2 and can only ever *demote* a row afterwards.
+/// See docs/relocated-storage-recovery.md.
+pub fn scan_storage_candidates(enumeration_json: &str, recorded: Option<&str>) -> String {
+    let rows: Vec<serde_json::Value> = match serde_json::from_str(enumeration_json) {
+        Ok(serde_json::Value::Array(v)) => v,
+        _ => {
+            error(&format!("scan_storage_candidates(): cannot parse enumeration JSON: {}",
+                           enumeration_json));
+            Vec::new()
+        }
+    };
+
+    let recorded = recorded.map(|s| s.trim()).filter(|s| !s.is_empty());
+
+    // Primary "external" storage on Android is emulated — a view of the same
+    // partition the internal app-data directory lives on — so it is not a
+    // second place to put anything. Listing both asks the user to choose
+    // between two identical locations, and lets one installation appear twice.
+    let has_internal = rows.iter().any(|r| r["is_internal"].as_bool().unwrap_or(false));
+
+    let mut out: Vec<serde_json::Value> = Vec::new();
+
+    for row in &rows {
+        if is_duplicate_emulated_candidate(row, has_internal, recorded) {
+            info(&format!("scan: skipping emulated duplicate of the internal storage: {}",
+                          row["path"].as_str().unwrap_or_default()));
+            continue;
+        }
+        out.push(classify_storage_candidate(row, recorded));
+    }
+
+    // The recorded path is a candidate in its own right.
+    if let Some(recorded_path) = recorded {
+        let already_listed = rows.iter().any(|r| {
+            same_path(r["path"].as_str().unwrap_or_default(), recorded_path)
+        });
+        if !already_listed {
+            // Not enumerated and not reachable is the ordinary case here — the
+            // volume is gone, which is why it is not in the enumeration. Such a
+            // row must be classified unusable rather than left to fall through
+            // to "available": "available" would offer a vanished location as a
+            // download destination, and would report free-space figures that
+            // QStorageInfo reports as zeros on an unreachable path.
+            let reachable = Path::new(recorded_path).try_exists().unwrap_or(false);
+
+            // No `megabytes_available`: this candidate did not come from the
+            // platform enumeration, so its free space was never measured. A
+            // fabricated 0 would render as "0.0 GB free" and trip the low-space
+            // warning, telling the user their volume is full when nothing has
+            // been weighed at all.
+            let extra = serde_json::json!({
+                "path": recorded_path,
+                "label": "Selected Location",
+                "is_internal": false,
+                "is_usable": reachable,
+                "unusable_reason": if reachable { "" } else { "Not available" },
+            });
+            out.push(classify_storage_candidate(&extra, recorded));
+        }
+    }
+
+    // Group order, internal first within each group. Group order is fixed and
+    // must not depend on where the hits happen to be.
+    fn group_rank(v: &serde_json::Value) -> u8 {
+        match v["group"].as_str().unwrap_or("unusable") {
+            "found" => 0,
+            "available" => 1,
+            _ => 2,
+        }
+    }
+    out.sort_by_key(|v| {
+        (group_rank(v), if v["is_internal"].as_bool().unwrap_or(false) { 0 } else { 1 })
+    });
+
+    serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Whether an enumerated candidate is merely another view of the internal
+/// storage and should not be offered as a separate location.
+///
+/// True only for an external candidate that Android reports as **emulated and
+/// not removable** — i.e. backed by the device's own storage rather than by a
+/// card — and only when an internal candidate exists to represent it. A real SD
+/// card reports `is_emulated = false` and is never dropped, which is the whole
+/// scenario this feature exists for.
+///
+/// The recorded path is **never** dropped, whatever it is: the user chose it, it
+/// must keep its "(current selection)" row, and dropping it here would also
+/// defeat the de-duplication check that re-appends it as an extra candidate.
+///
+/// Platforms whose enumeration carries no `is_emulated` field (desktop) are
+/// unaffected — a missing field reads as `false`.
+fn is_duplicate_emulated_candidate(
+    row: &serde_json::Value,
+    has_internal: bool,
+    recorded: Option<&str>,
+) -> bool {
+    if !has_internal || row["is_internal"].as_bool().unwrap_or(false) {
+        return false;
+    }
+
+    let path = row["path"].as_str().unwrap_or_default();
+    if recorded.map(|r| same_path(path, r)).unwrap_or(false) {
+        return false;
+    }
+
+    row["is_emulated"].as_bool().unwrap_or(false) && !row["is_removable"].as_bool().unwrap_or(false)
+}
+
+/// Classify one enumerated candidate into the tier-1 row shape.
+fn classify_storage_candidate(
+    row: &serde_json::Value,
+    recorded: Option<&str>,
+) -> serde_json::Value {
+    let path = row["path"].as_str().unwrap_or_default().to_string();
+    let label = row["label"].as_str().unwrap_or("Storage").to_string();
+    let is_internal = row["is_internal"].as_bool().unwrap_or(false);
+
+    // Absent when the candidate did not come from the platform enumeration
+    // (the recorded-path extra candidate). Unknown is reported as unknown —
+    // never as zero, which reads as "full".
+    let megabytes_available = row["megabytes_available"].as_i64();
+
+    // Carried through so the first-run dialog can keep saying "X GB free of
+    // Y GB": the volume's size is what tells the user whether "12 GB free" is a
+    // nearly empty card or a nearly full one. Never used for a verdict — free
+    // space is the only figure any classification depends on.
+    let megabytes_total = row["megabytes_total"].as_i64();
+
+    // The marker is a FIELD, never a suffix baked into `label`: the label comes
+    // from the platform enumeration and is reused and compared elsewhere.
+    let is_recorded = recorded.map(|r| same_path(&path, r)).unwrap_or(false);
+
+    // Tier-1 unusable verdicts come from the enumeration's flags.
+    let enumerated_usable = row["is_usable"].as_bool().unwrap_or(true);
+    let unusable_reason = row["unusable_reason"].as_str().unwrap_or_default().to_string();
+
+    if !enumerated_usable {
+        // Figures are omitted on unusable rows: QStorageInfo reports zeros for
+        // an unreachable path, and "0.0 GB free" reads as a space problem
+        // rather than an availability one.
+        return serde_json::json!({
+            "path": path,
+            "label": label,
+            "is_internal": is_internal,
+            "is_recorded": is_recorded,
+            "group": "unusable",
+            "unusable_reason": if unusable_reason.is_empty() {
+                "Not usable for the database".to_string()
+            } else {
+                unusable_reason
+            },
+            "megabytes_available": serde_json::Value::Null,
+            "megabytes_total": serde_json::Value::Null,
+            "low_space_warning": false,
+            "appdata_bytes": serde_json::Value::Null,
+            "modified": serde_json::Value::Null,
+            "is_complete": serde_json::Value::Null,
+        });
+    }
+
+    // Unmeasured free space warns about nothing.
+    let low_space_warning = megabytes_available
+        .map(|mb| mb < LOW_SPACE_THRESHOLD_MB)
+        .unwrap_or(false);
+
+    let assets_dir = Path::new(&path).join("app-assets");
+    let appdata_path = assets_dir.join("appdata.sqlite3");
+
+    // One metadata() call yields both the length (the usable-installation test)
+    // and the modification time (the most useful field for telling two copies
+    // apart), so neither costs an extra syscall.
+    let appdata_meta = match appdata_path.try_exists() {
+        Ok(true) => match fs::metadata(&appdata_path) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                warn(&format!("scan: cannot read metadata for {}: {}", appdata_path.display(), e));
+                None
+            }
+        },
+        Ok(false) => None,
+        Err(e) => {
+            warn(&format!("scan: cannot check {}: {}", appdata_path.display(), e));
+            None
+        }
+    };
+
+    let found = appdata_meta.as_ref().map(|m| m.len() > 0).unwrap_or(false);
+
+    if !found {
+        return serde_json::json!({
+            "path": path,
+            "label": label,
+            "is_internal": is_internal,
+            "is_recorded": is_recorded,
+            "group": "available",
+            "unusable_reason": "",
+            "megabytes_available": megabytes_available,
+            "megabytes_total": megabytes_total,
+            "low_space_warning": low_space_warning,
+            "appdata_bytes": serde_json::Value::Null,
+            "modified": serde_json::Value::Null,
+            "is_complete": serde_json::Value::Null,
+        });
+    }
+
+    let meta = appdata_meta.expect("found implies metadata");
+
+    let modified = meta
+        .modified()
+        .ok()
+        .map(|t| chrono::DateTime::<chrono::Local>::from(t).format("%Y-%m-%d %H:%M").to_string());
+
+    // Existence only — no opening, no version check. Which files are missing
+    // goes to the log rather than into the JSON, so rows stay readable: a
+    // single "Partial" marker is what the user needs at a glance.
+    let mut missing: Vec<&str> = Vec::new();
+    for name in INSTALLATION_DB_FILENAMES {
+        if !assets_dir.join(name).try_exists().unwrap_or(false) {
+            missing.push(name);
+        }
+    }
+    if !missing.is_empty() {
+        info(&format!("scan: partial installation at {} — missing: {}",
+                      path, missing.join(", ")));
+    }
+
+    serde_json::json!({
+        "path": path,
+        "label": label,
+        "is_internal": is_internal,
+        "is_recorded": is_recorded,
+        "group": "found",
+        "unusable_reason": "",
+        "megabytes_available": megabytes_available,
+        "megabytes_total": megabytes_total,
+        "low_space_warning": low_space_warning,
+        "appdata_bytes": meta.len(),
+        "modified": modified,
+        "is_complete": missing.is_empty(),
+    })
+}
+
+/// The single definition of the recorded-storage-path condition.
+///
+/// Free of side effects (no `create_dir_all()`, no writes, no database opens),
+/// which is what makes it safe to call at the earliest point of startup, before
+/// `init_app_globals()` resolves and creates any path.
+///
+/// Gated on `is_mobile()` internally: on desktop `get_create_simsapa_dir()`
+/// ignores `storage-path.txt` entirely, so a stray file there must not be able
+/// to reach any consumer of this predicate.
+pub fn storage_path_state() -> (StorageState, Option<PathBuf>) {
+    if !is_mobile() {
+        return (StorageState::Absent, None);
+    }
+
+    let internal_app_root = match get_simsapa_internal_app_root_path() {
+        Ok(p) => p,
+        Err(e) => {
+            warn(&format!("storage_path_state(): cannot derive internal app root: {}", e));
+            return (StorageState::Absent, None);
+        }
+    };
+
+    storage_path_state_of_file(&internal_app_root.join("storage-path.txt"))
 }
 
 pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
@@ -780,11 +1205,46 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 println!("{}", msg);
             }
 
-            // storage path
-            let p = PathBuf::from(contents);
-            if !p.try_exists()? {
-                create_dir_all(&p)?;
+            // Trim: a file written by hand, by a script or by `adb` carries a
+            // trailing newline, which would produce a path that can never
+            // resolve. An empty result means "no recorded path".
+            let trimmed = contents.trim();
+            if trimmed.is_empty() {
+                let msg = format!("Empty storage path recorded in {}, using the internal app root.",
+                                  &storage_config_path.to_str().unwrap_or_default());
+                if logger_initialized {
+                    warn(&msg);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return Ok(internal_app_root);
             }
+
+            // storage path
+            let p = PathBuf::from(trimmed);
+
+            // A recorded path that no longer resolves is NOT created here. The
+            // classification must stay stable across launches, or the recovery
+            // flow's "unreachable" diagnosis erases itself: launch 1 reports it,
+            // this call creates the directory, launch 2 sees an empty but
+            // reachable path and says nothing. Creating a directory is only ever
+            // correct immediately after the user chooses a location, which is
+            // save_storage_path() / the download flow's job (the asset
+            // directories are created by get_create_simsapa_app_assets_path()).
+            //
+            // See docs/relocated-storage-recovery.md.
+            if !p.try_exists().unwrap_or(false) {
+                let msg = format!("Recorded storage path is not available: {} — falling back to the internal app root: {}",
+                                  p.to_str().unwrap_or_default(),
+                                  internal_app_root.to_str().unwrap_or_default());
+                if logger_initialized {
+                    warn(&msg);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return Ok(internal_app_root);
+            }
+
             Ok(p)
         }
     }
@@ -870,8 +1330,18 @@ pub extern "C" fn dotenv_c() {
 /// wins). A stub deleted here is recorded as **missing**, which is what makes
 /// the diagnosis honest across launches. `DbManager::new()` re-records the same
 /// sweep for the non-GUI paths.
+///
+/// `sweep` gates **only the deletion**. With `sweep = false` (the recorded
+/// storage path is unreachable, so the resolved path is an internal fallback the
+/// user never chose) a zero-byte file is left in place but still recorded as
+/// **missing** — len == 0 is not a usable database, so the record means the same
+/// thing in both modes. The recording is never skipped: in that state the app
+/// never reaches `DbManager::new()`, so nothing else would ever write it and
+/// Database Validation would report `present_at_start: null` in exactly the
+/// session that needs diagnosing. The per-database order stays sweep-then-record
+/// for the same reason. See docs/relocated-storage-recovery.md.
 #[unsafe(no_mangle)]
-pub extern "C" fn ensure_no_empty_db_files() {
+pub extern "C" fn ensure_no_empty_db_files(sweep: bool) {
     let g = get_app_globals();
     for (p, kind) in [(g.paths.appdata_db_path.clone(), crate::db::DbKind::Appdata),
                       (g.paths.dict_db_path.clone(), crate::db::DbKind::Dictionaries),
@@ -881,7 +1351,8 @@ pub extern "C" fn ensure_no_empty_db_files() {
             Ok(true) => {
                 match fs::metadata(&p) {
                     Ok(metadata) if metadata.len() == 0 => {
-                        if let Err(e) = fs::remove_file(&p) {
+                        // Recorded as missing whether or not it is deleted.
+                        if sweep && let Err(e) = fs::remove_file(&p) {
                             eprintln!("Failed to remove file {:?}: {}", p, e);
                             present = true;
                         }
@@ -1340,6 +1811,129 @@ fn is_port_available(port: u16) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn find_port_set_env_c() -> bool {
     find_port_set_env()
+}
+
+// --- Recorded storage path predicate (read before init_app_globals()) ---
+//
+// See docs/relocated-storage-recovery.md. `storage_path_state()` is
+// side-effect-free, which is what lets `gui.cpp` evaluate it before anything
+// resolves or creates a path.
+
+/// FFI: evaluate the predicate **and** record it into the `StartupDbReport`,
+/// returning the state as an int matching `StorageState`:
+/// 0 = absent, 1 = unreachable, 2 = reachable_empty, 3 = ok.
+///
+/// One call site, one evaluation: `gui.cpp` calls this immediately after
+/// `find_port_set_env_c()` and **before** `init_app_globals()`, which is the
+/// last point at which the answer is still the one the app found rather than
+/// one it produced. The recording is first-write-wins, so calling this again
+/// (which nothing does) cannot falsify the report. Pair it with
+/// `recorded_storage_path_c()` for the path itself.
+#[unsafe(no_mangle)]
+pub extern "C" fn storage_path_state_c() -> i32 {
+    let (state, recorded) = storage_path_state();
+
+    crate::db::record_storage_path_state(
+        state.as_str(),
+        recorded.as_ref().and_then(|p| p.to_str()).map(|s| s.to_string()),
+    );
+
+    match state {
+        StorageState::Absent => 0,
+        StorageState::Unreachable => 1,
+        StorageState::ReachableEmpty => 2,
+        StorageState::Ok => 3,
+    }
+}
+
+/// The marker file that asks the app to dump the storage scan to the log.
+const LOG_STORAGE_SCAN_MARKER: &str = "log-storage-scan.txt";
+
+/// FFI: whether `log-storage-scan.txt` exists in the internal app root.
+///
+/// A diagnostic hook. The storage enumeration is only reachable from the
+/// storage dialogs, so on a healthy install there is otherwise no way to see
+/// what the app makes of the device's volumes — and on Android a JNI mistake in
+/// that pass fails silently. Dropping the marker file makes the next launch log
+/// the full tier-1 scan.
+///
+/// Costs one `try_exists()` when absent. The marker is **not** consumed, so
+/// every launch dumps until it is deleted:
+///
+/// ```sh
+/// adb shell run-as io.github.simsapa.app.beta \
+///   touch /data/user/0/io.github.simsapa.app.beta/files/log-storage-scan.txt
+/// ```
+///
+/// See docs/relocated-storage-recovery.md.
+#[unsafe(no_mangle)]
+pub extern "C" fn storage_scan_log_requested_c() -> bool {
+    match get_simsapa_internal_app_root_path() {
+        Ok(root) => root.join(LOG_STORAGE_SCAN_MARKER).try_exists().unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+/// FFI: run the tier-1 scan over the given enumeration JSON and write both the
+/// enumeration and the classified result to the log. Diagnostic only — it
+/// changes nothing.
+///
+/// # Safety
+/// `enumeration_json` must be a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn log_storage_scan_c(enumeration_json: *const std::os::raw::c_char) {
+    if enumeration_json.is_null() {
+        return;
+    }
+
+    let enumeration = match unsafe { std::ffi::CStr::from_ptr(enumeration_json) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let (state, recorded) = storage_path_state();
+    let recorded_str = recorded.as_ref().and_then(|p| p.to_str());
+
+    info(&format!("STORAGE-SCAN: state={} recorded={}",
+                  state.as_str(),
+                  recorded_str.unwrap_or("(none)")));
+    info(&format!("STORAGE-SCAN: enumeration={}", enumeration));
+    info(&format!("STORAGE-SCAN: candidates={}",
+                  scan_storage_candidates(enumeration, recorded_str)));
+}
+
+/// FFI: whether the `auto_start_download.txt` marker exists, **without
+/// removing it**.
+///
+/// The startup recovery decision needs the answer before any window is created,
+/// and must not consume the marker: `DownloadAppdataWindow.qml`'s
+/// `Component.onCompleted` is the single point of deletion, and a marker
+/// consumed here would turn an unattended upgrade download into a stalled setup
+/// screen. Mirrors `AssetManager::peek_auto_start_download()`; one
+/// `try_exists()`, and it runs before `app.exec()`.
+/// See docs/relocated-storage-recovery.md.
+#[unsafe(no_mangle)]
+pub extern "C" fn peek_auto_start_download_c() -> bool {
+    let paths = AppGlobalPaths::new();
+    let marker = &paths.auto_start_download_marker;
+    let found = marker.try_exists().unwrap_or(false);
+    info(&format!("peek_auto_start_download_c(): {} at {}", found, marker.display()));
+    found
+}
+
+/// FFI: the recorded storage path (trimmed), or null when there is none.
+/// Caller must call `free_rust_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn recorded_storage_path_c() -> *mut std::os::raw::c_char {
+    use std::ffi::CString;
+
+    match storage_path_state().1 {
+        Some(p) => match p.to_str().map(CString::new) {
+            Some(Ok(s)) => s.into_raw(),
+            _ => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
 }
 
 /// FFI function to create or update Linux desktop icon file

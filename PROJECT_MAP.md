@@ -144,7 +144,9 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── ListBackground.qml
 │   │   ├── PromptsTab.qml
 │   │   ├── SearchBarInput.qml
+│   │   ├── StorageCandidatesList.qml
 │   │   ├── StorageDialog.qml
+│   │   ├── StorageRecoveryWindow.qml
 │   │   ├── SuttaHtmlView_Desktop.qml
 │   │   ├── SuttaHtmlView_Mobile.qml
 │   │   ├── SuttaHtmlView.qml
@@ -165,6 +167,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `DrawerMenu.qml` - Navigation drawer menu
   - `SearchBarInput.qml`, - Search interface component
   - `AboutDialog.qml`, `StorageDialog.qml`, `ColorThemeDialog.qml`, `GlossWordSelectionDialog.qml` - Dialog windows
+  - `StorageCandidatesList.qml` - The one grouped storage-candidate list and delegate (found / available / not usable), shared by `StorageDialog`, `StorageRecoveryWindow` and `DatabaseValidationDialog`'s lookup; `StorageRecoveryWindow.qml` - the startup recovery flow's `ApplicationWindow` (hosted by `cpp/storage_recovery_window.{h,cpp}`). See `docs/relocated-storage-recovery.md`
   - `DeconstructorSelector.qml`, `DeconstructorUtils.qml` - Shared compound break-down UI (break-down ComboBox + lock, and pure filter helpers) reused by GlossTab, WordSummary and FulltextResults; see `docs/gloss-ai-word-selection.md` §9
 
 - `assets/qml/tst_*.qml` - QML component tests
@@ -295,7 +298,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/api.rs` - HTTP API bridge for web-based interactions (incl. the gloss pipeline routes `POST /gloss_text` and the `GET /word_selection_ws` WebSocket; see `docs/simsapa-localhost-api-search-endpoints.md` §16)
   - `src/sutta_bridge.rs` - Sutta (Buddhist text) related bridge functions (incl. the grouped DPD lookup `dpd_lookup_grouped_json_async` and `process_all_paragraphs` wrappers)
   - `src/asset_manager.rs` - Asset and resource management bridge
-  - `src/storage_manager.rs` - Storage path and file management bridge
+  - `src/storage_manager.rs` - Storage path and file management bridge. Beyond `get_app_data_storage_paths_json()` / `save_storage_path()` (which now returns a **verified** `bool`), it exposes the relocated-storage-recovery surface: `storage_path_state()` / `recorded_storage_path()` (the four-state predicate), `find_storage_candidates_json()` (the tier-1 scan), and the async tier-2 pair `probe_storage_candidate(path, request_id)` → `probeCompleted(path, request_id, result_json)` with `cancel_storage_probes()`. See `docs/relocated-storage-recovery.md`
   - `src/prompt_manager.rs` - AI prompt management bridge (Qt signal / `CancelState` wrappers around `ai_engine.rs`)
   - `src/ai_engine.rs` - Qt-free AI fallback engine: provider-request layer + walk glue + batching/pacing constants, shared by `prompt_manager.rs` and the `/word_selection_ws` route (see `docs/gloss-ai-word-selection.md` §9)
 
@@ -353,7 +356,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `gui.cpp/.h` - Main GUI initialization and callbacks; owns the global-hotkey lifecycle (`init_global_hotkey_manager`, `reregister_global_hotkeys_c`, aboutToQuit cleanup)
   - `window_manager.cpp/.h` - Multiple window management system
   - `sutta_search_window.cpp/.h` - Sutta search interface
-  - `download_appdata_window.cpp/.h` - Data download interface
+  - `download_appdata_window.cpp/.h` - Data download interface. Takes a `QVariantMap` of **initial** properties applied with `setInitialProperties()` before `load()`, because `skip_auto_start_download` must be in place before `Component.onCompleted` consumes the `auto_start_download.txt` marker
+  - `storage_recovery_window.cpp/.h` - Host for `StorageRecoveryWindow.qml`, the startup recovery flow shown when the recorded storage path is unreachable or empty (created through `WindowManager::create_storage_recovery_window()`). See [docs/relocated-storage-recovery.md](./docs/relocated-storage-recovery.md)
   - `system_palette.cpp/.h` - System theme integration
   - `utils.cpp/.h` - Storage paths, APK/qrc asset copying, `content://` URI copying, and the Android JNI accessors: `get_status_bar_height()` (informational only — Qt supplies layout insets), plus `get_android_package_name()` / `get_installer_package_name()`, which back `SuttaBridge.is_installed_from_play_store()` and `get_play_store_url()`. Those decide whether the in-app update notice may show an off-Play download link — a Play-installed copy is sent to its Play listing instead. See [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
   - `errors.cpp/.h` - Custom exception handling
@@ -482,6 +486,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 ### Platform Integration
 - **Mobile Detection:** `backend/src/lib.rs:427` - `is_mobile()`
 - **Storage Management:** `bridges/src/storage_manager.rs`
+- **Relocated storage recovery (mobile):** `backend/src/lib.rs` - `StorageState` / `storage_path_state()` (the read-only four-state predicate, run before `init_app_globals()`), `get_simsapa_internal_app_root_path()` (non-creating root), `scan_storage_candidates()` + `same_path()` + `LOW_SPACE_THRESHOLD_MB` (tier-1 classification policy), `ensure_no_empty_db_files(sweep: bool)`; `backend/src/storage_probe.rs` - `probe_storage_location()` (tier-2 write/SQLite probe, dialog-only); `backend/src/db/mod.rs` - `record_storage_path_state()` and the top-level `storage_path` field in `get_startup_db_report_json()`; `cpp/utils.cpp` - `get_app_data_storage_paths()` + `append_unmatched_storage_volumes()` (Android volume enumeration); `cpp/gui.cpp::start()` - the ordering and the startup branch. See [docs/relocated-storage-recovery.md](./docs/relocated-storage-recovery.md)
 - **Asset Management:** `bridges/src/asset_manager.rs`
   - **Download & Extract:** `download_urls_and_extract()` - Downloads tar.bz2 files and extracts to app-assets
   - **Language Support:** `get_available_languages()` - Returns list of downloadable language codes from LANG_CODE_TO_NAME

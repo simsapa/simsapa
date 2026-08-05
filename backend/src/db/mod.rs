@@ -74,6 +74,21 @@ impl Default for DbReportEntry {
     }
 }
 
+/// The recorded storage path and its state, as seen at startup **before**
+/// anything could resolve or create a path.
+///
+/// Not per-database: it describes the location all three databases were looked
+/// for in, which is what turns "database missing" into "the configured storage
+/// location is unavailable". See docs/relocated-storage-recovery.md.
+#[derive(Debug, Clone, Default)]
+pub struct StoragePathReport {
+    /// The trimmed path from `storage-path.txt`, or `None` when none is recorded.
+    pub recorded: Option<String>,
+    /// `"absent" | "unreachable" | "reachable_empty" | "ok"`, or `None` when the
+    /// predicate has not run (non-GUI paths).
+    pub state: Option<String>,
+}
+
 /// Per-database record of what happened at startup — file presence before any
 /// file-creating call, and the migration outcome. Lives in a process-global so
 /// the recovery UI (Database Validation) can report it long after startup.
@@ -82,6 +97,7 @@ pub struct StartupDbReport {
     pub appdata: DbReportEntry,
     pub dictionaries: DbReportEntry,
     pub dpd: DbReportEntry,
+    pub storage_path: StoragePathReport,
 }
 
 impl StartupDbReport {
@@ -111,6 +127,18 @@ pub fn record_db_presence(kind: DbKind, present_at_start: bool) {
     }
 }
 
+/// Record the recorded-storage-path state. **First write wins**, matching
+/// `record_db_presence()`: it is written once, early — before
+/// `init_app_globals()` can resolve a fallback or create a directory — so
+/// nothing later can overwrite what the predicate actually saw.
+pub fn record_storage_path_state(state: &str, recorded: Option<String>) {
+    let mut report = startup_db_report().lock();
+    if report.storage_path.state.is_none() {
+        report.storage_path.state = Some(state.to_string());
+        report.storage_path.recorded = recorded;
+    }
+}
+
 /// Record the migration outcome for a database. Idempotent per database — a
 /// second construction re-recording the same outcome is harmless, so the latest
 /// write wins here (unlike presence).
@@ -127,6 +155,9 @@ pub fn get_startup_db_report() -> StartupDbReport {
 /// JSON accessor for the QML bridge. Shape per database:
 /// `{ "present_at_start": bool|null, "migration_ok": bool|null, "migration_error": string|null }`.
 /// `migration_ok` is `null` for a `NotApplicable` outcome (dpd, or not-yet-run).
+///
+/// Plus one **top-level** (not per-database) object:
+/// `"storage_path": { "recorded": string|null, "state": string|null }`.
 pub fn get_startup_db_report_json() -> String {
     fn entry_json(e: &DbReportEntry) -> serde_json::Value {
         let (migration_ok, migration_error) = match &e.migration {
@@ -148,6 +179,10 @@ pub fn get_startup_db_report_json() -> String {
         "appdata": entry_json(&report.appdata),
         "dictionaries": entry_json(&report.dictionaries),
         "dpd": entry_json(&report.dpd),
+        "storage_path": {
+            "recorded": report.storage_path.recorded,
+            "state": report.storage_path.state,
+        },
     });
     serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
 }

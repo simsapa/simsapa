@@ -390,6 +390,39 @@ Notable feature docs:
   `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
   (`save_file` discarded the write result and always returned `true`) that made the
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
+- [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
+  what happens when the storage location the user chose is no longer where it was
+  (a microSD card moved to another socket, a volume back under a different path).
+  Built on the **four-state predicate** `storage_path_state()`
+  (`absent`/`unreachable`/`reachable_empty`/`ok`), which is **read-only, stable
+  across launches and `is_mobile()`-gated internally** — the three properties that
+  let it run *before* `init_app_globals()`. Covers the **two path notions** that
+  must never be conflated (the **recorded** path the user chose vs. the
+  **resolved** path, which falls back to the internal app root and is *not* a user
+  choice) — conflating them is the original bug: an internal copy plus an
+  unreachable recorded path made `appdata_db_exists()` true, so the app either
+  booted against a database the user never chose or let the startup sweeps
+  **delete** it. Hence the `gui.cpp` **sweep gating** on a deliberate *pre-sweep*
+  state snapshot, `ensure_no_empty_db_files(sweep: bool)` (with `sweep = false` a
+  zero-byte file is recorded as missing but **not** deleted), and the invariant
+  that no `unreachable` session ever reaches `init_app_data()`. Also the **two
+  classification tiers** — tier 1 (enumeration + `scan_storage_candidates()`,
+  cheap, all *policy* in Rust so it is unit-testable off-device: emulated-duplicate
+  de-duplication, the recorded path as an extra candidate, `same_path()` never
+  `canonicalize()`, null-not-zero figures) and tier 2 (the Diesel write/SQLite
+  probe, **dialog-only**, demote-only, with a `Drop`-guard cleanup of the
+  `-wal`/`-shm`/`-journal` set and two-halves cancellation) — the recovery flow's
+  branch order and endings, the **`auto_start_download` marker's three traps**
+  (peek vs. consume; suppression only in `reachable_empty`; initial properties
+  because `Component.onCompleted` consumes), FR-37 **verified writes**, the four
+  screens sharing `StorageCandidatesList.qml` and the QML rendering rules that are
+  easy to break (required properties not function calls, demoted rows move to the
+  end, a pending probe blocks *confirming* not selecting, `Dialog` content
+  anchored left/right only), the diagnostics (`storage_path` in the startup
+  report, per-volume `by=` logging, the `log-storage-scan.txt` marker), and the
+  **`adb` state-simulation recipes** with their traps (`printf '%s'` not `echo`,
+  `run-as … sh -c` blocked by SELinux, two candidates on a device with no card
+  slot).
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
@@ -724,6 +757,42 @@ When migrating from `console`, map the methods by severity rather than
 mechanically: `console.error` → `logger.error`, `console.warn` → `logger.warn`,
 and `console.log` → `logger.info` (or `logger.error` when the message actually
 reports a failure).
+
+### Logging in C++ (`log_info_c()`, not `qInfo()`)
+
+In the C++ files under `cpp/`, log through the app's own logger — the Rust FFI
+functions `log_info_c()` / `log_error_c()` — and **not** Qt's `qInfo()` /
+`qWarning()` / `qDebug()`:
+
+``` cpp
+extern "C" void log_info_c(const char* msg);
+extern "C" void log_error_c(const char* msg);
+
+log_info_c("start(): storage scan requested");
+log_info_c(QString("Found %1 volume(s)").arg(count).toUtf8().constData());
+```
+
+**Why: on Android, Qt tags its own messages with the *application name*, not
+with `Qt`.** The documented way to watch the app's log is
+
+``` sh
+adb logcat -s simsapa Qt QtCore QtQml
+```
+
+(see [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md)),
+where `simsapa` is the Rust logger's tag. A `qInfo()` call therefore lands under
+*neither* `simsapa` nor `Qt` and is filtered out entirely — the message looks
+like code that never ran. This has already produced one wasted device-debugging
+round trip: a storage-enumeration diagnostic added specifically to prove a JNI
+pass had executed was invisible in the log, which is indistinguishable from the
+failure it was added to detect.
+
+`log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
+also into the app's own `log.txt`, so it is available when a user sends logs.
+
+Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
+in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
+touching that code for another reason.
 
 ### New functions on Rust bridge QML components
 

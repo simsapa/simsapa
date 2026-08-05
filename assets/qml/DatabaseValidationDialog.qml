@@ -46,6 +46,23 @@ ApplicationWindow {
     // this is never used to mutate validation_results.
     property var startup_db_report: ({})
 
+    // The top-level storage_path entry of the same report: where the databases
+    // were looked for, and whether that location was reachable at startup. When
+    // it was not, the databases are not corrupted — they are simply somewhere
+    // the app cannot currently see, and saying "may need to be re-downloaded"
+    // would send the user to re-download data they still have.
+    // See docs/relocated-storage-recovery.md.
+    readonly property var storage_path_report: root.startup_db_report.storage_path
+                                                   ? root.startup_db_report.storage_path
+                                                   : ({})
+    readonly property string storage_path_state: root.storage_path_report.state
+                                                     ? root.storage_path_report.state
+                                                     : ""
+    readonly property string recorded_storage_path: root.storage_path_report.recorded
+                                                        ? root.storage_path_report.recorded
+                                                        : ""
+    readonly property bool storage_unreachable: root.storage_path_state === "unreachable"
+
     // Search index state. The index is NOT downloadable, so its failure is
     // tracked separately and must never feed has_downloadable_failures /
     // get_failed_downloadable_list() / handle_redownload() — those would build
@@ -472,6 +489,380 @@ ApplicationWindow {
         is_initial_setup: false
     }
 
+    // ── "Look for Database on Other Storage" (mobile only) ─────────────────
+    //
+    // The manual counterpart of the startup recovery flow: the same predicate,
+    // the same scan and the same list component, reached from a running app.
+    // It exists because a user whose card moved may well get this far — the
+    // databases open against a fallback location, or the app was already
+    // running when the card went — and "re-download" is the wrong advice when
+    // the data is intact somewhere the app can still see.
+    //
+    // Its own StorageManager instance: the probe generation lives on the
+    // bridge object, so sharing one with another window would let each cancel
+    // the other's probes.
+    //
+    // See docs/relocated-storage-recovery.md.
+    StorageManager { id: storage_manager }
+
+    // Bumped on every scan; probe verdicts carry it back so a verdict from a
+    // previous opening of the dialog can never merge into the current rows.
+    property int storage_probe_generation: 0
+
+    // The location the app is currently using, as of the lookup's own scan —
+    // not the startup snapshot in the report, which answers a different
+    // question. Used by the nothing-found screen's Copy Path.
+    property string storage_recorded_path: ""
+
+    readonly property int storage_screen_selection: 0
+    readonly property int storage_screen_nothing_found: 1
+    readonly property int storage_screen_message: 2
+
+    // The §12.7 flow. Runs the predicate and the scan on demand — the startup
+    // snapshot in the report is a different question (what was true when the
+    // app booted), and a card re-seated since then must be seen.
+    // Reuses the dialog's existing clipboard helper — the same one the export
+    // error copy buttons use.
+    function copy_storage_path(path: string) {
+        if (path === "") return;
+        validation_clipboard_helper.copy_text(path);
+        logger.info("Copied the storage path to the clipboard: " + path);
+    }
+
+    function open_storage_lookup() {
+        logger.info("open_storage_lookup()");
+        root.refresh_storage_candidates();
+        root.branch_storage_lookup();
+        storage_lookup_dialog.open();
+    }
+
+    function refresh_storage_candidates() {
+        // Probes from a previous opening belong to rows that are about to be
+        // replaced. Their verdicts would be discarded on arrival anyway, but
+        // cancelling stops a worker writing into a candidate directory this
+        // pass may not even show.
+        storage_manager.cancel_storage_probes();
+
+        root.storage_probe_generation += 1;
+        root.storage_recorded_path = storage_manager.recorded_storage_path();
+
+        var candidates_json = storage_manager.find_storage_candidates_json();
+        storage_candidates_list.load(candidates_json);
+        storage_nothing_found_list.load(candidates_json);
+
+        logger.info("Storage lookup: state=" + storage_manager.storage_path_state()
+                    + " recorded=" + root.storage_recorded_path
+                    + " rows=" + storage_candidates_list.row_count
+                    + " adoptable=" + storage_candidates_list.found_count_excluding_recorded());
+    }
+
+    function branch_storage_lookup() {
+        // Not found_count(): on a healthy install the location already in use
+        // is itself a `found` row, and branching on it would show a selection
+        // screen where nothing can be picked instead of saying that nothing
+        // was found elsewhere.
+        if (storage_candidates_list.found_count_excluding_recorded() < 1) {
+            storage_views_stack.currentIndex = root.storage_screen_nothing_found;
+            return;
+        }
+
+        storage_views_stack.currentIndex = root.storage_screen_selection;
+        // Tier 2 runs only after the dialog is up, off the UI thread, and only
+        // where a selection is possible.
+        Qt.callLater(root.start_storage_probes);
+    }
+
+    function start_storage_probes() {
+        // Selectable rows only: here the `available` group and the location
+        // already in use are shown but cannot be picked, so probing them would
+        // write into volumes to produce a demotion nobody can act on.
+        var paths = storage_candidates_list.probeable_paths(true);
+        var request_id = "" + root.storage_probe_generation;
+
+        for (var i = 0; i < paths.length; i++) {
+            storage_candidates_list.set_probe_pending(paths[i], true);
+            storage_manager.probe_storage_candidate(paths[i], request_id);
+        }
+    }
+
+    Connections {
+        target: storage_manager
+
+        function onProbeCompleted(path: string, request_id: string, result_json: string) {
+            if (request_id !== "" + root.storage_probe_generation) {
+                logger.info("Discarding a stale probe verdict for " + path
+                            + " (request " + request_id + ")");
+                return;
+            }
+
+            var verdict = null;
+            try {
+                verdict = JSON.parse(result_json);
+            } catch (e) {
+                logger.error("Cannot parse the probe result: " + e + " json: " + result_json);
+                storage_candidates_list.set_probe_pending(path, false);
+                return;
+            }
+
+            var is_usable = verdict.is_usable === true;
+            var reason = verdict.unusable_reason === undefined ? "" : verdict.unusable_reason;
+
+            storage_candidates_list.apply_probe_verdict(path, is_usable, reason);
+            // Both lists are views of the SAME scan, so a verdict merged into
+            // only one of them would tell the user two different things about
+            // one volume as they move between screens.
+            storage_nothing_found_list.apply_probe_verdict(path, is_usable, reason);
+
+            root.rebranch_if_the_last_storage_hit_was_demoted();
+        }
+    }
+
+    // A probe that demotes the last adoptable row leaves the user on a screen
+    // headed "Existing app data was found" with nothing to select. Re-branch on
+    // the refreshed rows, which is where tier 1 would have sent them had it
+    // known.
+    function rebranch_if_the_last_storage_hit_was_demoted() {
+        if (storage_views_stack.currentIndex !== root.storage_screen_selection) return;
+        if (storage_candidates_list.found_count_excluding_recorded() > 0) return;
+
+        logger.info("Storage lookup: the last adoptable location was demoted by its probe.");
+        root.branch_storage_lookup();
+    }
+
+    function adopt_selected_storage() {
+        var row = storage_candidates_list.selected_row();
+        if (row === null) return;
+
+        // A failed write must never reach the restart notice: the app would
+        // relaunch against the old location and the user would believe the
+        // change had been made.
+        if (!storage_manager.save_storage_path(row.path, row.is_internal)) {
+            logger.error("save_storage_path() failed for: " + row.path);
+            storage_save_error_dialog.storage_path = row.path;
+            storage_save_error_dialog.open();
+            return;
+        }
+
+        // Terminal screen: no row can be picked from here on, so any probe
+        // still running is work nobody will read — and one the user may quit
+        // out from under, leaving simsapa-write-probe.sqlite3 on their card.
+        storage_manager.cancel_storage_probes();
+
+        // The whole application quits, not just this window: the runtime paths
+        // were frozen at startup and AppData's connection pools, the Rocket
+        // thread and the Tantivy index directories are all still open against
+        // the old location. The message says so, because the app disappearing
+        // is otherwise indistinguishable from a crash.
+        storage_message_screen.heading = "Storage location updated";
+        storage_message_screen.body = "Simsapa will use the app data at:\n\n" + row.path
+            + "\n\nSimsapa will now close. Please start it again.";
+        storage_views_stack.currentIndex = root.storage_screen_message;
+    }
+
+    // Shown when storage-path.txt could not be written. The lookup dialog stays
+    // open behind it — nothing was changed, and retrying is the way out.
+    Dialog {
+        id: storage_save_error_dialog
+        title: "Could Not Save the Storage Location"
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+
+        property string storage_path: ""
+
+        Label {
+            text: "Simsapa could not record the storage location:\n\n"
+                + storage_save_error_dialog.storage_path
+                + "\n\nNothing was changed. Please try again."
+            font.pointSize: root.pointSize
+            wrapMode: Text.WordWrap
+            width: Math.min(400, root.width - 80)
+        }
+    }
+
+    Dialog {
+        id: storage_lookup_dialog
+        title: "Look for Database on Other Storage"
+        anchors.centerIn: parent
+        modal: true
+        // Not dismissable on the terminal screen: the location has already been
+        // recorded there and the app is running against the old one, so the only
+        // correct way out is the restart the message asks for.
+        closePolicy: storage_views_stack.currentIndex === root.storage_screen_message
+            ? Popup.NoAutoClose : Popup.CloseOnEscape
+        width: Math.min(root.width - 40, 560)
+        height: Math.min(root.height - 80, 600)
+
+        // A probe must never outlive the dialog that started it: a worker still
+        // running owns a file it is about to delete in a candidate directory.
+        onClosed: storage_manager.cancel_storage_probes()
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            StackLayout {
+                id: storage_views_stack
+                currentIndex: root.storage_screen_selection
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                // Idx 0: pick a database to adopt
+                ColumnLayout {
+                    spacing: 8
+
+                    Label {
+                        text: "Existing app data was found on another storage location. "
+                            + "Selecting it makes Simsapa use it from now on."
+                        font.pointSize: root.pointSize
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    StorageCandidatesList {
+                        id: storage_candidates_list
+                        font_point_size: root.pointSize
+                        // Database Validation adopts existing data; it never
+                        // starts a download, so the "available" group is shown
+                        // for the picture of the device but cannot be picked.
+                        selectable_groups: ["found"]
+                        // Nor is the location already in use an adoption
+                        // candidate — rewriting the identical path and quitting
+                        // would achieve nothing.
+                        exclude_recorded: true
+                        selection_enabled: true
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        onSelection_cleared: {
+                            logger.info("The selected location was found unusable; selection cleared.");
+                        }
+                    }
+                }
+
+                // Idx 1: nothing to adopt — but say what was examined
+                ColumnLayout {
+                    spacing: 8
+
+                    Label {
+                        text: "No existing database was found on the other storage locations."
+                        font.pointSize: root.pointSize
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        text: "Storage locations Simsapa can see:"
+                        font.pointSize: root.pointSize
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    // The same component, read-only: showing WHAT was examined
+                    // is the difference between a diagnosis and a dead end.
+                    // Nothing is selectable here, so nothing is probed either.
+                    StorageCandidatesList {
+                        id: storage_nothing_found_list
+                        font_point_size: root.pointSize
+                        selectable_groups: []
+                        selection_enabled: false
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                    }
+                }
+
+                // Idx 2: terminal message — the app must be restarted
+                ColumnLayout {
+                    id: storage_message_screen
+                    spacing: 12
+
+                    property string heading: ""
+                    property string body: ""
+
+                    Item { Layout.fillHeight: true }
+
+                    Label {
+                        text: storage_message_screen.heading
+                        font.pointSize: root.pointSize + 2
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        text: storage_message_screen.body
+                        font.pointSize: root.pointSize
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            // Stacked, not side by side: "Use the Selected Database" alongside
+            // two more buttons does not fit a phone's dialog width.
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Button {
+                    text: "Use the Selected Database"
+                    font.pointSize: root.pointSize
+                    visible: storage_views_stack.currentIndex === root.storage_screen_selection
+                    // Disabled while the selected row's tier-2 probe is still
+                    // running: the verdict may be about to demote it, and
+                    // committing first records a location the app has just
+                    // decided it cannot use.
+                    enabled: storage_candidates_list.has_selection
+                             && !storage_candidates_list.selection_probe_pending
+                    Layout.fillWidth: true
+                    onClicked: root.adopt_selected_storage()
+                }
+
+                // The exact path, for a user diagnosing this themselves: on the
+                // selection screen the row they picked, on the nothing-found
+                // screen the location the app is already using. Not offered on
+                // the terminal screen, where the path is in the message itself
+                // and the only thing left to do is restart.
+                Button {
+                    text: "Copy Path"
+                    font.pointSize: root.pointSize
+                    visible: storage_views_stack.currentIndex !== root.storage_screen_message
+                    enabled: storage_views_stack.currentIndex === root.storage_screen_selection
+                        ? storage_candidates_list.has_selection
+                        : root.storage_recorded_path !== ""
+                    Layout.fillWidth: true
+                    onClicked: {
+                        if (storage_views_stack.currentIndex === root.storage_screen_selection) {
+                            var row = storage_candidates_list.selected_row();
+                            if (row !== null) root.copy_storage_path(row.path);
+                        } else {
+                            root.copy_storage_path(root.storage_recorded_path);
+                        }
+                    }
+                }
+
+                Button {
+                    text: storage_views_stack.currentIndex === root.storage_screen_message
+                        ? "Quit" : "Close"
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+                    onClicked: {
+                        if (storage_views_stack.currentIndex === root.storage_screen_message) {
+                            Qt.quit();
+                        } else {
+                            storage_lookup_dialog.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Expected database names
     readonly property var expected_databases: ["appdata", "dpd", "dictionaries"]
 
@@ -597,10 +988,44 @@ ApplicationWindow {
                 visible: root.has_any_failure
             }
 
+            // Unavailable storage location. Replaces the re-download message
+            // below, which would be a false diagnosis here.
+            ColumnLayout {
+                spacing: 6
+                visible: root.storage_unreachable
+                Layout.fillWidth: true
+
+                Label {
+                    text: "The configured storage location is unavailable:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: "  " + root.recorded_storage_path
+                    font.pointSize: root.pointSize - 1
+                    color: palette.mid
+                    wrapMode: Text.WrapAnywhere
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: "Simsapa's app data is stored there, and that location is not currently available. "
+                        + "If it is on a memory card, make sure the card is inserted in the phone's own card slot — "
+                        + "a card in a USB card reader may not be usable for app data. "
+                        + "The databases are most likely intact; they are simply not reachable from here."
+                    font.pointSize: root.pointSize
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+            }
+
             // Downloadable databases section
             ColumnLayout {
                 spacing: 10
-                visible: root.has_downloadable_failures
+                visible: root.has_downloadable_failures && !root.storage_unreachable
                 Layout.fillWidth: true
 
                 Label {
@@ -730,6 +1155,17 @@ ApplicationWindow {
                             root.close();
                         }
                     }
+                }
+
+                // Mobile only: on desktop there is no second storage location
+                // to look at, and the predicate behind this returns "absent"
+                // there by design.
+                Button {
+                    text: "Look for Database on Other Storage"
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+                    visible: root.is_mobile
+                    onClicked: root.open_storage_lookup()
                 }
 
                 Button {

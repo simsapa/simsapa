@@ -1,6 +1,7 @@
 #include "window_manager.h"
 #include "sutta_search_window.h"
 #include "download_appdata_window.h"
+#include "storage_recovery_window.h"
 #include "sutta_languages_window.h"
 #include "dictionaries_window.h"
 #include "library_window.h"
@@ -194,6 +195,11 @@ WindowManager::~WindowManager() {
         w->deleteLater();
     }
 
+    while (!storage_recovery_windows.isEmpty()) {
+        auto w = storage_recovery_windows.takeFirst();
+        w->deleteLater();
+    }
+
     while (!sutta_languages_windows.isEmpty()) {
         auto w = sutta_languages_windows.takeFirst();
         w->deleteLater();
@@ -287,9 +293,16 @@ void WindowManager::restore_last_session() {
     }
 }
 
-DownloadAppdataWindow* WindowManager::create_download_appdata_window() {
-    DownloadAppdataWindow* w = new DownloadAppdataWindow(this->m_app);
+DownloadAppdataWindow* WindowManager::create_download_appdata_window(
+    const QVariantMap& initial_properties) {
+    DownloadAppdataWindow* w = new DownloadAppdataWindow(this->m_app, initial_properties);
     download_appdata_windows.append(w);
+    return w;
+}
+
+StorageRecoveryWindow* WindowManager::create_storage_recovery_window() {
+    StorageRecoveryWindow* w = new StorageRecoveryWindow(this->m_app);
+    storage_recovery_windows.append(w);
     return w;
 }
 

@@ -62,6 +62,9 @@ pub mod qobject {
         fn should_auto_start_download(self: Pin<&mut AssetManager>) -> bool;
 
         #[qinvokable]
+        fn peek_auto_start_download(self: Pin<&mut AssetManager>) -> bool;
+
+        #[qinvokable]
         fn set_keep_screen_on(self: Pin<&mut AssetManager>, on: bool);
 
         // NOTE: currently unused — the "Open Settings" button on the large-download
@@ -246,11 +249,17 @@ impl qobject::AssetManager {
     /// without user interaction. The marker file is created by prepare_for_database_upgrade().
     ///
     /// Returns true if the file exists (and removes it), false otherwise.
+    ///
+    /// This is the **single point of deletion** for the marker; its one caller
+    /// is `DownloadAppdataWindow.qml`'s `Component.onCompleted`. Anything that
+    /// merely needs to know whether an upgrade download is pending must use the
+    /// non-consuming `peek_auto_start_download()` instead — consuming it early
+    /// turns an unattended upgrade into a stalled setup screen.
     fn should_auto_start_download(self: Pin<&mut Self>) -> bool {
         let paths = AppGlobalPaths::new();
         let auto_start_path = &paths.auto_start_download_marker;
 
-        if auto_start_path.exists() {
+        if auto_start_path.try_exists().unwrap_or(false) {
             info("Found auto_start_download.txt marker file");
             // Remove the file after checking
             if let Err(e) = std::fs::remove_file(auto_start_path) {
@@ -260,6 +269,22 @@ impl qobject::AssetManager {
         }
 
         false
+    }
+
+    /// Whether the auto_start_download.txt marker file exists, **without
+    /// removing it**.
+    ///
+    /// Used by the startup recovery decision, which must not consume the marker:
+    /// `DownloadAppdataWindow.qml` reads it later and would then never
+    /// auto-start the upgrade download. One `try_exists()`, nothing else — it
+    /// runs before `app.exec()`.
+    fn peek_auto_start_download(self: Pin<&mut Self>) -> bool {
+        let paths = AppGlobalPaths::new();
+        let auto_start_path = &paths.auto_start_download_marker;
+
+        let found = auto_start_path.try_exists().unwrap_or(false);
+        info(&format!("peek_auto_start_download(): {} at {}", found, auto_start_path.display()));
+        found
     }
 
     /// Remove suttas and related data for specific language codes
