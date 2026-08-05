@@ -390,6 +390,39 @@ Notable feature docs:
   `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
   (`save_file` discarded the write result and always returned `true`) that made the
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
+- [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
+  what happens when the storage location the user chose is no longer where it was
+  (a microSD card moved to another socket, a volume back under a different path).
+  Built on the **four-state predicate** `storage_path_state()`
+  (`absent`/`unreachable`/`reachable_empty`/`ok`), which is **read-only, stable
+  across launches and `is_mobile()`-gated internally** — the three properties that
+  let it run *before* `init_app_globals()`. Covers the **two path notions** that
+  must never be conflated (the **recorded** path the user chose vs. the
+  **resolved** path, which falls back to the internal app root and is *not* a user
+  choice) — conflating them is the original bug: an internal copy plus an
+  unreachable recorded path made `appdata_db_exists()` true, so the app either
+  booted against a database the user never chose or let the startup sweeps
+  **delete** it. Hence the `gui.cpp` **sweep gating** on a deliberate *pre-sweep*
+  state snapshot, `ensure_no_empty_db_files(sweep: bool)` (with `sweep = false` a
+  zero-byte file is recorded as missing but **not** deleted), and the invariant
+  that no `unreachable` session ever reaches `init_app_data()`. Also the **two
+  classification tiers** — tier 1 (enumeration + `scan_storage_candidates()`,
+  cheap, all *policy* in Rust so it is unit-testable off-device: emulated-duplicate
+  de-duplication, the recorded path as an extra candidate, `same_path()` never
+  `canonicalize()`, null-not-zero figures) and tier 2 (the Diesel write/SQLite
+  probe, **dialog-only**, demote-only, with a `Drop`-guard cleanup of the
+  `-wal`/`-shm`/`-journal` set and two-halves cancellation) — the recovery flow's
+  branch order and endings, the **`auto_start_download` marker's three traps**
+  (peek vs. consume; suppression only in `reachable_empty`; initial properties
+  because `Component.onCompleted` consumes), FR-37 **verified writes**, the four
+  screens sharing `StorageCandidatesList.qml` and the QML rendering rules that are
+  easy to break (required properties not function calls, demoted rows move to the
+  end, a pending probe blocks *confirming* not selecting, `Dialog` content
+  anchored left/right only), the diagnostics (`storage_path` in the startup
+  report, per-volume `by=` logging, the `log-storage-scan.txt` marker), and the
+  **`adb` state-simulation recipes** with their traps (`printf '%s'` not `echo`,
+  `run-as … sh -c` blocked by SELinux, two candidates on a device with no card
+  slot).
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row

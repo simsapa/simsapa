@@ -37,7 +37,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `assets/qml/tst_StorageCandidatesList.qml` - **new** (5.0): 16 tests over the selectability rules and the demote-only probe merge (group rules, Database-Validation exclusions, single-hit preselect, trailing-slash path match, selection cleared on demotion). Test files are not registered in `bridges/build.rs`.
 - `backend/src/lib.rs` (FFI) - `peek_auto_start_download_c()` (5.0): the non-consuming marker peek `gui.cpp` needs before any window exists.
 - `backend/src/lib.rs` (diagnostics) - `storage_scan_log_requested_c()` / `log_storage_scan_c()`: the `log-storage-scan.txt` marker that dumps the enumeration + tier-1 scan to the log, so the Android-only JNI is observable on a healthy install (task 3.9).
-- `docs/relocated-storage-recovery.md` - **new**: feature documentation (task 8.0).
+- `docs/relocated-storage-recovery.md` - **new**: feature documentation (task 8.0). **Done in 8.1:** 13 sections — the two path notions, the four-state predicate, the `get_create_simsapa_dir()` trim + no-create change, the `gui.cpp` startup ordering (sweep gating, pre-sweep snapshot, FR-2 invariant), the two classification tiers, the recovery flow and its endings, the `auto_start_download` marker's three traps, FR-37 verified writes, the four list screens + the QML rendering rules that are easy to break, diagnostics (report field, per-volume logging, the scan-dump marker, `log_info_c()`), the `adb` state-simulation recipes with the SELinux/`printf` traps, the test inventory, and the hardware-blocked backlog.
 - `PROJECT_MAP.md`, `CLAUDE.md` - documentation pointers.
 
 ### Notes
@@ -847,12 +847,26 @@ logs **no** storage-path write at all.
 
 **Dependencies:** everything above.
 
-- [ ] 8.1 Write `docs/relocated-storage-recovery.md`: the four-state predicate and where it runs, the FR-20/20a fallback semantics, the sweep gating and FR-36a's `sweep` flag, the two-tier classification and why the probe is dialog-only, the recovery flow + outcome matrix (link to the PRD), the `skip_storage_dialog` rule, the marker peek, the FR-37 verified write, and the §8 `adb` simulation recipe for future debugging. **14 source files across `assets/qml`, `backend/src`, `bridges/src` and `cpp` already point readers at this path** (`grep -rl docs/relocated-storage-recovery.md`) — it is the branch's most-referenced missing artifact, so 8.1 is not optional polish.
-- [ ] 8.2 Add the doc pointer to `CLAUDE.md`'s notable feature docs list; update `PROJECT_MAP.md` with the new QML components, bridge methods, and backend functions.
-- [ ] 8.3 Run the full suite: `make build -B`, `make test` (Rust + QML + JS). Fix anything that surfaced.
+- [x] 8.1 Write `docs/relocated-storage-recovery.md`: the four-state predicate and where it runs, the FR-20/20a fallback semantics, the sweep gating and FR-36a's `sweep` flag, the two-tier classification and why the probe is dialog-only, the recovery flow + outcome matrix (link to the PRD), the `skip_storage_dialog` rule, the marker peek, the FR-37 verified write, and the §8 `adb` simulation recipe for future debugging. **14 source files across `assets/qml`, `backend/src`, `bridges/src` and `cpp` already point readers at this path** (`grep -rl docs/relocated-storage-recovery.md`) — it is the branch's most-referenced missing artifact, so 8.1 is not optional polish.
+- [x] 8.2 Add the doc pointer to `CLAUDE.md`'s notable feature docs list; update `PROJECT_MAP.md` with the new QML components, bridge methods, and backend functions. **Note: `CLAUDE.md` is a symlink to `AGENTS.md`** — edit the target, not the link. `PROJECT_MAP.md` gained the two new QML files (tree + Main Components), the extended `storage_manager.rs` bridge surface, `storage_recovery_window.cpp/.h` and the `setInitialProperties()` note on `download_appdata_window.cpp/.h`, and a **Relocated storage recovery** entry under Platform Integration naming every backend/C++ function. Its `cpp/` tree listing is abbreviated upstream (it omits ~10 existing files) and uses non-breaking spaces, so the new host was added to Key Components rather than the tree.
+- [x] 8.3 Run the full suite: `make build -B`, `make test` (Rust + QML + JS). Fix anything that surfaced. **Closed on 7.4's verification** (`make build -B` clean, `cargo test` green across all 59 binaries, `make qml-test` 131 passed, `qmllint` clean): 8.1 and 8.2 changed **markdown only** — no `.rs`, `.qml`, `.cpp` or build file was touched after that run, so there is nothing new for a suite to exercise.
 - [ ] 8.4 Verify test 9's startup-time claim: add temporary `STARTUP-TRACE` logs around the predicate, scan and probes; confirm on a normal (`ok`-state) launch that only the predicate runs pre-`exec` and costs nothing measurable; remove or keep the traces per the existing convention in the codebase.
-- [ ] 8.5 Compile the manual on-device test list for the user (§8 tests 1–7, 8c–8n hardware halves, 10) with expected outcomes, as a checklist section in the doc or a handoff note.
+
+  **Device-bound; not closable from here — the same box as 9.2d, do not check one
+  without the other.** The *ordering* half is already proven: 5.9's device run of
+  test 8h showed the enumeration and scan logging **after** `app.exec()` and the
+  probe running on `ThreadId(02)`. What remains is the *timing* half on an
+  `ok`-state launch, which needs the traces and a phone. Note the pre-`exec` work
+  the traces would be measuring is one `try_exists()` plus one `metadata()` — if
+  it measures as anything, something is wrong with the predicate, not with the
+  budget.
+- [x] 8.5 Compile the manual on-device test list for the user (§8 tests 1–7, 8c–8n hardware halves, 10) with expected outcomes, as a checklist section in the doc or a handoff note. **Done as §13 of `docs/relocated-storage-recovery.md`**, split into a passed table (13 tests, PRD numbering kept, marked re-run-only-if-touched) and 11 open checkboxes with the reason each is still open. 8e carries its "disposable installation only" warning; 8o is called out as the one desktop item needing no phone.
 - [ ] 8.6 When the feature is accepted: archive the PRD and this task file per the repo's `archive prd and tasks` convention (see commit `a561f85`). **Check 9.0 first** — archiving with unexplained open boxes there loses the deferred verifications permanently.
+
+  **Not done, and must not be done yet.** 9.1a–9.1d (all hardware-blocked), 9.2d
+  and 9.3c are open, and the user has not accepted the feature. The deferred
+  verifications now also live in the doc's §13/§14, so they survive archiving —
+  but the archive step itself still waits on acceptance.
 
 ### 9.0 Deferred verifications (the standing backlog)
 
@@ -927,7 +941,9 @@ component 6.0 and 7.0 are about to change.
   `row_count` this would have shown the one-choice modal 3.12 removed. **The
   low-space half remains hardware-blocked (9.1d)** — no volume on this device is
   anywhere near full.
-- [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch.
+- [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch. The
+  ordering half is already covered by 5.9's test 8h run (enumeration and scan log
+  after `app.exec()`, probe on a worker thread); only the timing half is left.
 - [x] 9.2f The 5.11 fixes: with two candidates where the *only* hit is on a
   volume the probe rejects, the selection screen must not be left headed
   "Existing Simsapa data was found" with nothing selectable — it re-branches to
