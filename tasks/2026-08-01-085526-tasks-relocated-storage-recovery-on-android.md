@@ -80,6 +80,10 @@ Example:
 
 Update the file after completing each sub-task, not just after completing an entire parent task.
 
+**Deferred verifications live in §9.0**, not in the prose of the stage that
+postponed them. When you defer a check, add a box there — a note inside a
+completed stage's result table is invisible by the time anyone would act on it.
+
 ## Tasks
 
 ### 1.0 Backend path foundations
@@ -168,7 +172,7 @@ extra rows" result. These sub-tasks make a device run informative.
   - (c) **Unreachable recorded path** (§8's main recipe). Expect: `state=unreachable`, the recorded path appended as an extra candidate row, the `Skipping destructive startup sweeps` log line naming it, and Database Validation reporting "The configured storage location is unavailable" instead of the re-download message.
   - (d) **Reachable-but-empty** (`adb shell run-as … mkdir -p …`): `state=reachable_empty`, no new message.
   - (e) **Whitespace-only `storage-path.txt`** (`printf ' '`): `state=absent`, treated as a genuine first run.
-  - (f) **Read-only / removed volume classification** (FR-29 rows 2–3) — needs real removable hardware and cannot be simulated with `adb`. Defer to a device with a card slot; the code path is a single `getExternalStorageState()` string compare.
+  - (f) **Read-only / removed volume classification** (FR-29 rows 2–3) — needs real removable hardware and cannot be simulated with `adb`. Defer to a device with a card slot; the code path is a single `getExternalStorageState()` string compare. **Tracked as 9.1a.**
 
   **Results (2026-08-05, SM-S911B / Android 16, beta debug).** (a)–(e) all pass;
   (f) deferred, no card slot available. Two defects found and fixed, both
@@ -444,13 +448,88 @@ Verified: `make build -B` clean, `cargo test` green across all 59 binaries,
     the app before restoring. (No data was lost; noted for whoever repeats these
     runs.)
 
-  Not covered on this device: **(f)** read-only / removed-volume classification
-  (FR-29 rows 2-3) and tests **3** / **8c** still need real removable hardware —
-  the phone has no card slot, so every run had exactly one usable location.
+  Not covered on this device (**tracked as 9.1a / 9.1b / 9.3c** — do not rely on
+  this paragraph to remember them): **(f)** read-only / removed-volume
+  classification (FR-29 rows 2-3) and tests **3** / **8c** still need real
+  removable hardware — the phone has no card slot, so every run had exactly one
+  usable location.
   **8e** (the `delete_files_for_upgrade` data-loss guard) was **not** re-run: it
   was verified in 3.10, nothing in 5.0 touched the sweep gating, and a
   regression would have destroyed the user's 4.6 GB install. The FR-36 skip line
   was observed in every `unreachable` run regardless.
+
+### 5.10 Review fixes (2026-08-05, before starting 6.0)
+
+A review of 1.0–5.0 against the PRD found four defects in the new QML, all in
+code 6.0 and 7.0 are about to reuse. Fixed together; `make qml-test` 126 passed
+(120 + 6 new cases), `qmllint` clean, build clean.
+
+- **A pending tier-2 probe no longer makes a row unselectable.**
+  `row_selectable` / `is_selectable()` included `!probe_pending`, and
+  `show_selection()` pre-selects the single hit *before* posting the probes — so
+  the pre-selected row lost its `RadioButton` (`visible: row_selectable`) and
+  went `enabled: false` while still showing the selection tint. Worse,
+  `has_selection` stayed true, so **the confirm button stayed enabled during the
+  probe**: a fast tap wrote a storage path the verdict was about to reject.
+  A probed row now stays selectable and keeps its radio button; what a pending
+  probe blocks is *confirming*, through the new
+  `StorageCandidatesList.selection_probe_pending` (explicit state, refreshed at
+  every selection/pending mutation — a binding over a `ListModel` role would not
+  re-evaluate), which the confirm button's `enabled` binds to.
+- **A demoted row now moves to the end of the model.** `apply_probe_verdict()`
+  changed `group` in place, but the `ListView`'s section headings come from row
+  *order* — so a demotion inside the `found` run split the section, rendering a
+  stray "Not usable for the database" heading with the remaining found rows
+  beneath it. Exactly when the probe does its job. `selected_index` is decremented
+  when the moved row was before it.
+- **Every terminal path cancels in-flight probes** (FR-31's "never outlive the
+  dialog"). Only the two handoffs did; the adoption branch, the three Quit
+  buttons and `onClosing` quit with workers possibly mid-probe, and a process
+  exit inside `probe_storage_location()` leaves `simsapa-write-probe.sqlite3`
+  (+ `-wal`) on the user's card. Quitting now goes through
+  `StorageRecoveryWindow.quit_app()`; `refresh_state_and_scan()` also cancels, so
+  Try Again cannot leave the previous pass writing to a volume this pass may not
+  even show.
+- **`StorageCandidatesList.found_count_excluding_recorded()` added for 6.2.**
+  FR-19's condition is "no FOUND rows other than `is_recorded`", which is *not*
+  `found_count()`: on a healthy install the recorded path is itself a `found`
+  row, so a 6.2 written against `found_count()` would show a selection screen on
+  which nothing can be picked instead of the "no database was found" message.
+
+Two further findings recorded rather than fixed:
+
+- **`DatabaseValidationDialog`'s `storage_unreachable` branch (task 2.6) is
+  currently unreachable.** On mobile, `unreachable` always routes into the
+  recovery flow, and every `DownloadAppdataWindow` ending is "Quit and start the
+  application again" — so no main window ever opens in a session whose snapshot
+  says `unreachable`. FR-22 is a SHOULD and the code is correct defensive
+  wiring; it is noted so nobody spends device time trying to observe it.
+- **`append_unmatched_storage_volumes()`'s adopted-storage match is dead in
+  practice.** It compares `getDescription(Context)` against `row.label`, but
+  `createStorageInfo()` now discards path-shaped labels and substitutes
+  "Internal Storage" / "SD Card" / "External Storage", so the comparison will
+  essentially never fire. The failure stays in FR-33's safe direction (a
+  spurious "Not usable for app data" row for a volume that *is* usable), but a
+  device with adopted storage would show a bogus row. Match on the volume path
+  or the raw `displayName()` instead. Untestable here — belongs with the
+  deferred 3.10(f) / test 3 hardware runs.
+
+Task-file correction: 5.2 lists `download_here(path, is_internal)`; the
+implemented signal is `download_here(string path)`. Harmless — `is_internal` is
+only logged inside `save_storage_path()`, which QML already called before the
+handoff — so the task file is what was wrong.
+
+- [x] 5.10a Apply the four fixes; `make qml-test` (126 passed), `qmllint`, build.
+- [ ] 5.10b **Visual check of the two rendering fixes** — the pre-selected single
+  hit keeps its radio button while its probe runs, and a demoted row does not
+  split the section headings. Unit tests cannot see either. Cheap on desktop: a
+  throwaway harness QML that feeds `StorageCandidatesList` the
+  `tst_StorageCandidatesList` fixture and renders it under `qml`, no device
+  needed (the recovery *flow* is mobile-gated, but this component is not).
+- [ ] 5.10c Decide the adopted-storage label match (9.0's deferred item): either
+  match `append_unmatched_storage_volumes()` on the volume path / raw
+  `displayName()` instead of the substituted label, or accept the spurious row
+  and say so. Blocked on hardware to verify either way — see 9.0.
 
 ### 6.0 Database Validation entry point
 
@@ -465,9 +544,9 @@ Verified: `make build -B` clean, `cargo test` green across all 59 binaries,
 Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow` instantiated **inline in `SuttaSearchWindow.qml:2277`** — the whole entry point is pure QML inside the running app's engine; no C++ host or `WindowManager` work is needed here, and the adoption quit is a plain `Qt.quit()` from the running app.
 
 - [ ] 6.1 Add the "Look for Database on Other Storage" button to `DatabaseValidationDialog.qml`, visible only when `is_mobile` (FR-16), opening a dialog/section hosting `StorageCandidatesList` in Database-Validation mode.
-- [ ] 6.2 Implement the §12.7 flow: run predicate + scan on demand; branch on the FR-19 nothing-found condition; otherwise show the grouped selection with FR-18's selectability rules; run tier-2 probes on the selectable rows only.
+- [ ] 6.2 Implement the §12.7 flow: run predicate + scan on demand; branch on the FR-19 nothing-found condition (use `found_count_excluding_recorded()`, **not** `found_count()` — see 5.10); otherwise show the grouped selection with FR-18's selectability rules; run tier-2 probes on the selectable rows only.
 - [ ] 6.3 Adoption path: verified `save_storage_path()` (error + stay open on failure, FR-37), restart notice, then quit the whole application (`Qt.quit()` — confirm it tears down cleanly from a running-app context rather than just closing the validation window).
-- [ ] 6.4 Build + `make qml-test`; on-device check of §8 test 5 (find + adopt + restart) and the state-`ok` non-selectable current-selection row.
+- [ ] 6.4 Build + `make qml-test`; on-device check of §8 test 5 (find + adopt + restart) and the state-`ok` non-selectable current-selection row. **The device half is batched into the 9.2 session** — check 9.2b with it.
 
 ### 7.0 First-run `StorageDialog` integration
 
@@ -482,7 +561,7 @@ Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow`
 - [ ] 7.1 Rework `StorageDialog.qml`'s list to consume the extended JSON: selectable rows first (internal first), unusable rows appended under the heading, greyed, reason line, no figures (FR-28, FR-34); low-space warning line on affected selectable rows (FR-30).
 - [ ] 7.2 Wire tier-2 probes: post out of the engine load, off the UI thread, pending state per row, demote-only merge, selection cleared + Select disabled on demotion of the selected row (FR-31a, FR-32, FR-34), cancellation on dialog close.
 - [ ] 7.3 Confirm the FR-37 error path (task 1.8) still holds in the final structure; `make qml-test` for the dialog.
-- [ ] 7.4 Build + tests; on-device check of §8 test 6 (unusable location cannot be chosen at first run; low-space location selectable with warning).
+- [ ] 7.4 Build + tests; on-device check of §8 test 6 (unusable location cannot be chosen at first run; low-space location selectable with warning). **The device half is batched into the 9.2 session** — check 9.2c with it; the two-real-volumes half is hardware-blocked as 9.1d.
 
 ### 8.0 Documentation and verification
 
@@ -498,4 +577,71 @@ Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow`
 - [ ] 8.3 Run the full suite: `make build -B`, `make test` (Rust + QML + JS). Fix anything that surfaced.
 - [ ] 8.4 Verify test 9's startup-time claim: add temporary `STARTUP-TRACE` logs around the predicate, scan and probes; confirm on a normal (`ok`-state) launch that only the predicate runs pre-`exec` and costs nothing measurable; remove or keep the traces per the existing convention in the codebase.
 - [ ] 8.5 Compile the manual on-device test list for the user (§8 tests 1–7, 8c–8n hardware halves, 10) with expected outcomes, as a checklist section in the doc or a handoff note.
-- [ ] 8.6 When the feature is accepted: archive the PRD and this task file per the repo's `archive prd and tasks` convention (see commit `a561f85`).
+- [ ] 8.6 When the feature is accepted: archive the PRD and this task file per the repo's `archive prd and tasks` convention (see commit `a561f85`). **Check 9.0 first** — archiving with unexplained open boxes there loses the deferred verifications permanently.
+
+### 9.0 Deferred verifications (the standing backlog)
+
+Everything below was deliberately postponed rather than skipped, and each item
+existed only as prose inside 3.10 / 5.9 / 5.10 until this section was added —
+which is exactly how a deferred check gets forgotten. **Nothing here may be
+closed by reasoning; each needs a run.** The feature must not be accepted (8.6)
+with unchecked boxes in 9.1 and 9.2 unless the reason is recorded next to them.
+
+**9.1 Blocked on hardware — needs a phone with a real card slot.** Every device
+run so far was on an SM-S911B, which has none, so every run had exactly one
+usable location and the removable-media paths have never executed.
+
+- [ ] 9.1a **FR-29 rows 2–3: read-only and removed volume classification**
+  (3.10(f)). A single `getExternalStorageState()` string compare, but it has
+  never returned anything except `"mounted"`. Expect `mounted_ro` → "Read-only —
+  the app cannot write here", a pulled card → "Not available".
+- [ ] 9.1b **§8 test 3 / 8c — the real scenario the feature is named after:**
+  install to a card, move the card to another socket (or another device), relaunch.
+  This is the only end-to-end proof that the recorded path goes `unreachable`
+  *and* the copy on the card is found and adoptable.
+- [ ] 9.1c **Adopted (internal-formatted) storage** — the 5.10 finding: with the
+  label substitution in `createStorageInfo()`, `append_unmatched_storage_volumes()`'s
+  `getDescription(Context) == row.label` match cannot fire, so an adopted volume
+  is likely to appear as a bogus "Not usable for app data" row. Confirm on
+  hardware, then apply 5.10c.
+- [ ] 9.1d **A second real volume in the list at first run** (§8 test 6, the
+  hardware half of 7.4): with two locations, `StorageDialog` opens again rather
+  than auto-selecting (3.12), and an unusable location cannot be chosen.
+
+**9.2 Not blocked — needs a device session, batched after 7.0.** The plan of
+record (2026-08-05) is one beta-debug session covering 5.10, 6.4 and 7.4
+together, once `StorageCandidatesList` is final. Doing it earlier re-tests a
+component 6.0 and 7.0 are about to change.
+
+- [ ] 9.2a Re-run the 5.10 fixes on device: pre-selected hit keeps its radio
+  button and the confirm button is disabled until its probe reports; a demoted
+  row lands under "Not usable for the database" with no stray heading; quitting
+  mid-probe leaves no `simsapa-write-probe.sqlite3` behind (check the candidate
+  dirs after a Quit during the probe).
+- [ ] 9.2b 6.4's runs — §8 test 5 (find + adopt + restart from Database
+  Validation) and the state-`ok` non-selectable "(current selection)" row.
+- [ ] 9.2c 7.4's runs — unusable location cannot be chosen at first run;
+  low-space location selectable with its warning.
+- [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch.
+
+**9.3 Verified once, re-run only if the relevant code changes.** Recorded so a
+later reader knows these were not skipped.
+
+- [x] 9.3a 3.10(a)–(e): enumeration, the four predicate states, the FR-20
+  fallback, FR-20a's no-create guarantee, the FR-36 sweep skip.
+- [x] 9.3b 5.9's device matrix: FR-2 (no silent boot from the fallback), FR-23,
+  FR-25, the `unreachable` → `ok` transition, adoption end to end, the 5.7
+  short-circuit, the 5.8a marker gap fix, FR-32 tiering.
+- [ ] 9.3c **§8 test 8e — the `delete_files_for_upgrade` data-loss guard.**
+  Verified in 3.10 and deliberately **not** re-run in 5.9: a regression would
+  destroy the user's 4.6 GB install. Re-run only on a device with a disposable
+  installation, and only if the sweep gating in `gui.cpp` is touched again.
+
+**9.4 Recorded, no run needed.**
+
+- `DatabaseValidationDialog`'s `storage_unreachable` branch (2.6) is currently
+  unreachable — on mobile, `unreachable` always routes into the recovery flow
+  and every download-flow ending is "Quit and start again", so no main window
+  opens in such a session. FR-22 is a SHOULD; the wiring is correct and stays.
+  **Do not spend device time trying to observe it.** It becomes reachable only
+  if a future change opens a main window from a recovery session.

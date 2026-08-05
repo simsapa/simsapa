@@ -90,6 +90,18 @@ ApplicationWindow {
         // would quit with the storage problem unresolved and no explanation.
         close.accepted = true;
         logger.info("StorageRecoveryWindow closed by the user; quitting.");
+        root.quit_app();
+    }
+
+    // Quitting always goes through here, never through a bare Qt.quit().
+    //
+    // A probe that is still running owns a file it is about to delete in a
+    // candidate directory; a process exit in the middle of that leaves
+    // simsapa-write-probe.sqlite3 (and possibly its -wal sibling) behind on the
+    // user's card — the litter the probe's cleanup guard exists to prevent. The
+    // cancel makes in-flight workers give up before their next write.
+    function quit_app() {
+        sm.cancel_storage_probes();
         Qt.quit();
     }
 
@@ -103,6 +115,12 @@ ApplicationWindow {
     // Re-check AND re-scan. Never a cached result: Try Again exists precisely
     // because the card may have been re-seated since the last look.
     function refresh_state_and_scan() {
+        // Probes from the previous pass belong to rows that are about to be
+        // replaced. Their verdicts would be discarded on arrival anyway (the
+        // request id no longer matches), but cancelling stops them writing to a
+        // candidate directory this pass may never even show.
+        sm.cancel_storage_probes();
+
         root.storage_state = sm.storage_path_state();
         root.recorded_path = sm.recorded_storage_path();
 
@@ -250,6 +268,10 @@ ApplicationWindow {
         }
 
         if (is_adoption) {
+            // Terminal screen: no row can be picked from here on, so any probe
+            // still running is work nobody will read — and one the user may quit
+            // out from under.
+            sm.cancel_storage_probes();
             // The runtime paths were frozen at startup, so the adopted location
             // takes effect on the next launch.
             root.show_message("Storage location updated",
@@ -384,7 +406,12 @@ ApplicationWindow {
                         }
                         font.pointSize: root.pointSize
                         Layout.fillWidth: true
+                        // Disabled while the selected row's probe is still
+                        // running: the verdict may be about to demote it, and
+                        // committing first writes a storage path the app has
+                        // just decided it cannot use.
                         enabled: candidates_list.has_selection
+                                 && !candidates_list.selection_probe_pending
                         palette.button: "#4CAF50"
                         palette.buttonText: "white"
                         onClicked: root.confirm_selection()
@@ -401,7 +428,7 @@ ApplicationWindow {
                         text: "Quit"
                         font.pointSize: root.pointSize
                         Layout.fillWidth: true
-                        onClicked: Qt.quit()
+                        onClicked: root.quit_app()
                     }
                 }
             }
@@ -474,7 +501,7 @@ ApplicationWindow {
                         text: "Quit"
                         font.pointSize: root.pointSize
                         Layout.fillWidth: true
-                        onClicked: Qt.quit()
+                        onClicked: root.quit_app()
                     }
                 }
             }
@@ -518,7 +545,7 @@ ApplicationWindow {
                     Layout.margins: 6
                     palette.button: "#4CAF50"
                     palette.buttonText: "white"
-                    onClicked: Qt.quit()
+                    onClicked: root.quit_app()
                 }
             }
         }

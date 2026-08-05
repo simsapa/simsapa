@@ -61,6 +61,19 @@ Item {
     property int selected_index: -1
     readonly property bool has_selection: root.selected_index >= 0
 
+    // True while the selected row's tier-2 probe has not yet reported.
+    //
+    // A row stays selectable while it is being probed — hiding its radio button
+    // mid-probe makes the pre-selected single hit look unselected — but the
+    // hosting screen MUST disable its confirm button on this, because
+    // committing before the verdict writes a storage path the probe may be
+    // about to reject.
+    //
+    // Maintained explicitly at every mutation point rather than as a binding: a
+    // JS function reading rows_model is not re-evaluated when a model role
+    // changes.
+    property bool selection_probe_pending: false
+
     // Emitted when a selected row is taken away by a tier-2 demotion, so the
     // hosting screen can disable its confirm button.
     signal selection_cleared()
@@ -75,6 +88,7 @@ Item {
     function load(candidates_json: string) {
         rows_model.clear();
         root.selected_index = -1;
+        root.selection_probe_pending = false;
 
         var rows = [];
         try {
@@ -122,8 +136,8 @@ Item {
         return root.row_at(root.selected_index);
     }
 
-    // How many rows hold an existing installation. The recovery flow branches on
-    // this ("hits"), so it must count rows, not selectable rows.
+    // How many rows hold an existing installation. The startup recovery flow
+    // branches on this ("hits"), so it must count rows, not selectable rows.
     function found_count(): int {
         var n = 0;
         for (var i = 0; i < rows_model.count; i++) {
@@ -132,20 +146,51 @@ Item {
         return n;
     }
 
+    // Hits that are something OTHER than the location already in use.
+    //
+    // This is Database Validation's branch condition, and it is not the same
+    // question as found_count(): on a healthy install the recorded path is
+    // itself a `found` row, so found_count() is ≥ 1 with nothing to adopt.
+    // Branching on found_count() there would show a selection screen on which
+    // no row can be picked, instead of the "no database was found on the other
+    // storage locations" message.
+    function found_count_excluding_recorded(): int {
+        var n = 0;
+        for (var i = 0; i < rows_model.count; i++) {
+            var r = rows_model.get(i);
+            if (r.group === "found" && !r.is_recorded) n++;
+        }
+        return n;
+    }
+
     // Rows the user may act on, given this entry point's rules.
+    //
+    // A pending tier-2 probe does NOT make a row unselectable: the probe is a
+    // demote-only refinement of an already-valid tier-1 verdict, and taking the
+    // radio button away from a row the user is looking at (including the
+    // pre-selected single hit) reads as a bug. What a pending probe does block
+    // is *confirming* — see selection_probe_pending.
     function is_selectable(index: int): bool {
         var r = root.row_at(index);
         if (r === null) return false;
         if (!root.selection_enabled) return false;
         if (root.selectable_groups.indexOf(r.group) < 0) return false;
         if (root.exclude_recorded && r.is_recorded) return false;
-        if (r.probe_pending) return false;
         return true;
     }
 
     function select(index: int) {
         if (!root.is_selectable(index)) return;
         root.selected_index = index;
+        root.refresh_selection_probe_pending();
+    }
+
+    // Recompute whether the selected row is still waiting on its probe. Called
+    // from every place that changes either the selection or a row's pending
+    // flag.
+    function refresh_selection_probe_pending() {
+        var r = root.row_at(root.selected_index);
+        root.selection_probe_pending = (r !== null && r.probe_pending === true);
     }
 
     // Pre-select the single hit, per FR-11. Does nothing when there is more than
@@ -160,6 +205,7 @@ Item {
         }
         if (hit >= 0 && root.is_selectable(hit)) {
             root.selected_index = hit;
+            root.refresh_selection_probe_pending();
         }
     }
 
@@ -179,6 +225,7 @@ Item {
         var i = root.index_of_path(path);
         if (i < 0) return;
         rows_model.setProperty(i, "probe_pending", pending);
+        root.refresh_selection_probe_pending();
     }
 
     // Merge one tier-2 verdict. Demote-only: a probe can move a row to
@@ -193,7 +240,10 @@ Item {
 
         rows_model.setProperty(i, "probe_pending", false);
 
-        if (is_usable) return;
+        if (is_usable) {
+            root.refresh_selection_probe_pending();
+            return;
+        }
 
         logger.info("StorageCandidatesList: demoting " + path + " — " + reason);
         rows_model.setProperty(i, "group", "unusable");
@@ -207,8 +257,28 @@ Item {
 
         if (root.selected_index === i) {
             root.selected_index = -1;
+            root.selection_probe_pending = false;
             root.selection_cleared();
         }
+
+        // Move the demoted row to the end of the model.
+        //
+        // The ListView's section headings come from row ORDER — the scan hands
+        // the rows over already grouped — so a row whose group changes in place
+        // splits its section: a demoted row sitting inside the "found" run
+        // renders a second "Not usable for the database" heading mid-list, with
+        // the remaining found rows underneath it. The move keeps the model in
+        // group order, which is the invariant the sections rely on.
+        var last = rows_model.count - 1;
+        if (i < last) {
+            rows_model.move(i, last, 1);
+            // Every row after i shifted down by one.
+            if (root.selected_index > i) {
+                root.selected_index -= 1;
+            }
+        }
+
+        root.refresh_selection_probe_pending();
     }
 
     // Normalized comparison, matching the Rust scan's same_path(): trim and drop
@@ -279,11 +349,15 @@ Item {
             // root.is_selectable(index): a function call is not re-evaluated
             // when a model role changes, so a tier-2 demotion would leave the
             // row still clickable. The required properties ARE reactive.
+            //
+            // `probe_pending` is deliberately NOT part of this: a row being
+            // probed stays selectable and keeps its radio button (the mirror of
+            // is_selectable()). Blocking the *confirmation* is the host's job,
+            // through root.selection_probe_pending.
             readonly property bool row_selectable:
                 root.selection_enabled
                 && root.selectable_groups.indexOf(row_item.group) >= 0
                 && !(root.exclude_recorded && row_item.is_recorded)
-                && !row_item.probe_pending
 
             enabled: row_item.row_selectable
             opacity: row_item.group === "unusable" ? 0.7 : 1.0

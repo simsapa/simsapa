@@ -129,11 +129,44 @@ TestCase {
         candidates.apply_probe_verdict("/storage/EEEE-5678/Android/data/app/files",
                                        false, "The app cannot write here");
 
-        var row = candidates.row_at(2);
+        // Demoted rows move to the end — see
+        // test_a_demoted_row_moves_into_the_unusable_group.
+        var i = candidates.row_count - 1;
+        var row = candidates.row_at(i);
+        compare(row.path, "/storage/EEEE-5678/Android/data/app/files");
         compare(row.group, "unusable");
         compare(row.unusable_reason, "The app cannot write here");
         compare(row.megabytes_available, -1);
-        verify(!candidates.is_selectable(2));
+        verify(!candidates.is_selectable(i));
+    }
+
+    function test_a_demoted_row_moves_into_the_unusable_group() {
+        // The ListView's section headings come from row order, so a row demoted
+        // in place would split the "found" section with a stray "not usable"
+        // heading and leave the remaining found rows under it.
+        candidates.apply_probe_verdict("/data/user/0/app/files",
+                                       false, "The app cannot write here");
+
+        compare(candidates.row_at(candidates.row_count - 1).path, "/data/user/0/app/files");
+
+        // Everything before it is still in group order.
+        var seen_non_found = false;
+        for (var i = 0; i < candidates.row_count; i++) {
+            var g = candidates.row_at(i).group;
+            if (g !== "found") seen_non_found = true;
+            else verify(!seen_non_found, "a found row must not follow a non-found row");
+        }
+    }
+
+    function test_demotion_keeps_a_selection_made_on_a_later_row() {
+        // Moving the demoted row shifts every row after it down by one; a
+        // selection tracked by index has to move with it.
+        candidates.select(2);
+        candidates.apply_probe_verdict("/data/user/0/app/files",
+                                       false, "The app cannot write here");
+
+        compare(candidates.selected_row().path, "/storage/EEEE-5678/Android/data/app/files");
+        compare(selection_cleared_spy.count, 0);
     }
 
     function test_probe_never_promotes_a_row() {
@@ -157,7 +190,9 @@ TestCase {
         // row pending forever with no error anywhere.
         candidates.apply_probe_verdict("/storage/EEEE-5678/Android/data/app/files/",
                                        false, "The app cannot write here");
-        compare(candidates.row_at(2).group, "unusable");
+        var row = candidates.row_at(candidates.row_count - 1);
+        compare(row.path, "/storage/EEEE-5678/Android/data/app/files");
+        compare(row.group, "unusable");
     }
 
     function test_probeable_paths_exclude_unusable_rows() {
@@ -166,11 +201,62 @@ TestCase {
         compare(paths.indexOf("/storage/FFFF-9999"), -1);
     }
 
-    function test_a_pending_row_cannot_be_selected() {
+    function test_a_pending_row_stays_selectable() {
+        // A probe is a demote-only refinement of a verdict tier 1 already made,
+        // so the row keeps its radio button while it runs. Taking selection away
+        // mid-probe made the pre-selected single hit look unselected.
         candidates.set_probe_pending("/data/user/0/app/files", true);
-        verify(!candidates.is_selectable(0));
-        candidates.set_probe_pending("/data/user/0/app/files", false);
         verify(candidates.is_selectable(0));
+        candidates.select(0);
+        compare(candidates.selected_index, 0);
+    }
+
+    function test_a_pending_probe_on_the_selected_row_blocks_confirmation() {
+        // What a pending probe blocks is committing: the host's confirm button
+        // binds to this.
+        candidates.select(0);
+        verify(!candidates.selection_probe_pending);
+
+        candidates.set_probe_pending("/data/user/0/app/files", true);
+        verify(candidates.selection_probe_pending, "the selected row is being probed");
+
+        // A probe on some other row is not the user's problem.
+        candidates.set_probe_pending("/data/user/0/app/files", false);
+        candidates.set_probe_pending("/storage/EEEE-5678/Android/data/app/files", true);
+        verify(!candidates.selection_probe_pending);
+    }
+
+    function test_a_usable_verdict_clears_the_pending_block() {
+        candidates.select(0);
+        candidates.set_probe_pending("/data/user/0/app/files", true);
+        candidates.apply_probe_verdict("/data/user/0/app/files", true, "");
+        verify(!candidates.selection_probe_pending);
+        compare(candidates.selected_index, 0);
+    }
+
+    function test_selecting_a_row_recomputes_the_pending_block() {
+        candidates.set_probe_pending("/storage/EEEE-5678/Android/data/app/files", true);
+        candidates.select(2);
+        verify(candidates.selection_probe_pending);
+    }
+
+    function test_found_count_excluding_recorded_ignores_the_current_location() {
+        // Database Validation's branch condition: on a healthy install the
+        // recorded path is itself a hit, and there is nothing to adopt.
+        compare(candidates.found_count(), 2);
+        compare(candidates.found_count_excluding_recorded(), 1);
+
+        candidates.load(JSON.stringify([
+            {
+                path: "/storage/ABCD-1234/Android/data/app/files", label: "SD Card",
+                is_internal: false, is_recorded: true, group: "found",
+                unusable_reason: "", megabytes_available: 30000,
+                low_space_warning: false, appdata_bytes: 512000000,
+                modified: "2026-07-20 09:00", is_complete: true
+            }
+        ]));
+        compare(candidates.found_count(), 1);
+        compare(candidates.found_count_excluding_recorded(), 0);
     }
 
     function test_loading_again_drops_the_previous_selection() {
