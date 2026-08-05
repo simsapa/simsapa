@@ -25,4 +25,14 @@ Item {
         console.log("find_storage_candidates_json()");
         return "[]";
     }
+
+    function probe_storage_candidate(path: string, request_id: string) {
+        console.log("probe_storage_candidate(): " + path + ", request_id: " + request_id);
+    }
+
+    function cancel_storage_probes() {
+        console.log("cancel_storage_probes()");
+    }
+
+    signal probeCompleted(path: string, request_id: string, result_json: string);
 }

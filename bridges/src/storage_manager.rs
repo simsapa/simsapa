@@ -1,11 +1,17 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::thread;
 
+use core::pin::Pin;
+use cxx_qt::Threading;
 use cxx_qt_lib::QString;
 
 use simsapa_backend::logger::{error, info};
 use simsapa_backend::{get_create_simsapa_internal_app_root, save_to_file_checked};
 use simsapa_backend::storage_path_state as backend_storage_path_state;
 use simsapa_backend::scan_storage_candidates;
+use simsapa_backend::storage_probe::probe_storage_location_json;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -38,10 +44,36 @@ pub mod qobject {
         #[qinvokable]
         fn find_storage_candidates_json(self: &StorageManager) -> QString;
     }
+
+    impl cxx_qt::Threading for StorageManager {}
+
+    extern "RustQt" {
+        #[qinvokable]
+        fn probe_storage_candidate(self: Pin<&mut StorageManager>,
+                                   path: &QString,
+                                   request_id: &QString);
+
+        #[qinvokable]
+        fn cancel_storage_probes(self: Pin<&mut StorageManager>);
+
+        #[qsignal]
+        #[cxx_name = "probeCompleted"]
+        fn probe_completed(self: Pin<&mut StorageManager>,
+                           path: QString,
+                           request_id: QString,
+                           result_json: QString);
+    }
 }
 
 #[derive(Default)]
-pub struct StorageManagerRust {}
+pub struct StorageManagerRust {
+    /// Cancellation token for the tier-2 probes. A running probe captures the
+    /// value when it starts and gives up — without writing anything and without
+    /// emitting — once it no longer matches, so a dialog closed mid-probe never
+    /// leaves a worker touching a candidate directory and never merges a late
+    /// verdict into a destroyed model. `cancel_storage_probes()` bumps it.
+    probe_generation: Arc<AtomicUsize>,
+}
 
 
 impl qobject::StorageManager {
@@ -89,6 +121,58 @@ impl qobject::StorageManager {
         let recorded = recorded.as_ref().and_then(|p| p.to_str());
 
         QString::from(&scan_storage_candidates(&enumeration, recorded))
+    }
+
+    /// The tier-2 probe for one candidate: write a throwaway SQLite database in
+    /// the location, exercise it and remove it, then emit `probeCompleted`
+    /// with the §7 shape
+    /// `{ "path": "…", "is_usable": bool, "unusable_reason": "" }`.
+    ///
+    /// `request_id` is the caller's dialog-scoped id, echoed back unchanged so
+    /// QML can discard verdicts belonging to a dialog that has since closed or
+    /// reopened. The work runs on a spawned thread — CXX-Qt invokables run on
+    /// the calling (QML) thread, and the worst case here is a half-mounted card.
+    ///
+    /// Callable **only from a dialog**, and only posted out of the QML engine
+    /// load. Its verdict may only demote a row to unusable, never promote one.
+    /// See docs/relocated-storage-recovery.md.
+    pub fn probe_storage_candidate(self: Pin<&mut Self>, path: &QString, request_id: &QString) {
+        let qt_thread = self.qt_thread();
+        let generation = self.probe_generation.clone();
+        let my_gen = generation.load(Ordering::SeqCst);
+
+        let path_text = path.to_string();
+        let request_id_text = request_id.to_string();
+
+        thread::spawn(move || {
+            // Checked before the probe writes anything: a cancelled probe must
+            // not create files in a location the dialog no longer cares about.
+            if generation.load(Ordering::SeqCst) != my_gen {
+                info(&format!("probe_storage_candidate(): cancelled before probing {}", path_text));
+                return;
+            }
+
+            let result_json = probe_storage_location_json(&path_text);
+
+            if generation.load(Ordering::SeqCst) != my_gen {
+                info(&format!("probe_storage_candidate(): discarding a late verdict for {}",
+                              path_text));
+                return;
+            }
+
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().probe_completed(QString::from(&path_text),
+                                            QString::from(&request_id_text),
+                                            QString::from(&result_json));
+            }).ok();
+        });
+    }
+
+    /// Abandon every probe started so far: in-flight workers stop before their
+    /// next write and emit nothing. Call it when a dialog hosting probes closes.
+    pub fn cancel_storage_probes(self: Pin<&mut Self>) {
+        self.probe_generation.fetch_add(1, Ordering::SeqCst);
+        info("cancel_storage_probes(): pending storage probes abandoned");
     }
 
     /// Save the storage path selected with the StorageDialog or the storage
