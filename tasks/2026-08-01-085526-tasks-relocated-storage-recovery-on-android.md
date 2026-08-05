@@ -29,7 +29,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `assets/qml/StorageDialog.qml` - unusable rows (FR-28), tier-2 probes, FR-37 failed-write handling at the Select button (`:190`).
 - `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`). **Done in 5.0**, plus `skip_auto_start_download` (5.8a), which suppresses the upgrade marker on the "set up a new database" handoff.
 - `cpp/download_appdata_window.{h,cpp}` - (5.8a) takes a `QVariantMap` of **initial** properties, applied via `QQmlApplicationEngine::setInitialProperties()` before `load()` so they are in place before `Component.onCompleted`; `m_root` is now nullptr rather than UB on an empty root-object list. `WindowManager::create_download_appdata_window()` passes the map through (defaulted, so existing callers are unchanged).
-- `assets/qml/DatabaseValidationDialog.qml` - consumes the new `storage_path` report field; gains the "Look for Database on Other Storage" action (FR-16 – FR-19).
+- `assets/qml/DatabaseValidationDialog.qml` - consumes the new `storage_path` report field; gains the "Look for Database on Other Storage" action (FR-16 – FR-19). **Done in 6.0:** the mobile-only button, its own `StorageManager` instance + probe generation, the three-screen `storage_lookup_dialog` (selection / FR-19 nothing-found / terminal restart message), `open_storage_lookup()` / `refresh_storage_candidates()` / `branch_storage_lookup()` / `start_storage_probes()` / `adopt_selected_storage()`, and the FR-37 save-error dialog.
 - `assets/qml/com/profoundlabs/simsapa/StorageManager.qml` - qmllint stubs for every new/changed `StorageManager` method.
 - `assets/qml/com/profoundlabs/simsapa/AssetManager.qml` - qmllint stub for the marker peek.
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `get_startup_db_report()` stub (`:268`) — return shape comment updated.
@@ -627,10 +627,36 @@ code 6.0 and 7.0 are about to reuse or depend on; fixed together.
 
 Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow` instantiated **inline in `SuttaSearchWindow.qml:2277`** — the whole entry point is pure QML inside the running app's engine; no C++ host or `WindowManager` work is needed here, and the adoption quit is a plain `Qt.quit()` from the running app.
 
-- [ ] 6.1 Add the "Look for Database on Other Storage" button to `DatabaseValidationDialog.qml`, visible only when `is_mobile` (FR-16), opening a dialog/section hosting `StorageCandidatesList` in Database-Validation mode.
-- [ ] 6.2 Implement the §12.7 flow: run predicate + scan on demand; branch on the FR-19 nothing-found condition (use `found_count_excluding_recorded()`, **not** `found_count()` — see 5.10); otherwise show the grouped selection with FR-18's selectability rules; run tier-2 probes on the selectable rows only.
-- [ ] 6.3 Adoption path: verified `save_storage_path()` (error + stay open on failure, FR-37), restart notice, then quit the whole application (`Qt.quit()` — confirm it tears down cleanly from a running-app context rather than just closing the validation window).
-- [ ] 6.4 Build + `make qml-test`; on-device check of §8 test 5 (find + adopt + restart) and the state-`ok` non-selectable current-selection row. **The device half is batched into the 9.2 session** — check 9.2b with it.
+- [x] 6.1 Add the "Look for Database on Other Storage" button to `DatabaseValidationDialog.qml`, visible only when `is_mobile` (FR-16), opening a dialog/section hosting `StorageCandidatesList` in Database-Validation mode.
+- [x] 6.2 Implement the §12.7 flow: run predicate + scan on demand; branch on the FR-19 nothing-found condition (use `found_count_excluding_recorded()`, **not** `found_count()` — see 5.10); otherwise show the grouped selection with FR-18's selectability rules; run tier-2 probes on the selectable rows only.
+- [x] 6.3 Adoption path: verified `save_storage_path()` (error + stay open on failure, FR-37), restart notice, then quit the whole application (`Qt.quit()` — confirm it tears down cleanly from a running-app context rather than just closing the validation window).
+- [x] 6.4 Build + `make qml-test`; on-device check of §8 test 5 (find + adopt + restart) and the state-`ok` non-selectable current-selection row. **The device half is batched into the 9.2 session** — check 9.2b with it.
+
+  **Desktop half done (2026-08-05):** `make build -B` clean, `make qml-test` 128
+  passed, `qmllint` clean on `DatabaseValidationDialog.qml`. The entry point is
+  `is_mobile`-gated, so none of it is reachable on desktop — the device half is
+  9.2b.
+
+**Implementation notes (6.0).**
+
+- The whole entry point is inline in `DatabaseValidationDialog.qml`: its own
+  `StorageManager { id: storage_manager }` (per-instance probe generation, so
+  its probes and the recovery window's cannot cancel each other), a
+  `storage_lookup_dialog` with a three-screen `StackLayout` (selection /
+  nothing-found / terminal message), and its own FR-37 save-error dialog.
+- The list is in Database-Validation mode: `selectable_groups: ["found"]` +
+  `exclude_recorded: true`, `selection_enabled: true` — group 2 renders greyed
+  by itself and the recorded path's own row keeps its "(current selection)"
+  suffix while being non-selectable.
+- Probes use `probeable_paths(true)`, posted with `Qt.callLater`, cancelled on
+  `onClosed`, on adoption, and on every re-scan.
+- `rebranch_if_the_last_storage_hit_was_demoted()` mirrors 5.11's fix: a probe
+  that demotes the last adoptable row drops the user onto the FR-19 message
+  instead of an empty selection screen.
+- **The terminal screen is not dismissable** — `closePolicy` becomes
+  `Popup.NoAutoClose` there. The path has already been recorded and the running
+  app still holds the old one open, so Escape-ing out would leave the app in a
+  state its own message says it is not in. The only button is "Quit".
 
 ### 7.0 First-run `StorageDialog` integration
 
