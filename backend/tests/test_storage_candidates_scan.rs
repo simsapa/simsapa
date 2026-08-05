@@ -91,6 +91,46 @@ fn found_and_available_are_classified_and_ordered() {
     assert!(rows[2]["modified"].is_null());
 }
 
+/// The first-run dialog says "X GB free of Y GB", so the volume's size has to
+/// survive the scan — and must stay absent (never 0) where it was never
+/// measured, exactly like `megabytes_available`.
+#[test]
+fn megabytes_total_is_carried_through_and_omitted_where_unmeasured() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let internal = tmp.path().join("internal");
+    let empty_card = tmp.path().join("empty");
+    fs::create_dir_all(&empty_card).expect("create empty card");
+    make_installation(&internal, true);
+
+    let rows = scan(
+        vec![
+            enum_row(empty_card.to_str().unwrap(), "SD Card", false, 40000),
+            enum_row(internal.to_str().unwrap(), "Internal Storage", true, 40000),
+        ],
+        None,
+    );
+
+    assert_eq!(rows[0]["group"], "found");
+    assert_eq!(rows[0]["megabytes_total"], 64000);
+    assert_eq!(rows[1]["group"], "available");
+    assert_eq!(rows[1]["megabytes_total"], 64000);
+
+    // An unusable row keeps no figures at all.
+    let unusable = scan(vec![unusable_enum_row("USB Drive", "Read-only")], None);
+    assert_eq!(unusable[0]["group"], "unusable");
+    assert!(unusable[0]["megabytes_total"].is_null());
+
+    // The recorded-path extra candidate was never enumerated, so nothing about
+    // its volume was weighed.
+    let gone = tmp.path().join("gone");
+    let extra = scan(
+        vec![enum_row(internal.to_str().unwrap(), "Internal Storage", true, 40000)],
+        Some(gone.to_str().unwrap()),
+    );
+    let extra_row = extra.iter().find(|r| r["is_recorded"] == true).expect("recorded row");
+    assert!(extra_row["megabytes_total"].is_null());
+}
+
 #[test]
 fn zero_byte_stub_is_not_a_found_installation() {
     let tmp = tempfile::tempdir().expect("tempdir");

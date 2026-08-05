@@ -6,6 +6,20 @@ import QtQuick.Layouts
 
 import com.profoundlabs.simsapa
 
+// The first-run destination picker: where the ~1 GB of databases will be
+// downloaded to.
+//
+// It renders the SAME grouped list as the recovery flow and Database
+// Validation (StorageCandidatesList), from the same tier-1 scan, so a user who
+// can see their card in the phone finds it in every one of these screens and
+// reads the same reason for why it is or is not offered.
+//
+// What differs here is only the rules: this is a destination picker, not an
+// adoption UI, so BOTH usable groups are selectable — a location that already
+// holds an installation is still a valid place to download to — and the
+// recorded path is not excluded.
+//
+// See docs/relocated-storage-recovery.md.
 Dialog {
     id: root
     title: "Select App Data Storage Location"
@@ -15,14 +29,22 @@ Dialog {
     width: Math.min(500, parent ? parent.width - 40 : 500)
 
     property alias storageManager: sm
-    property int selectedIndex: -1
 
     readonly property int font_point_size: 12
     readonly property bool is_qml_preview: Qt.application.name === "Qml Runtime"
 
     Logger { id: logger }
     StorageManager { id: sm }
-    ListModel { id: storage_locations_model }
+
+    // Bumped on every scan; probe verdicts carry it back so a verdict from a
+    // previous pass can never merge into the rows now on screen.
+    property int probe_generation: 0
+
+    // How tall the candidates list is. Half the window leaves room for the
+    // heading and the three buttons on a phone, and is enough for the two or
+    // three locations a device actually has; beyond that the list scrolls. The
+    // fallback only applies before the dialog has a parent.
+    readonly property real list_height: root.parent ? Math.max(200, root.parent.height * 0.5) : 340
 
     // Shown when storage-path.txt could not be written. The dialog stays open,
     // so the user can pick another location instead of silently downloading to
@@ -51,10 +73,6 @@ Dialog {
         }
     }
 
-    // How many locations the user could actually pick from. Unusable rows are
-    // never added to the model, so this is the number of real choices.
-    readonly property int selectable_count: storage_locations_model.count
-
     // Record `path` as the app data location. Returns whether the write
     // succeeded; on failure the caller must NOT proceed to the download, or the
     // app downloads into whatever location it resolves on its own — one the
@@ -75,15 +93,20 @@ Dialog {
     // recorded. On a failed write it returns false so the caller opens the
     // dialog as usual, where pressing Select surfaces the error.
     function auto_select_single_location(): bool {
-        if (root.selectable_count !== 1) {
+        // selectable_count(), not the row count: the list now also renders the
+        // locations the app can see but cannot use, and counting those would
+        // turn a device with one usable location plus one unusable volume back
+        // into a modal offering a single choice.
+        if (candidates_list.selectable_count() !== 1) {
             return false;
         }
 
-        var only = storage_locations_model.get(0);
+        var only = candidates_list.first_selectable_row();
+        if (only === null) return false;
+
         logger.info("Only one storage location available, using it without asking: " + only.path);
 
         if (root.save_selected_path(only.path, only.is_internal)) {
-            root.selectedIndex = 0;
             return true;
         }
 
@@ -93,64 +116,89 @@ Dialog {
 
     Component.onCompleted: {
         if (root.is_qml_preview) return;
-        var s = sm.get_app_data_storage_paths_json();
-        var d = JSON.parse(s);
+        // Tier 1 only. This dialog is instantiated inline in
+        // DownloadAppdataWindow, so this runs inside the QML engine load,
+        // before app.exec() — the scan is cheap and does no probing, and the
+        // write probes are posted out of the load in onOpened.
+        //
+        // Every policy the list obeys (the emulated-duplicate drop, the
+        // unusable classification, the ordering) lives in the Rust scan, so
+        // this dialog and the recovery flow cannot drift apart.
+        root.rescan();
+    }
 
-        // Primary "external" storage on Android is emulated — a view of the
-        // same partition the internal location lives on, reporting identical
-        // free space — so offering both is a choice with no consequence.
-        // TEMPORARY: this mirrors the policy in the Rust scan
-        // (is_duplicate_emulated_candidate). Task 7.1 reworks this list to
-        // consume find_storage_candidates_json(), after which the policy lives
-        // in one place. See docs/relocated-storage-recovery.md.
-        var has_internal = d.some(function(row) { return row.is_internal === true; });
+    function rescan() {
+        sm.cancel_storage_probes();
+        root.probe_generation += 1;
+        candidates_list.load(sm.find_storage_candidates_json());
+        // The dialog has always opened with the internal location selected;
+        // keeping that means the Select button is live from the start instead
+        // of dead until something is touched.
+        candidates_list.preselect_first_selectable();
+    }
 
-        for (var i = 0; i < d.length; i++) {
-            var item = d[i];
+    onOpened: {
+        // Out of the engine load and off the UI thread: the probe writes a
+        // throwaway SQLite database into each candidate directory.
+        Qt.callLater(root.start_probes);
+    }
 
-            if (has_internal && !item.is_internal
-                && item.is_emulated === true && item.is_removable !== true) {
-                logger.info("Skipping emulated duplicate of the internal storage: " + item.path);
-                continue;
-            }
+    onClosed: {
+        // A probe must never outlive the dialog that started it.
+        sm.cancel_storage_probes();
+    }
 
-            // The enumeration now also reports volumes the app can see but
-            // cannot use for the database (read-only, unmounted, or SAF-only
-            // with no app-writable directory). They must never be offered as a
-            // download destination. They are skipped rather than rendered here;
-            // showing them under a "Not usable for the database" heading is
-            // handled by the shared candidates list.
-            // See docs/relocated-storage-recovery.md.
-            if (item.is_usable === false) {
-                logger.info("Skipping unusable storage location: " + item.label
-                            + " (" + item.unusable_reason + ")");
-                continue;
-            }
+    function start_probes() {
+        // Not selectable_only: both usable groups can be picked here, so every
+        // non-unusable row's verdict can change what the user may do.
+        var paths = candidates_list.probeable_paths(false);
+        var request_id = "" + root.probe_generation;
 
-            var data = {
-                path: item.path,
-                label: item.label,
-                is_internal: item.is_internal,
-                megabytes_total: item.megabytes_total,
-                megabytes_available: item.megabytes_available,
-            };
-
-            if (item.is_internal) {
-                storage_locations_model.insert(0, data);
-                root.selectedIndex = 0;
-            } else {
-                storage_locations_model.append(data);
-            }
+        for (var i = 0; i < paths.length; i++) {
+            candidates_list.set_probe_pending(paths[i], true);
+            sm.probe_storage_candidate(paths[i], request_id);
         }
     }
 
-    function megabytes_to_gb(megabytes: int): string {
-        var gb = megabytes / 1024;
-        return gb.toFixed(1);
+    Connections {
+        target: sm
+
+        function onProbeCompleted(path: string, request_id: string, result_json: string) {
+            if (request_id !== "" + root.probe_generation) {
+                logger.info("Discarding a stale probe verdict for " + path
+                            + " (request " + request_id + ")");
+                return;
+            }
+
+            var verdict = null;
+            try {
+                verdict = JSON.parse(result_json);
+            } catch (e) {
+                logger.error("Cannot parse the probe result: " + e + " json: " + result_json);
+                candidates_list.set_probe_pending(path, false);
+                return;
+            }
+
+            candidates_list.apply_probe_verdict(
+                path,
+                verdict.is_usable === true,
+                verdict.unusable_reason === undefined ? "" : verdict.unusable_reason);
+        }
     }
 
+    // Width from the dialog, height from the children — NOT anchors.fill.
+    //
+    // The dialog sizes itself from this layout's IMPLICIT height. Anchoring the
+    // layout to the parent inverts that: the layout would take its height from
+    // the dialog, whose implicit height is then nothing (measured: 41 px), and
+    // the list was handed whatever space happened to be left over — cutting its
+    // last row's reason line in half however large a preferred height it asked
+    // for. The left/right anchors are still needed, though: without them the
+    // layout is only as wide as its widest child's implicit width and the rows
+    // stop short of the dialog's edge.
     ColumnLayout {
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.margins: 10
 
         Label {
@@ -160,113 +208,29 @@ Dialog {
             Layout.fillWidth: true
         }
 
-        ListView {
-            id: storageListView
-            model: storage_locations_model
-            delegate: storage_list_delegate
-            clip: true
-            spacing: 8
-
+        // The shared grouped list: usable locations first (internal first
+        // within each group), then the volumes the app can see but cannot use,
+        // greyed under their own heading with the reason — FR-28. Rows are
+        // never silently dropped: a user looking at a card that is plugged in
+        // needs to find it here and read why it is not offered.
+        StorageCandidatesList {
+            id: candidates_list
+            font_point_size: root.font_point_size
+            // A destination picker, not an adoption UI: a location that already
+            // holds an installation is still a valid place to download to.
+            selectable_groups: ["found", "available"]
+            selection_enabled: true
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // A fixed share of the window, not a measurement of the rows.
+            // `contentHeight` cannot be used here: a ListView that has not been
+            // given a height creates no delegates, so it reports ~0 and the
+            // dialog sized itself around a list one row tall, cutting the last
+            // row's reason line in half.
+            Layout.preferredHeight: root.list_height
 
-            Layout.preferredHeight: (item_height + spacing + 10) * storage_locations_model.count
-            readonly property int item_height: 70
-        }
-
-        Component {
-            id: storage_list_delegate
-            ItemDelegate {
-                id: list_item
-
-                width: storageListView.width
-                height: storageListView.item_height
-
-                required property int index
-                required property string path
-                required property string label
-                required property bool is_internal
-                required property int megabytes_total
-                required property int megabytes_available
-
-                Rectangle {
-                    anchors.fill: parent
-
-                    radius: 5
-                    border.width: 1
-                    border.color: storageRadioButton.checked ? "#1976d2" : "#ddd"
-                    color: storageRadioButton.checked ? "#e3f2fd" : "transparent"
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            root.selectedIndex = list_item.index;
-                        }
-                    }
-
-                    RowLayout {
-                        id: main_row
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        spacing: 4
-
-                        RadioButton {
-                            id: storageRadioButton
-                            checked: root.selectedIndex === list_item.index
-                            onClicked: {
-                                root.selectedIndex = list_item.index;
-                            }
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        ColumnLayout {
-                            id: text_column
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 2
-
-                            // Label and storage info
-                            Text {
-                                id: internal_label
-                                visible: list_item.is_internal
-                                text: "(Internal)"
-                                font.pointSize: root.font_point_size
-                                font.bold: true
-                                Layout.fillWidth: true
-                            }
-
-                            Text {
-                                id: label_text
-                                text: list_item.label
-                                font.pointSize: root.font_point_size
-                                font.bold: true
-                                elide: Text.ElideRight
-                                maximumLineCount: 1
-                                Layout.fillWidth: true
-                            }
-
-                            // Storage size info
-                            Text {
-                                text: root.megabytes_to_gb(list_item.megabytes_available) + " GB free of " + root.megabytes_to_gb(list_item.megabytes_total) + " GB"
-                                font.pointSize: root.font_point_size - 2
-                                color: "#555"
-                                Layout.fillWidth: true
-                            }
-
-                            // Path (truncated)
-                            // (Don't show to save space)
-                            // Text {
-                            //     id: path_text
-                            //     text: list_item.path
-                            //     font.pointSize: root.font_point_size - 3
-                            //     color: "#555"
-                            //     elide: Text.ElideMiddle
-                            //     maximumLineCount: 1
-                            //     Layout.fillWidth: true
-                            // }
-                        }
-                    }
-                }
+            onSelection_cleared: {
+                logger.info("The selected location was found unusable; selection cleared.");
             }
         }
 
@@ -278,38 +242,40 @@ Dialog {
             Button {
                 text: "Select"
                 Layout.fillWidth: true
-                enabled: root.selectedIndex >= 0
+                // Disabled while the selected row's tier-2 probe is still
+                // running: the verdict may be about to demote it, and
+                // committing first records a download destination the app has
+                // just decided it cannot write to.
+                enabled: candidates_list.has_selection
+                         && !candidates_list.selection_probe_pending
                 palette.button: "#4CAF50"
                 palette.buttonText: "white"
 
                 onClicked: {
-                    if (root.selectedIndex >= 0) {
-                        var idx = root.selectedIndex;
-                        var selected_path = storage_locations_model.get(idx).path;
-                        // A failed write must not proceed to the download: the
-                        // app would download into whatever location it resolves
-                        // on its own, which is not the one the user chose.
-                        if (!root.save_selected_path(selected_path,
-                                                     storage_locations_model.get(idx).is_internal)) {
-                            save_error_dialog.storage_path = selected_path;
-                            save_error_dialog.open();
-                            return;
-                        }
-                        root.accept()
+                    var row = candidates_list.selected_row();
+                    if (row === null) return;
+
+                    // A failed write must not proceed to the download: the app
+                    // would download into whatever location it resolves on its
+                    // own, which is not the one the user chose.
+                    if (!root.save_selected_path(row.path, row.is_internal)) {
+                        save_error_dialog.storage_path = row.path;
+                        save_error_dialog.open();
+                        return;
                     }
+                    root.accept()
                 }
             }
 
             Button {
                 text: "Copy Path"
                 Layout.fillWidth: true
-                enabled: root.selectedIndex >= 0
+                enabled: candidates_list.has_selection
 
                 onClicked: {
-                    if (root.selectedIndex >= 0) {
-                        var idx = root.selectedIndex;
-                        var path = storage_locations_model.get(idx).path;
-                        clip.copy_text(path);
+                    var row = candidates_list.selected_row();
+                    if (row !== null) {
+                        clip.copy_text(row.path);
                     }
                 }
             }

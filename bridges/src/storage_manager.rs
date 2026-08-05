@@ -107,8 +107,8 @@ impl qobject::StorageManager {
     ///
     /// Row shape:
     /// `{ path, label, is_internal, is_recorded, group, unusable_reason,
-    ///    megabytes_available, low_space_warning, appdata_bytes, modified,
-    ///    is_complete }`
+    ///    megabytes_available, megabytes_total, low_space_warning,
+    ///    appdata_bytes, modified, is_complete }`
     ///
     /// `appdata_bytes` (database size) and `megabytes_available` (volume free
     /// space) are different quantities and must not be collapsed. `group` is

@@ -291,6 +291,59 @@ TestCase {
         compare(candidates.found_count_excluding_recorded(), 0);
     }
 
+    function test_first_selectable_is_the_internal_location() {
+        // The first-run dialog opens with a default selection, and the scan
+        // orders the internal location first within its group.
+        compare(candidates.first_selectable_index(), 0);
+        candidates.preselect_first_selectable();
+        compare(candidates.selected_index, 0);
+        compare(candidates.first_selectable_row().path, "/data/user/0/app/files");
+    }
+
+    function test_first_selectable_skips_rows_this_entry_point_cannot_pick() {
+        // Database Validation's rules: the recorded path is not an adoption
+        // candidate and group 2 is not selectable, so the first pickable row is
+        // neither row 0's group-mate nor the available one.
+        candidates.exclude_recorded = true;
+        candidates.selectable_groups = ["found"];
+        candidates.load(JSON.stringify([
+            {
+                path: "/storage/ABCD-1234/Android/data/app/files", label: "SD Card",
+                is_internal: false, is_recorded: true, group: "found",
+                unusable_reason: "", megabytes_available: 30000,
+                low_space_warning: false, appdata_bytes: 512000000,
+                modified: "2026-07-20 09:00", is_complete: true
+            },
+            {
+                path: "/storage/EEEE-5678/Android/data/app/files", label: "USB Storage",
+                is_internal: false, is_recorded: false, group: "found",
+                unusable_reason: "", megabytes_available: 8000,
+                low_space_warning: false, appdata_bytes: 512000000,
+                modified: "2026-07-01 09:00", is_complete: true
+            }
+        ]));
+
+        compare(candidates.first_selectable_index(), 1);
+        candidates.preselect_first_selectable();
+        compare(candidates.selected_index, 1);
+
+        candidates.exclude_recorded = false;
+        candidates.selectable_groups = ["found", "available"];
+        candidates.load(test_case.sample_json);
+    }
+
+    function test_preselect_first_selectable_does_nothing_with_no_pickable_row() {
+        // The read-only message screens: nothing may be selected, so nothing is.
+        candidates.selection_enabled = false;
+        candidates.load(test_case.sample_json);
+        candidates.preselect_first_selectable();
+        compare(candidates.selected_index, -1);
+        compare(candidates.selectable_count(), 0);
+
+        candidates.selection_enabled = true;
+        candidates.load(test_case.sample_json);
+    }
+
     function test_loading_again_drops_the_previous_selection() {
         // Try Again re-scans from scratch; row indices are not comparable.
         candidates.select(0);

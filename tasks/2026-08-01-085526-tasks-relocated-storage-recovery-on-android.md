@@ -25,9 +25,9 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`). **Done in 5.0:** string-based `QObject::connect` to the QML root's two handoff signals, `run_first_time_install(skip_storage_dialog)` (creates `DownloadAppdataWindow`, sets the property, *then* hides the recovery window so the app is never momentarily windowless). **Done in 5.11:** guarded `m_root` read + `gui.cpp` falls back to the first-run window when it is null (a windowless `app.exec()` hangs forever).
 - `cpp/window_manager.h` / `cpp/window_manager.cpp` - `create_storage_recovery_window()` next to `create_download_appdata_window()` (`window_manager.h:28`).
 - `CMakeLists.txt` - register the new `.cpp` in the `cpp_files` list (`:223-241`).
-- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`. **Done in 5.0:** `ListView` sections over the pre-sorted scan rows, `selectable_groups` / `selection_enabled` / `exclude_recorded`, `preselect_single_hit()`, `apply_probe_verdict()` (demote-only, clears a demoted selection), normalized path matching. Row selectability is computed from the delegate's **required properties**, not from a function call — a function is not re-evaluated when a model role changes, so a demoted row would have stayed clickable. **Done in 5.11:** `probeable_paths(selectable_only)` (6.2 passes `true`) and `selectable_count()` (7.1's auto-select count).
-- `assets/qml/StorageDialog.qml` - unusable rows (FR-28), tier-2 probes, FR-37 failed-write handling at the Select button (`:190`).
-- `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`). **Done in 5.0**, plus `skip_auto_start_download` (5.8a), which suppresses the upgrade marker on the "set up a new database" handoff.
+- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`. **Done in 5.0:** `ListView` sections over the pre-sorted scan rows, `selectable_groups` / `selection_enabled` / `exclude_recorded`, `preselect_single_hit()`, `apply_probe_verdict()` (demote-only, clears a demoted selection), normalized path matching. Row selectability is computed from the delegate's **required properties**, not from a function call — a function is not re-evaluated when a model role changes, so a demoted row would have stayed clickable. **Done in 5.11:** `probeable_paths(selectable_only)` (6.2 passes `true`) and `selectable_count()` (7.1's auto-select count). **Done in 7.0:** `megabytes_total` carried through the model and rendered as "X GB free of Y GB", the free-space label shown on every usable row (FR-30), `first_selectable_index()` / `first_selectable_row()` / `preselect_first_selectable()`, and `content_height` for content-sized hosts.
+- `assets/qml/StorageDialog.qml` - unusable rows (FR-28), tier-2 probes, FR-37 failed-write handling at the Select button (`:190`). **Done in 7.0:** its own `ListModel` + delegate replaced by `StorageCandidatesList` fed from `find_storage_candidates_json()` (both temporary policy guards deleted), `rescan()` + `preselect_first_selectable()`, probes posted from `onOpened` and cancelled in `onClosed`, `auto_select_single_location()` re-expressed on `selectable_count()`.
+- `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`). **7.5:** the mobile storage branch is now also gated on `is_initial_setup`, so Database Validation's hidden instance can no longer record a storage path on an ordinary launch. **Done in 5.0**, plus `skip_auto_start_download` (5.8a), which suppresses the upgrade marker on the "set up a new database" handoff.
 - `cpp/download_appdata_window.{h,cpp}` - (5.8a) takes a `QVariantMap` of **initial** properties, applied via `QQmlApplicationEngine::setInitialProperties()` before `load()` so they are in place before `Component.onCompleted`; `m_root` is now nullptr rather than UB on an empty root-object list. `WindowManager::create_download_appdata_window()` passes the map through (defaulted, so existing callers are unchanged).
 - `assets/qml/DatabaseValidationDialog.qml` - consumes the new `storage_path` report field; gains the "Look for Database on Other Storage" action (FR-16 – FR-19). **Done in 6.0:** the mobile-only button, its own `StorageManager` instance + probe generation, the three-screen `storage_lookup_dialog` (selection / FR-19 nothing-found / terminal restart message), `open_storage_lookup()` / `refresh_storage_candidates()` / `branch_storage_lookup()` / `start_storage_probes()` / `adopt_selected_storage()`, and the FR-37 save-error dialog.
 - `assets/qml/com/profoundlabs/simsapa/StorageManager.qml` - qmllint stubs for every new/changed `StorageManager` method.
@@ -702,10 +702,141 @@ holds an installation is still a valid place to download to), which is *not*
 
 **Dependencies:** 3.x (extended enumeration JSON), 4.x (probe), 5.1 (shared delegate/component), 1.8.
 
-- [ ] 7.1 Rework `StorageDialog.qml`'s list to consume the extended JSON: selectable rows first (internal first), unusable rows appended under the heading, greyed, reason line, no figures (FR-28, FR-34); low-space warning line on affected selectable rows (FR-30).
-- [ ] 7.2 Wire tier-2 probes: post out of the engine load, off the UI thread, pending state per row, demote-only merge, selection cleared + Select disabled on demotion of the selected row (FR-31a, FR-32, FR-34), cancellation on dialog close.
-- [ ] 7.3 Confirm the FR-37 error path (task 1.8) still holds in the final structure; `make qml-test` for the dialog.
-- [ ] 7.4 Build + tests; on-device check of §8 test 6 (unusable location cannot be chosen at first run; low-space location selectable with warning). **The device half is batched into the 9.2 session** — check 9.2c with it; the two-real-volumes half is hardware-blocked as 9.1d.
+- [x] 7.1 Rework `StorageDialog.qml`'s list to consume the extended JSON: selectable rows first (internal first), unusable rows appended under the heading, greyed, reason line, no figures (FR-28, FR-34); low-space warning line on affected selectable rows (FR-30).
+- [x] 7.2 Wire tier-2 probes: post out of the engine load, off the UI thread, pending state per row, demote-only merge, selection cleared + Select disabled on demotion of the selected row (FR-31a, FR-32, FR-34), cancellation on dialog close.
+- [x] 7.3 Confirm the FR-37 error path (task 1.8) still holds in the final structure; `make qml-test` for the dialog.
+- [x] 7.4 Build + tests; on-device check of §8 test 6 (unusable location cannot be chosen at first run; low-space location selectable with warning). **The device half is batched into the 9.2 session** — check 9.2c with it; the two-real-volumes half is hardware-blocked as 9.1d.
+
+  **Desktop half done (2026-08-05):** `make build -B` clean, `cargo test` green
+  across all 59 binaries (including the previously-drifted timing budgets),
+  `make qml-test` 131 passed (128 + 3 new `tst_StorageCandidatesList` cases),
+  `qmllint` clean on the five affected QML files. A throwaway offscreen `qml`
+  harness rendered the reworked dialog against a three-row fixture (found +
+  low-space available + unusable) with no warnings and `auto_select_single_location()`
+  correctly returning `false` for two selectable rows; harness deleted.
+
+**How the five carried-forward risks were closed (7.0).**
+
+1. **Auto-select re-expressed.** `auto_select_single_location()` now branches on
+   `candidates_list.selectable_count()` and takes its row from the new
+   `first_selectable_row()`, so the unusable rows the dialog has started
+   rendering cannot turn a one-choice device back into a modal.
+2. **Both temporary guards deleted.** `Component.onCompleted` calls
+   `find_storage_candidates_json()` — the emulated-duplicate drop and the
+   unusable classification now exist only in `scan_storage_candidates()`.
+3. **`megabytes_total` added to the row shape** rather than losing today's
+   *"X GB free of Y GB"*: carried through `classify_storage_candidate()` (null
+   on unusable rows and on the recorded-path extra candidate, exactly like
+   `megabytes_available`), rendered by the shared delegate, and covered by
+   `megabytes_total_is_carried_through_and_omitted_where_unmeasured`.
+4. **Hardcoded light-theme colours gone** with the old delegate; the only
+   literal colour left is the Select button's green, which matches the recovery
+   window and the rest of the app.
+5. **FR-30's warning now always comes with its figure**: the free-space label's
+   `visible` binding is `group !== "unusable"`, not `group === "available"`,
+   because a `found` row is selectable as a download destination here.
+
+**Also new in 7.0** (both tested, both used by more than one entry point):
+`StorageCandidatesList.first_selectable_index()` / `first_selectable_row()` /
+`preselect_first_selectable()` — the first-run dialog opens with the internal
+location selected, as it always has, so the Select button is live from the
+start; and `content_height`, so the dialog sizes to its rows (capped at 340 px)
+instead of the old `count × 70` arithmetic.
+
+**Deliberate divergence from the old dialog:** the path is now shown on every
+row (the old delegate had it commented out "to save space"). With two external
+candidates the label is often a guess on Android, so the path is the only thing
+that tells them apart — and the recovery flow already shows it.
+
+### 7.5 Device session 2026-08-05 (9.2 batch): four defects found and fixed
+
+The 9.2 batch ran on the SM-S911B beta debug build after 7.0. Everything in 9.2
+except 9.2d passed (see the boxes there), and four defects surfaced that no test
+on this branch could have caught.
+
+- **A hidden window was rewriting `storage-path.txt` on every launch.**
+  `DatabaseValidationDialog` keeps a permanently invisible
+  `DownloadAppdataWindow` for re-downloads. Its releases check completes on every
+  ordinary launch, so it reached `proceed_after_releases_check()`'s mobile branch
+  and called `auto_select_single_location()` — which **records a storage path**.
+  Observed on a healthy `ok`-state launch: *"Only one storage location available,
+  using it without asking …"* → *"Saved storage path to …"*, with no window on
+  screen. The write is idempotent in the only state that can reach it (one
+  candidate ⇒ it is the recorded one), which is why it was invisible, and it
+  predates this branch — 3.12 added the write, and before that the same branch
+  silently `open()`ed a storage dialog inside an invisible window. Fixed by
+  gating the branch on `is_initial_setup`, which that instance already sets to
+  `false`. The C++-created windows (first run, recovery handoff) leave it `true`
+  and are unaffected.
+- **`StorageDialog`'s dialog frame was never sized by its content.** Its
+  `ColumnLayout` used `anchors.fill: parent`, which inverts Dialog sizing: the
+  dialog takes its height from the content's *implicit* height, so anchoring the
+  content to the dialog leaves the dialog with nothing to measure. Measured in a
+  desktop harness: **`implicitHeight = 41`**. The list then got whatever space
+  was left over and cut its last row's reason line in half — visible on device as
+  a broken-looking list. Fixed by anchoring **left/right only**, so width comes
+  from the dialog and height from the children. (Anchoring nothing at all was
+  tried first and was wrong in the other direction: the rows then stopped short
+  of the dialog's right edge.)
+- **`content_height` cannot size a `ListView`.** 7.0 sized the list from
+  `candidates_view.contentHeight`, which is ~0 until the view has a height — a
+  view with no height creates no delegates. The list is now a fixed share of the
+  window (`list_height`, half), which is enough for the two or three locations a
+  device has and scrolls beyond that.
+- **The `StorageManager` qmllint stub was an `Item`.** The real CXX-Qt bridge is
+  a `QObject`, and as an `Item` the stub counted as a second visual child of any
+  `Dialog` that declared one — which suppresses Popup implicit sizing and is
+  exactly what hid the bug above from desktop harnesses while the device showed
+  it. Changed to `QtObject`, which also makes harnesses behave like the device.
+
+**Recipe worth keeping: two storage candidates on a device with no card slot.**
+Every device run before this one had exactly one location, which is why the
+adoption and multi-row paths had never been exercised. Point `storage-path.txt`
+at the **emulated** external path (`/storage/emulated/0/Android/data/<pkg>/files`)
+and plant a one-byte `app-assets/appdata.sqlite3` there with `adb shell` (the
+`shell` user can write under `Android/data/<pkg>` even though `run-as` cannot):
+
+- the recorded path is **never** de-duplicated, so the emulated row survives as
+  the "(current selection)";
+- a non-zero `appdata.sqlite3` makes the state `ok`, so the app boots to a main
+  window and Database Validation is reachable;
+- the real install at the internal path becomes a `found`, non-recorded row —
+  i.e. the adoption candidate.
+
+Two things to know when repeating it: the runtime creates zero-byte
+`dictionaries.sqlite3` / `dpd.sqlite3` next to the fabricated appdata, so
+`is_complete` (existence only) goes **true** and no "Partial" marker appears —
+that is correct, not a regression; and `chmod` is a no-op on the emulated FUSE
+view, so a probe can only be made to fail on the internal path.
+
+Also confirmed again this session: `run-as … sh -c` is blocked by SELinux on this
+device (stage in `/data/local/tmp`, then `run-as … cp`).
+
+### 7.6 "Copy Path" in every storage list (requested 2026-08-05)
+
+`StorageDialog` already had a Copy Path button; the two new dialogs did not, so a
+user diagnosing their own storage problem could read a long path on screen but
+not extract it. Added to both, with the target chosen per screen:
+
+| Screen | Copies |
+|---|---|
+| Recovery selection (FR-9 – FR-15) | the **selected** row's path |
+| Recovery "not available" (FR-23) | the **recorded** path — the one the message is about; nothing is selectable there |
+| Database Validation selection (FR-18) | the **selected** row's path |
+| Database Validation "nothing found" (FR-19) | the **recorded** path (`storage_recorded_path`, from the lookup's own scan — not the startup snapshot) |
+| Terminal "please restart" screens | nothing — the path is in the message and the only action left is to restart |
+
+`StorageRecoveryWindow` gained its own hidden `TextEdit` clipboard helper (it
+runs when no main window exists); Database Validation reuses the
+`validation_clipboard_helper` its export-error buttons already use. Its button
+row became a **column** — "Use the Selected Database" plus two more buttons does
+not fit a phone dialog's width. Each copy logs the path it copied, which is also
+how it was verified on device (the clipboard itself is not readable over `adb` on
+modern Android).
+
+Verified on device 2026-08-05: all four buttons copy the expected path, and the
+`is_initial_setup` gate above was confirmed in the same run — a normal launch now
+logs **no** storage-path write at all.
 
 ### 8.0 Documentation and verification
 
@@ -758,27 +889,68 @@ record (2026-08-05) is one beta-debug session covering 5.10, 6.4 and 7.4
 together, once `StorageCandidatesList` is final. Doing it earlier re-tests a
 component 6.0 and 7.0 are about to change.
 
-- [ ] 9.2a Re-run the 5.10 fixes on device: pre-selected hit keeps its radio
+- [x] 9.2a Re-run the 5.10 fixes on device: pre-selected hit keeps its radio
   button and the confirm button is disabled until its probe reports; a demoted
   row lands under "Not usable for the database" with no stray heading; quitting
   mid-probe leaves no `simsapa-write-probe.sqlite3` behind (check the candidate
   dirs after a Quit during the probe).
-- [ ] 9.2b 6.4's runs — §8 test 5 (find + adopt + restart from Database
+
+  **Passed 2026-08-05.** The single hit is pre-selected **and keeps its checked
+  radio button**; the demoted row moved to the end under one "Not usable for the
+  database" heading with no stray heading. No `simsapa-write-probe.sqlite3` was
+  ever found in any candidate directory, after normal completion, after a failed
+  probe, or after quitting. **The confirm-disabled-during-probe transient is not
+  observable on this device** — the probe reports in ~70 ms, so there is no
+  window to screenshot; it stays covered by `tst_StorageCandidatesList`.
+- [x] 9.2b 6.4's runs — §8 test 5 (find + adopt + restart from Database
   Validation) and the state-`ok` non-selectable "(current selection)" row.
-- [ ] 9.2c 7.4's runs — unusable location cannot be chosen at first run;
+
+  **Passed 2026-08-05, both halves.** With a healthy install the lookup showed
+  FR-19's "No existing database was found on the other storage locations" with
+  the grouped list beneath and the current location greyed, radio-less and
+  marked "(current selection)"; the log confirmed `adoptable=0` and **zero
+  probes**. For the adoption half the two-candidate case was manufactured
+  without a card (see the recipe below): the internal install appeared as the
+  only selectable row, exactly **one** probe ran (`probeable_paths(true)` — the
+  recorded row was not probed, confirming 5.11 on device), the write was
+  verified, the terminal screen appeared and Quit exited with status 0. The
+  relaunch booted normally against the adopted location, which answers 6.3's
+  open question: `Qt.quit()` from a running app tears down cleanly.
+- [x] 9.2c 7.4's runs — unusable location cannot be chosen at first run;
   low-space location selectable with its warning.
+
+  **Half passed 2026-08-05.** The reworked `StorageDialog` renders the grouped
+  list with the internal location pre-selected and the unusable location under
+  "Not usable for the database" — greyed, reason shown, **no radio button**, not
+  selectable (FR-28). Risk 1 confirmed the same run: the scan returned **2** rows
+  and `selectable_count()` returned 1, so the auto-select still fired — on
+  `row_count` this would have shown the one-choice modal 3.12 removed. **The
+  low-space half remains hardware-blocked (9.1d)** — no volume on this device is
+  anywhere near full.
 - [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch.
-- [ ] 9.2f The 5.11 fixes: with two candidates where the *only* hit is on a
+- [x] 9.2f The 5.11 fixes: with two candidates where the *only* hit is on a
   volume the probe rejects, the selection screen must not be left headed
   "Existing Simsapa data was found" with nothing selectable — it re-branches to
   the FR-23 message (`unreachable`) or into the ordinary download flow
   (`reachable_empty`). Simulate by making the hit's directory read-only, or by
   planting the hit on a path the SQLite probe cannot use.
-- [ ] 9.2e 5.10c's exact volume match: every volume's log line reads
+
+  **Passed 2026-08-05** via `run-as … chmod 555` on the internal app root (the
+  read-only route; the emulated FUSE view ignores `chmod`, so it cannot be used
+  for this). Log: probe → `is_usable=false The app cannot write here` → *"the
+  last found installation was demoted by its probe; re-branching on
+  state=unreachable"* → the FR-23 message, with the demoted row listed beneath
+  it. `chmod 771` afterwards restores the original mode (**not** 755 — that is
+  not what Android creates).
+- [x] 9.2e 5.10c's exact volume match: every volume's log line reads
   `matched=true`, and the emulated/primary one now reports `by=volume` rather
   than falling through to `by=primary` — proof that `getStorageVolume(File)`
   works on device. No extra "Not usable for app data" row should appear that did
   not appear before the change.
+
+  **Passed 2026-08-05:** `getStorageVolumes pass: 1 volume(s) reported, 2
+  enumerated candidate(s)` then `StorageVolume: uuid=(none) description=Internal
+  storage primary=true matched=true **by=volume**`. No extra row appeared.
 
 **9.3 Verified once, re-run only if the relevant code changes.** Recorded so a
 later reader knows these were not skipped.

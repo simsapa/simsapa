@@ -509,6 +509,11 @@ ApplicationWindow {
     // previous opening of the dialog can never merge into the current rows.
     property int storage_probe_generation: 0
 
+    // The location the app is currently using, as of the lookup's own scan —
+    // not the startup snapshot in the report, which answers a different
+    // question. Used by the nothing-found screen's Copy Path.
+    property string storage_recorded_path: ""
+
     readonly property int storage_screen_selection: 0
     readonly property int storage_screen_nothing_found: 1
     readonly property int storage_screen_message: 2
@@ -516,6 +521,14 @@ ApplicationWindow {
     // The §12.7 flow. Runs the predicate and the scan on demand — the startup
     // snapshot in the report is a different question (what was true when the
     // app booted), and a card re-seated since then must be seen.
+    // Reuses the dialog's existing clipboard helper — the same one the export
+    // error copy buttons use.
+    function copy_storage_path(path: string) {
+        if (path === "") return;
+        validation_clipboard_helper.copy_text(path);
+        logger.info("Copied the storage path to the clipboard: " + path);
+    }
+
     function open_storage_lookup() {
         logger.info("open_storage_lookup()");
         root.refresh_storage_candidates();
@@ -531,13 +544,14 @@ ApplicationWindow {
         storage_manager.cancel_storage_probes();
 
         root.storage_probe_generation += 1;
+        root.storage_recorded_path = storage_manager.recorded_storage_path();
 
         var candidates_json = storage_manager.find_storage_candidates_json();
         storage_candidates_list.load(candidates_json);
         storage_nothing_found_list.load(candidates_json);
 
         logger.info("Storage lookup: state=" + storage_manager.storage_path_state()
-                    + " recorded=" + storage_manager.recorded_storage_path()
+                    + " recorded=" + root.storage_recorded_path
                     + " rows=" + storage_candidates_list.row_count
                     + " adoptable=" + storage_candidates_list.found_count_excluding_recorded());
     }
@@ -789,7 +803,9 @@ ApplicationWindow {
                 }
             }
 
-            RowLayout {
+            // Stacked, not side by side: "Use the Selected Database" alongside
+            // two more buttons does not fit a phone's dialog width.
+            ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 10
 
@@ -805,6 +821,29 @@ ApplicationWindow {
                              && !storage_candidates_list.selection_probe_pending
                     Layout.fillWidth: true
                     onClicked: root.adopt_selected_storage()
+                }
+
+                // The exact path, for a user diagnosing this themselves: on the
+                // selection screen the row they picked, on the nothing-found
+                // screen the location the app is already using. Not offered on
+                // the terminal screen, where the path is in the message itself
+                // and the only thing left to do is restart.
+                Button {
+                    text: "Copy Path"
+                    font.pointSize: root.pointSize
+                    visible: storage_views_stack.currentIndex !== root.storage_screen_message
+                    enabled: storage_views_stack.currentIndex === root.storage_screen_selection
+                        ? storage_candidates_list.has_selection
+                        : root.storage_recorded_path !== ""
+                    Layout.fillWidth: true
+                    onClicked: {
+                        if (storage_views_stack.currentIndex === root.storage_screen_selection) {
+                            var row = storage_candidates_list.selected_row();
+                            if (row !== null) root.copy_storage_path(row.path);
+                        } else {
+                            root.copy_storage_path(root.storage_recorded_path);
+                        }
+                    }
                 }
 
                 Button {

@@ -83,6 +83,12 @@ Item {
 
     readonly property int row_count: rows_model.count
 
+    // The height the rows and section headings actually need. The recovery
+    // window and Database Validation give the list all the space they have; the
+    // first-run dialog sizes itself to its content, so it caps this instead of
+    // reserving a fixed block that a one-row list would leave mostly empty.
+    readonly property real content_height: candidates_view.contentHeight
+
     // Populate from the tier-1 scan JSON. Any previous selection is dropped:
     // Try Again re-scans from scratch and the row indices are not comparable.
     function load(candidates_json: string) {
@@ -114,6 +120,12 @@ Item {
                 // volume. -1 is this model's "not measured".
                 megabytes_available: r.megabytes_available === undefined
                     || r.megabytes_available === null ? -1 : r.megabytes_available,
+                // The volume's size, so the figure can read "12 GB free of
+                // 64 GB" — the difference between a nearly empty card and a
+                // nearly full one. -1 is "not measured"; the line then falls
+                // back to the free-space figure alone.
+                megabytes_total: r.megabytes_total === undefined
+                    || r.megabytes_total === null ? -1 : r.megabytes_total,
                 low_space_warning: r.low_space_warning === true,
                 appdata_bytes: r.appdata_bytes === undefined || r.appdata_bytes === null
                     ? -1 : r.appdata_bytes,
@@ -209,6 +221,32 @@ Item {
         }
     }
 
+    // The first row the user could pick, in the list's own order — which is
+    // group order with the internal location first, so this is "the internal
+    // location" wherever one is selectable.
+    function first_selectable_index(): int {
+        for (var i = 0; i < rows_model.count; i++) {
+            if (root.is_selectable(i)) return i;
+        }
+        return -1;
+    }
+
+    function first_selectable_row(): var {
+        return root.row_at(root.first_selectable_index());
+    }
+
+    // Start with a sensible default rather than a dialog whose confirm button
+    // is dead until something is touched. Used by the first-run destination
+    // picker, where any usable location is a legitimate choice; the recovery
+    // flow uses preselect_single_hit() instead, because there a default would
+    // nudge the user towards an arbitrary copy of their data.
+    function preselect_first_selectable() {
+        var i = root.first_selectable_index();
+        if (i < 0) return;
+        root.selected_index = i;
+        root.refresh_selection_probe_pending();
+    }
+
     // How many rows the user could actually pick, under this entry point's
     // rules. Not row_count (which includes unusable rows) and not found_count():
     // the first-run dialog auto-selects when there is exactly ONE choice, and
@@ -275,6 +313,7 @@ Item {
                                reason === "" ? "Not usable for the database" : reason);
         // Figures are omitted on unusable rows.
         rows_model.setProperty(i, "megabytes_available", -1);
+        rows_model.setProperty(i, "megabytes_total", -1);
         rows_model.setProperty(i, "low_space_warning", false);
         rows_model.setProperty(i, "appdata_bytes", -1);
         rows_model.setProperty(i, "modified", "");
@@ -394,6 +433,7 @@ Item {
             required property string group
             required property string unusable_reason
             required property int megabytes_available
+            required property int megabytes_total
             required property bool low_space_warning
             required property real appdata_bytes
             required property string modified
@@ -480,10 +520,17 @@ Item {
                             Layout.fillWidth: true
                         }
 
+                        // Free space is shown on every usable row, not only on
+                        // group 2: a `found` row can be picked as a download
+                        // destination at first run, and FR-30 requires the
+                        // low-space warning to come with the figure it is about.
                         Label {
-                            visible: row_item.group === "available"
+                            visible: row_item.group !== "unusable"
                                 && row_item.megabytes_available >= 0
                             text: root.megabytes_to_gb(row_item.megabytes_available) + " GB free"
+                                + (row_item.megabytes_total >= 0
+                                   ? " of " + root.megabytes_to_gb(row_item.megabytes_total) + " GB"
+                                   : "")
                             font.pointSize: root.font_point_size - 2
                             color: palette.text
                             Layout.fillWidth: true

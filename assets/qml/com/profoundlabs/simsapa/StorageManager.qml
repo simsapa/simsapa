@@ -1,6 +1,6 @@
 import QtQuick
 
-Item {
+QtObject {
     function get_app_data_storage_paths_json(): string {
         console.log("get_app_data_storage_paths_json()");
         return "[{}]";

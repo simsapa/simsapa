@@ -59,6 +59,33 @@ ApplicationWindow {
     Logger { id: logger }
     StorageManager { id: sm }
 
+    // A user diagnosing a storage problem needs the exact path — to type into a
+    // file manager, or to send to someone helping them. The paths here are long
+    // and easy to mistype, and this window may be the only thing the app shows.
+    TextEdit {
+        id: clipboard_helper
+        visible: false
+        width: 0
+        height: 0
+        function copy_text(t: string) {
+            clipboard_helper.text = t;
+            clipboard_helper.selectAll();
+            clipboard_helper.copy();
+        }
+    }
+
+    function copy_path(path: string) {
+        if (path === "") return;
+        clipboard_helper.copy_text(path);
+        logger.info("Copied the storage path to the clipboard: " + path);
+    }
+
+    function copy_selected_path() {
+        var row = candidates_list.selected_row();
+        if (row === null) return;
+        root.copy_path(row.path);
+    }
+
     // The predicate's verdict for this pass. Re-evaluated by Try Again, never
     // cached from gui.cpp's startup snapshot — the whole purpose of Try Again is
     // that the answer may have changed.
@@ -442,6 +469,14 @@ ApplicationWindow {
                     }
 
                     Button {
+                        text: "Copy Path"
+                        font.pointSize: root.pointSize
+                        Layout.fillWidth: true
+                        enabled: candidates_list.has_selection
+                        onClicked: root.copy_selected_path()
+                    }
+
+                    Button {
                         text: "Create New Location"
                         font.pointSize: root.pointSize
                         Layout.fillWidth: true
@@ -512,6 +547,17 @@ ApplicationWindow {
                         font.pointSize: root.pointSize
                         Layout.fillWidth: true
                         onClicked: root.try_again()
+                    }
+
+                    // Nothing is selectable on this screen, so the useful path is
+                    // the one the message is about: where the app expected to
+                    // find its data.
+                    Button {
+                        text: "Copy Path"
+                        font.pointSize: root.pointSize
+                        Layout.fillWidth: true
+                        enabled: root.recorded_path !== ""
+                        onClicked: root.copy_path(root.recorded_path)
                     }
 
                     Button {

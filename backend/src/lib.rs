@@ -947,6 +947,12 @@ fn classify_storage_candidate(
     // never as zero, which reads as "full".
     let megabytes_available = row["megabytes_available"].as_i64();
 
+    // Carried through so the first-run dialog can keep saying "X GB free of
+    // Y GB": the volume's size is what tells the user whether "12 GB free" is a
+    // nearly empty card or a nearly full one. Never used for a verdict — free
+    // space is the only figure any classification depends on.
+    let megabytes_total = row["megabytes_total"].as_i64();
+
     // The marker is a FIELD, never a suffix baked into `label`: the label comes
     // from the platform enumeration and is reused and compared elsewhere.
     let is_recorded = recorded.map(|r| same_path(&path, r)).unwrap_or(false);
@@ -971,6 +977,7 @@ fn classify_storage_candidate(
                 unusable_reason
             },
             "megabytes_available": serde_json::Value::Null,
+            "megabytes_total": serde_json::Value::Null,
             "low_space_warning": false,
             "appdata_bytes": serde_json::Value::Null,
             "modified": serde_json::Value::Null,
@@ -1015,6 +1022,7 @@ fn classify_storage_candidate(
             "group": "available",
             "unusable_reason": "",
             "megabytes_available": megabytes_available,
+            "megabytes_total": megabytes_total,
             "low_space_warning": low_space_warning,
             "appdata_bytes": serde_json::Value::Null,
             "modified": serde_json::Value::Null,
@@ -1051,6 +1059,7 @@ fn classify_storage_candidate(
         "group": "found",
         "unusable_reason": "",
         "megabytes_available": megabytes_available,
+        "megabytes_total": megabytes_total,
         "low_space_warning": low_space_warning,
         "appdata_bytes": meta.len(),
         "modified": modified,

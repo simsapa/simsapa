@@ -104,8 +104,18 @@ ApplicationWindow {
         } else if (root.skip_storage_dialog) {
             logger.info("Storage location already chosen in the recovery dialog; "
                         + "not asking again.");
-        } else if (root.is_mobile) {
+        } else if (root.is_mobile && root.is_initial_setup) {
             // On mobile, show storage dialog for initial setup (not upgrade).
+            //
+            // `is_initial_setup` is load-bearing, not decoration:
+            // DatabaseValidationDialog keeps a permanently hidden
+            // DownloadAppdataWindow for re-downloads, and its releases check
+            // completes on every ordinary launch — so without this gate the
+            // hidden window reached this branch and auto_select_single_location()
+            // rewrote storage-path.txt behind the user's back on a healthy
+            // install (observed on device, 2026-08-05). The write happened to be
+            // idempotent there, but a hidden window silently recording the app's
+            // storage location is not something to leave in place.
             //
             // Unless there is only one location to offer — a device with no
             // memory card has exactly one, once the emulated view of the
