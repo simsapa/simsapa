@@ -1893,6 +1893,25 @@ pub unsafe extern "C" fn log_storage_scan_c(enumeration_json: *const std::os::ra
                   scan_storage_candidates(enumeration, recorded_str)));
 }
 
+/// FFI: whether the `auto_start_download.txt` marker exists, **without
+/// removing it**.
+///
+/// The startup recovery decision needs the answer before any window is created,
+/// and must not consume the marker: `DownloadAppdataWindow.qml`'s
+/// `Component.onCompleted` is the single point of deletion, and a marker
+/// consumed here would turn an unattended upgrade download into a stalled setup
+/// screen. Mirrors `AssetManager::peek_auto_start_download()`; one
+/// `try_exists()`, and it runs before `app.exec()`.
+/// See docs/relocated-storage-recovery.md.
+#[unsafe(no_mangle)]
+pub extern "C" fn peek_auto_start_download_c() -> bool {
+    let paths = AppGlobalPaths::new();
+    let marker = &paths.auto_start_download_marker;
+    let found = marker.try_exists().unwrap_or(false);
+    info(&format!("peek_auto_start_download_c(): {} at {}", found, marker.display()));
+    found
+}
+
 /// FFI: the recorded storage path (trimmed), or null when there is none.
 /// Caller must call `free_rust_string`.
 #[unsafe(no_mangle)]

@@ -50,6 +50,7 @@ extern "C" void ensure_no_empty_db_files(bool sweep);
 extern "C" int storage_path_state_c();
 extern "C" char* recorded_storage_path_c();
 extern "C" bool storage_scan_log_requested_c();
+extern "C" bool peek_auto_start_download_c();
 extern "C" void log_storage_scan_c(const char* enumeration_json);
 extern "C" void check_delete_files_for_upgrade();
 extern "C" void check_remove_lang_index_dirs();
@@ -97,6 +98,16 @@ enum class StoragePathState : int {
     ReachableEmpty = 2,
     Ok = 3,
 };
+
+static const char* storage_path_state_name(StoragePathState state) {
+    switch (state) {
+        case StoragePathState::Absent: return "absent";
+        case StoragePathState::Unreachable: return "unreachable";
+        case StoragePathState::ReachableEmpty: return "reachable_empty";
+        case StoragePathState::Ok: return "ok";
+    }
+    return "unknown";
+}
 
 struct AppGlobals {
     static WindowManager* manager;
@@ -432,6 +443,12 @@ int start(int argc, char* argv[]) {
 
   QString os(QSysInfo::productType());
 
+  // The storage recovery flow is mobile-only. The predicate is already
+  // is_mobile()-gated in Rust (desktop always reports "absent"), so this is
+  // belt and braces — but the branch it guards is the one that decides whether
+  // the app boots at all, so it states the condition rather than relying on it.
+  const bool is_mobile = (os == "android" || os == "ios");
+
   // Initialize a QtWebView / QtWebEngineView. Otherwise the app errors:
   //
   // QtWebEngineWidgets must be imported or Qt.AA_ShareOpenGLContexts must be
@@ -571,6 +588,49 @@ int start(int argc, char* argv[]) {
   // DownloadAppdataWindow instead of the main app.
 
   AppGlobals::manager = &WindowManager::instance(&app);
+
+  // The startup branch is keyed on the storage-path STATE, not on
+  // appdata_db_exists(): with an unreachable recorded path, get_create_simsapa_dir()
+  // falls back to the internal app root, so appdata_db_exists() can be true at a
+  // location the user never chose — which is exactly the case this flow exists
+  // to catch. A moved memory card must never look like a fresh install.
+  //
+  // The upgrade marker suppresses recovery only in the reachable-empty state. In
+  // the unreachable state it must not: the upgrade download would silently land
+  // in the internal fallback, write no storage-path.txt, and leave the next
+  // launch unreachable all over again with the fresh copy showing up as a
+  // recovery hit. The peek never consumes the marker —
+  // DownloadAppdataWindow.qml's Component.onCompleted remains its single point
+  // of deletion — so the intended upgrade download still auto-starts on the
+  // launch after the user has resolved where their data lives.
+  //
+  // See docs/relocated-storage-recovery.md.
+  const bool storage_needs_recovery = (storage_state == StoragePathState::Unreachable
+                                       || storage_state == StoragePathState::ReachableEmpty);
+  const bool skip_for_upgrade = (storage_state == StoragePathState::ReachableEmpty
+                                 && peek_auto_start_download_c());
+
+  if (is_mobile && storage_needs_recovery && !skip_for_upgrade) {
+
+    log_info_c(QString("Starting the storage recovery flow; recorded path state: %1")
+                   .arg(storage_path_state_name(storage_state))
+                   .toUtf8()
+                   .constData());
+
+    // The recovery window resolves the flow itself and hands off to
+    // DownloadAppdataWindow (created by its C++ host) for the outcomes that need
+    // a download — all within this single app.exec() lifetime.
+    AppGlobals::manager->create_storage_recovery_window();
+
+    log_info_c("app.exec()");
+    int status = app.exec();
+
+    std::ostringstream msg;
+    msg << "Exiting with status " << status << ".";
+    log_info_c(msg.str().c_str());
+
+    throw NormalExit("Exiting after StorageRecoveryWindow", status);
+  }
 
   if (!appdata_db_exists()) {
 

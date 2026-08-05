@@ -21,18 +21,21 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `bridges/src/sutta_bridge.rs` - `get_startup_db_report()` wrapper (`:3875`) passes the extended JSON through unchanged; verify only.
 - `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`. **Done in 2.0:** `StoragePathState` enum mirroring the FFI ints, predicate + record before `init_app_globals()`, `ensure_no_empty_db_files(!unreachable)`, the two destructive sweeps wrapped with a logged skip, FR-2 exemption comments.
 - `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only). **Done in 3.0:** `is_usable` / `unusable_reason` defaults in `createStorageInfo()`, `android_external_storage_state()`, `append_unmatched_storage_volumes()`. **Android-only code — not compiled by `make build`; needs an Android build to verify.**
-- `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation).
-- `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`).
+- `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation). **Done in 5.0:** starts **invisible**, posts its first scan with `Qt.callLater` (out of the engine load, and so the `reachable_empty`-with-no-hits short-circuit never flashes a screen), three screens (selection / unavailable / terminal message), the `download_here` + `declined` handoff signals, tier-2 probes with a generation id, and the FR-37 save-error dialog.
+- `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`). **Done in 5.0:** string-based `QObject::connect` to the QML root's two handoff signals, `run_first_time_install(skip_storage_dialog)` (creates `DownloadAppdataWindow`, sets the property, *then* hides the recovery window so the app is never momentarily windowless).
 - `cpp/window_manager.h` / `cpp/window_manager.cpp` - `create_storage_recovery_window()` next to `create_download_appdata_window()` (`window_manager.h:28`).
 - `CMakeLists.txt` - register the new `.cpp` in the `cpp_files` list (`:223-241`).
-- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`.
+- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`. **Done in 5.0:** `ListView` sections over the pre-sorted scan rows, `selectable_groups` / `selection_enabled` / `exclude_recorded`, `preselect_single_hit()`, `apply_probe_verdict()` (demote-only, clears a demoted selection), normalized path matching. Row selectability is computed from the delegate's **required properties**, not from a function call — a function is not re-evaluated when a model role changes, so a demoted row would have stayed clickable.
 - `assets/qml/StorageDialog.qml` - unusable rows (FR-28), tier-2 probes, FR-37 failed-write handling at the Select button (`:190`).
-- `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`).
+- `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`). **Done in 5.0**, plus `skip_auto_start_download` (5.8a), which suppresses the upgrade marker on the "set up a new database" handoff.
+- `cpp/download_appdata_window.{h,cpp}` - (5.8a) takes a `QVariantMap` of **initial** properties, applied via `QQmlApplicationEngine::setInitialProperties()` before `load()` so they are in place before `Component.onCompleted`; `m_root` is now nullptr rather than UB on an empty root-object list. `WindowManager::create_download_appdata_window()` passes the map through (defaulted, so existing callers are unchanged).
 - `assets/qml/DatabaseValidationDialog.qml` - consumes the new `storage_path` report field; gains the "Look for Database on Other Storage" action (FR-16 – FR-19).
 - `assets/qml/com/profoundlabs/simsapa/StorageManager.qml` - qmllint stubs for every new/changed `StorageManager` method.
 - `assets/qml/com/profoundlabs/simsapa/AssetManager.qml` - qmllint stub for the marker peek.
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `get_startup_db_report()` stub (`:268`) — return shape comment updated.
-- `bridges/build.rs` - register new QML files in `qml_files`.
+- `bridges/build.rs` - register new QML files in `qml_files`. **Done in 5.0:** `StorageCandidatesList.qml`, `StorageRecoveryWindow.qml`.
+- `assets/qml/tst_StorageCandidatesList.qml` - **new** (5.0): 16 tests over the selectability rules and the demote-only probe merge (group rules, Database-Validation exclusions, single-hit preselect, trailing-slash path match, selection cleared on demotion). Test files are not registered in `bridges/build.rs`.
+- `backend/src/lib.rs` (FFI) - `peek_auto_start_download_c()` (5.0): the non-consuming marker peek `gui.cpp` needs before any window exists.
 - `backend/src/lib.rs` (diagnostics) - `storage_scan_log_requested_c()` / `log_storage_scan_c()`: the `log-storage-scan.txt` marker that dumps the enumeration + tier-1 scan to the log, so the Android-only JNI is observable on a healthy install (task 3.9).
 - `docs/relocated-storage-recovery.md` - **new**: feature documentation (task 8.0).
 - `PROJECT_MAP.md`, `CLAUDE.md` - documentation pointers.
@@ -314,16 +317,140 @@ Consequences to keep in mind:
 
 **Dependencies:** 1.x (predicate, peek, `save_storage_path` bool), 2.x (state available in `gui.cpp`), 3.5 (scan JSON), 4.2/4.3 (probe + cancellation).
 
-- [ ] 5.1 Create `StorageCandidatesList.qml`: a reusable grouped list taking the scan JSON, a `selectable_groups` list property, and a `selection_enabled` bool; renders section headings (omitting empty groups), the shared delegate (label, path, figure per group, "Partial" marker, unusable reason, `(current selection)` suffix, pending state for probes), and exposes `selected_row` + a `selection_cleared()` behaviour when a selected row is demoted. Register in `bridges/build.rs`.
-- [ ] 5.2 Create `StorageRecoveryWindow.qml` (`ApplicationWindow`): hosts the state machine's screens — the grouped selection dialog (FR-9 – FR-15), the FR-23 unavailable message with Try Again / Set Up Again + the non-selectable list, the FR-25 "Storage is available again" message, and the FR-37 write-failure error state. Signals out: `adopt_confirmed(path, is_internal)`, `download_here(path, is_internal)`, `declined()`, `try_again()`, `set_up_again()`, `quit_requested()`. Register in `bridges/build.rs`.
-- [ ] 5.2a Create the C++ host `cpp/storage_recovery_window.{h,cpp}` mirroring `DownloadAppdataWindow` (a `QObject` owning a `QQmlApplicationEngine` loading the QML — see `cpp/download_appdata_window.cpp` for the exact pattern), add `WindowManager::create_storage_recovery_window()` in `cpp/window_manager.{h,cpp}` next to `create_download_appdata_window()` (`window_manager.h:28`), and register the new `.cpp` in `CMakeLists.txt`'s `cpp_files` list (`:223-241`).
-- [ ] 5.3 Wire tier 2 into the selectable dialog: on dialog shown (post-`app.exec()`, via `Qt.callLater`/timer), fire `probe_storage_candidate_json()` per non-unusable row; merge verdicts by generation id; demote-only; clear selection + disable confirm per FR-34; skip probes entirely on the non-selectable FR-23/FR-19 lists (FR-31).
-- [ ] 5.4 Implement the flow logic (QML-side state machine in `StorageRecoveryWindow.qml` driven by `StorageManager` calls): initial scan, the §12.4 loop as signal handlers — Try Again re-runs predicate + scan and re-branches on the new state; Set Up Again / decline route to the first-time install; adoption writes + verifies + shows restart notice + `Qt.quit()`; group 2 writes + verifies + hands off to the download flow.
-- [ ] 5.5 Add `skip_storage_dialog` to `DownloadAppdataWindow.qml`: a property (default `false`) gating the `storage_dialog.open()` at `:93-94`; set `true` only on the FR-14 group-2 handoff, never on FR-23a's fall-through (§12.4 note). Handoff mechanism: `create_download_appdata_window()` returns the `DownloadAppdataWindow*`, whose `m_root` is the QML root object — `m_root->setProperty("skip_storage_dialog", true)` right after construction. Timing is safe because the property is only consulted in `proceed_after_releases_check()`, which fires on the async `onReleasesCheckCompleted` signal, well after construction — but state this in a comment, since `Component.onCompleted` itself has already run by then.
-- [ ] 5.6 Rework `gui.cpp::start()`'s `:486` branch per §12.3: compute `skip_for_upgrade` with the non-consuming peek; when `is_mobile() && state ∈ {UNREACHABLE, REACHABLE_EMPTY} && !skip_for_upgrade`, create `StorageRecoveryWindow` (via `WindowManager`) instead of / ahead of `DownloadAppdataWindow`; `elif !appdata_db_exists()` → existing first-run window; else normal launch. Recovery-window signal outcomes that need the download flow create `DownloadAppdataWindow` (with `skip_storage_dialog` when applicable) inside the same single `app.exec()` lifetime; all terminating paths throw `NormalExit` after `app.exec()` returns.
-- [ ] 5.7 Special-case short-circuit inside the recovery flow before showing any UI: `REACHABLE_EMPTY` with zero hits → go straight to the first-time install path (no message, storage dialog opens) so the common interrupted-first-run case (test 8a) shows no new screens.
-- [ ] 5.8 Verify the §12.8 outcome matrix row by row against the implementation (desk check, recorded as a checklist in the commit message or a comment in the task file), with special attention to: FR-2's invariant, the marker × `UNREACHABLE` row (test 8k), the pre-sweep snapshot note, and the failed-write row (test 8g).
-- [ ] 5.9 Build + `cargo test` + `make qml-test`; then on-device/emulator smoke runs of the §8 `adb` recipes: unreachable path (tests 2, 8f, 8j), reachable-empty (8a, 8l), adoption end-to-end (test 1 analogue via a second local path), decline (tests 4, 8i), marker interactions (8d, 8k), data-loss guard (8e).
+- [x] 5.1 Create `StorageCandidatesList.qml`: a reusable grouped list taking the scan JSON, a `selectable_groups` list property, and a `selection_enabled` bool; renders section headings (omitting empty groups), the shared delegate (label, path, figure per group, "Partial" marker, unusable reason, `(current selection)` suffix, pending state for probes), and exposes `selected_row` + a `selection_cleared()` behaviour when a selected row is demoted. Register in `bridges/build.rs`.
+- [x] 5.2 Create `StorageRecoveryWindow.qml` (`ApplicationWindow`): hosts the state machine's screens — the grouped selection dialog (FR-9 – FR-15), the FR-23 unavailable message with Try Again / Set Up Again + the non-selectable list, the FR-25 "Storage is available again" message, and the FR-37 write-failure error state. Signals out: `adopt_confirmed(path, is_internal)`, `download_here(path, is_internal)`, `declined()`, `try_again()`, `set_up_again()`, `quit_requested()`. Register in `bridges/build.rs`.
+- [x] 5.2a Create the C++ host `cpp/storage_recovery_window.{h,cpp}` mirroring `DownloadAppdataWindow` (a `QObject` owning a `QQmlApplicationEngine` loading the QML — see `cpp/download_appdata_window.cpp` for the exact pattern), add `WindowManager::create_storage_recovery_window()` in `cpp/window_manager.{h,cpp}` next to `create_download_appdata_window()` (`window_manager.h:28`), and register the new `.cpp` in `CMakeLists.txt`'s `cpp_files` list (`:223-241`).
+- [x] 5.3 Wire tier 2 into the selectable dialog: on dialog shown (post-`app.exec()`, via `Qt.callLater`/timer), fire `probe_storage_candidate_json()` per non-unusable row; merge verdicts by generation id; demote-only; clear selection + disable confirm per FR-34; skip probes entirely on the non-selectable FR-23/FR-19 lists (FR-31).
+- [x] 5.4 Implement the flow logic (QML-side state machine in `StorageRecoveryWindow.qml` driven by `StorageManager` calls): initial scan, the §12.4 loop as signal handlers — Try Again re-runs predicate + scan and re-branches on the new state; Set Up Again / decline route to the first-time install; adoption writes + verifies + shows restart notice + `Qt.quit()`; group 2 writes + verifies + hands off to the download flow.
+- [x] 5.5 Add `skip_storage_dialog` to `DownloadAppdataWindow.qml`: a property (default `false`) gating the `storage_dialog.open()` at `:93-94`; set `true` only on the FR-14 group-2 handoff, never on FR-23a's fall-through (§12.4 note). Handoff mechanism: `create_download_appdata_window()` returns the `DownloadAppdataWindow*`, whose `m_root` is the QML root object — `m_root->setProperty("skip_storage_dialog", true)` right after construction. Timing is safe because the property is only consulted in `proceed_after_releases_check()`, which fires on the async `onReleasesCheckCompleted` signal, well after construction — but state this in a comment, since `Component.onCompleted` itself has already run by then.
+- [x] 5.6 Rework `gui.cpp::start()`'s `:486` branch per §12.3: compute `skip_for_upgrade` with the non-consuming peek; when `is_mobile() && state ∈ {UNREACHABLE, REACHABLE_EMPTY} && !skip_for_upgrade`, create `StorageRecoveryWindow` (via `WindowManager`) instead of / ahead of `DownloadAppdataWindow`; `elif !appdata_db_exists()` → existing first-run window; else normal launch. Recovery-window signal outcomes that need the download flow create `DownloadAppdataWindow` (with `skip_storage_dialog` when applicable) inside the same single `app.exec()` lifetime; all terminating paths throw `NormalExit` after `app.exec()` returns.
+- [x] 5.7 Special-case short-circuit inside the recovery flow before showing any UI: `REACHABLE_EMPTY` with zero hits → go straight to the first-time install path (no message, storage dialog opens) so the common interrupted-first-run case (test 8a) shows no new screens.
+- [x] 5.8 Verify the §12.8 outcome matrix row by row against the implementation (desk check, recorded as a checklist in the commit message or a comment in the task file), with special attention to: FR-2's invariant, the marker × `UNREACHABLE` row (test 8k), the pre-sweep snapshot note, and the failed-write row (test 8g).
+**§12.8 outcome matrix — desk check (task 5.8, 2026-08-05).** Every row traced
+against the implementation; the branch point is `gui.cpp::start()` and
+`StorageRecoveryWindow.branch_on_state()`.
+
+| `state` | hits | action | Where it lands |
+|---|---|---|---|
+| `absent`, db present | — | — | `gui.cpp`: `storage_needs_recovery` false → `appdata_db_exists()` true → `init_app_data()` ✓ |
+| `absent`, no db | — | — | `gui.cpp`: falls to `!appdata_db_exists()` → download window, no new screen ✓ |
+| `ok` | — | — | normal launch ✓ |
+| `reachable_empty` | none | — | `branch_on_state()` → `hand_off_declined()` **before the window is ever made visible** → download flow with `StorageDialog` ✓ (task 5.7) |
+| `reachable_empty` | ≥1 | adopt | `confirm_selection()` → verified write → restart message → Quit ✓ |
+| `reachable_empty` | ≥1 | group 2 | write → `hand_off_download_here()` → `skip_storage_dialog = true`, no quit ✓ |
+| `reachable_empty` | ≥1 | decline | "Create New Location" → `hand_off_declined()`, `skip_storage_dialog` stays false ✓ |
+| `unreachable` | none | Try Again | `try_again()` → `refresh_state_and_scan()` + `branch_on_state()`, never a cached result ✓ |
+| `unreachable` | none | Set Up Again | `hand_off_declined()` ✓ |
+| `unreachable` | ≥1 | adopt / group 2 / decline | the same three handlers — `found_count() > 0` is checked before the per-state branches ✓ |
+| `unreachable` → `ok` | Try Again | — | the `state === "ok"` check runs **first** in `branch_on_state()`, so the recorded path is never offered for "adoption" ✓ |
+| any | — | write fails | `save_error_dialog` opens over the selection screen; no quit, no handoff, `init_app_data()` unreachable ✓ |
+| `ok` + `delete_files_for_upgrade` | — | — | sweeps delete the DBs, `storage_needs_recovery` is false (pre-sweep snapshot said `ok`), so it takes `!appdata_db_exists()` → upgrade download ✓ |
+| `reachable_empty` + `auto_start_download` | — | — | `skip_for_upgrade` true → recovery skipped → download window consumes the marker and auto-starts ✓ |
+| `unreachable` + `auto_start_download` | — | — | `skip_for_upgrade` is `reachable_empty`-only, so recovery runs; `peek_auto_start_download_c()` does not consume ✓ (but see the gap below) |
+| `unreachable` → `absent` | Try Again | — | `branch_on_state()`'s `absent` arm → `hand_off_declined()`, no message ✓ |
+| desktop | — | — | predicate returns `absent` (Rust-side `is_mobile()` gate) **and** `gui.cpp` guards the branch with its own `is_mobile` ✓ |
+
+**FR-2 invariant holds:** the whole recovery branch ends in `throw NormalExit`
+after `app.exec()` returns, and `init_app_data()` sits after it, so no path
+through `unreachable` can boot against the fallback database. The failed-write
+branch neither quits nor hands off — the window stays up.
+
+**Gap found and closed (5.8a, 2026-08-05).** In the `unreachable` state with an
+`auto_start_download.txt` marker at the *internal fallback*, taking **Set Up
+Again** / **Create New Location** created `DownloadAppdataWindow`, whose
+`Component.onCompleted` consumed the marker and auto-started the download — so
+the storage dialog never opened, contrary to FR-15, and the download landed in
+the internal fallback: a location the user never chose and had just declined to
+keep (FR-2, Goal 2).
+
+The fix is a second initial property, `skip_auto_start_download`, set **only** on
+the "set up a new database" handoff:
+
+- **It must be an *initial* property, not one set after construction.**
+  `should_auto_start_download()` **deletes** the marker as a side effect of
+  reporting it, so a flag applied afterwards would come too late to prevent the
+  consumption. `DownloadAppdataWindow`'s C++ host therefore now constructs its
+  `QQmlApplicationEngine` empty, calls `setInitialProperties()`, and *then*
+  `load()`s — the URL-taking constructor loads immediately, running
+  `Component.onCompleted` before anything can be applied.
+- `skip_storage_dialog` moved to the same mechanism, which retires the
+  "setting it after construction is safe because it is only read in an async
+  handler" reasoning.
+- **The marker is left in place**, matching §6: an interrupted upgrade download
+  can still resume once the user's storage question is settled. (Concretely: a
+  failed download after the decline leaves the state `reachable_empty`, where
+  `skip_for_upgrade` is true and the download auto-starts at the freshly chosen
+  location.)
+
+Paths re-checked after the change, all unaffected:
+
+| Path | Behaviour |
+|---|---|
+| `gui.cpp:637` first-run window | `create_download_appdata_window()` with an empty map → `setInitialProperties()` is not called at all → both flags default false → byte-for-byte the old behaviour |
+| Recovery group 2 (`download_here`) | passes only `skip_storage_dialog`; the marker is still consulted and consumed, and auto-starting is correct there — the location was just written and `AssetManager` re-reads it at download time |
+| Recovery 5.7 short-circuit (`reachable_empty`, no hits) | provably marker-free: had the marker existed, `skip_for_upgrade` would have been true and the recovery flow would never have run |
+| `DatabaseValidationDialog.qml:486`'s inline `DownloadAppdataWindow` | constructed by QML, not by the C++ host, so it never touches the changed code; both flags default false. (Note it *does* consume the marker on every launch that opens a main window — pre-existing, and harmless because the marker only matters on a launch that has no main window.) |
+| `DownloadAppdataWindow::m_root` | was `rootObjects().constFirst()` on a possibly-empty list (UB); now nullptr with a guard at the one call site. No other `m_root` dereference in the tree belongs to this class |
+| Constructor signature | gained a middle parameter; a caller passing a `QObject*` parent positionally would fail to compile, and the build is clean — there are no such callers |
+
+Verified: `make build -B` clean, `cargo test` green across all 59 binaries,
+`make qml-test` 120 passed, `qmllint` clean on all four affected QML files.
+
+- [x] 5.9 Build + `cargo test` + `make qml-test`; then on-device/emulator smoke runs of the §8 `adb` recipes: unreachable path (tests 2, 8f, 8j), reachable-empty (8a, 8l), adoption end-to-end (test 1 analogue via a second local path), decline (tests 4, 8i), marker interactions (8d, 8k), data-loss guard (8e).
+
+  **Desktop half done (2026-08-05):** `make build -B` clean, `cargo test` green
+  across all 59 test binaries, `make qml-test` 120 passed (104 + the 16 new
+  `tst_StorageCandidatesList` cases), `qmllint` clean on the two new QML files
+  and on the two changed ones. None of it exercises the recovery flow itself,
+  which is mobile-only: on desktop the predicate returns `absent` and
+  `gui.cpp`'s `is_mobile` guard skips the branch entirely.
+
+  **Device runs done (2026-08-05, SM-S911B / Android 16, beta debug).** All
+  passed. The device had a complete 4.6 GB install at the internal path, so the
+  zero-hit branches were reached by *renaming* `app-assets` (instant, reversible)
+  rather than deleting anything. `run-as … sh -c` is blocked on this device;
+  files were staged in `/data/local/tmp` and copied in with `run-as … cp`.
+
+  | Test | Result |
+  |---|---|
+  | **7 / FR-2** — internal install present, recorded path unreachable | Recovery dialog shown; `init_app_data` / `start_webserver` never logged. The app did **not** boot silently from the internal copy |
+  | **8j / FR-20a** — relaunch untouched | Still `unreachable`; `ls` confirms the recorded directory was **not** created |
+  | **8k** — marker × `unreachable` | Recovery ran anyway; the marker still existed afterwards (the peek does not consume) |
+  | **5.8a gap fix** — decline with the marker present | Log: *"Setting up a new database; not consulting the auto_start_download.txt marker."* Marker survived, **zero** download-start log lines, user landed on the ordinary setup screen. Before the fix this configuration auto-started a ~700 MB download into the internal fallback with no dialog |
+  | **FR-23** — `unreachable`, zero hits | Message names the recorded path, carries the card-reader advice and the grouped list beneath, all rows non-selectable (no radio buttons), Try Again / Set Up Again / Quit |
+  | **FR-25** — Try Again, nothing changed | Re-checked and re-scanned; still `unreachable`, message shown again |
+  | **12.4 `unreachable` → `ok`** — data + recorded path restored mid-dialog, then Try Again | `state=ok` → *"Storage is available again … Please restart Simsapa."* The recorded path was **not** offered for adoption |
+  | **Adoption (test 1 analogue)** | Verified write → `storage-path.txt` updated → restart notice → Quit → `Exiting with status 0`; relaunch boots into the main window, no recovery flow |
+  | **5.7 short-circuit** — `reachable_empty`, zero hits | **No** recovery screen at all; straight to the ordinary download flow, no message (FR-23a) |
+  | **8b** — whitespace-only `storage-path.txt` | `Empty storage path recorded … using the internal app root`; treated as a first run, no recovery flow |
+  | **8b** — trailing newline | Trimmed; `state=ok`, normal boot |
+  | **8h / FR-32** — tiering | The enumeration and scan log **after** `app.exec()`; the probe ran on `ThreadId(02)` (a worker), and only **one** probe fired for two rows — the unusable recorded-path row is correctly never probed |
+
+  Two defects found and fixed during the runs:
+
+  - **The list was barely legible on a dark phone.** `StorageCandidatesList` used
+    hardcoded light-theme colours: the selected row was a solid `#e3f2fd` with
+    `palette.text` (white) on top, and the group headings used `palette.mid`,
+    which is near-invisible on a dark background. Colours are now derived from
+    the palette (`dark_background`, `secondary_text_color`,
+    `warning_text_color`), with the selected row a **tint** of
+    `palette.highlight` rather than a fill. `ThemeHelper` is not usable here —
+    it reads the saved theme through `SuttaBridge`, and this flow runs when the
+    database may be missing. **`StorageDialog.qml` still carries the same
+    hardcoded colours; fold the fix in at task 7.1.**
+  - **`get_create_simsapa_app_assets_path()` recreates `app-assets` on every
+    launch**, which is a trap for this style of testing: restoring a renamed
+    `app-assets` with `mv` nests it inside the freshly created empty one. Stop
+    the app before restoring. (No data was lost; noted for whoever repeats these
+    runs.)
+
+  Not covered on this device: **(f)** read-only / removed-volume classification
+  (FR-29 rows 2-3) and tests **3** / **8c** still need real removable hardware —
+  the phone has no card slot, so every run had exactly one usable location.
+  **8e** (the `delete_files_for_upgrade` data-loss guard) was **not** re-run: it
+  was verified in 3.10, nothing in 5.0 touched the sweep gating, and a
+  regression would have destroyed the user's 4.6 GB install. The FR-36 skip line
+  was observed in every `unreachable` run regardless.
 
 ### 6.0 Database Validation entry point
 

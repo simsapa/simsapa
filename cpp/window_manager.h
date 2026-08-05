@@ -5,9 +5,11 @@
 #include <QString>
 #include <QList>
 #include <QMainWindow>
+#include <QVariantMap>
 
 class SuttaSearchWindow;
 class DownloadAppdataWindow;
+class StorageRecoveryWindow;
 class SuttaLanguagesWindow;
 class DictionariesWindow;
 class LibraryWindow;
@@ -25,7 +27,9 @@ class WindowManager : public QObject {
         void create_plain_sutta_search_window();
         SuttaSearchWindow* create_sutta_search_window();
         void restore_last_session();
-        DownloadAppdataWindow* create_download_appdata_window();
+        DownloadAppdataWindow* create_download_appdata_window(
+            const QVariantMap& initial_properties = QVariantMap());
+        StorageRecoveryWindow* create_storage_recovery_window();
         SuttaLanguagesWindow* create_sutta_languages_window();
         DictionariesWindow* create_dictionaries_window();
         LibraryWindow* create_library_window();
@@ -39,6 +43,7 @@ class WindowManager : public QObject {
         int m_window_id_count;
         QList<SuttaSearchWindow*> sutta_search_windows;
         QList<DownloadAppdataWindow*> download_appdata_windows;
+        QList<StorageRecoveryWindow*> storage_recovery_windows;
         QList<SuttaLanguagesWindow*> sutta_languages_windows;
         QList<DictionariesWindow*> dictionaries_windows;
         QList<LibraryWindow*> library_windows;
