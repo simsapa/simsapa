@@ -259,13 +259,49 @@ static bool android_external_storage_is_removable(const QString& path) {
 // Matching is deliberately conservative (FR-33's safe direction): only volumes
 // matching NOTHING become extra rows, so a matching failure can produce a
 // missing warning but never a duplicated or wrongly-disabled usable location.
-// Three matching strategies, all API 24 or earlier — StorageVolume.getDirectory()
-// is API 30 and must NOT be used at minSdk 27:
+// All strategies are API 24 or earlier — StorageVolume.getDirectory() is API 30
+// and must NOT be used at minSdk 27:
 //
+//   - getStorageVolume(File) + StorageVolume.equals() (API 24): the volume the
+//     platform itself says a candidate path lives on. Exact, and independent of
+//     paths, uuids and labels — this is the primary test,
 //   - UUID appearing in an enumerated path (ordinary FAT/exFAT cards),
 //   - isPrimary() (primary emulated storage: getUuid() returns null),
-//   - getDescription(Context) matching a row label (adopted storage reports a
-//     UUID that does not appear in the path).
+//   - getDescription(Context) matching a row label.
+//
+// The last three are fallbacks for the case getStorageVolume() returns null
+// (a path on no reported volume). The description test in particular can no
+// longer fire on its own: createStorageInfo() discards path-shaped labels and
+// substitutes "Internal Storage" / "SD Card" / "External Storage", which a
+// volume description will essentially never equal. That is what the exact test
+// above replaces — before it, an adopted (internal-formatted) volume matched
+// nothing and would have been reported as a bogus "Not usable for app data"
+// row. Kept anyway: it costs nothing and can still fire for a card whose FAT
+// label survives into the row label.
+// The StorageVolume containing `path`, via
+// android.os.storage.StorageManager.getStorageVolume(File) (API 24). Returns an
+// invalid object when the path is on no reported volume.
+static QJniObject android_storage_volume_for_path(const QJniObject& storage_manager,
+                                                  const QString& path) {
+    if (path.isEmpty()) {
+        return QJniObject();
+    }
+
+    QJniObject file_obj(
+        "java/io/File",
+        "(Ljava/lang/String;)V",
+        QJniObject::fromString(path).object<jstring>());
+
+    if (!file_obj.isValid()) {
+        return QJniObject();
+    }
+
+    return storage_manager.callObjectMethod(
+        "getStorageVolume",
+        "(Ljava/io/File;)Landroid/os/storage/StorageVolume;",
+        file_obj.object<jobject>());
+}
+
 static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
     QJniEnvironment env;
 
@@ -306,6 +342,18 @@ static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
                    .toUtf8()
                    .constData());
 
+    // The volume each already-enumerated candidate lives on, resolved once.
+    // Comparing these with StorageVolume.equals() is the exact match; the
+    // uuid / isPrimary / description tests below are fallbacks for paths the
+    // platform maps to no volume.
+    QList<QJniObject> row_volumes;
+    row_volumes.reserve(storageArray.size());
+    for (int r = 0; r < storageArray.size(); ++r) {
+        row_volumes.append(android_storage_volume_for_path(
+            storage_manager, storageArray.at(r).toObject().value("path").toString()));
+    }
+    env.checkAndClearExceptions();
+
     for (jint i = 0; i < count; ++i) {
         QJniObject volume = volumes.callObjectMethod("get", "(I)Ljava/lang/Object;", i);
         if (!volume.isValid()) {
@@ -323,9 +371,29 @@ static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
             activity.object<jobject>());
         const QString description = description_obj.isValid() ? description_obj.toString() : QString();
 
+        // The exact test first: is this the volume the platform itself reports
+        // for one of the enumerated candidate paths?
+        bool matched = false;
+        QString matched_by;
+        for (int r = 0; r < row_volumes.size(); ++r) {
+            if (!row_volumes.at(r).isValid()) {
+                continue;
+            }
+            if (row_volumes.at(r).callMethod<jboolean>(
+                    "equals", "(Ljava/lang/Object;)Z", volume.object<jobject>())) {
+                matched = true;
+                matched_by = QStringLiteral("volume");
+                break;
+            }
+        }
+
         // Primary emulated storage: getUuid() returns null, so it can only be
         // matched by this flag.
-        bool matched = is_primary;
+        if (!matched && is_primary) {
+            matched = true;
+            matched_by = QStringLiteral("primary");
+        }
+
         for (int r = 0; !matched && r < storageArray.size(); ++r) {
             const QJsonObject row = storageArray.at(r).toObject();
             const QString row_path = row.value("path").toString();
@@ -333,12 +401,12 @@ static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
 
             if (!uuid.isEmpty() && row_path.contains(uuid)) {
                 matched = true;
+                matched_by = QStringLiteral("uuid-in-path");
                 break;
             }
-            // Adopted (internal-formatted) storage reports a UUID that does not
-            // appear in the path; fall back to its description.
             if (!description.isEmpty() && row_label == description) {
                 matched = true;
+                matched_by = QStringLiteral("description");
                 break;
             }
         }
@@ -348,11 +416,16 @@ static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
         // back — which is indistinguishable from "matched everything", and on a
         // phone with no removable storage the correct answer is also "no extra
         // rows". Without this line a passing test proves nothing.
-        log_info_c(QString("StorageVolume: uuid=%1 description=%2 primary=%3 matched=%4")
+        //
+        // matched_by names which test fired, so a device run shows whether the
+        // exact getStorageVolume() match is working ("volume") or whether the
+        // older heuristics are carrying it.
+        log_info_c(QString("StorageVolume: uuid=%1 description=%2 primary=%3 matched=%4 by=%5")
                        .arg(uuid.isEmpty() ? QStringLiteral("(none)") : uuid)
                        .arg(description.isEmpty() ? QStringLiteral("(none)") : description)
                        .arg(is_primary ? "true" : "false")
                        .arg(matched ? "true" : "false")
+                       .arg(matched_by.isEmpty() ? QStringLiteral("(none)") : matched_by)
                        .toUtf8()
                        .constData());
 

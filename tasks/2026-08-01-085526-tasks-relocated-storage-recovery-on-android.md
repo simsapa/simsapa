@@ -20,7 +20,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `bridges/src/asset_manager.rs` - `should_auto_start_download()` (`:249-263`): `.exists()` → `try_exists()` fix; new non-consuming `peek_auto_start_download()`.
 - `bridges/src/sutta_bridge.rs` - `get_startup_db_report()` wrapper (`:3875`) passes the extended JSON through unchanged; verify only.
 - `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`. **Done in 2.0:** `StoragePathState` enum mirroring the FFI ints, predicate + record before `init_app_globals()`, `ensure_no_empty_db_files(!unreachable)`, the two destructive sweeps wrapped with a logged skip, FR-2 exemption comments.
-- `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only). **Done in 3.0:** `is_usable` / `unusable_reason` defaults in `createStorageInfo()`, `android_external_storage_state()`, `append_unmatched_storage_volumes()`. **Android-only code — not compiled by `make build`; needs an Android build to verify.**
+- `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only). **Done in 3.0:** `is_usable` / `unusable_reason` defaults in `createStorageInfo()`, `android_external_storage_state()`, `append_unmatched_storage_volumes()`. **Done in 5.10c:** `android_storage_volume_for_path()` (`StorageManager.getStorageVolume(File)`, API 24) and the exact `StorageVolume.equals()` match, with the three string tests demoted to fallbacks and a `by=` field in the per-volume log line. **Android-only code — not compiled by `make build`;** syntax-check it with the NDK clang against the Android Qt headers (`-fsyntax-only --target=aarch64-linux-android27`) until a real Android build runs.
 - `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation). **Done in 5.0:** starts **invisible**, posts its first scan with `Qt.callLater` (out of the engine load, and so the `reachable_empty`-with-no-hits short-circuit never flashes a screen), three screens (selection / unavailable / terminal message), the `download_here` + `declined` handoff signals, tier-2 probes with a generation id, and the FR-37 save-error dialog.
 - `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`). **Done in 5.0:** string-based `QObject::connect` to the QML root's two handoff signals, `run_first_time_install(skip_storage_dialog)` (creates `DownloadAppdataWindow`, sets the property, *then* hides the recovery window so the app is never momentarily windowless).
 - `cpp/window_manager.h` / `cpp/window_manager.cpp` - `create_storage_recovery_window()` next to `create_download_appdata_window()` (`window_manager.h:28`).
@@ -513,6 +513,9 @@ Two further findings recorded rather than fixed:
   device with adopted storage would show a bogus row. Match on the volume path
   or the raw `displayName()` instead. Untestable here — belongs with the
   deferred 3.10(f) / test 3 hardware runs.
+  **Superseded by 5.10c**, which matches exactly with
+  `getStorageVolume(File)` + `StorageVolume.equals()` rather than on any string;
+  the description test survives only as a fallback.
 
 Task-file correction: 5.2 lists `download_here(path, is_internal)`; the
 implemented signal is `download_here(string path)`. Harmless — `is_internal` is
@@ -520,16 +523,51 @@ only logged inside `save_storage_path()`, which QML already called before the
 handoff — so the task file is what was wrong.
 
 - [x] 5.10a Apply the four fixes; `make qml-test` (126 passed), `qmllint`, build.
-- [ ] 5.10b **Visual check of the two rendering fixes** — the pre-selected single
+- [x] 5.10b **Visual check of the two rendering fixes** — the pre-selected single
   hit keeps its radio button while its probe runs, and a demoted row does not
   split the section headings. Unit tests cannot see either. Cheap on desktop: a
   throwaway harness QML that feeds `StorageCandidatesList` the
   `tst_StorageCandidatesList` fixture and renders it under `qml`, no device
   needed (the recovery *flow* is mobile-gated, but this component is not).
-- [ ] 5.10c Decide the adopted-storage label match (9.0's deferred item): either
+
+  **Done 2026-08-05, desktop.** No build required: `qml -I ./assets/qml` resolves
+  `Logger` / `SuttaBridge` from the same `assets/qml/com/profoundlabs/simsapa/`
+  stub module `qmltestrunner` uses, so the component renders standalone. The
+  throwaway `assets/qml/tmp_StorageCandidatesHarness.qml` drove two scenarios —
+  (A) single hit pre-selected with its probe pending, (B) the middle of three
+  `found` rows demoted — and both rendered correctly: the probed hit keeps its
+  checked radio button and "Checking…" while the host's confirm button stays
+  disabled until the verdict, and the demoted row lands at the bottom under a
+  single "Not usable for the database" heading with the remaining found rows
+  still under one heading. Harness deleted afterwards. The dark-theme half was
+  already confirmed on device in 5.9.
+- [x] 5.10c Decide the adopted-storage label match (9.0's deferred item): either
   match `append_unmatched_storage_volumes()` on the volume path / raw
   `displayName()` instead of the substituted label, or accept the spurious row
   and say so. Blocked on hardware to verify either way — see 9.0.
+
+  **Decided 2026-08-05: neither option — matched exactly instead, via
+  `StorageManager.getStorageVolume(File)` + `StorageVolume.equals()` (API 24,
+  below the minSdk 27 floor).** Both offered options are string comparisons that
+  can only ever be *more* heuristic: the raw `displayName()` is a mount-point
+  path and the volume's `getDescription()` is a friendly name, so they would not
+  have matched each other either. `getStorageVolume(File)` asks the platform
+  which volume a candidate path actually lives on, which is the question the
+  whole pass is trying to answer, and it needs no path, uuid or label to agree.
+
+  The volume for each enumerated candidate is resolved once before the loop; the
+  three previous tests (uuid-in-path, `isPrimary()`, description-vs-label) are
+  kept as fallbacks for a path the platform maps to no volume, and the
+  per-volume log line now carries `by=volume|primary|uuid-in-path|description`
+  so a device run shows which test carried the match. `StorageVolume.getDirectory()`
+  (API 30) is still not used.
+
+  Verified: desktop `make build -B` clean, and the Android-only block
+  syntax-checked against the Android Qt headers with the NDK toolchain
+  (`clang++ -fsyntax-only --target=aarch64-linux-android27 -I ~/Qt/6.9.3/android_arm64_v8a/include/...`),
+  which the desktop build never compiles. Still needs a device run to confirm
+  the exact match fires — folded into 9.2 as 9.2e; adopted-storage hardware
+  confirmation remains 9.1c.
 
 ### 6.0 Database Validation entry point
 
@@ -599,11 +637,12 @@ usable location and the removable-media paths have never executed.
   install to a card, move the card to another socket (or another device), relaunch.
   This is the only end-to-end proof that the recorded path goes `unreachable`
   *and* the copy on the card is found and adoptable.
-- [ ] 9.1c **Adopted (internal-formatted) storage** — the 5.10 finding: with the
-  label substitution in `createStorageInfo()`, `append_unmatched_storage_volumes()`'s
-  `getDescription(Context) == row.label` match cannot fire, so an adopted volume
-  is likely to appear as a bogus "Not usable for app data" row. Confirm on
-  hardware, then apply 5.10c.
+- [ ] 9.1c **Adopted (internal-formatted) storage** — 5.10c replaced the dead
+  `getDescription(Context) == row.label` match with the exact
+  `getStorageVolume(File)` + `StorageVolume.equals()` test, which should stop an
+  adopted volume appearing as a bogus "Not usable for app data" row. Confirm on
+  hardware: the volume's log line should read `matched=true by=volume` and no
+  extra row should appear.
 - [ ] 9.1d **A second real volume in the list at first run** (§8 test 6, the
   hardware half of 7.4): with two locations, `StorageDialog` opens again rather
   than auto-selecting (3.12), and an unusable location cannot be chosen.
@@ -623,6 +662,11 @@ component 6.0 and 7.0 are about to change.
 - [ ] 9.2c 7.4's runs — unusable location cannot be chosen at first run;
   low-space location selectable with its warning.
 - [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch.
+- [ ] 9.2e 5.10c's exact volume match: every volume's log line reads
+  `matched=true`, and the emulated/primary one now reports `by=volume` rather
+  than falling through to `by=primary` — proof that `getStorageVolume(File)`
+  works on device. No extra "Not usable for app data" row should appear that did
+  not appear before the change.
 
 **9.3 Verified once, re-run only if the relevant code changes.** Recorded so a
 later reader knows these were not skipped.
