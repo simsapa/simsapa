@@ -5,6 +5,7 @@ use cxx_qt_lib::QString;
 use simsapa_backend::logger::{error, info};
 use simsapa_backend::{get_create_simsapa_internal_app_root, save_to_file_checked};
 use simsapa_backend::storage_path_state as backend_storage_path_state;
+use simsapa_backend::scan_storage_candidates;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -33,6 +34,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn recorded_storage_path(self: &StorageManager) -> QString;
+
+        #[qinvokable]
+        fn find_storage_candidates_json(self: &StorageManager) -> QString;
     }
 }
 
@@ -63,6 +67,28 @@ impl qobject::StorageManager {
             Some(p) => QString::from(p.to_str().unwrap_or_default()),
             None => QString::from(""),
         }
+    }
+
+    /// The tier-1 storage scan: every location the app can see, classified into
+    /// `found` / `available` / `unusable`, in group order with the internal
+    /// location first within each group.
+    ///
+    /// Row shape:
+    /// `{ path, label, is_internal, is_recorded, group, unusable_reason,
+    ///    megabytes_available, low_space_warning, appdata_bytes, modified,
+    ///    is_complete }`
+    ///
+    /// `appdata_bytes` (database size) and `megabytes_available` (volume free
+    /// space) are different quantities and must not be collapsed. `group` is
+    /// **provisional**: the tier-2 probe can demote a row to `unusable`, never
+    /// promote one. No probes and no database opens happen here.
+    /// See docs/relocated-storage-recovery.md.
+    pub fn find_storage_candidates_json(&self) -> QString {
+        let enumeration = qobject::get_app_data_storage_paths_json().to_string();
+        let recorded = backend_storage_path_state().1;
+        let recorded = recorded.as_ref().and_then(|p| p.to_str());
+
+        QString::from(&scan_storage_candidates(&enumeration, recorded))
     }
 
     /// Save the storage path selected with the StorageDialog or the storage

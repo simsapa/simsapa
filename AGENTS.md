@@ -725,6 +725,42 @@ mechanically: `console.error` → `logger.error`, `console.warn` → `logger.war
 and `console.log` → `logger.info` (or `logger.error` when the message actually
 reports a failure).
 
+### Logging in C++ (`log_info_c()`, not `qInfo()`)
+
+In the C++ files under `cpp/`, log through the app's own logger — the Rust FFI
+functions `log_info_c()` / `log_error_c()` — and **not** Qt's `qInfo()` /
+`qWarning()` / `qDebug()`:
+
+``` cpp
+extern "C" void log_info_c(const char* msg);
+extern "C" void log_error_c(const char* msg);
+
+log_info_c("start(): storage scan requested");
+log_info_c(QString("Found %1 volume(s)").arg(count).toUtf8().constData());
+```
+
+**Why: on Android, Qt tags its own messages with the *application name*, not
+with `Qt`.** The documented way to watch the app's log is
+
+``` sh
+adb logcat -s simsapa Qt QtCore QtQml
+```
+
+(see [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md)),
+where `simsapa` is the Rust logger's tag. A `qInfo()` call therefore lands under
+*neither* `simsapa` nor `Qt` and is filtered out entirely — the message looks
+like code that never ran. This has already produced one wasted device-debugging
+round trip: a storage-enumeration diagnostic added specifically to prove a JNI
+pass had executed was invisible in the log, which is indistinguishable from the
+failure it was added to detect.
+
+`log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
+also into the app's own `log.txt`, so it is available when a user sends logs.
+
+Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
+in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
+touching that code for another reason.
+
 ### New functions on Rust bridge QML components
 
 When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml

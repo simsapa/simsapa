@@ -17,6 +17,13 @@
 
 #include "utils.h"
 
+// The app's own logger (Rust side). On Android, Qt's qInfo()/qWarning() are
+// tagged with the *application name*, not "Qt", so storage diagnostics logged
+// that way do not appear alongside everything else under the `simsapa` logcat
+// tag — which is where anyone debugging this feature will be looking.
+extern "C" void log_info_c(const char* msg);
+extern "C" void log_error_c(const char* msg);
+
 QString get_internal_storage_path() {
     QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return path;
@@ -116,8 +123,27 @@ QJsonObject createStorageInfo(const QString& path, const QString& internalAppDat
     // Get storage info for the path
     QStorageInfo storage(path);
 
-    // Set label - use displayName if available, otherwise use friendly default
+    // Set label - use displayName if available, otherwise use friendly default.
+    //
+    // On Android displayName() returns the volume's MOUNT POINT rather than a
+    // human name — "/data/data/io.github.simsapa.app.beta",
+    // "/storage/emulated" — so it is never empty and the friendly fallbacks
+    // below would never fire. A path-shaped label rendered directly above the
+    // row's full path is redundant and tells the user nothing, so a label that
+    // *is* a path — it starts with '/', or the candidate path starts with it —
+    // is treated as no label at all.
+    //
+    // The prefix test alone is not enough: the internal candidate's path is
+    // /data/user/0/<pkg>/files while displayName() reports
+    // /data/data/<pkg>, and those are the same directory only by way of a
+    // symlink, so neither string is a prefix of the other. Verified on device.
+    //
+    // A real volume name (a card's FAT label, say) does not start with '/' and
+    // is still used. See docs/relocated-storage-recovery.md.
     QString label = storage.displayName();
+    if (!label.isEmpty() && (label.startsWith('/') || path.startsWith(label))) {
+        label.clear();
+    }
     if (label.isEmpty()) {
         // Provide user-friendly labels when displayName is not available
         if (isInternal) {
@@ -137,8 +163,220 @@ QJsonObject createStorageInfo(const QString& path, const QString& internalAppDat
     item["megabytes_total"] = static_cast<int>(storage.bytesTotal() / (1024 * 1024));
     item["megabytes_available"] = static_cast<int>(storage.bytesAvailable() / (1024 * 1024));
 
+    // Tier-1 usability. Defaults to usable; the caller demotes external
+    // candidates from the volume's mounted state. The expensive write / SQLite
+    // probe is tier 2 and deliberately NOT done here — this function is called
+    // from the storage scan and from StorageDialog's Component.onCompleted,
+    // i.e. from inside the QML engine load.
+    // See docs/relocated-storage-recovery.md.
+    item["is_usable"] = true;
+    item["unusable_reason"] = "";
+
     return item;
 }
+
+#ifdef Q_OS_ANDROID
+// The mounted state of the volume containing `path`, via
+// Environment.getExternalStorageState(File) — "mounted", "mounted_ro",
+// "removed", "unmounted", "bad_removal", … (API 19).
+//
+// External candidates only: the internal app-data directory is present and
+// writable by definition, and this call is not meaningful for it.
+static QString android_external_storage_state(const QString& path) {
+    QJniObject file_obj(
+        "java/io/File",
+        "(Ljava/lang/String;)V",
+        QJniObject::fromString(path).object<jstring>());
+
+    if (!file_obj.isValid()) {
+        return QString();
+    }
+
+    QJniObject state = QJniObject::callStaticObjectMethod(
+        "android/os/Environment",
+        "getExternalStorageState",
+        "(Ljava/io/File;)Ljava/lang/String;",
+        file_obj.object<jobject>());
+
+    return state.isValid() ? state.toString() : QString();
+}
+
+// Whether the external volume containing `path` is *emulated* — i.e. backed by
+// the device's own internal storage rather than by a removable card
+// (Environment.isExternalStorageEmulated(File), API 21).
+//
+// This is the fact that identifies the duplicate: on a phone with no card,
+// /storage/emulated/0/Android/data/<pkg>/files and the internal app-data
+// directory are two views of the SAME physical storage, and they report
+// identical total and available bytes. Listing both as separate choices offers
+// the user a decision with no consequence.
+static bool android_external_storage_is_emulated(const QString& path) {
+    QJniObject file_obj(
+        "java/io/File",
+        "(Ljava/lang/String;)V",
+        QJniObject::fromString(path).object<jstring>());
+
+    if (!file_obj.isValid()) {
+        return false;
+    }
+
+    return QJniObject::callStaticMethod<jboolean>(
+        "android/os/Environment",
+        "isExternalStorageEmulated",
+        "(Ljava/io/File;)Z",
+        file_obj.object<jobject>());
+}
+
+// Whether the external volume containing `path` is removable
+// (Environment.isExternalStorageRemovable(File), API 21) — a real card slot or
+// USB volume, as opposed to emulated internal storage.
+static bool android_external_storage_is_removable(const QString& path) {
+    QJniObject file_obj(
+        "java/io/File",
+        "(Ljava/lang/String;)V",
+        QJniObject::fromString(path).object<jstring>());
+
+    if (!file_obj.isValid()) {
+        return false;
+    }
+
+    return QJniObject::callStaticMethod<jboolean>(
+        "android/os/Environment",
+        "isExternalStorageRemovable",
+        "(Ljava/io/File;)Z",
+        file_obj.object<jobject>());
+}
+
+// Append a row for every volume android.os.storage.StorageManager reports that
+// matches none of the already-enumerated getExternalFilesDirs() entries.
+//
+// These are volumes the app can SEE but cannot write app data to — typically
+// USB / SAF-only storage. Reporting them is the point: a volume the user can
+// see in their phone but that silently vanishes from the app's list is exactly
+// the confusion this feature exists to remove. SQLite needs a real filesystem
+// path, so a SAF-only volume is genuinely unusable for the database.
+//
+// Matching is deliberately conservative (FR-33's safe direction): only volumes
+// matching NOTHING become extra rows, so a matching failure can produce a
+// missing warning but never a duplicated or wrongly-disabled usable location.
+// Three matching strategies, all API 24 or earlier — StorageVolume.getDirectory()
+// is API 30 and must NOT be used at minSdk 27:
+//
+//   - UUID appearing in an enumerated path (ordinary FAT/exFAT cards),
+//   - isPrimary() (primary emulated storage: getUuid() returns null),
+//   - getDescription(Context) matching a row label (adopted storage reports a
+//     UUID that does not appear in the path).
+static void append_unmatched_storage_volumes(QJsonArray& storageArray) {
+    QJniEnvironment env;
+
+    QJniObject activity = QJniObject::callStaticObjectMethod(
+        "org/qtproject/qt/android/QtNative",
+        "activity",
+        "()Landroid/app/Activity;");
+
+    if (!activity.isValid()) {
+        return;
+    }
+
+    QJniObject storage_manager = activity.callObjectMethod(
+        "getSystemService",
+        "(Ljava/lang/String;)Ljava/lang/Object;",
+        QJniObject::fromString("storage").object<jstring>());
+
+    if (!storage_manager.isValid()) {
+        log_error_c("getStorageVolumes pass: STORAGE_SERVICE unavailable");
+        env.checkAndClearExceptions();
+        return;
+    }
+
+    QJniObject volumes = storage_manager.callObjectMethod(
+        "getStorageVolumes",
+        "()Ljava/util/List;");
+
+    if (!volumes.isValid()) {
+        log_error_c("getStorageVolumes pass: getStorageVolumes() returned nothing");
+        env.checkAndClearExceptions();
+        return;
+    }
+
+    const jint count = volumes.callMethod<jint>("size", "()I");
+    log_info_c(QString("getStorageVolumes pass: %1 volume(s) reported, %2 enumerated candidate(s)")
+                   .arg(count)
+                   .arg(storageArray.size())
+                   .toUtf8()
+                   .constData());
+
+    for (jint i = 0; i < count; ++i) {
+        QJniObject volume = volumes.callObjectMethod("get", "(I)Ljava/lang/Object;", i);
+        if (!volume.isValid()) {
+            continue;
+        }
+
+        const bool is_primary = volume.callMethod<jboolean>("isPrimary", "()Z");
+
+        QJniObject uuid_obj = volume.callObjectMethod("getUuid", "()Ljava/lang/String;");
+        const QString uuid = uuid_obj.isValid() ? uuid_obj.toString() : QString();
+
+        QJniObject description_obj = volume.callObjectMethod(
+            "getDescription",
+            "(Landroid/content/Context;)Ljava/lang/String;",
+            activity.object<jobject>());
+        const QString description = description_obj.isValid() ? description_obj.toString() : QString();
+
+        // Primary emulated storage: getUuid() returns null, so it can only be
+        // matched by this flag.
+        bool matched = is_primary;
+        for (int r = 0; !matched && r < storageArray.size(); ++r) {
+            const QJsonObject row = storageArray.at(r).toObject();
+            const QString row_path = row.value("path").toString();
+            const QString row_label = row.value("label").toString();
+
+            if (!uuid.isEmpty() && row_path.contains(uuid)) {
+                matched = true;
+                break;
+            }
+            // Adopted (internal-formatted) storage reports a UUID that does not
+            // appear in the path; fall back to its description.
+            if (!description.isEmpty() && row_label == description) {
+                matched = true;
+                break;
+            }
+        }
+
+        // Logged for every volume, matched or not. A JNI signature error here
+        // fails silently — the exception is cleared and an invalid object comes
+        // back — which is indistinguishable from "matched everything", and on a
+        // phone with no removable storage the correct answer is also "no extra
+        // rows". Without this line a passing test proves nothing.
+        log_info_c(QString("StorageVolume: uuid=%1 description=%2 primary=%3 matched=%4")
+                       .arg(uuid.isEmpty() ? QStringLiteral("(none)") : uuid)
+                       .arg(description.isEmpty() ? QStringLiteral("(none)") : description)
+                       .arg(is_primary ? "true" : "false")
+                       .arg(matched ? "true" : "false")
+                       .toUtf8()
+                       .constData());
+
+        if (matched) {
+            continue;
+        }
+
+        QJsonObject item;
+        // No usable path: this volume has no app-writable directory, which is
+        // the whole reason it is being reported.
+        item["path"] = "";
+        item["label"] = description.isEmpty() ? QString("External Storage") : description;
+        item["is_internal"] = false;
+        item["megabytes_total"] = 0;
+        item["megabytes_available"] = 0;
+        item["is_usable"] = false;
+        item["unusable_reason"] =
+            "Not usable for app data (this device may only allow file transfers here)";
+        storageArray.append(item);
+    }
+
+    env.checkAndClearExceptions();
+}
+#endif
 
 QJsonArray get_app_data_storage_paths() {
     QJsonArray storageArray;
@@ -190,13 +428,43 @@ QJsonArray get_app_data_storage_paths() {
 
                         // Only add if it's different from internal path and not empty
                         if (!externalPath.isEmpty() && externalPath != internalAppDataPath) {
-                            storageArray.append(createStorageInfo(externalPath, internalAppDataPath));
+                            QJsonObject item = createStorageInfo(externalPath, internalAppDataPath);
+
+                            // Is this its own physical storage, or another view
+                            // of the internal one? Reported as facts; the
+                            // de-duplication policy lives in the Rust scan.
+                            const bool is_emulated = android_external_storage_is_emulated(externalPath);
+                            const bool is_removable = android_external_storage_is_removable(externalPath);
+                            item["is_emulated"] = is_emulated;
+                            item["is_removable"] = is_removable;
+
+                            log_info_c(QString("External candidate: %1 emulated=%2 removable=%3")
+                                           .arg(externalPath)
+                                           .arg(is_emulated ? "true" : "false")
+                                           .arg(is_removable ? "true" : "false")
+                                           .toUtf8()
+                                           .constData());
+
+                            // Tier-1 classification, external candidates only.
+                            const QString state = android_external_storage_state(externalPath);
+                            if (state == QLatin1String("mounted_ro")) {
+                                item["is_usable"] = false;
+                                item["unusable_reason"] = "Read-only — the app cannot write here";
+                            } else if (!state.isEmpty() && state != QLatin1String("mounted")) {
+                                item["is_usable"] = false;
+                                item["unusable_reason"] = "Not available";
+                            }
+
+                            storageArray.append(item);
                         }
                     }
                 }
             }
         }
     }
+
+    // Volumes the app can see but has no app-writable directory on.
+    append_unmatched_storage_volumes(storageArray);
 
     // Clear any pending JNI exceptions
     env.checkAndClearExceptions();

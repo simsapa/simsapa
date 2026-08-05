@@ -51,12 +51,82 @@ Dialog {
         }
     }
 
+    // How many locations the user could actually pick from. Unusable rows are
+    // never added to the model, so this is the number of real choices.
+    readonly property int selectable_count: storage_locations_model.count
+
+    // Record `path` as the app data location. Returns whether the write
+    // succeeded; on failure the caller must NOT proceed to the download, or the
+    // app downloads into whatever location it resolves on its own — one the
+    // user did not choose. See docs/relocated-storage-recovery.md.
+    function save_selected_path(path: string, is_internal: bool): bool {
+        if (sm.save_storage_path(path, is_internal)) {
+            return true;
+        }
+        logger.error("save_storage_path() failed for: " + path);
+        return false;
+    }
+
+    // When there is exactly one place the database can go, record it and report
+    // that no dialog is needed: a modal asking the user to choose between one
+    // option is a question with a single answer.
+    //
+    // Returns true only when the location was both chosen and successfully
+    // recorded. On a failed write it returns false so the caller opens the
+    // dialog as usual, where pressing Select surfaces the error.
+    function auto_select_single_location(): bool {
+        if (root.selectable_count !== 1) {
+            return false;
+        }
+
+        var only = storage_locations_model.get(0);
+        logger.info("Only one storage location available, using it without asking: " + only.path);
+
+        if (root.save_selected_path(only.path, only.is_internal)) {
+            root.selectedIndex = 0;
+            return true;
+        }
+
+        logger.warn("Auto-selection could not be recorded; falling back to the storage dialog.");
+        return false;
+    }
+
     Component.onCompleted: {
         if (root.is_qml_preview) return;
         var s = sm.get_app_data_storage_paths_json();
         var d = JSON.parse(s);
+
+        // Primary "external" storage on Android is emulated — a view of the
+        // same partition the internal location lives on, reporting identical
+        // free space — so offering both is a choice with no consequence.
+        // TEMPORARY: this mirrors the policy in the Rust scan
+        // (is_duplicate_emulated_candidate). Task 7.1 reworks this list to
+        // consume find_storage_candidates_json(), after which the policy lives
+        // in one place. See docs/relocated-storage-recovery.md.
+        var has_internal = d.some(function(row) { return row.is_internal === true; });
+
         for (var i = 0; i < d.length; i++) {
             var item = d[i];
+
+            if (has_internal && !item.is_internal
+                && item.is_emulated === true && item.is_removable !== true) {
+                logger.info("Skipping emulated duplicate of the internal storage: " + item.path);
+                continue;
+            }
+
+            // The enumeration now also reports volumes the app can see but
+            // cannot use for the database (read-only, unmounted, or SAF-only
+            // with no app-writable directory). They must never be offered as a
+            // download destination. They are skipped rather than rendered here;
+            // showing them under a "Not usable for the database" heading is
+            // handled by the shared candidates list.
+            // See docs/relocated-storage-recovery.md.
+            if (item.is_usable === false) {
+                logger.info("Skipping unusable storage location: " + item.label
+                            + " (" + item.unusable_reason + ")");
+                continue;
+            }
+
             var data = {
                 path: item.path,
                 label: item.label,
@@ -219,11 +289,8 @@ Dialog {
                         // A failed write must not proceed to the download: the
                         // app would download into whatever location it resolves
                         // on its own, which is not the one the user chose.
-                        // See docs/relocated-storage-recovery.md.
-                        var saved = sm.save_storage_path(selected_path,
-                                                         storage_locations_model.get(idx).is_internal);
-                        if (!saved) {
-                            logger.error("save_storage_path() failed for: " + selected_path);
+                        if (!root.save_selected_path(selected_path,
+                                                     storage_locations_model.get(idx).is_internal)) {
                             save_error_dialog.storage_path = selected_path;
                             save_error_dialog.open();
                             return;

@@ -20,4 +20,9 @@ Item {
         console.log("recorded_storage_path()");
         return "";
     }
+
+    function find_storage_candidates_json(): string {
+        console.log("find_storage_candidates_json()");
+        return "[]";
+    }
 }

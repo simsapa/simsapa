@@ -9,6 +9,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 ## Relevant Files
 
 - `backend/src/lib.rs` - `get_create_simsapa_dir()` (mobile branch `:735-790`), `ensure_no_empty_db_files()` (`:864-897`), new `storage_path_state()` predicate, new scan helpers; the heart of tasks 1.0 and 3.0. **Done in 1.0:** `get_simsapa_internal_app_root_path()` (non-creating root), `StorageState`, `has_usable_installation()`, `storage_path_state_of_file()` / `storage_path_state()`, trim + no-create fallback in `get_create_simsapa_dir()`, `ensure_no_empty_db_files(sweep)`, FFI `storage_path_state_c()` / `recorded_storage_path_c()`.
+- `backend/tests/test_storage_candidates_scan.rs` - **new**: tier-1 scan tests (classification, ordering, recorded-path extra candidate + trailing-slash de-dup, Partial, low space, unusable rows, resilience, `same_path`).
 - `backend/tests/test_storage_path_state.rs` - **new**: predicate tests (trim, whitespace-only, zero-byte stub, read-only/stable-across-launches, desktop gate).
 - `backend/tests/test_ensure_no_empty_db_files_no_sweep.rs` - **new**: `sweep = false` records a zero-byte stub as missing without deleting it (own test binary — sets `SIMSAPA_DIR` before the `OnceLock`). Task 2.0 added `startup_report_carries_the_storage_path_at_the_top_level` to `test_storage_path_state.rs` (JSON shape + first-write-wins).
 - `backend/src/db/mod.rs` - `StartupDbReport` struct, `record_db_presence()`, `get_startup_db_report_json()` (`:80-153`); gains the top-level `storage_path` field (FR-22). **Done in 2.0:** `StoragePathReport`, `record_storage_path_state()` (first-write-wins), `"storage_path"` in the JSON.
@@ -17,7 +18,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `bridges/src/asset_manager.rs` - `should_auto_start_download()` (`:249-263`): `.exists()` → `try_exists()` fix; new non-consuming `peek_auto_start_download()`.
 - `bridges/src/sutta_bridge.rs` - `get_startup_db_report()` wrapper (`:3875`) passes the extended JSON through unchanged; verify only.
 - `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`. **Done in 2.0:** `StoragePathState` enum mirroring the FFI ints, predicate + record before `init_app_globals()`, `ensure_no_empty_db_files(!unreachable)`, the two destructive sweeps wrapped with a logged skip, FR-2 exemption comments.
-- `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only).
+- `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only). **Done in 3.0:** `is_usable` / `unusable_reason` defaults in `createStorageInfo()`, `android_external_storage_state()`, `append_unmatched_storage_volumes()`. **Android-only code — not compiled by `make build`; needs an Android build to verify.**
 - `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation).
 - `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`).
 - `cpp/window_manager.h` / `cpp/window_manager.cpp` - `create_storage_recovery_window()` next to `create_download_appdata_window()` (`window_manager.h:28`).
@@ -30,6 +31,7 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `assets/qml/com/profoundlabs/simsapa/AssetManager.qml` - qmllint stub for the marker peek.
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `get_startup_db_report()` stub (`:268`) — return shape comment updated.
 - `bridges/build.rs` - register new QML files in `qml_files`.
+- `backend/src/lib.rs` (diagnostics) - `storage_scan_log_requested_c()` / `log_storage_scan_c()`: the `log-storage-scan.txt` marker that dumps the enumeration + tier-1 scan to the log, so the Android-only JNI is observable on a healthy install (task 3.9).
 - `docs/relocated-storage-recovery.md` - **new**: feature documentation (task 8.0).
 - `PROJECT_MAP.md`, `CLAUDE.md` - documentation pointers.
 
@@ -46,6 +48,22 @@ seem to disagree, the PRD wins — flag it rather than improvising.
   fallback cannot be reached from a desktop test run. It is covered by §8's device
   tests 8f/8j; the classification half of it is covered by
   `predicate_is_read_only_and_stable_across_calls`.
+- **Volume labels are paths on Android — resolved, option (b).**
+  `QStorageInfo::displayName()` returns the *mount point*, not a friendly name
+  (observed: `"/data/data/io.github.simsapa.app.beta"`, `"/storage/emulated"`),
+  so it is never empty and `createStorageInfo()`'s "Internal Storage" / "SD
+  Card" / "External Storage" fallbacks never fired. A label that is a **prefix
+  of the candidate path** is now treated as no label, falling through to the
+  friendly guess. A real volume name (a card's FAT label) is not a prefix of the
+  path and is still used, so FR-12's "reuse `createStorageInfo()`'s labelling"
+  is preserved where it has anything to say.
+- **The same physical storage is reported as two candidates** (`/data/user/0/…/files`
+  and `/storage/emulated/0/Android/data/…/files`, identical total and available
+  bytes). See the de-duplication analysis below; the enumeration now reports
+  `is_emulated` and `is_removable` per external candidate
+  (`Environment.isExternalStorageEmulated/isExternalStorageRemovable(File)`,
+  API 21) so the policy can be decided in the Rust scan and unit-tested.
+  **Decision pending — must land before 5.1 renders the list.**
 - The `adb` state-simulation recipe (§8) requires the **beta debug** build (`make android-beta-debug`) and `printf '%s'`, never `echo`.
 
 ## Instructions for Completing Tasks
@@ -118,13 +136,150 @@ Update the file after completing each sub-task, not just after completing an ent
 
 **Dependencies:** 1.1 (state/recorded for `is_recorded`), 1.6 (bridge patterns). Consumed by 4.0–7.0.
 
-- [ ] 3.1 Extend `cpp/utils.cpp`: add the mounted/read-only state check (`Environment.getExternalStorageState(File)` via JNI) for external entries in `get_app_data_storage_paths()`, extending each JSON object with `is_usable: bool` and `unusable_reason: string` (existing consumers ignore the new fields). Keep `createStorageInfo()` labelling untouched.
-- [ ] 3.2 Add the `getStorageVolumes()` pass in `cpp/utils.cpp` (or a sibling function feeding the same JSON): enumerate volumes, match against the `getExternalFilesDirs()` entries per FR-33 (UUID in path → `isPrimary()` → `getDescription(Context)`), and append unmatched volumes as rows with `is_usable: false`, reason "Not usable for app data (this device may only allow file transfers here)" (FR-27, FR-29 row 1). **Name-collision warning:** this is Android's `android.os.storage.StorageManager.getStorageVolumes()` reached over JNI (new code, none exists yet in the repo) — not the app's own `StorageManager` QML bridge, which merely shares the name.
-- [ ] 3.3 Implement the tier-1 scan in Rust (`backend/src/lib.rs`, near `appdata_db_exists()`): consume `get_app_data_storage_paths_json()`, append the recorded path as an extra candidate via `same_path()` normalized comparison (FR-6/6a), run FR-5's `usable_installation()` check (`try_exists` + `metadata().len() > 0`, one `metadata()` call also yielding `modified` — FR-9), set `group`/`is_recorded`/`is_complete`/`appdata_bytes`/`modified`/`low_space_warning`, log missing DB names for partial installs, omit figures on unusable rows, and sort per FR-9/FR-11.
-- [ ] 3.4 Implement `same_path()` (trim, strip trailing separators, component-wise compare; no `canonicalize()`) as a small tested helper (FR-6a).
-- [ ] 3.5 Expose `StorageManager::find_storage_candidates_json() -> QString` calling the Rust scan; add the qmllint stub.
-- [ ] 3.6 Rust unit tests over temp directory fixtures: group classification (found / available), FR-5 zero-byte stub → not found, recorded-path extra candidate + de-dup with trailing slash (FR-6a), `is_recorded` marking, `is_complete` false when `dictionaries.sqlite3` missing, ordering (internal first, group order), unusable rows keep no figures, unreadable candidate skipped without error (FR-8).
-- [ ] 3.7 Build + tests; verify `StorageDialog` still renders correctly with the extended JSON (it ignores the new fields until task 7.0).
+- [x] 3.1 Extend `cpp/utils.cpp`: add the mounted/read-only state check (`Environment.getExternalStorageState(File)` via JNI) for external entries in `get_app_data_storage_paths()`, extending each JSON object with `is_usable: bool` and `unusable_reason: string` (existing consumers ignore the new fields). Keep `createStorageInfo()` labelling untouched.
+- [x] 3.2 Add the `getStorageVolumes()` pass in `cpp/utils.cpp` (or a sibling function feeding the same JSON): enumerate volumes, match against the `getExternalFilesDirs()` entries per FR-33 (UUID in path → `isPrimary()` → `getDescription(Context)`), and append unmatched volumes as rows with `is_usable: false`, reason "Not usable for app data (this device may only allow file transfers here)" (FR-27, FR-29 row 1). **Name-collision warning:** this is Android's `android.os.storage.StorageManager.getStorageVolumes()` reached over JNI (new code, none exists yet in the repo) — not the app's own `StorageManager` QML bridge, which merely shares the name.
+- [x] 3.3 Implement the tier-1 scan in Rust (`backend/src/lib.rs`, near `appdata_db_exists()`): consume `get_app_data_storage_paths_json()`, append the recorded path as an extra candidate via `same_path()` normalized comparison (FR-6/6a), run FR-5's `usable_installation()` check (`try_exists` + `metadata().len() > 0`, one `metadata()` call also yielding `modified` — FR-9), set `group`/`is_recorded`/`is_complete`/`appdata_bytes`/`modified`/`low_space_warning`, log missing DB names for partial installs, omit figures on unusable rows, and sort per FR-9/FR-11.
+- [x] 3.4 Implement `same_path()` (trim, strip trailing separators, component-wise compare; no `canonicalize()`) as a small tested helper (FR-6a).
+- [x] 3.5 Expose `StorageManager::find_storage_candidates_json() -> QString` calling the Rust scan; add the qmllint stub.
+- [x] 3.6 Rust unit tests over temp directory fixtures: group classification (found / available), FR-5 zero-byte stub → not found, recorded-path extra candidate + de-dup with trailing slash (FR-6a), `is_recorded` marking, `is_complete` false when `dictionaries.sqlite3` missing, ordering (internal first, group order), unusable rows keep no figures, unreadable candidate skipped without error (FR-8).
+- [x] 3.7 Build + tests; verify `StorageDialog` still renders correctly with the extended JSON (it ignores the new fields until task 7.0). **Note:** the enumeration can now emit unusable rows, which `StorageDialog` consumes directly and would have rendered as selectable 0 GB destinations, so a temporary `is_usable === false` → skip-and-log guard was added to its `Component.onCompleted`. Task 7.1 replaces it with the proper "Not usable for the database" rendering.
+
+**Added after 3.7 — making the Android-only code observable.** The JNI added in
+3.1/3.2 is compiled only for Android and is reachable only from the storage
+dialogs, so a healthy install exercises none of it; worse, a wrong JNI signature
+fails *silently* (the exception is cleared, an invalid object comes back), which
+on a phone with no removable storage is indistinguishable from a correct "no
+extra rows" result. These sub-tasks make a device run informative.
+
+- [x] 3.8 Per-volume diagnostic logging in `append_unmatched_storage_volumes()`: one line per volume with `uuid`, `description`, `primary`, `matched`, plus the volume count vs. enumerated-candidate count and explicit errors when `STORAGE_SERVICE` or `getStorageVolumes()` come back invalid. Keep it permanently — support diagnosis of this feature is the point. **Logged via the app's `log_info_c()` / `log_error_c()`, NOT `qInfo()`/`qWarning()`:** on Android Qt tags its own messages with the *application name*, so `qInfo()` output does not appear under the `simsapa` logcat tag and was invisible in the first 3.10(a) run.
+- [x] 3.9 Marker-triggered scan dump: `log-storage-scan.txt` in the internal app root makes the next launch log the state, the raw enumeration JSON and the classified tier-1 candidates (`storage_scan_log_requested_c()` / `log_storage_scan_c()` in `backend/src/lib.rs`, called from `gui.cpp` right after the `QApplication` is constructed). Costs one `try_exists()` when absent; **not** consumed, so it dumps on every launch until deleted. This is the only way to see the enumeration on a healthy install.
+- [x] 3.10 **On-device verification of the tier-1 enumeration and scan** (beta debug build; `run-as` requires a debuggable package). Each step's expected outcome is in the log under `STORAGE-SCAN:` / `StorageVolume:`. None of these touch the real (Play-installed) app — the beta is a separate package with its own data directory.
+  - (a) **Baseline, healthy install.** Drop the marker and relaunch:
+    `adb shell run-as io.github.simsapa.app.beta touch /data/user/0/io.github.simsapa.app.beta/files/log-storage-scan.txt`
+    then `adb logcat -s simsapa Qt QtCore QtQml`. Expect: `state=ok`, one `StorageVolume:` line per volume with `primary=true matched=true` for emulated storage, the internal candidate classified `found` with a plausible `appdata_bytes` / `modified` / `is_complete: true`, and every external path present with a sane label and free-space figure. **A `getStorageVolumes pass: … volume(s) reported` line proves the JNI pass ran at all** — its absence is the silent-failure case.
+  - (b) **A fabricated second candidate** — exercises the scan end to end with no card and no large copy. FR-5 tests existence + non-zero length only, so a one-byte file is a "found" installation:
+    `adb shell run-as io.github.simsapa.app.beta sh -c "mkdir -p files/fake/app-assets && printf 'x' > files/fake/app-assets/appdata.sqlite3"`
+    then point the recorded path at it with the §8 `printf '%s'` recipe. Expect: two `found` rows, internal first, the fake row carrying `is_recorded: true` and `is_complete: false` (the "Partial" marker), and a log line naming the missing `dictionaries.sqlite3` / `dpd.sqlite3`. **Do not adopt the fake location** once the recovery UI exists — restore `storage-path.txt` afterwards.
+  - (c) **Unreachable recorded path** (§8's main recipe). Expect: `state=unreachable`, the recorded path appended as an extra candidate row, the `Skipping destructive startup sweeps` log line naming it, and Database Validation reporting "The configured storage location is unavailable" instead of the re-download message.
+  - (d) **Reachable-but-empty** (`adb shell run-as … mkdir -p …`): `state=reachable_empty`, no new message.
+  - (e) **Whitespace-only `storage-path.txt`** (`printf ' '`): `state=absent`, treated as a genuine first run.
+  - (f) **Read-only / removed volume classification** (FR-29 rows 2–3) — needs real removable hardware and cannot be simulated with `adb`. Defer to a device with a card slot; the code path is a single `getExternalStorageState()` string compare.
+
+  **Results (2026-08-05, SM-S911B / Android 16, beta debug).** (a)–(e) all pass;
+  (f) deferred, no card slot available. Two defects found and fixed, both
+  cosmetic-but-misleading, neither visible from the unit tests:
+  - **`run-as … sh -c` is blocked on this device** (SELinux); direct
+    `run-as … <cmd>` works. Write files by staging them in `/data/local/tmp`
+    (writable by the `shell` user) and `run-as … cp`-ing them into place. The
+    §8 PRD recipe as written does not run here.
+  - **Volume labels.** The `startsWith(label)` prefix test fixed the *emulated*
+    row but not the internal one: its path is `/data/user/0/<pkg>/files` while
+    `displayName()` reports `/data/data/<pkg>`, the same directory only via a
+    symlink, so neither string is a prefix of the other. Now any label starting
+    with `/` is discarded as path-shaped.
+  - **The recorded-path extra candidate reported `megabytes_available: 0` and
+    `low_space_warning: true`** — fabricated figures for a candidate whose free
+    space was never measured, rendering as "0.0 GB free" plus a spurious
+    low-space warning. `megabytes_available` is now `null` when unmeasured and
+    the warning is suppressed. Test added.
+
+  **Re-verified 2026-08-05 after the two fixes** (device run of 3.10(d)):
+  enumeration now reports `"label":"Internal Storage"` instead of
+  `/data/data/<pkg>`, and first-run setup shows **no** storage dialog —
+  `Skipping emulated duplicate…` → `Only one storage location available, using
+  it without asking: /data/user/0/<pkg>/files` → `Saved storage path to …` →
+  the download screen directly, with "Select Storage" still available for a
+  manual change.
+
+  Confirmed working on device: the four-state predicate (`ok` /`unreachable` /
+  `reachable_empty` / `absent`), the FR-20 fallback warning, the FR-36 sweep
+  skip, the FR-20a no-create guarantee across two consecutive launches, the
+  recorded path as an FR-6 extra candidate classified `unusable` / "Not
+  available" when gone, the "Partial" marker with its missing-filenames log
+  line, `emulated=true removable=false` detection, and the emulated de-duplication
+  (verified visually in `StorageDialog`: one row, not two).
+
+### 3.11 De-duplicating emulated storage (decision + implementation)
+
+**The problem, from the 3.10(a) device run.** On a phone with no card the scan
+produces two candidates that are the same physical storage:
+
+| path | label | total | available |
+|---|---|---|---|
+| `/data/user/0/<pkg>/files` | Internal Storage | 228219 MB | 188561 MB |
+| `/storage/emulated/0/Android/data/<pkg>/files` | External Storage | 228219 MB | 188561 MB |
+
+Primary "external" storage on modern Android is *emulated* — a FUSE view of the
+same `/data` partition — so the second row offers a choice with no consequence,
+while implying the user has two places to put a ~1 GB download. This predates
+the feature (`StorageDialog` has always shown both), but the recovery dialog
+makes it worse: the same installation can appear twice, once per view.
+
+**Detection.** `Environment.isExternalStorageEmulated(File)` (API 21, below the
+minSdk 27 floor) answers exactly this: true ⇒ backed by internal storage, not a
+card. Paired with `isExternalStorageRemovable(File)`. Both are now reported by
+the enumeration as `is_emulated` / `is_removable` and logged per candidate.
+Rejected alternatives: comparing `QStorageInfo::device()` or `bytesTotal()`
+(heuristic, and the FUSE view legitimately differs), and comparing `st_dev`
+(the emulated view has its own device id).
+
+**Options.** Note FR-27/Goal 7 ("no volume the app can enumerate silently
+vanishes") is about distinct *volumes*; two paths on one volume are not two
+volumes. Even so, the PRD wins on disagreements, so this is recorded rather than
+assumed.
+
+- **(A) Drop emulated external candidates entirely** when an internal candidate
+  exists. Simplest, and the list then matches what the user's phone actually
+  has. Risk: an existing `storage-path.txt` pointing at the emulated path stops
+  being offered — but it still *resolves* (`get_create_simsapa_dir()` reads the
+  file, not the list) and FR-6 re-appends it as an extra candidate marked
+  "(current selection)", so nothing is lost.
+- **(B) Merge the pair into one row**, preferring whichever path `is_recorded`,
+  else the internal one. Same visible result as (A) on a fresh install, but an
+  existing emulated recorded path keeps its own row naturally rather than via
+  the FR-6 fallback. Slightly more logic; one row can then represent two paths,
+  which the delegate must not be allowed to confuse.
+- **(C) Keep both, label them distinctly** ("Internal Storage" vs "Internal
+  Storage (shared area)"). Honest about the filesystem, still asks the user a
+  question with no consequence. Not recommended.
+
+**Decision: (A)**, gated on `is_emulated && !is_removable && an internal
+candidate exists`, applied in `scan_storage_candidates()` so it is unit-tested,
+with the dropped path logged. A real SD card reports `is_emulated = false` and
+is unaffected — which is the whole scenario this feature exists for.
+
+- [x] 3.11a Decide between (A) / (B) / (C). **Chosen: (A)** — drop the emulated duplicate.
+- [x] 3.11b Implement the chosen policy in `scan_storage_candidates()` (not in C++ — the enumeration reports facts, the scan applies policy), log every dropped or merged path, and add unit tests: emulated duplicate dropped/merged; a removable card never dropped; an emulated path that **is** the recorded path still appears; no internal candidate ⇒ nothing dropped.
+- [x] 3.11c Apply the same policy to `StorageDialog`'s first-run list, so both entry points show the same storage (task 7.1 reworks that list anyway — fold it in there if it lands first).
+
+### 3.12 Skip the storage dialog when there is only one location
+
+**Requested 2026-08-05, after the de-duplication landed.** With the emulated
+duplicate removed, a phone with no memory card offers exactly **one** storage
+location, so `StorageDialog` becomes a modal asking the user to choose between a
+single option. It is now skipped in that case: the one location is recorded with
+`save_storage_path()` and the setup continues straight to the download screen.
+
+**This amends the PRD.** §5 Non-Goals lists "Any change to how the storage
+location is chosen on first run" as out of scope. Accepted deliberately — the
+mechanism is untouched (the same `save_storage_path()` call, the same flow); only
+the needless prompt is suppressed. Recorded here so the divergence is not
+mistaken for drift.
+
+Consequences to keep in mind:
+- The write still happens, so `storage-path.txt` is created on first run exactly
+  as before and the recorded-path states are unchanged.
+- A **failed** write falls through to opening the dialog (rather than silently
+  proceeding), where pressing Select surfaces the FR-37 error. The rule that a
+  failed write never reaches the download is preserved on both paths.
+- FR-23a's "`StorageDialog` MUST still open in `reachable_empty`" is not
+  violated in spirit: its purpose is to let the user pick a *different*
+  location, and with one candidate there is no different location to pick.
+- Two or more locations (any device with a card) behave exactly as before.
+
+- [x] 3.12a `StorageDialog.auto_select_single_location()` + the shared `save_selected_path()` helper used by both it and the Select button.
+- [x] 3.12b `DownloadAppdataWindow.proceed_after_releases_check()` calls it and only opens the dialog when it returns false.
+- [x] 3.12c On-device check: with one location, first-run setup shows **no** storage dialog and the log reads "Only one storage location available, using it without asking: …". Re-run 3.10(d) to reach the first-run flow.
 
 ### 4.0 Tier-2 write/SQLite probe
 

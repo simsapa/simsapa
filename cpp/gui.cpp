@@ -25,6 +25,7 @@
 // #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 #include "errors.h"
+#include "utils.h"
 #include "window_manager.h"
 #include "sutta_search_window.h"
 #include "global_hotkey_manager.h"
@@ -48,6 +49,8 @@ extern "C" bool appdata_db_exists();
 extern "C" void ensure_no_empty_db_files(bool sweep);
 extern "C" int storage_path_state_c();
 extern "C" char* recorded_storage_path_c();
+extern "C" bool storage_scan_log_requested_c();
+extern "C" void log_storage_scan_c(const char* enumeration_json);
 extern "C" void check_delete_files_for_upgrade();
 extern "C" void check_remove_lang_index_dirs();
 extern "C" void remove_download_temp_folder();
@@ -470,6 +473,19 @@ int start(int argc, char* argv[]) {
 
   // QApplication has to be constructed before other windows or dialogs.
   QApplication app(argc, argv);
+
+  // Diagnostic: with a log-storage-scan.txt marker in the internal app root,
+  // dump the storage enumeration and the tier-1 scan to the log. The
+  // enumeration is otherwise only reachable from the storage dialogs, so on a
+  // healthy install there is no way to see what the app makes of the device's
+  // volumes — and the Android getStorageVolumes() pass fails silently when a
+  // JNI signature is wrong. Costs one try_exists() when the marker is absent.
+  // The marker is not consumed; delete it to stop dumping.
+  // See docs/relocated-storage-recovery.md.
+  if (storage_scan_log_requested_c()) {
+    const QByteArray enumeration = get_app_data_storage_paths_json().toUtf8();
+    log_storage_scan_c(enumeration.constData());
+  }
 
   // Apply the theme's link colours to the *application* palette immediately.
   // This must happen before the QML engine loads: rich-text <a href> anchors

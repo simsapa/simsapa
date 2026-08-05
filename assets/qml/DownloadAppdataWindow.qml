@@ -90,8 +90,19 @@ ApplicationWindow {
                 }
             });
         } else if (root.is_mobile) {
-            // On mobile, show storage dialog for initial setup (not upgrade)
-            storage_dialog.open();
+            // On mobile, show storage dialog for initial setup (not upgrade).
+            //
+            // Unless there is only one location to offer — a device with no
+            // memory card has exactly one, once the emulated view of the
+            // internal storage has been de-duplicated away — in which case the
+            // dialog would be a modal asking the user to choose between one
+            // option. auto_select_single_location() records it and returns
+            // true; anything else (several locations, or a failed write) falls
+            // through to the dialog.
+            // See docs/relocated-storage-recovery.md.
+            if (!storage_dialog.auto_select_single_location()) {
+                storage_dialog.open();
+            }
         }
     }
 
