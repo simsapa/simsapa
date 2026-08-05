@@ -196,9 +196,41 @@ TestCase {
     }
 
     function test_probeable_paths_exclude_unusable_rows() {
-        var paths = candidates.probeable_paths();
+        var paths = candidates.probeable_paths(false);
         compare(paths.length, 3);
         compare(paths.indexOf("/storage/FFFF-9999"), -1);
+    }
+
+    function test_probeable_paths_can_be_limited_to_selectable_rows() {
+        // A probe writes a file into the candidate directory, so Database
+        // Validation — where group 2 and the recorded row are shown but cannot
+        // be picked — must not touch them for a verdict nobody can act on.
+        candidates.selectable_groups = ["found"];
+        candidates.exclude_recorded = true;
+
+        var paths = candidates.probeable_paths(true);
+        compare(paths.length, 1);
+        compare(paths[0], "/data/user/0/app/files");
+
+        // The startup dialog, where both groups are selectable, still probes
+        // every non-unusable row.
+        candidates.selectable_groups = ["found", "available"];
+        candidates.exclude_recorded = false;
+        compare(candidates.probeable_paths(true).length, 3);
+    }
+
+    function test_selectable_count_follows_the_entry_point_rules() {
+        // The first-run dialog auto-selects when there is exactly one choice;
+        // counting rows the user cannot pick would turn that into a modal
+        // offering a single option.
+        compare(candidates.selectable_count(), 3);
+
+        candidates.selectable_groups = ["found"];
+        candidates.exclude_recorded = true;
+        compare(candidates.selectable_count(), 1);
+
+        candidates.selection_enabled = false;
+        compare(candidates.selectable_count(), 0);
     }
 
     function test_a_pending_row_stays_selectable() {

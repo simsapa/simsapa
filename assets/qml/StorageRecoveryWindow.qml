@@ -212,7 +212,9 @@ ApplicationWindow {
     // ── Tier-2 probes (FR-31, FR-32) ───────────────────────────────────────
 
     function start_probes() {
-        var paths = candidates_list.probeable_paths();
+        // Not selectable_only: on this screen both groups can be picked, so
+        // every non-unusable row's verdict can change what the user may do.
+        var paths = candidates_list.probeable_paths(false);
         var request_id = "" + root.probe_generation;
 
         for (var i = 0; i < paths.length; i++) {
@@ -242,11 +244,33 @@ ApplicationWindow {
                 return;
             }
 
-            candidates_list.apply_probe_verdict(path,
-                                                verdict.is_usable === true,
-                                                verdict.unusable_reason === undefined
-                                                    ? "" : verdict.unusable_reason);
+            var is_usable = verdict.is_usable === true;
+            var reason = verdict.unusable_reason === undefined ? "" : verdict.unusable_reason;
+
+            candidates_list.apply_probe_verdict(path, is_usable, reason);
+            // The two lists are two views of the SAME scan — the read-only one
+            // beneath the "not available" message is the same picture of the
+            // device. A verdict merged into only one of them would let the user
+            // move between screens and be told two different things about one
+            // volume.
+            unavailable_list.apply_probe_verdict(path, is_usable, reason);
+
+            root.rebranch_if_the_last_hit_was_demoted();
         }
+    }
+
+    // A probe that demotes the last remaining hit invalidates the screen the
+    // user is looking at: "Existing Simsapa data was found" with nothing to
+    // adopt, and — in the unreachable state — no Try Again button to get out of
+    // it. Re-branch on the same state with the refreshed rows, which is where
+    // tier 1 would have sent them had it known.
+    function rebranch_if_the_last_hit_was_demoted() {
+        if (views_stack.currentIndex !== root.screen_selection) return;
+        if (candidates_list.found_count() > 0) return;
+
+        logger.info("Recovery: the last found installation was demoted by its probe; "
+                    + "re-branching on state=" + root.storage_state);
+        root.branch_on_state();
     }
 
     // ── Outcomes ───────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@
 #include "errors.h"
 #include "utils.h"
 #include "window_manager.h"
+#include "storage_recovery_window.h"
 #include "sutta_search_window.h"
 #include "global_hotkey_manager.h"
 #include "system_palette.h"
@@ -610,6 +611,8 @@ int start(int argc, char* argv[]) {
   const bool skip_for_upgrade = (storage_state == StoragePathState::ReachableEmpty
                                  && peek_auto_start_download_c());
 
+  bool recovery_window_shown = false;
+
   if (is_mobile && storage_needs_recovery && !skip_for_upgrade) {
 
     log_info_c(QString("Starting the storage recovery flow; recorded path state: %1")
@@ -620,7 +623,21 @@ int start(int argc, char* argv[]) {
     // The recovery window resolves the flow itself and hands off to
     // DownloadAppdataWindow (created by its C++ host) for the outcomes that need
     // a download — all within this single app.exec() lifetime.
-    AppGlobals::manager->create_storage_recovery_window();
+    StorageRecoveryWindow* recovery = AppGlobals::manager->create_storage_recovery_window();
+
+    // If the QML failed to load there is no window at all, and entering
+    // app.exec() would hang on a blank screen forever: with nothing on screen no
+    // window can ever close, so quitOnLastWindowClosed never fires. Fall through
+    // to the ordinary first-run window instead — the recovery flow is lost for
+    // this launch, but the user still reaches a working setup screen.
+    recovery_window_shown = (recovery != nullptr && recovery->m_root != nullptr);
+    if (!recovery_window_shown) {
+      log_error_c("The storage recovery window could not be created; "
+                  "falling back to the first-run download window.");
+    }
+  }
+
+  if (recovery_window_shown) {
 
     log_info_c("app.exec()");
     int status = app.exec();

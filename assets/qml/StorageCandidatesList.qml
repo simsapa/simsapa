@@ -209,14 +209,38 @@ Item {
         }
     }
 
-    // Paths worth probing: everything not already classified unusable. The
-    // message screens never call this — probing where nothing can be selected
-    // gains nothing and touches volumes needlessly.
-    function probeable_paths(): var {
+    // How many rows the user could actually pick, under this entry point's
+    // rules. Not row_count (which includes unusable rows) and not found_count():
+    // the first-run dialog auto-selects when there is exactly ONE choice, and
+    // counting rows the user cannot pick would turn that into a modal offering a
+    // single option.
+    function selectable_count(): int {
+        var n = 0;
+        for (var i = 0; i < rows_model.count; i++) {
+            if (root.is_selectable(i)) n++;
+        }
+        return n;
+    }
+
+    // Paths worth probing.
+    //
+    // A probe writes a throwaway SQLite database into the candidate directory,
+    // so it is only ever run where its verdict can change what the user is
+    // allowed to do. `selectable_only` is what Database Validation needs: there
+    // the `available` group and the recorded path's own row are shown but not
+    // selectable, and probing them would touch volumes to produce a demotion
+    // nobody can act on. The startup dialog passes false (both groups are
+    // selectable there, and its own confirm button is what a verdict gates).
+    //
+    // The message screens never call this at all — nothing can be selected on
+    // them, so nothing is probed.
+    function probeable_paths(selectable_only: bool): var {
         var paths = [];
         for (var i = 0; i < rows_model.count; i++) {
             var r = rows_model.get(i);
-            if (r.group !== "unusable") paths.push(r.path);
+            if (r.group === "unusable") continue;
+            if (selectable_only && !root.is_selectable(i)) continue;
+            paths.push(r.path);
         }
         return paths;
     }

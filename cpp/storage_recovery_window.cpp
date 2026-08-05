@@ -17,7 +17,14 @@ StorageRecoveryWindow::StorageRecoveryWindow(QApplication* app, QObject* parent)
 void StorageRecoveryWindow::setup_qml() {
     QUrl view_qml(QStringLiteral("qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/StorageRecoveryWindow.qml"));
     m_engine = new QQmlApplicationEngine(view_qml, this);
-    m_root = m_engine->rootObjects().constFirst();
+
+    // Never constFirst() on a possibly-empty list: a QML load failure leaves
+    // rootObjects() empty and constFirst() is undefined behaviour there. The
+    // null is the caller's signal to fall back to the ordinary first-run window
+    // — this window is the app's only one at that point, so entering app.exec()
+    // with nothing on screen would hang with a blank display and no way out
+    // (no window can close, so quitOnLastWindowClosed never fires).
+    m_root = m_engine->rootObjects().isEmpty() ? nullptr : m_engine->rootObjects().constFirst();
 
     if (m_root == nullptr) {
         log_error_c("StorageRecoveryWindow: the QML root object is null");

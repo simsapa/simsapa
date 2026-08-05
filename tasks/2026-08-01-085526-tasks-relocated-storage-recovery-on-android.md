@@ -22,10 +22,10 @@ seem to disagree, the PRD wins — flag it rather than improvising.
 - `cpp/gui.cpp` - startup sequence (`start()` at `:344`): predicate evaluation before `init_app_globals()`, sweep gating, the new recovery-flow branch replacing `if (!appdata_db_exists())` at `:486`. **Done in 2.0:** `StoragePathState` enum mirroring the FFI ints, predicate + record before `init_app_globals()`, `ensure_no_empty_db_files(!unreachable)`, the two destructive sweeps wrapped with a logged skip, FR-2 exemption comments.
 - `cpp/utils.cpp` / `cpp/utils.h` - `get_app_data_storage_paths()` (`:143`), `createStorageInfo()` (`:107`); gains the `getStorageVolumes()` pass and mounted/read-only classification (tier 1 only). **Done in 3.0:** `is_usable` / `unusable_reason` defaults in `createStorageInfo()`, `android_external_storage_state()`, `append_unmatched_storage_volumes()`. **Done in 5.10c:** `android_storage_volume_for_path()` (`StorageManager.getStorageVolume(File)`, API 24) and the exact `StorageVolume.equals()` match, with the three string tests demoted to fallbacks and a `by=` field in the per-volume log line. **Android-only code — not compiled by `make build`;** syntax-check it with the NDK clang against the Android Qt headers (`-fsyntax-only --target=aarch64-linux-android27`) until a real Android build runs.
 - `assets/qml/StorageRecoveryWindow.qml` - **new**: the recovery flow host `ApplicationWindow` (startup entry point, §6 recommendation). **Done in 5.0:** starts **invisible**, posts its first scan with `Qt.callLater` (out of the engine load, and so the `reachable_empty`-with-no-hits short-circuit never flashes a screen), three screens (selection / unavailable / terminal message), the `download_here` + `declined` handoff signals, tier-2 probes with a generation id, and the FR-37 save-error dialog.
-- `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`). **Done in 5.0:** string-based `QObject::connect` to the QML root's two handoff signals, `run_first_time_install(skip_storage_dialog)` (creates `DownloadAppdataWindow`, sets the property, *then* hides the recovery window so the app is never momentarily windowless).
+- `cpp/storage_recovery_window.h` / `cpp/storage_recovery_window.cpp` - **new**: C++ host loading the recovery QML (mirrors `download_appdata_window.{h,cpp}`). **Done in 5.0:** string-based `QObject::connect` to the QML root's two handoff signals, `run_first_time_install(skip_storage_dialog)` (creates `DownloadAppdataWindow`, sets the property, *then* hides the recovery window so the app is never momentarily windowless). **Done in 5.11:** guarded `m_root` read + `gui.cpp` falls back to the first-run window when it is null (a windowless `app.exec()` hangs forever).
 - `cpp/window_manager.h` / `cpp/window_manager.cpp` - `create_storage_recovery_window()` next to `create_download_appdata_window()` (`window_manager.h:28`).
 - `CMakeLists.txt` - register the new `.cpp` in the `cpp_files` list (`:223-241`).
-- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`. **Done in 5.0:** `ListView` sections over the pre-sorted scan rows, `selectable_groups` / `selection_enabled` / `exclude_recorded`, `preselect_single_hit()`, `apply_probe_verdict()` (demote-only, clears a demoted selection), normalized path matching. Row selectability is computed from the delegate's **required properties**, not from a function call — a function is not re-evaluated when a model role changes, so a demoted row would have stayed clickable.
+- `assets/qml/StorageCandidatesList.qml` - **new**: the shared grouped-list component (three groups, one delegate) used by the recovery dialog, the FR-23 message, FR-19, and `StorageDialog`. **Done in 5.0:** `ListView` sections over the pre-sorted scan rows, `selectable_groups` / `selection_enabled` / `exclude_recorded`, `preselect_single_hit()`, `apply_probe_verdict()` (demote-only, clears a demoted selection), normalized path matching. Row selectability is computed from the delegate's **required properties**, not from a function call — a function is not re-evaluated when a model role changes, so a demoted row would have stayed clickable. **Done in 5.11:** `probeable_paths(selectable_only)` (6.2 passes `true`) and `selectable_count()` (7.1's auto-select count).
 - `assets/qml/StorageDialog.qml` - unusable rows (FR-28), tier-2 probes, FR-37 failed-write handling at the Select button (`:190`).
 - `assets/qml/DownloadAppdataWindow.qml` - `skip_storage_dialog` property gating `storage_dialog.open()` (`:93-94`). **Done in 5.0**, plus `skip_auto_start_download` (5.8a), which suppresses the upgrade marker on the "set up a new database" handoff.
 - `cpp/download_appdata_window.{h,cpp}` - (5.8a) takes a `QVariantMap` of **initial** properties, applied via `QQmlApplicationEngine::setInitialProperties()` before `load()` so they are in place before `Component.onCompleted`; `m_root` is now nullptr rather than UB on an empty root-object list. `WindowManager::create_download_appdata_window()` passes the map through (defaulted, so existing callers are unchanged).
@@ -569,7 +569,53 @@ handoff — so the task file is what was wrong.
   the exact match fires — folded into 9.2 as 9.2e; adopted-storage hardware
   confirmation remains 9.1c.
 
+### 5.11 Review fixes (2026-08-05, second review before 6.0)
+
+A review of 1.0–5.10 against the PRD found three further defects. All are in
+code 6.0 and 7.0 are about to reuse or depend on; fixed together.
+`make qml-test` 128 passed (126 + 2 new cases), build clean.
+
+- **`cpp/storage_recovery_window.cpp` called `rootObjects().constFirst()` on a
+  possibly-empty list** — the exact UB fixed in `DownloadAppdataWindow` at 5.8a,
+  not mirrored here. The consequence was worse than the UB: on a QML load
+  failure `setup_qml()` logged and returned having created **no window**, and
+  `gui.cpp` then entered `app.exec()` with nothing on screen — where no window
+  can ever close, so `quitOnLastWindowClosed` never fires and the app hangs on a
+  blank display with no way out. Now a guarded `isEmpty() ? nullptr : …`, and
+  `gui.cpp` checks `recovery->m_root` and **falls through to the ordinary
+  first-run download window** when it is null. The recovery flow is lost for
+  that launch, but the user reaches a working setup screen instead of a hang.
+- **`probeable_paths()` had no way to exclude non-selectable rows**, which 6.2
+  needs: in Database Validation the `available` group and the recorded path's
+  own row are shown but cannot be picked, and probing them writes
+  `simsapa-write-probe.sqlite3` into volumes to produce a demotion nobody can
+  act on. It now takes `selectable_only`; the startup dialog passes `false`
+  (both groups are selectable there), 6.2 must pass `true`. §12.5's tier-2
+  pseudo-code says `group != UNUSABLE`, but it describes the startup dialog —
+  the task-file rule ("selectable rows only") is the correct reading for 6.2.
+- **A tier-2 demotion could leave the selection screen lying.** When the probe
+  demoted the last `found` row, the user was left on a screen headed *"Existing
+  Simsapa data was found"* with nothing to adopt and — in `unreachable` — no Try
+  Again button to escape it. `rebranch_if_the_last_hit_was_demoted()` now re-runs
+  `branch_on_state()` on the same (not re-scanned) state, which is where tier 1
+  would have sent the user had it known: `unreachable` → the FR-23 message,
+  `reachable_empty` → §12.4's `run_first_time_install(skip_storage_dialog =
+  false)`. Verdicts are now merged into **both** `StorageCandidatesList`
+  instances, because the read-only list under the FR-23 message is the same
+  picture of the device — merging into one only would tell the user two
+  different things about one volume as they move between screens.
+- **`selectable_count()` added for 7.1** (see the 7.0 carry-forward note).
+
 ### 6.0 Database Validation entry point
+
+**Carried forward from the 5.11 review — do not rediscover these:**
+- Probe with `probeable_paths(true)`. See 5.11.
+- The mode is `selectable_groups = ["found"]` + `exclude_recorded = true`;
+  `selection_enabled` stays true. Group 2 then renders greyed by itself.
+- Branch on `found_count_excluding_recorded()`, never `found_count()` (5.10).
+- `DatabaseValidationDialog` needs its own `StorageManager { id: … }` instance;
+  its `probe_generation` is per-instance, so its probes and the recovery
+  window's cannot cancel each other.
 
 **Specs to keep in mind:**
 - §12.7 is the flow authority. Mobile only (`is_mobile`), same predicate, same scan, same `StorageCandidatesList` component (FR-16, FR-17).
@@ -587,6 +633,40 @@ Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow`
 - [ ] 6.4 Build + `make qml-test`; on-device check of §8 test 5 (find + adopt + restart) and the state-`ok` non-selectable current-selection row. **The device half is batched into the 9.2 session** — check 9.2b with it.
 
 ### 7.0 First-run `StorageDialog` integration
+
+**Carried forward from the 5.11 review — five integration risks, each of which
+would otherwise be found on a device or not at all:**
+
+1. **3.12's auto-select will regress silently unless it is re-expressed.**
+   `auto_select_single_location()` branches on `storage_locations_model.count`,
+   which today holds *only usable* rows because the temporary skip guards drop
+   the rest. `StorageCandidatesList.row_count` includes unusable rows, so a
+   phone with one usable location plus one visible-but-unusable volume would
+   stop auto-selecting and show a one-choice modal again — the exact prompt 3.12
+   removed, with no error anywhere. Use **`selectable_count()`** (added in 5.11,
+   tested), not `row_count` and not `found_count()`.
+2. **Delete both temporary guards** in `StorageDialog.Component.onCompleted` —
+   the emulated-duplicate skip and the `is_usable === false` skip. Both policies
+   already live in `scan_storage_candidates()`; leaving them applies the first
+   twice and hides the unusable rows FR-28 requires the dialog to show.
+3. **`megabytes_total` is not in the scan row shape**, so the reworked dialog
+   loses today's *"X GB free of Y GB"*. Decide explicitly: add the field in
+   `classify_storage_candidate()` (and to the delegate), or accept "GB free"
+   only. Do not let it disappear by accident.
+4. **Hardcoded light-theme colours** remain in `StorageDialog.qml` (`#e3f2fd`,
+   `#ddd`, `#555`, `#1976d2`) — the same defect fixed in `StorageCandidatesList`
+   during 5.9, which was explicitly deferred to here. Reusing the shared
+   component fixes it; a partial reuse must not leave them behind.
+5. **FR-30's "warning + figure"**: the free-space label in
+   `StorageCandidatesList` is `visible: group === "available"`, so a low-space
+   **`found`** row shows the warning with no figure. Mostly theoretical at first
+   run (rows there are almost always `available`), but if 7.1 lets `found` rows
+   be picked as a download destination, relax that binding.
+
+Also note the dialog is a destination picker, not an adoption UI: with the scan
+JSON its selectable groups are `["found", "available"]` (a location that already
+holds an installation is still a valid place to download to), which is *not*
+6.0's rule.
 
 **Specs to keep in mind:**
 - `StorageDialog` gains the unusable rows under the same "Not usable for the database" heading, appended after selectable locations (FR-28) — reuse `StorageCandidatesList` or at minimum its delegate, per §6's one-delegate note.
@@ -610,7 +690,7 @@ Note: despite its name, `DatabaseValidationDialog.qml` is an `ApplicationWindow`
 
 **Dependencies:** everything above.
 
-- [ ] 8.1 Write `docs/relocated-storage-recovery.md`: the four-state predicate and where it runs, the FR-20/20a fallback semantics, the sweep gating and FR-36a's `sweep` flag, the two-tier classification and why the probe is dialog-only, the recovery flow + outcome matrix (link to the PRD), the `skip_storage_dialog` rule, the marker peek, the FR-37 verified write, and the §8 `adb` simulation recipe for future debugging.
+- [ ] 8.1 Write `docs/relocated-storage-recovery.md`: the four-state predicate and where it runs, the FR-20/20a fallback semantics, the sweep gating and FR-36a's `sweep` flag, the two-tier classification and why the probe is dialog-only, the recovery flow + outcome matrix (link to the PRD), the `skip_storage_dialog` rule, the marker peek, the FR-37 verified write, and the §8 `adb` simulation recipe for future debugging. **14 source files across `assets/qml`, `backend/src`, `bridges/src` and `cpp` already point readers at this path** (`grep -rl docs/relocated-storage-recovery.md`) — it is the branch's most-referenced missing artifact, so 8.1 is not optional polish.
 - [ ] 8.2 Add the doc pointer to `CLAUDE.md`'s notable feature docs list; update `PROJECT_MAP.md` with the new QML components, bridge methods, and backend functions.
 - [ ] 8.3 Run the full suite: `make build -B`, `make test` (Rust + QML + JS). Fix anything that surfaced.
 - [ ] 8.4 Verify test 9's startup-time claim: add temporary `STARTUP-TRACE` logs around the predicate, scan and probes; confirm on a normal (`ok`-state) launch that only the predicate runs pre-`exec` and costs nothing measurable; remove or keep the traces per the existing convention in the codebase.
@@ -662,6 +742,12 @@ component 6.0 and 7.0 are about to change.
 - [ ] 9.2c 7.4's runs — unusable location cannot be chosen at first run;
   low-space location selectable with its warning.
 - [ ] 9.2d 8.4's `STARTUP-TRACE` timing check on a normal `ok`-state launch.
+- [ ] 9.2f The 5.11 fixes: with two candidates where the *only* hit is on a
+  volume the probe rejects, the selection screen must not be left headed
+  "Existing Simsapa data was found" with nothing selectable — it re-branches to
+  the FR-23 message (`unreachable`) or into the ordinary download flow
+  (`reachable_empty`). Simulate by making the hit's directory read-only, or by
+  planting the hit on a path the SQLite probe cannot use.
 - [ ] 9.2e 5.10c's exact volume match: every volume's log line reads
   `matched=true`, and the emulated/primary one now reports `by=volume` rather
   than falling through to `by=primary` — proof that `getStorageVolume(File)`
