@@ -1019,16 +1019,19 @@ Item {
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(400, parent ? parent.width - 40 : 400)
 
         property int current_samples_per_second: 0
 
         ColumnLayout {
+            anchors.fill: parent
             spacing: 12
 
             Label {
                 text: "Current: " + resample_dialog.current_samples_per_second + " samples/sec"
                     + " (" + root.waveform_num_bars + " total)"
                 wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
 
             RowLayout {
@@ -1053,6 +1056,7 @@ Item {
                 font.pointSize: 9
                 color: palette.placeholderText
                 wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
 
@@ -1072,8 +1076,10 @@ Item {
         id: marker_time_dialog
         title: marker_time_dialog.is_position ? "Edit Position" : "Edit Range"
         standardButtons: Dialog.Ok | Dialog.Cancel
+        parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
+        width: Math.min(420, parent ? parent.width - 40 : 420)
 
         property string marker_id: ""
         property bool is_position: true
@@ -1090,46 +1096,50 @@ Item {
         }
 
         ColumnLayout {
+            anchors.fill: parent
             spacing: 12
 
             // Position marker fields
             RowLayout {
+                Layout.fillWidth: true
                 visible: marker_time_dialog.is_position
                 spacing: 4
 
                 Label { text: "Position:" }
-                SpinBox { id: pos_min_spin; from: 0; to: 999; editable: true; implicitWidth: 80 }
+                SpinBox { id: pos_min_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "m" }
-                SpinBox { id: pos_sec_spin; from: 0; to: 59; editable: true; implicitWidth: 80 }
+                SpinBox { id: pos_sec_spin; from: 0; to: 59; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "s" }
-                SpinBox { id: pos_ms_spin; from: 0; to: 999; editable: true; implicitWidth: 90 }
+                SpinBox { id: pos_ms_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 90; Layout.minimumWidth: 55 }
                 Label { text: "ms" }
             }
 
             // Range marker fields
             RowLayout {
                 visible: !marker_time_dialog.is_position
+                Layout.fillWidth: true
                 spacing: 4
 
                 Label { text: "Start:" }
-                SpinBox { id: range_start_min_spin; from: 0; to: 999; editable: true; implicitWidth: 80 }
+                SpinBox { id: range_start_min_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "m" }
-                SpinBox { id: range_start_sec_spin; from: 0; to: 59; editable: true; implicitWidth: 80 }
+                SpinBox { id: range_start_sec_spin; from: 0; to: 59; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "s" }
-                SpinBox { id: range_start_ms_spin; from: 0; to: 999; editable: true; implicitWidth: 90 }
+                SpinBox { id: range_start_ms_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 90; Layout.minimumWidth: 55 }
                 Label { text: "ms" }
             }
 
             RowLayout {
                 visible: !marker_time_dialog.is_position
+                Layout.fillWidth: true
                 spacing: 4
 
                 Label { text: "End:  " }
-                SpinBox { id: range_end_min_spin; from: 0; to: 999; editable: true; implicitWidth: 80 }
+                SpinBox { id: range_end_min_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "m" }
-                SpinBox { id: range_end_sec_spin; from: 0; to: 59; editable: true; implicitWidth: 80 }
+                SpinBox { id: range_end_sec_spin; from: 0; to: 59; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 80; Layout.minimumWidth: 55 }
                 Label { text: "s" }
-                SpinBox { id: range_end_ms_spin; from: 0; to: 999; editable: true; implicitWidth: 90 }
+                SpinBox { id: range_end_ms_spin; from: 0; to: 999; editable: true; Layout.fillWidth: true; Layout.preferredWidth: 90; Layout.minimumWidth: 55 }
                 Label { text: "ms" }
             }
 

@@ -85,7 +85,7 @@ ApplicationWindow {
         id: add_collection_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Add Collection"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -138,7 +138,7 @@ ApplicationWindow {
         id: add_chant_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Add Chant"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -194,7 +194,7 @@ ApplicationWindow {
         id: add_section_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 500
+        width: Math.min(500, parent ? parent.width - 40 : 500)
         title: "Add Section"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -264,7 +264,7 @@ ApplicationWindow {
         id: edit_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 500
+        width: Math.min(500, parent ? parent.width - 40 : 500)
         title: "Edit"
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -344,17 +344,22 @@ ApplicationWindow {
         id: remove_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Confirm Removal"
         modal: true
         standardButtons: Dialog.Yes | Dialog.No
 
         property string remove_title: ""
 
-        Label {
-            text: "Remove '" + remove_dialog.remove_title + "' and all its contents?"
-            font.pointSize: root.pointSize
-            wrapMode: Text.WordWrap
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: "Remove '" + remove_dialog.remove_title + "' and all its contents?"
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
         }
 
         onAccepted: {
@@ -377,15 +382,20 @@ ApplicationWindow {
         id: export_info_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Export"
         modal: true
         standardButtons: Dialog.Ok
 
-        Label {
-            text: "Select the items you want to export, then click the Export button again."
-            font.pointSize: root.pointSize
-            wrapMode: Text.WordWrap
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: "Select the items you want to export, then click the Export button again."
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
         }
 
         onAccepted: {
@@ -399,15 +409,20 @@ ApplicationWindow {
         id: export_no_selection_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Export"
         modal: true
         standardButtons: Dialog.Ok
 
-        Label {
-            text: "No items selected for export."
-            font.pointSize: root.pointSize
-            wrapMode: Text.WordWrap
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: "No items selected for export."
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
         }
     }
 
@@ -417,17 +432,22 @@ ApplicationWindow {
         id: export_result_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Export"
         modal: true
         standardButtons: Dialog.Ok
 
         property string result_message: ""
 
-        Label {
-            text: export_result_dialog.result_message
-            font.pointSize: root.pointSize
-            wrapMode: Text.WordWrap
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: export_result_dialog.result_message
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
         }
     }
 
@@ -437,17 +457,22 @@ ApplicationWindow {
         id: import_result_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         title: "Import"
         modal: true
         standardButtons: Dialog.Ok
 
         property string result_message: ""
 
-        Label {
-            text: import_result_dialog.result_message
-            font.pointSize: root.pointSize
-            wrapMode: Text.WordWrap
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: import_result_dialog.result_message
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
         }
     }
 
@@ -457,7 +482,7 @@ ApplicationWindow {
         id: importing_dialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 300
+        width: Math.min(300, parent ? parent.width - 40 : 300)
         title: "Import"
         modal: true
         closePolicy: Popup.NoAutoClose

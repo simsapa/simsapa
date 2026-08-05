@@ -2300,7 +2300,7 @@ ${query_text}`;
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok
-        width: 400
+        width: Math.min(root.width - 40, 400)
 
         property string status_text: ""
 
