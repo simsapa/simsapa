@@ -2257,6 +2257,14 @@ ${query_text}`;
     AboutDialog {
         id: about_dialog
         extra_top_margin: root.extra_top_margin
+        storage_diagnostics_dialog: storage_diagnostics_dialog
+    }
+
+    // One shared instance: both AboutDialog and DatabaseValidationDialog open
+    // this same window. See docs/storage-diagnostics.md.
+    StorageDiagnosticsDialog {
+        id: storage_diagnostics_dialog
+        extra_top_margin: root.extra_top_margin
     }
 
     SystemPromptsDialog {
@@ -2277,6 +2285,7 @@ ${query_text}`;
     DatabaseValidationDialog {
         id: database_validation_dialog
         extra_top_margin: root.extra_top_margin
+        storage_diagnostics_dialog: storage_diagnostics_dialog
     }
 
     DhammaTextSourcesDialog {

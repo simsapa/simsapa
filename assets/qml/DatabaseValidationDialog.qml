@@ -24,6 +24,14 @@ ApplicationWindow {
     readonly property int pointSize: is_mobile ? 14 : 12
     required property int extra_top_margin
 
+    // The one shared StorageDiagnosticsDialog instance, declared in
+    // SuttaSearchWindow.qml. That window owns the whole run — the busy state,
+    // the completion signal and the keep-screen-on bracket — so this dialog
+    // only calls open_and_run(). Its modality matches this dialog's
+    // ApplicationModal, or it would open dead to clicks.
+    // See docs/storage-diagnostics.md.
+    property var storage_diagnostics_dialog: null
+
     // Theme support
     property bool is_dark: theme_helper.is_dark
 
@@ -1175,6 +1183,23 @@ ApplicationWindow {
                     enabled: !root.export_in_progress
                     onClicked: {
                         root.handle_remove_all_and_redownload();
+                    }
+                }
+
+                // A user investigating "no search results" is likely to open
+                // this dialog first, so the diagnostics are reachable from
+                // here as well as from the About dialog. All platforms.
+                Button {
+                    text: "Run Storage Diagnostics"
+                    font.pointSize: root.pointSize
+                    Layout.fillWidth: true
+                    enabled: !(root.storage_diagnostics_dialog && root.storage_diagnostics_dialog.is_running)
+                    onClicked: {
+                        if (!root.storage_diagnostics_dialog) {
+                            logger.error("DatabaseValidationDialog: storage_diagnostics_dialog is not set");
+                            return;
+                        }
+                        root.storage_diagnostics_dialog.open_and_run();
                     }
                 }
 

@@ -382,12 +382,21 @@ defects were found and fixed in place; two questions went to PRD §11 (3 and 4).
 - `assets/qml/AboutDialog.qml` — the "Run Storage Diagnostics" button (FR-1),
   which only calls `open_and_run()`. Root is an **`ApplicationWindow`** with no
   modality set. It needs **no** `AssetManager`: the keep-screen-on bracket lives
-  in the results dialog (FR-10c).
+  in the results dialog (FR-10c). Reaches the shared window through a
+  `property var storage_diagnostics_dialog: null` bound from
+  `SuttaSearchWindow.qml` — the same object-reference shape `AppSettingsWindow`
+  already uses for `database_validation_dialog` (`AppSettingsWindow.qml:29`),
+  since a sibling's `id` is not in scope from inside another component file.
+  Its bottom button area was changed from a `RowLayout` to a full-width
+  `ColumnLayout`: a third button overflowed the window on a phone, and the row's
+  implicit width dragged the whole dialog wider than the screen (task 8.7a).
 - `assets/qml/DatabaseValidationDialog.qml` — the second entry point (FR-2).
   Also an `ApplicationWindow` root, and `modality: Qt.ApplicationModal` (`:18`) —
   the reason for finding 24. Its `AssetManager { id: manager }` (`:297`) with the
   keep-screen-on bracket at `:305`/`:326` is the **shape to copy into the results
-  dialog**, not a hook to reuse from here.
+  dialog**, not a hook to reuse from here. Carries the same
+  `property var storage_diagnostics_dialog: null` as `AboutDialog.qml`; the
+  button sits in the bottom button column above "Close".
 - `assets/qml/SuttaSearchWindow.qml` — where the shared results dialog is
   **declared**, as a third sibling alongside `AboutDialog` (`:2257`) and
   `DatabaseValidationDialog` (`:2277`). Both entry points open the one instance
@@ -949,11 +958,11 @@ two.
 
 **Depends on:** 6.0. **Blocks:** 8.0.
 
-- [ ] 7.1 Create `assets/qml/StorageDiagnosticsDialog.qml` — an
+- [x] 7.1 Create `assets/qml/StorageDiagnosticsDialog.qml` — an
       **`ApplicationWindow`** root matching its two siblings — with a monospace,
       **selectable**, scrollable text area for the summary (FR-6), and add it to
       the `qml_files` list in `bridges/build.rs` (FR-47).
-- [ ] 7.1a Declare **one** instance in `assets/qml/SuttaSearchWindow.qml`
+- [x] 7.1a Declare **one** instance in `assets/qml/SuttaSearchWindow.qml`
       alongside `AboutDialog` (`:2257`) and `DatabaseValidationDialog` (`:2277`),
       and give it a small API (e.g. `open_and_run()`) that both entry points call.
       Keep its `Component.onCompleted` trivial, or create it lazily with
@@ -961,44 +970,44 @@ two.
       the engine load before `app.exec()` — see §6 of
       `docs/startup-sequence-and-caches.md`. Do **not** wrap it in a `Loader`: the
       root is an `ApplicationWindow`.
-- [ ] 7.1b Set **`modality: Qt.ApplicationModal`** on the root (FR-10a, finding
+- [x] 7.1b Set **`modality: Qt.ApplicationModal`** on the root (FR-10a, finding
       24). `DatabaseValidationDialog.qml:18` is `Qt.ApplicationModal`, so a
       non-modal results window opened from it is input-blocked while that modal
       stays open — the window appears and does not respond. A modal shown *later*
       heads the modal stack and is not itself blocked, so matching the modality is
       the fix. `AboutDialog` sets no modality, so **verify from the Database
       Validation entry point specifically** — the About path cannot reveal this.
-- [ ] 7.1c Declare `required property int extra_top_margin` on the root and bind
+- [x] 7.1c Declare `required property int extra_top_margin` on the root and bind
       it in `SuttaSearchWindow.qml` as `extra_top_margin: root.extra_top_margin`,
       matching every sibling at `:2257-2295` (FR-10b, finding 25). An unbound
       `required property` fails at **instantiation**, not at build, so
       `make build -B` passing proves nothing here.
-- [ ] 7.2 Add the **Copy** button reusing the invisible-`TextEdit`
+- [x] 7.2 Add the **Copy** button reusing the invisible-`TextEdit`
       `clipboard_helper` pattern (`AboutDialog.qml:63-71`), copying the entire
       summary (FR-7), with a brief "Copied" label confirmation that reverts after a
       moment (§6).
-- [ ] 7.3 Add the **Close** button (FR-8) and the instruction line telling the user
+- [x] 7.3 Add the **Close** button (FR-8) and the instruction line telling the user
       to send both the copied text **and** their `log.txt`, noting that `log.txt`
       can be saved or copied from the log-file list in the About dialog (FR-9).
-- [ ] 7.4 Apply the `ApplicationWindow` rules of FR-10 — and only those, since
+- [x] 7.4 Apply the `ApplicationWindow` rules of FR-10 — and only those, since
       the root is not a `Popup`: the root content item is anchored to its parent
       (which Qt has already reparented to the inset `contentItem`), never sized
       from `root.width`/`root.height`, and **no** `topPadding` or `padding` is
       assigned on the root, which would silently replace Qt's safe-area binding.
       Sizing the *window* itself is fine and expected — `DatabaseValidationDialog.qml:12-13`
       (`is_mobile ? Screen.desktopAvailableWidth : 600`) is the shape to copy.
-- [ ] 7.5 Show a busy indicator while the run is in flight and disable the trigger
+- [x] 7.5 Show a busy indicator while the run is in flight and disable the trigger
       button (FR-4); connect `SuttaBridge.storageDiagnosticsCompleted` **in the
       results dialog** to populate the text area and re-enable. This dialog is the
       single owner of the run state (FR-10c): the `Connections`, the "initiated
       here" guard and the busy flag all live here, not in the entry points.
-- [ ] 7.6 Add the **"Run Storage Diagnostics"** button to the bottom button row of
+- [x] 7.6 Add the **"Run Storage Diagnostics"** button to the bottom button row of
       `assets/qml/AboutDialog.qml`, alongside "Copy App Info" and "Close"
       (FR-1), on **all** platforms with no mobile-only gate (FR-3).
-- [ ] 7.7 Add the same action to `assets/qml/DatabaseValidationDialog.qml`
+- [x] 7.7 Add the same action to `assets/qml/DatabaseValidationDialog.qml`
       (FR-2), opening the **single** instance declared in `SuttaSearchWindow.qml`
       by task 7.1a rather than declaring a second one.
-- [ ] 7.8 Bracket the run with `AssetManager.set_keep_screen_on(true)` /
+- [x] 7.8 Bracket the run with `AssetManager.set_keep_screen_on(true)` /
       `(false)` **in the results dialog** — the single owner (FR-10c) — releasing
       in the completion handler on success **and** failure, guarded by the
       "initiated here" boolean (FR-5). Give the results dialog its own
@@ -1008,7 +1017,7 @@ two.
       to `AboutDialog.qml` — an earlier draft of this task did, which would have
       split the bracket and the guard across three objects listening to one
       process-global signal.
-- [ ] 7.9 Run `make qml-test`; confirm no `console.*` calls were introduced
+- [x] 7.9 Run `make qml-test`; confirm no `console.*` calls were introduced
       (FR-48) and `qmllint` is clean.
 
 ---
@@ -1056,12 +1065,25 @@ behaviour change in this whole PRD is a new button (Goal 4).
       (task 3.5a), and **`is_fulltext_searcher_ready()` is unchanged** (task 5.2a
       — it is phase-2 FR-20's to fix, and touching it here silently alters
       `/health`).
-- [ ] 8.7a Verify the two entry points **separately on a running desktop build**,
+- [x] 8.7a Verify the two entry points **separately on a running desktop build**,
       Database Validation first: the results window must be interactive when
       opened from the `Qt.ApplicationModal` Database Validation dialog (task
       7.1b), and must instantiate at all — an unbound `extra_top_margin` fails
       only at runtime (task 7.1c). Neither defect is visible from the About path
       or from a green build. (Per CLAUDE.md this is a **manual user check**, not
       an agent-run GUI test.)
+      **Done 2026-08-06 on an Android 16 device (SM-S911B, API 36) via `adb`**,
+      against `make android-beta-debug`. Both entry points open the one window
+      and it is **interactive from Database Validation** (Copy → "Copied" while
+      that ApplicationModal dialog is open), so FR-10a holds; it instantiates,
+      so `extra_top_margin` is bound. The run completed in 146 ms on internal
+      f2fs with every section populated, `nirodha`/`cessation` hits from five of
+      six indexes, `suttas/san` correctly marked *expected* on `num_docs == 0`,
+      and **no `simsapa-*` probe file left behind** (metric 5).
+      One defect was found and fixed: three buttons on one row overflowed
+      `AboutDialog`'s window on a phone and clipped "Close" — the row's implicit
+      width was also forcing the whole dialog wider than the screen, clipping
+      the log-file rows' "Copy Contents". The row is now a full-width
+      `ColumnLayout`, matching `DatabaseValidationDialog`.
 - [ ] 8.8 Add any question discovered during implementation to PRD §11 rather than
       resolving it silently (PRD §11.1).
