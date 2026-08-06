@@ -44,6 +44,7 @@ Item {
     // Search index signals
     signal rebuildSearchIndexProgress(message: string);
     signal rebuildSearchIndexCompleted(success: bool, message: string);
+    signal storageDiagnosticsCompleted(success: bool, summary: string);
 
     signal debugQueryReady(debug_json: string);
 
@@ -263,6 +264,10 @@ Item {
 
     function rebuild_search_index() {
         console.log("rebuild_search_index()");
+    }
+
+    function run_storage_diagnostics() {
+        console.log("run_storage_diagnostics()");
     }
 
     // One entry per database, plus a top-level "storage_path" object:

@@ -885,15 +885,15 @@ so the run must be spawned (FR-4); the model is
 
 **Depends on:** 5.0. **Blocks:** 7.0.
 
-- [ ] 6.1 Add `#[qsignal] storageDiagnosticsCompleted(success: bool, summary: QString)`
+- [x] 6.1 Add `#[qsignal] storageDiagnosticsCompleted(success: bool, summary: QString)`
       to `bridges/src/sutta_bridge.rs`, following the existing `#[cxx_name = …]`
       convention.
-- [ ] 6.2 Add `#[qinvokable] run_storage_diagnostics(self: Pin<&mut SuttaBridge>)`
+- [x] 6.2 Add `#[qinvokable] run_storage_diagnostics(self: Pin<&mut SuttaBridge>)`
       that captures `qt_thread()`, spawns a thread, calls the backend's
       `run_storage_diagnostics()`, and queues the signal back with the summary.
       Catch a panic in the worker (`catch_unwind`) and emit `success: false` with
       the panic message rather than losing the signal (FR-44).
-- [ ] 6.3 Add matching stubs to
+- [x] 6.3 Add matching stubs to
       `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — the method with a
       trivial body and the signal declaration — for `qmllint` (FR-47). The
       neighbouring code **is** the model to copy (finding 22, correcting review
@@ -903,7 +903,7 @@ so the run must be spawned (FR-4); the model is
       the `rebuild_search_index()` function stub is at `:264`. Add
       `signal storageDiagnosticsCompleted(success: bool, summary: string);` to
       that same group and the function stub beside `rebuild_search_index()`.
-- [ ] 6.4 Build with `make build -B` and confirm the bridge compiles and the
+- [x] 6.4 Build with `make build -B` and confirm the bridge compiles and the
       generated QML type exposes the method and signal.
 
 ---
