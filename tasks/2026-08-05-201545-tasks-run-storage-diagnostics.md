@@ -305,8 +305,9 @@ hooks into is `searcher.rs:120` (not `:121`); the sutta `content` /
 - `backend/src/storage_diagnostics.rs` — **new.** All probes, the section
   builders, the verdict deriver and the report builder returning a `String`
   (FR-45).
-- `backend/src/storage_diagnostics/mount_table.rs` — **new** (or a module inside
-  the file above). Pure `/proc/mounts` parser, fixture-tested (FR-15).
+- Mount-table parser — implemented as `parse_mount_table()` **inside**
+  `storage_diagnostics.rs` (the "module inside the file above" option), pure and
+  fixture-tested (FR-15). No separate file was needed.
 - `backend/src/lib.rs` — declare the new modules; add a diagnostics-only record
   of per-index-directory open failures (FR-31) and expose the searcher's index
   counts.
@@ -508,21 +509,21 @@ only past page 0. Every probe reports elapsed time (FR-21) and cleans up via a
 **Depends on:** 1.0 (reuses `probe_flock_support`).
 **Blocks:** 5.0 (the report builder consumes these result structs).
 
-- [ ] 2.1 Create `backend/src/storage_diagnostics.rs`, declare it in
+- [x] 2.1 Create `backend/src/storage_diagnostics.rs`, declare it in
       `backend/src/lib.rs`, and define the result types the sections produce
       (`StorageLocationInfo`, `ProbeResults`, each field carrying its own
       `Duration` and an `Option<String>` error rather than returning `Result` from
       the section as a whole).
-- [ ] 2.2 Write the pure mount-table parser:
+- [x] 2.2 Write the pure mount-table parser:
       `parse_mount_table(contents: &str, path: &Path) -> Option<MountEntry>`
       returning the mount point, filesystem type and mount options for the
       **longest mount point that prefixes** `path` (FR-15). Keep it free of I/O so
       it is fixture-testable off-device.
-- [ ] 2.3 Add the caller that reads `/proc/mounts` (guarded by `try_exists()`) and
+- [x] 2.3 Add the caller that reads `/proc/mounts` (guarded by `try_exists()`) and
       the `statfs` `f_type` numeric fallback for platforms without `/proc`, with a
       small lookup of well-known magics (ext4, F2FS, exFAT/vfat, FUSE, tmpfs) and
       the raw hex when unknown.
-- [ ] 2.4 Cover FR-14 and FR-16 (review findings 7 and 11). **Free/total space
+- [x] 2.4 Cover FR-14 and FR-16 (review findings 7 and 11). **Free/total space
       needs no new platform code and no `libc`:** `fs4` — already a direct
       dependency from task 1.1 — exports `fs4::statvfs(path)`,
       `fs4::available_space`, `fs4::free_space` and `fs4::total_space`
@@ -533,11 +534,11 @@ only past page 0. Every probe reports elapsed time (FR-21) and cleans up via a
       FR-16, derive internal-vs-external from the resolved path against the
       internal app root, not from the C++/JNI enumeration, which the backend
       cannot see.
-- [ ] 2.5 Build section A: recorded path, resolved path, an explicit "these
+- [x] 2.5 Build section A: recorded path, resolved path, an explicit "these
       differ" note, the `storage_path_state()` verdict (FR-13), free/total space
       on the volume (FR-14), the filesystem type + mount options (FR-15), and
       whether the location is internal or external (FR-16).
-- [ ] 2.5a Handle the **desktop case** of FR-13 honestly (review finding 13).
+- [x] 2.5a Handle the **desktop case** of FR-13 honestly (review finding 13).
       `storage_path_state()` short-circuits to `(Absent, None)` whenever
       `!is_mobile()` (`lib.rs:1080-1082`), so on a healthy desktop install the
       raw verdict is `absent` with no recorded path. Section A must print that as
@@ -545,13 +546,13 @@ only past page 0. Every probe reports elapsed time (FR-21) and cleans up via a
       bare `absent`, and must carry a flag the verdict deriver can read so
       task 5.4 does not fire the "storage location is unreachable" branch on
       every desktop run (FR-34, FR-37).
-- [ ] 2.6 Section B `flock` probe: call `probe_flock_support()` from task 1.0
+- [x] 2.6 Section B `flock` probe: call `probe_flock_support()` from task 1.0
       against an index directory and format the outcome as
       `supported` / `busy` / `unsupported(<errno> <NAME>)` / `error(<errno>)`,
       always printing the raw errno (FR-17). Reuse `probe_flock_support()`'s own
       `Drop` guard from task 1.3 — do **not** add a second cleanup guard for the
       same file.
-- [ ] 2.7 Section B **mmap probe** (FR-18): memory-map an existing index **segment
+- [x] 2.7 Section B **mmap probe** (FR-18): memory-map an existing index **segment
       file** read-only and read the first, a middle and the last byte, reporting
       success or the exact errno. Select the file **by size, not by extension**
       (review finding 21): take the largest regular file of at least ~8 KiB,
@@ -561,20 +562,20 @@ only past page 0. Every probe reports elapsed time (FR-21) and cleans up via a
       last reads. If no file meets the size floor, write the diagnostic's own
       probe file large enough to span several pages, mmap that instead, and say
       so explicitly in the output.
-- [ ] 2.8 Section B atomic-write probe (FR-19): write a temp file in the
+- [x] 2.8 Section B atomic-write probe (FR-19): write a temp file in the
       directory, `sync_data()`, `persist()` (rename) it over an existing target,
       then delete it — mirroring `MmapDirectory::atomic_write`
       (`mmap_directory.rs:352`).
-- [ ] 2.9 Section B plain read/write probe (FR-20): create, write, `fsync`,
+- [x] 2.9 Section B plain read/write probe (FR-20): create, write, `fsync`,
       re-read and delete a small file, so "the volume is broken" is separable from
       "the volume lacks one primitive".
-- [ ] 2.10 Wrap every probe file in a `Drop` guard with a distinctive
+- [x] 2.10 Wrap every probe file in a `Drop` guard with a distinctive
       `simsapa-…` name (FR-39, §7), and give every probe an elapsed-time
       measurement (FR-21). Each probe file gets **exactly one** guard — the
       `flock` probe's already lives in task 1.3, so 2.6 reuses it rather than
       wrapping the same path twice. Verify by test that no probe file remains
       after a run, including a run where a probe returns an error.
-- [ ] 2.11 Ensure each probe catches its own error and continues — a failing
+- [x] 2.11 Ensure each probe catches its own error and continues — a failing
       probe records its error string and the section proceeds (FR-44). Add a test
       driving the section against a non-existent directory and asserting the run
       completes with populated error strings.

@@ -43,6 +43,7 @@ pub mod waveform;
 pub mod audio;
 pub mod global_hotkeys;
 pub mod storage_probe;
+pub mod storage_diagnostics;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 
