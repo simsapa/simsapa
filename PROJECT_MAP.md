@@ -146,6 +146,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── SearchBarInput.qml
 │   │   ├── StorageCandidatesList.qml
 │   │   ├── StorageDialog.qml
+│   │   ├── StorageDiagnosticsDialog.qml
 │   │   ├── StorageRecoveryWindow.qml
 │   │   ├── SuttaHtmlView_Desktop.qml
 │   │   ├── SuttaHtmlView_Mobile.qml
@@ -167,6 +168,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `DrawerMenu.qml` - Navigation drawer menu
   - `SearchBarInput.qml`, - Search interface component
   - `AboutDialog.qml`, `StorageDialog.qml`, `ColorThemeDialog.qml`, `GlossWordSelectionDialog.qml` - Dialog windows
+  - `StorageDiagnosticsDialog.qml` - The "Run Storage Diagnostics" results window. **One** instance, declared in `SuttaSearchWindow.qml`; both `AboutDialog` and `DatabaseValidationDialog` call `open_and_run()` on it. `Qt.ApplicationModal` (or it opens dead to clicks from Database Validation) and the sole owner of the run — the completion `Connections`, the "initiated here" guard, the busy state and the keep-screen-on bracket all live in it. See `docs/storage-diagnostics.md`
   - `StorageCandidatesList.qml` - The one grouped storage-candidate list and delegate (found / available / not usable), shared by `StorageDialog`, `StorageRecoveryWindow` and `DatabaseValidationDialog`'s lookup; `StorageRecoveryWindow.qml` - the startup recovery flow's `ApplicationWindow` (hosted by `cpp/storage_recovery_window.{h,cpp}`). See `docs/relocated-storage-recovery.md`
   - `DeconstructorSelector.qml`, `DeconstructorUtils.qml` - Shared compound break-down UI (break-down ComboBox + lock, and pure filter helpers) reused by GlossTab, WordSummary and FulltextResults; see `docs/gloss-ai-word-selection.md` §9
 
@@ -261,7 +263,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/app_data.rs` - Central data management and caching
   - `src/lookup.rs` - Dictionary and word lookup functionality
   - `src/query_task.rs` - Search query processing and filtering; `results_page` dispatch, FTS5 helpers with uid prefix/suffix push-down + parallel `SELECT COUNT(*)`, and the boundary-aware `split_page_across_streams` orchestrator for regular ⊕ bold pagination
-  - `src/search/` - Tantivy schema, indexer, searcher, and tokenizer for the unified dict (incl. bold-definitions), sutta, and library indexes
+  - `src/search/` - Tantivy schema, indexer, searcher, and tokenizer for the unified dict (incl. bold-definitions), sutta, and library indexes; also `lenient_directory.rs` — the `Directory` wrapper that tolerates volumes without working `flock(2)`, currently reached **only** from the storage diagnostics (see `docs/storage-diagnostics.md`)
+  - `src/storage_diagnostics.rs` - The user-initiated "Run Storage Diagnostics" report: storage-location facts, the `flock`/`mmap`/atomic-write/read-write probes, the index inventory, the two open sequences (today's and through the candidate fix) and the plain-language verdict. See `docs/storage-diagnostics.md`
   - `src/html_content.rs` - HTML template rendering for content display
   - `src/pali_stemmer.rs` - Pali language stemming for better search
   - `src/stardict_parse.rs` - StarDict dictionary format parser
@@ -487,6 +490,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - **Mobile Detection:** `backend/src/lib.rs:427` - `is_mobile()`
 - **Storage Management:** `bridges/src/storage_manager.rs`
 - **Relocated storage recovery (mobile):** `backend/src/lib.rs` - `StorageState` / `storage_path_state()` (the read-only four-state predicate, run before `init_app_globals()`), `get_simsapa_internal_app_root_path()` (non-creating root), `scan_storage_candidates()` + `same_path()` + `LOW_SPACE_THRESHOLD_MB` (tier-1 classification policy), `ensure_no_empty_db_files(sweep: bool)`; `backend/src/storage_probe.rs` - `probe_storage_location()` (tier-2 write/SQLite probe, dialog-only); `backend/src/db/mod.rs` - `record_storage_path_state()` and the top-level `storage_path` field in `get_startup_db_report_json()`; `cpp/utils.cpp` - `get_app_data_storage_paths()` + `append_unmatched_storage_volumes()` (Android volume enumeration); `cpp/gui.cpp::start()` - the ordering and the startup branch. See [docs/relocated-storage-recovery.md](./docs/relocated-storage-recovery.md)
+- **Run Storage Diagnostics (user-initiated report):** `backend/src/storage_diagnostics.rs` - `run_storage_diagnostics()` (the entry point; **exactly one caller**, the bridge invokable — no CLI, no HTTP route) and the six sections it assembles: `collect_storage_location()` (A), `select_probe_dir()` + `run_primitive_probes()` (B — `flock` / **`mmap` go-no-go** / atomic-write / read-write, each with elapsed time and a `Drop`-guard cleanup of its `simsapa-*` probe file), `collect_index_inventory()` (C — **its lock-file reading must be taken before section D runs**, since D's reader creates `.tantivy-meta.lock`), `run_current_opens()` (D), `run_wrapper_opens()` (E — the same open through the candidate fix, plus `num_docs` and both `QUERY_TERMS` against every index), `collect_searcher_state()` (F), and the pure `derive_verdict()` / `render_report()`. Supported by `backend/src/lib.rs` - `record_searcher_open_failure()` / `clear_searcher_open_failures()` / `searcher_open_failures()`, and `backend/src/search/searcher.rs` - `begin_open_session()` (called by **both** constructors) + `index_counts()`. UI: `bridges/src/sutta_bridge.rs::run_storage_diagnostics()` → `storageDiagnosticsCompleted(success, summary)`, `assets/qml/StorageDiagnosticsDialog.qml` (one instance in `SuttaSearchWindow.qml`, `Qt.ApplicationModal`, owns the run), opened from `AboutDialog.qml` and `DatabaseValidationDialog.qml`. See [docs/storage-diagnostics.md](./docs/storage-diagnostics.md)
+- **Lenient Tantivy `Directory` (phase-2 code, wired only into the diagnostics):** `backend/src/search/lenient_directory.rs` - `LenientLockMmapDirectory` (delegates every `Directory` method to `MmapDirectory` except `acquire_lock`, which falls back to a process-internal `Condvar` lock when the volume cannot do advisory locking), `probe_flock_support()` / `flock_support_for_dir()` (per-directory cached `FlockSupport`), `normalize_lock_key()` (one shared key for both the cache and the fallback table; `canonicalize()` with a lexical-absolutise fallback, never a skipped entry), and `LockPathTaken` + `lock_paths()` (**every distinct route**, not just the last). `searcher.rs` and `indexer.rs` still use bare `MmapDirectory`. See [docs/storage-diagnostics.md](./docs/storage-diagnostics.md)
 - **Asset Management:** `bridges/src/asset_manager.rs`
   - **Download & Extract:** `download_urls_and_extract()` - Downloads tar.bz2 files and extracts to app-assets
   - **Language Support:** `get_available_languages()` - Returns list of downloadable language codes from LANG_CODE_TO_NAME

@@ -1032,15 +1032,15 @@ behaviour change in this whole PRD is a new button (Goal 4).
 
 **Depends on:** 1.0–7.0.
 
-- [ ] 8.1 Consolidate the unit tests: mount-table parser fixtures (Android
+- [x] 8.1 Consolidate the unit tests: mount-table parser fixtures (Android
       `/proc/mounts` with sdcardfs + FUSE lines, a plain Linux one), the verdict
       deriver's cases — including the two not-a-fault regressions of 5.9
       (`num_docs == 0`, and a populated `suttas/san` where only `nirodha` hits) —
       and the report builder's end-to-end fixture output.
-- [ ] 8.2 Add the probe-cleanup regression test: after a full run against a temp
+- [x] 8.2 Add the probe-cleanup regression test: after a full run against a temp
       directory, no `simsapa-*` probe file remains (FR-39, metric 5) — including on
       the error path.
-- [ ] 8.3 Confirm the report has **exactly one caller** — the `SuttaBridge`
+- [x] 8.3 Confirm the report has **exactly one caller** — the `SuttaBridge`
       invokable behind the UI button. No CLI subcommand, no `/health` field, no
       other route (PRD Non-Goals, §11.2): the affected users are reached by asking
       them to press the button, and `/health` would be actively wrong for a report
@@ -1050,15 +1050,15 @@ behaviour change in this whole PRD is a new button (Goal 4).
       that because `gui.cpp:403` initialises unconditionally before any dialog
       exists (review finding 8), so a future headless caller does not inherit the
       assumption silently.
-- [ ] 8.4 Write `docs/storage-diagnostics.md`: what each section measures and why,
+- [x] 8.4 Write `docs/storage-diagnostics.md`: what each section measures and why,
       how to read the report, the PRD §9 decision-gate table, and the note that the
       wrapper here is phase-2 code wired only into the diagnostic.
-- [ ] 8.5 Update `CLAUDE.md`'s notable-docs list and `PROJECT_MAP.md` with the new
+- [x] 8.5 Update `CLAUDE.md`'s notable-docs list and `PROJECT_MAP.md` with the new
       modules and doc.
-- [ ] 8.6 Run `cd backend && cargo test`, `make qml-test` and `make build -B`;
+- [x] 8.6 Run `cd backend && cargo test`, `make qml-test` and `make build -B`;
       record any pre-existing timing-assertion drift separately rather than as a
       regression.
-- [ ] 8.7 Re-read the PRD's Non-Goals and diff the branch: confirm no existing call
+- [x] 8.7 Re-read the PRD's Non-Goals and diff the branch: confirm no existing call
       site was switched to the wrapper, no `ReloadPolicy` change reached the real
       search path, no auto-run of the diagnostics exists, no network call was
       added, the diagnostic leaves no live readers or watcher threads behind
@@ -1085,5 +1085,37 @@ behaviour change in this whole PRD is a new button (Goal 4).
       width was also forcing the whole dialog wider than the screen, clipping
       the log-file rows' "Copy Contents". The row is now a full-width
       `ColumnLayout`, matching `DatabaseValidationDialog`.
-- [ ] 8.8 Add any question discovered during implementation to PRD §11 rather than
+- [x] 8.8 Add any question discovered during implementation to PRD §11 rather than
       resolving it silently (PRD §11.1).
+
+**Review pass, 2026-08-06 — three changes made after 8.7a.**
+
+1. **Section B is no longer skipped when there is no per-language index
+   directory.** It previously probed `inventory.dirs.first()` and printed
+   *"Not run: there is no index directory to probe"* when that was empty — so an
+   install whose index download never finished produced **no `flock` and no
+   `mmap` reading at all**, and `mmap` is the one measurement phase 2 is blocked
+   on (PRD §9). That state belongs to exactly the user who presses this button.
+   `select_probe_dir()` now falls outwards to the index root and then the
+   storage root, and `ProbeDirSource` names the choice in the report so a
+   fallback directory is never mistaken for the directory the failure happens
+   in. Tests: `the_probes_fall_outwards_when_there_is_no_per_language_index_dir`,
+   `a_fallback_probe_directory_is_named_in_the_report`.
+2. **The missing-index verdict no longer masks a volume-level fault.** The
+   `no_indexes || missing_meta || version_wrong` branch returned *"rebuilding
+   the search index should put this right"* before the section-B results were
+   ever consulted — which sends a user whose volume cannot lock round a loop,
+   because the rebuild fails too. The primitive results are now computed first
+   and that branch says so when they are bad. Test:
+   `a_missing_index_on_a_volume_that_cannot_lock_does_not_just_say_rebuild`.
+3. **A failed search is now distinguished from a search that matched nothing.**
+   `zero_hits_unexpected()` treats `hits: None` as no hits, so a query that
+   errored printed *"the index opened and holds documents, but neither search
+   matched"* — and, with `num_docs == 0`, could even reach the healthy verdict.
+   `any_query_errored()` now gates both. Test:
+   `a_search_that_failed_outright_is_not_reported_as_no_matches`.
+
+Verified after the changes: `cargo test --lib` 442 passed / 0 failed,
+`make qml-test` 131 passed / 0 failed, `cmake --build` clean. `git diff main..HEAD`
+on `searcher.rs` and `lib.rs` remains purely additive, no call site was switched
+to the wrapper, and `is_fulltext_searcher_ready()` is unchanged (8.7).

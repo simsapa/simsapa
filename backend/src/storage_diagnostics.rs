@@ -378,10 +378,75 @@ impl ProbeOutcome {
     }
 }
 
+/// Which directory section B ended up probing, and why.
+///
+/// The probes want a per-language index directory, because that is the exact
+/// place the failure under investigation happens. But that directory may not
+/// exist — an install whose index download never finished has none, and a user
+/// in that state is precisely who presses this button. Skipping section B there
+/// would throw away the `mmap` reading, which is the one measurement phase 2 is
+/// blocked on, and would leave the "the index files are missing" verdict with no
+/// storage evidence behind it. So the probes walk outwards to the nearest
+/// directory that does exist on the same volume and say which one they used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProbeDirSource {
+    /// A per-language index directory — the directory the failure happens in.
+    IndexLanguageDir,
+    /// The top of the index tree: there are no per-language directories.
+    IndexRoot,
+    /// The storage root: the index tree itself is absent.
+    StorageRoot,
+}
+
+impl ProbeDirSource {
+    /// The line explaining a non-ideal choice, or `None` when the probes got
+    /// the directory they wanted.
+    pub fn note(&self) -> Option<&'static str> {
+        match self {
+            ProbeDirSource::IndexLanguageDir => None,
+            ProbeDirSource::IndexRoot => Some(
+                "NOTE: there are no per-language index directories, so the probes ran against \
+                 the top of the index tree instead",
+            ),
+            ProbeDirSource::StorageRoot => Some(
+                "NOTE: there is no index tree at all, so the probes ran against the storage \
+                 root instead",
+            ),
+        }
+    }
+}
+
+/// Pick the directory section B should probe, walking outwards until one
+/// exists. `None` only when even the storage root is gone — in which case
+/// section A has already said so.
+///
+/// Takes the two paths rather than `AppGlobalPaths`, so the policy is testable
+/// off-device — the same reason `enumerate_index_dirs_in` takes a base
+/// directory while `enumerate_index_dirs` reads the globals.
+pub fn select_probe_dir(
+    inventory: &IndexInventory,
+    index_dir: &Path,
+    storage_dir: &Path,
+) -> Option<(PathBuf, ProbeDirSource)> {
+    if let Some(d) = inventory.dirs.first() {
+        return Some((d.path.clone(), ProbeDirSource::IndexLanguageDir));
+    }
+    if matches!(index_dir.try_exists(), Ok(true)) {
+        return Some((index_dir.to_path_buf(), ProbeDirSource::IndexRoot));
+    }
+    if matches!(storage_dir.try_exists(), Ok(true)) {
+        return Some((storage_dir.to_path_buf(), ProbeDirSource::StorageRoot));
+    }
+    None
+}
+
 /// The section-B measurements for one directory.
 #[derive(Debug, Clone)]
 pub struct ProbeResults {
     pub dir: PathBuf,
+    /// Why this directory, and not a per-language index directory. See
+    /// [`ProbeDirSource`].
+    pub dir_source: ProbeDirSource,
     pub flock: FlockSupport,
     pub flock_elapsed: Duration,
     pub mmap: ProbeOutcome,
@@ -397,7 +462,7 @@ pub struct ProbeResults {
 
 /// Run every section-B probe against `dir`. Never fails as a whole: each probe
 /// records its own error and the next one still runs.
-pub fn run_primitive_probes(dir: &Path) -> ProbeResults {
+pub fn run_primitive_probes(dir: &Path, dir_source: ProbeDirSource) -> ProbeResults {
     let started = Instant::now();
 
     // The flock probe brings its own cleanup guard; do not wrap its file again.
@@ -409,6 +474,7 @@ pub fn run_primitive_probes(dir: &Path) -> ProbeResults {
 
     ProbeResults {
         dir: dir.to_path_buf(),
+        dir_source,
         flock,
         flock_elapsed,
         mmap: mmap_probe.outcome,
@@ -1314,6 +1380,13 @@ impl WrapperOpenReport {
     pub fn zero_hits_unexpected(&self) -> bool {
         self.all_ok() && !self.any_hits() && self.num_docs.unwrap_or(0) > 0
     }
+
+    /// Whether any query failed outright rather than returning a count. A
+    /// failed search is a different finding from a search that ran and matched
+    /// nothing, and saying "neither search matched" about it would be wrong.
+    pub fn any_query_errored(&self) -> bool {
+        self.queries.iter().any(|q| q.error.is_some())
+    }
 }
 
 /// Run the same three-step open through the candidate wrapper, then query.
@@ -1550,7 +1623,11 @@ pub fn render_wrapper_opens(reports: &[WrapperOpenReport]) -> String {
 
             // The decision gate branches on exactly this distinction, so it is
             // stated rather than left to be inferred from the numbers.
-            if r.zero_hits_unexpected() {
+            if r.any_query_errored() {
+                out.push_str(
+                    "  UNEXPECTED: the index opened, but at least one search failed outright\n",
+                );
+            } else if r.zero_hits_unexpected() {
                 out.push_str(
                     "  UNEXPECTED: the index opened and holds documents, but neither search matched\n",
                 );
@@ -1707,6 +1784,10 @@ pub fn render_primitive_probes(results: &ProbeResults) -> String {
     let mut out = String::new();
     out.push_str("== B. Primitive probes ==\n");
     out.push_str(&format!("Directory: {}\n", results.dir.display()));
+    if let Some(note) = results.dir_source.note() {
+        out.push_str(note);
+        out.push('\n');
+    }
 
     out.push_str(&format!(
         "File locking: {} in {}\n",
@@ -1926,15 +2007,10 @@ pub fn derive_verdict(results: &DiagnosticsResults) -> String {
         .iter()
         .any(|d| d.meta_json != MetaJsonState::Present);
 
-    if no_indexes || missing_meta || version_wrong {
-        return "The search index files are missing or incomplete, which is why searches that \
-                use them find nothing. Rebuilding the search index from the app's settings \
-                should put this right. The details are below."
-            .to_string();
-    }
-
     // A primitive the volume does not provide — the case this whole report was
-    // written for.
+    // written for. Computed before the missing-index branch, because a volume
+    // that cannot do what the index needs will not be put right by rebuilding
+    // the index, and telling the user to rebuild would send them round a loop.
     let unsupported_primitive = results
         .probes
         .as_ref()
@@ -1946,10 +2022,27 @@ pub fn derive_verdict(results: &DiagnosticsResults) -> String {
         .map(|p| !p.mmap.ok || !p.read_write.ok)
         .unwrap_or(false);
 
+    if no_indexes || missing_meta || version_wrong {
+        if unsupported_primitive || read_path_broken {
+            return "The search index files are missing or incomplete, and this storage \
+                    location also does not support everything the search index needs — so \
+                    rebuilding the index here may not be enough on its own. Please send this \
+                    summary."
+                .to_string();
+        }
+        return "The search index files are missing or incomplete, which is why searches that \
+                use them find nothing. Rebuilding the search index from the app's settings \
+                should put this right. The details are below."
+            .to_string();
+    }
+
     let current_ok = !results.current_opens.is_empty() && results.current_opens.iter().all(|r| r.all_ok());
     let wrapper_ok = !results.wrapper_opens.is_empty() && results.wrapper_opens.iter().all(|r| r.all_ok());
     let wrapper_found_hits = results.wrapper_opens.iter().any(|r| r.any_hits());
     let unexpected_empty = results.wrapper_opens.iter().any(|r| r.zero_hits_unexpected());
+    // A search that failed outright is never the healthy case, whatever the
+    // document count says.
+    let query_errored = results.wrapper_opens.iter().any(|r| r.any_query_errored());
 
     if unsupported_primitive && wrapper_ok && wrapper_found_hits {
         return "This storage location does not support something the search index normally \
@@ -1974,7 +2067,7 @@ pub fn derive_verdict(results: &DiagnosticsResults) -> String {
             .to_string();
     }
 
-    if current_ok && wrapper_ok && !unexpected_empty {
+    if current_ok && wrapper_ok && !unexpected_empty && !query_errored {
         return "The storage checks all passed and the search index opened and returned \
                 results. Nothing is wrong with the storage location on this device."
             .to_string();
@@ -1999,7 +2092,9 @@ pub fn render_report(results: &DiagnosticsResults) -> String {
     match &results.probes {
         Some(probes) => out.push_str(&render_primitive_probes(probes)),
         None => out.push_str(
-            "== B. Primitive probes ==\nNot run: there is no index directory to probe.\n",
+            "== B. Primitive probes ==\nNot run: neither the index tree nor the storage \
+             location itself could be found, so there is no directory to probe. Section A \
+             says where the app was looking.\n",
         ),
     }
     out.push('\n');
@@ -2034,12 +2129,12 @@ pub fn run_storage_diagnostics() -> String {
     // diagnostic's own leftovers as the volume's prior state.
     let inventory = collect_index_inventory(paths);
 
-    // The probes go against a real index directory where there is one, since
-    // that is the volume in question; otherwise there is nothing to probe.
-    let probes = inventory
-        .dirs
-        .first()
-        .map(|d| run_primitive_probes(&d.path));
+    // The probes want a per-language index directory, but fall outwards to the
+    // index root and then the storage root when there is none: `mmap` is the
+    // measurement phase 2 is blocked on, and an install whose index download
+    // never finished is exactly the case where it must still be taken.
+    let probes = select_probe_dir(&inventory, &paths.index_dir, &paths.simsapa_dir)
+        .map(|(dir, source)| run_primitive_probes(&dir, source));
 
     let current_opens = run_current_opens(&inventory);
     let wrapper_opens = run_wrapper_opens(&inventory);
@@ -2147,7 +2242,7 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
         // …alongside a small one the size floor must reject.
         fs::write(dir.path().join("small.fast"), vec![1u8; 146]).expect("write");
 
-        let results = run_primitive_probes(dir.path());
+        let results = run_primitive_probes(dir.path(), ProbeDirSource::IndexLanguageDir);
 
         assert!(results.mmap.ok, "mmap: {:?}", results.mmap.error);
         assert!(!results.mmap_used_fallback_file);
@@ -2165,7 +2260,7 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
         fs::write(dir.path().join("small.fast"), vec![1u8; 146]).expect("write");
         fs::write(dir.path().join("meta.json"), vec![1u8; 64 * 1024]).expect("write");
 
-        let results = run_primitive_probes(dir.path());
+        let results = run_primitive_probes(dir.path(), ProbeDirSource::IndexLanguageDir);
 
         assert!(results.mmap.ok, "mmap: {:?}", results.mmap.error);
         assert!(
@@ -2180,7 +2275,7 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
         let missing = std::env::temp_dir().join("simsapa-diag-no-such-directory-xyz");
         let _ = fs::remove_dir_all(&missing);
 
-        let results = run_primitive_probes(&missing);
+        let results = run_primitive_probes(&missing, ProbeDirSource::IndexLanguageDir);
 
         // Every probe failed, and every one of them said why — none panicked
         // and none aborted the others.
@@ -2194,6 +2289,63 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
 
         // …and rendering the failures does not panic either.
         assert!(render_primitive_probes(&results).contains("FAILED"));
+    }
+
+    /// `mmap` is the one measurement phase 2 is blocked on, so section B must
+    /// still run when there is no per-language index directory to run it in —
+    /// which is the state of exactly the install whose index download never
+    /// finished.
+    #[test]
+    fn the_probes_fall_outwards_when_there_is_no_per_language_index_dir() {
+        let storage = tempfile::tempdir().expect("temp dir");
+        let index_dir = storage.path().join("app-assets").join("index");
+        let lang_dir = index_dir.join("suttas").join("pli");
+
+        // Nothing exists yet but the storage root.
+        let empty = fixture_inventory(Vec::new(), true);
+        let (dir, source) =
+            select_probe_dir(&empty, &index_dir, storage.path()).expect("the storage root exists");
+        assert_eq!(source, ProbeDirSource::StorageRoot);
+        assert_eq!(dir, storage.path());
+
+        // The index tree exists but holds no languages.
+        fs::create_dir_all(&index_dir).expect("mkdir");
+        let (dir, source) =
+            select_probe_dir(&empty, &index_dir, storage.path()).expect("the index root exists");
+        assert_eq!(source, ProbeDirSource::IndexRoot);
+        assert_eq!(dir, index_dir);
+
+        // A language directory is present: the probes want that one.
+        fs::create_dir_all(&lang_dir).expect("mkdir");
+        let populated = fixture_inventory(
+            vec![collect_index_dir_info(IndexArea::Suttas, "pli", &lang_dir)],
+            true,
+        );
+        let (dir, source) =
+            select_probe_dir(&populated, &index_dir, storage.path()).expect("the language dir");
+        assert_eq!(source, ProbeDirSource::IndexLanguageDir);
+        assert_eq!(dir, lang_dir);
+    }
+
+    /// A fallback directory is not the directory the failure happens in, so the
+    /// report has to say which one it measured.
+    #[test]
+    fn a_fallback_probe_directory_is_named_in_the_report() {
+        let dir = tempfile::tempdir().expect("temp dir");
+
+        let results = run_primitive_probes(dir.path(), ProbeDirSource::IndexRoot);
+        let rendered = render_primitive_probes(&results);
+        assert!(rendered.contains("no per-language index directories"), "{rendered}");
+
+        let results = run_primitive_probes(dir.path(), ProbeDirSource::StorageRoot);
+        assert!(render_primitive_probes(&results).contains("no index tree at all"));
+
+        // …and says nothing extra when it got the directory it wanted.
+        let results = run_primitive_probes(dir.path(), ProbeDirSource::IndexLanguageDir);
+        let rendered = render_primitive_probes(&results);
+        assert!(!rendered.contains("NOTE:"), "{rendered}");
+
+        assert_no_probe_files(dir.path());
     }
 
     /// No `simsapa-*` file may remain after a run — on the success path or the
@@ -2666,6 +2818,7 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
         let ok = |detail: &str| ProbeOutcome::ok(detail, Duration::from_millis(1));
         ProbeResults {
             dir: PathBuf::from("/data/simsapa/index/suttas/pli"),
+            dir_source: ProbeDirSource::IndexLanguageDir,
             flock,
             flock_elapsed: Duration::from_millis(1),
             mmap: if mmap_ok {
@@ -2950,6 +3103,68 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
         assert!(derive_verdict(&stale).contains("missing or incomplete"));
     }
 
+    /// "Rebuild the search index" is the wrong advice when the volume cannot do
+    /// what the index needs: the rebuild fails too, and the user goes round a
+    /// loop. The missing-index branch therefore has to look at section B first.
+    #[test]
+    fn a_missing_index_on_a_volume_that_cannot_lock_does_not_just_say_rebuild() {
+        let missing = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Missing);
+        let results = fixture_results(
+            false,
+            StorageState::Ok,
+            Some(fixture_probes(
+                FlockSupport::Unsupported {
+                    errno: 38,
+                    name: "ENOSYS".to_string(),
+                },
+                true,
+            )),
+            fixture_inventory(vec![missing], true),
+            Vec::new(),
+            Vec::new(),
+            false,
+        );
+
+        let verdict = derive_verdict(&results);
+        assert!(verdict.contains("missing or incomplete"), "{verdict}");
+        assert!(
+            verdict.contains("may not be enough"),
+            "the volume's own limitation must be named too: {verdict}"
+        );
+    }
+
+    /// A search that fails outright is a different finding from one that runs
+    /// and matches nothing, and it is never the healthy verdict.
+    #[test]
+    fn a_search_that_failed_outright_is_not_reported_as_no_matches() {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let mut broken = fixture_wrapper_open(&dir, 8000, [0, 0], LockPathTaken::InnerFlock);
+        broken.queries[0].hits = None;
+        broken.queries[0].error = Some("io error reading the postings".to_string());
+
+        let rendered = render_wrapper_opens(&[broken.clone()]);
+        assert!(rendered.contains("nirodha=FAILED"), "{rendered}");
+        assert!(rendered.contains("at least one search failed outright"), "{rendered}");
+        assert!(
+            !rendered.contains("neither search matched"),
+            "a failed search is not a search that matched nothing: {rendered}"
+        );
+
+        let results = fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![dir.clone()], true),
+            vec![fixture_current_open(&dir, true)],
+            vec![broken],
+            false,
+        );
+        assert!(
+            !derive_verdict(&results).contains("Nothing is wrong"),
+            "a failed search must never read as healthy"
+        );
+    }
+
     #[test]
     fn an_index_holding_no_documents_is_not_a_fault() {
         // The library index is empty on most installs: nobody imported a book.
@@ -3042,6 +3257,16 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
                 true,
                 StorageState::Absent,
                 Some(fixture_probes(FlockSupport::Supported, true)),
+                fixture_inventory(vec![fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Missing)], true),
+                Vec::new(),
+                Vec::new(),
+                false,
+            ),
+            // A missing index on a volume that also cannot lock.
+            fixture_results(
+                false,
+                StorageState::Ok,
+                Some(fixture_probes(unsupported.clone(), true)),
                 fixture_inventory(vec![fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Missing)], true),
                 Vec::new(),
                 Vec::new(),
