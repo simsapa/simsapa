@@ -796,32 +796,32 @@ output; paths and volume UUIDs are expected and fine.
 
 **Depends on:** 2.0, 3.0, 4.0. **Blocks:** 6.0.
 
-- [ ] 5.1 Add a diagnostics-only process-global record of per-index-directory open
+- [x] 5.1 Add a diagnostics-only process-global record of per-index-directory open
       failures, populated where `searcher.rs:120` currently only calls `warn()`
       (path + error string). This changes no behaviour; it makes FR-31 answerable.
       Clear it on **every** searcher (re)open, or an entry recorded before a
       storage recovery survives and section F reports a failure that no longer
       exists (review finding 19). Add a test: record a failure, reopen, assert the
       record is empty.
-- [ ] 5.1a Put the clear in a **small helper called by both constructors**.
+- [x] 5.1a Put the clear in a **small helper called by both constructors**.
       `FulltextSearcher` has two — `open()` (`searcher.rs:55`) and
       `open_from_dirs()` (`:78`) — and both call `open_indexes()` three times, so
       clearing only in `open()` leaves `open_from_dirs()` appending to a list that
       is never reset (FR-31a, finding 29). Cover `open_from_dirs()` in the 5.1
       test, not just `open()`.
-- [ ] 5.2 Add a public accessor on `FulltextSearcher` returning the sutta / dict /
+- [x] 5.2 Add a public accessor on `FulltextSearcher` returning the sutta / dict /
       library index counts, and read them through `with_fulltext_searcher()`
       (`lib.rs:369`) — a read-only borrow that never reinitialises the global
       (FR-31, FR-41). The existing `has_sutta_indexes()` / `has_dict_indexes()` /
       `has_library_indexes()` predicates (`:270`, `:275`, `:313`) answer a
       different question and are not a substitute.
-- [ ] 5.2a Do **not** touch `is_fulltext_searcher_ready()` (`lib.rs:358`). It
+- [x] 5.2a Do **not** touch `is_fulltext_searcher_ready()` (`lib.rs:358`). It
       returns `true` whenever the global is `Some` regardless of index count, and
       that dishonesty is real — but correcting it is **phase-2 FR-20**, and doing
       it here changes `/health`'s `fulltext_searcher_ready` field, breaking Goal 4
       and success metric 6. Derive the "not initialised" state of 5.3 from
       `with_fulltext_searcher()` returning `None` instead (FR-31b, finding 30).
-- [ ] 5.3 Section F: print those counts, the startup open failures, and the app
+- [x] 5.3 Section F: print those counts, the startup open failures, and the app
       version, platform and Android API level where applicable (FR-32). Print
       **"searcher not initialised this session"** as a state distinct from "0
       indexes": `init_fulltext_searcher()` is lazy and mode-gated (called from
@@ -834,7 +834,7 @@ output; paths and volume UUIDs are expected and fine.
       state so they cannot disagree. Read the state from
       `with_fulltext_searcher()` returning `None`, **never** from
       `is_fulltext_searcher_ready()` (task 5.2a).
-- [ ] 5.4 Implement `derive_verdict(&DiagnosticsResults) -> String` as a **pure**
+- [x] 5.4 Implement `derive_verdict(&DiagnosticsResults) -> String` as a **pure**
       function over the collected result structs, covering the four named cases
       plus the explicit unrecognised-pattern fallback (FR-34, FR-35). **Four**
       inputs must **not** be treated as faults: an uninitialised searcher (5.3);
@@ -846,23 +846,23 @@ output; paths and volume UUIDs are expected and fine.
       ungated, the "storage location is unreachable" branch would fire on every
       healthy desktop run. Each is normal, and FR-37 forbids implying a fault that
       was not found. Unit-test the desktop case explicitly.
-- [ ] 5.5 Enforce the verdict's vocabulary rules — no `flock`/`mmap`/`Tantivy`/
+- [x] 5.5 Enforce the verdict's vocabulary rules — no `flock`/`mmap`/`Tantivy`/
       `FUSE`/errno names (FR-36) — and add a unit test asserting the produced
       verdict strings contain none of those tokens for every case.
-- [ ] 5.6 Assemble the report: verdict first, then sections A–F with plain-text
+- [x] 5.6 Assemble the report: verdict first, then sections A–F with plain-text
       headers, per-section elapsed times, one line per index row (§6). Plain text
       only, no markup, safe to paste into an email. The **execution** order must
       match the report order at least to the extent that section C's lock-file
       snapshot is taken before section D runs (task 3.3a) — section D creates
       lock files, so a lazily-evaluated section C would report the diagnostic's
       own leftovers as pre-existing (FR-38a).
-- [ ] 5.7 Write the complete summary to the log at INFO through the Rust logger,
+- [x] 5.7 Write the complete summary to the log at INFO through the Rust logger,
       so `log.txt` alone is sufficient (FR-11). Log it in one call, or in clearly
       contiguous lines that reassemble.
-- [ ] 5.8 Expose the entry point `pub fn run_storage_diagnostics() -> String`
+- [x] 5.8 Expose the entry point `pub fn run_storage_diagnostics() -> String`
       (FR-45), and review the assembled output against FR-42 — assert in a test
       that it contains no `api_key`-shaped content and no document text.
-- [ ] 5.9 Unit-test the report builder end-to-end against fixture result structs
+- [x] 5.9 Unit-test the report builder end-to-end against fixture result structs
       for: healthy, `flock`-unsupported-but-section-E-succeeded,
       `flock`-unsupported-and-mmap-failed, missing index, unreachable storage,
       **healthy-on-desktop** (the `Absent`-but-not-a-fault case of 5.4), and

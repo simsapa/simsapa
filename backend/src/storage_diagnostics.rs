@@ -1737,6 +1737,334 @@ pub fn render_primitive_probes(results: &ProbeResults) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Section F — the live searcher, and the platform
+// ---------------------------------------------------------------------------
+
+/// What the process-global searcher currently holds, plus the facts that place
+/// the report on a particular build and device.
+#[derive(Debug, Clone)]
+pub struct SearcherState {
+    /// False when no searcher has been built this session. This is a **third**
+    /// state, distinct from "0 indexes, 0 failures": the searcher is opened
+    /// lazily on the first fulltext query, so on a healthy install where none
+    /// has run it is legitimately absent — and the diagnostics are forbidden
+    /// from building one just to look.
+    pub initialised: bool,
+    pub sutta_indexes: usize,
+    pub dict_indexes: usize,
+    pub library_indexes: usize,
+    /// Per-directory failures recorded while that searcher was built. Only
+    /// meaningful when `initialised`; otherwise the honest reading is "not
+    /// measured", never "none".
+    pub open_failures: Vec<(String, String)>,
+    pub app_version: String,
+    pub platform: &'static str,
+    pub android_api_level: Option<i32>,
+}
+
+/// Read the live searcher's state without disturbing it.
+pub fn collect_searcher_state() -> SearcherState {
+    // Read through the borrowing accessor, which returns `None` when the global
+    // is unset. Deliberately not the readiness predicate, which answers "is the
+    // global `Some`" regardless of index count and feeds a `/health` field this
+    // work must not change.
+    let counts = crate::with_fulltext_searcher(|s| s.index_counts());
+
+    let (initialised, sutta_indexes, dict_indexes, library_indexes) = match counts {
+        Some((s, d, l)) => (true, s, d, l),
+        None => (false, 0, 0, 0),
+    };
+
+    SearcherState {
+        initialised,
+        sutta_indexes,
+        dict_indexes,
+        library_indexes,
+        open_failures: if initialised {
+            crate::searcher_open_failures()
+        } else {
+            Vec::new()
+        },
+        app_version: crate::update_checker::get_app_version(),
+        platform: current_platform(),
+        android_api_level: android_api_level(),
+    }
+}
+
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "Android"
+    } else if cfg!(target_os = "ios") {
+        "iOS"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(target_os = "linux") {
+        "Linux"
+    } else {
+        "unknown"
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_api_level() -> Option<i32> {
+    // `android_get_device_api_level()` is not declared by the libc version in
+    // use, so read the property the same way it does.
+    const PROP_VALUE_MAX: usize = 92;
+    let name = std::ffi::CString::new("ro.build.version.sdk").ok()?;
+    let mut value = [0u8; PROP_VALUE_MAX];
+
+    let len = unsafe {
+        libc::__system_property_get(name.as_ptr(), value.as_mut_ptr() as *mut libc::c_char)
+    };
+    if len <= 0 {
+        return None;
+    }
+
+    std::str::from_utf8(&value[..len as usize])
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_api_level() -> Option<i32> {
+    None
+}
+
+/// Section F as plain text.
+pub fn render_searcher_state(state: &SearcherState) -> String {
+    let mut out = String::new();
+    out.push_str("== F. Search index state in this session ==\n");
+
+    if state.initialised {
+        out.push_str(&format!(
+            "Open indexes: {} sutta, {} dictionary, {} library\n",
+            state.sutta_indexes, state.dict_indexes, state.library_indexes
+        ));
+        if state.open_failures.is_empty() {
+            out.push_str("Index directories that failed to open: none\n");
+        } else {
+            out.push_str(&format!(
+                "Index directories that failed to open: {}\n",
+                state.open_failures.len()
+            ));
+            for (path, error) in &state.open_failures {
+                out.push_str(&format!("  {path}: {error}\n"));
+            }
+        }
+    } else {
+        // Both lines are worded from the same state so they cannot disagree:
+        // the failure list is written while a searcher is being built, so
+        // without one there is nothing to have recorded.
+        out.push_str(
+            "Open indexes: the search indexes have not been opened in this session — they are\n\
+             opened the first time a fulltext search runs, and this diagnostic deliberately\n\
+             does not open them. This is normal, not a fault.\n",
+        );
+        out.push_str("Index directories that failed to open: not measured (see above)\n");
+    }
+
+    out.push_str(&format!("App version: {}\n", state.app_version));
+    match state.android_api_level {
+        Some(level) => out.push_str(&format!("Platform: {} (API level {})\n", state.platform, level)),
+        None => out.push_str(&format!("Platform: {}\n", state.platform)),
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Section G — the plain-language verdict, and the assembled report
+// ---------------------------------------------------------------------------
+
+/// Everything the run measured, in one value, so the verdict can be derived by
+/// a pure function and unit-tested against fixtures.
+#[derive(Debug, Clone)]
+pub struct DiagnosticsResults {
+    pub location: StorageLocationInfo,
+    pub probes: Option<ProbeResults>,
+    pub inventory: IndexInventory,
+    pub current_opens: Vec<IndexOpenReport>,
+    pub wrapper_opens: Vec<WrapperOpenReport>,
+    pub searcher: SearcherState,
+    pub elapsed: Duration,
+}
+
+/// The plain-language verdict that opens the report.
+///
+/// Pure, so every branch is testable off-device. Two rules shape it, and both
+/// are easy to break by adding a case:
+///
+/// - **No jargon.** The words for the failing primitives, the index library and
+///   the filesystem kind belong in the sections below, not here.
+/// - **Never imply a fault that was not found.** Four measured states are
+///   normal and must not produce a fault verdict: a searcher that was never
+///   opened this session; a zero hit count from an index holding no documents;
+///   leftover lock files; and the storage state on desktop, which is reported
+///   as absent for every install because a recorded storage path is a
+///   mobile-only idea.
+pub fn derive_verdict(results: &DiagnosticsResults) -> String {
+    // The storage location itself — gated on mobile, since desktop always
+    // reports `absent` and would otherwise fire this branch every time.
+    if !results.location.state_is_desktop
+        && matches!(
+            results.location.state,
+            StorageState::Unreachable | StorageState::ReachableEmpty
+        )
+    {
+        return "The storage location you chose for the app's data cannot be reached, or is \
+                empty. Until the app can see it again, searches that need the search index \
+                will find nothing. The details are below."
+            .to_string();
+    }
+
+    let no_indexes = results.inventory.dirs.is_empty();
+    let version_wrong = !results.inventory.version_is_current;
+    let missing_meta = results
+        .inventory
+        .dirs
+        .iter()
+        .any(|d| d.meta_json != MetaJsonState::Present);
+
+    if no_indexes || missing_meta || version_wrong {
+        return "The search index files are missing or incomplete, which is why searches that \
+                use them find nothing. Rebuilding the search index from the app's settings \
+                should put this right. The details are below."
+            .to_string();
+    }
+
+    // A primitive the volume does not provide — the case this whole report was
+    // written for.
+    let unsupported_primitive = results
+        .probes
+        .as_ref()
+        .map(|p| p.flock.is_unsupported())
+        .unwrap_or(false);
+    let read_path_broken = results
+        .probes
+        .as_ref()
+        .map(|p| !p.mmap.ok || !p.read_write.ok)
+        .unwrap_or(false);
+
+    let current_ok = !results.current_opens.is_empty() && results.current_opens.iter().all(|r| r.all_ok());
+    let wrapper_ok = !results.wrapper_opens.is_empty() && results.wrapper_opens.iter().all(|r| r.all_ok());
+    let wrapper_found_hits = results.wrapper_opens.iter().any(|r| r.any_hits());
+    let unexpected_empty = results.wrapper_opens.iter().any(|r| r.zero_hits_unexpected());
+
+    if unsupported_primitive && wrapper_ok && wrapper_found_hits {
+        return "This storage location does not support something the search index normally \
+                relies on, which is why searches find nothing at the moment. The good news is \
+                that the change we are planning did work here in the test below, so a future \
+                update should fix it. Please send this summary."
+            .to_string();
+    }
+
+    if unsupported_primitive && read_path_broken {
+        return "This storage location does not support two of the things the search index \
+                needs, and the change we are planning was not enough on its own. Please send \
+                this summary — it tells us what to do instead."
+            .to_string();
+    }
+
+    if unsupported_primitive {
+        return "This storage location does not support something the search index normally \
+                relies on, which is why searches find nothing. The test of our planned change \
+                did not succeed here either. Please send this summary — it tells us what to do \
+                instead."
+            .to_string();
+    }
+
+    if current_ok && wrapper_ok && !unexpected_empty {
+        return "The storage checks all passed and the search index opened and returned \
+                results. Nothing is wrong with the storage location on this device."
+            .to_string();
+    }
+
+    "The results here do not match any pattern we recognise, so we would rather not guess. \
+     Please send this summary — an unfamiliar result is exactly the kind we most want to see."
+        .to_string()
+}
+
+/// The verdict plus every section, as one block of plain text.
+pub fn render_report(results: &DiagnosticsResults) -> String {
+    let mut out = String::new();
+    out.push_str("Simsapa storage diagnostics\n");
+    out.push_str("===========================\n\n");
+    out.push_str(&derive_verdict(results));
+    out.push_str("\n\n");
+
+    out.push_str(&render_storage_location(&results.location));
+    out.push('\n');
+
+    match &results.probes {
+        Some(probes) => out.push_str(&render_primitive_probes(probes)),
+        None => out.push_str(
+            "== B. Primitive probes ==\nNot run: there is no index directory to probe.\n",
+        ),
+    }
+    out.push('\n');
+
+    out.push_str(&render_index_inventory(&results.inventory));
+    out.push('\n');
+    out.push_str(&render_current_opens(&results.current_opens));
+    out.push('\n');
+    out.push_str(&render_wrapper_opens(&results.wrapper_opens));
+    out.push('\n');
+    out.push_str(&render_searcher_state(&results.searcher));
+    out.push('\n');
+    out.push_str(&format!("Total elapsed: {}\n", format_duration(results.elapsed)));
+    out
+}
+
+/// Run every measurement and return the report.
+///
+/// **Depends on the app globals having been initialised** —
+/// `get_app_globals()` panics otherwise. The GUI satisfies that
+/// unconditionally, well before any dialog can exist, and the UI button is this
+/// function's only caller. A future headless caller must initialise them first
+/// rather than inherit the assumption silently.
+pub fn run_storage_diagnostics() -> String {
+    let started = Instant::now();
+    let paths = &crate::get_app_globals().paths;
+
+    let location = collect_storage_location();
+
+    // Section C first, and in particular its lock-file reading: the section-D
+    // open creates those files, so a snapshot taken afterwards would report the
+    // diagnostic's own leftovers as the volume's prior state.
+    let inventory = collect_index_inventory(paths);
+
+    // The probes go against a real index directory where there is one, since
+    // that is the volume in question; otherwise there is nothing to probe.
+    let probes = inventory
+        .dirs
+        .first()
+        .map(|d| run_primitive_probes(&d.path));
+
+    let current_opens = run_current_opens(&inventory);
+    let wrapper_opens = run_wrapper_opens(&inventory);
+    let searcher = collect_searcher_state();
+
+    let results = DiagnosticsResults {
+        location,
+        probes,
+        inventory,
+        current_opens,
+        wrapper_opens,
+        searcher,
+        elapsed: started.elapsed(),
+    };
+
+    let report = render_report(&results);
+
+    // One call, so the whole report lands in the log contiguously: a user who
+    // sends only their log file has still given us everything.
+    info(&format!("Storage diagnostics report:\n{report}"));
+
+    report
+}
+
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -2255,6 +2583,555 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Sections F and G
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn the_open_failure_record_is_cleared_by_both_searcher_constructors() {
+        use crate::search::searcher::FulltextSearcher;
+
+        let empty = tempfile::tempdir().expect("temp dir");
+
+        crate::record_searcher_open_failure("/some/index/dir", "boom");
+        assert!(!crate::searcher_open_failures().is_empty());
+
+        // An entry recorded before a storage recovery must not survive the
+        // reopen and be reported as a live fault.
+        let searcher = FulltextSearcher::open_from_dirs(empty.path(), empty.path(), None)
+            .expect("open_from_dirs");
+        assert!(
+            crate::searcher_open_failures().is_empty(),
+            "open_from_dirs must reset the record too, not only open()"
+        );
+        assert_eq!(searcher.index_counts(), (0, 0, 0));
+
+        // `open()` needs a fully-populated `AppGlobalPaths`, which is not worth
+        // synthesising here — so check instead that both constructors go
+        // through the one helper. Clearing in only one of them is precisely the
+        // defect this guards.
+        let src = include_str!("search/searcher.rs");
+        let calls = src.matches("Self::begin_open_session();").count();
+        assert_eq!(
+            calls, 2,
+            "both FulltextSearcher constructors must reset the open-failure record"
+        );
+    }
+
+    #[test]
+    fn an_uninitialised_searcher_is_reported_as_a_state_of_its_own() {
+        let state = SearcherState {
+            initialised: false,
+            sutta_indexes: 0,
+            dict_indexes: 0,
+            library_indexes: 0,
+            open_failures: Vec::new(),
+            app_version: "1.0.0".to_string(),
+            platform: "Linux",
+            android_api_level: None,
+        };
+
+        let rendered = render_searcher_state(&state);
+        assert!(rendered.contains("have not been opened in this session"));
+        assert!(rendered.contains("This is normal, not a fault"));
+        // The failure list must be worded from the same state, or the two lines
+        // can disagree — "not measured" is honest, "none" is not.
+        assert!(rendered.contains("failed to open: not measured"));
+        assert!(!rendered.contains("failed to open: none"));
+    }
+
+    // -- verdict fixtures ---------------------------------------------------
+
+    fn fixture_location(desktop: bool, state: StorageState) -> StorageLocationInfo {
+        StorageLocationInfo {
+            recorded_path: None,
+            resolved_path: PathBuf::from("/data/simsapa"),
+            paths_differ: false,
+            state,
+            state_is_desktop: desktop,
+            total_space: Some(64 * 1024 * 1024 * 1024),
+            available_space: Some(32 * 1024 * 1024 * 1024),
+            space_error: None,
+            mount: None,
+            statfs_magic: None,
+            mount_error: None,
+            is_internal: Some(true),
+            internal_app_root: None,
+            elapsed: Duration::from_millis(1),
+        }
+    }
+
+    fn fixture_probes(flock: FlockSupport, mmap_ok: bool) -> ProbeResults {
+        let ok = |detail: &str| ProbeOutcome::ok(detail, Duration::from_millis(1));
+        ProbeResults {
+            dir: PathBuf::from("/data/simsapa/index/suttas/pli"),
+            flock,
+            flock_elapsed: Duration::from_millis(1),
+            mmap: if mmap_ok {
+                ok("read 3 bytes")
+            } else {
+                ProbeOutcome {
+                    ok: false,
+                    detail: String::new(),
+                    error: Some("map: operation not supported".to_string()),
+                    errno: Some(19),
+                    elapsed: Duration::from_millis(1),
+                }
+            },
+            mmap_file: Some("0.store".to_string()),
+            mmap_used_fallback_file: false,
+            atomic_write: ok("renamed"),
+            read_write: ok("round-tripped"),
+            elapsed: Duration::from_millis(4),
+        }
+    }
+
+    fn fixture_dir(area: IndexArea, lang: &str, meta: MetaJsonState) -> IndexDirInfo {
+        IndexDirInfo {
+            area,
+            lang: lang.to_string(),
+            path: PathBuf::from(format!("/data/simsapa/index/{}/{}", area.as_str(), lang)),
+            file_count: 12,
+            total_size: 40 * 1024 * 1024,
+            meta_json: meta,
+            // Leftover lock files are the normal reading, and must never feed a
+            // fault verdict.
+            lock_files: vec![LockFileInfo {
+                name: ".tantivy-meta.lock".to_string(),
+                age: Some(Duration::from_secs(600)),
+            }],
+            scan_error: None,
+        }
+    }
+
+    fn fixture_inventory(dirs: Vec<IndexDirInfo>, version_current: bool) -> IndexInventory {
+        IndexInventory {
+            version: Some(if version_current { "1.0" } else { "0.9" }.to_string()),
+            version_error: None,
+            version_is_current: version_current,
+            expected_version: "1.0",
+            dirs,
+            elapsed: Duration::from_millis(2),
+        }
+    }
+
+    fn ok_step(name: &'static str) -> OpenStep {
+        OpenStep {
+            name,
+            ok: true,
+            error: None,
+            elapsed: Duration::from_millis(1),
+        }
+    }
+
+    fn failed_step(name: &'static str, error: &str) -> OpenStep {
+        OpenStep {
+            name,
+            ok: false,
+            error: Some(error.to_string()),
+            elapsed: Duration::from_millis(1),
+        }
+    }
+
+    fn fixture_current_open(dir: &IndexDirInfo, reader_ok: bool) -> IndexOpenReport {
+        let mut steps = vec![ok_step("MmapDirectory::open"), ok_step("Index::open")];
+        steps.push(if reader_ok {
+            ok_step("index.reader()")
+        } else {
+            failed_step("index.reader()", "LockError: IoError: Function not implemented")
+        });
+        IndexOpenReport {
+            area: dir.area,
+            lang: dir.lang.clone(),
+            path: dir.path.clone(),
+            steps,
+            created_lock_files: Vec::new(),
+            elapsed: Duration::from_millis(3),
+        }
+    }
+
+    fn fixture_wrapper_open(
+        dir: &IndexDirInfo,
+        num_docs: u64,
+        hits: [usize; 2],
+        route: LockPathTaken,
+    ) -> WrapperOpenReport {
+        WrapperOpenReport {
+            area: dir.area,
+            lang: dir.lang.clone(),
+            path: dir.path.clone(),
+            steps: vec![
+                ok_step("LenientLockMmapDirectory::open"),
+                ok_step("Index::open"),
+                ok_step("index.reader() [ReloadPolicy::Manual]"),
+            ],
+            lock_paths: vec![route],
+            num_docs: Some(num_docs),
+            schema_error: None,
+            queries: QUERY_TERMS
+                .iter()
+                .zip(hits)
+                .map(|(term, h)| QueryProbe {
+                    term,
+                    hits: Some(h),
+                    error: None,
+                    elapsed: Duration::from_millis(1),
+                })
+                .collect(),
+            elapsed: Duration::from_millis(5),
+        }
+    }
+
+    fn fixture_searcher(initialised: bool) -> SearcherState {
+        SearcherState {
+            initialised,
+            sutta_indexes: if initialised { 3 } else { 0 },
+            dict_indexes: if initialised { 2 } else { 0 },
+            library_indexes: if initialised { 1 } else { 0 },
+            open_failures: Vec::new(),
+            app_version: "1.0.0".to_string(),
+            platform: "Linux",
+            android_api_level: None,
+        }
+    }
+
+    fn fixture_results(
+        desktop: bool,
+        state: StorageState,
+        probes: Option<ProbeResults>,
+        inventory: IndexInventory,
+        current: Vec<IndexOpenReport>,
+        wrapper: Vec<WrapperOpenReport>,
+        searcher_initialised: bool,
+    ) -> DiagnosticsResults {
+        DiagnosticsResults {
+            location: fixture_location(desktop, state),
+            probes,
+            inventory,
+            current_opens: current,
+            wrapper_opens: wrapper,
+            searcher: fixture_searcher(searcher_initialised),
+            elapsed: Duration::from_millis(50),
+        }
+    }
+
+    /// The all-healthy case, on desktop, with the searcher never opened — every
+    /// one of which is normal and none of which may read as a fault.
+    fn healthy_desktop_fixture() -> DiagnosticsResults {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let current = vec![fixture_current_open(&dir, true)];
+        let wrapper = vec![fixture_wrapper_open(&dir, 8000, [12, 4], LockPathTaken::InnerFlock)];
+        fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![dir], true),
+            current,
+            wrapper,
+            false,
+        )
+    }
+
+    #[test]
+    fn a_healthy_desktop_run_reports_no_fault() {
+        let verdict = derive_verdict(&healthy_desktop_fixture());
+        assert!(
+            verdict.contains("Nothing is wrong"),
+            "desktop always reports the storage state as absent, and that alone \
+             must not fire the unreachable branch: {verdict}"
+        );
+    }
+
+    #[test]
+    fn an_unreachable_storage_location_is_only_a_fault_on_mobile() {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let mobile = fixture_results(
+            false,
+            StorageState::Unreachable,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![dir.clone()], true),
+            vec![fixture_current_open(&dir, true)],
+            vec![fixture_wrapper_open(&dir, 10, [1, 1], LockPathTaken::InnerFlock)],
+            true,
+        );
+        assert!(derive_verdict(&mobile).contains("cannot be reached"));
+    }
+
+    #[test]
+    fn an_unsupported_primitive_that_the_candidate_fix_handled_says_so() {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let results = fixture_results(
+            false,
+            StorageState::Ok,
+            Some(fixture_probes(
+                FlockSupport::Unsupported {
+                    errno: 38,
+                    name: "ENOSYS".to_string(),
+                },
+                true,
+            )),
+            fixture_inventory(vec![dir.clone()], true),
+            vec![fixture_current_open(&dir, false)],
+            vec![fixture_wrapper_open(
+                &dir,
+                8000,
+                [12, 0],
+                LockPathTaken::FallbackUnsupported {
+                    errno: 38,
+                    name: "ENOSYS".to_string(),
+                },
+            )],
+            true,
+        );
+
+        let verdict = derive_verdict(&results);
+        assert!(verdict.contains("does not support"));
+        assert!(verdict.contains("did work here"));
+    }
+
+    #[test]
+    fn an_unsupported_primitive_with_a_broken_read_path_says_the_fix_is_not_enough() {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let mut wrapper = fixture_wrapper_open(&dir, 0, [0, 0], LockPathTaken::InnerFlock);
+        wrapper.steps = vec![
+            ok_step("LenientLockMmapDirectory::open"),
+            failed_step("Index::open", "Io error: operation not supported"),
+        ];
+        wrapper.num_docs = None;
+        wrapper.queries.clear();
+
+        let results = fixture_results(
+            false,
+            StorageState::Ok,
+            Some(fixture_probes(
+                FlockSupport::Unsupported {
+                    errno: 38,
+                    name: "ENOSYS".to_string(),
+                },
+                false,
+            )),
+            fixture_inventory(vec![dir.clone()], true),
+            vec![fixture_current_open(&dir, false)],
+            vec![wrapper],
+            true,
+        );
+
+        let verdict = derive_verdict(&results);
+        assert!(verdict.contains("two of the things"));
+        assert!(verdict.contains("was not enough"));
+    }
+
+    #[test]
+    fn a_missing_or_stale_index_is_named_as_such() {
+        let missing = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Missing);
+        let results = fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![missing], true),
+            Vec::new(),
+            Vec::new(),
+            false,
+        );
+        assert!(derive_verdict(&results).contains("missing or incomplete"));
+
+        // A VERSION mismatch is the same user-facing situation.
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let stale = fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![dir.clone()], false),
+            vec![fixture_current_open(&dir, true)],
+            vec![fixture_wrapper_open(&dir, 10, [1, 1], LockPathTaken::InnerFlock)],
+            true,
+        );
+        assert!(derive_verdict(&stale).contains("missing or incomplete"));
+    }
+
+    #[test]
+    fn an_index_holding_no_documents_is_not_a_fault() {
+        // The library index is empty on most installs: nobody imported a book.
+        let suttas = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let library = fixture_dir(IndexArea::Library, "en", MetaJsonState::Present);
+        let results = fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![suttas.clone(), library.clone()], true),
+            vec![
+                fixture_current_open(&suttas, true),
+                fixture_current_open(&library, true),
+            ],
+            vec![
+                fixture_wrapper_open(&suttas, 8000, [12, 4], LockPathTaken::InnerFlock),
+                fixture_wrapper_open(&library, 0, [0, 0], LockPathTaken::InnerFlock),
+            ],
+            false,
+        );
+        assert!(derive_verdict(&results).contains("Nothing is wrong"));
+    }
+
+    #[test]
+    fn a_populated_index_matching_only_the_pali_term_is_not_a_fault() {
+        // The regression per-language query routing produced: `suttas/san`
+        // holds romanized Sanskrit, so the English term legitimately misses.
+        let san = fixture_dir(IndexArea::Suttas, "san", MetaJsonState::Present);
+        let results = fixture_results(
+            true,
+            StorageState::Absent,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![san.clone()], true),
+            vec![fixture_current_open(&san, true)],
+            vec![fixture_wrapper_open(&san, 1200, [7, 0], LockPathTaken::InnerFlock)],
+            false,
+        );
+        assert!(derive_verdict(&results).contains("Nothing is wrong"));
+    }
+
+    #[test]
+    fn an_unrecognised_pattern_asks_for_the_summary_rather_than_guessing() {
+        // Locking works, the files are all there, and the index still will not
+        // open. We have no diagnosis for that, and must not invent one.
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let mut wrapper = fixture_wrapper_open(&dir, 0, [0, 0], LockPathTaken::InnerFlock);
+        wrapper.steps = vec![failed_step("LenientLockMmapDirectory::open", "permission denied")];
+        wrapper.num_docs = None;
+        wrapper.queries.clear();
+
+        let results = fixture_results(
+            false,
+            StorageState::Ok,
+            Some(fixture_probes(FlockSupport::Supported, true)),
+            fixture_inventory(vec![dir.clone()], true),
+            vec![fixture_current_open(&dir, false)],
+            vec![wrapper],
+            true,
+        );
+
+        let verdict = derive_verdict(&results);
+        assert!(verdict.contains("do not match any pattern we recognise"));
+        assert!(verdict.contains("Please send this summary"));
+    }
+
+    #[test]
+    fn no_verdict_ever_uses_the_technical_vocabulary() {
+        let dir = fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Present);
+        let unsupported = FlockSupport::Unsupported {
+            errno: 38,
+            name: "ENOSYS".to_string(),
+        };
+
+        let mut broken_wrapper = fixture_wrapper_open(&dir, 0, [0, 0], LockPathTaken::InnerFlock);
+        broken_wrapper.steps = vec![failed_step("Index::open", "Io error")];
+        broken_wrapper.queries.clear();
+
+        let cases = vec![
+            healthy_desktop_fixture(),
+            fixture_results(
+                false,
+                StorageState::Unreachable,
+                Some(fixture_probes(FlockSupport::Supported, true)),
+                fixture_inventory(vec![dir.clone()], true),
+                Vec::new(),
+                Vec::new(),
+                true,
+            ),
+            fixture_results(
+                true,
+                StorageState::Absent,
+                Some(fixture_probes(FlockSupport::Supported, true)),
+                fixture_inventory(vec![fixture_dir(IndexArea::Suttas, "pli", MetaJsonState::Missing)], true),
+                Vec::new(),
+                Vec::new(),
+                false,
+            ),
+            fixture_results(
+                false,
+                StorageState::Ok,
+                Some(fixture_probes(unsupported.clone(), true)),
+                fixture_inventory(vec![dir.clone()], true),
+                vec![fixture_current_open(&dir, false)],
+                vec![fixture_wrapper_open(&dir, 900, [3, 1], LockPathTaken::InnerFlock)],
+                true,
+            ),
+            fixture_results(
+                false,
+                StorageState::Ok,
+                Some(fixture_probes(unsupported.clone(), false)),
+                fixture_inventory(vec![dir.clone()], true),
+                vec![fixture_current_open(&dir, false)],
+                vec![broken_wrapper.clone()],
+                true,
+            ),
+            fixture_results(
+                false,
+                StorageState::Ok,
+                Some(fixture_probes(FlockSupport::Supported, true)),
+                fixture_inventory(vec![dir.clone()], true),
+                vec![fixture_current_open(&dir, false)],
+                vec![broken_wrapper],
+                true,
+            ),
+        ];
+
+        for case in &cases {
+            let verdict = derive_verdict(case).to_lowercase();
+            for token in [
+                "flock", "mmap", "tantivy", "fuse", "enosys", "eopnotsupp", "einval", "errno",
+                "index.reader", "sdcardfs", "exfat",
+            ] {
+                assert!(
+                    !verdict.contains(token),
+                    "the verdict must not say `{token}`: {verdict}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_report_puts_the_verdict_first_and_carries_every_section() {
+        let results = healthy_desktop_fixture();
+        let report = render_report(&results);
+
+        let verdict = derive_verdict(&results);
+        let verdict_at = report.find(&verdict).expect("the verdict is in the report");
+        let section_a = report.find("== A.").expect("section A is in the report");
+        assert!(verdict_at < section_a, "the verdict must come first");
+
+        for header in ["== A.", "== B.", "== C.", "== D.", "== E.", "== F."] {
+            assert!(report.contains(header), "missing {header}");
+        }
+        assert!(report.contains("Total elapsed:"));
+        // Plain text, safe to paste into an email.
+        assert!(!report.contains("<span"));
+        assert!(!report.contains("**"));
+    }
+
+    #[test]
+    fn the_report_carries_no_sensitive_or_document_content() {
+        let report = render_report(&healthy_desktop_fixture());
+        let lowered = report.to_lowercase();
+        for forbidden in [
+            "api_key",
+            "api key",
+            "sk-",
+            "bookmark",
+            "password",
+            "token=",
+            "evaṁ me sutaṁ",
+        ] {
+            assert!(
+                !lowered.contains(forbidden),
+                "the report must not contain `{forbidden}`"
+            );
+        }
+        // The searches report counts, never matched text.
+        assert!(report.contains("nirodha=12"));
+        assert!(!report.contains("suffering"));
+    }
+
 
     #[test]
     fn byte_and_duration_formatting_is_readable() {
