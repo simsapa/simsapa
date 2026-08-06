@@ -28,9 +28,13 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use tantivy::directory::MmapDirectory;
+use tantivy::Index;
+
 use crate::logger::error;
+use crate::search::indexer::{is_index_current, read_version_file, INDEX_VERSION};
 use crate::search::lenient_directory::{probe_flock_support, FlockSupport};
-use crate::StorageState;
+use crate::{AppGlobalPaths, StorageState};
 
 /// Prefix for every file this module writes, so anything left behind by a
 /// killed process is identifiable as ours rather than mistaken for app data or
@@ -481,9 +485,9 @@ fn probe_mmap(dir: &Path) -> MmapProbe {
 
     // SAFETY: the mapping is read-only and dropped before this function
     // returns. Another process truncating the file underneath us would be UB,
-    // but only this process touches an index directory (the searcher is the
-    // process-global FULLTEXT_SEARCHER shared by the embedded webserver), and
-    // the diagnostic never writes to the files it maps.
+    // but only this process touches an index directory (the searcher is a
+    // process-global shared by the embedded webserver), and the diagnostic
+    // never writes to the files it maps.
     let map = match unsafe { memmap2::Mmap::map(&file) } {
         Ok(m) => m,
         Err(e) => {
@@ -679,6 +683,515 @@ fn probe_read_write(dir: &Path) -> ProbeOutcome {
 }
 
 // ---------------------------------------------------------------------------
+// Section C — index inventory
+// ---------------------------------------------------------------------------
+
+/// The three index trees, each holding one subdirectory per language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexArea {
+    Suttas,
+    DictWords,
+    Library,
+}
+
+impl IndexArea {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IndexArea::Suttas => "suttas",
+            IndexArea::DictWords => "dict_words",
+            IndexArea::Library => "library",
+        }
+    }
+}
+
+/// The lock files `MmapDirectory` uses. It **creates** them and never deletes
+/// them — `ReleaseLockFile`'s `Drop` only closes the file descriptor — so
+/// finding them lying about is expected, and their *absence* is the unusual
+/// reading.
+const TANTIVY_LOCK_FILES: [&str; 2] = [".tantivy-meta.lock", ".tantivy-writer.lock"];
+
+#[derive(Debug, Clone)]
+pub struct LockFileInfo {
+    pub name: String,
+    pub age: Option<Duration>,
+}
+
+/// Whether `meta.json` is there and readable as JSON. Its absence is what makes
+/// the section-D open fail at step 2 rather than step 3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetaJsonState {
+    Present,
+    Missing,
+    Unparseable(String),
+}
+
+impl MetaJsonState {
+    pub fn describe(&self) -> String {
+        match self {
+            MetaJsonState::Present => "meta.json ok".to_string(),
+            MetaJsonState::Missing => "meta.json MISSING".to_string(),
+            MetaJsonState::Unparseable(e) => format!("meta.json UNPARSEABLE ({e})"),
+        }
+    }
+}
+
+/// One per-language index directory.
+#[derive(Debug, Clone)]
+pub struct IndexDirInfo {
+    pub area: IndexArea,
+    pub lang: String,
+    pub path: PathBuf,
+    pub file_count: usize,
+    pub total_size: u64,
+    pub meta_json: MetaJsonState,
+    /// The lock files present **before** section D ran. Section D's
+    /// `index.reader()` creates them, so this snapshot has to be taken first or
+    /// the report describes the diagnostic's own leftovers as pre-existing.
+    pub lock_files: Vec<LockFileInfo>,
+    pub scan_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexInventory {
+    /// `<app-assets>/index/VERSION` — **one** file for the whole tree, not one
+    /// per language directory.
+    pub version: Option<String>,
+    pub version_error: Option<String>,
+    pub version_is_current: bool,
+    pub expected_version: &'static str,
+    pub dirs: Vec<IndexDirInfo>,
+    pub elapsed: Duration,
+}
+
+/// The per-language index directories under one area's base directory, in a
+/// stable order. A missing base directory is not an error — it simply
+/// contributes no rows.
+pub fn enumerate_index_dirs_in(area: IndexArea, base_dir: &Path) -> Vec<(IndexArea, String, PathBuf)> {
+    let mut found = Vec::new();
+
+    match base_dir.try_exists() {
+        Ok(true) => {}
+        _ => return found,
+    }
+
+    let entries = match fs::read_dir(base_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            error(&format!(
+                "storage_diagnostics: cannot list {}: {}",
+                base_dir.display(),
+                e
+            ));
+            return found;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(lang) = path.file_name().and_then(|n| n.to_str()) {
+            found.push((area, lang.to_string(), path.clone()));
+        }
+    }
+
+    found.sort_by(|a, b| a.1.cmp(&b.1));
+    found
+}
+
+/// Every per-language index directory the app knows about.
+pub fn enumerate_index_dirs(paths: &AppGlobalPaths) -> Vec<(IndexArea, String, PathBuf)> {
+    let mut all = enumerate_index_dirs_in(IndexArea::Suttas, &paths.suttas_index_dir);
+    all.extend(enumerate_index_dirs_in(
+        IndexArea::DictWords,
+        &paths.dict_words_index_dir,
+    ));
+    all.extend(enumerate_index_dirs_in(
+        IndexArea::Library,
+        &paths.library_index_dir,
+    ));
+    all
+}
+
+/// Section C for one directory. Must be called **before** section D touches the
+/// directory.
+pub fn collect_index_dir_info(area: IndexArea, lang: &str, dir: &Path) -> IndexDirInfo {
+    let mut file_count = 0usize;
+    let mut total_size = 0u64;
+    let mut scan_error = None;
+
+    match fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        file_count += 1;
+                        total_size += meta.len();
+                    }
+                }
+            }
+        }
+        Err(e) => scan_error = Some(format!("cannot list the directory: {e}")),
+    }
+
+    let meta_path = dir.join("meta.json");
+    let meta_json = match meta_path.try_exists() {
+        Ok(true) => match fs::read_to_string(&meta_path) {
+            Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
+                Ok(_) => MetaJsonState::Present,
+                Err(e) => MetaJsonState::Unparseable(e.to_string()),
+            },
+            Err(e) => MetaJsonState::Unparseable(format!("cannot read: {e}")),
+        },
+        _ => MetaJsonState::Missing,
+    };
+
+    IndexDirInfo {
+        area,
+        lang: lang.to_string(),
+        path: dir.to_path_buf(),
+        file_count,
+        total_size,
+        meta_json,
+        lock_files: lock_files_present(dir),
+        scan_error,
+    }
+}
+
+/// Which of tantivy's lock files are in `dir`, and how old they are.
+fn lock_files_present(dir: &Path) -> Vec<LockFileInfo> {
+    let mut found = Vec::new();
+    for name in TANTIVY_LOCK_FILES {
+        let path = dir.join(name);
+        if matches!(path.try_exists(), Ok(true)) {
+            let age = fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(file_age);
+            found.push(LockFileInfo {
+                name: name.to_string(),
+                age,
+            });
+        }
+    }
+    found
+}
+
+/// Collect section C for every index directory, plus the one top-level
+/// `VERSION` file.
+pub fn collect_index_inventory(paths: &AppGlobalPaths) -> IndexInventory {
+    let started = Instant::now();
+
+    let (version, version_error) = match read_version_file(&paths.index_dir) {
+        Ok(v) => (Some(v), None),
+        Err(e) => (None, Some(e.to_string())),
+    };
+
+    let dirs = enumerate_index_dirs(paths)
+        .into_iter()
+        .map(|(area, lang, path)| collect_index_dir_info(area, &lang, &path))
+        .collect();
+
+    IndexInventory {
+        version,
+        version_error,
+        version_is_current: is_index_current(&paths.index_dir),
+        expected_version: INDEX_VERSION,
+        dirs,
+        elapsed: started.elapsed(),
+    }
+}
+
+/// Section C as plain text.
+pub fn render_index_inventory(inventory: &IndexInventory) -> String {
+    let mut out = String::new();
+    out.push_str("== C. Index inventory ==\n");
+
+    match (&inventory.version, inventory.version_is_current) {
+        (Some(v), true) => out.push_str(&format!(
+            "Index VERSION: {} (matches the expected {})\n",
+            v, inventory.expected_version
+        )),
+        (Some(v), false) => out.push_str(&format!(
+            "Index VERSION: {} — DOES NOT MATCH the expected {}; the index is stale\n",
+            v, inventory.expected_version
+        )),
+        (None, _) => out.push_str(&format!(
+            "Index VERSION: not readable ({}); expected {}\n",
+            inventory.version_error.as_deref().unwrap_or("unknown error"),
+            inventory.expected_version
+        )),
+    }
+
+    if inventory.dirs.is_empty() {
+        out.push_str("No per-language index directories found.\n");
+    }
+
+    for d in &inventory.dirs {
+        out.push_str(&format!(
+            "{}/{}: {} files, {}, {}{}\n",
+            d.area.as_str(),
+            d.lang,
+            d.file_count,
+            format_bytes(d.total_size),
+            d.meta_json.describe(),
+            match &d.scan_error {
+                Some(e) => format!(", scan error: {e}"),
+                None => String::new(),
+            }
+        ));
+
+        // Worded so their presence does not read as a fault: the app's own
+        // index code creates these and never removes them.
+        let locks = if d.lock_files.is_empty() {
+            "  lock files: none present (they are normally left behind by any successful open)".to_string()
+        } else {
+            let listed: Vec<String> = d
+                .lock_files
+                .iter()
+                .map(|l| match l.age {
+                    Some(age) => format!("{} (age {})", l.name, format_age(age)),
+                    None => l.name.clone(),
+                })
+                .collect();
+            format!(
+                "  lock files present (expected leftovers, not a fault): {}",
+                listed.join(", ")
+            )
+        };
+        out.push_str(&locks);
+        out.push('\n');
+    }
+
+    out.push_str(&format!(
+        "Section elapsed: {}\n",
+        format_duration(inventory.elapsed)
+    ));
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Section D — the open sequence as the app performs it today
+// ---------------------------------------------------------------------------
+
+/// One step of the three-step open, recorded separately because the app's own
+/// log conflates all three behind a single message — which is why we still do
+/// not know which of them actually fails on the affected devices.
+#[derive(Debug, Clone)]
+pub struct OpenStep {
+    pub name: &'static str,
+    pub ok: bool,
+    pub error: Option<String>,
+    pub elapsed: Duration,
+}
+
+impl OpenStep {
+    pub fn describe(&self) -> String {
+        if self.ok {
+            format!("{}: ok in {}", self.name, format_duration(self.elapsed))
+        } else {
+            format!(
+                "{}: FAILED after {} — {}",
+                self.name,
+                format_duration(self.elapsed),
+                self.error.as_deref().unwrap_or("unknown error")
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexOpenReport {
+    pub area: IndexArea,
+    pub lang: String,
+    pub path: PathBuf,
+    pub steps: Vec<OpenStep>,
+    /// Lock files that did not exist before this run and do now. The reader
+    /// step opens the lock file before locking it, so on a directory that has
+    /// never opened successfully the diagnostic creates one. Saying so keeps
+    /// the report honest about the volume's prior state.
+    pub created_lock_files: Vec<String>,
+    pub elapsed: Duration,
+}
+
+impl IndexOpenReport {
+    /// The step that failed, if any.
+    pub fn failed_step(&self) -> Option<&OpenStep> {
+        self.steps.iter().find(|s| !s.ok)
+    }
+
+    pub fn all_ok(&self) -> bool {
+        self.steps.iter().all(|s| s.ok) && !self.steps.is_empty()
+    }
+}
+
+/// Run the **current** open sequence against one index directory and record
+/// which of its three steps fails.
+///
+/// Two deliberate differences from `open_single_index()` in `searcher.rs`:
+///
+/// - The app opens the directory in a mode that *creates* an empty index when
+///   `meta.json` is absent, and then quietly returns no results. This only ever
+///   opens, so a missing or incomplete index fails here at step 2 — which is
+///   how "the index files are missing" becomes visible at all. The report says
+///   so, or that failure reads as one the app itself exhibits.
+/// - No tokenizers are registered. This section measures opens and never
+///   queries; registering here would imply a parity with section E that does
+///   not exist.
+///
+/// `pre_run_locks` is section C's snapshot for this directory.
+pub fn run_current_open(
+    area: IndexArea,
+    lang: &str,
+    dir: &Path,
+    pre_run_locks: &[LockFileInfo],
+) -> IndexOpenReport {
+    let started = Instant::now();
+    let mut steps = Vec::new();
+
+    let step_started = Instant::now();
+    let mmap_dir = match MmapDirectory::open(dir) {
+        Ok(d) => {
+            steps.push(OpenStep {
+                name: "MmapDirectory::open",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            d
+        }
+        Err(e) => {
+            steps.push(OpenStep {
+                name: "MmapDirectory::open",
+                ok: false,
+                error: Some(e.to_string()),
+                elapsed: step_started.elapsed(),
+            });
+            return finish_open_report(area, lang, dir, steps, pre_run_locks, started);
+        }
+    };
+
+    let step_started = Instant::now();
+    let index = match Index::open(mmap_dir) {
+        Ok(i) => {
+            steps.push(OpenStep {
+                name: "Index::open",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            i
+        }
+        Err(e) => {
+            steps.push(OpenStep {
+                name: "Index::open",
+                ok: false,
+                error: Some(e.to_string()),
+                elapsed: step_started.elapsed(),
+            });
+            return finish_open_report(area, lang, dir, steps, pre_run_locks, started);
+        }
+    };
+
+    let step_started = Instant::now();
+    match index.reader() {
+        Ok(reader) => {
+            steps.push(OpenStep {
+                name: "index.reader()",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            // Dropped immediately: this reproduces the app's default reload
+            // policy, which spawns a `meta.json`-polling thread per index for
+            // as long as the reader lives. One diagnostic run must not leave a
+            // handful of those behind.
+            drop(reader);
+        }
+        Err(e) => steps.push(OpenStep {
+            name: "index.reader()",
+            ok: false,
+            error: Some(e.to_string()),
+            elapsed: step_started.elapsed(),
+        }),
+    }
+
+    drop(index);
+
+    finish_open_report(area, lang, dir, steps, pre_run_locks, started)
+}
+
+fn finish_open_report(
+    area: IndexArea,
+    lang: &str,
+    dir: &Path,
+    steps: Vec<OpenStep>,
+    pre_run_locks: &[LockFileInfo],
+    started: Instant,
+) -> IndexOpenReport {
+    let before: Vec<&str> = pre_run_locks.iter().map(|l| l.name.as_str()).collect();
+    let created_lock_files = lock_files_present(dir)
+        .into_iter()
+        .filter(|l| !before.contains(&l.name.as_str()))
+        .map(|l| l.name)
+        .collect();
+
+    IndexOpenReport {
+        area,
+        lang: lang.to_string(),
+        path: dir.to_path_buf(),
+        steps,
+        created_lock_files,
+        elapsed: started.elapsed(),
+    }
+}
+
+/// Run section D over every directory section C inventoried, reusing its
+/// pre-run lock snapshot.
+pub fn run_current_opens(inventory: &IndexInventory) -> Vec<IndexOpenReport> {
+    inventory
+        .dirs
+        .iter()
+        .map(|d| run_current_open(d.area, &d.lang, &d.path, &d.lock_files))
+        .collect()
+}
+
+/// Section D as plain text.
+pub fn render_current_opens(reports: &[IndexOpenReport]) -> String {
+    let mut out = String::new();
+    out.push_str("== D. Index open, as the app does it today ==\n");
+    out.push_str(
+        "Three steps per index. Note that the app opens each index in a mode that\n\
+         creates an empty one when its files are missing; this only opens, so a\n\
+         missing or incomplete index fails at step 2 here where the app would\n\
+         instead carry on and simply find nothing.\n",
+    );
+
+    if reports.is_empty() {
+        out.push_str("No index directories to open.\n");
+    }
+
+    let mut total = Duration::ZERO;
+    for r in reports {
+        total += r.elapsed;
+        out.push_str(&format!("{}/{}:\n", r.area.as_str(), r.lang));
+        for step in &r.steps {
+            out.push_str(&format!("  {}\n", step.describe()));
+        }
+        if !r.created_lock_files.is_empty() {
+            out.push_str(&format!(
+                "  NOTE: this diagnostic run created {} here — it was not present beforehand\n",
+                r.created_lock_files.join(", ")
+            ));
+        }
+    }
+
+    out.push_str(&format!("Section elapsed: {}\n", format_duration(total)));
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Formatting helpers shared by the section renderers
 // ---------------------------------------------------------------------------
 
@@ -706,9 +1219,23 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Age of a file, for the stale-lock-file reading of section C.
+/// Age of a file, for the lock-file reading of section C.
 pub fn file_age(modified: SystemTime) -> Option<Duration> {
     SystemTime::now().duration_since(modified).ok()
+}
+
+/// A file age in the coarsest unit that still says something.
+pub fn format_age(age: Duration) -> String {
+    let secs = age.as_secs();
+    if secs < 60 {
+        format!("{secs} s")
+    } else if secs < 3600 {
+        format!("{} min", secs / 60)
+    } else if secs < 86400 {
+        format!("{} h", secs / 3600)
+    } else {
+        format!("{} days", secs / 86400)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -994,6 +1521,207 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
 
         assert!(matches!(path.try_exists(), Ok(false)));
         assert_no_probe_files(dir.path());
+    }
+
+    // -----------------------------------------------------------------
+    // Sections C and D
+    // -----------------------------------------------------------------
+
+    /// A real, populated tantivy index — the only way to test the open
+    /// sequence against something other than the failure case.
+    fn build_test_index(dir: &Path) {
+        use tantivy::schema::{Schema, STORED, TEXT};
+
+        let mut builder = Schema::builder();
+        let content = builder.add_text_field("content", TEXT | STORED);
+        let schema = builder.build();
+
+        let index = Index::create_in_dir(dir, schema).expect("create index");
+        let mut writer = index.writer(15_000_000).expect("writer");
+        writer
+            .add_document(tantivy::doc!(content => "nirodha is the cessation of suffering"))
+            .expect("add doc");
+        writer.commit().expect("commit");
+        drop(writer);
+        drop(index);
+    }
+
+    #[test]
+    fn enumerating_index_dirs_tolerates_a_missing_base_directory() {
+        let missing = std::env::temp_dir().join("simsapa-diag-no-such-base-xyz");
+        let _ = fs::remove_dir_all(&missing);
+        assert!(enumerate_index_dirs_in(IndexArea::Suttas, &missing).is_empty());
+    }
+
+    #[test]
+    fn enumerating_index_dirs_lists_language_subdirectories_in_order() {
+        let base = tempfile::tempdir().expect("temp dir");
+        for lang in ["pli", "en", "san"] {
+            fs::create_dir(base.path().join(lang)).expect("mkdir");
+        }
+        // A stray file at the top level is not a language.
+        fs::write(base.path().join("VERSION"), b"1.0").expect("write");
+
+        let found = enumerate_index_dirs_in(IndexArea::Suttas, base.path());
+        let langs: Vec<&str> = found.iter().map(|(_, l, _)| l.as_str()).collect();
+        assert_eq!(langs, vec!["en", "pli", "san"]);
+    }
+
+    #[test]
+    fn index_dir_info_counts_files_and_reads_meta_json() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index(dir.path());
+
+        let info = collect_index_dir_info(IndexArea::Suttas, "en", dir.path());
+
+        assert!(info.file_count > 0);
+        assert!(info.total_size > 0);
+        assert_eq!(info.meta_json, MetaJsonState::Present);
+        assert!(info.scan_error.is_none());
+    }
+
+    #[test]
+    fn index_dir_info_reports_an_unparseable_meta_json() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        fs::write(dir.path().join("meta.json"), b"{ not json").expect("write");
+
+        let info = collect_index_dir_info(IndexArea::DictWords, "pli", dir.path());
+        assert!(matches!(info.meta_json, MetaJsonState::Unparseable(_)));
+        assert!(info.meta_json.describe().contains("UNPARSEABLE"));
+    }
+
+    #[test]
+    fn the_lock_snapshot_is_taken_before_the_open_and_a_creation_is_reported() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index(dir.path());
+
+        // Creating the index already left lock files behind, exactly as the app
+        // does. Remove them so the directory looks like one that has never
+        // opened successfully — the case where section D creates its own.
+        for name in TANTIVY_LOCK_FILES {
+            let _ = fs::remove_file(dir.path().join(name));
+        }
+
+        let info = collect_index_dir_info(IndexArea::Suttas, "en", dir.path());
+        assert!(
+            info.lock_files.is_empty(),
+            "the pre-run snapshot must record the directory as it was found"
+        );
+
+        let report = run_current_open(IndexArea::Suttas, "en", dir.path(), &info.lock_files);
+        assert!(report.all_ok(), "steps: {:?}", report.steps);
+        assert!(
+            report.created_lock_files.contains(&".tantivy-meta.lock".to_string()),
+            "the reader step creates the lock file: {:?}",
+            report.created_lock_files
+        );
+
+        // Section C still reports the *pre-run* state…
+        assert!(render_index_inventory(&IndexInventory {
+            version: Some("1.0".to_string()),
+            version_error: None,
+            version_is_current: true,
+            expected_version: "1.0",
+            dirs: vec![info],
+            elapsed: Duration::ZERO,
+        })
+        .contains("lock files: none present"));
+        // …and section D says the run created one.
+        assert!(render_current_opens(&[report]).contains("this diagnostic run created"));
+    }
+
+    #[test]
+    fn the_open_sequence_attributes_a_missing_meta_json_to_the_index_step() {
+        // An empty directory is the "index missing or incomplete" case.
+        let dir = tempfile::tempdir().expect("temp dir");
+
+        let report = run_current_open(IndexArea::Library, "en", dir.path(), &[]);
+
+        assert_eq!(report.steps.len(), 2, "the run stops at the failing step");
+        assert!(report.steps[0].ok, "opening the directory itself succeeds");
+        let failed = report.failed_step().expect("a step must have failed");
+        assert_eq!(failed.name, "Index::open");
+        assert!(failed.error.is_some());
+        assert!(render_current_opens(&[report]).contains("FAILED"));
+    }
+
+    #[test]
+    fn the_open_sequence_reports_all_three_steps_on_a_healthy_index() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index(dir.path());
+
+        let report = run_current_open(IndexArea::Suttas, "pli", dir.path(), &[]);
+
+        let names: Vec<&str> = report.steps.iter().map(|s| s.name).collect();
+        assert_eq!(
+            names,
+            vec!["MmapDirectory::open", "Index::open", "index.reader()"]
+        );
+        assert!(report.all_ok(), "steps: {:?}", report.steps);
+    }
+
+    /// Live thread count, for the "no leaked watcher threads" guarantee.
+    #[cfg(target_os = "linux")]
+    fn live_thread_count() -> usize {
+        fs::read_dir("/proc/self/task")
+            .map(|entries| entries.flatten().count())
+            .unwrap_or(0)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_open_sequence_leaves_no_watcher_threads_behind() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index(dir.path());
+
+        let baseline = live_thread_count();
+
+        for _ in 0..4 {
+            let report = run_current_open(IndexArea::Suttas, "en", dir.path(), &[]);
+            assert!(report.all_ok(), "steps: {:?}", report.steps);
+        }
+
+        // The polling threads stop when their reader is dropped, but not
+        // instantly — so wait for the count to come back rather than sampling
+        // once and hoping.
+        let mut count = live_thread_count();
+        for _ in 0..50 {
+            if count <= baseline + 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            count = live_thread_count();
+        }
+
+        assert!(
+            count <= baseline + 1,
+            "four opens leaked threads: {baseline} before, {count} after"
+        );
+    }
+
+    #[test]
+    fn the_diagnostics_never_create_an_index_and_never_touch_the_live_searcher() {
+        // Read the module's own source and check the non-test half. This is a
+        // guard on two rules that are invisible at runtime on a healthy
+        // machine: the diagnostic must only ever open an index, never bring one
+        // into being, and it must not read, replace or initialise the
+        // process-global searcher — it opens its own instances.
+        let src = include_str!("storage_diagnostics.rs");
+        let (non_test, _) = src
+            .split_once("#[cfg(test)]")
+            .expect("the test module marks the end of the production half");
+
+        for forbidden in [
+            "open_or_create",
+            "FULLTEXT_SEARCHER",
+            "init_fulltext_searcher",
+            "reinit_fulltext_searcher",
+        ] {
+            assert!(
+                !non_test.contains(forbidden),
+                "`{forbidden}` must not appear in the diagnostics module"
+            );
+        }
     }
 
     #[test]

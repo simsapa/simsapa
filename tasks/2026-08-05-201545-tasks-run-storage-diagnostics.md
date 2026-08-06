@@ -595,18 +595,18 @@ FR-41: never touch `FULLTEXT_SEARCHER`; open independent instances.
 
 **Depends on:** 2.1 (module + result types). **Blocks:** 4.0, 5.0.
 
-- [ ] 3.1 Enumerate the per-language index directories under
+- [x] 3.1 Enumerate the per-language index directories under
       `suttas/`, `dict_words/` and `library/` from `AppGlobalPaths`
       (`lib.rs:578-580`), tolerating a missing base directory without error.
-- [ ] 3.2 Section C per-directory row (one line each, per §6): area, language key,
+- [x] 3.2 Section C per-directory row (one line each, per §6): area, language key,
       file count, total size, and whether `meta.json` is present and parseable
       (FR-22).
-- [ ] 3.3 Section C: report the presence and **age** of any
+- [x] 3.3 Section C: report the presence and **age** of any
       `.tantivy-meta.lock` / `.tantivy-writer.lock` files, with wording that makes
       clear these are expected leftovers, not a fault — `MmapDirectory` creates
       them and never deletes them (FR-23). Both files are present in the shipped
       tree, so their absence (not their presence) is the unusual reading.
-- [ ] 3.3a **Collect 3.3's reading before section D executes**, and keep the
+- [x] 3.3a **Collect 3.3's reading before section D executes**, and keep the
       snapshot. Section D's `index.reader()` reaches
       `MmapDirectory::acquire_lock`, which *opens — and therefore creates —* the
       lock file before locking it, so on an index directory that has never opened
@@ -618,7 +618,7 @@ FR-41: never touch `FULLTEXT_SEARCHER`; open independent instances.
       single line saying the run created it — otherwise the report misstates the
       volume's prior state (FR-38a, finding 28). Add a test over a temp index
       directory asserting the pre-run snapshot is what section C reports.
-- [ ] 3.4 Section C: report the index `VERSION` **once, as a section-C header
+- [x] 3.4 Section C: report the index `VERSION` **once, as a section-C header
       line — it is a single top-level file** (`<app-assets>/index/VERSION`,
       written by `write_version_file(&paths.index_dir)` at `indexer.rs:599`,
       contents `1.0`), **not** one per language directory, which is where an
@@ -629,7 +629,7 @@ FR-41: never touch `FULLTEXT_SEARCHER`; open independent instances.
       value **and** whether it matches `INDEX_VERSION`; a mismatch is a real
       "index stale or incomplete" input for the FR-34 verdict, which otherwise
       has no way to see it. Absence is a reported fact, not an error.
-- [ ] 3.5 Section D: for each index directory run the three-step current open
+- [x] 3.5 Section D: for each index directory run the three-step current open
       sequence — `MmapDirectory::open` → `Index::open` → `index.reader()` —
       recording per step: ok / failed-with-full-error, plus elapsed time (FR-25).
       **`Index::open(directory)` takes no schema** (`index/index.rs:510`); it reads
@@ -639,21 +639,21 @@ FR-41: never touch `FULLTEXT_SEARCHER`; open independent instances.
       belongs in task 4.3 alone, where the `QueryParser` resolves
       `{lang}_stem` / `{lang}_normalize` off the `Index` at parse time (review
       finding 14).
-- [ ] 3.5a **Drop the section-D readers** as soon as each directory's three steps
+- [x] 3.5a **Drop the section-D readers** as soon as each directory's three steps
       are recorded. Section D deliberately reproduces the app's bare
       `index.reader()`, i.e. the default `ReloadPolicy::OnCommitWithDelay`, which
       spawns a 500 ms `meta.json`-polling thread per index that lives as long as
       the reader (research §8). Leaking six watcher threads per diagnostic run
       would contradict Goal 4 and success metric 6 ("no other app behaviour
       changes"). Add a test asserting the run leaves no additional live readers.
-- [ ] 3.6 Make the step attribution explicit in the output — one labelled line per
+- [x] 3.6 Make the step attribution explicit in the output — one labelled line per
       step, so a reader can see which of the three failed without inference
       (FR-26). Word the `Index::open` line so the divergence from the app is
       visible: the app calls `open_or_create` and would silently *create* an empty
       index here, whereas the diagnostic only opens. A failure at this step means
       the index is missing or incomplete — not a fault the app exhibits at this
       step (review finding 5).
-- [ ] 3.7 Assert in code review and in a test that the diagnostic path contains no
+- [x] 3.7 Assert in code review and in a test that the diagnostic path contains no
       `open_or_create` call anywhere (FR-40), and that it constructs its own
       `Directory`/`Index` values without reading or replacing `FULLTEXT_SEARCHER`
       (FR-41).
