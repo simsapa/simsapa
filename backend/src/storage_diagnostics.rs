@@ -28,12 +28,17 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use tantivy::collector::Count;
 use tantivy::directory::MmapDirectory;
-use tantivy::Index;
+use tantivy::query::QueryParser;
+use tantivy::{Index, IndexReader, ReloadPolicy};
 
 use crate::logger::{error, info};
 use crate::search::indexer::{is_index_current, read_version_file, INDEX_VERSION};
-use crate::search::lenient_directory::{probe_flock_support, FlockSupport};
+use crate::search::lenient_directory::{
+    probe_flock_support, FlockSupport, LenientLockMmapDirectory, LockPathTaken,
+};
+use crate::search::tokenizer::register_tokenizers;
 use crate::{AppGlobalPaths, StorageState};
 
 /// Prefix for every file this module writes, so anything left behind by a
@@ -1233,6 +1238,335 @@ pub fn render_current_opens(reports: &[IndexOpenReport]) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Section E — the open sequence through the candidate fix
+// ---------------------------------------------------------------------------
+
+/// The query terms, hard-coded on purpose: reproducible across every report,
+/// and one less thing to explain to a user who is already confused about why
+/// search returns nothing.
+///
+/// **Both terms run against every index.** Routing them by language — Pāli gets
+/// `nirodha`, everything else `cessation` — sends an English term at
+/// `suttas/san`, whose content is romanized Sanskrit, so a perfectly healthy
+/// populated index scores zero and lands in the *informative* bucket. Two
+/// queries per index cost nothing and delete the classification question
+/// entirely.
+pub const QUERY_TERMS: [&str; 2] = ["nirodha", "cessation"];
+
+/// One term run against one index.
+#[derive(Debug, Clone)]
+pub struct QueryProbe {
+    pub term: &'static str,
+    pub hits: Option<usize>,
+    pub error: Option<String>,
+    pub elapsed: Duration,
+}
+
+/// Section E for one index directory.
+#[derive(Debug, Clone)]
+pub struct WrapperOpenReport {
+    pub area: IndexArea,
+    pub lang: String,
+    pub path: PathBuf,
+    pub steps: Vec<OpenStep>,
+    /// Every distinct route the wrapper's `acquire_lock` took, in the order
+    /// first seen — not just the last one. One `index.reader()` reaches
+    /// `acquire_lock` more than once, so a single slot can hide an early
+    /// "fell back after some other IoError" behind a later "inner flock
+    /// succeeded", which is exactly the "the fix works" versus "the fix hid the
+    /// failure" pair this reporting exists to separate.
+    pub lock_paths: Vec<LockPathTaken>,
+    /// Whether the index holds any documents. Nothing else in the report
+    /// measures this — section C counts files, sections D and E measure opens —
+    /// yet the expected-versus-unexpected split for a zero hit count depends on
+    /// it entirely. It is also an independent proof that the read path works,
+    /// should both query terms come up unlucky.
+    pub num_docs: Option<u64>,
+    /// Set when the schema carries no `content` field. `Index::open` reads the
+    /// schema from `meta.json` rather than being handed one, so a foreign,
+    /// truncated or older `meta.json` legitimately has no such field. That is an
+    /// attributed line, not an aborted section.
+    pub schema_error: Option<String>,
+    pub queries: Vec<QueryProbe>,
+    pub elapsed: Duration,
+}
+
+impl WrapperOpenReport {
+    pub fn all_ok(&self) -> bool {
+        self.steps.iter().all(|s| s.ok) && !self.steps.is_empty()
+    }
+
+    pub fn failed_step(&self) -> Option<&OpenStep> {
+        self.steps.iter().find(|s| !s.ok)
+    }
+
+    /// Whether any term matched anything.
+    pub fn any_hits(&self) -> bool {
+        self.queries.iter().any(|q| q.hits.unwrap_or(0) > 0)
+    }
+
+    /// A zero hit count is **expected**, not a fault, from an index that holds
+    /// no documents — the library index above all (most users import no books),
+    /// but equally a language whose content was never downloaded. The
+    /// informative case is a zero hit from an index that *does* contain
+    /// documents, and `num_docs` makes that a measured fact rather than a guess
+    /// about the language.
+    pub fn zero_hits_unexpected(&self) -> bool {
+        self.all_ok() && !self.any_hits() && self.num_docs.unwrap_or(0) > 0
+    }
+}
+
+/// Run the same three-step open through the candidate wrapper, then query.
+///
+/// This section is the point of the whole exercise: a non-zero hit count from a
+/// user's SD card is direct proof the designed fix works on real hardware,
+/// obtained before we commit to it. It therefore uses the **real** wrapper —
+/// same module, same fallback behaviour, the code the fix itself will ship —
+/// and not a diagnostic-only approximation, which would prove nothing.
+pub fn run_wrapper_open(area: IndexArea, lang: &str, dir: &Path) -> WrapperOpenReport {
+    let started = Instant::now();
+    let mut steps = Vec::new();
+
+    let finish = |steps: Vec<OpenStep>,
+                  lock_paths: Vec<LockPathTaken>,
+                  num_docs: Option<u64>,
+                  schema_error: Option<String>,
+                  queries: Vec<QueryProbe>| WrapperOpenReport {
+        area,
+        lang: lang.to_string(),
+        path: dir.to_path_buf(),
+        steps,
+        lock_paths,
+        num_docs,
+        schema_error,
+        queries,
+        elapsed: started.elapsed(),
+    };
+
+    let step_started = Instant::now();
+    let directory = match LenientLockMmapDirectory::open(dir) {
+        Ok(d) => {
+            steps.push(OpenStep {
+                name: "LenientLockMmapDirectory::open",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            d
+        }
+        Err(e) => {
+            steps.push(OpenStep {
+                name: "LenientLockMmapDirectory::open",
+                ok: false,
+                error: Some(e.to_string()),
+                elapsed: step_started.elapsed(),
+            });
+            return finish(steps, Vec::new(), None, None, Vec::new());
+        }
+    };
+
+    // The handle kept here shares its route log with the clone tantivy takes
+    // ownership of, so the routes remain readable after the open.
+    let route_handle = directory.clone();
+
+    let step_started = Instant::now();
+    // Only ever opens, never the variant that brings an index into being when
+    // one is absent: creating an index inside a user's index directory during a
+    // diagnostic would be a defect.
+    let index = match Index::open(directory) {
+        Ok(i) => {
+            steps.push(OpenStep {
+                name: "Index::open",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            i
+        }
+        Err(e) => {
+            steps.push(OpenStep {
+                name: "Index::open",
+                ok: false,
+                error: Some(e.to_string()),
+                elapsed: step_started.elapsed(),
+            });
+            return finish(steps, route_handle.lock_paths(), None, None, Vec::new());
+        }
+    };
+
+    // Before the `QueryParser` is constructed, not merely before the query
+    // runs: the parser resolves `{lang}_stem` / `{lang}_normalize` off this
+    // `Index` at parse time, and the schema read out of `meta.json` names them.
+    register_tokenizers(&index, lang);
+
+    let step_started = Instant::now();
+    let reader = match index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()
+    {
+        Ok(r) => {
+            let r: IndexReader = r;
+            steps.push(OpenStep {
+                name: "index.reader() [ReloadPolicy::Manual]",
+                ok: true,
+                error: None,
+                elapsed: step_started.elapsed(),
+            });
+            r
+        }
+        Err(e) => {
+            let e: tantivy::TantivyError = e;
+            steps.push(OpenStep {
+                name: "index.reader() [ReloadPolicy::Manual]",
+                ok: false,
+                error: Some(e.to_string()),
+                elapsed: step_started.elapsed(),
+            });
+            return finish(steps, route_handle.lock_paths(), None, None, Vec::new());
+        }
+    };
+
+    let searcher = reader.searcher();
+    let num_docs = Some(searcher.num_docs());
+
+    let content_field = match index.schema().get_field("content") {
+        Ok(f) => f,
+        Err(e) => {
+            return finish(
+                steps,
+                route_handle.lock_paths(),
+                num_docs,
+                Some(format!("schema has no 'content' field: {e}")),
+                Vec::new(),
+            );
+        }
+    };
+
+    // A single field, deliberately. The live search builds a dual-field
+    // Must/Should boolean with a boost; the question here is only whether the
+    // index can be read at all, and the extra machinery is more to get wrong
+    // for no diagnostic gain.
+    let parser = QueryParser::for_index(&index, vec![content_field]);
+
+    let mut queries = Vec::new();
+    for term in QUERY_TERMS {
+        let query_started = Instant::now();
+        let probe = match parser.parse_query(term) {
+            Ok(query) => match searcher.search(&query, &Count) {
+                Ok(hits) => QueryProbe {
+                    term,
+                    hits: Some(hits),
+                    error: None,
+                    elapsed: query_started.elapsed(),
+                },
+                Err(e) => QueryProbe {
+                    term,
+                    hits: None,
+                    error: Some(e.to_string()),
+                    elapsed: query_started.elapsed(),
+                },
+            },
+            Err(e) => QueryProbe {
+                term,
+                hits: None,
+                error: Some(format!("cannot parse the query: {e}")),
+                elapsed: query_started.elapsed(),
+            },
+        };
+        queries.push(probe);
+    }
+
+    let lock_paths = route_handle.lock_paths();
+
+    drop(reader);
+    drop(index);
+
+    finish(steps, lock_paths, num_docs, None, queries)
+}
+
+/// Run section E over every directory section C inventoried.
+pub fn run_wrapper_opens(inventory: &IndexInventory) -> Vec<WrapperOpenReport> {
+    inventory
+        .dirs
+        .iter()
+        .map(|d| run_wrapper_open(d.area, &d.lang, &d.path))
+        .collect()
+}
+
+/// Section E as plain text.
+pub fn render_wrapper_opens(reports: &[WrapperOpenReport]) -> String {
+    let mut out = String::new();
+    out.push_str("== E. Index open through the candidate fix ==\n");
+    out.push_str(
+        "The same three steps, but through the proposed replacement for the part\n\
+         that failed in section D, followed by two real searches. A non-zero hit\n\
+         count here means the proposed fix works on this device.\n\
+         Note that the reader is built in a mode that does no background\n\
+         reloading, but that is NOT what makes the difference: the reader takes\n\
+         the same lock on every build whatever that setting is, so a success here\n\
+         is attributable to the replacement alone.\n",
+    );
+
+    if reports.is_empty() {
+        out.push_str("No index directories to open.\n");
+    }
+
+    let mut total = Duration::ZERO;
+    for r in reports {
+        total += r.elapsed;
+        out.push_str(&format!("{}/{}:\n", r.area.as_str(), r.lang));
+        for step in &r.steps {
+            out.push_str(&format!("  {}\n", step.describe()));
+        }
+
+        if r.lock_paths.is_empty() {
+            out.push_str("  lock route: none taken\n");
+        } else {
+            let listed: Vec<String> = r.lock_paths.iter().map(|p| p.describe()).collect();
+            out.push_str(&format!("  lock route: {}\n", listed.join("; ")));
+        }
+
+        match r.num_docs {
+            Some(n) => out.push_str(&format!("  documents in the index: {n}\n")),
+            None => out.push_str("  documents in the index: not measured (the open failed)\n"),
+        }
+
+        if let Some(e) = &r.schema_error {
+            out.push_str(&format!("  {e}\n"));
+        }
+
+        if !r.queries.is_empty() {
+            let listed: Vec<String> = r
+                .queries
+                .iter()
+                .map(|q| match (q.hits, &q.error) {
+                    (Some(h), _) => format!("{}={} ({})", q.term, h, format_duration(q.elapsed)),
+                    (None, Some(e)) => format!("{}=FAILED ({})", q.term, e),
+                    (None, None) => format!("{}=not run", q.term),
+                })
+                .collect();
+            out.push_str(&format!("  searches: {}\n", listed.join("  ")));
+
+            // The decision gate branches on exactly this distinction, so it is
+            // stated rather than left to be inferred from the numbers.
+            if r.zero_hits_unexpected() {
+                out.push_str(
+                    "  UNEXPECTED: the index opened and holds documents, but neither search matched\n",
+                );
+            } else if r.all_ok() && !r.any_hits() {
+                out.push_str(
+                    "  (no matches, but this index holds no documents — expected, not a fault)\n",
+                );
+            }
+        }
+    }
+
+    out.push_str(&format!("Section elapsed: {}\n", format_duration(total)));
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Formatting helpers shared by the section renderers
 // ---------------------------------------------------------------------------
 
@@ -1571,6 +1905,13 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
     /// A real, populated tantivy index — the only way to test the open
     /// sequence against something other than the failure case.
     fn build_test_index(dir: &Path) {
+        build_test_index_with(dir, &["nirodha is the cessation of suffering"]);
+    }
+
+    /// An index over a `content` field holding exactly `docs`. An empty slice
+    /// gives a committed but document-less index — the "the user never
+    /// downloaded this language" shape.
+    fn build_test_index_with(dir: &Path, docs: &[&str]) {
         use tantivy::schema::{Schema, STORED, TEXT};
 
         let mut builder = Schema::builder();
@@ -1579,9 +1920,11 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
 
         let index = Index::create_in_dir(dir, schema).expect("create index");
         let mut writer = index.writer(15_000_000).expect("writer");
-        writer
-            .add_document(tantivy::doc!(content => "nirodha is the cessation of suffering"))
-            .expect("add doc");
+        for doc in docs {
+            writer
+                .add_document(tantivy::doc!(content => *doc))
+                .expect("add doc");
+        }
         writer.commit().expect("commit");
         drop(writer);
         drop(index);
@@ -1699,6 +2042,154 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
             vec!["MmapDirectory::open", "Index::open", "index.reader()"]
         );
         assert!(report.all_ok(), "steps: {:?}", report.steps);
+    }
+
+    #[test]
+    fn the_wrapper_open_runs_both_terms_against_every_index_and_counts_documents() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index(dir.path());
+
+        let report = run_wrapper_open(IndexArea::Suttas, "pli", dir.path());
+
+        let names: Vec<&str> = report.steps.iter().map(|s| s.name).collect();
+        assert_eq!(
+            names,
+            vec![
+                "LenientLockMmapDirectory::open",
+                "Index::open",
+                "index.reader() [ReloadPolicy::Manual]"
+            ]
+        );
+        assert!(report.all_ok(), "steps: {:?}", report.steps);
+        assert_eq!(report.num_docs, Some(1));
+        assert!(report.schema_error.is_none());
+
+        // Both terms, on every index — never routed by language. The routing
+        // rule sent an English term at an index of romanized Sanskrit, so a
+        // healthy populated index scored zero and read as a fault.
+        let terms: Vec<&str> = report.queries.iter().map(|q| q.term).collect();
+        assert_eq!(terms, vec!["nirodha", "cessation"]);
+        assert!(report.any_hits());
+        assert!(!report.zero_hits_unexpected());
+
+        // The lock route is recorded, and on a healthy temp filesystem it is
+        // the inner one — the wrapper changed nothing here.
+        assert_eq!(report.lock_paths, vec![LockPathTaken::InnerFlock]);
+
+        let rendered = render_wrapper_opens(&[report]);
+        assert!(rendered.contains("nirodha=1"));
+        assert!(rendered.contains("cessation=1"));
+        assert!(rendered.contains("documents in the index: 1"));
+        assert!(rendered.contains("inner flock succeeded"));
+    }
+
+    #[test]
+    fn a_zero_hit_from_an_empty_index_is_expected_and_from_a_populated_one_is_not() {
+        let empty = tempfile::tempdir().expect("temp dir");
+        build_test_index_with(empty.path(), &[]);
+        let report = run_wrapper_open(IndexArea::Library, "en", empty.path());
+        assert!(report.all_ok(), "steps: {:?}", report.steps);
+        assert_eq!(report.num_docs, Some(0));
+        assert!(!report.any_hits());
+        assert!(
+            !report.zero_hits_unexpected(),
+            "an index holding no documents cannot match anything"
+        );
+        assert!(render_wrapper_opens(&[report]).contains("expected, not a fault"));
+
+        let populated = tempfile::tempdir().expect("temp dir");
+        build_test_index_with(populated.path(), &["a passage mentioning neither term"]);
+        let report = run_wrapper_open(IndexArea::Suttas, "en", populated.path());
+        assert_eq!(report.num_docs, Some(1));
+        assert!(!report.any_hits());
+        assert!(
+            report.zero_hits_unexpected(),
+            "an open index that holds documents and matches nothing is the informative case"
+        );
+        assert!(render_wrapper_opens(&[report]).contains("UNEXPECTED"));
+    }
+
+    #[test]
+    fn a_populated_index_that_only_matches_one_term_reads_as_healthy() {
+        // The regression that per-language routing produced: an index of
+        // romanized Sanskrit matches the Pāli term and not the English one, and
+        // must not be reported as a fault.
+        let dir = tempfile::tempdir().expect("temp dir");
+        build_test_index_with(dir.path(), &["nirodha only, no english here"]);
+
+        let report = run_wrapper_open(IndexArea::Suttas, "san", dir.path());
+
+        assert_eq!(report.queries[0].hits, Some(1));
+        assert_eq!(report.queries[1].hits, Some(0));
+        assert!(report.any_hits());
+        assert!(!report.zero_hits_unexpected());
+    }
+
+    #[test]
+    fn the_wrapper_open_attributes_a_missing_index_to_the_index_step() {
+        let dir = tempfile::tempdir().expect("temp dir");
+
+        let report = run_wrapper_open(IndexArea::Library, "en", dir.path());
+
+        assert_eq!(report.steps.len(), 2, "the run stops at the failing step");
+        let failed = report.failed_step().expect("a step must have failed");
+        assert_eq!(failed.name, "Index::open");
+        assert!(report.num_docs.is_none());
+        assert!(report.queries.is_empty());
+        assert!(render_wrapper_opens(&[report]).contains("not measured"));
+    }
+
+    #[test]
+    fn a_schema_without_a_content_field_is_a_reported_line_not_an_aborted_section() {
+        use tantivy::schema::{Schema, TEXT};
+
+        // `Index::open` reads the schema from `meta.json` rather than being
+        // handed one, so a foreign or older index legitimately has no `content`
+        // field. That must not stop the section.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mut builder = Schema::builder();
+        let body = builder.add_text_field("body", TEXT);
+        let schema = builder.build();
+        let index = Index::create_in_dir(dir.path(), schema).expect("create index");
+        let mut writer = index.writer(15_000_000).expect("writer");
+        writer
+            .add_document(tantivy::doc!(body => "nirodha"))
+            .expect("add doc");
+        writer.commit().expect("commit");
+        drop(writer);
+        drop(index);
+
+        let report = run_wrapper_open(IndexArea::DictWords, "en", dir.path());
+
+        assert!(report.all_ok(), "the open itself succeeds");
+        assert_eq!(report.num_docs, Some(1));
+        assert!(report.queries.is_empty());
+        let message = report
+            .schema_error
+            .clone()
+            .expect("the missing field is reported");
+        assert!(message.contains("content"));
+        assert!(render_wrapper_opens(&[report]).contains("content"));
+    }
+
+    #[test]
+    fn section_e_uses_the_real_wrapper_and_keeps_no_copy_of_the_lock_logic() {
+        // The section proves nothing unless it exercises the very code the fix
+        // will ship. A diagnostic-only approximation of the fallback would make
+        // a success here meaningless.
+        let src = include_str!("storage_diagnostics.rs");
+        let (non_test, _) = src
+            .split_once("#[cfg(test)]")
+            .expect("the test module marks the end of the production half");
+
+        assert!(non_test.contains("use crate::search::lenient_directory::"));
+        assert!(non_test.contains("LenientLockMmapDirectory::open"));
+        for forbidden in ["fn acquire_lock", "try_lock_exclusive", "DirectoryLock"] {
+            assert!(
+                !non_test.contains(forbidden),
+                "`{forbidden}` suggests a second copy of the lock logic lives here"
+            );
+        }
     }
 
     /// Live thread count, for the "no leaked watcher threads" guarantee.

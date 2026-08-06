@@ -716,11 +716,11 @@ routed by language — see finding 26 for why routing produced a false fault on
 **Depends on:** 1.0 (the wrapper), 3.0 (the enumeration and schema selection).
 **Blocks:** 5.0 (the verdict reads section E's outcome).
 
-- [ ] 4.1 Repeat the three-step open per index directory, substituting
+- [x] 4.1 Repeat the three-step open per index directory, substituting
       `LenientLockMmapDirectory` for `MmapDirectory` and building the reader with
       `ReloadPolicy::Manual`; report success or failure **per step**, with the full
       error and elapsed time (FR-27).
-- [ ] 4.2 Record which lock path the wrapper actually took for that directory —
+- [x] 4.2 Record which lock path the wrapper actually took for that directory —
       **three** outcomes, not two: inner `flock` succeeded; fell back after an
       unsupported-operation errno; fell back after some *other* `IoError`. Read
       them with **`LenientLockMmapDirectory::lock_paths()`**, which returns every
@@ -735,7 +735,7 @@ routed by language — see finding 26 for why routing produced a false fault on
       `open_segment_readers()` takes `META_LOCK` unconditionally on every reader
       build whatever the policy (`reader/mod.rs:194`), so a section E success is
       attributable to the wrapper alone (review finding 3).
-- [ ] 4.3 On a successful open, call `register_tokenizers(&index, lang)`
+- [x] 4.3 On a successful open, call `register_tokenizers(&index, lang)`
       (`search/tokenizer.rs:186`, already `pub`) — **before** the `QueryParser` is
       constructed, not merely before the query runs (review finding 14) — then run
       the hard-coded queries and report the **hit count and elapsed milliseconds**
@@ -755,20 +755,20 @@ routed by language — see finding 26 for why routing produced a false fault on
       (`searcher.rs:515-525`): the diagnostic asks "can this index be read at
       all", and the extra machinery is more to get wrong for no diagnostic gain
       (review finding 14).
-- [ ] 4.3a Handle a missing `content` field as an **attributed output line**, not
+- [x] 4.3a Handle a missing `content` field as an **attributed output line**, not
       an aborted section. `Index::open` reads the schema from `meta.json` rather
       than being handed one, so `index.schema().get_field("content")` can
       legitimately fail on a foreign, truncated or older `meta.json`. Print
       "schema has no `content` field" for that row and continue (FR-28a, FR-44,
       finding 31).
-- [ ] 4.3b Report **`reader.searcher().num_docs()`** per index (FR-28c, finding
+- [x] 4.3b Report **`reader.searcher().num_docs()`** per index (FR-28c, finding
       27). Nothing else in sections A–F measures whether an index actually
       contains documents — C counts files, D and E measure opens — yet 4.4, 5.4,
       FR-28b and FR-37 all depend on exactly that. It is one line on a reader this
       section already holds, it turns the expected-vs-unexpected zero-hit split
       into a **measured** fact instead of an inference, and it independently proves
       the read path works even if both query terms come up empty.
-- [ ] 4.4 Make a zero-hit success visibly distinct from an open failure in the
+- [x] 4.4 Make a zero-hit success visibly distinct from an open failure in the
       output — the decision-gate table (PRD §9) branches on exactly that
       distinction. Drive the expected/unexpected split from **`num_docs`** (4.3b),
       not from a guess about the language: a zero hit against `num_docs == 0` is
@@ -776,7 +776,7 @@ routed by language — see finding 26 for why routing produced a false fault on
       review finding 9), but equally a `dict_words/<lang>` or `suttas/<lang>`
       index for a language whose content was never downloaded. The unexpected case
       is both terms scoring zero against an index with `num_docs > 0`.
-- [ ] 4.5 Confirm the wrapper is imported from
+- [x] 4.5 Confirm the wrapper is imported from
       `backend/src/search/lenient_directory.rs` and that no parallel
       diagnostic-only copy of the lock logic exists anywhere (FR-30).
 
