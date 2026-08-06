@@ -3978,7 +3978,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simsapa_backend"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -4030,7 +4030,7 @@ dependencies = [
 
 [[package]]
 name = "simsapa_bridges"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "bzip2",
  "cxx",
