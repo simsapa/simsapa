@@ -44,6 +44,17 @@ markup5ever = "0.12"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 tantivy = "0.25"
+# Advisory file locking (flock(2)) and memory mapping, used by the storage
+# diagnostics probes and by the lenient Directory wrapper. Both are already in
+# Cargo.lock transitively via tantivy (0.13.1 / 0.9.10), so naming them here
+# adds no second copy. fs4's default `sync` feature is what provides
+# `fs4::fs_std::FileExt`; its free functions also give cross-platform
+# free/total space, so no per-cfg statvfs helper is needed.
+fs4 = "0.13"
+memmap2 = "0.9"
+# Pulled in *only* for the errno constants of the flock support probe: fs4 0.13
+# is rustix-based and deliberately libc-free, so it exports none.
+libc = "0.2"
 symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.18"
 flacenc = "0.5"

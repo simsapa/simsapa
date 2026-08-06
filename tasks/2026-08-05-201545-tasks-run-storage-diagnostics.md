@@ -391,7 +391,7 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
 
 **Depends on:** nothing. **Blocks:** 2.0 (shares the probe), 4.0 (needs the wrapper).
 
-- [ ] 1.1 Create `backend/src/search/lenient_directory.rs` and declare it in
+- [x] 1.1 Create `backend/src/search/lenient_directory.rs` and declare it in
       `backend/src/search/mod.rs`. Add `fs4 = "0.13"`, `memmap2 = "0.9"` and
       `libc` to `backend/Cargo.toml` — all three already in `Cargo.lock`
       transitively at 0.13.1 / 0.9.10 / 0.2.186, so this adds no second copy —
@@ -399,7 +399,7 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       `fs4::fs_std::FileExt`. `libc` is pulled in **only** for the errno
       constants of task 1.2: `fs4 0.13` is deliberately libc-free (rustix-based)
       and exports none (review finding 12).
-- [ ] 1.2 Implement `FlockSupport` — an enum with `Supported`, `Busy`,
+- [x] 1.2 Implement `FlockSupport` — an enum with `Supported`, `Busy`,
       `Unsupported { errno: i32, name: String }`, `Error { errno: i32, message: String }`
       — and `probe_flock_support(dir: &Path) -> (FlockSupport, Duration)`. It
       creates/opens a distinctively-named probe file (e.g.
@@ -415,21 +415,21 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       GC only ever deletes files it manages, so an unmanaged foreign file in an
       index directory is left alone — the `Drop` guard of 1.3 is what removes
       it, not tantivy.
-- [ ] 1.3 Give the probe a `Drop`-guard cleanup struct modelled on
+- [x] 1.3 Give the probe a `Drop`-guard cleanup struct modelled on
       `ProbeCleanup` in `backend/src/storage_probe.rs`, removing the probe file on
       success, failure **and** panic (FR-39). Use `try_exists()` (FR-43).
-- [ ] 1.4 Add a process-global cache `HashMap<PathBuf, FlockSupport>` keyed on the
+- [x] 1.4 Add a process-global cache `HashMap<PathBuf, FlockSupport>` keyed on the
       canonicalised index-directory path, so support is determined **once per
       index directory** for the process lifetime (fix-PRD FR-7). Expose
       `flock_support_for_dir(&Path) -> FlockSupport` which consults the cache.
-- [ ] 1.5 Implement the process-internal fallback lock: a global table keyed on
+- [x] 1.5 Implement the process-internal fallback lock: a global table keyed on
       the **canonicalised absolute lock-file path** (fix-PRD FR-6), and a
       hand-rolled `Send + Sync` guard type over `Arc<Mutex<…>>`/`Condvar` that
       releases in `Drop` (fix-PRD FR-12). It must be real mutual exclusion, never
       a no-op (fix-PRD FR-13), and must preserve blocking semantics: blocking for
       `META_LOCK`, `try_lock` returning `LockBusy` for `INDEX_WRITER_LOCK`
       (fix-PRD FR-14).
-- [ ] 1.5a Write **one** shared key-normalisation helper used by both 1.4 and
+- [x] 1.5a Write **one** shared key-normalisation helper used by both 1.4 and
       1.5, with an explicit `canonicalize()` fallback: on failure, use the
       absolutised path as-is (`std::path::absolute` / join against the cwd) —
       never skip or drop the entry. `canonicalize()` can fail on exactly the
@@ -439,14 +439,14 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       instances on one index directory two different mutexes, which is the bug
       fix-PRD FR-6 exists to prevent (review finding 17). Unit-test that a
       path that cannot be canonicalised still maps two instances to one key.
-- [ ] 1.5b Add the **bounded retry loop** for the blocking (`META_LOCK`)
+- [x] 1.5b Add the **bounded retry loop** for the blocking (`META_LOCK`)
       fallback, mirroring tantivy's own `RetryPolicy { num_retries: 100,
       wait_in_ms: 100 }` (`directory/directory.rs:89`), logging an error on
       exhaustion rather than blocking unboundedly (fix-PRD FR-15). Tantivy does
       not nest `META_LOCK` acquisitions today, but that is an upstream detail;
       a bounded wait fails loudly instead of freezing a thread if a future
       version does.
-- [ ] 1.6 Implement `LenientLockMmapDirectory`, deriving/implementing **`Clone` and
+- [x] 1.6 Implement `LenientLockMmapDirectory`, deriving/implementing **`Clone` and
       `Debug`** — `Directory: DirectoryClone + Debug + Send + Sync + 'static` and
       `DirectoryClone` is blanket-implemented only for `T: Directory + Clone`
       (`directory.rs:246-252`), so a non-`Clone` wrapper will not compile as a
@@ -456,7 +456,7 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       (FR-3); on `LockError::IoError` fall back to the process-internal lock
       (FR-4); on `LockError::LockBusy` fall back **only if** `flock_support_for_dir`
       says unsupported, otherwise propagate `LockBusy` (FR-5).
-- [ ] 1.6a Implement fix-PRD **FR-16**: once `flock_support_for_dir` has
+- [x] 1.6a Implement fix-PRD **FR-16**: once `flock_support_for_dir` has
       classified a directory as unsupported, skip the inner `acquire_lock`
       **entirely** and go straight to the process-internal lock. This avoids a
       failing syscall on every reader reload and avoids creating a
@@ -464,7 +464,7 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       (`MmapDirectory` creates lock files and never deletes them). Without this
       and 1.5b, phase 2 would have to edit this file after all — defeating the
       "final location, unchanged" premise of task 1.0.
-- [ ] 1.6b Record the **third `IoError` source** at the FR-4 fallback:
+- [x] 1.6b Record the **third `IoError` source** at the FR-4 fallback:
       `MmapDirectory::acquire_lock` opens the lock file *before* locking it, so a
       read-only or unwritable directory fails at `open_write` and also produces
       `LockError::IoError` — which the fallback would silently turn into a
@@ -474,7 +474,7 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       section E (task 4.2) reports exactly that distinction, and without it a
       diagnostic run on a genuinely broken volume reads as "the fix works"
       (review finding 18).
-- [ ] 1.7 Write the single-process invariant as a comment at the fallback: only
+- [x] 1.7 Write the single-process invariant as a comment at the fallback: only
       one Simsapa process ever touches an index directory, because the searcher is
       the process-global `FULLTEXT_SEARCHER` (`lib.rs:169`) shared by the embedded
       webserver (fix-PRD FR-10). In the same comment, record **why the trait's
@@ -483,10 +483,10 @@ the fallback guard must be hand-rolled — a `MutexGuard` is `!Send`.
       its lock files (`ReleaseLockFile`'s `Drop` only closes the fd — the reason
       FR-23 expects stale `.tantivy-meta.lock` files), so it would find the
       leftover and return `LockBusy` forever. See review finding 2.
-- [ ] 1.8 Do **not** change any existing call site. `searcher.rs` and `indexer.rs`
+- [x] 1.8 Do **not** change any existing call site. `searcher.rs` and `indexer.rs`
       keep using bare `MmapDirectory` in this phase (PRD Non-Goals) — the wrapper
       is referenced only from the diagnostic.
-- [ ] 1.9 Add unit tests: the fallback guard actually excludes two concurrent
+- [x] 1.9 Add unit tests: the fallback guard actually excludes two concurrent
       acquisitions of the same path; two different paths do not block each other;
       `Supported`/`Busy`/`Unsupported` classification from synthesised errnos; the
       probe file is gone afterwards. `cd backend && cargo test` passes.
