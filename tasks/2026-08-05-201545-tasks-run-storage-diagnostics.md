@@ -296,6 +296,46 @@ hooks into is `searcher.rs:120` (not `:121`); the sutta `content` /
 `content_exact` pair is `schema.rs:47-48` (not `:48-49`), the library pair is
 `:99-100`, and the dictionary pair at `:152-153` is correct as stated.
 
+## Review findings (phase 6) — five defects in the implemented sections, all fixed
+
+A review of the implemented tasks 1.0–3.0 against the source (2026-08-06, after
+commit `b1bb617`). Every PRD-critical property held — no `open_or_create`, no
+`FULLTEXT_SEARCHER` access, readers dropped, the lock snapshot taken pre-run,
+`VERSION` read once at tree level, the desktop-state flag wired through. Five
+defects were found and fixed in place; two questions went to PRD §11 (3 and 4).
+
+34. **`last_lock_path` kept only the most recent route** and FR-27a depends on
+    it. One `index.reader()` reaches `acquire_lock` more than once
+    (`open_segment_readers()` takes `META_LOCK` on every reader build,
+    `reader/mod.rs:194`), so an early `FallbackOtherIoError` was overwritten by a
+    later `InnerFlock` — the "the fix works" versus "the fix hid the failure"
+    pair the three-way split exists for. Now a `Vec` of distinct routes behind
+    `lock_paths()`, with `last_lock_path()` kept as a convenience. Task 4.2 must
+    use the former.
+35. **The errno classification was wrong on Windows.** `errno_name()` /
+    `errno_is_unsupported()` compared `io::Error::raw_os_error()` against libc's
+    **CRT** errno constants, but on Windows that call returns **Win32** codes
+    from `LockFileEx`, and the numbering overlaps meaninglessly (libc's Windows
+    `EOPNOTSUPP` is 130 = `ERROR_DIRECT_ACCESS_HANDLE`; `EINVAL` is 22 =
+    `ERROR_BAD_COMMAND`). An ordinary Windows error could be classified
+    `Unsupported`, which is cached for the process lifetime and permanently skips
+    the inner lock for that directory (task 1.6a). Now `#[cfg(unix)]` for the
+    errno table, a Windows arm naming only `ERROR_INVALID_FUNCTION` (1) and
+    `ERROR_NOT_SUPPORTED` (50), and a never-`Unsupported` fallback elsewhere;
+    `libc` moved to `[target.'cfg(unix)'.dependencies]`.
+36. **The `LockBusy` → unsupported branch was unreachable.** `acquire_lock`
+    early-returns when the cached support is `Unsupported`, so
+    `support.is_unsupported()` in that arm was always false. Replaced with a
+    plain propagate plus the reasoning, so nobody re-adds a mask that would let
+    two writers into one index.
+37. **`enumerate_index_dirs_in` used `path.is_dir()`**, which reports a
+    permission error as `false` — silently dropping an index directory from
+    sections C, D and E, an invisible hole in the report on exactly the volumes
+    under investigation. Now `entry.file_type()`, with the error logged.
+38. **`probe_mmap` would have been UB on a zero-length file** (`read_volatile` at
+    offset 0 of an empty map). Unreachable given the ~8 KiB floor and the
+    fallback file, but now guarded explicitly.
+
 ## Relevant Files
 
 - `backend/src/search/lenient_directory.rs` — **new.** `LenientLockMmapDirectory`
@@ -682,7 +722,11 @@ routed by language — see finding 26 for why routing produced a false fault on
       error and elapsed time (FR-27).
 - [ ] 4.2 Record which lock path the wrapper actually took for that directory —
       **three** outcomes, not two: inner `flock` succeeded; fell back after an
-      unsupported-operation errno; fell back after some *other* `IoError`. The
+      unsupported-operation errno; fell back after some *other* `IoError`. Read
+      them with **`LenientLockMmapDirectory::lock_paths()`**, which returns every
+      distinct route in the order first seen, **not** `last_lock_path()`: one
+      `index.reader()` acquires `META_LOCK` several times, so the last route can
+      hide an earlier differing one (finding 34). The
       third matters because `MmapDirectory::acquire_lock` opens the lock file
       before locking it, so an unwritable directory also yields `IoError` and the
       fallback would report a clean success on a genuinely broken volume (task

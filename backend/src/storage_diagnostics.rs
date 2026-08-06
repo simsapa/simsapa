@@ -31,7 +31,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tantivy::directory::MmapDirectory;
 use tantivy::Index;
 
-use crate::logger::error;
+use crate::logger::{error, info};
 use crate::search::indexer::{is_index_current, read_version_file, INDEX_VERSION};
 use crate::search::lenient_directory::{probe_flock_support, FlockSupport};
 use crate::{AppGlobalPaths, StorageState};
@@ -483,6 +483,32 @@ fn probe_mmap(dir: &Path) -> MmapProbe {
         }
     };
 
+    if len == 0 {
+        return MmapProbe {
+            outcome: ProbeOutcome::failed(
+                "the selected file is empty, so there is nothing to map",
+                &std::io::Error::from(std::io::ErrorKind::InvalidInput),
+                started.elapsed(),
+            ),
+            file: Some(display_name),
+            used_fallback_file,
+        };
+    }
+
+    // Logged *before* the mapping is touched, because this is the one step of
+    // the whole diagnostic that can take the process down without returning:
+    // a read that faults (a truncated file, some FUSE modes) raises SIGBUS,
+    // which is a signal, not a panic — no error string, no report, and the
+    // worker thread's `catch_unwind` cannot intercept it. The summary is only
+    // logged when the run finishes, so without this line a crashed run leaves
+    // nothing behind in log.txt. If a user's log ends here, this file on this
+    // volume is the answer.
+    info(&format!(
+        "storage_diagnostics: about to memory-map {} ({} bytes)",
+        path.display(),
+        len
+    ));
+
     // SAFETY: the mapping is read-only and dropped before this function
     // returns. Another process truncating the file underneath us would be UB,
     // but only this process touches an index directory (the searcher is a
@@ -788,9 +814,24 @@ pub fn enumerate_index_dirs_in(area: IndexArea, base_dir: &Path) -> Vec<(IndexAr
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
+
+        // `entry.file_type()` rather than `path.is_dir()`: the latter swallows
+        // a permission error as `false`, which would silently drop an index
+        // directory from sections C, D and E — an invisible hole in the report,
+        // on exactly the volumes being investigated. Log it instead.
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => {}
+            Ok(_) => continue,
+            Err(e) => {
+                error(&format!(
+                    "storage_diagnostics: cannot stat {}: {}",
+                    path.display(),
+                    e
+                ));
+                continue;
+            }
         }
+
         if let Some(lang) = path.file_name().and_then(|n| n.to_str()) {
             found.push((area, lang.to_string(), path.clone()));
         }

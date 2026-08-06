@@ -259,6 +259,16 @@ email. Each section reports its own elapsed time.
       would turn that into a clean-looking success on a genuinely broken volume.
       Without the distinction, section E cannot tell "the fix works" from "the fix
       hid the failure".
+
+      **Report every distinct route the directory took, not just the last one.**
+      One `index.reader()` reaches `acquire_lock` more than once —
+      `open_segment_readers()` takes `META_LOCK` on every reader build
+      (`reader/mod.rs:194`) — so a single overwritten slot can hide an early
+      "fell back after some other `IoError`" behind a later "inner flock
+      succeeded", which is exactly the pair this requirement exists to
+      distinguish. `LenientLockMmapDirectory::lock_paths()` returns the distinct
+      routes in the order first seen; `last_lock_path()` remains for callers that
+      want one line.
 28. On success, **run a real query** against each opened index and report the
     **hit count and elapsed milliseconds**. The query terms are **hard-coded**:
     **`nirodha`** and **`cessation`**. There must be **no input field**:
@@ -593,3 +603,31 @@ is not re-litigated during implementation.
 
    Anything discovered during implementation should be added here rather than
    resolved silently.
+
+3. **The mmap probe (FR-18) can take the process down without returning, and
+   nothing can catch it.** Raised by the phase-6 review (2026-08-06, after tasks
+   1.0–3.0 were implemented). A read *through* a mapping that faults — a
+   truncated file, some FUSE modes — raises **SIGBUS**, which is a signal, not a
+   panic: the `catch_unwind` of task 6.2 cannot intercept it, the completion
+   signal is never emitted, and the app dies. This is unlikely (a `direct_io`
+   FUSE mount normally fails at `mmap()` itself with `ENODEV`, which *is*
+   reported as an ordinary error), but if it happens at all it happens on
+   precisely the devices this PRD was written for.
+
+   **Resolved as far as it can be, without a signal handler:** the probe now
+   logs `about to memory-map <file> (<n> bytes)` at INFO *before* touching the
+   mapping. Since the summary is only written to the log when the run completes
+   (FR-11), that line is the only thing a crashed run would leave behind — and
+   it names the file and the volume, which is the answer. Installing a `SIGBUS`
+   handler to convert the fault into a reported error was considered and
+   rejected: a process-wide signal handler is a far larger behaviour change than
+   this PRD's Goal 4 allows, for a failure mode we have not once observed.
+
+4. **`FlockSupport` is cached for the process lifetime whatever the verdict**
+   (fix-PRD FR-7), so a transient `Error` — a directory that happened to be
+   unwritable at first probe — sticks for the session. Left as is, deliberately:
+   only `Unsupported` changes the wrapper's routing, and "this filesystem does
+   not implement advisory locking" is not a transient property. A stale `Error`
+   therefore costs at most one failing syscall per lock, never a wrong route,
+   and a restart re-probes. Recorded at `flock_support_for_dir()` and to be
+   repeated in `docs/storage-diagnostics.md` (task 8.4).

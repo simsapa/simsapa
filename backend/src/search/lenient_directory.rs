@@ -84,10 +84,24 @@ impl FlockSupport {
     }
 }
 
+// The two classification helpers below are deliberately per-platform.
+//
+// `io::Error::raw_os_error()` yields a **C errno** on unix and a **Win32 error
+// code** on Windows, and the two numbering schemes overlap without meaning the
+// same thing: libc's Windows `EOPNOTSUPP` is 130, which as a Win32 code is
+// `ERROR_DIRECT_ACCESS_HANDLE`, and `EINVAL` is 22, which is
+// `ERROR_BAD_COMMAND`. Comparing a `LockFileEx` failure against libc's CRT
+// constants would therefore misclassify ordinary Windows errors as "this
+// filesystem does not do advisory locking" — and via [`LenientLockMmapDirectory`]
+// that verdict is cached and permanently skips the inner lock for the
+// directory. Android is what this module was written for, but it ships
+// everywhere.
+
 /// Errno → name, for the classification of [`probe_flock_support`].
 ///
 /// `EOPNOTSUPP` and `ENOTSUP` are the **same number (95)** on Linux and
 /// Android, so this deliberately does not pretend to tell them apart.
+#[cfg(unix)]
 fn errno_name(errno: i32) -> &'static str {
     if errno == libc::ENOSYS {
         "ENOSYS"
@@ -104,11 +118,51 @@ fn errno_name(errno: i32) -> &'static str {
 }
 
 /// True when this errno means "this filesystem does not do advisory locking".
+#[cfg(unix)]
 fn errno_is_unsupported(errno: i32) -> bool {
     errno == libc::ENOSYS
         || errno == libc::EINVAL
         || errno == libc::EOPNOTSUPP
         || errno == libc::ENOTSUP
+}
+
+/// `ERROR_INVALID_FUNCTION` — what a Windows volume that does not implement
+/// byte-range locking returns.
+#[cfg(windows)]
+const WIN32_ERROR_INVALID_FUNCTION: i32 = 1;
+/// `ERROR_NOT_SUPPORTED`.
+#[cfg(windows)]
+const WIN32_ERROR_NOT_SUPPORTED: i32 = 50;
+
+/// Win32 error code → name. Only the two codes that actually mean "this volume
+/// does not do locking" are named; everything else stays `unknown` rather than
+/// borrowing a unix errno's name for an unrelated number.
+#[cfg(windows)]
+fn errno_name(errno: i32) -> &'static str {
+    match errno {
+        WIN32_ERROR_INVALID_FUNCTION => "ERROR_INVALID_FUNCTION",
+        WIN32_ERROR_NOT_SUPPORTED => "ERROR_NOT_SUPPORTED",
+        _ => "unknown",
+    }
+}
+
+#[cfg(windows)]
+fn errno_is_unsupported(errno: i32) -> bool {
+    errno == WIN32_ERROR_INVALID_FUNCTION || errno == WIN32_ERROR_NOT_SUPPORTED
+}
+
+/// Platforms that are neither unix nor Windows: never claim to know that
+/// locking is unsupported. A wrong `Unsupported` is cached for the process
+/// lifetime and disables the inner lock, so the safe default is "some other
+/// error".
+#[cfg(not(any(unix, windows)))]
+fn errno_name(_errno: i32) -> &'static str {
+    "unknown"
+}
+
+#[cfg(not(any(unix, windows)))]
+fn errno_is_unsupported(_errno: i32) -> bool {
+    false
 }
 
 /// Classify an `io::Error` from a locking call.
@@ -203,6 +257,14 @@ fn flock_support_cache() -> &'static Mutex<HashMap<PathBuf, FlockSupport>> {
 }
 
 /// The cached verdict for `dir`, probing it the first time it is asked for.
+///
+/// The verdict is cached for the **process lifetime**, whatever it is — that is
+/// the point (one probe per index directory), but it cuts both ways: a
+/// `Busy` or `Error` answer from a momentarily unwritable directory sticks, and
+/// that directory keeps going through the inner lock for the rest of the
+/// session. Only `Unsupported` changes behaviour, and `Unsupported` is not a
+/// transient state of a filesystem, so a stale `Error` costs at most one failing
+/// syscall per lock rather than a wrong route. Restarting the app re-probes.
 pub fn flock_support_for_dir(dir: &Path) -> FlockSupport {
     let key = normalize_lock_key(dir);
 
@@ -440,7 +502,15 @@ pub struct LenientLockMmapDirectory {
     root: PathBuf,
     /// Shared across clones, so a caller that kept the original handle can read
     /// what a clone's `acquire_lock` did.
-    last_lock_path: Arc<Mutex<Option<LockPathTaken>>>,
+    ///
+    /// **Every distinct route is kept, not just the last one.** One
+    /// `index.reader()` reaches `acquire_lock` more than once —
+    /// `open_segment_readers()` takes `META_LOCK` on every reader build
+    /// (`reader/mod.rs:194`) — so overwriting a single slot can hide an early
+    /// `FallbackOtherIoError` behind a later `InnerFlock`. That is precisely
+    /// the "the fix works" versus "the fix hid the failure" distinction this
+    /// type exists to report.
+    lock_paths: Arc<Mutex<Vec<LockPathTaken>>>,
 }
 
 impl LenientLockMmapDirectory {
@@ -450,19 +520,34 @@ impl LenientLockMmapDirectory {
         Ok(LenientLockMmapDirectory {
             inner,
             root,
-            last_lock_path: Arc::new(Mutex::new(None)),
+            lock_paths: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
-    /// Which route the most recent `acquire_lock` took, or `None` if no lock
-    /// has been taken through this directory (or any of its clones) yet.
+    /// Every distinct route `acquire_lock` has taken through this directory
+    /// (or any of its clones), in the order first seen. Empty if no lock has
+    /// been taken yet.
+    pub fn lock_paths(&self) -> Vec<LockPathTaken> {
+        self.lock_paths
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default()
+    }
+
+    /// The route the most recent `acquire_lock` took. Kept for callers that
+    /// only want one line; prefer [`Self::lock_paths`] when reporting, so an
+    /// earlier differing route is not lost.
     pub fn last_lock_path(&self) -> Option<LockPathTaken> {
-        self.last_lock_path.lock().ok().and_then(|v| v.clone())
+        self.lock_paths.lock().ok().and_then(|v| v.last().cloned())
     }
 
     fn record_lock_path(&self, taken: LockPathTaken) {
-        if let Ok(mut slot) = self.last_lock_path.lock() {
-            *slot = Some(taken);
+        if let Ok(mut seen) = self.lock_paths.lock() {
+            // Distinct routes only: a reader that rebuilds repeatedly would
+            // otherwise fill this with identical entries.
+            if !seen.contains(&taken) {
+                seen.push(taken);
+            }
         }
     }
 
@@ -548,18 +633,13 @@ impl Directory for LenientLockMmapDirectory {
                 // The non-blocking (`INDEX_WRITER_LOCK`) path maps *everything*
                 // to `LockBusy` and discards the errno (`index/index.rs:545`),
                 // so the probe is the only way to tell a real contention from
-                // an unsupported call. Only mask it in the latter case.
-                if support.is_unsupported() {
-                    let (errno, name) = match &support {
-                        FlockSupport::Unsupported { errno, name } => (*errno, name.clone()),
-                        _ => (0, "unknown".to_string()),
-                    };
-                    self.record_lock_path(LockPathTaken::FallbackUnsupported { errno, name });
-                    acquire_fallback_lock(lock, &full_path)
-                } else {
-                    self.record_lock_path(LockPathTaken::PropagatedBusy);
-                    Err(LockError::LockBusy)
-                }
+                // an unsupported call — and the probe has already spoken above:
+                // an `Unsupported` verdict returned early and never reached this
+                // match. So `LockBusy` here means the volume does do advisory
+                // locking and something genuinely holds the lock. Propagate it;
+                // masking it would let two writers into one index.
+                self.record_lock_path(LockPathTaken::PropagatedBusy);
+                Err(LockError::LockBusy)
             }
         }
     }
@@ -721,6 +801,39 @@ mod tests {
         };
         let guard = directory.acquire_lock(&lock).unwrap();
         assert_eq!(directory.last_lock_path(), Some(LockPathTaken::InnerFlock));
+        assert_eq!(directory.lock_paths(), vec![LockPathTaken::InnerFlock]);
         drop(guard);
+    }
+
+    /// One `index.reader()` acquires `META_LOCK` more than once, so a route
+    /// recorded early must not be overwritten by a later, different one:
+    /// "fell back after some other IoError, then the inner lock worked" and
+    /// "the inner lock worked" are the two answers the report has to keep
+    /// apart.
+    #[test]
+    fn every_distinct_lock_route_is_kept_and_repeats_are_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let directory = LenientLockMmapDirectory::open(dir.path()).unwrap();
+
+        directory.record_lock_path(LockPathTaken::FallbackOtherIoError {
+            message: "permission denied".to_string(),
+        });
+        directory.record_lock_path(LockPathTaken::InnerFlock);
+        directory.record_lock_path(LockPathTaken::InnerFlock);
+
+        let seen = directory.lock_paths();
+        assert_eq!(seen.len(), 2, "repeats must collapse: {seen:?}");
+        assert!(matches!(
+            seen[0],
+            LockPathTaken::FallbackOtherIoError { .. }
+        ));
+        assert_eq!(seen[1], LockPathTaken::InnerFlock);
+        assert_eq!(directory.last_lock_path(), Some(LockPathTaken::InnerFlock));
+
+        // A clone shares the record, which is what lets a caller that kept the
+        // original handle read what tantivy's internally-cloned copy did.
+        let clone = directory.clone();
+        clone.record_lock_path(LockPathTaken::PropagatedBusy);
+        assert_eq!(directory.lock_paths().len(), 3);
     }
 }

@@ -52,9 +52,6 @@ tantivy = "0.25"
 # free/total space, so no per-cfg statvfs helper is needed.
 fs4 = "0.13"
 memmap2 = "0.9"
-# Pulled in *only* for the errno constants of the flock support probe: fs4 0.13
-# is rustix-based and deliberately libc-free, so it exports none.
-libc = "0.2"
 symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.18"
 flacenc = "0.5"
@@ -65,6 +62,15 @@ urlencoding = "2.1"
 # Stable digest for the gloss word-context cache keys (std's DefaultHasher is
 # not stable across Rust versions).
 sha2 = "0.10"
+
+# Pulled in *only* for the errno constants of the flock support probe and the
+# `statfs` magic of the storage diagnostics: fs4 0.13 is rustix-based and
+# deliberately libc-free, so it exports none. Unix-only on purpose — on Windows
+# `io::Error::raw_os_error()` yields Win32 codes, not CRT errnos, and comparing
+# those against libc's Windows constants would silently misclassify ordinary
+# errors as "locking unsupported" (see `backend/src/search/lenient_directory.rs`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
