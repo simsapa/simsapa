@@ -43,6 +43,7 @@ pub mod waveform;
 pub mod audio;
 pub mod global_hotkeys;
 pub mod storage_probe;
+pub mod storage_diagnostics;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 
@@ -352,10 +353,55 @@ pub fn reinit_fulltext_searcher() {
     }
 }
 
+/// Per-index-directory open failures recorded while a searcher was being built.
+///
+/// Diagnostics-only: nothing reads this except the storage diagnostics report.
+/// It exists because the failure is otherwise only ever `warn()`ed, and a user
+/// sending a report is exactly the person who cannot be asked to find and read
+/// their log.
+///
+/// The list shares the **searcher's** lifecycle, so it is cleared whenever a
+/// searcher is (re)opened. Without that, an entry recorded before a storage
+/// recovery survives and the report names a failure that no longer exists. And
+/// because it is only ever written while a searcher is being built, an
+/// uninitialised searcher means "not measured", never "no failures".
+static SEARCHER_OPEN_FAILURES: std::sync::RwLock<Vec<(String, String)>> =
+    std::sync::RwLock::new(Vec::new());
+
+/// Record one index directory that would not open. Called from the searcher's
+/// per-directory failure path; changes no behaviour there.
+pub fn record_searcher_open_failure(path: &str, error: &str) {
+    if let Ok(mut failures) = SEARCHER_OPEN_FAILURES.write() {
+        failures.push((path.to_string(), error.to_string()));
+    }
+}
+
+/// Reset the list. Called once per searcher construction, before any index is
+/// opened.
+pub fn clear_searcher_open_failures() {
+    if let Ok(mut failures) = SEARCHER_OPEN_FAILURES.write() {
+        failures.clear();
+    }
+}
+
+/// The failures recorded while the current searcher was built.
+pub fn searcher_open_failures() -> Vec<(String, String)> {
+    SEARCHER_OPEN_FAILURES
+        .read()
+        .map(|f| f.clone())
+        .unwrap_or_default()
+}
+
 /// Whether the process-global fulltext searcher has been initialized (the
 /// Tantivy indexes are open). Lets a headless caller learn — via `/health` —
 /// whether a `FulltextMatch` / `Combined` query will return real results yet,
 /// without running a throwaway query. See docs/simsapa-localhost-api-search-endpoints.md.
+///
+/// Note that this answers "is the global `Some`", not "does it hold any
+/// indexes" — the storage diagnostics deliberately derive their
+/// "not initialised this session" state from `with_fulltext_searcher()`
+/// returning `None` instead, because changing this function's meaning would
+/// change the `/health` field it feeds.
 pub fn is_fulltext_searcher_ready() -> bool {
     FULLTEXT_SEARCHER.read().map(|g| g.is_some()).unwrap_or(false)
 }

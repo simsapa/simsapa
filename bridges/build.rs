@@ -44,6 +44,7 @@ fn main() {
         "../assets/qml/SuttaStackLayout.qml",
         "../assets/qml/AboutDialog.qml",
         "../assets/qml/DatabaseValidationDialog.qml",
+        "../assets/qml/StorageDiagnosticsDialog.qml",
         "../assets/qml/DhammaTextSourcesDialog.qml",
         "../assets/qml/SearchHelpWindow.qml",
         "../assets/qml/SystemPromptsDialog.qml",

@@ -423,6 +423,32 @@ Notable feature docs:
   **`adb` state-simulation recipes** with their traps (`printf '%s'` not `echo`,
   `run-as … sh -c` blocked by SELinux, two candidates on a device with no card
   slot).
+- [Run Storage Diagnostics](./docs/storage-diagnostics.md) — the user-initiated
+  report (a button in **About** and in **Database Validation**) written to answer
+  why fulltext search returns nothing on an **SD card** while ContainsMatch works:
+  `MmapDirectory::acquire_lock` calls `flock(2)`, the volume answers `ENOSYS`, and
+  **every** index fails to open. Phase 1 of two — it **changes no app behaviour**
+  and only measures, but `backend/src/search/lenient_directory.rs`
+  (`LenientLockMmapDirectory`, a `Directory` that falls back to a process-internal
+  mutex when the volume cannot lock) is the **real phase-2 code in its final
+  location**, wired here only into section E. Covers the six sections and what each
+  is for: the **`mmap` go/no-go probe** (maps a real segment file and reads first /
+  **middle** / **last** byte, because only a fault past page 0 catches a
+  `direct_io` FUSE mount; the file is chosen **by size, never by extension**), the
+  fallback probe-directory chain when no per-language index dir exists, the
+  step-attributed open sequences (D = today's, E = through the wrapper, with
+  `num_docs` and both hard-coded query terms run against **every** index), and the
+  four **routes** `acquire_lock` can take — the "fell back after some *other*
+  `IoError`" one exists so section E can tell "the fix works" from "the fix hid the
+  failure". Also the **verdict** rules (no jargon; four measured states that are
+  normal and must never read as a fault — uninitialised searcher, zero hits from an
+  empty index, stale `.tantivy-*.lock` files, and `storage_path_state()` = `absent`
+  on **desktop**, which it always is), the `Drop`-guard probe cleanup, the one
+  unavoidable write (section D's reader *creates* `.tantivy-meta.lock`, hence
+  section C's lock reading is taken **before** D runs), and the three load-bearing
+  UI facts — `Qt.ApplicationModal` (or the window opens dead to clicks from
+  Database Validation), the bound `extra_top_margin`, and the results window owning
+  the whole run.
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row

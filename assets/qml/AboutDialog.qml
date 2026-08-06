@@ -27,6 +27,12 @@ ApplicationWindow {
     readonly property int pointSize: is_mobile? 14 : 12
     required property int extra_top_margin
 
+    // The one shared StorageDiagnosticsDialog instance, declared in
+    // SuttaSearchWindow.qml. That window owns the whole run — the busy state,
+    // the completion signal and the keep-screen-on bracket — so this dialog
+    // only calls open_and_run(). See docs/storage-diagnostics.md.
+    property var storage_diagnostics_dialog: null
+
     // FIXME make text selectable
 
     // Application.displayName is simsapa
@@ -243,17 +249,18 @@ ApplicationWindow {
                 }
             }
 
-            // Fixed button area at the bottom
-            RowLayout {
+            // Fixed button area at the bottom. Stacked in one full-width
+            // column, as in DatabaseValidationDialog: three buttons on a row
+            // overflow the window on a phone and the last one is clipped.
+            ColumnLayout {
                 spacing: 10
                 Layout.fillWidth: true
                 Layout.margins: 20
                 Layout.bottomMargin: 20
 
-                Item { Layout.fillWidth: true }
-
                 Button {
                     text: "Copy App Info"
+                    Layout.fillWidth: true
                     onClicked: {
                         let info = root.info_lines().join("\n");
                         info += "\nContents:\n\n" + SuttaBridge.app_data_contents_plain_table()
@@ -261,12 +268,26 @@ ApplicationWindow {
                     }
                 }
 
+                // Available on all platforms: the same diagnosis applies to a
+                // desktop user with an external or network drive.
                 Button {
-                    text: "Close"
-                    onClicked: root.close()
+                    text: "Run Storage Diagnostics"
+                    Layout.fillWidth: true
+                    enabled: !(root.storage_diagnostics_dialog && root.storage_diagnostics_dialog.is_running)
+                    onClicked: {
+                        if (!root.storage_diagnostics_dialog) {
+                            logger.error("AboutDialog: storage_diagnostics_dialog is not set");
+                            return;
+                        }
+                        root.storage_diagnostics_dialog.open_and_run();
+                    }
                 }
 
-                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Close"
+                    Layout.fillWidth: true
+                    onClicked: root.close()
+                }
             }
         }
     }

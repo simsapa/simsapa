@@ -820,6 +820,10 @@ pub mod qobject {
         fn rebuild_search_index_completed(self: Pin<&mut SuttaBridge>, success: bool, message: QString);
 
         #[qsignal]
+        #[cxx_name = "storageDiagnosticsCompleted"]
+        fn storage_diagnostics_completed(self: Pin<&mut SuttaBridge>, success: bool, summary: QString);
+
+        #[qsignal]
         #[cxx_name = "debugQueryReady"]
         fn debug_query_ready(self: Pin<&mut SuttaBridge>, debug_json: QString);
 
@@ -1126,6 +1130,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn rebuild_search_index(self: Pin<&mut SuttaBridge>);
+
+        #[qinvokable]
+        fn run_storage_diagnostics(self: Pin<&mut SuttaBridge>);
 
         #[qinvokable]
         fn check_search_index_status(self: &SuttaBridge) -> QString;
@@ -3939,6 +3946,51 @@ impl qobject::SuttaBridge {
                     }).unwrap();
                 }
             }
+        });
+    }
+
+    /// Run the storage diagnostics report on a background thread and emit
+    /// `storageDiagnosticsCompleted(success, summary)` when it finishes.
+    ///
+    /// This is the **only** caller of the backend's `run_storage_diagnostics()`
+    /// — there is no CLI subcommand and no HTTP route (see
+    /// `docs/storage-diagnostics.md`). The backend function reads
+    /// `get_app_globals()`, which panics when uninitialised; the GUI satisfies
+    /// that because `gui.cpp` calls `init_app_globals()` unconditionally before
+    /// any dialog can exist.
+    ///
+    /// A panic in the worker is caught so the completion signal is still
+    /// emitted, rather than the UI waiting forever on a busy indicator.
+    pub fn run_storage_diagnostics(self: Pin<&mut Self>) {
+        info("run_storage_diagnostics: starting background run");
+
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            let result = std::panic::catch_unwind(|| {
+                simsapa_backend::storage_diagnostics::run_storage_diagnostics()
+            });
+
+            let (success, summary) = match result {
+                Ok(summary) => (true, summary),
+                Err(e) => {
+                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = e.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic".to_string()
+                    };
+                    let msg = format!("Storage diagnostics failed: {}", msg);
+                    error(&msg);
+                    (false, msg)
+                }
+            };
+
+            let summary_qstr = QString::from(&summary);
+            qt_thread.queue(move |mut qo| {
+                qo.as_mut().storage_diagnostics_completed(success, summary_qstr);
+            }).unwrap();
         });
     }
 

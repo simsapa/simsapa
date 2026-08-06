@@ -51,8 +51,21 @@ pub struct DebugQueryResult {
 }
 
 impl FulltextSearcher {
+    /// Reset the per-directory open-failure record kept for the storage
+    /// diagnostics.
+    ///
+    /// Called by **both** constructors, before any index is opened. There are
+    /// two, and both call `open_indexes()` three times — clearing in only one
+    /// of them leaves the other appending to a list that is never reset, so an
+    /// entry recorded before a storage recovery would be reported as a live
+    /// fault forever.
+    fn begin_open_session() {
+        crate::clear_searcher_open_failures();
+    }
+
     /// Open all available per-language indexes under the given paths.
     pub fn open(paths: &AppGlobalPaths) -> Result<Self> {
+        Self::begin_open_session();
         let sutta_indexes = Self::open_indexes(&paths.suttas_index_dir, IndexType::Sutta)?;
         let dict_indexes = Self::open_indexes(&paths.dict_words_index_dir, IndexType::Dict)?;
         let library_indexes = Self::open_indexes(&paths.library_index_dir, IndexType::Library)?;
@@ -76,6 +89,7 @@ impl FulltextSearcher {
     /// Useful for CLI tools or tests that manage index directories directly.
     /// Pass an empty or non-existent path to skip sutta, dict, or library indexes.
     pub fn open_from_dirs(suttas_index_dir: &Path, dict_words_index_dir: &Path, library_index_dir: Option<&Path>) -> Result<Self> {
+        Self::begin_open_session();
         let sutta_indexes = Self::open_indexes(suttas_index_dir, IndexType::Sutta)?;
         let dict_indexes = Self::open_indexes(dict_words_index_dir, IndexType::Dict)?;
         let library_indexes = if let Some(dir) = library_index_dir {
@@ -119,6 +133,12 @@ impl FulltextSearcher {
                 }
                 Err(e) => {
                     warn(&format!("Failed to open index at {}: {}", path.display(), e));
+                    // Same information, kept where the storage diagnostics
+                    // report can read it back. No behaviour change.
+                    crate::record_searcher_open_failure(
+                        &path.display().to_string(),
+                        &e.to_string(),
+                    );
                 }
             }
         }
@@ -264,6 +284,20 @@ impl FulltextSearcher {
             debug_text: out,
             parse_error: first_parse_error,
         })
+    }
+
+    /// How many per-language indexes are open, as (suttas, dict_words,
+    /// library).
+    ///
+    /// The `has_*_indexes()` predicates answer a different question — "is there
+    /// at least one" — and are not a substitute where the count itself is the
+    /// reported fact.
+    pub fn index_counts(&self) -> (usize, usize, usize) {
+        (
+            self.sutta_indexes.len(),
+            self.dict_indexes.len(),
+            self.library_indexes.len(),
+        )
     }
 
     /// Check if any sutta indexes are available.
