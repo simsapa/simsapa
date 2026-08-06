@@ -219,9 +219,20 @@ Frame {
                 // never raises the soft keyboard (needing a second tap).
                 // Leaving it unfocused makes the first tap a real focus change.
                 focus: root.is_desktop
-                // Pāli queries are lowercase; stop the soft keyboard from
-                // auto-capitalising the first letter (Sentence case).
-                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhPreferLowercase
+                // Suppress the IME's Sentence-case auto-capitalisation, so a
+                // romanised query looks lowercase — a cue to the user that
+                // search is case-insensitive (it is: SearchQueryTask::new()
+                // normalizes every mode and the DPD lookups lowercase their
+                // input, so this is purely cosmetic).
+                //
+                // Do NOT add Qt.ImhPreferLowercase — inert on Android, but it
+                // forces the lowercase layer under Qt Virtual Keyboard.
+                //
+                // This hint was removed for one build while chasing the
+                // Gboard/Thai mid-word Shift bug and is now restored: removing
+                // it did NOT fix Thai, so it is not implicated. Do not re-remove
+                // it without new evidence. See docs/android-soft-keyboard.md §4.
+                inputMethodHints: Qt.ImhNoAutoUppercase
                 // Make the soft keyboard's action key a "Search" button. On
                 // Android this maps to IME_ACTION_SEARCH, which is consistent
                 // across taps (otherwise the first focus can show a "Next"

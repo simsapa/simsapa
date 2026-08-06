@@ -82,9 +82,23 @@ Notable feature docs:
   keyboard on Android/ChromeOS, the reusable `MobileKeyboardHelper.qml`
   (focus-in + tap + retry `Timer` until `Qt.inputMethod.visible`), the
   `EnterKey.type` rules (`EnterKeySearch` for search fields needs a matching
-  `onAccepted`; `EnterKeyDone` for form fields; omit for multi-line), and the
-  `focus: root.is_desktop` gate for pre-focused persistent fields. **Apply this
-  technique to every new text input.**
+  `onAccepted`; `EnterKeyDone` for form fields; omit for multi-line), the
+  `focus: root.is_desktop` gate for pre-focused persistent fields, and the
+  `Qt.ImhNoAutoUppercase`-only hint rule (never `Qt.ImhPreferLowercase`, which
+  is inert on Android but forces the lowercase layer under Qt Virtual Keyboard).
+  **§4, the Gboard/Thai mid-word Shift bug — an upstream Qt bug with no app-side
+  fix**: Shift reverts to the base layer mid-word in *both* the search field and
+  the Gloss `TextArea` (which share no configuration), while a US layout in the
+  same field and Firefox with Thai both work; shift-lock is the user workaround.
+  Ruled out on device: `inputMethodHints` (removing `ImhNoAutoUppercase` changed
+  nothing and cost the lowercase look, so it was **restored**), Qt's
+  keyboard-height probe (`android:windowSoftInputMode="adjustResize"`, no effect,
+  reverted), and `MobileKeyboardHelper`. Fixed upstream by qtbase `f5c0296fdaad`
+  (`Fixes: QTBUG-140694`), which cuts `restartImmInput()` from **12** call sites
+  in 6.9.3 to **2** in 6.10.1 — it landed 8 days after 6.9.3 shipped, so only a
+  **Qt upgrade** fixes it (now the top functional reason in
+  [android-qt-upgrade-considerations.md](./docs/android-qt-upgrade-considerations.md)).
+  **Apply this technique to every new text input.**
 - [Mobile rendering troubleshooting](./docs/mobile-rendering-troubleshooting.md) —
   the three mobile-only **Settings → Rendering** tab toggles that work around
   GPU framebuffer / scene-graph corruption on flaky Android drivers (flat result

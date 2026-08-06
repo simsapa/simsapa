@@ -221,6 +221,20 @@ ways — AAB/APK size, on-device install footprint, `zipalign -c -P 16`, and
 
 ## 3. Reasons to upgrade
 
+- **Fixes the Gboard/Thai mid-word Shift bug** — the strongest *functional*
+  reason on this list, because it makes non-Latin text entry work in every text
+  field in the app. qtbase
+  [`f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
+  ("Android: Add support for GET_EXTRACTED_TEXT_MONITOR", 2025-10-08, `Fixes:`
+  [QTBUG-140694](https://bugreports.qt.io/browse/QTBUG-140694),
+  `Pick-to: 6.10 6.9 6.8`) stops Qt restarting the input connection on every
+  keystroke:
+  `QtInputConnection.java` goes from **12** `restartImmInput()` call sites in
+  6.9.3 to **2** in 6.10.1, and `restartInput()` is what resets an IME's shift
+  state. It landed 8 days after 6.9.3 was released, so our version just misses
+  it. Not yet verified on device — verifying it is a reason to prioritise the
+  upgrade. See
+  [android-soft-keyboard.md §4](./android-soft-keyboard.md).
 - Removes the deprecated `setStatusBarColor` / `setNavigationBarColor` calls from
   Play's report (§2.3).
 - Possible removal of the predictive-back opt-out (§2.1) — the one item that is

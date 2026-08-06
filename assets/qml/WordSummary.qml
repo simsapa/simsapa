@@ -217,8 +217,11 @@ Frame {
 
                 font.pointSize: root.is_mobile ? 14 : 12
 
-                // Pāli lookups are lowercase; the action key triggers the search.
-                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhPreferLowercase
+                // Suppress Sentence-case auto-capitalisation only (lookups are
+                // lowercased in the backend anyway — `dpd_lookup*` normalize
+                // their query text). Never Qt.ImhPreferLowercase.
+                // See docs/android-soft-keyboard.md §4.
+                inputMethodHints: Qt.ImhNoAutoUppercase
                 EnterKey.type: Qt.EnterKeySearch
 
                 onAccepted: search_btn.clicked()

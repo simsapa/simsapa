@@ -87,7 +87,122 @@ the whole chain (platform detection, focus gating, tap → focus, repeated
   focusing a field, key events aren't delivered to the view.)
 
 We tried adding `android:windowSoftInputMode="adjustResize|stateVisible"` to the
-`<activity>` in `android/AndroidManifest.xml` but it did not fix the issue.
+`<activity>` in `android/AndroidManifest.xml` but it did not fix the issue. (It
+was tried a second time, as plain `adjustResize`, against the Shift-key bug in
+§4 — also no effect. The attribute is **not** set.)
+
+### 4. Mid-word Shift is forced off (Thai and other non-Latin layouts)
+
+**Status: an upstream Qt bug, not app code. Fixed in Qt ≥ 6.10.1, absent from
+the 6.9.3 we build against.** No app-side fix exists; the user workaround is
+**shift-lock** (double-tap / long-press Shift), which works.
+
+Symptom (Gboard, Thai layout, reported 2026-08-06): Shift gives **one** shifted
+character at the start of a word, and **mid-word it is forced straight back to
+the base layer** — pressing Shift again does nothing until a space is typed.
+Thai's shift layer is a second set of *distinct characters* rather than
+capitals, so those characters become untypeable.
+
+The measurements that bound the problem:
+
+| Where | Layout | Mid-word Shift |
+|---|---|---|
+| Simsapa search field (`SearchBarInput.qml`) | Thai | **forced off** |
+| Simsapa Gloss text area (`GlossTab.qml`, `gloss_text_input`) | Thai | **forced off** |
+| Simsapa search field | US | works (`dHaMmA` types fine) |
+| Firefox search bar | Thai | works (one Shift press per char, repeatable) |
+
+The two Simsapa fields share no configuration — the search field is single-line
+with `EnterKey.type: Qt.EnterKeySearch` and an `inputMethodHints`; the gloss
+field is a multi-line `TextArea` with neither — and both fail identically. That,
+plus the US layout working in the *same* field, puts the fault below QML, in
+Qt's Android input-connection layer.
+
+**Eliminated on device — do not re-test:**
+
+1. **`Qt.ImhPreferLowercase`** — removed, no change. Inert on Android
+   (`QtEditText.java:37` declares it; nothing reads it). Kept out anyway: Qt
+   Virtual Keyboard's `ShiftHandler` does `setShiftActive(!preferLowerCase)`
+   (`shifthandler.cpp:280-282`).
+2. **`Qt.ImhNoAutoUppercase`** — removed for one build, **no change to Thai**,
+   and it cost the lowercase look of romanised queries (the US layout began
+   sentence-capitalising, which confirmed the build had taken). **Restored.**
+3. **Qt's keyboard-height probe** — `android:windowSoftInputMode="adjustResize"`
+   disables `probeForKeyboardHeight()` (armed only when
+   `QtInputDelegate.m_softInputMode == 0`, which is what an absent attribute
+   gives). No change; reverted. A per-keystroke re-show would also have broken
+   the US layout.
+4. **`MobileKeyboardHelper`** — present on both failing fields, but it only acts
+   on tap/focus, and the failure happens mid-typing with no tap.
+
+**The upstream fix.** qtbase commit
+[`f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
+— *"Android: Add support for GET_EXTRACTED_TEXT_MONITOR"*, 2025-10-08,
+`Fixes:` [QTBUG-140694](https://bugreports.qt.io/browse/QTBUG-140694),
+`Task-number:` [QTBUG-138858](https://bugreports.qt.io/browse/QTBUG-138858)
+[QTBUG-37980](https://bugreports.qt.io/browse/QTBUG-37980),
+`Pick-to: 6.10 6.9 6.8`. It adds
+`updateExtractedText()` support so the extracted-text field stays current
+**"without the need for restarting the input connection every time input is
+given"**, and adds an `m_isComposing` flag so selection changes are ignored
+during composition — which it says fixes composition text being corrupted.
+
+That matters here because `InputMethodManager.restartInput()` is precisely what
+resets an IME's shift state. The call-site count tells the story:
+
+| Qt version | `restartImmInput()` call sites in `QtInputConnection.java` |
+|---|---|
+| 6.9.3 (ours) | **12** |
+| 6.10.1 | **2** (definition + `sendKeyEvent`) |
+
+Verified directly: the local 6.9.3 sources contain no
+`GET_EXTRACTED_TEXT_MONITOR`, `m_isComposing` or `updateFullScreenExtractedText`;
+the 6.10.1 sources contain all three. Qt 6.9.3 was released 2025-09-30 and the
+fix landed **eight days later**, so it missed our version by a hair despite
+being picked to the 6.9 branch.
+
+Causal story, plausible but **not proven**: mid-word the IME is composing, each
+keystroke restarted the input connection, and Gboard rebuilt its keyboard at the
+base layer; at a word boundary composition ends, so the next Shift survives.
+Why a US layout tolerates the same restarts (manual shift preserved, layout
+layer not) is unexplained — do not treat the fix as confirmed until it is tested
+on device.
+
+**How to test it:** build the Android target against a Qt ≥ 6.10.1 Android kit
+(only `gcc_64` is installed for 6.10.1 — the Android ABIs must be added via the
+MaintenanceTool), then re-run the table above. Note the 6.10.1 problems recorded
+in [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)
+are **Linux-AppImage-specific** (libtiff SONAME, WebEngine-on-FUSE SIGSEGV) and
+do not bear on the Android kits — but the rest of the Android upgrade checklist
+in that doc (minSdk 28, AGP/Gradle coupling) does.
+
+### References
+
+- [qtbase `f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
+  — the fix, with its commit message.
+- [`QtInputConnection.java` history](https://code.qt.io/cgit/qt/qtbase.git/log/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java)
+  — how the `restartImmInput()` call sites evolved. The file at a given release
+  can be read directly, which is how the 12-vs-2 count was verified:
+  `…/plain/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java?h=v6.10.1`
+- [QTBUG-140694](https://bugreports.qt.io/browse/QTBUG-140694) — the bug the fix
+  closes.
+- [QTBUG-138858](https://bugreports.qt.io/browse/QTBUG-138858),
+  [QTBUG-37980](https://bugreports.qt.io/browse/QTBUG-37980) — the tasks it
+  advances.
+- [QTBUG-68822](https://bugreports.qt.io/browse/QTBUG-68822) — "QAndroidInputContext:
+  Improve compatibility with virtual keyboards", the umbrella issue for this
+  class of problem.
+- [QTBUG-59958](https://bugreports.qt.io/browse/QTBUG-59958) — Gboard/SwiftKey
+  predictive input corrupting text; same layer, same era.
+- [Qt 6.9.3 release announcement](https://www.qt.io/blog/qt-6.9.3-released) —
+  dated 2025-09-30, eight days before the fix landed.
+
+> Practical note: `bugreports.qt.io/browse/…` now 301-redirects to
+> `qt-project.atlassian.net`, which renders through JavaScript — so these
+> tickets **cannot be read by command-line fetchers**. Open them in a browser.
+> The cgit links above are plain HTML and work fine from a terminal, which is
+> why the analysis in this section is built on source and commit messages rather
+> than on ticket text.
 
 ## How to apply it
 
@@ -98,7 +213,7 @@ targets its parent field — and set an appropriate `EnterKey.type`:
 // A search / lookup field whose action key should run the search:
 TextField {
     id: search_input
-    inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhPreferLowercase // Pāli is lowercase
+    inputMethodHints: Qt.ImhNoAutoUppercase   // no Sentence-case; see below
     EnterKey.type: Qt.EnterKeySearch
     onAccepted: search_btn.clicked()   // the IME search action emits `accepted`
     MobileKeyboardHelper {}
@@ -132,6 +247,22 @@ Guidelines:
   auto-focus to desktop (`focus: root.is_desktop`) so the first mobile tap is a
   real focus transition. Modal dialog fields that gain focus when the dialog
   opens do not need this — the open *is* the focus transition.
+- **`inputMethodHints`: `Qt.ImhNoAutoUppercase` only, never
+  `Qt.ImhPreferLowercase`.** `ImhNoAutoUppercase` suppresses the IME's
+  Sentence-case auto-capitalisation, which keeps romanised queries looking
+  lowercase — a cue that search is case-insensitive. `ImhPreferLowercase` asks
+  the IME to sit on its lowercase layer, which is meaningless for non-Latin
+  scripts whose shift layer holds distinct characters; it is inert on Android
+  but not under Qt Virtual Keyboard. Neither hint is responsible for the
+  unresolved Thai Shift bug in §4 — both were removed and re-tested.
+
+  Case-insensitivity of queries is a **backend** guarantee, not an IME one, so
+  nothing is lost: `SearchQueryTask::new()` lowercases every mode
+  (`UidMatch` → `to_lowercase()`; `FulltextMatch` → `normalize_fulltext_query`;
+  everything else → `normalize_query_text` → `compact_plain_text`, both of which
+  route through `normalize_plain_text`, whose first step is `to_lowercase()`),
+  and the DPD paths (`dpd_lookup`, `dpd_lookup_grouped`) normalize their query
+  text and lower-case the uid candidate. Do not re-add case handling in QML.
 - **`gesturePolicy`**: the helper's `TapHandler` must stay `DragThreshold` (its
   default). That gives it a *passive* grab so taps still reach the field for
   cursor placement and text selection; a drag past the threshold cancels the tap.
