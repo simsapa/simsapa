@@ -45,6 +45,7 @@ Item {
     signal rebuildSearchIndexProgress(message: string);
     signal rebuildSearchIndexCompleted(success: bool, message: string);
     signal storageDiagnosticsCompleted(success: bool, summary: string);
+    signal fileSelectionTestCompleted(success: bool, outcome: string);
 
     signal debugQueryReady(debug_json: string);
 
@@ -268,6 +269,16 @@ Item {
 
     function run_storage_diagnostics() {
         console.log("run_storage_diagnostics()");
+    }
+
+    // Takes a `url`, never a string: QML-side string handling is the corruption
+    // this test exists to measure.
+    function run_file_selection_test(url: url) {
+        console.log("run_file_selection_test()");
+    }
+
+    function start_file_selection_test_raw_pick() {
+        console.log("start_file_selection_test_raw_pick()");
     }
 
     // One entry per database, plus a top-level "storage_path" object:

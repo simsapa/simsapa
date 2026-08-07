@@ -1,5 +1,4 @@
 #include <QDir>
-#include <QDirIterator>
 #include <QFile>
 #include <QString>
 #include <QSysInfo>
@@ -562,7 +561,7 @@ QString copy_file(QString source_file, QString destination_file) {
     if (!dest_dir.exists()) {
         if (!dest_dir.mkpath(".")) {
             QString ret_msg = QString("Failed to create directory for: " + destination_file);
-            qWarning() << ret_msg;
+            log_error_c(ret_msg.toUtf8().constData());
             return ret_msg;
         }
     }
@@ -570,7 +569,7 @@ QString copy_file(QString source_file, QString destination_file) {
     QFile source(source_file);
     if (!source.copy(destination_file)) {
         QString ret_msg("Failed to copy file: " + source_file + ", error: " + source.errorString());
-        qWarning() << ret_msg;
+        log_error_c(ret_msg.toUtf8().constData());
         return ret_msg;
     }
 
@@ -581,6 +580,14 @@ QString copy_file(QString source_file, QString destination_file) {
         QFileDevice::WriteOwner);
 
     return QString("");
+}
+
+// The folder where picked files are staged before an import. This is the single
+// source of truth for the C++ side; the Rust cleanup uses std::env::temp_dir(),
+// which is not guaranteed to be the same directory on Android. See
+// docs/file-selection-test.md.
+QString get_import_staging_root() {
+    return QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/simsapa-imports";
 }
 
 QString copy_content_uri_to_temp_file(const QString& content_uri) {
@@ -642,10 +649,10 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
     }
 
     // Create temp directory
-    QString temp_dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/simsapa-imports";
+    QString temp_dir = get_import_staging_root();
     QDir dir;
     if (!dir.mkpath(temp_dir)) {
-        qWarning() << "Failed to create temp directory:" << temp_dir;
+        log_error_c(QString("Failed to create temp directory: %1").arg(temp_dir).toUtf8().constData());
         return QString("");
     }
 
@@ -654,14 +661,16 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
     // Open the content URI for reading
     QFile source(content_uri);
     if (!source.open(QIODevice::ReadOnly)) {
-        qWarning() << "Failed to open content URI:" << content_uri << "Error:" << source.errorString();
+        log_error_c(QString("Failed to open content URI: %1 Error: %2")
+                    .arg(content_uri, source.errorString()).toUtf8().constData());
         return QString("");
     }
 
     // Open destination file for writing
     QFile dest(temp_path);
     if (!dest.open(QIODevice::WriteOnly)) {
-        qWarning() << "Failed to create temp file:" << temp_path << "Error:" << dest.errorString();
+        log_error_c(QString("Failed to create temp file: %1 Error: %2")
+                    .arg(temp_path, dest.errorString()).toUtf8().constData());
         source.close();
         return QString("");
     }
@@ -669,7 +678,8 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
     // Copy data
     QByteArray data = source.readAll();
     if (data.isEmpty() && source.error() != QFile::NoError) {
-        qWarning() << "Failed to read from content URI:" << source.errorString();
+        log_error_c(QString("Failed to read from content URI: %1")
+                    .arg(source.errorString()).toUtf8().constData());
         source.close();
         dest.close();
         return QString("");
@@ -680,12 +690,13 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
     dest.close();
 
     if (written != data.size()) {
-        qWarning() << "Failed to write all data to temp file";
+        log_error_c(QString("Failed to write all data to temp file: %1 (wrote %2 of %3 bytes)")
+                    .arg(temp_path).arg(written).arg(data.size()).toUtf8().constData());
         QFile::remove(temp_path);
         return QString("");
     }
 
-    qInfo() << "Copied content URI to temp file:" << temp_path;
+    log_info_c(QString("Copied content URI to temp file: %1").arg(temp_path).toUtf8().constData());
     return temp_path;
 #else
     // On non-Android platforms, content:// URIs shouldn't occur
@@ -848,67 +859,6 @@ QString copy_apk_assets_to_internal_storage(QString apk_asset_path /* = QString(
         QString destination_file = dest_dir_path;
 
         copy_file(source_path, destination_file);
-    }
-
-    return ret_msg;
-}
-
-QStringList list_qrc_assets() {
-    qWarning() << "list_qrc_assets()";
-    QStringList resource_files;
-    // QDirIterator it(":/app-assets", QStringList() << "*", QDir::AllEntries | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-    QDirIterator it(":",                                  QDir::AllEntries | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        QString i(it.next());
-        resource_files.append(i);
-        qWarning() << i;
-    }
-    qWarning() << resource_files.length();
-    return resource_files;
-}
-
-QString copy_qrc_app_assets_to_internal_storage() {
-    qWarning() << "copy_qrc_app_assets_to_internal_storage()";
-    QString assets_storage = get_app_assets_path();
-    QString ret_msg = QString("");
-
-    QDir assets_storage_dir(assets_storage);
-    if (!assets_storage_dir.exists()) {
-        if (!assets_storage_dir.mkpath(".")) {
-            ret_msg = QString("Failed to create directory: " + assets_storage);
-            qWarning() << ret_msg;
-            return ret_msg;
-        }
-    }
-
-    QStringList resource_files;
-    QDirIterator it(":/app-assets", QStringList() << "*", QDir::AllEntries | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        QString i(it.next());
-        qWarning() << i;
-        resource_files.append(i);
-    }
-
-    qWarning() << resource_files.length();
-
-    foreach (const QString& source_path, resource_files) {
-        // Remove ":/app-assets/" prefix
-        QString relative_path = source_path.mid(12);
-        QString destination_path = assets_storage + "/" + relative_path;
-
-        qWarning() << "relative_path: " << relative_path;
-        // qWarning() << "destination_path: " << destination_path;
-
-        QFileInfo fileInfo(source_path);
-        if (fileInfo.isDir()) {
-            continue;
-        }
-
-        QString r = copy_file(source_path, destination_path);
-        if (!r.isEmpty()) {
-            qWarning() << r;
-            return r;
-        }
     }
 
     return ret_msg;

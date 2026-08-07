@@ -44,6 +44,7 @@ pub mod audio;
 pub mod global_hotkeys;
 pub mod storage_probe;
 pub mod storage_diagnostics;
+pub mod picker_url;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 

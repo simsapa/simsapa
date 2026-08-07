@@ -71,6 +71,124 @@ static COMBINED_CACHE: Mutex<Option<CombinedCache>> = Mutex::new(None);
 /// log which errors the user chose to bypass. See PRD §11.6.
 static LAST_EXPORT_FAILURE: Mutex<Option<String>> = Mutex::new(None);
 
+/// The `SuttaBridge` thread handle a finished raw pick reports back through.
+///
+/// The native activity-result callback (`raw_document_pick_result_c`, in
+/// `backend/src/picker_url.rs`) is a plain `extern "C"` function with no `self`,
+/// so it cannot reach the singleton. It is registered here when a raw pick is
+/// started, and read by `on_raw_pick_finished()`.
+///
+/// Diagnostic only — see `docs/file-selection-test.md`; goes away with the
+/// feature.
+static FILE_SELECTION_TEST_THREAD: Mutex<Option<cxx_qt::CxxQtThread<qobject::SuttaBridge>>> =
+    Mutex::new(None);
+
+/// Extract the Qt-side facts about a picked URL into owned `String`s.
+///
+/// Must be called on the thread that owns the `QUrl` — it is not `Send`, and
+/// this conversion is what makes the measurement movable to a worker.
+///
+/// The encoded form is recovered exactly as `save_bytes_to_folder` does: through
+/// `to_encoded()`, never `to_qstring()` / `path()`, which are the pretty-decoded
+/// forms. Those are captured too, but only as the *measurement* of the encoding
+/// difference — never as something to open.
+fn picker_url_facts_from(url: &QUrl) -> simsapa_backend::picker_url::PickerUrlFacts {
+    simsapa_backend::picker_url::PickerUrlFacts {
+        is_valid: url.is_valid(),
+        encoded: String::from_utf8_lossy(url.to_encoded().as_slice()).to_string(),
+        decoded: url.to_qstring().to_string(),
+        scheme: url.scheme_or_default().to_string(),
+        host: url.host_or_default().to_string(),
+        // `None` unless Qt considers the URL a local file, which is the
+        // distinction the report wants to state.
+        local_file: url.to_local_file().map(|s| s.to_string()).unwrap_or_default(),
+    }
+}
+
+/// Run a File Selection Test on a worker and emit `fileSelectionTestCompleted`.
+///
+/// Shared by both entry points so there is exactly one report builder and one
+/// completion signal, whichever picker produced the input. A panic is caught so
+/// the signal is still emitted — otherwise the dialog's busy state would never
+/// clear and its keep-screen-on lock would never be released.
+fn spawn_file_selection_test(
+    qt_thread: cxx_qt::CxxQtThread<qobject::SuttaBridge>,
+    input: simsapa_backend::picker_url::FileSelectionTestInput,
+) {
+    thread::spawn(move || {
+        let result = std::panic::catch_unwind(move || {
+            simsapa_backend::picker_url::run_and_log_file_selection_test(&input)
+        });
+
+        let (success, outcome) = match result {
+            Ok(outcome) => (true, outcome),
+            Err(e) => {
+                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+                let msg = format!("The file selection test could not finish: {}", msg);
+                error(&msg);
+                (false, msg)
+            }
+        };
+
+        let outcome_qstr = QString::from(&outcome);
+        qt_thread.queue(move |mut qo| {
+            qo.as_mut().file_selection_test_completed(success, outcome_qstr);
+        }).unwrap();
+    });
+}
+
+/// Called from the native activity-result callback when a raw pick finishes.
+///
+/// This runs on the **Android UI thread**, inside the activity result dispatch,
+/// so it does nothing but collect the stored outcome and hand it to a worker —
+/// the provider read in the report can take as long as a network fetch.
+///
+/// Every outcome completes the run, `cancelled` included, or the button that
+/// started it stays disabled until the dialog is reopened.
+fn on_raw_pick_finished() {
+    let qt_thread = match FILE_SELECTION_TEST_THREAD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+    {
+        Some(t) => t,
+        None => {
+            error("on_raw_pick_finished: no bridge thread registered, the result is lost");
+            return;
+        }
+    };
+
+    let raw = simsapa_backend::picker_url::take_raw_pick();
+
+    // Reproduce `QUrl(uri.toString())` — the exact conversion
+    // qandroidplatformfiledialoghelper.cpp performs, in the same TolerantMode —
+    // so the report can say directly whether that is where the URL is lost.
+    // Built here because it needs Qt; `picker_url.rs` stays Qt-free.
+    let (facts, qurl_of_raw_is_valid) = match raw.as_ref() {
+        Some(r) if !r.raw_uri.is_empty() => {
+            let url = QUrl::from(&QString::from(&r.raw_uri));
+            (Some(picker_url_facts_from(&url)), Some(url.is_valid()))
+        }
+        _ => (None, None),
+    };
+
+    let input = simsapa_backend::picker_url::FileSelectionTestInput {
+        source: Some(simsapa_backend::picker_url::PickSource::RawIntent),
+        facts,
+        raw,
+        qurl_of_raw_is_valid,
+        cpp_staging_root: qobject::get_import_staging_root().to_string(),
+    };
+
+    spawn_file_selection_test(qt_thread, input);
+}
+
 /// Fetch, highlight, and cache a single page of search results.
 /// Returns (results, total_hits, page_len) on success.
 /// If the cache key has changed (new search started), returns None to signal abort.
@@ -702,7 +820,15 @@ pub mod qobject {
         fn get_system_palette_json() -> QString;
         fn set_app_palette_link_colors(link: &QString, link_visited: &QString);
 
+        // Diagnostic only, and deliberately its own header: the private-Qt
+        // include it needs is confined to that one file, so a future Qt change
+        // cannot reach the import path. Delete with the diagnostic — see
+        // cpp/android_raw_pick.cpp.
+        include!("android_raw_pick.h");
+        fn start_raw_document_pick() -> bool;
+
         include!("utils.h");
+        fn get_import_staging_root() -> QString;
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
         fn get_qt_version() -> QString;
         fn get_android_package_name() -> QString;
@@ -822,6 +948,12 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "storageDiagnosticsCompleted"]
         fn storage_diagnostics_completed(self: Pin<&mut SuttaBridge>, success: bool, summary: QString);
+
+        // `outcome` is the plain-language one-liner for the screen, not the
+        // report block — the block goes to log.txt, which is the deliverable.
+        #[qsignal]
+        #[cxx_name = "fileSelectionTestCompleted"]
+        fn file_selection_test_completed(self: Pin<&mut SuttaBridge>, success: bool, outcome: QString);
 
         #[qsignal]
         #[cxx_name = "debugQueryReady"]
@@ -1133,6 +1265,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn run_storage_diagnostics(self: Pin<&mut SuttaBridge>);
+
+        #[qinvokable]
+        fn run_file_selection_test(self: Pin<&mut SuttaBridge>, url: &QUrl);
+
+        #[qinvokable]
+        fn start_file_selection_test_raw_pick(self: Pin<&mut SuttaBridge>);
 
         #[qinvokable]
         fn check_search_index_status(self: &SuttaBridge) -> QString;
@@ -3992,6 +4130,61 @@ impl qobject::SuttaBridge {
                 qo.as_mut().storage_diagnostics_completed(success, summary_qstr);
             }).unwrap();
         });
+    }
+
+    /// Run the "File Selection Test" against a URL a QML `FileDialog` returned.
+    ///
+    /// The desktop entry point (D-3a); Android uses
+    /// `start_file_selection_test_raw_pick()` instead, because Qt's Android file
+    /// dialog destroys the picker's raw URI before any app code can see it.
+    ///
+    /// The `QUrl` is taken **as a `QUrl`** and never as a string from QML: the
+    /// encoding damage that string handling does is exactly what this test
+    /// measures, so QML must not touch it. The facts are extracted here, on the
+    /// calling thread, both because `QUrl` is not `Send` and because this is the
+    /// moment the encoded form is preserved.
+    ///
+    /// Measures only — it opens nothing on the import path, stages no file and
+    /// writes nothing (D-4).
+    pub fn run_file_selection_test(self: Pin<&mut Self>, url: &QUrl) {
+        info("run_file_selection_test: starting background run");
+
+        let facts = picker_url_facts_from(url);
+        // Fetched here for the same reason as the facts: the C++ accessor is
+        // Qt's and the worker must be handed a plain String.
+        let cpp_staging_root = qobject::get_import_staging_root().to_string();
+
+        let input = simsapa_backend::picker_url::FileSelectionTestInput {
+            source: Some(simsapa_backend::picker_url::PickSource::QtFileDialog),
+            facts: Some(facts),
+            raw: None,
+            qurl_of_raw_is_valid: None,
+            cpp_staging_root,
+        };
+
+        spawn_file_selection_test(self.qt_thread(), input);
+    }
+
+    /// Start the Android raw-intent pick (D-3a, D-8h).
+    ///
+    /// Returns immediately: the picker is a separate activity, and the result
+    /// arrives asynchronously in `raw_document_pick_result_c()`, which wakes
+    /// `on_raw_pick_finished()` below. Deliberately **not** polled.
+    pub fn start_file_selection_test_raw_pick(self: Pin<&mut Self>) {
+        info("start_file_selection_test_raw_pick: launching the raw document picker");
+
+        *FILE_SELECTION_TEST_THREAD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(self.qt_thread());
+
+        simsapa_backend::picker_url::set_raw_pick_listener(on_raw_pick_finished);
+
+        // On a non-Android build this immediately delivers an
+        // "unsupported-platform" outcome through the same callback, so the run
+        // still completes and the button is re-enabled.
+        if !qobject::start_raw_document_pick() {
+            info("start_file_selection_test_raw_pick: the picker could not be launched");
+        }
     }
 
     pub fn remove_book(&self, book_uid: &QString) -> bool {

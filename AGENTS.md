@@ -404,6 +404,40 @@ Notable feature docs:
   `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
   (`save_file` discarded the write result and always returned `true`) that made the
   failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
+  **The `to_encoded()` rule applies identically to the read path**, which is
+  where it was missing: `probe_document_uri` (`ContentResolver.openInputStream`,
+  never `QFile(content_uri)` — that works only for `content://`) is the read-side
+  twin, and `attach()` was split into `attach_resolver` + `attach_tree` because
+  a plain document URI has no tree document id. See
+  [file-selection-test.md](./docs/file-selection-test.md).
+- [File Selection Test](./docs/file-selection-test.md) — the phase-1 diagnostic
+  behind the Chromebook StarDict import failure, whose whole deliverable is a
+  greppable `FILE-SELECTION-TEST:` block in `log.txt` (there is deliberately no
+  results window). It exists because the user's log showed `Path not found:`
+  with an **empty** path — so none of the four catalogued URL defects is
+  demonstrated by the report, and the shipped error message could not answer the
+  question by email. Records the source-level mechanism
+  (`qandroidplatformfiledialoghelper.cpp:48` hands the picker's URI to
+  `QUrl(QString)` and emits `accept()` regardless, so an unparseable URI reaches
+  QML as an **empty** `QUrl`; `currentFile`/`currentFiles`/`selectedFiles` all
+  come from the same list and are empty *together*), which is why **Android
+  bypasses Qt's `FileDialog`** and launches its own `ACTION_OPEN_DOCUMENT`
+  (request code `51305`, never Qt's `1305`) to capture the raw Java
+  `Uri.toString()` before any `QUrl` exists — **one press opens one picker**,
+  chosen by platform. Covers the Qt-free classifier
+  (`backend/src/picker_url.rs`), the block's line-by-line meaning, both
+  decision-gate tables (**read the raw-intent rows first**), the private-Qt
+  include confined to `cpp/android_raw_pick.cpp` and the terms confining it, and
+  the `qInstallMessageHandler` in `cpp/gui.cpp` that finally routes Qt's own
+  warnings into `log.txt` (`QtDebugMsg` dropped, chains to the previous handler)
+  — **which does not catch this bug**, since Qt's dialog helper emits zero
+  `qWarning`s. **§6 lists four measured states that are normal and must not be
+  "fixed"** — notably `encoding_differs: no` (Qt's `toString()` is
+  `PrettyDecoded`, which does *not* decode a delimiter inside a path, so Defect
+  B may be milder than the PRD asserts) and `staging_roots_differ: no` (on an
+  Android 16 device `QStandardPaths::TempLocation` and `std::env::temp_dir()`
+  resolve to the **same** directory, contradicting the PRD's "very likely a
+  silent no-op" claim).
 - [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
   what happens when the storage location the user chose is no longer where it was
   (a microSD card moved to another socket, a volume back under a different path).

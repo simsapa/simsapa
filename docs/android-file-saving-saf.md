@@ -100,6 +100,40 @@ The reporter's exact case (a newly-created nested folder like `Download/Temp`,
 whose tree URI carries encoded `%3A`/`%2F`) is the regression guard for this
 round-trip.
 
+## The read path — the same rule, the other direction
+
+**The `to_encoded()` rule above applies identically to reading**, and the read
+side did not get it for a long time. That omission is one of the defects behind
+the Chromebook import failure: the import dialogs convert the picker's URL to a
+string in QML with `String(url)` (i.e. `QUrl::toString()`), which
+pretty-decodes `%3A`/`%2F` exactly as warned above, and hand the corrupted
+result to the backend as though it were a path.
+
+`backend/src/android_saf.rs` now carries **both** directions:
+
+| Direction | Function | Opens via |
+|---|---|---|
+| write | `write_to_tree_uri`, `child_exists` | `ContentResolver.openOutputStream` |
+| read | `probe_document_uri(uri, cap_bytes)` | `ContentResolver.openInputStream` |
+
+Two things to know before using the read side:
+
+- **`attach()` was tree-URI specific and has been split.** It called
+  `DocumentsContract.getTreeDocumentId`, which a plain *document* URI has no
+  answer for. It is now `attach_resolver(vm) -> (AttachGuard, ContentResolver)`
+  plus a thin `attach_tree(vm, tree_uri)` that adds the tree-specific part. The
+  write path's behaviour is unchanged by that refactor.
+- **Read through `ContentResolver`, never `QFile(content_uri)`.** `QFile` works
+  only for `content://` through Qt's `QAndroidContentFileEngine`, so it fails on
+  precisely the non-`content://` provider schemes a ChromeOS picker can return —
+  which is the failure the read path exists to survive.
+
+`probe_document_uri` is currently wired **only** into the File Selection Test
+diagnostic; it is the import fix in its final location, waiting for the phase-2
+migration of the four picker call sites. See
+[file-selection-test.md](./file-selection-test.md) for what it measures and how
+to read its output.
+
 ## The `jni` crate version
 
 `backend/Cargo.toml` pins `jni = "0.21"` under

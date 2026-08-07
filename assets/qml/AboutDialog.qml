@@ -31,7 +31,19 @@ ApplicationWindow {
     // SuttaSearchWindow.qml. That window owns the whole run — the busy state,
     // the completion signal and the keep-screen-on bracket — so this dialog
     // only calls open_and_run(). See docs/storage-diagnostics.md.
+    //
+    // The File Selection Test below is the opposite case: it has no results
+    // window (its whole deliverable is a FILE-SELECTION-TEST: block in
+    // log.txt), so *this* dialog owns that run — the busy state, the
+    // keep-screen-on bracket and the completion handler all live here.
+    // See docs/file-selection-test.md.
     property var storage_diagnostics_dialog: null
+
+    // True while a File Selection Test is in flight (from the moment the
+    // picker is launched until fileSelectionTestCompleted arrives).
+    property bool file_selection_test_running: false
+
+    AssetManager { id: manager }
 
     // FIXME make text selectable
 
@@ -64,6 +76,83 @@ ApplicationWindow {
             `App data folder: ${SuttaBridge.app_data_folder_path()}`,
             `App data folder is writable: ${SuttaBridge.is_app_data_folder_writable()}`,
         ];
+    }
+
+    // One press opens exactly one picker, and which one depends on the
+    // platform. Qt's Android FileDialog parses the picker's URI into a QUrl
+    // and discards the original string, which is the very thing this test has
+    // to see — so Android launches the raw ACTION_OPEN_DOCUMENT intent
+    // instead, and never opens the FileDialog below.
+    // Acknowledge a finished run in a dialog the user dismisses themselves.
+    //
+    // Deliberately a dialog and not a Label in the button column: the column is
+    // a fixed bottom area holding four full-width buttons, so a wrapping
+    // outcome line grew it downwards and pushed "Close" towards the edge of a
+    // phone screen. A dialog also makes the result unmissable, which matters
+    // when the whole point is that the user reports what they saw.
+    function show_file_selection_test_outcome(outcome: string) {
+        file_selection_test_result_dialog.text = outcome;
+        file_selection_test_result_dialog.open();
+    }
+
+    function start_file_selection_test() {
+        root.file_selection_test_running = true;
+        // The run continues on a worker after the picker closes, so hold the
+        // screen awake until the completion signal arrives.
+        manager.set_keep_screen_on(true);
+
+        // Android specifically, not is_mobile: the raw intent exists only there,
+        // and on iOS it would report "unsupported-platform" instead of opening
+        // the picker that platform does have.
+        if (Qt.platform.os === "android") {
+            logger.info("File Selection Test: starting, picker = raw ACTION_OPEN_DOCUMENT intent");
+            SuttaBridge.start_file_selection_test_raw_pick();
+        } else {
+            logger.info("File Selection Test: starting, picker = Qt FileDialog");
+            file_selection_test_dialog.open();
+        }
+    }
+
+    Connections {
+        target: SuttaBridge
+
+        function onFileSelectionTestCompleted(success: bool, outcome: string) {
+            // The signal is process-global; only the dialog that started a run
+            // acts on it.
+            if (!root.file_selection_test_running) return;
+
+            root.file_selection_test_running = false;
+            // Released on both success and failure, and on a cancelled pick.
+            manager.set_keep_screen_on(false);
+
+            root.show_file_selection_test_outcome(outcome);
+            logger.info("File Selection Test: completed, success = " + success + ", outcome: " + outcome);
+        }
+    }
+
+    FileDialog {
+        id: file_selection_test_dialog
+        title: "File Selection Test — choose any file"
+        // No nameFilters, deliberately: the .zip filter on the real import
+        // dialog is one of the suspects, and a test must not inherit the
+        // configuration it is testing.
+
+        onAccepted: {
+            // Passed straight through as a url. Any JavaScript string handling
+            // here would re-introduce the encoding corruption being measured.
+            logger.info("File Selection Test: FileDialog accepted"
+                        + ", selectedFile is empty: " + (String(file_selection_test_dialog.selectedFile) === "")
+                        + ", selectedFiles.length: " + file_selection_test_dialog.selectedFiles.length
+                        + ", currentFolder: " + file_selection_test_dialog.currentFolder);
+            SuttaBridge.run_file_selection_test(file_selection_test_dialog.selectedFile);
+        }
+
+        onRejected: {
+            logger.info("File Selection Test: FileDialog cancelled, no file was chosen");
+            root.file_selection_test_running = false;
+            manager.set_keep_screen_on(false);
+            root.show_file_selection_test_outcome("The file chooser was closed without choosing a file.");
+        }
     }
 
     // Invisible helper for clipboard - placed at root level to avoid id conflicts
@@ -268,6 +357,15 @@ ApplicationWindow {
                     }
                 }
 
+                // Available on all platforms: on desktop it exercises the
+                // file:// branch, which a maintainer can actually read.
+                Button {
+                    text: root.file_selection_test_running ? "File Selection Test..." : "File Selection Test"
+                    Layout.fillWidth: true
+                    enabled: !root.file_selection_test_running
+                    onClicked: root.start_file_selection_test()
+                }
+
                 // Available on all platforms: the same diagnosis applies to a
                 // desktop user with an external or network drive.
                 Button {
@@ -317,5 +415,17 @@ ApplicationWindow {
     MessageDialog {
         id: save_log_msg_dialog
         buttons: MessageDialog.Ok
+    }
+
+    // The on-screen half of the File Selection Test (D-6). The text is the
+    // plain-language one-liner the backend produced (D-13) — it never says
+    // "Path not found", and it is the wording model for the phase-2 messages.
+    // The detail lives in log.txt, which is the deliverable the user sends.
+    MessageDialog {
+        id: file_selection_test_result_dialog
+        title: "File Selection Test"
+        informativeText: "The full details have been written to the log file. "
+                         + "You can copy or save it from the log file list above."
+        buttons: MessageDialog.Close
     }
 }

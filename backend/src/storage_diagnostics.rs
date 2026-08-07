@@ -1872,7 +1872,7 @@ pub fn collect_searcher_state() -> SearcherState {
     }
 }
 
-fn current_platform() -> &'static str {
+pub fn current_platform() -> &'static str {
     if cfg!(target_os = "android") {
         "Android"
     } else if cfg!(target_os = "ios") {
@@ -1889,7 +1889,7 @@ fn current_platform() -> &'static str {
 }
 
 #[cfg(target_os = "android")]
-fn android_api_level() -> Option<i32> {
+pub fn android_api_level() -> Option<i32> {
     // `android_get_device_api_level()` is not declared by the libc version in
     // use, so read the property the same way it does.
     const PROP_VALUE_MAX: usize = 92;
@@ -1909,7 +1909,7 @@ fn android_api_level() -> Option<i32> {
 }
 
 #[cfg(not(target_os = "android"))]
-fn android_api_level() -> Option<i32> {
+pub fn android_api_level() -> Option<i32> {
     None
 }
 

@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <sstream>
 #include <thread>
 
@@ -89,6 +90,74 @@ extern "C" bool render_loop_basic_c();
 // loads. See the comment on `theme_link_colors_c()` in backend/src/lib.rs and
 // on `set_app_palette_link_colors()` in cpp/system_palette.h.
 extern "C" char* theme_link_colors_c();
+
+// Route Qt's own diagnostics into the app logger, so that a qWarning() raised
+// inside Qt — the QML engine's warnings especially — lands in log.txt, the file
+// a user can hand back via About → log files → "Copy Contents". Without this
+// they reach only stderr / logcat, which an ordinary user cannot retrieve; that
+// gap is why the native half of an import failure has been undiagnosable.
+//
+// This complements, rather than replaces, converting the app's *own*
+// qWarning() calls to log_error_c() (cpp/utils.cpp): the handler is for
+// messages we do not author. See docs/file-selection-test.md.
+static QtMessageHandler g_previous_message_handler = nullptr;
+
+static void simsapa_message_handler(QtMsgType type,
+                                    const QMessageLogContext& context,
+                                    const QString& msg) {
+    // QtDebugMsg is deliberately dropped. Qt's debug stream is high-volume and
+    // would bury the app's own messages in the very file users are asked to
+    // paste.
+    if (type != QtDebugMsg) {
+        // Compose with QString/QByteArray only, and never call back into Qt
+        // logging from here: a handler that warns while handling a warning
+        // recurses until the stack is gone.
+        QString prefix("Qt");
+        if (context.category && *context.category
+            && qstrcmp(context.category, "default") != 0) {
+            prefix += QString(".%1").arg(QLatin1String(context.category));
+        }
+
+        switch (type) {
+            case QtInfoMsg:
+                log_info_c(QString("%1: %2").arg(prefix, msg).toUtf8().constData());
+                break;
+            case QtWarningMsg:
+                log_error_c(QString("%1: %2").arg(prefix, msg).toUtf8().constData());
+                break;
+            case QtCriticalMsg:
+                log_error_c(QString("%1: CRITICAL: %2").arg(prefix, msg).toUtf8().constData());
+                break;
+            case QtFatalMsg:
+                log_error_c(QString("%1: FATAL: %2").arg(prefix, msg).toUtf8().constData());
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Chaining (task 1.5d): pass the message on, so this change is purely
+    // additive and `adb logcat` / Qt Creator's Application Output keep showing
+    // what they showed before.
+    //
+    // qInstallMessageHandler() returns nullptr when the *default* handler was
+    // in place, and Qt exposes no way to call that default directly — so in
+    // that (usual) case the fallback is an explicit stderr write, which keeps
+    // the desktop console output. On Android the platform default writes to
+    // logcat under the "Qt" tag and cannot be reached; there, Qt's stream moves
+    // into the Rust logger, which itself writes to logcat under the `simsapa`
+    // tag *and* to log.txt. Nothing is lost from the documented
+    // `adb logcat -s simsapa Qt QtCore QtQml` tag set, and log.txt gains it.
+    if (g_previous_message_handler) {
+        g_previous_message_handler(type, context, msg);
+        return;
+    }
+
+#ifndef Q_OS_ANDROID
+    fprintf(stderr, "%s\n", msg.toLocal8Bit().constData());
+    fflush(stderr);
+#endif
+}
 
 // The four states of the recorded storage path, mirroring `StorageState` in
 // backend/src/lib.rs. The integers are the FFI contract of
@@ -401,6 +470,13 @@ int start(int argc, char* argv[]) {
   }
 
   init_app_globals();
+
+  // Install the Qt message handler now: after init_app_globals(), so the
+  // logger's data directory is resolvable, and before the QApplication and the
+  // QML engine, which are what produce most of Qt's own warnings. This is the
+  // same slot the render-loop and palette pre-reads occupy.
+  g_previous_message_handler = qInstallMessageHandler(simsapa_message_handler);
+
   remove_download_temp_folder();
 
   // The three startup sweeps below are gated on the storage-path state.
