@@ -352,7 +352,7 @@ self-contained and de-risks every later on-device observation.
 
 ---
 
-### 2.0 `backend/src/picker_url.rs` — the Qt-free URL classifier
+### 2.0 [x] `backend/src/picker_url.rs` — the Qt-free URL classifier
 
 **Specs to keep in mind.** D-10 and PRD Req. 29: the branch decision must be a
 **pure Rust function over strings**, so the ChromeOS behaviour we cannot
@@ -363,31 +363,31 @@ must model it as a first-class branch rather than as "some other scheme".
 
 **Depends on:** nothing. **Blocks:** 3.0, 4.0, 5.0.
 
-- [ ] 2.1 Create `backend/src/picker_url.rs`, declare it in `backend/src/lib.rs`,
+- [x] 2.1 Create `backend/src/picker_url.rs`, declare it in `backend/src/lib.rs`,
       and define `PickerUrlFacts` — the Qt-extracted inputs, all owned `String`s
       plus one `bool`: `is_valid`, `encoded` (`to_encoded()`), `decoded`
       (`to_qstring()`), `scheme`, `host`, `local_file` (`toLocalFile()`).
       Keeping the struct Qt-free is what makes the tests possible.
-- [ ] 2.2 Define `PickerBranch` — `Empty`, `LocalFile`, `Provider { scheme }`,
+- [x] 2.2 Define `PickerBranch` — `Empty`, `LocalFile`, `Provider { scheme }`,
       `BarePath` — and `classify(&PickerUrlFacts) -> PickerBranch`, mirroring
       PRD Req. 4(a)–(d) plus the new empty case. `Empty` when `!is_valid` **or**
       `encoded` is empty; `LocalFile` for `file`; `BarePath` for an empty scheme
       on a non-empty string; `Provider` for every other non-empty scheme
       (`content`, `externalfile`, anything else) — Req. 4(c) deliberately does
       not allowlist schemes.
-- [ ] 2.2a Do **not** treat a Windows drive letter as a scheme. `C:/Users/…`
+- [x] 2.2a Do **not** treat a Windows drive letter as a scheme. `C:/Users/…`
       parses with scheme `c` in some URL libraries; the classifier works from
       Qt's already-parsed `scheme` field, so this is a **test** to write rather
       than logic to add (PRD §9.6 makes the same point for Req. 15).
-- [ ] 2.3 Add `encoding_differs(&PickerUrlFacts) -> bool` comparing `encoded`
+- [x] 2.3 Add `encoding_differs(&PickerUrlFacts) -> bool` comparing `encoded`
       against `decoded`. This single boolean **is** the Defect B measurement
       (D-8c): a difference proves the corruption, identity rules it out for that
       pick. Keep it a named function so the report and the tests share one
       definition.
-- [ ] 2.4 Add a process-global run counter (`AtomicU64`) and
+- [x] 2.4 Add a process-global run counter (`AtomicU64`) and
       `next_run_number() -> u64` (D-11), so repeated presses produce
       distinguishable blocks.
-- [ ] 2.5 Unit-test `classify` and `encoding_differs` against: `file:///path`
+- [x] 2.5 Unit-test `classify` and `encoding_differs` against: `file:///path`
       (Unix), `file:///C:/path` (Windows), `file://server/share/x.zip` (UNC — the
       host must survive, Req. 7a), `content://…/document/primary%3ADownload%2Ffoo.zip`
       (the `%3A`/`%2F` **preserved** in `encoded` and **decoded** in `decoded`,
@@ -398,7 +398,10 @@ must model it as a first-class branch rather than as "some other scheme".
 
 ---
 
-### 3.0 The document-URI probe in `android_saf.rs` (D-8f/g, D-9)
+### 3.0 [x] The document-URI probe in `android_saf.rs` (D-8f/g, D-9)
+
+> **3.1-3.9 complete. 3.10 decided: NO private API — see the decision recorded
+> there; 3.11-3.14 are consequently not implemented.**
 
 **Specs to keep in mind.** PRD Req. 8 / D-9 word this as a fix to
 `copy_content_uri_to_temp_file` in `cpp/utils.cpp`. **It is implemented in Rust
@@ -414,46 +417,46 @@ for — so it must be split before it can be reused.
 **Depends on:** 2.0 (the `Provider` branch selects this path).
 **Blocks:** 5.0.
 
-- [ ] 3.1 Split `attach()` (`backend/src/android_saf.rs:47`) into
+- [x] 3.1 Split `attach()` (`backend/src/android_saf.rs:47`) into
       `attach_resolver(vm) -> (AttachGuard, ContentResolver)` and a thin
       `attach_tree(vm, tree_uri)` that calls it and then does `Uri.parse` +
       `getTreeDocumentId`. Keep `write_to_tree_uri` and `child_exists` behaviour
       **byte-identical** — this is a refactor, and their tests/behaviour are the
       regression surface.
-- [ ] 3.2 Add `probe_document_uri(uri: &str, cap_bytes: usize) -> DocumentProbe`
+- [x] 3.2 Add `probe_document_uri(uri: &str, cap_bytes: usize) -> DocumentProbe`
       taking the **fully-encoded** URI string (never a pretty-decoded one — the
       `to_encoded()` trap of `docs/android-file-saving-saf.md` applies identically
       to reading). It parses with `Uri.parse` and opens via
       **`ContentResolver.openInputStream`** — *not* `QFile` (D-9), which only
       works for `content://` through `QAndroidContentFileEngine` and would fail on
       exactly the non-`content://` scheme this probe exists to detect.
-- [ ] 3.3 Have `DocumentProbe` carry every field D-8(f)/(g) needs, each
+- [x] 3.3 Have `DocumentProbe` carry every field D-8(f)/(g) needs, each
       independently `Option`al so a partial failure still reports what it learned:
       `opened: bool`, `display_name`, `size`, `bytes_read`, `open_ms`,
       `read_ms`, and `error: Option<String>` naming **which** step failed (URI
       parse, resolver open, query, read).
-- [ ] 3.4 Resolve the display name via `OpenableColumns.DISPLAY_NAME` and the size
+- [x] 3.4 Resolve the display name via `OpenableColumns.DISPLAY_NAME` and the size
       via `OpenableColumns.SIZE`, in one cursor query, tolerating a null cursor
       and a missing column without failing the whole probe (PRD Req. 9's
       fallbacks; the sanitisation half of Req. 9 belongs to phase 2, which
       actually writes a file).
-- [ ] 3.5 **Cap the read** at `cap_bytes` (a few MB — 4 MB is ample) and read in
+- [x] 3.5 **Cap the read** at `cap_bytes` (a few MB — 4 MB is ample) and read in
       fixed-size chunks, discarding the bytes. D-4 forbids staging anything, and
       the test must never pull a 200 MB archive across a Drive connection. Report
       `bytes_read` and stop cleanly at the cap; reaching the cap is a **success**,
       not a truncation error.
-- [ ] 3.6 Close the stream on **every** path, including the error paths, and
+- [x] 3.6 Close the stream on **every** path, including the error paths, and
       write no file anywhere (D-4). There is nothing to `Drop`-guard because
       nothing is created — state that in a comment so a later reader does not add
       a cleanup guard for a file that does not exist.
-- [ ] 3.7 Time the open and the capped read separately (D-8g). §9.5's
+- [x] 3.7 Time the open and the capped read separately (D-8g). §9.5's
       Drive-streaming concern is a latency question and this is the only place it
       is ever measured.
-- [ ] 3.8 Gate the whole probe with `#[cfg(target_os = "android")]` and provide a
+- [x] 3.8 Gate the whole probe with `#[cfg(target_os = "android")]` and provide a
       non-Android stub returning a `DocumentProbe` whose error says the platform
       has no provider-backed reader (PRD Req. 27), so the desktop build compiles
       and the desktop report reads honestly.
-- [ ] 3.9 Confirm `cd backend && cargo test` still passes and the write path is
+- [x] 3.9 Confirm `cd backend && cargo test` still passes and the write path is
       untouched in behaviour — 3.1 is the only edit to shipping code in this task.
 
 **Raw-URI capture (review finding 6).** Without these, an empty-URL result tells
@@ -462,7 +465,7 @@ is wasted. Qt's helper destroys the raw string at
 `qandroidplatformfiledialoghelper.cpp:48` before any app code runs, so the only
 way to see it is to run our own picker intent.
 
-- [ ] 3.10 **DECISION — confirm before implementing 3.11–3.14.** This uses Qt
+- [x] 3.10 **DECISION — confirm before implementing 3.11–3.14.** This uses Qt
       **private** API (`QtCore/private/qandroidextras_p.h`:
       `QAndroidActivityResultReceiver` at `:96`, `QtAndroidPrivate::startActivity`
       at `:199-205`, both `Q_CORE_EXPORT`, verified present in the 6.9.3

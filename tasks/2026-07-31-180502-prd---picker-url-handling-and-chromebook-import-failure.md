@@ -978,6 +978,19 @@ Still open:
    `QtCore/private/qandroidextras_p.h` — both `Q_CORE_EXPORT` and present in the
    6.9.3 Android kit), which is what Qt's own helper uses but which may shift
    under the pending Qt upgrade. Decision recorded at task 3.10.
+
+   **ANSWERED 2026-08-07: no.** Phase 1 ships **public API only**, so the
+   diagnostic stays valid across the planned Qt upgrade rather than becoming
+   something that must be re-verified against a new kit before its own output
+   can be trusted. The cost is accepted and is narrow: an empty URL is confirmed
+   but its raw string cannot be recovered, which — given §2.1a's source-level
+   mechanism — likely points at a Qt-level fix anyway. D-3's unfiltered dialog
+   and the D-12 staging facts are unaffected. If the raw URI does become
+   necessary, the **preferred** route is no longer the private API but a small
+   Java class in `android/` launching `ACTION_OPEN_DOCUMENT` and returning
+   `intent.getData().toString()` over JNI: public API throughout, immune to the
+   upgrade, and it also removes this question's coupling to Qt's release
+   schedule.
 1. **`delete_temp_import_folder` signature change (Req. 19)** is a breaking change
    to an existing bridge function. Its only callers are
    `DocumentImportDialog.qml:360` and `:376` (verified 2026-07-31) — re-confirm
