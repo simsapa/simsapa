@@ -609,7 +609,7 @@ say plainly whether they differ.
 
 ---
 
-### 5.0 The report builder and the `run_file_selection_test()` entry point
+### 5.0 [x] The report builder and the `run_file_selection_test()` entry point
 
 **Specs to keep in mind.** The deliverable of this whole feature is a block of
 INFO lines in `log.txt` (D-7) — there is no results window (§4A.4). Every line
@@ -621,21 +621,21 @@ reporting whatever else is knowable, because "empty" is the finding.
 
 **Depends on:** 2.0, 3.0, 4.0. **Blocks:** 6.0.
 
-- [ ] 5.1 Implement
+- [x] 5.1 Implement
       `run_file_selection_test(facts: &PickerUrlFacts, cpp_staging_root: &str) -> String`
       in `picker_url.rs`, returning the whole block as a `String` (the pattern
       `storage_diagnostics::run_storage_diagnostics()` follows, and what makes it
       unit-testable).
-- [ ] 5.2 Emit the header: run number (2.4), timestamp, and the platform — plus
+- [x] 5.2 Emit the header: run number (2.4), timestamp, and the platform — plus
       Android API level where applicable, reusing `storage_diagnostics.rs`'s `current_platform()` (`:1875`) and
       `android_api_level()` (`:1892`) rather than writing a second copy — **both are
       private today and must be made `pub`** (finding 8).
-- [ ] 5.3 Emit the URL lines in D-8's order, one labelled line each: **(a)
+- [x] 5.3 Emit the URL lines in D-8's order, one labelled line each: **(a)
       empty/invalid first**, then encoded, decoded, an explicit
       `encoding_differs: yes/no` line (2.3), scheme, host, path segment count.
       Where the URL is empty, emit the empty verdict and then continue to the
       staging facts — the block must never end early (D-8a).
-- [ ] 5.3a **Emit the raw-pick lines (D-8h), and emit them before the `QUrl`
+- [x] 5.3a **Emit the raw-pick lines (D-8h), and emit them before the `QUrl`
       lines** — they are upstream of everything else, and PRD §4A.5's
       raw-intent rows are read first. From `take_raw_pick()` (already
       implemented in `picker_url.rs`): the **raw URI string exactly as the
@@ -650,7 +650,7 @@ reporting whatever else is knowable, because "empty" is the finding.
       a summary, the user's log comes back with nothing new in it and the round
       trip is wasted. PRD Req. 17 permits it: URLs and paths are acceptable in
       the log, file contents are not.
-- [ ] 5.3b Beside the raw URI, emit whether **`QUrl(raw)` is valid** — the line
+- [x] 5.3b Beside the raw URI, emit whether **`QUrl(raw)` is valid** — the line
       that reproduces `qandroidplatformfiledialoghelper.cpp:48` and decides the
       first two rows of the new §4A.5 table. It must use the same constructor
       Qt uses (`QUrl(QString)`, `TolerantMode`). **Verified 2026-08-07:**
@@ -658,31 +658,31 @@ reporting whatever else is knowable, because "empty" is the finding.
       `qurl_init_from_qstring` to exactly that constructor. Building the `QUrl`
       needs Qt, so this line is produced in `bridges/` (task 6.3a) and passed
       into the builder as a plain `bool` — the backend module stays Qt-free.
-- [ ] 5.4 For the `LocalFile` branch, emit the `toLocalFile()` path and its
+- [x] 5.4 For the `LocalFile` branch, emit the `toLocalFile()` path and its
       `try_exists()` result (D-8e, Req. 7a). Do **not** use `QUrl::path()`
       anywhere in this feature; it drops the host and silently breaks Windows UNC
       picks.
-- [ ] 5.5 For the `Provider` branch, call `probe_document_uri` (3.2) with the
+- [x] 5.5 For the `Provider` branch, call `probe_document_uri` (3.2) with the
       **encoded** URI and emit its fields, including the failing step on error
       (D-8f, D-8g).
-- [ ] 5.6 For `BarePath`, emit the path and its `try_exists()` — it should not
+- [x] 5.6 For `BarePath`, emit the path and its `try_exists()` — it should not
       occur from a picker, and saying so is how we would learn that it did.
-- [ ] 5.7 Append the staging facts (4.2–4.5) to every block, whatever the URL
+- [x] 5.7 Append the staging facts (4.2–4.5) to every block, whatever the URL
       branch. They are independent of the pick, and a user who only ever produces
       empty-URL blocks still supplies them.
-- [ ] 5.8 Log the whole block through the Rust logger at **INFO** (D-7), in one
+- [x] 5.8 Log the whole block through the Rust logger at **INFO** (D-7), in one
       call or in clearly contiguous lines that reassemble, and also return it so
       the bridge can put a one-line outcome on screen.
-- [ ] 5.9 Add a short `outcome_line(&PickerUrlFacts, …) -> String` producing the
+- [x] 5.9 Add a short `outcome_line(&PickerUrlFacts, …) -> String` producing the
       **plain-language** one-liner for D-6/D-13 — "The file picker did not return
       a file." for the empty case. It must not print `Path not found:`, and it is
       the wording model for phase 2's Req. 13, so keep it to one sentence a
       non-developer can act on.
-- [ ] 5.10 Assert by test that the block contains no file **contents** and no
+- [x] 5.10 Assert by test that the block contains no file **contents** and no
       `api_key`-shaped text (PRD Req. 17: the URL and paths are acceptable, file
       contents are not) — 3.5 discards the bytes it reads, and this test guards
       that.
-- [ ] 5.11 Unit-test the builder end-to-end against fixture `PickerUrlFacts` for:
+- [x] 5.11 Unit-test the builder end-to-end against fixture `PickerUrlFacts` for:
       empty URL, `file://` that exists, `file://` that does not, a `content://`
       with differing encoded/decoded forms, and an unknown scheme. Assert the
       prefix is on every line and the run number increments across calls.

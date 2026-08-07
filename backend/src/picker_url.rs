@@ -545,6 +545,266 @@ pub fn next_run_number() -> u64 {
     RUN_COUNTER.fetch_add(1, Ordering::SeqCst) + 1
 }
 
+/// Everything the report needs that only the Qt side can supply.
+///
+/// Gathering it into one struct keeps `run_file_selection_test` a pure function
+/// of its inputs, which is what makes the whole report testable on a machine
+/// that has neither Qt nor a Chromebook.
+#[derive(Debug, Clone, Default)]
+pub struct FileSelectionTestInput {
+    /// Which picker produced this block. Load-bearing when reading the report:
+    /// the decision-gate rows for the raw intent do not apply to a Qt
+    /// `FileDialog` block, and vice versa.
+    pub source: Option<PickSource>,
+    /// The `QUrl` facts, absent on a raw-intent run that returned no URI at all.
+    pub facts: Option<PickerUrlFacts>,
+    /// The raw pick, present only on the Android path.
+    pub raw: Option<RawPickOutcome>,
+    /// Whether `QUrl(raw_uri)` is valid — built in `bridges/` with the same
+    /// `TolerantMode` constructor Qt's file dialog helper uses, so this
+    /// reproduces the conversion at issue. `None` when there was no raw string
+    /// to convert.
+    pub qurl_of_raw_is_valid: Option<bool>,
+    /// `QStandardPaths::TempLocation` + `/simsapa-imports`, from the C++ side.
+    pub cpp_staging_root: String,
+}
+
+/// One labelled line of the report.
+fn line(out: &mut String, label: &str, value: impl std::fmt::Display) {
+    out.push_str(&format!("{LOG_PREFIX} {label}: {value}\n"));
+}
+
+/// Render a value that may be absent, without ever printing an empty field —
+/// "(none)" is a measurement, a blank is an ambiguity.
+fn or_none<T: std::fmt::Display>(value: Option<T>) -> String {
+    match value {
+        Some(v) => v.to_string(),
+        None => "(none)".to_string(),
+    }
+}
+
+/// Describe a path's existence without letting an unreadable path abort the run.
+fn exists_str(path: &str) -> String {
+    match std::path::Path::new(path).try_exists() {
+        Ok(true) => "yes".to_string(),
+        Ok(false) => "no".to_string(),
+        Err(e) => format!("unknown ({e})"),
+    }
+}
+
+/// Build the whole report block.
+///
+/// Returns the block so the bridge can log it and derive the on-screen line from
+/// the same run. Never returns early: an empty URL is the *finding*, not a
+/// reason to abandon the rest, and the staging facts are independent of the pick
+/// so they are reported whatever happened.
+pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
+    let mut out = String::new();
+    let run = next_run_number();
+
+    out.push_str(&format!("{LOG_PREFIX} ===== run {run} begin =====\n"));
+    line(&mut out, "timestamp", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3fZ"));
+    line(&mut out, "platform", crate::storage_diagnostics::current_platform());
+    line(
+        &mut out,
+        "android_api_level",
+        or_none(crate::storage_diagnostics::android_api_level()),
+    );
+    line(
+        &mut out,
+        "picker",
+        input.source.map(|s| s.label()).unwrap_or("(unknown)"),
+    );
+
+    // The raw pick first: it sits upstream of every QUrl question, and on the
+    // Android path it can settle the whole diagnosis on its own.
+    match &input.raw {
+        Some(raw) => {
+            line(&mut out, "raw_branch", &raw.source);
+            line(&mut out, "raw_uri_length", raw.raw_uri.len());
+            // The URI itself. This is the deliverable of the round trip; Req. 17
+            // permits URLs and paths in the log, and forbids only file contents.
+            if raw.raw_uri.is_empty() {
+                line(&mut out, "raw_uri", "(empty — the picker returned no URI)");
+            } else {
+                line(&mut out, "raw_uri", &raw.raw_uri);
+            }
+            // Reproduces qandroidplatformfiledialoghelper.cpp:48. If this says
+            // "no" for a non-empty raw_uri, Qt's QUrl(QString) conversion is
+            // where the URL is lost, and no amount of URL->path rework fixes it.
+            line(
+                &mut out,
+                "qurl_of_raw_is_valid",
+                or_none(input.qurl_of_raw_is_valid.map(|v| if v { "yes" } else { "no" })),
+            );
+        }
+        None => {
+            line(&mut out, "raw_pick", "(not attempted on this path)");
+        }
+    }
+
+    match &input.facts {
+        Some(facts) => {
+            let branch = classify(facts);
+
+            // (a) first, always.
+            line(
+                &mut out,
+                "url_empty_or_invalid",
+                if branch == PickerBranch::Empty { "YES" } else { "no" },
+            );
+            line(&mut out, "url_is_valid", facts.is_valid);
+            line(&mut out, "url_encoded", &facts.encoded);
+            line(&mut out, "url_decoded", &facts.decoded);
+            line(
+                &mut out,
+                "encoding_differs",
+                if encoding_differs(facts) { "yes" } else { "no" },
+            );
+            line(&mut out, "url_scheme", if facts.scheme.is_empty() { "(none)" } else { &facts.scheme });
+            line(&mut out, "url_host", if facts.host.is_empty() { "(none)" } else { &facts.host });
+            line(&mut out, "url_path_segments", path_segment_count(&facts.encoded));
+            line(&mut out, "branch", format!("{branch:?}"));
+
+            match &branch {
+                PickerBranch::Empty => {
+                    // Say so and carry on: the staging facts below are still
+                    // worth having, and a user who only ever produces empty
+                    // blocks still supplies them.
+                    line(&mut out, "verdict", "the file picker did not return a file");
+                }
+                PickerBranch::LocalFile => {
+                    // toLocalFile() semantics, never QUrl::path(), which drops
+                    // the host and silently breaks a Windows UNC pick.
+                    let local = &facts.local_file;
+                    line(&mut out, "local_file", if local.is_empty() { "(none)" } else { local });
+                    line(&mut out, "local_file_exists", exists_str(local));
+                }
+                PickerBranch::Provider { scheme } => {
+                    line(&mut out, "provider_scheme", scheme);
+                    // The *encoded* URI: a pretty-decoded one resolves a
+                    // different document or none at all.
+                    let probe = probe_document_uri(&facts.encoded, PROBE_READ_CAP_BYTES);
+                    line(&mut out, "provider_opened", probe.opened);
+                    line(&mut out, "provider_display_name", or_none(probe.display_name.as_ref()));
+                    line(&mut out, "provider_size", or_none(probe.size));
+                    line(&mut out, "provider_bytes_read", or_none(probe.bytes_read));
+                    line(&mut out, "provider_reached_cap", probe.reached_cap);
+                    line(&mut out, "provider_open_ms", or_none(probe.open_ms));
+                    line(&mut out, "provider_read_ms", or_none(probe.read_ms));
+                    line(&mut out, "provider_error", or_none(probe.error.as_ref()));
+                    for note in &probe.notes {
+                        line(&mut out, "provider_note", note);
+                    }
+                }
+                PickerBranch::BarePath => {
+                    // Should not come from a picker. Saying so is how we would
+                    // learn that it did.
+                    line(&mut out, "bare_path", &facts.encoded);
+                    line(&mut out, "bare_path_exists", exists_str(&facts.encoded));
+                }
+            }
+        }
+        None => {
+            line(&mut out, "url", "(no URL to examine on this run)");
+        }
+    }
+
+    // Independent of the pick, so appended to every block whatever happened.
+    let staging = collect_staging_facts(&input.cpp_staging_root);
+    line(&mut out, "staging_cpp_root", &staging.cpp_root);
+    line(&mut out, "staging_rust_root", &staging.rust_root);
+    line(
+        &mut out,
+        "staging_roots_differ",
+        if staging.roots_differ {
+            "YES — the C++ writer and the Rust cleanup are pointed at different directories"
+        } else {
+            "no"
+        },
+    );
+    append_census(&mut out, "staging_cpp", &staging.cpp_census);
+    if let Some(rust_census) = &staging.rust_census {
+        append_census(&mut out, "staging_rust", rust_census);
+    }
+    line(&mut out, "staging_space_measured_at", &staging.space.measured_path);
+    line(&mut out, "staging_space_total_bytes", or_none(staging.space.total_bytes));
+    line(&mut out, "staging_space_available_bytes", or_none(staging.space.available_bytes));
+    line(&mut out, "staging_space_error", or_none(staging.space.error.as_ref()));
+
+    out.push_str(&format!("{LOG_PREFIX} ===== run {run} end =====\n"));
+    out
+}
+
+fn append_census(out: &mut String, prefix: &str, census: &FolderCensus) {
+    line(out, &format!("{prefix}_path"), &census.path);
+    line(out, &format!("{prefix}_exists"), or_none(census.exists));
+    line(out, &format!("{prefix}_file_count"), census.file_count);
+    line(out, &format!("{prefix}_total_bytes"), census.total_bytes);
+    line(out, &format!("{prefix}_oldest_age_secs"), or_none(census.oldest_age_secs));
+    line(out, &format!("{prefix}_error"), or_none(census.error.as_ref()));
+}
+
+/// Count the path segments of an encoded URL, for D-8(d).
+///
+/// Works on the encoded string so that a `%2F` inside one segment is *not*
+/// counted as a separator — which is the very distinction the report exists to
+/// measure.
+fn path_segment_count(encoded: &str) -> usize {
+    let after_scheme = match encoded.find("://") {
+        Some(i) => &encoded[i + 3..],
+        None => encoded,
+    };
+    // Drop the authority when there is one.
+    let path = match after_scheme.find('/') {
+        Some(i) => &after_scheme[i..],
+        None => return 0,
+    };
+    path.split('/').filter(|s| !s.is_empty()).count()
+}
+
+/// The plain-language one-liner shown on screen (D-6/D-13).
+///
+/// One sentence a non-developer can act on, and never `Path not found:` — this
+/// is the wording model for the phase-2 failure messages.
+pub fn outcome_line(input: &FileSelectionTestInput) -> String {
+    // A cancelled pick is not a failure and must not read like one.
+    if let Some(raw) = &input.raw {
+        if raw.source == "cancelled" {
+            return "The file chooser was closed without choosing a file.".to_string();
+        }
+        if raw.raw_uri.is_empty() {
+            return "The file picker did not return a file.".to_string();
+        }
+        if input.qurl_of_raw_is_valid == Some(false) {
+            return "The file picker returned a location the app could not \
+                    understand. This is the fault we were looking for."
+                .to_string();
+        }
+    }
+
+    match input.facts.as_ref().map(classify) {
+        Some(PickerBranch::Empty) => "The file picker did not return a file.".to_string(),
+        Some(PickerBranch::LocalFile) => "The file picker returned a file on this device.".to_string(),
+        Some(PickerBranch::Provider { scheme }) => {
+            format!("The file picker returned a file from another app (scheme: {scheme}).")
+        }
+        Some(PickerBranch::BarePath) => "The file picker returned a plain path.".to_string(),
+        None => "The test ran, but the file chooser provided nothing to examine.".to_string(),
+    }
+}
+
+/// Run the test and write it to the log at INFO, returning the on-screen line.
+///
+/// The block goes to `log.txt` — that file is the deliverable — while only the
+/// one-liner reaches the screen.
+pub fn run_and_log_file_selection_test(input: &FileSelectionTestInput) -> String {
+    let block = run_file_selection_test(input);
+    // One call, so the block cannot be interleaved with other threads' lines.
+    crate::logger::info(&block);
+    outcome_line(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -796,11 +1056,238 @@ mod tests {
         assert!(facts.rust_census.is_none());
     }
 
+    /// A report input with no raw pick — the desktop `FileDialog` shape.
+    fn input_for(facts: Option<PickerUrlFacts>) -> FileSelectionTestInput {
+        FileSelectionTestInput {
+            source: Some(PickSource::QtFileDialog),
+            facts,
+            raw: None,
+            qurl_of_raw_is_valid: None,
+            cpp_staging_root: std::env::temp_dir()
+                .join("simsapa-imports-test-fixture")
+                .to_string_lossy()
+                .to_string(),
+        }
+    }
+
     #[test]
-    fn run_numbers_start_at_one_and_increment() {
+    fn every_line_carries_the_prefix() {
+        // The user pastes this into an email and it may be truncated, so each
+        // line has to be greppable on its own.
+        let block = run_file_selection_test(&input_for(Some(facts(
+            "file:///home/user/mw-gd.zip",
+            "file:///home/user/mw-gd.zip",
+            "file",
+            "",
+            "/home/user/mw-gd.zip",
+        ))));
+        assert!(!block.is_empty());
+        for l in block.lines() {
+            assert!(l.starts_with(LOG_PREFIX), "line without prefix: {l}");
+        }
+    }
+
+    #[test]
+    fn the_run_number_increases_across_blocks() {
+        let first = run_file_selection_test(&input_for(None));
+        let second = run_file_selection_test(&input_for(None));
+        let n = |b: &str| {
+            b.lines()
+                .find(|l| l.contains("run ") && l.contains("begin"))
+                // "FILE-SELECTION-TEST: ===== run 1 begin ====="
+                //  0                    1     2   3
+                .and_then(|l| {
+                    l.split_whitespace()
+                        .nth(3)
+                        .and_then(|s| s.parse::<u64>().ok())
+                })
+                .expect("no run number in block")
+        };
+        // Strictly greater, not exactly +1: the counter is process-global and
+        // the test harness runs these in parallel, so another test's block can
+        // legitimately take a number in between. What the report needs is that
+        // two blocks are never confusable, which is what this asserts.
+        assert!(n(&second) > n(&first));
+        // Both ends of a block must agree, or a truncated paste cannot be
+        // reassembled.
+        assert!(second.contains(&format!("run {} end", n(&second))));
+    }
+
+    #[test]
+    fn an_empty_url_is_reported_and_the_block_continues() {
+        // The whole point of D-8(a): "empty" is the finding, not a reason to
+        // stop. The staging facts must still be there.
+        let block = run_file_selection_test(&input_for(Some(PickerUrlFacts {
+            is_valid: false,
+            ..Default::default()
+        })));
+        assert!(block.contains("url_empty_or_invalid: YES"));
+        assert!(block.contains("the file picker did not return a file"));
+        assert!(block.contains("staging_cpp_root:"));
+        assert!(block.contains("staging_roots_differ:"));
+        assert!(block.contains("run 1") || block.contains("end ====="));
+    }
+
+    #[test]
+    fn a_local_file_reports_existence_both_ways() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("mw-gd.zip");
+        std::fs::write(&present, b"x").unwrap();
+        let present = present.to_string_lossy().to_string();
+
+        let block = run_file_selection_test(&input_for(Some(facts(
+            &format!("file://{present}"),
+            &format!("file://{present}"),
+            "file",
+            "",
+            &present,
+        ))));
+        assert!(block.contains("local_file_exists: yes"));
+
+        let missing = dir.path().join("not-here.zip").to_string_lossy().to_string();
+        let block = run_file_selection_test(&input_for(Some(facts(
+            &format!("file://{missing}"),
+            &format!("file://{missing}"),
+            "file",
+            "",
+            &missing,
+        ))));
+        assert!(block.contains("local_file_exists: no"));
+    }
+
+    #[test]
+    fn a_content_uri_reports_the_encoding_difference() {
+        let block = run_file_selection_test(&input_for(Some(facts(
+            "content://com.android.externalstorage.documents/document/primary%3ADownload%2Ffoo.zip",
+            "content://com.android.externalstorage.documents/document/primary:Download/foo.zip",
+            "content",
+            "com.android.externalstorage.documents",
+            "",
+        ))));
+        assert!(block.contains("encoding_differs: yes"));
+        assert!(block.contains("provider_scheme: content"));
+        // Off Android there is no provider reader, and the report says so rather
+        // than leaving the section mysteriously blank.
+        assert!(block.contains("provider_opened: false"));
+    }
+
+    #[test]
+    fn an_unknown_scheme_still_takes_the_provider_branch() {
+        let block = run_file_selection_test(&input_for(Some(facts(
+            "externalfile://media/document/1234",
+            "externalfile://media/document/1234",
+            "externalfile",
+            "media",
+            "",
+        ))));
+        assert!(block.contains("provider_scheme: externalfile"));
+    }
+
+    #[test]
+    fn the_raw_pick_lines_come_before_the_url_lines() {
+        // PRD §4A.5's Android rows are read first, so the block must present
+        // them first.
+        let mut input = input_for(Some(PickerUrlFacts { is_valid: false, ..Default::default() }));
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: "content://org.chromium.arc.file/x%3Ay".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        input.qurl_of_raw_is_valid = Some(false);
+
+        let block = run_file_selection_test(&input);
+        let raw_at = block.find("raw_uri:").expect("no raw_uri line");
+        let url_at = block.find("url_empty_or_invalid:").expect("no url line");
+        assert!(raw_at < url_at, "raw lines must precede the URL lines");
+
+        // The single most valuable pair in the report.
+        assert!(block.contains("content://org.chromium.arc.file/x%3Ay"));
+        assert!(block.contains("qurl_of_raw_is_valid: no"));
+        assert!(block.contains("picker: raw ACTION_OPEN_DOCUMENT intent"));
+    }
+
+    #[test]
+    fn an_empty_raw_uri_says_so_rather_than_printing_a_blank() {
+        let mut input = input_for(None);
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: String::new(),
+            source: "no-uri".to_string(),
+        });
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("raw_uri: (empty"));
+        assert!(block.contains("raw_branch: no-uri"));
+    }
+
+    #[test]
+    fn outcome_lines_are_plain_and_never_say_path_not_found() {
+        // D-13: this wording is the model for phase 2's user-facing messages.
+        let empty = outcome_line(&input_for(Some(PickerUrlFacts {
+            is_valid: false,
+            ..Default::default()
+        })));
+        assert_eq!(empty, "The file picker did not return a file.");
+        assert!(!empty.contains("Path not found"));
+
+        let mut cancelled = input_for(None);
+        cancelled.raw = Some(RawPickOutcome {
+            raw_uri: String::new(),
+            source: "cancelled".to_string(),
+        });
+        // A cancelled pick is not a failure and must not read like one.
+        assert!(outcome_line(&cancelled).contains("closed without choosing"));
+
+        let mut bad_convert = input_for(None);
+        bad_convert.raw = Some(RawPickOutcome {
+            raw_uri: "weird://thing".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        bad_convert.qurl_of_raw_is_valid = Some(false);
+        assert!(outcome_line(&bad_convert).contains("could not understand"));
+    }
+
+    #[test]
+    fn the_block_leaks_no_file_contents_or_secrets() {
+        // Req. 17: the URL and paths are acceptable; file contents are not. The
+        // probe discards the bytes it reads, and this guards that.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("secret.zip");
+        std::fs::write(&file, b"SUPER_SECRET_FILE_BODY api_key=sk-live-1234567890").unwrap();
+        let file = file.to_string_lossy().to_string();
+
+        let block = run_file_selection_test(&input_for(Some(facts(
+            &format!("file://{file}"),
+            &format!("file://{file}"),
+            "file",
+            "",
+            &file,
+        ))));
+
+        assert!(!block.contains("SUPER_SECRET_FILE_BODY"));
+        assert!(!block.to_lowercase().contains("api_key"));
+        assert!(!block.contains("sk-live"));
+        // The path itself is expected, and permitted.
+        assert!(block.contains("secret.zip"));
+    }
+
+    #[test]
+    fn path_segments_are_counted_on_the_encoded_form() {
+        // An encoded %2F is inside a segment, not a separator -- which is the
+        // distinction the whole report exists to measure.
+        assert_eq!(path_segment_count("content://auth/document/a%2Fb"), 2);
+        assert_eq!(path_segment_count("content://auth/document/a/b"), 3);
+        assert_eq!(path_segment_count("file:///home/user/x.zip"), 3);
+        assert_eq!(path_segment_count(""), 0);
+    }
+
+    #[test]
+    fn run_numbers_start_at_one_and_increase() {
         let first = next_run_number();
         let second = next_run_number();
-        assert_eq!(second, first + 1);
+        // Strictly greater rather than +1: the counter is shared with every
+        // other test in this binary and they run in parallel.
+        assert!(second > first);
         assert!(first >= 1);
     }
 }
+
