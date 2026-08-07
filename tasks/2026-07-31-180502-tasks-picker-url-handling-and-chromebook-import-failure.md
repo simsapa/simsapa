@@ -289,7 +289,7 @@ just after completing an entire parent task.
 
 ---
 
-### 1.0 Make the native half of the import path visible in `log.txt` (D-14)
+### 1.0 [x] Make the native half of the import path visible in `log.txt` (D-14)
 
 **Specs to keep in mind.** This is the one task that improves the *existing*
 release's diagnosability, independently of everything else — the reporting user
@@ -301,51 +301,51 @@ alternatives (findings 1–4). Nothing here changes control flow.
 **Depends on:** nothing. **Blocks:** nothing — do it first because it is
 self-contained and de-risks every later on-device observation.
 
-- [ ] 1.1 Convert the **five** `qWarning`s in `copy_content_uri_to_temp_file`
+- [x] 1.1 Convert the **five** `qWarning`s in `copy_content_uri_to_temp_file`
       (`cpp/utils.cpp:648`, `:657`, `:664`, `:672`, `:683`) to `log_error_c`,
       using the established idiom at `:339`:
       `log_error_c(QString("…%1…").arg(x).toUtf8().constData())`. Preserve each
       message's text and every interpolated value (the `QFile::errorString()`
       calls especially — they are the native reason we are missing). Change **no**
       control flow, no return values, no early exits.
-- [ ] 1.2 Convert the **two** `qWarning`s in `copy_file` (`cpp/utils.cpp:565`,
+- [x] 1.2 Convert the **two** `qWarning`s in `copy_file` (`cpp/utils.cpp:565`,
       `:573`) the same way. These already build a `ret_msg` `QString`, so the
       conversion is `log_error_c(ret_msg.toUtf8().constData())`.
-- [ ] 1.3 Delete the two **dead** functions `list_qrc_assets()`
+- [x] 1.3 Delete the two **dead** functions `list_qrc_assets()`
       (`cpp/utils.cpp:856`) and `copy_qrc_app_assets_to_internal_storage()`
       (`:870`), and their declarations at `cpp/utils.h:19-20`. Verified callable
       from nowhere in the tree (finding 2). Re-run the grep before deleting, in
       case the tree has moved on. If anything does call them, **stop and leave
       them alone** — do not convert their 11 tracing `qWarning`s, which would
       spam the log file the user emails.
-- [ ] 1.4 Leave `cpp/global_hotkey_x11.cpp`'s three `qWarning`s alone. They are
+- [x] 1.4 Leave `cpp/global_hotkey_x11.cpp`'s three `qWarning`s alone. They are
       X11-only, off the import path, and outside this feature's reason to touch
       the file.
-- [ ] 1.5 Install a `qInstallMessageHandler` in `cpp/gui.cpp`, after
+- [x] 1.5 Install a `qInstallMessageHandler` in `cpp/gui.cpp`, after
       `init_app_globals()` (`:403`) and before `QApplication` (`:493`) — the
       slot the render-loop and palette pre-reads already occupy, and late enough
       that the logger's data dir is resolvable. Map `QtWarningMsg` →
       `log_error_c`, `QtCriticalMsg` / `QtFatalMsg` → `log_error_c` with the
       severity in the text, and `QtInfoMsg` → `log_info_c`.
-- [ ] 1.5a **Drop `QtDebugMsg` entirely.** Qt's debug stream is high-volume and
+- [x] 1.5a **Drop `QtDebugMsg` entirely.** Qt's debug stream is high-volume and
       would bury the `FILE-SELECTION-TEST:` block in the file we are asking the
       user to paste.
-- [ ] 1.5b Prefix every handler-routed line distinctly (e.g. `Qt: `) so a
+- [x] 1.5b Prefix every handler-routed line distinctly (e.g. `Qt: `) so a
       maintainer reading `log.txt` can tell a Qt-internal warning from one of the
       app's own messages. Include `context.category` when it is set — QML engine
       warnings carry `qml`, which is exactly the category PRD §2.1a's hypothesis
       would surface under.
-- [ ] 1.5c Keep the handler body **free of any Qt call that could itself warn**,
+- [x] 1.5c Keep the handler body **free of any Qt call that could itself warn**,
       and do not re-enter Qt logging from inside it. Compose the string with
       `QString`/`QByteArray` only and hand it to `log_*_c`. A handler that warns
       while handling a warning recurses until the stack is gone.
-- [ ] 1.5d Chain to the previous handler returned by `qInstallMessageHandler`, or
+- [x] 1.5d Chain to the previous handler returned by `qInstallMessageHandler`, or
       deliberately do not, and **write which and why in a comment**. Not chaining
       means logcat loses Qt's warnings on Android (they now go to `log.txt`
       instead); chaining means they appear twice on desktop stderr. Recommended:
       chain, so `adb logcat` and Qt Creator's Application Output are unaffected
       and this task is purely additive.
-- [ ] 1.6 Build (`make build -B`) and verify on the developer machine that a Qt
+- [x] 1.6 Build (`make build -B`) and verify on the developer machine that a Qt
       warning reaches `log.txt` — triggering any existing `qWarning` path is
       enough (metric 6). Confirm the app still starts and the log is not flooded
       (1.5a).
