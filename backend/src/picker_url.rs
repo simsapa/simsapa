@@ -638,6 +638,9 @@ fn exists_str(path: &str) -> String {
 pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
     let mut out = String::new();
     let run = next_run_number();
+    // Whether the `QUrl`-derived path already read the document, so the raw URI
+    // is not read a second time. A provider read can stream over the network.
+    let mut probed_via_qurl = false;
 
     out.push_str(&format!("{LOG_PREFIX} ===== run {run} begin =====\n"));
     line(&mut out, "timestamp", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3fZ"));
@@ -722,17 +725,8 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
                     // The *encoded* URI: a pretty-decoded one resolves a
                     // different document or none at all.
                     let probe = probe_document_uri(&facts.encoded, PROBE_READ_CAP_BYTES);
-                    line(&mut out, "provider_opened", probe.opened);
-                    line(&mut out, "provider_display_name", or_none(probe.display_name.as_ref()));
-                    line(&mut out, "provider_size", or_none(probe.size));
-                    line(&mut out, "provider_bytes_read", or_none(probe.bytes_read));
-                    line(&mut out, "provider_reached_cap", probe.reached_cap);
-                    line(&mut out, "provider_open_ms", or_none(probe.open_ms));
-                    line(&mut out, "provider_read_ms", or_none(probe.read_ms));
-                    line(&mut out, "provider_error", or_none(probe.error.as_ref()));
-                    for note in &probe.notes {
-                        line(&mut out, "provider_note", note);
-                    }
+                    append_probe(&mut out, "provider", &probe);
+                    probed_via_qurl = true;
                 }
                 PickerBranch::BarePath => {
                     // Should not come from a picker. Saying so is how we would
@@ -744,6 +738,31 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
         }
         None => {
             line(&mut out, "url", "(no URL to examine on this run)");
+        }
+    }
+
+    // Read the raw URI directly, when the `QUrl` route did not already read it.
+    //
+    // This is the measurement §4A.5's first raw-intent row needs. If `QUrl(raw)`
+    // came back invalid, the branch above is `Empty` and nothing was opened — so
+    // without this the block would say the URL is unusable and stop, exactly
+    // where the interesting question starts. The document URI is a plain string
+    // to `Uri.parse`; it never needed a `QUrl`. A raw URI that opens and reads
+    // while `QUrl` rejects it proves that bypassing the conversion is a viable
+    // phase-2 fix, rather than leaving it a hypothesis.
+    if let Some(raw) = &input.raw {
+        if raw.raw_uri.is_empty() {
+            line(&mut out, "raw_provider", "(no raw URI to read)");
+        } else if probed_via_qurl {
+            line(
+                &mut out,
+                "raw_provider",
+                "(not re-read: the URL above round-tripped through QUrl unchanged \
+                 and has already been read)",
+            );
+        } else {
+            let probe = probe_document_uri(&raw.raw_uri, PROBE_READ_CAP_BYTES);
+            append_probe(&mut out, "raw_provider", &probe);
         }
     }
 
@@ -771,6 +790,23 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
 
     out.push_str(&format!("{LOG_PREFIX} ===== run {run} end =====\n"));
     out
+}
+
+/// Emit a probe's fields under a prefix, so the `QUrl`-derived probe and the
+/// raw-URI probe are reported in exactly the same shape and can be compared line
+/// for line.
+fn append_probe(out: &mut String, prefix: &str, probe: &DocumentProbe) {
+    line(out, &format!("{prefix}_opened"), probe.opened);
+    line(out, &format!("{prefix}_display_name"), or_none(probe.display_name.as_ref()));
+    line(out, &format!("{prefix}_size"), or_none(probe.size));
+    line(out, &format!("{prefix}_bytes_read"), or_none(probe.bytes_read));
+    line(out, &format!("{prefix}_reached_cap"), probe.reached_cap);
+    line(out, &format!("{prefix}_open_ms"), or_none(probe.open_ms));
+    line(out, &format!("{prefix}_read_ms"), or_none(probe.read_ms));
+    line(out, &format!("{prefix}_error"), or_none(probe.error.as_ref()));
+    for note in &probe.notes {
+        line(out, &format!("{prefix}_note"), note);
+    }
 }
 
 fn append_census(out: &mut String, prefix: &str, census: &FolderCensus) {
@@ -1254,6 +1290,56 @@ mod tests {
         let block = run_file_selection_test(&input);
         assert!(block.contains("raw_uri: (empty"));
         assert!(block.contains("raw_branch: no-uri"));
+        assert!(block.contains("raw_provider: (no raw URI to read)"));
+    }
+
+    #[test]
+    fn a_raw_uri_qurl_rejects_is_still_read_directly() {
+        // The §4A.5 case that matters most: Qt's QUrl(QString) conversion fails,
+        // so the QUrl branch is Empty and reads nothing. The raw URI is a plain
+        // string to Uri.parse and must still be tried — that is what shows
+        // whether bypassing the conversion is a viable fix.
+        let mut input = input_for(Some(PickerUrlFacts {
+            is_valid: false,
+            ..Default::default()
+        }));
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: "content://org.chromium.arc.file/x%3Ay".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        input.qurl_of_raw_is_valid = Some(false);
+
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("url_empty_or_invalid: YES"));
+        // Attempted, and reported under its own prefix so it is never confused
+        // with the QUrl-derived probe. Off Android it reports the honest
+        // "no provider-backed reader" answer rather than nothing at all.
+        assert!(block.contains("raw_provider_opened:"));
+        assert!(block.contains("raw_provider_error:"));
+    }
+
+    #[test]
+    fn a_readable_provider_url_is_not_read_twice() {
+        // A provider read can stream over the network; once is enough.
+        let mut input = input_for(Some(PickerUrlFacts {
+            is_valid: true,
+            encoded: "content://media/external/file/42".to_string(),
+            decoded: "content://media/external/file/42".to_string(),
+            scheme: "content".to_string(),
+            ..Default::default()
+        }));
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: "content://media/external/file/42".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        input.qurl_of_raw_is_valid = Some(true);
+
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("provider_opened:"));
+        assert!(block.contains("raw_provider: (not re-read"));
+        assert!(!block.contains("raw_provider_opened:"));
     }
 
     #[test]

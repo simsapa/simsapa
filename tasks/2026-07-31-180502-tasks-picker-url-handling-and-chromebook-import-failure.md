@@ -236,6 +236,47 @@ bug, and its priority relative to 3.10 drops accordingly.
   and it is already instantiated and bound in `SuttaSearchWindow.qml`. Tasks 7.x
   add no new QML file and no new binding.
 
+## Review findings (2026-08-07, after task 7.0) — carry these into task 8.5
+
+### 9. A raw URI that `QUrl` rejects must still be read directly
+
+The gap this closed was in the **one case the whole round trip exists for**.
+On the raw-intent path the report's `PickerUrlFacts` are derived from
+`QUrl(raw_uri)`, so when that conversion fails — §4A.5's first row, and the
+mechanism finding 6 predicts — the branch is `Empty`, the provider probe never
+ran, and the block said only "the URL is unusable". That is the point at which
+the interesting question *starts*.
+
+`Uri.parse` / `ContentResolver.openInputStream` take a plain string and never
+needed a `QUrl` at all. `run_file_selection_test` therefore probes the **raw**
+URI directly whenever the `QUrl` route did not already read it, under a separate
+`raw_provider_*` prefix so the two probes are never confused. A raw URI that
+opens and reads while `QUrl` rejects it turns "bypass the conversion" from a
+hypothesis into a demonstrated fix for phase 2.
+
+It is deliberately **not** read twice: when the `QUrl` round-trip preserved the
+URL and the provider branch already read it, the block says
+`raw_provider: (not re-read …)`. A provider read can stream over a network.
+
+### 10. Smaller corrections made in the same pass
+
+- **The Android gate is `Qt.platform.os === "android"`, not `is_mobile`.** On
+  iOS the raw intent does not exist, and `is_mobile` would have sent that
+  platform to an "unsupported-platform" outcome instead of the picker it does
+  have.
+- **`start_raw_document_pick()`'s two Android failure paths delivered nothing.**
+  Failing to build the intent, or a JNI exception while building it, returned
+  `false` without calling `raw_document_pick_result_c()` — and the caller has by
+  then already armed the listener and disabled its button, so the run would
+  never complete. Both now deliver a `no-intent` outcome. Only a delivered
+  result completes a run; this is the same rule as the `cancelled` branch.
+- **The JNI result handler cleared pending exceptions after delivering, not
+  before.** Delivery crosses into Rust, and an exception left pending across
+  that boundary makes the next JNI call misbehave.
+- The on-screen outcome line is kept short (`(Details are in log.txt.)`)
+  because it shares the fixed bottom area with four buttons — the clipping
+  hazard task 8.4 checks for.
+
 ## Relevant Files
 
 - `cpp/utils.cpp` — convert the 7 real failure `qWarning`s (finding 3); delete
@@ -907,7 +948,8 @@ email are part of the deliverable, not an afterthought.
       `make android-beta-debug`, install, and confirm on a phone that the button
       appears in the right position, the picker opens with **no** file-type
       filter, a normal `content://` pick produces a complete block in `log.txt`,
-      and the four buttons all fit without clipping — the defect the storage
+      and the four buttons all fit without clipping **with the outcome Label
+      showing** (it shares the fixed bottom area with them) — the defect the storage
       diagnostics work hit at its task 8.7a, now with a fourth button.
 - [ ] 8.5 Write `docs/file-selection-test.md`: what each D-8 line means, how to
       read a `FILE-SELECTION-TEST:` block, the §4A.5 decision-gate table, the

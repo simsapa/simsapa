@@ -110,8 +110,13 @@ void handle_result(int result_code, const QJniObject& data) {
         // toString() on the *Java* Uri, kept as a Java string. This is the value
         // Qt would have handed to QUrl(QString), and the single most valuable
         // line in the report.
-        deliver(uri.callObjectMethod<jstring>("toString").toString(), "intent-getData");
+        //
+        // Any pending JNI exception is cleared *before* delivering: the delivery
+        // crosses into Rust, and leaving an exception pending across that
+        // boundary makes the next JNI call in any thread misbehave.
+        const QString raw_uri = uri.callObjectMethod<jstring>("toString").toString();
         env.checkAndClearExceptions();
+        deliver(raw_uri, "intent-getData");
         return;
     }
 
@@ -124,9 +129,9 @@ void handle_result(int result_code, const QJniObject& data) {
             ? item.callObjectMethod("getUri", "()Landroid/net/Uri;")
             : QJniObject();
         if (clip_uri.isValid()) {
-            deliver(clip_uri.callObjectMethod<jstring>("toString").toString(),
-                    "intent-getClipData");
+            const QString raw_uri = clip_uri.callObjectMethod<jstring>("toString").toString();
             env.checkAndClearExceptions();
+            deliver(raw_uri, "intent-getClipData");
             return;
         }
     }

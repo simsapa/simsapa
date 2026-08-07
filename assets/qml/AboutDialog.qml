@@ -92,7 +92,10 @@ ApplicationWindow {
         // screen awake until the completion signal arrives.
         manager.set_keep_screen_on(true);
 
-        if (root.is_mobile) {
+        // Android specifically, not is_mobile: the raw intent exists only there,
+        // and on iOS it would report "unsupported-platform" instead of opening
+        // the picker that platform does have.
+        if (Qt.platform.os === "android") {
             logger.info("File Selection Test: starting, picker = raw ACTION_OPEN_DOCUMENT intent");
             SuttaBridge.start_file_selection_test_raw_pick();
         } else {
@@ -113,7 +116,10 @@ ApplicationWindow {
             // Released on both success and failure, and on a cancelled pick.
             manager.set_keep_screen_on(false);
 
-            root.file_selection_test_outcome = outcome + " The details are in the log file listed above.";
+            // Kept short: this Label sits in the fixed bottom area beside four
+            // buttons, and a long wrapping outcome would push "Close" off a
+            // phone screen.
+            root.file_selection_test_outcome = outcome + " (Details are in log.txt.)";
             logger.info("File Selection Test: completed, success = " + success + ", outcome: " + outcome);
         }
     }
