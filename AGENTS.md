@@ -21,6 +21,19 @@ When working on features, the PRD (Product Requirements Document) files are in
 the `tasks/` folder. They often contain the reasoning and logic for existing
 features.
 
+**Completed PRDs are moved to `tasks/archive/`** (122 files and growing), so
+`tasks/` shows only current work. **Always search `tasks/archive/` too** before
+concluding a PRD does not exist — a doc that cites a PRD by filename is almost
+always citing an archived one, not a missing one. For example
+`docs/android-qt-upgrade-considerations.md` names
+`tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`
+as its source PRD; that file is in `tasks/archive/`, not `tasks/`. Search both:
+
+``` sh
+ls tasks/ tasks/archive/ | grep -i <feature>
+grep -rl "<term>" tasks/ tasks/archive/
+```
+
 Documentation is in the `docs/` folder. Keep it updated for relevant features.
 
 Notable feature docs:
