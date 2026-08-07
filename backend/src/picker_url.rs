@@ -493,6 +493,29 @@ pub fn take_raw_pick() -> Option<RawPickOutcome> {
         .take()
 }
 
+/// Woken when a raw pick finishes, so the bridge can build its report.
+///
+/// A plain `fn()` rather than a boxed closure: the listener carries no state of
+/// its own, it only wakes the bridge, which then calls `take_raw_pick()` on a
+/// worker thread. **Not** a polling timer — the native callback is the event,
+/// and a pick the user cancels must wake the listener too, or the button that
+/// started it stays disabled forever.
+type RawPickListener = fn();
+
+static RAW_PICK_LISTENER: std::sync::Mutex<Option<RawPickListener>> =
+    std::sync::Mutex::new(None);
+
+/// Register the function to call when a raw pick finishes.
+///
+/// Registered by `bridges/` when a run is started, because the C callback below
+/// is a plain `extern "C"` function with no `self` and cannot reach the
+/// `SuttaBridge` on its own.
+pub fn set_raw_pick_listener(listener: RawPickListener) {
+    *RAW_PICK_LISTENER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(listener);
+}
+
 /// Receive a raw-pick result from the native side (`cpp/android_raw_pick.cpp`).
 ///
 /// Same C-ABI shape and the same defensive discipline as `log_info_c`: both
@@ -532,6 +555,20 @@ pub unsafe extern "C" fn raw_document_pick_result_c(
     ));
 
     store_raw_pick(outcome);
+
+    // This runs on the Android UI thread, inside the activity-result dispatch,
+    // so the listener must only hand off — never read a provider here. The fn
+    // pointer is copied out before the call so the lock is not held across it.
+    let listener = *RAW_PICK_LISTENER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match listener {
+        Some(f) => f(),
+        None => crate::logger::warn(&format!(
+            "{LOG_PREFIX} raw pick arrived with no listener registered; \
+             the result is stored but nothing will report it"
+        )),
+    }
 }
 
 /// Monotonic counter so repeated presses of the button produce distinguishable

@@ -267,10 +267,21 @@ bug, and its priority relative to 3.10 drops accordingly.
   stream, so a provider returning `0` would have spun the loop forever on a
   worker thread holding the keep-screen-on lock; and one `?` in
   `query_openable_columns` returned without closing the cursor.
+- `backend/src/picker_url.rs` — additionally carries `set_raw_pick_listener()`
+  (a plain `fn()` hook, no state of its own), which `raw_document_pick_result_c()`
+  calls after storing the outcome. This is what wakes the bridge; the alternative
+  (polling `take_raw_pick()` on a timer) is explicitly rejected in task 6.3b.
 - `bridges/src/sutta_bridge.rs` — the `#[qsignal] fileSelectionTestCompleted`
   (beside `storageDiagnosticsCompleted` at `:822`), the
   `run_file_selection_test(url: &QUrl)` invokable (modelled on `:3964`), and the
-  `unsafe extern "C++"` declaration of the new C++ accessor (beside `:708-709`).
+  `unsafe extern "C++"` declaration of the new C++ accessor (beside `:708-769`).
+  Also `start_file_selection_test_raw_pick()` (the Android entry point), the
+  shared `spawn_file_selection_test()` worker, `picker_url_facts_from()`, and
+  `on_raw_pick_finished()` — the listener that turns the native activity-result
+  callback into a finished report, reaching the singleton through a registered
+  `CxxQtThread<SuttaBridge>` in `FILE_SELECTION_TEST_THREAD` rather than a global
+  object pointer. `QUrl(raw)` is reproduced here (`QUrl::from(&QString)`,
+  `TolerantMode`) so `picker_url.rs` stays Qt-free.
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for the
   new method and signal; the signal goes in the same group as
   `storageDiagnosticsCompleted` (`:47`).
@@ -689,7 +700,7 @@ reporting whatever else is knowable, because "empty" is the finding.
 
 ---
 
-### 6.0 Bridge wiring: a `&QUrl`-taking invokable with a completion signal
+### 6.0 [x] Bridge wiring: a `&QUrl`-taking invokable with a completion signal
 
 **Specs to keep in mind.** CXX-Qt invokables run on the **calling (QML) thread**,
 so the run must be spawned (D-5); `run_storage_diagnostics`
@@ -715,12 +726,12 @@ Do **not** solve this by polling.
 
 **Depends on:** 5.0. **Blocks:** 7.0.
 
-- [ ] 6.1 Add `#[qsignal] #[cxx_name = "fileSelectionTestCompleted"]
+- [x] 6.1 Add `#[qsignal] #[cxx_name = "fileSelectionTestCompleted"]
       fn file_selection_test_completed(self: Pin<&mut SuttaBridge>, success: bool, outcome: QString)`
       beside `storage_diagnostics_completed` (`:822-824`), following the same
       convention. `outcome` carries the D-6 one-liner, not the whole block — the
       block goes to the log.
-- [ ] 6.1a **Verify `Pin<&mut Self>` + `&QUrl` compiles before building on it**
+- [x] 6.1a **Verify `Pin<&mut Self>` + `&QUrl` compiles before building on it**
       (finding 8). There is no precedent in this codebase: every `&QUrl` method is
       `self: &SuttaBridge`, and every spawn-and-signal invokable takes no `&QUrl`.
       A one-line throwaway invokable settles it in one `make build -B`. If it does
@@ -728,7 +739,7 @@ Do **not** solve this by polling.
       and hands them to a separate `Pin<&mut Self>` method — do **not** fall back
       to passing the URL as a `QString` from QML, which reintroduces the exact
       corruption being measured.
-- [ ] 6.2 Add `#[qinvokable] run_file_selection_test(self: Pin<&mut SuttaBridge>, url: &QUrl)`.
+- [x] 6.2 Add `#[qinvokable] run_file_selection_test(self: Pin<&mut SuttaBridge>, url: &QUrl)`.
       Extract the `PickerUrlFacts` from the `QUrl` **on the calling thread**, using
       the cxx-qt-lib Rust names (finding 8): `is_valid()`, `to_encoded()`,
       `to_qstring()`, `scheme_or_default()`, `host_or_default()`,
@@ -736,14 +747,14 @@ Do **not** solve this by polling.
       `String`s, then move those
       into the worker. `QUrl` is not `Send`; extracting first is what makes the
       spawn legal, and it is also the moment the encoding is preserved.
-- [ ] 6.2a Recover the encoded form exactly as `save_bytes_to_folder` does at
+- [x] 6.2a Recover the encoded form exactly as `save_bytes_to_folder` does at
       `:614`: `String::from_utf8_lossy(url.to_encoded().as_slice()).to_string()`.
       Do **not** use `to_qstring()`, `to_display_string()` or `path()` for it —
       those are the pretty-decoded forms and are only captured separately, as the
       *measurement* of D-8(c).
-- [ ] 6.3 Fetch the C++ staging root (4.1) on the calling thread too, and pass the
+- [x] 6.3 Fetch the C++ staging root (4.1) on the calling thread too, and pass the
       resulting `String` into the worker — the same reason as 6.2.
-- [ ] 6.3a Build the D-8h `QUrl(raw)` reproduction here, where Qt is available:
+- [x] 6.3a Build the D-8h `QUrl(raw)` reproduction here, where Qt is available:
       `QUrl::from(&QString::from(raw_uri))` then `is_valid()`, passed into the
       report builder as a plain `bool` (task 5.3b) so `picker_url.rs` stays
       Qt-free. Use **that** constructor and no other — it is the one Qt's file
@@ -751,7 +762,7 @@ Do **not** solve this by polling.
       `qurl_init_from_qstring` to `QUrl(QString)` in `TolerantMode`. A
       strict-mode parse would answer a different question and quietly
       mis-diagnose the bug.
-- [ ] 6.3b **Add the Android entry point** — an invokable
+- [x] 6.3b **Add the Android entry point** — an invokable
       `start_file_selection_test_raw_pick()` that calls the already-declared
       `start_raw_document_pick()` (`sutta_bridge.rs`, from `android_raw_pick.h`),
       plus the path that turns the native callback into a finished report.
@@ -768,15 +779,15 @@ Do **not** solve this by polling.
         keep-screen-on lock and re-enable the button (task 7.4) — or the button
         stays dead until the dialog is reopened;
       - **do not poll** `take_raw_pick()` on a timer. The callback is the event.
-- [ ] 6.4 Spawn the worker with `catch_unwind` (copying `:3966-3988`), emit
+- [x] 6.4 Spawn the worker with `catch_unwind` (copying `:3966-3988`), emit
       `success: false` with the panic message rather than losing the signal, and
       queue the completion back through `qt_thread()`.
-- [ ] 6.5 Add the `qmllint` stubs to
+- [x] 6.5 Add the `qmllint` stubs to
       `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`: the signal beside
       `storageDiagnosticsCompleted` (`:47`) and a trivial
       `run_file_selection_test(url: url)` function stub beside the other bridge
       methods.
-- [ ] 6.6 `make build -B` and confirm the generated QML type exposes both the
+- [x] 6.6 `make build -B` and confirm the generated QML type exposes both the
       method and the signal.
 
 ---
