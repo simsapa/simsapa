@@ -302,11 +302,22 @@ fn query_openable_columns(
         return Ok((None, None, notes));
     }
 
-    let has_row = env
+    // Not `?`: an early return here would skip the `cursor.close()` below, and
+    // this is the one step in the function that could take that path. Every
+    // other provider quirk becomes a note and the query carries on.
+    let has_row = match env
         .call_method(&cursor, "moveToFirst", "()Z", &[])
-        .map_err(|e| format!("cursor.moveToFirst: {e}"))?
-        .z()
-        .map_err(|e| format!("cursor.moveToFirst .z(): {e}"))?;
+        .map_err(|e| format!("cursor.moveToFirst: {e}"))
+        .and_then(|v| v.z().map_err(|e| format!("cursor.moveToFirst .z(): {e}")))
+    {
+        Ok(has_row) => has_row,
+        Err(e) => {
+            let _ = env.exception_clear();
+            notes.push(format!("metadata cursor unusable: {e}"));
+            let _ = env.call_method(&cursor, "close", "()V", &[]);
+            return Ok((None, None, notes));
+        }
+    };
 
     let mut display_name = None;
     let mut size = None;
@@ -487,7 +498,20 @@ pub fn probe_document_uri(uri: &str, cap_bytes: usize) -> DocumentProbe {
 
         // -1 is end of stream: the document was smaller than the cap and has
         // been read in full.
-        if n < 0 {
+        //
+        // 0 is treated as end of stream too, and that is deliberate. With a
+        // positive length `InputStream.read` is not allowed to return 0, but
+        // this probe exists to exercise *unusual* providers on a device we
+        // cannot attach a debugger to: a provider that returned 0 would leave
+        // `total` unchanged, so the loop would never make progress and the test
+        // would hang on a worker thread holding the keep-screen-on lock. A
+        // short read reported honestly beats a frozen app.
+        if n <= 0 {
+            if n == 0 {
+                probe
+                    .notes
+                    .push("provider returned a 0-byte read; treated as end of stream".to_string());
+            }
             break;
         }
         total += n as u64;

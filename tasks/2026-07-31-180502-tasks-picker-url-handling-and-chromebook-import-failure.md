@@ -262,7 +262,11 @@ bug, and its priority relative to 3.10 drops accordingly.
 - `backend/src/lib.rs` — declare the new module.
 - `backend/src/android_saf.rs` — split `attach()` (`:47`) into a shared
   resolver-attach plus the tree-specific part; add the document-URI probe
-  (D-8f/g, D-9). This is phase-2 code in its final location.
+  (D-8f/g, D-9). This is phase-2 code in its final location. Two defects found
+  in the review pass and fixed: the capped read treated only `n < 0` as end of
+  stream, so a provider returning `0` would have spun the loop forever on a
+  worker thread holding the keep-screen-on lock; and one `?` in
+  `query_openable_columns` returned without closing the cursor.
 - `bridges/src/sutta_bridge.rs` — the `#[qsignal] fileSelectionTestCompleted`
   (beside `storageDiagnosticsCompleted` at `:822`), the
   `run_file_selection_test(url: &QUrl)` invokable (modelled on `:3964`), and the
@@ -287,6 +291,34 @@ bug, and its priority relative to 3.10 drops accordingly.
 
 - Rust tests: `cd backend && cargo test`; a single test with `cargo test <name>`.
   QML: `make qml-test`. Full build: `make build -B`.
+- **`cargo check`/`cargo test` on the developer machine do not compile
+  `android_saf.rs` at all** — it is `#[cfg(target_os = "android")]`, so the whole
+  JNI half of this feature can be edited without any compiler ever seeing it.
+  Check it explicitly, without needing a full Android build:
+
+  ```sh
+  NDK=~/Android/Sdk/ndk/27.3.13750724
+  BIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+  cd backend && \
+    CC_aarch64_linux_android=$BIN/aarch64-linux-android27-clang \
+    CXX_aarch64_linux_android=$BIN/aarch64-linux-android27-clang++ \
+    AR_aarch64_linux_android=$BIN/llvm-ar \
+    CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$BIN/aarch64-linux-android27-clang \
+    cargo check --lib --target aarch64-linux-android
+  ```
+
+  (`ring`'s build script is why the three compiler variables are needed.) The
+  C++ half has the same hole — `cpp/android_raw_pick.cpp` is `#ifdef
+  Q_OS_ANDROID` and its private-Qt include is invisible to the desktop build:
+
+  ```sh
+  $BIN/clang++ --target=aarch64-linux-android27 -std=c++17 -fsyntax-only -Wall \
+    -I cpp -I $QT/include -I $QT/include/QtCore \
+    -I $QT/include/QtCore/6.9.3 -I $QT/include/QtCore/6.9.3/QtCore \
+    cpp/android_raw_pick.cpp
+  ```
+
+  with `QT=~/Qt/6.9.3/android_arm64_v8a`. Both pass as of 2026-08-07.
 - Do **not** run the GUI to test (CLAUDE.md); compile-verify and unit-test. The
   on-device check is task 8.4, performed by the user.
 - Every file-existence check uses `try_exists()`, never `.exists()` (PRD Req. 28).
@@ -603,6 +635,29 @@ reporting whatever else is knowable, because "empty" is the finding.
       `encoding_differs: yes/no` line (2.3), scheme, host, path segment count.
       Where the URL is empty, emit the empty verdict and then continue to the
       staging facts — the block must never end early (D-8a).
+- [ ] 5.3a **Emit the raw-pick lines (D-8h), and emit them before the `QUrl`
+      lines** — they are upstream of everything else, and PRD §4A.5's
+      raw-intent rows are read first. From `take_raw_pick()` (already
+      implemented in `picker_url.rs`): the **raw URI string exactly as the
+      picker returned it**, its length, the branch that produced it
+      (`intent-getData` / `intent-getClipData` / `cancelled` / `no-uri` /
+      `no-intent` / `unsupported-platform`), and a `PickSource` line naming
+      which picker the block came from (D-3a).
+      **This is the whole deliverable of the round trip.** Today the native
+      side logs only the URI's *length* (`android_raw_pick.cpp`) and the Rust
+      callback logs only `source` + length — the string itself sits in
+      `RAW_PICK_RESULT` waiting for this task. If 5.3a is skipped or emits only
+      a summary, the user's log comes back with nothing new in it and the round
+      trip is wasted. PRD Req. 17 permits it: URLs and paths are acceptable in
+      the log, file contents are not.
+- [ ] 5.3b Beside the raw URI, emit whether **`QUrl(raw)` is valid** — the line
+      that reproduces `qandroidplatformfiledialoghelper.cpp:48` and decides the
+      first two rows of the new §4A.5 table. It must use the same constructor
+      Qt uses (`QUrl(QString)`, `TolerantMode`). **Verified 2026-08-07:**
+      cxx-qt-lib's `QUrl::from(&QString)` resolves through
+      `qurl_init_from_qstring` to exactly that constructor. Building the `QUrl`
+      needs Qt, so this line is produced in `bridges/` (task 6.3a) and passed
+      into the builder as a plain `bool` — the backend module stays Qt-free.
 - [ ] 5.4 For the `LocalFile` branch, emit the `toLocalFile()` path and its
       `try_exists()` result (D-8e, Req. 7a). Do **not** use `QUrl::path()`
       anywhere in this feature; it drops the host and silently breaks Windows UNC
@@ -644,6 +699,20 @@ QML — that is Defect B's whole lesson (PRD Req. 2), and `save_file(folder_url:
 &QUrl, …)` (`:3388`) is the proven precedent. Any new `SuttaBridge` method
 **and** signal needs a `qmllint` stub (PRD §8).
 
+**There are now TWO ways a run starts, and only one of them is QML-initiated.**
+D-3a splits the picker by platform, so the bridge needs two entry points that
+converge on one report builder and one completion signal:
+
+| Platform | Started by | Result arrives via |
+|---|---|---|
+| desktop | QML `FileDialog.onAccepted` → `run_file_selection_test(url)` | the invokable's own worker |
+| Android | `start_raw_document_pick()` → the system picker | the **native activity-result callback**, `raw_document_pick_result_c()` |
+
+The Android half has **no trigger today**: `raw_document_pick_result_c`
+(`backend/src/picker_url.rs`) stores the outcome into `RAW_PICK_RESULT` and
+returns, and nothing wakes the bridge to build a report. Task 6.3b adds it.
+Do **not** solve this by polling.
+
 **Depends on:** 5.0. **Blocks:** 7.0.
 
 - [ ] 6.1 Add `#[qsignal] #[cxx_name = "fileSelectionTestCompleted"]
@@ -674,6 +743,31 @@ QML — that is Defect B's whole lesson (PRD Req. 2), and `save_file(folder_url:
       *measurement* of D-8(c).
 - [ ] 6.3 Fetch the C++ staging root (4.1) on the calling thread too, and pass the
       resulting `String` into the worker — the same reason as 6.2.
+- [ ] 6.3a Build the D-8h `QUrl(raw)` reproduction here, where Qt is available:
+      `QUrl::from(&QString::from(raw_uri))` then `is_valid()`, passed into the
+      report builder as a plain `bool` (task 5.3b) so `picker_url.rs` stays
+      Qt-free. Use **that** constructor and no other — it is the one Qt's file
+      dialog helper uses, verified 2026-08-07 to resolve through
+      `qurl_init_from_qstring` to `QUrl(QString)` in `TolerantMode`. A
+      strict-mode parse would answer a different question and quietly
+      mis-diagnose the bug.
+- [ ] 6.3b **Add the Android entry point** — an invokable
+      `start_file_selection_test_raw_pick()` that calls the already-declared
+      `start_raw_document_pick()` (`sutta_bridge.rs`, from `android_raw_pick.h`),
+      plus the path that turns the native callback into a finished report.
+      Design constraints, in order of how easy they are to get wrong:
+      - the callback runs on the **Android UI thread**, inside the activity
+        result dispatch. Do the report there and the UI stalls for the length of
+        a provider read; so hand off to a worker exactly as 6.4 does, and queue
+        the completion through `qt_thread()`;
+      - the callback is a plain `extern "C"` function with **no `self`**, so it
+        cannot reach the `SuttaBridge`. Give it a registered
+        `CxxQtThread<SuttaBridge>` (captured when the pick is started) rather
+        than reaching for a global `SuttaBridge` pointer;
+      - a `cancelled` outcome must still complete the run — release the
+        keep-screen-on lock and re-enable the button (task 7.4) — or the button
+        stays dead until the dialog is reopened;
+      - **do not poll** `take_raw_pick()` on a timer. The callback is the event.
 - [ ] 6.4 Spawn the worker with `catch_unwind` (copying `:3966-3988`), emit
       `success: false` with the panic message rather than losing the signal, and
       queue the completion back through `qt_thread()`.
@@ -701,6 +795,14 @@ owns the run here** (finding 5): unlike the storage diagnostics, there is no
 results window, so the `AssetManager` bracket and the `Connections` live in this
 file.
 
+**One press opens exactly one picker, and which one depends on the platform**
+(PRD D-3a, decided 2026-08-07): desktop opens Qt's `FileDialog`; **Android does
+not** — it calls `SuttaBridge.start_file_selection_test_raw_pick()` (task 6.3b)
+and never instantiates the `FileDialog` at all. Opening both would put two
+consecutive pickers in front of the user and contradict Appendix B.2, which tells
+them to pick the file once. The `FileDialog` therefore needs a platform gate even
+though the *button* does not (D-2).
+
 **Depends on:** 6.0. **Blocks:** 8.0.
 
 - [ ] 7.1 Add the **"File Selection Test"** button to the `ColumnLayout` at
@@ -708,6 +810,12 @@ file.
       Diagnostics", with `Layout.fillWidth: true` like its siblings. **No
       platform gate** — D-2 wants it on desktop too, where it exercises the
       `file://` branch a maintainer can actually read.
+- [ ] 7.1a Branch the button's `onClicked` on the platform (D-3a): on Android
+      call `SuttaBridge.start_file_selection_test_raw_pick()` (6.3b); everywhere
+      else open the `FileDialog` of 7.2. Use the dialog's existing
+      `root.is_desktop`-style gate rather than inventing a second one. Log which
+      path was taken (D-7) — a block whose picker is ambiguous cannot be read
+      against PRD §4A.5, whose Android rows apply only to the raw-intent path.
 - [ ] 7.2 Add a `FileDialog` with **no `nameFilters`** (D-3) and a title naming
       the purpose. On `onAccepted`, pass `selectedFile` **straight** into
       `SuttaBridge.run_file_selection_test(selectedFile)` — no `String(...)`, no
@@ -723,9 +831,13 @@ file.
       **Expect all of them to be empty together** — they are fed from one
       `m_selectedFile` list inside Qt (finding 6), so they corroborate rather than
       recover. The raw URI comes from tasks 3.11-3.13, not from here.
+      **Desktop only now** (D-3a) — on Android this dialog never opens, so these
+      lines will not appear in an Android block and their absence is not a fault.
 - [ ] 7.2b Handle `onRejected` by logging a cancelled test, so a user who backs
       out of the picker does not leave a maintainer wondering whether the button
-      worked.
+      worked. The Android equivalent is the `cancelled` branch of the native
+      callback (6.3b), which must complete the run rather than leave the button
+      disabled.
 - [ ] 7.3 Give `AboutDialog` its own `AssetManager { id: manager }` and bracket
       the run with `set_keep_screen_on(true)` before the invokable and `(false)`
       in the completion handler on **both** success and failure (D-5). Finding 5:

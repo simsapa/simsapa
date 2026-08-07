@@ -393,10 +393,34 @@ Numbered `D-n` so as not to collide with the phase-2 requirements 1–30.
 - **D-2.** The button must be available on **all platforms**. The desktop
   `file://` branch is the regression surface for phase 2, and a maintainer
   running it locally must be able to see the report shape.
-- **D-3.** The button opens a `FileDialog` with **no `nameFilters`**. §2.1a names
-  the existing `.zip` filter as a candidate cause of the empty URL; a diagnostic
-  that inherits the suspect configuration cannot test it. The test must also be
-  runnable against any file, not only a `.zip`.
+- **D-3.** The picker the button opens carries **no file-type filter**. §2.1a
+  names the existing `.zip` filter as a candidate cause of the empty URL; a
+  diagnostic that inherits the suspect configuration cannot test it. The test
+  must also be runnable against any file, not only a `.zip`.
+- **D-3a.** *(Amended 2026-08-07, once Q0a was reversed and the raw-intent
+  capture existed.)* **One button press opens exactly one picker**, and which
+  picker depends on the platform:
+  - **desktop** — Qt's `FileDialog`, with no `nameFilters`;
+  - **Android** — the app's own `ACTION_OPEN_DOCUMENT` (`CATEGORY_OPENABLE`,
+    `setType("*/*")`), **not** Qt's `FileDialog`.
+
+  The reason is that on Android the two paths do not carry equal information.
+  Qt's `FileDialog` can only tell us the URL was empty, which the user's log
+  (§2.1) already established; the raw intent additionally yields the picker's
+  URI as a string, and the report reproduces Qt's own conversion from it (D-8h).
+  Running both would open **two consecutive pickers per press**, contradicting
+  Appendix B.2's instruction to pick the file once and inviting the user to
+  cancel one of them.
+
+  The cost is accepted and recorded: nothing then exercises Qt's `setType` /
+  `EXTRA_MIME_TYPES` as `DictionaryImportDialog` configures it. That only
+  becomes interesting if the raw URI turns out to parse cleanly — the last row
+  of §4A.5 — and it is a second round trip if so.
+- **D-3b.** The raw-intent path must set **no MIME filter** either, for the same
+  reason as D-3, and must use a request code that cannot collide with Qt's own
+  (`1305`, `qandroidplatformfiledialoghelper.cpp:24`) — the activity result is
+  dispatched by request code, and a clash would cross the two dialogs' results
+  over.
 - **D-4.** The test must **import nothing, stage nothing into the import folders,
   and modify no app data**. It may write its own probe file only if a
   measurement requires one, removed via a `Drop` guard, per the storage PRD's
@@ -447,6 +471,22 @@ Numbered `D-n` so as not to collide with the phase-2 requirements 1–30.
   - g) elapsed milliseconds for the provider open and for the capped read —
     §9.5's Drive-streaming concern is a latency question and this is the only
     place it gets measured.
+  - h) *(Added 2026-08-07 with the raw-intent capture.)* On the Android
+    raw-intent path, the **URI exactly as the picker returned it** — the Java
+    `Uri.toString()` string, never round-tripped through a `QUrl` — printed
+    beside **whether `QUrl(that string)` is valid**. These two lines together are
+    the most valuable in the report: they reproduce
+    `qandroidplatformfiledialoghelper.cpp:48` and show directly whether that
+    conversion is where the URL is lost. Also record which branch of the result
+    produced the string (`getData`, `getClipData`, cancelled, no-URI), and label
+    every block with which picker it came from (D-3a), so blocks from different
+    platforms are never compared as though they were the same measurement.
+
+    The reproduction must use the **same constructor** Qt uses — the
+    `QUrl(QString)` overload, which parses in `TolerantMode`. Verified
+    2026-08-07: cxx-qt-lib's `QUrl::from(&QString)` resolves through
+    `qurl_init_from_qstring` to exactly that constructor, so the Rust side
+    reproduces it faithfully.
 - **D-9.** The provider read of D-8(f) must go through
   `ContentResolver.openInputStream`, **not** `QFile(content_uri)`. This is
   Req. 8 (Defect C) implemented in its final form: `QFile` works only for
@@ -517,6 +557,17 @@ Numbered `D-n` so as not to collide with the phase-2 requirements 1–30.
 | non-empty | identical | not `content://` | **Defect A.1 confirmed**, Q2 answered. Req. 4(c) + D-9's provider reader are the fix. |
 | non-empty | identical | `file://`, `try_exists()` false | **Defect A.2 confirmed.** Scoped storage; Req. 14's honest message plus Req. 14a's Downloads workaround is all that is available. |
 | non-empty, provider read **succeeds** | identical | `content://` | The pick is fine and the failure is downstream — re-triage from D-12's staging facts and the `scan_source` path. |
+
+**Rows for the Android raw-intent path (D-8h), added 2026-08-07.** Read these
+*first* on an Android block: they sit upstream of everything above, because they
+report what the picker returned before any `QUrl` existed.
+
+| D-8(h) raw URI | `QUrl(raw)` valid? | Conclusion for phase 2 |
+|---|---|---|
+| non-empty | **invalid** | **The bug is Qt's `QUrl(QString)` conversion at `qandroidplatformfiledialoghelper.cpp:48`**, exactly as §2.1a's mechanism predicts. None of §5's requirements is the fix. The work becomes: normalize or bypass that conversion for the import path — and since the 6.11 branch still carries the line unchanged (§11 Q0a), an upstream fix cannot be waited for. Compare the raw string against `QUrl`'s parsing rules to find *what* it rejects. |
+| non-empty | **valid** | The picker and the conversion are both fine, so the loss is **downstream of Qt's dialog** — the leading remaining suspect is the `nameFilters` → `setType`/`EXTRA_MIME_TYPES` mapping that D-3a deliberately does not exercise. This is the case that earns a second round trip with a Qt-`FileDialog` run. Take the scheme and encoding lines to the table above. |
+| **empty**, branch = `cancelled` | — | The user backed out of the picker. Not a finding; ask for another run. |
+| **empty**, branch = `no-uri` / `no-intent` | — | The picker reported success but returned no URI at all — a case Qt's helper drops silently. The failure is in the ARC picker or the intent, upstream of every URL question in this PRD. |
 
 ## 5. Functional Requirements (phase 2 — blocked on §4A)
 
@@ -1184,6 +1235,14 @@ and is still worth one sentence in the reply:
    valuable of the three**: §2.1a's leading hypothesis is that Qt cannot map
    what the ARC picker returned, so which picker appeared is a direct clue.
 
+   *Note (2026-08-07):* since D-3a the Android test launches the app's **own**
+   `ACTION_OPEN_DOCUMENT` rather than going through Qt's `FileDialog`, so what
+   appears is whatever ChromeOS resolves that intent to. If the user reports a
+   *different* chooser here than the one they saw when the import failed, that
+   difference is itself a finding — it would mean Qt's dialog and a plain
+   `ACTION_OPEN_DOCUMENT` reach different pickers, and the two blocks are not
+   measuring the same thing.
+
 ### B.4 Tone
 
 Unchanged from A.4, and it is the reason the flow is built this way. The user is
@@ -1194,8 +1253,11 @@ D-14 is for.
 ### B.5 Reading what comes back
 
 - `log.txt` → grep for `FILE-SELECTION-TEST:` (D-7). Each run is one block with a
-  counter and timestamp (D-11). Take the block to §4A.5's decision-gate table;
-  the first column — was the URL empty — decides everything downstream.
+  counter and timestamp (D-11). Take the block to §4A.5's decision-gate table.
+  **On an Android block, read the raw-intent rows first**: the raw URI and
+  `QUrl(raw)` validity (D-8h) sit upstream of the scheme and encoding lines, and
+  they can settle the whole question on their own. Only if the raw URI parses
+  cleanly do the original rows apply.
 - The storage summary → the storage PRD's own decision gate (§9 there).
 - If step 4 produced several blocks, compare their scheme and encoded-form lines
   across locations before concluding anything from any single one.
