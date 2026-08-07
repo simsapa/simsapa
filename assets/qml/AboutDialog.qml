@@ -42,8 +42,6 @@ ApplicationWindow {
     // True while a File Selection Test is in flight (from the moment the
     // picker is launched until fileSelectionTestCompleted arrives).
     property bool file_selection_test_running: false
-    // The plain-language one-liner from the completed run, shown on screen.
-    property string file_selection_test_outcome: ""
 
     AssetManager { id: manager }
 
@@ -85,9 +83,20 @@ ApplicationWindow {
     // and discards the original string, which is the very thing this test has
     // to see — so Android launches the raw ACTION_OPEN_DOCUMENT intent
     // instead, and never opens the FileDialog below.
+    // Acknowledge a finished run in a dialog the user dismisses themselves.
+    //
+    // Deliberately a dialog and not a Label in the button column: the column is
+    // a fixed bottom area holding four full-width buttons, so a wrapping
+    // outcome line grew it downwards and pushed "Close" towards the edge of a
+    // phone screen. A dialog also makes the result unmissable, which matters
+    // when the whole point is that the user reports what they saw.
+    function show_file_selection_test_outcome(outcome: string) {
+        file_selection_test_result_dialog.text = outcome;
+        file_selection_test_result_dialog.open();
+    }
+
     function start_file_selection_test() {
         root.file_selection_test_running = true;
-        root.file_selection_test_outcome = "";
         // The run continues on a worker after the picker closes, so hold the
         // screen awake until the completion signal arrives.
         manager.set_keep_screen_on(true);
@@ -116,10 +125,7 @@ ApplicationWindow {
             // Released on both success and failure, and on a cancelled pick.
             manager.set_keep_screen_on(false);
 
-            // Kept short: this Label sits in the fixed bottom area beside four
-            // buttons, and a long wrapping outcome would push "Close" off a
-            // phone screen.
-            root.file_selection_test_outcome = outcome + " (Details are in log.txt.)";
+            root.show_file_selection_test_outcome(outcome);
             logger.info("File Selection Test: completed, success = " + success + ", outcome: " + outcome);
         }
     }
@@ -145,7 +151,7 @@ ApplicationWindow {
             logger.info("File Selection Test: FileDialog cancelled, no file was chosen");
             root.file_selection_test_running = false;
             manager.set_keep_screen_on(false);
-            root.file_selection_test_outcome = "The file chooser was closed without choosing a file.";
+            root.show_file_selection_test_outcome("The file chooser was closed without choosing a file.");
         }
     }
 
@@ -360,14 +366,6 @@ ApplicationWindow {
                     onClicked: root.start_file_selection_test()
                 }
 
-                Label {
-                    visible: root.file_selection_test_outcome !== ""
-                    text: root.file_selection_test_outcome
-                    font.pointSize: root.pointSize
-                    wrapMode: Text.WordWrap
-                    Layout.fillWidth: true
-                }
-
                 // Available on all platforms: the same diagnosis applies to a
                 // desktop user with an external or network drive.
                 Button {
@@ -417,5 +415,17 @@ ApplicationWindow {
     MessageDialog {
         id: save_log_msg_dialog
         buttons: MessageDialog.Ok
+    }
+
+    // The on-screen half of the File Selection Test (D-6). The text is the
+    // plain-language one-liner the backend produced (D-13) — it never says
+    // "Path not found", and it is the wording model for the phase-2 messages.
+    // The detail lives in log.txt, which is the deliverable the user sends.
+    MessageDialog {
+        id: file_selection_test_result_dialog
+        title: "File Selection Test"
+        informativeText: "The full details have been written to the log file. "
+                         + "You can copy or save it from the log file list above."
+        buttons: MessageDialog.Close
     }
 }

@@ -907,10 +907,23 @@ though the *button* does not (D-2).
       boolean: the signal is process-global, and although `AboutDialog` is
       currently the only listener, the guard is what keeps that safe when
       Appendix B's step 4 has the user run it repeatedly.
-- [x] 7.5 Show the outcome **on screen** (D-6): a single wrapping `Label` under
-      the button, carrying the 5.9 one-liner plus a fixed reminder that the detail
-      is in the log file listed above. Disable the button and show a busy state
-      while the run is in flight (D-5).
+- [x] 7.5 Show the outcome **on screen** (D-6): ~~a single wrapping `Label` under
+      the button~~ **a `MessageDialog` with a Close button**, carrying the 5.9
+      one-liner plus a fixed reminder that the detail is in the log file listed
+      above. Disable the button and show a busy state while the run is in flight
+      (D-5).
+
+      **Changed 2026-08-07 after the first on-device run.** The Label was built
+      as specified and worked, but it sits *inside* the fixed bottom
+      `ColumnLayout` with four full-width buttons, so a wrapping outcome grows
+      that column downwards and pushes "Close" toward the screen edge — the
+      clipping hazard 8.4 was written to watch for, arriving through the outcome
+      line rather than through the fourth button. A `MessageDialog` (the idiom
+      already in this file, `save_log_msg_dialog`) takes the text out of the
+      layout entirely, and the explicit acknowledgement is better suited to a
+      user who has to report what they saw. The one-liner is now the dialog's
+      `text` and the log-file reminder its `informativeText`, so the outcome no
+      longer has to be kept artificially short.
 - [x] 7.6 Ensure the empty-URL case reads in **plain words** — "The file picker
       did not return a file." — and never surfaces `Path not found:` (D-13).
 - [x] 7.7 Confirm **no new QML file** was created, so `bridges/build.rs` needs no
@@ -931,41 +944,218 @@ email are part of the deliverable, not an afterthought.
 
 **Depends on:** 1.0–7.0.
 
-- [ ] 8.1 Consolidate the unit tests from 2.5, 4.6, 5.10 and 5.11 and confirm
+- [x] 8.1 Consolidate the unit tests from 2.5, 4.6, 5.10 and 5.11 and confirm
       `cd backend && cargo test` and `make qml-test` pass (metric 5). Record any
       pre-existing timing-assertion drift separately rather than as a regression.
-- [ ] 8.2 Verify the classifier covers every §4A.5 decision-gate row, so each
+
+      **Run 2026-08-07:** `cargo test` — 0 failed across every binary, of which
+      **32** are `picker_url::tests` (2.5, 4.6, 5.10, 5.11 all live in the one
+      `mod tests` at the bottom of `backend/src/picker_url.rs`, the
+      `storage_diagnostics.rs` convention, so no consolidation was needed).
+      `make qml-test` — 131 passed, 0 failed. No timing-assertion drift fired on
+      this run.
+- [x] 8.2 Verify the classifier covers every §4A.5 decision-gate row, so each
       possible report lands in exactly one of them (metric 2). Add a test per row
       if any is unreachable from the fixtures already written.
-- [ ] 8.3 Diff the branch against the §4A.4 non-goals and confirm, explicitly:
+
+      All nine rows are reachable; **six** were only *implied* by the fixtures and
+      now have a named `gate_*` test each (`picker_url.rs`, 32 → 38 tests). The
+      gaps closed: QUrl row 3 asserted only the scheme, never the "identical
+      encoding" half the row turns on; row 4's *true* complement was untested, so
+      a working desktop pick could be misread as the scoped-storage finding; row 5
+      had no test at all; raw row B never asserted `qurl_of_raw_is_valid: yes`;
+      raw row C existed only as an `outcome_line` assertion, not a block; raw
+      row D covered `no-uri` but not `no-intent` — which is what the two Android
+      early-failure paths deliver.
+
+      **Row 5 is the one row not fully reachable off-device**, and deliberately
+      so: it needs `provider_opened: true`, which only the JNI
+      `probe_document_uri` can produce (the desktop stub always reports "no
+      provider-backed reader"). It is split — `classify` + `encoding_differs` are
+      covered by `a_short_phone_content_uri_may_encode_identically`, and the
+      *rendering* of a successful probe is covered by feeding `append_probe` a
+      constructed `DocumentProbe`. So the row is readable when it arrives from a
+      phone; only the read itself is untestable here, which is the same
+      structural limit Req. 29 accepts throughout.
+- [x] 8.3 Diff the branch against the §4A.4 non-goals and confirm, explicitly:
       `DictionaryImportDialog.qml`, `DocumentImportDialog.qml`,
       `ChantingPracticeWindow.qml` and `GlossTab.qml` are **untouched**;
       `strip_file_scheme` and `file_url_to_path` still exist unchanged;
       `android/AndroidManifest.xml` is **byte-identical**; no network call was
       added; nothing is staged or written into the import folders (D-4); and
       `bridges/build.rs` is unchanged (metric 4).
-- [ ] 8.4 **On-device check by the user, not the agent** (CLAUDE.md): build
+
+      **Verified 2026-08-07** against `git merge-base main HEAD`
+      (`d7cdd77`). The branch touches **15 files**, and the four call sites are
+      not among them:
+      - `DictionaryImportDialog.qml`, `DocumentImportDialog.qml`,
+        `ChantingPracticeWindow.qml`, `GlossTab.qml` — all `git diff --quiet`
+        clean. `strip_file_scheme` (`DictionaryImportDialog.qml:88`) and both
+        `file_url_to_path` copies (`ChantingPracticeWindow.qml:60`,
+        `GlossTab.qml:815`) still exist, unchanged.
+      - `android/AndroidManifest.xml` — **byte-identical**, confirmed by
+        sha256 against the merge-base blob, not merely by `git diff`
+        (`7d7f0590…` both sides).
+      - `bridges/build.rs`, `dictionary_manager_core.rs`,
+        `dictionary_manager.rs` — untouched.
+      - **D-4:** every write-shaped call (`fs::write`, `create_dir`,
+        `File::create`, `OpenOptions`, `remove_*`) in `picker_url.rs` falls
+        **after** `mod tests` at `:882`; production code writes nothing. The
+        `android_saf.rs` probe uses `openInputStream` only — no
+        `openOutputStream`, no `createDocument`. Corroborated on device by the
+        run under 8.4: `staging_cpp_exists: false` *after* a completed run.
+      - **No network call** introduced anywhere in the diff.
+      - Incidental changes are all accounted for: `storage_diagnostics.rs` is
+        two `fn` → `pub fn` and nothing else (finding 8); `CMakeLists.txt` adds
+        the new source and the Android-only `Qt6::CorePrivate` interface target;
+        `cpp/utils.cpp` is −73/+22, being the 7 conversions plus the two dead
+        qrc functions, which are now referenced from nowhere in the tree.
+
+      **One deliberate leftover:** 4 `qWarning`s remain in `cpp/utils.cpp`, all
+      in `copy_apk_assets_to_internal_storage` (`:809`, `:825`, `:848`) — a
+      different function from the two task 1.0 scoped, so converting them was
+      not this feature's business. They now reach `log.txt` anyway through the
+      task-1.5 message handler, which is the outcome that mattered.
+- [x] 8.4 **On-device check by the user, not the agent** (CLAUDE.md): build
       `make android-beta-debug`, install, and confirm on a phone that the button
       appears in the right position, the picker opens with **no** file-type
       filter, a normal `content://` pick produces a complete block in `log.txt`,
-      and the four buttons all fit without clipping **with the outcome Label
-      showing** (it shares the fixed bottom area with them) — the defect the storage
-      diagnostics work hit at its task 8.7a, now with a fourth button.
-- [ ] 8.5 Write `docs/file-selection-test.md`: what each D-8 line means, how to
+      and the four buttons all fit without clipping — the defect the storage
+      diagnostics work hit at its task 8.7a, now with a fourth button. The
+      outcome no longer shares that area (7.5 moved it into a `MessageDialog`),
+      so the checks are: the four buttons fit, and the result dialog appears,
+      reads plainly, and closes on its Close button.
+
+      **Partly done 2026-08-07 on a Samsung SM-S911B (Android 16, API 36)** —
+      *not* a Chromebook, so this run validates the **instrument**, not the bug.
+      Confirmed: the button is in the right position, the raw
+      `ACTION_OPEN_DOCUMENT` picker opens unfiltered, and one press produced a
+      complete, well-formed block (run 1) end to end — `raw_branch:
+      intent-getData`, the raw URI captured at full length, `provider_opened:
+      true`, `display_name`/`size` resolved, 3518 of 3518 bytes read,
+      `open_ms: 29` / `read_ms: 1`, staging census and free space all present,
+      and the `raw_provider: (not re-read …)` suppression firing correctly. The
+      **Re-tested 2026-08-07 after the 7.5 dialog change** (same device), two
+      runs in one session:
+      - **run 1, normal pick** — as above, `open_ms: 11` / `read_ms: 0`; outcome
+        *"The file picker returned a file from another app (scheme: content)."*
+      - **run 2, cancelled pick** — the path that had to be checked, because a
+        cancel that does not complete the run leaves the button dead until the
+        dialog is reopened. It completes: `raw_branch: cancelled`, the run
+        counter increments, the staging facts are still reported (they do not
+        depend on the pick), and the block is unambiguously **not** the
+        empty-URL finding — `url: (no URL to examine on this run)`, which is
+        what §4A.5's cancelled row needs to stay distinguishable. This confirms
+        `gate_raw_row_c` (8.2) on hardware.
+
+      User-confirmed visually: the four buttons fit with nothing clipped now the
+      Label is gone, and the result dialog reads correctly and closes on its
+      Close button. No QML errors, no `TypeError`, and no Qt-routed warnings in
+      the session (the two `Failed to fetch releases info … using embedded
+      fallback` lines are documented offline behaviour, unrelated).
+
+      **Two measurements contradict PRD assumptions — carry to 8.8:**
+      - `staging_roots_differ: **no**`. Both roots are
+        `/data/user/0/…/cache/simsapa-imports`. PRD §2.5 Defect D.2 asserts the
+        C++ `QStandardPaths::TempLocation` and Rust `std::env::temp_dir()` are
+        "not the same directory" on Android, making the cleanup "very likely a
+        silent no-op". On this device they are identical, so **Req. 20 may be a
+        non-issue** and Req. 21a's unbounded-footprint claim loses its D.2 half.
+        Measured on one device / one Android version — not yet general.
+      - `encoding_differs: **no**`, with `%3A` and `%2F` preserved in **both**
+        forms. Exactly what review finding 8 predicted: Qt's `toString()`
+        defaults to `PrettyDecoded`, which does not decode a delimiter inside a
+        path. This is **data, not a defect in the report** — see finding 8's
+        standing instruction not to "fix" the builder when the two come back
+        identical.
+- [x] 8.5 Write `docs/file-selection-test.md`: what each D-8 line means, how to
       read a `FILE-SELECTION-TEST:` block, the §4A.5 decision-gate table, the
       note that the `android_saf.rs` probe is phase-2 code wired only into the
       diagnostic (task 3.0), and the finding-2 record that the two qrc functions
       were dead when deleted.
-- [ ] 8.6 Add the **read**-path cross-reference to
+
+      Written. Beyond the required content it carries §3 (the two-picker split
+      and why Android bypasses Qt's `FileDialog`, with the `:48` mechanism),
+      §3.1 (the private-Qt include and the terms it is confined by), §7 (the
+      never-do list) and §8 (the message handler, including the correction that
+      it does **not** catch this bug). **§6 is the one to read before touching
+      the report**: it names four measured states that are normal and must not
+      be "fixed" — `encoding_differs: no`, `staging_roots_differ: no`,
+      `staging_cpp_exists: false` and `provider_reached_cap: true` — with the
+      first two backed by the 8.4 device run and flagged as contradicting PRD
+      §2.3 and §2.5 respectively.
+- [x] 8.6 Add the **read**-path cross-reference to
       `docs/android-file-saving-saf.md` so the `to_encoded()` rule is stated for
       both directions (PRD §8), and update `CLAUDE.md`'s notable-docs list and
       `PROJECT_MAP.md` (CLAUDE.md).
-- [ ] 8.7 Cut the distributable beta (`make android-beta-dist`) and send it with
-      **PRD Appendix B.2 verbatim**. The step order there is load-bearing: the
-      File Selection Test must run **before** the log is copied, or the user sends
-      a log with nothing in it and the round trip is wasted.
-- [ ] 8.8 Add any question discovered during implementation to PRD §11 rather
+
+      - `docs/android-file-saving-saf.md` gains a **"The read path — the same
+        rule, the other direction"** section: the write/read function table, the
+        `attach()` → `attach_resolver` + `attach_tree` split and why a document
+        URI forced it, and the `ContentResolver`-not-`QFile` rule. It opens by
+        naming the read side as where the `to_encoded()` rule was *missing* —
+        which is one of the defects behind the Chromebook failure.
+      - `CLAUDE.md` — **note it is a symlink to `AGENTS.md`**; edit the target.
+        The SAF entry gains the read-path sentence, and a full
+        **File Selection Test** entry was added after it.
+      - `PROJECT_MAP.md` — three additions: `src/picker_url.rs` in Key Modules,
+        an "Android SAF reader" bullet beside the writer, a "File Selection Test"
+        bullet listing every file involved, and the `AboutDialog.qml` line now
+        records that it **owns** this run (unlike the storage diagnostics) and
+        that its button area must stay a `ColumnLayout`.
+- [ ] 8.7 ~~Cut the distributable beta (`make android-beta-dist`)~~ **Release to
+      Google Play closed testing** and send it with **PRD Appendix B.2
+      verbatim**. The step order there is load-bearing: the File Selection Test
+      must run **before** the log is copied, or the user sends a log with nothing
+      in it and the round trip is wasted.
+
+      **Distribution changed 2026-08-07 to Play closed testing.** The
+      sideloaded beta APK was never really available to this user: unknown-source
+      installs in ARC normally need the Chromebook in **developer mode** (a
+      powerwash), and a managed device may forbid it outright. Consequences:
+      - the artifact is the **AAB** from `make android-aab`, package
+        `io.github.simsapa.app`. `make android-beta-dist` and the
+        `io.github.simsapa.app.beta` package play no part;
+      - **it is not a second app** — a closed track ships the same package, so
+        joining updates their existing Simsapa and leaving reverts it. Any
+        "installs alongside" wording is wrong;
+      - `android/version.txt` (currently **6**; production on the test phone is
+        **5**) must exceed every versionCode *ever uploaded*, including ones
+        never promoted — check the Play Console before uploading;
+      - build with `make android-aab`, **never from the Qt Creator interface**:
+        its kits are single-ABI and an arm64-only bundle is filtered off
+        Intel/AMD Chromebooks, which is this user's device;
+      - we now need the user's Google account address to add them as a tester,
+        and the turnaround includes review time — do not read silence as failure.
+
+      **Draft email: `tasks/2026-07-31-180502-email-to-reporting-user.md`**, with
+      B.2's four steps verbatim, the B.3 environment questions (the picker one
+      carrying its 2026-08-07 note), and the notes-for-us section. Still to do:
+      the versionCode check, the upload, the tester link, and sending it.
+- [x] 8.8 Add any question discovered during implementation to PRD §11 rather
       than resolving it silently.
+
+      Three added as **§11 Q4-Q6**, all from running the finished diagnostic on
+      the Samsung test phone (Android 16) — the instrument's bench, not the
+      reported platform, so each is a question about the PRD's *premises*, not
+      an answer about the bug:
+      - **Q4 — is Defect D.2 real on any device?** The two staging roots are
+        **identical** on Android 16. If that holds on ARC, Req. 20 is a
+        non-issue and Req. 21a loses its D.2 half (its "nothing ever deletes the
+        staged copy" half is unaffected). The returning Chromebook block carries
+        these lines, so it answers this for free.
+      - **Q5 — does `encoding_differs` ever come back `true`?** A deeply encoded
+        `content://` pick was **byte-identical** in both forms. Defect B may be
+        milder than §2.3 states.
+      - **Q6 — do Qt's `FileDialog` and a plain `ACTION_OPEN_DOCUMENT` reach the
+        same picker on ChromeOS?** The accepted cost of D-3a, written down so it
+        is not rediscovered as a surprise when the report arrives.
+
+      §2.5 and §2.3 also carry short in-place notes pointing at Q4 and Q5, so a
+      reader of the background sections is not left with the unqualified claim.
+      Both notes are careful to say what still stands: §2.5's claim 1 (an
+      unrelated import wiping the shared folder) is untouched, and §2.3's defect
+      is real on the write path it cites.
 
 ---
 

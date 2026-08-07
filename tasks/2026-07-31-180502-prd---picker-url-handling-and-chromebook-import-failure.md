@@ -236,6 +236,14 @@ This is precisely the trap already documented in
 `%3A`→`:` and `%2F`→`/`, corrupting the URI so Android's `Uri.parse` reads the
 wrong document.
 
+> **Partly qualified by measurement, 2026-08-07 — see §11 Q5.** `toString()`
+> defaults to `PrettyDecoded`, which does **not** decode `%2F` or `%3A` *inside
+> a path*, since there they are delimiters. On an Android 16 device a deeply
+> encoded `content://` pick came back **byte-identical** in both forms. The
+> defect is real on the *write* path this section cites, but the blanket claim
+> that any `String(url)` corrupts any picker URI is stronger than the evidence.
+> `encoding_differs` measures it per pick; identity is not a bug in the report.
+
 This hurts more on a Chromebook than on a phone. A phone's Downloads pick is a
 short `…/document/msf%3A1003`, which often survives decoding; a ChromeOS pick
 carries a deeply encoded document id (`primary%3ADownload%2Ffoo.zip`, or an
@@ -276,6 +284,12 @@ candidate's `source_path` for the later import step. Two problems:
    `QStandardPaths::TempLocation`. On Android these are not the same directory,
    so the cleanup is very likely a silent no-op and staged files accumulate
    indefinitely.
+
+   > **Contradicted by measurement, 2026-08-07 — see §11 Q4.** On an Android 16
+   > device the two roots are **identical**
+   > (`/data/user/0/<pkg>/cache/simsapa-imports`). Claim 2 above was never
+   > verified; D-12 was written to settle it and did. Claim 1 (the shared folder
+   > being wiped by an unrelated import) is untouched by this and still stands.
 
 ### 2.6 The four duplicated call sites
 
@@ -1099,6 +1113,44 @@ Still open:
    AppImage-on-portal imports are ever reported as flaky, this is the lever.
 3. **Should Req. 25** (single-extraction probe) be split into its own task? It is
    the largest optional win here and is independent of the URL handling.
+
+Raised during phase-1 implementation (2026-08-07). All three come from running
+the finished diagnostic on a **Samsung SM-S911B, Android 16 / API 36** — a
+phone, **not** a Chromebook. That device is the instrument's test bench, not the
+reported platform, so each of these is a *question about the PRD's premises*
+rather than an answer about the bug.
+
+4. **Is Defect D.2 real on any device?** (§2.5.) The PRD asserts that
+   `QStandardPaths::TempLocation` and `std::env::temp_dir()` "are not the same
+   directory" on Android, so the cleanup "is very likely a silent no-op" and
+   staged files accumulate indefinitely. **Measured, they are identical** — both
+   `/data/user/0/<pkg>/cache/simsapa-imports`, `staging_roots_differ: no`, on two
+   separate runs. If that holds on ARC as well, **Req. 20 is a non-issue** and
+   Req. 21a loses its D.2 half (the "nothing ever deletes the staged copy" half
+   stands on its own and is unaffected). The returning Chromebook block carries
+   these same two lines, so it answers this for free — read them even though
+   they are not what the round trip was for.
+5. **Does `encoding_differs` ever come back `true`?** (§2.3.) §2.3 asserts that
+   `String(url)` "percent-decodes and corrupts the URI". Qt's `toString()`
+   defaults to `PrettyDecoded`, which does **not** decode `%2F` or `%3A` inside
+   a path — they are delimiters — so the premise was already flagged as
+   unverified in the task list's review finding 8. **Measured on a deeply
+   encoded `content://com.android.externalstorage.documents/document/primary%3ADownload%2FTemp%2F…`
+   URI, the encoded and decoded forms were byte-identical**, both retaining
+   `%3A` and `%2F`. That does not disprove Defect B — §9.5 argues the ChromeOS
+   document ids are shaped differently — but it does mean **Defect B may be
+   milder than §2.3 states**, and that a `content://` pick is not sufficient to
+   demonstrate it. Do **not** "fix" the report if the two forms come back the
+   same; that is data. (Recorded as one of the four normal states in
+   `docs/file-selection-test.md` §6.)
+6. **Do Qt's `FileDialog` and a plain `ACTION_OPEN_DOCUMENT` reach the same
+   picker on ChromeOS?** Created by D-3a: since the Android test launches the
+   app's own intent, it no longer exercises the path the import actually uses.
+   If the user reports a *different* chooser than the one they saw when the
+   import failed (Appendix B.3's third question), the two blocks are not
+   measuring the same thing and the §4A.5 raw-intent rows must be read with that
+   caveat. This is the known, accepted cost of D-3a, written down here so it is
+   not rediscovered as a surprise when the report arrives.
 
 ## Appendix A — Diagnostic requests for the reporting user
 

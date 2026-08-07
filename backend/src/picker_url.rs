@@ -1403,6 +1403,160 @@ mod tests {
         assert_eq!(path_segment_count(""), 0);
     }
 
+    // ---- PRD §4A.5 decision-gate coverage ------------------------------
+    //
+    // One test per row of the two tables, so every possible report lands in
+    // exactly one row and no row is left unreachable. The tests above already
+    // cover: QUrl row 1 (`an_empty_url_is_reported_and_the_block_continues`),
+    // row 2 (`a_content_uri_reports_the_encoding_difference`), row 4's
+    // false half (`a_local_file_reports_existence_both_ways`), raw row A
+    // (`a_raw_uri_qurl_rejects_is_still_read_directly`) and raw row D's
+    // `no-uri` half (`an_empty_raw_uri_says_so_rather_than_printing_a_blank`).
+    // The rest are below.
+
+    #[test]
+    fn gate_row_3_non_content_scheme_with_identical_encoding() {
+        // "non-empty | identical | not content://" — Defect A.1 confirmed, Q2
+        // answered. The row turns on *both* halves, so both are asserted.
+        let block = run_file_selection_test(&input_for(Some(facts(
+            "externalfile://drive/root/mw-gd.zip",
+            "externalfile://drive/root/mw-gd.zip",
+            "externalfile",
+            "drive",
+            "",
+        ))));
+        assert!(block.contains("url_empty_or_invalid: no"));
+        assert!(block.contains("encoding_differs: no"));
+        assert!(block.contains("url_scheme: externalfile"));
+        assert!(block.contains("provider_scheme: externalfile"));
+    }
+
+    #[test]
+    fn gate_row_4_file_url_that_exists_is_not_the_scoped_storage_row() {
+        // The row is `file://` + try_exists false. Its complement has to be
+        // distinguishable, or a working desktop pick would be misread as the
+        // Android scoped-storage finding.
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("mw-gd.zip");
+        std::fs::write(&present, b"x").unwrap();
+        let present = present.to_string_lossy().to_string();
+
+        let block = run_file_selection_test(&input_for(Some(facts(
+            &format!("file://{present}"),
+            &format!("file://{present}"),
+            "file",
+            "",
+            &present,
+        ))));
+        assert!(block.contains("url_scheme: file"));
+        assert!(block.contains("encoding_differs: no"));
+        assert!(block.contains("local_file_exists: yes"));
+    }
+
+    #[test]
+    fn gate_row_5_a_successful_provider_read_renders_completely() {
+        // "provider read succeeds | identical | content://" — the pick is fine
+        // and the failure is downstream.
+        //
+        // The read itself needs a device: `probe_document_uri` is JNI behind
+        // `#[cfg(target_os = "android")]`, and its desktop stub always reports
+        // "no provider-backed reader". So what is testable here is the half
+        // that decides the row's *readability* — that a successful probe
+        // renders every field the row is read from. The classifier half is
+        // covered by `a_short_phone_content_uri_may_encode_identically`.
+        let probe = DocumentProbe {
+            opened: true,
+            display_name: Some("mw-gd.zip".to_string()),
+            size: Some(12_345_678),
+            bytes_read: Some(4 * 1024 * 1024),
+            reached_cap: true,
+            open_ms: Some(31),
+            read_ms: Some(842),
+            error: None,
+            notes: Vec::new(),
+        };
+        let mut out = String::new();
+        append_probe(&mut out, "provider", &probe);
+
+        assert!(out.contains("provider_opened: true"));
+        assert!(out.contains("provider_display_name: mw-gd.zip"));
+        assert!(out.contains("provider_size: 12345678"));
+        // Reaching the cap is a success, and the block must not read as an error.
+        assert!(out.contains("provider_reached_cap: true"));
+        assert!(out.contains("provider_error: (none)"));
+        // D-8(g): the latency figures the Drive-streaming concern is measured by.
+        assert!(out.contains("provider_open_ms: 31"));
+        assert!(out.contains("provider_read_ms: 842"));
+    }
+
+    #[test]
+    fn gate_raw_row_b_a_raw_uri_qurl_accepts() {
+        // "non-empty | QUrl(raw) valid" — the conversion is fine, so the loss
+        // is downstream of Qt's dialog and the block must say so unambiguously,
+        // to be read against the QUrl table above.
+        let mut input = input_for(Some(facts(
+            "content://org.chromium.arc.file/document/42",
+            "content://org.chromium.arc.file/document/42",
+            "content",
+            "org.chromium.arc.file",
+            "",
+        )));
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: "content://org.chromium.arc.file/document/42".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        input.qurl_of_raw_is_valid = Some(true);
+
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("qurl_of_raw_is_valid: yes"));
+        assert!(block.contains("raw_branch: intent-getData"));
+        assert!(block.contains("url_empty_or_invalid: no"));
+    }
+
+    #[test]
+    fn gate_raw_row_c_a_cancelled_pick_is_not_a_finding() {
+        // "empty | branch = cancelled" — the user backed out. The block must be
+        // readable as "ask for another run" and must not present itself as the
+        // empty-URL finding of the QUrl table's first row.
+        let mut input = input_for(None);
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: String::new(),
+            source: "cancelled".to_string(),
+        });
+
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("raw_branch: cancelled"));
+        assert!(block.contains("raw_uri: (empty"));
+        // No URL was examined at all, which is different from one that came
+        // back empty.
+        assert!(block.contains("url: (no URL to examine on this run)"));
+        assert!(!block.contains("url_empty_or_invalid:"));
+        assert!(outcome_line(&input).contains("closed without choosing"));
+    }
+
+    #[test]
+    fn gate_raw_row_d_no_intent_reports_like_no_uri() {
+        // "empty | branch = no-uri / no-intent" — the picker reported success
+        // but returned nothing, a case Qt's helper drops silently. `no-uri` is
+        // covered above; this is the other half, which is also what the two
+        // Android early-failure paths deliver.
+        let mut input = input_for(None);
+        input.source = Some(PickSource::RawIntent);
+        input.raw = Some(RawPickOutcome {
+            raw_uri: String::new(),
+            source: "no-intent".to_string(),
+        });
+
+        let block = run_file_selection_test(&input);
+        assert!(block.contains("raw_branch: no-intent"));
+        assert!(block.contains("raw_uri: (empty"));
+        assert!(block.contains("raw_provider: (no raw URI to read)"));
+        // Still a complete block: the staging facts do not depend on the pick.
+        assert!(block.contains("staging_roots_differ:"));
+    }
+
     #[test]
     fn run_numbers_start_at_one_and_increase() {
         let first = next_run_number();
