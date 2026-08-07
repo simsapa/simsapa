@@ -991,6 +991,55 @@ Still open:
    `intent.getData().toString()` over JNI: public API throughout, immune to the
    upgrade, and it also removes this question's coupling to Qt's release
    schedule.
+
+   **REVERSED 2026-08-07: yes, use the private API.** The answer above was
+   sound reasoning resting on an assumption that had not been checked. It was
+   then checked against qtbase's **6.11** branch — the release this project is
+   upgrading to — and it does not hold. Three measured facts:
+
+   1. **The private API is unchanged in 6.11.** `qandroidextras_p.h` on the
+      6.11 branch still declares `class Q_CORE_EXPORT
+      QAndroidActivityResultReceiver` with the same pure-virtual
+      `handleActivityResult(int, int, const QJniObject &)`, and all three
+      `QtAndroidPrivate::startActivity` overloads with identical signatures —
+      byte-compatible with the 6.9.3 kit. The file has had four commits since
+      2022 and the most recent (2026-03-03, "Add default security headers") is
+      cosmetic. The upgrade this question was deferring to is a **non-event**
+      for this API.
+   2. **The blast radius is smaller than it reads.** `Qt6::CorePrivate` is an
+      *interface* target — verified in the local kit, `Qt6CoreConfig.cmake:133`
+      propagates only `INTERFACE_INCLUDE_DIRECTORIES`. It adds header paths,
+      **not a library**: no new `.so` in the AAB, no ABI-slice growth, no
+      manifest change. None of the packaging hazards of
+      [android-multi-abi-and-chromeos.md](../docs/android-multi-abi-and-chromeos.md)
+      are in play. And the failure mode is a **compile error at upgrade time**,
+      not silent misbehaviour, on ~80 lines of `#ifdef`-gated, deletable
+      diagnostic code.
+   3. **6.11 does not fix the bug, so the upgrade is not a substitute for
+      measuring.** `qandroidplatformfiledialoghelper.cpp` on the 6.11 branch
+      still does `m_selectedFile.append(QUrl(uri.toString()))`, still emits
+      `accept()`, and still contains **zero** `qWarning` calls. Its
+      `uri.isValid()` test guards the *Java* `Uri`, not the resulting `QUrl`, so
+      §2.1a's hole is open in 6.11 exactly as in 6.9.3. Unlike the Thai/Gboard
+      Shift bug of
+      [android-soft-keyboard.md](../docs/android-soft-keyboard.md) §4, this one
+      is **not** waiting for us upstream.
+
+   The custom-Java alternative is genuinely upgrade-proof but is now the more
+   expensive and riskier option for a throwaway diagnostic: it costs a new Java
+   class **plus an `<activity>` entry in `android/AndroidManifest.xml`**, which
+   breaks phase-1 success metric 4's byte-identical-manifest check and touches
+   the one file with a history of filtering this app off Chromebooks.
+
+   **Terms of the reversal**, so the risk stays where it was measured:
+
+   - the private include is confined to the **diagnostic**; phase 2's import
+     path must not acquire a dependency on it, where a future build break would
+     take a shipping feature down with it;
+   - the raw string feeds the **same** `PickerUrlFacts` pipeline (task 3.13),
+     never a second report shape;
+   - the module comment records that the private include is deliberate, scoped,
+     and expected to be **deleted** once the report comes back.
 1. **`delete_temp_import_folder` signature change (Req. 19)** is a breaking change
    to an existing bridge function. Its only callers are
    `DocumentImportDialog.qml:360` and `:376` (verified 2026-07-31) — re-confirm

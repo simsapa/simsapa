@@ -30,6 +30,13 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Prefix on every line the test writes.
+///
+/// The deliverable of this feature is a block of INFO lines in `log.txt` that a
+/// user pastes into an email, so every line must be greppable on its own and
+/// survive a truncated paste.
+pub const LOG_PREFIX: &str = "FILE-SELECTION-TEST:";
+
 /// The facts Qt can state about a picked URL, extracted on the calling thread
 /// and owned, so the measurement can move to a worker (`QUrl` is not `Send`).
 ///
@@ -212,6 +219,320 @@ pub fn probe_document_uri(uri: &str, cap_bytes: usize) -> DocumentProbe {
 /// the stream really delivers bytes, small enough that a large archive on a slow
 /// network-backed provider does not turn a diagnostic into a download.
 pub const PROBE_READ_CAP_BYTES: usize = 4 * 1024 * 1024;
+
+/// What a staging directory currently holds.
+///
+/// Absence is a normal reported fact, not an error: on a device that has never
+/// completed an import there is nothing there, and a census that failed in that
+/// case would be indistinguishable from one that could not read the directory.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FolderCensus {
+    /// The directory this census describes.
+    pub path: String,
+    /// `try_exists()` — `None` when the check itself failed (a permission error
+    /// on Android is a different finding from "not there").
+    pub exists: Option<bool>,
+    /// Files directly inside the folder. Imports stage flat, so a recursive walk
+    /// would only add cost.
+    pub file_count: u64,
+    /// Total size of those files.
+    pub total_bytes: u64,
+    /// Age in seconds of the oldest entry — the evidence for or against the
+    /// claim that staged files accumulate forever because the cleanup never
+    /// removes them.
+    pub oldest_age_secs: Option<u64>,
+    /// Why the census is incomplete, when it is.
+    pub error: Option<String>,
+}
+
+/// Free and total space on a volume, or why it could not be read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpaceFacts {
+    /// The path actually measured. When the staging root does not exist yet,
+    /// this is its nearest existing ancestor — `statvfs` needs a real path, and
+    /// the figure for the ancestor is the figure for the same volume.
+    pub measured_path: String,
+    pub total_bytes: Option<u64>,
+    pub available_bytes: Option<u64>,
+    pub error: Option<String>,
+}
+
+/// The import-staging measurement.
+///
+/// This settles, as measured fact rather than inference, whether the C++ writer
+/// and the Rust cleanup are pointed at the same directory. The C++ side stages
+/// into `QStandardPaths::TempLocation`; the Rust cleanup deletes
+/// `std::env::temp_dir()`. On Android these are not obliged to be the same
+/// place, and if they are not, the cleanup has always been a no-op.
+///
+/// It needs no user interaction at all — it is reported for every run, whatever
+/// the picked URL turned out to be, including an empty one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StagingFacts {
+    /// `QStandardPaths::TempLocation` + `/simsapa-imports`, supplied by the
+    /// bridge. The backend stays Qt-free, so it cannot ask for this itself.
+    pub cpp_root: String,
+    /// `std::env::temp_dir()` + `simsapa-imports`, what the Rust cleanup deletes.
+    pub rust_root: String,
+    /// Whether the two are different directories.
+    pub roots_differ: bool,
+    /// Census of the C++ root — where files actually land.
+    pub cpp_census: FolderCensus,
+    /// Census of the Rust root, **only when the roots differ**. Reporting one
+    /// root cannot demonstrate a mismatch, which is the entire point.
+    pub rust_census: Option<FolderCensus>,
+    /// Space on the volume the C++ root lives on — the input a future
+    /// pre-staging free-space check will need a threshold for.
+    pub space: SpaceFacts,
+}
+
+/// The Rust side's idea of the staging root — literally what the existing
+/// cleanup builds, so the comparison is against the real value and not a
+/// plausible reconstruction of it.
+pub fn rust_staging_root() -> std::path::PathBuf {
+    std::env::temp_dir().join("simsapa-imports")
+}
+
+/// Census one directory. Never fails the caller; an unreadable directory is
+/// reported in `error` with whatever was learned before that point.
+pub fn census_folder(path: &str) -> FolderCensus {
+    let mut census = FolderCensus {
+        path: path.to_string(),
+        ..Default::default()
+    };
+
+    if path.trim().is_empty() {
+        census.error = Some("no path given".to_string());
+        return census;
+    }
+
+    let dir = std::path::Path::new(path);
+
+    // `try_exists()`, never `.exists()`: on Android the latter can raise a
+    // permission error as a panic-adjacent failure (CLAUDE.md).
+    match dir.try_exists() {
+        Ok(exists) => census.exists = Some(exists),
+        Err(e) => {
+            census.error = Some(format!("try_exists failed: {e}"));
+            return census;
+        }
+    }
+
+    if census.exists != Some(true) {
+        return census;
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            census.error = Some(format!("read_dir failed: {e}"));
+            return census;
+        }
+    };
+
+    let now = std::time::SystemTime::now();
+    let mut oldest: Option<u64> = None;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                census.error = Some(format!("entry failed: {e}"));
+                continue;
+            }
+        };
+        let meta = match entry.metadata() {
+            Ok(meta) => meta,
+            Err(e) => {
+                census.error = Some(format!("metadata failed: {e}"));
+                continue;
+            }
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        census.file_count += 1;
+        census.total_bytes += meta.len();
+        if let Ok(modified) = meta.modified() {
+            if let Ok(age) = now.duration_since(modified) {
+                let secs = age.as_secs();
+                oldest = Some(oldest.map_or(secs, |o: u64| o.max(secs)));
+            }
+        }
+    }
+
+    census.oldest_age_secs = oldest;
+    census
+}
+
+/// Free/total space on the volume holding `path`.
+///
+/// Walks up to the nearest existing ancestor, because the staging root may not
+/// have been created yet and `statvfs` needs a path that exists. The volume is
+/// the same either way, so the figures are the ones wanted.
+pub fn space_for(path: &str) -> SpaceFacts {
+    let mut candidate = std::path::Path::new(path);
+    loop {
+        if matches!(candidate.try_exists(), Ok(true)) {
+            break;
+        }
+        match candidate.parent() {
+            Some(parent) if parent != candidate => candidate = parent,
+            _ => break,
+        }
+    }
+
+    let measured_path = candidate.to_string_lossy().to_string();
+
+    // `statvfs` rather than `available_space`: one call yields both figures, and
+    // it is what the storage diagnostics already uses.
+    match fs4::statvfs(candidate) {
+        Ok(stats) => SpaceFacts {
+            measured_path,
+            total_bytes: Some(stats.total_space()),
+            available_bytes: Some(stats.available_space()),
+            error: None,
+        },
+        Err(e) => SpaceFacts {
+            measured_path,
+            total_bytes: None,
+            available_bytes: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+/// Collect the whole staging measurement.
+///
+/// `cpp_root` comes from the bridge (`get_import_staging_root()`); the backend
+/// must not try to reach Qt for it.
+pub fn collect_staging_facts(cpp_root: &str) -> StagingFacts {
+    let rust_root = rust_staging_root().to_string_lossy().to_string();
+
+    // `same_path()` compares components without touching the filesystem, which
+    // matters because either root may not exist yet.
+    let roots_differ = !crate::same_path(cpp_root, &rust_root);
+
+    let cpp_census = census_folder(cpp_root);
+    let rust_census = if roots_differ {
+        Some(census_folder(&rust_root))
+    } else {
+        None
+    };
+
+    StagingFacts {
+        cpp_root: cpp_root.to_string(),
+        rust_root,
+        roots_differ,
+        cpp_census,
+        rust_census,
+        space: space_for(cpp_root),
+    }
+}
+
+/// Where a report block's URL came from.
+///
+/// One report shape, two ways of obtaining the URL — never two report builders.
+/// The distinction matters because the two paths see different things: Qt's
+/// `FileDialog` hands over a `QUrl` that may already have lost the picker's
+/// string, while the raw pick sees what the picker actually returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickSource {
+    /// Qt's `FileDialog` — what the real import dialogs use, and therefore the
+    /// path whose behaviour is under investigation.
+    QtFileDialog,
+    /// Our own `ACTION_OPEN_DOCUMENT`, read before any `QUrl` existed.
+    RawIntent,
+}
+
+impl PickSource {
+    /// The label used in the report.
+    pub fn label(&self) -> &'static str {
+        match self {
+            PickSource::QtFileDialog => "Qt FileDialog",
+            PickSource::RawIntent => "raw ACTION_OPEN_DOCUMENT intent",
+        }
+    }
+}
+
+/// The outcome of a raw pick, as the native side reported it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RawPickOutcome {
+    /// The picker's URI as the raw Java string — never round-tripped through a
+    /// `QUrl`. Empty when the pick produced no URI, which is itself a finding.
+    pub raw_uri: String,
+    /// Which branch produced it: `intent-getData`, `intent-getClipData`,
+    /// `cancelled`, `no-intent`, `no-uri`, or `unsupported-platform`.
+    pub source: String,
+}
+
+// Filled in by the native result callback and taken by the report builder. A
+// `Mutex` rather than a channel: the pick is user-paced and at most one is ever
+// in flight, so there is nothing to queue.
+static RAW_PICK_RESULT: std::sync::Mutex<Option<RawPickOutcome>> = std::sync::Mutex::new(None);
+
+/// Store a raw-pick outcome for the report builder to collect.
+pub fn store_raw_pick(outcome: RawPickOutcome) {
+    // A poisoned lock must not lose the measurement: recovering the guard is
+    // strictly better than dropping the one thing the round trip is for.
+    let mut slot = RAW_PICK_RESULT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *slot = Some(outcome);
+}
+
+/// Take the stored raw-pick outcome, leaving the slot empty.
+///
+/// Taking rather than peeking is deliberate: a stale outcome reported against a
+/// later run would be worse than no outcome at all, because nothing in the block
+/// would reveal that it belonged to a different pick.
+pub fn take_raw_pick() -> Option<RawPickOutcome> {
+    RAW_PICK_RESULT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+}
+
+/// Receive a raw-pick result from the native side (`cpp/android_raw_pick.cpp`).
+///
+/// Same C-ABI shape and the same defensive discipline as `log_info_c`: both
+/// pointers are null-checked and UTF-8-checked, and nothing here can panic
+/// across the FFI boundary.
+///
+/// # Safety
+///
+/// `raw_uri` and `source` must each be either null or a valid NUL-terminated C
+/// string that stays alive for the duration of the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn raw_document_pick_result_c(
+    raw_uri: *const std::os::raw::c_char,
+    source: *const std::os::raw::c_char,
+) {
+    fn to_string(ptr: *const std::os::raw::c_char) -> String {
+        if ptr.is_null() {
+            return String::new();
+        }
+        // SAFETY: checked non-null above; the caller guarantees a valid
+        // NUL-terminated string for the duration of the call.
+        unsafe { std::ffi::CStr::from_ptr(ptr) }
+            .to_str()
+            .unwrap_or("<invalid utf-8>")
+            .to_string()
+    }
+
+    let outcome = RawPickOutcome {
+        raw_uri: to_string(raw_uri),
+        source: to_string(source),
+    };
+
+    crate::logger::info(&format!(
+        "{LOG_PREFIX} raw pick received: source={}, uri_len={}",
+        outcome.source,
+        outcome.raw_uri.len()
+    ));
+
+    store_raw_pick(outcome);
+}
 
 /// Monotonic counter so repeated presses of the button produce distinguishable
 /// blocks in one log file. The user is asked to run the test several times, from
@@ -402,6 +723,77 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(classify(&f), PickerBranch::Empty);
+    }
+
+    #[test]
+    fn census_reports_known_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.zip"), vec![0u8; 100]).unwrap();
+        std::fs::write(dir.path().join("b.zip"), vec![0u8; 250]).unwrap();
+        // A subdirectory must not be counted: imports stage flat, and counting
+        // directories as files would inflate the footprint evidence.
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+
+        let census = census_folder(&dir.path().to_string_lossy());
+        assert_eq!(census.exists, Some(true));
+        assert_eq!(census.file_count, 2);
+        assert_eq!(census.total_bytes, 350);
+        assert!(census.oldest_age_secs.is_some());
+        assert!(census.error.is_none());
+    }
+
+    #[test]
+    fn census_of_a_missing_folder_reports_cleanly() {
+        // Absence is a fact to report, not an error. A device that has never
+        // imported anything must produce a readable block.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("never-created");
+
+        let census = census_folder(&missing.to_string_lossy());
+        assert_eq!(census.exists, Some(false));
+        assert_eq!(census.file_count, 0);
+        assert_eq!(census.total_bytes, 0);
+        assert!(census.error.is_none());
+    }
+
+    #[test]
+    fn space_falls_back_to_an_existing_ancestor() {
+        // The staging root usually does not exist yet, and `statvfs` needs a
+        // real path. The volume is the same, so the figures still apply.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("a").join("b").join("c");
+
+        let space = space_for(&missing.to_string_lossy());
+        assert!(space.error.is_none(), "unexpected error: {:?}", space.error);
+        assert!(space.total_bytes.unwrap() > 0);
+        assert_ne!(space.measured_path, missing.to_string_lossy());
+    }
+
+    #[test]
+    fn staging_facts_compare_both_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let cpp_root = dir.path().join("cpp-imports");
+        std::fs::create_dir(&cpp_root).unwrap();
+        std::fs::write(cpp_root.join("staged.zip"), vec![0u8; 42]).unwrap();
+
+        let facts = collect_staging_facts(&cpp_root.to_string_lossy());
+
+        // The Rust root is `std::env::temp_dir()`-based, so on any real machine
+        // it differs from this fixture — and when it differs it must be
+        // censused too, or the mismatch cannot be demonstrated.
+        assert!(facts.roots_differ);
+        assert!(facts.rust_census.is_some());
+        assert_eq!(facts.cpp_census.file_count, 1);
+        assert_eq!(facts.cpp_census.total_bytes, 42);
+        assert!(facts.space.available_bytes.is_some());
+    }
+
+    #[test]
+    fn identical_roots_are_reported_as_identical() {
+        let root = rust_staging_root().to_string_lossy().to_string();
+        let facts = collect_staging_facts(&root);
+        assert!(!facts.roots_differ);
+        assert!(facts.rust_census.is_none());
     }
 
     #[test]

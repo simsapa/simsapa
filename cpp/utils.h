@@ -8,6 +8,7 @@ extern "C++" {
     QString get_app_assets_path();
     QString get_app_data_storage_paths_json();
     int get_status_bar_height();
+    QString get_import_staging_root();
     QString copy_content_uri_to_temp_file(const QString& content_uri);
     QString get_qt_platform_name();
     QString get_qt_version();

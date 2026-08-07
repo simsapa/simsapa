@@ -582,6 +582,14 @@ QString copy_file(QString source_file, QString destination_file) {
     return QString("");
 }
 
+// The folder where picked files are staged before an import. This is the single
+// source of truth for the C++ side; the Rust cleanup uses std::env::temp_dir(),
+// which is not guaranteed to be the same directory on Android. See
+// docs/file-selection-test.md.
+QString get_import_staging_root() {
+    return QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/simsapa-imports";
+}
+
 QString copy_content_uri_to_temp_file(const QString& content_uri) {
 #ifdef Q_OS_ANDROID
     // Only handle content:// URIs
@@ -641,7 +649,7 @@ QString copy_content_uri_to_temp_file(const QString& content_uri) {
     }
 
     // Create temp directory
-    QString temp_dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/simsapa-imports";
+    QString temp_dir = get_import_staging_root();
     QDir dir;
     if (!dir.mkpath(temp_dir)) {
         log_error_c(QString("Failed to create temp directory: %1").arg(temp_dir).toUtf8().constData());

@@ -225,6 +225,7 @@ list(APPEND cpp_files
     cpp/utils.cpp
     cpp/screen.cpp
     cpp/android_helpers.cpp
+    cpp/android_raw_pick.cpp
     cpp/system_palette.cpp
     cpp/clipboard_manager.cpp
     cpp/gui.cpp
@@ -406,6 +407,19 @@ target_link_libraries(simsapadhammareader
         simsapa_bridges
         ${qt_modules}
     )
+
+# The "File Selection Test" diagnostic reads the file picker's URI before Qt
+# converts it, which needs QtCore/private/qandroidextras_p.h -- the same private
+# API Qt's own Android file dialog uses. Deliberate and scoped; the decision and
+# its evidence are in cpp/android_raw_pick.cpp and PRD §11 Q0a.
+#
+# Qt6::CorePrivate is an *interface* target: it contributes include paths, not a
+# library, so this adds no .so to the package. Android only, and NOT added to
+# ${qt_modules} -- that list is also handed to cxx_qt_import_crate(QT_MODULES),
+# which resolves names through qmake and has no business seeing a private module.
+if(ANDROID)
+    target_link_libraries(simsapadhammareader PRIVATE Qt6::CorePrivate)
+endif()
 
 # Link SystemConfiguration framework on macOS (required by Rust dependencies),
 # plus Carbon / AppKit / ApplicationServices for the global hotkey backend

@@ -172,6 +172,14 @@ diagnostic can launch its own `ACTION_OPEN_DOCUMENT` and read
 `intent.getData().toString()` as a **raw Java string**, never passing it through
 `QUrl`. See task 3.10 for the trade-off and the decision.
 
+**Decided and implemented** (`cpp/android_raw_pick.cpp`). Two implementation
+notes worth keeping: the `std::function` overload of
+`QtAndroidPrivate::startActivity` (`qandroidextras_p.h:205-208`) avoids
+subclassing `QAndroidActivityResultReceiver` entirely, so there is no receiver
+object whose lifetime must outlive the picker; and a check against the **6.11**
+branch found the file dialog helper unchanged, so the upgrade will not fix this
+bug and the measurement is still needed.
+
 ### 7. The message handler will **not** catch this failure — correcting finding 4
 
 `grep -c 'qWarning\|qCWarning' qandroidplatformfiledialoghelper.cpp` → **0**.
@@ -235,6 +243,15 @@ bug, and its priority relative to 3.10 drops accordingly.
   staging-root accessor for D-12.
 - `cpp/utils.h` — remove the two dead declarations (`:19-20`); declare the new
   accessor.
+- `cpp/android_raw_pick.{h,cpp}` — **new.** Launches our own
+  `ACTION_OPEN_DOCUMENT` and reports the picker's URI as the **raw Java string**,
+  before any `QUrl` exists (tasks 3.11-3.14). The **only** file including private
+  Qt API (`QtCore/private/qandroidextras_p.h`), deliberately kept self-contained
+  so the import path never depends on it and the whole diagnostic is deletable in
+  one commit. Delivers through `raw_document_pick_result_c()`.
+- `CMakeLists.txt` — the new source file, and `Qt6::CorePrivate` linked on
+  **Android only**. Not added to `${qt_modules}`, which is also handed to
+  `cxx_qt_import_crate(QT_MODULES)` and resolves names through qmake.
 - `cpp/gui.cpp` — install the `qInstallMessageHandler` (D-14). Insertion point is
   after `init_app_globals()` (`:403`) and before `QApplication` (`:493`), the
   same slot the render-loop and palette pre-reads already use.
@@ -400,8 +417,9 @@ must model it as a first-class branch rather than as "some other scheme".
 
 ### 3.0 [x] The document-URI probe in `android_saf.rs` (D-8f/g, D-9)
 
-> **3.1-3.9 complete. 3.10 decided: NO private API — see the decision recorded
-> there; 3.11-3.14 are consequently not implemented.**
+> **3.1-3.9 complete. 3.10 first decided against the private API, then
+> REVERSED on 2026-08-07 after checking qtbase's 6.11 branch — see the decision
+> recorded there; 3.11-3.14 are in scope.**
 
 **Specs to keep in mind.** PRD Req. 8 / D-9 word this as a fix to
 `copy_content_uri_to_temp_file` in `cpp/utils.cpp`. **It is implemented in Rust
@@ -476,29 +494,50 @@ way to see it is to run our own picker intent.
       without it and accept that an empty result confirms only "Qt handed QML
       nothing" — which, combined with the source reading in finding 6, may already
       be enough to move to a Qt-level fix. Record the decision here either way.
-- [ ] 3.11 Add an Android-only "raw pick" path: build an `ACTION_OPEN_DOCUMENT`
+
+      **DECIDED 2026-08-07: use the private API.** An initial "no" was reversed
+      once the assumption behind it was actually checked against qtbase's
+      **6.11** branch — the release this project is upgrading to. Full reasoning
+      and the terms of the reversal are in PRD §11 Q0a; the three facts are:
+      (1) `qandroidextras_p.h` on 6.11 declares `QAndroidActivityResultReceiver`
+      and all three `QtAndroidPrivate::startActivity` overloads with signatures
+      identical to the 6.9.3 kit, its last commit being cosmetic — the upgrade
+      is a non-event for this API; (2) `Qt6::CorePrivate` is an **interface**
+      target (include paths only, verified at `Qt6CoreConfig.cmake:133`), so
+      there is no new `.so`, no ABI-slice growth and no manifest change, and a
+      future break would be a **compile error**, not silent misbehaviour, on
+      deletable diagnostic code; (3) 6.11 does **not** fix the bug — the helper
+      still does `m_selectedFile.append(QUrl(uri.toString()))` and still has zero
+      `qWarning`s — so the upgrade is no substitute for measuring. The
+      custom-Java route would cost an `<activity>` entry in
+      `android/AndroidManifest.xml`, breaking metric 4's byte-identical check on
+      the one file with a Chromebook-filtering history.
+
+      **Keep the private include confined to the diagnostic.** Phase 2's import
+      path must not come to depend on it.
+- [x] 3.11 Add an Android-only "raw pick" path: build an `ACTION_OPEN_DOCUMENT`
       intent with `CATEGORY_OPENABLE` and `setType("*/*")` (no MIME filter — the
       D-3 rationale applies here too), and launch it with
       `QtAndroidPrivate::startActivity` using a **request code that cannot collide
       with Qt's own `1305`** (`qandroidplatformfiledialoghelper.cpp:24`).
-- [ ] 3.12 In the result receiver, read `intent.getData()` and record
+- [x] 3.12 In the result receiver, read `intent.getData()` and record
       **`uri.toString()` as a raw Java string**, before any `QUrl` exists. Also
       record `QUrl(uri.toString()).isValid()` — the single most valuable line in
       the whole report, because it reproduces Qt's `:48` conversion and shows
       directly whether that is where the URL is lost. Handle the `getClipData()`
       branch (`:57-69`) too, and the "neither" case, which Qt leaves silently
       emitting nothing.
-- [ ] 3.13 Feed the raw string into the **same** `PickerUrlFacts` pipeline (task
+- [x] 3.13 Feed the raw string into the **same** `PickerUrlFacts` pipeline (task
       2.1) so both paths produce the same report shape, with one line naming which
       path produced the block (Qt `FileDialog` vs raw intent). Do **not** fork the
       report builder.
-- [ ] 3.14 Gate all of it behind `#[cfg(target_os = "android")]` / `#ifdef
+- [x] 3.14 Gate all of it behind `#[cfg(target_os = "android")]` / `#ifdef
       Q_OS_ANDROID` with a desktop stub, and confirm the desktop build neither
       links nor references the private header (PRD Req. 27).
 
 ---
 
-### 4.0 Import-staging facts (D-12)
+### 4.0 [x] Import-staging facts (D-12)
 
 **Specs to keep in mind.** This section needs **no user interaction at all** — it
 is pure measurement that settles Defect D (PRD §2.5), which the PRD currently
@@ -509,7 +548,7 @@ say plainly whether they differ.
 
 **Depends on:** 2.1 (the module). **Blocks:** 5.0.
 
-- [ ] 4.1 Add a C++ accessor returning the staging root
+- [x] 4.1 Add a C++ accessor returning the staging root
       (`QStandardPaths::writableLocation(QStandardPaths::TempLocation) + "/simsapa-imports"`)
       to `cpp/utils.cpp` + `cpp/utils.h`, and declare it in the
       `unsafe extern "C++"` block of `bridges/src/sutta_bridge.rs` beside
@@ -517,23 +556,23 @@ say plainly whether they differ.
       expression `copy_content_uri_to_temp_file` uses** — ideally by extracting
       that expression into the new function and calling it from both, so the two
       cannot drift.
-- [ ] 4.2 In `picker_url.rs`, add `collect_staging_facts(cpp_root: &str) -> StagingFacts`
+- [x] 4.2 In `picker_url.rs`, add `collect_staging_facts(cpp_root: &str) -> StagingFacts`
       recording: the C++ root (passed in — the backend stays Qt-free), the Rust
       root (`std::env::temp_dir().join("simsapa-imports")`), and an explicit
       `roots_differ: bool`. The bridge supplies `cpp_root`; do not try to reach
       Qt from the backend.
-- [ ] 4.3 Census the staging folder, tolerating its absence as a normal reported
+- [x] 4.3 Census the staging folder, tolerating its absence as a normal reported
       fact rather than an error: exists (`try_exists()`), file count, total size,
       and the age of the oldest entry — the evidence for or against PRD Req. 21a's
       unbounded-footprint claim.
-- [ ] 4.4 Report free/total space on the staging volume via **`fs4::statvfs`**, matching
+- [x] 4.4 Report free/total space on the staging volume via **`fs4::statvfs`**, matching
       `storage_diagnostics.rs:282` (finding 8) — already a direct dependency
       (`backend/Cargo.toml:53`), cross-platform, no new code per platform. This is the input PRD Req. 24's threshold will need.
-- [ ] 4.5 Census **both** roots when they differ, not just the C++ one. The whole
+- [x] 4.5 Census **both** roots when they differ, not just the C++ one. The whole
       point is to show which directory actually holds the staged files and which
       one the cleanup is pointed at; reporting only one cannot demonstrate the
       mismatch.
-- [ ] 4.6 Unit-test `collect_staging_facts` against a temp directory with known
+- [x] 4.6 Unit-test `collect_staging_facts` against a temp directory with known
       contents, and against a non-existent root (must report cleanly, not error).
 
 ---

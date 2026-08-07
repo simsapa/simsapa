@@ -702,7 +702,15 @@ pub mod qobject {
         fn get_system_palette_json() -> QString;
         fn set_app_palette_link_colors(link: &QString, link_visited: &QString);
 
+        // Diagnostic only, and deliberately its own header: the private-Qt
+        // include it needs is confined to that one file, so a future Qt change
+        // cannot reach the import path. Delete with the diagnostic — see
+        // cpp/android_raw_pick.cpp.
+        include!("android_raw_pick.h");
+        fn start_raw_document_pick() -> bool;
+
         include!("utils.h");
+        fn get_import_staging_root() -> QString;
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
         fn get_qt_version() -> QString;
         fn get_android_package_name() -> QString;
