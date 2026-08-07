@@ -248,7 +248,10 @@ bug, and its priority relative to 3.10 drops accordingly.
   before any `QUrl` exists (tasks 3.11-3.14). The **only** file including private
   Qt API (`QtCore/private/qandroidextras_p.h`), deliberately kept self-contained
   so the import path never depends on it and the whole diagnostic is deletable in
-  one commit. Delivers through `raw_document_pick_result_c()`.
+  one commit. Delivers through `raw_document_pick_result_c()` — **on every
+  path, including the two Android early failures** (invalid intent, JNI
+  exception), which originally returned `false` without delivering anything and
+  would have left the button disabled forever.
 - `CMakeLists.txt` — the new source file, and `Qt6::CorePrivate` linked on
   **Android only**. Not added to `${qt_modules}`, which is also handed to
   `cxx_qt_import_crate(QT_MODULES)` and resolves names through qmake.
@@ -792,7 +795,7 @@ Do **not** solve this by polling.
 
 ---
 
-### 7.0 QML: the "File Selection Test" button and the picker flow
+### 7.0 [x] QML: the "File Selection Test" button and the picker flow
 
 **Specs to keep in mind.** `AboutDialog.qml`'s bottom button area is a
 **full-width `ColumnLayout`** (`:255-291`) precisely because three buttons on a
@@ -816,24 +819,24 @@ though the *button* does not (D-2).
 
 **Depends on:** 6.0. **Blocks:** 8.0.
 
-- [ ] 7.1 Add the **"File Selection Test"** button to the `ColumnLayout` at
+- [x] 7.1 Add the **"File Selection Test"** button to the `ColumnLayout` at
       `AboutDialog.qml:255-291`, between "Copy App Info" and "Run Storage
       Diagnostics", with `Layout.fillWidth: true` like its siblings. **No
       platform gate** — D-2 wants it on desktop too, where it exercises the
       `file://` branch a maintainer can actually read.
-- [ ] 7.1a Branch the button's `onClicked` on the platform (D-3a): on Android
+- [x] 7.1a Branch the button's `onClicked` on the platform (D-3a): on Android
       call `SuttaBridge.start_file_selection_test_raw_pick()` (6.3b); everywhere
       else open the `FileDialog` of 7.2. Use the dialog's existing
       `root.is_desktop`-style gate rather than inventing a second one. Log which
       path was taken (D-7) — a block whose picker is ambiguous cannot be read
       against PRD §4A.5, whose Android rows apply only to the raw-intent path.
-- [ ] 7.2 Add a `FileDialog` with **no `nameFilters`** (D-3) and a title naming
+- [x] 7.2 Add a `FileDialog` with **no `nameFilters`** (D-3) and a title naming
       the purpose. On `onAccepted`, pass `selectedFile` **straight** into
       `SuttaBridge.run_file_selection_test(selectedFile)` — no `String(...)`, no
       `strip_file_scheme`, no JavaScript inspection of the URL whatsoever
       (PRD Req. 2). Any QML-side string handling would re-introduce the very
       corruption being measured.
-- [ ] 7.2a Log the QML-side view of the pick before the call, through
+- [x] 7.2a Log the QML-side view of the pick before the call, through
       `Logger { id: logger }` (already at `:14`) with a **single concatenated
       string** (D-7): the run being started, and — because this is the case under
       investigation — whether `selectedFile` is empty as QML sees it, plus
@@ -844,12 +847,12 @@ though the *button* does not (D-2).
       recover. The raw URI comes from tasks 3.11-3.13, not from here.
       **Desktop only now** (D-3a) — on Android this dialog never opens, so these
       lines will not appear in an Android block and their absence is not a fault.
-- [ ] 7.2b Handle `onRejected` by logging a cancelled test, so a user who backs
+- [x] 7.2b Handle `onRejected` by logging a cancelled test, so a user who backs
       out of the picker does not leave a maintainer wondering whether the button
       worked. The Android equivalent is the `cancelled` branch of the native
       callback (6.3b), which must complete the run rather than leave the button
       disabled.
-- [ ] 7.3 Give `AboutDialog` its own `AssetManager { id: manager }` and bracket
+- [x] 7.3 Give `AboutDialog` its own `AssetManager { id: manager }` and bracket
       the run with `set_keep_screen_on(true)` before the invokable and `(false)`
       in the completion handler on **both** success and failure (D-5). Finding 5:
       the storage-diagnostics task list's instruction *not* to add an
@@ -857,22 +860,22 @@ though the *button* does not (D-2).
       not apply to this feature. **Extend the comment at `AboutDialog.qml:31-34`**
       to say so, or the new `AssetManager` reads as a contradiction of it
       (finding 8).
-- [ ] 7.4 Add a `Connections` on `SuttaBridge` handling
+- [x] 7.4 Add a `Connections` on `SuttaBridge` handling
       `onFileSelectionTestCompleted` — set the on-screen outcome text, re-enable
       the button, release the keep-screen-on lock. Guard with an "initiated here"
       boolean: the signal is process-global, and although `AboutDialog` is
       currently the only listener, the guard is what keeps that safe when
       Appendix B's step 4 has the user run it repeatedly.
-- [ ] 7.5 Show the outcome **on screen** (D-6): a single wrapping `Label` under
+- [x] 7.5 Show the outcome **on screen** (D-6): a single wrapping `Label` under
       the button, carrying the 5.9 one-liner plus a fixed reminder that the detail
       is in the log file listed above. Disable the button and show a busy state
       while the run is in flight (D-5).
-- [ ] 7.6 Ensure the empty-URL case reads in **plain words** — "The file picker
+- [x] 7.6 Ensure the empty-URL case reads in **plain words** — "The file picker
       did not return a file." — and never surfaces `Path not found:` (D-13).
-- [ ] 7.7 Confirm **no new QML file** was created, so `bridges/build.rs` needs no
+- [x] 7.7 Confirm **no new QML file** was created, so `bridges/build.rs` needs no
       change. If a component is factored out later, it must be added to
       `qml_files` (CLAUDE.md) — but D-6 does not want one.
-- [ ] 7.8 Run `make qml-test`; confirm `qmllint` is clean and no `console.*` call
+- [x] 7.8 Run `make qml-test`; confirm `qmllint` is clean and no `console.*` call
       was introduced (D-7).
 
 ---

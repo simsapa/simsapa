@@ -148,6 +148,9 @@ bool start_raw_document_pick() {
     QJniObject intent("android/content/Intent", "(Ljava/lang/String;)V", action.object<jstring>());
     if (!intent.isValid()) {
         log_error_c("start_raw_document_pick(): failed to create ACTION_OPEN_DOCUMENT intent");
+        // Deliver an outcome anyway: the caller has already armed the listener
+        // and disabled its button, and only a delivered result completes the run.
+        raw_document_pick_result_c("", "no-intent");
         return false;
     }
 
@@ -167,6 +170,7 @@ bool start_raw_document_pick() {
 
     if (env.checkAndClearExceptions()) {
         log_error_c("start_raw_document_pick(): JNI exception while building the intent");
+        raw_document_pick_result_c("", "no-intent");
         return false;
     }
 
