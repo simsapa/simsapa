@@ -6,6 +6,14 @@ on, or only sensible alongside, a Qt upgrade. This document records that
 deferred work, the reasons to upgrade, and the pitfalls to guard against — so
 the next person does not have to re-derive any of it.
 
+> ## ⚠ Qt 6.10.3 was attempted for Android in August 2026 and REVERTED
+>
+> Read [§0](#0-the-august-2026-610.3-attempt-and-why-it-was-reverted) before
+> planning another upgrade. In one sentence: **6.10.3 did not fix the bug it was
+> undertaken for, and it broke the Android UI.** Everything else in this
+> document still stands — including the build-version-correctness machinery,
+> which was built during that attempt and is kept.
+
 Companion documents:
 
 - [android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md) — the
@@ -17,6 +25,126 @@ Companion documents:
 - [pure-rust-audio-backend.md](./pure-rust-audio-backend.md) — the NDK constraint.
 
 Source PRD: `tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`.
+
+---
+
+## 0. The August 2026 6.10.3 attempt, and why it was reverted
+
+Source PRD: `tasks/2026-08-07-175059-prd---cxx-qt-and-qt-6-10-3-android-upgrade.md`
+and its task list, which carry the full measurement trail.
+
+The upgrade was **Android-only** (`QT_ANDROID` = 6.10.3, desktops left at
+6.9.3), and it got as far as a signed multi-ABI release bundle before device
+testing stopped it. `QT_ANDROID` is back at `6.9.3`.
+
+### 0.1 It did not fix the Thai bug — the sole functional reason for it
+
+The whole upgrade existed to fix the Gboard/Thai mid-word Shift bug
+([android-soft-keyboard.md §4](./android-soft-keyboard.md)). On device
+(Galaxy S23, Android 16), typing **รู้** on 6.10.3 behaves **exactly** as on
+6.9.3: the long vowel is reachable only with shift-lock.
+
+**The reasoning that led us here was wrong in an instructive way.** The PRD
+inferred the fix from a **call-site count in a single file** — `restartImmInput()`
+in `QtInputConnection.java`, 12 in 6.9.3 down to 2 in 6.10.x — plus the presence
+of `GET_EXTRACTED_TEXT_MONITOR`. Both facts are true. The conclusion was not:
+
+- The call on the keystroke path is in a **different file**,
+  `QtEditText.onKeyDown()`, and is **byte-identical in 6.9.3 and 6.10.3**.
+- Patching *that* out (verified live in the dex, not merely built) **still did
+  not fix it**.
+- A logcat capture across a Shift press shows **no `restartInput` at all**.
+  What it does show is Gboard resetting itself:
+  `LatinIme.resetInputContext(): reason=5, ExternalEditsInfo{… textLength=0,
+  hasEdits=false}` — twice per key press, with the editor appearing **empty** to
+  the IME even after text was typed.
+
+So the "Qt restarts the input connection on every keystroke" story is **not a
+sufficient explanation** of the bug. The live lead is that Qt's Android input
+connection presents a synthetic, empty editor, and Gboard drops its context —
+one-shot Shift included — because it cannot reconcile that. Firefox with the same
+Thai layout on the same device behaves correctly (one Shift tap holds for exactly
+one character), so the IME is fine; something in Qt's input handling cancels it.
+
+**Rule this earns:** *a Qt version must be judged on device, not by reading its
+sources.* Counting call sites in one file produced a confident, wrong prediction
+that drove a multi-day upgrade.
+
+### 0.2 It broke the Android UI — QtWebView was rearchitected in 6.10
+
+Measured in the sources both kits ship:
+
+| | 6.9.3 | 6.10.3 |
+|---|---|---|
+| `QQuickWebView` base class | `QQuickViewController` | **`QQuickWindowContainer`** |
+| `quick/qquickviewcontroller.{cpp,_p.h}` | present | **deleted** |
+| `webview/qnativeviewcontroller_p.h` | present | **deleted** |
+| geometry/clip code in `qquickwebview.cpp` | active | **`#if defined(Q_OS_WASM)` only** |
+
+On Android the native view is handed to the container wholesale
+(`onNativeWindowChanged` → `nativeWindow->setParent(window())` +
+`setContainedWindow(...)`), making it a native child window composited **above**
+the Qt surface. Observed consequences, all from the one cause:
+
+- A blank surface covers dialogs and dropdowns (the tab-list dialog's title was
+  clipped mid-glyph at the surface's top edge) and ignores QML stacking.
+- The search-info dialog appeared not to open — it was opening *behind* it.
+- Drawer items and the mode/language selectors did not respond to taps.
+- **Text entry broke app-wide**: the native WebView takes the
+  `InputConnection`, so the IME serves it instead of Qt's `QtEditText`. The
+  keyboard appears (Qt asked for it) but no character reaches the QML field —
+  injected `adb shell input text` is swallowed identically.
+
+**Proof it is the webview and nothing else:** a diagnostic build that swapped the
+mobile webviews for stubs — same Qt 6.10.3 binary, no `WebView` instantiated —
+restored text input, the Search Help dialog and the dropdowns simultaneously.
+
+The app has long documented that Android's native view "renders in a separate
+layer above Qt Quick content" (`SuttaHtmlView_Mobile.qml`); 6.10 made a
+known-fragile area much worse.
+
+### 0.3 What was kept
+
+- **`QT_ANDROID` is back at 6.9.3**, and the diagnostic scaffolding (webview
+  stubs, the patched `QtEditText`, the Gradle class-strip task) was removed.
+- **The Qt-version-correctness machinery is kept in full** — see §0.4. It was
+  built as Part C of that PRD and is independent of which version is targeted.
+- **`list(APPEND app_components CorePrivate)`** in the Android branch of
+  `CMakeLists.txt`. Redundant on 6.9.3, but it removes a hidden dependency: 6.9.3
+  defines `Qt6::CorePrivate` as a *side effect* of `find_package(Qt6 COMPONENTS
+  Core)` (`__qt_Core_always_load_private_module ON`), 6.10.3 does not, and the
+  6.10.3 configure failed outright on it. Asking explicitly costs nothing and
+  removes one failure from the next attempt.
+- The corrected `armeabi-v7a` → `armv7-linux-androideabi` rationale in
+  [android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md).
+
+### 0.4 The build-version-correctness system (built during the attempt, kept)
+
+The attempt began by discovering that **the Linux build was not using the Qt it
+claimed** — `find_package` resolved Arch's system Qt 6.11.1 while cxx-qt was
+separately handed 6.9.3's qmake, so the binary mixed two Qt versions and the
+AppImage bundled a third combination. That is fixed, and the machinery that
+prevents its return is **the most durable result of this work**:
+
+| Piece | What it guarantees |
+|---|---|
+| `CMakeLists.txt` `QT_*` variables | One declaration per platform; **everything else reads from here** |
+| Linux `CMAKE_PREFIX_PATH` branch (`elseif (UNIX AND NOT APPLE AND NOT ANDROID)`) | `find_package` uses the declared kit, not ambient `PATH` |
+| Post-`find_package` version assertion | A wrong Qt fails the **configure**, naming expected/found/`Qt6_DIR` |
+| `qmake_path` derived from `Qt6_DIR` | The cxx-qt half cannot diverge from the CMake half |
+| `scripts/qt-env.sh` | The single shell-side reader (`qt_version_for`), used by every build script |
+| `scripts/qt-env-verify.sh` + `Invoke-EnvVerify` | Pre-flight gate on **every** build: reports the real toolchain and **stops** on a critical mismatch — including the kit's actual `qmake -query QT_VERSION` vs. the declared one |
+| `build-android.sh` desktop-Qt scrub | Stops a `LD_LIBRARY_PATH`/`PATH` desktop kit being loaded by the Android host tools |
+
+Full account: [qt-kit-selection.md](./qt-kit-selection.md).
+
+**Why this matters more than the upgrade did.** With Android at 6.10.3 the
+desktop and Android kits genuinely diverged for the first time, and the gate
+caught real problems that were previously invisible — a stale `QT_ANDROID_VERSION`
+export that would have silently built Android against the *desktop* kit, and a
+foreign Qt on `LD_LIBRARY_PATH`. Those failure modes return the moment any future
+divergence happens, so **keep the gate green even while all five platforms agree**;
+it is dormant, not useless.
 
 ---
 
@@ -221,9 +349,22 @@ ways — AAB/APK size, on-device install footprint, `zipalign -c -P 16`, and
 
 ## 3. Reasons to upgrade
 
-- **Fixes the Gboard/Thai mid-word Shift bug** — the strongest *functional*
-  reason on this list, because it makes non-Latin text entry work in every text
-  field in the app. qtbase
+- ~~**Fixes the Gboard/Thai mid-word Shift bug**~~ — **DISPROVEN ON DEVICE
+  2026-08-08. This was the strongest functional reason on the list; it is now
+  gone.** The app was built against the 6.10.3 Android kit and tested with
+  Gboard Thai on a Galaxy S23: typing **รู้**, the mid-word Shift still reverts
+  immediately and shift-lock is still required — indistinguishable from 6.9.3.
+  The reasoning below counted `restartImmInput()` in `QtInputConnection.java`
+  only, and **missed `QtEditText.onKeyDown()`**, which calls it on every key
+  down and is **byte-identical in 6.9.3 and 6.10.3**. `f5c0296fdaad` is
+  necessary but not sufficient. A patched-`QtEditText` route that would work on
+  **6.9.3, with no Qt upgrade at all**, is sketched in
+  [android-soft-keyboard.md §4](./android-soft-keyboard.md).
+
+  Superseded reasoning, kept because the sources it cites are accurate and only
+  the conclusion was wrong:
+
+  qtbase
   [`f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
   ("Android: Add support for GET_EXTRACTED_TEXT_MONITOR", 2025-10-08, `Fixes:`
   [QTBUG-140694](https://bugreports.qt.io/browse/QTBUG-140694),
@@ -298,6 +439,25 @@ readelf -lW <lib>.so | awk '/LOAD/{print $NF}' | sort -u
 zipalign -c -P 16 4 <apk>
 ```
 
+**Do the on-device pass FIRST, on a debug APK, before spending a day on AGP,
+Gradle, minSdk and packaging.** The 6.10.3 attempt did those in the documented
+order — packaging work, then device — and every hour of it was wasted, because
+the device pass would have killed the upgrade on the first screen. The cheapest
+build that can be typed into is worth more than a signed bundle.
+
+**Two new must-check items, both learned the hard way (§0):**
+
+0a. **Does the version actually fix the bug you are upgrading for?** Verify the
+    *symptom* on device, never the source. Reading Qt's sources produced a
+    confident, wrong prediction about the Thai fix.
+
+0b. **Do the webview panels still compose with the QML scene?** Open a sutta,
+    then a dialog and a dropdown over it, and toggle the sidebar. If a blank
+    surface covers them — or text entry stops working anywhere in the app — the
+    QtWebView native-window integration has regressed (§0.2). A fast way to
+    confirm attribution: build with the mobile webviews stubbed out; if every
+    unrelated symptom disappears at once, it is the webview.
+
 On device, the cases that actually broke before:
 
 1. Back from the sutta reader, the tab list dialog, the search help dialog and
@@ -321,3 +481,22 @@ block the Android benefits.
 Change **one variable at a time**. The AGP/Gradle/JDK cluster (§2.4) and the Qt
 bump each fail late and unhelpfully; doing both at once makes the failure
 unattributable.
+
+**Revised after the 6.10.3 attempt — put the two cheap kill-switches first:**
+
+1. **Bump `QT_ANDROID`, build a debug APK, install it, and use the app.** Nothing
+   else. Text entry, a dialog, a dropdown, a sutta tab. This is ~1 hour and it is
+   what would have ended the 6.10.3 attempt on day one.
+2. **Verify the motivating symptom is actually fixed**, on device.
+3. Only then the packaging work: AGP/Gradle/JDK, minSdk, 16 KB, multi-ABI AAB.
+
+Steps 1 and 2 are the *reason* for the upgrade; steps in §2 are the *cost*. The
+2026-08 attempt paid the cost before checking the reason.
+
+**On choosing a target version:** 6.10.3 was picked as the conservative step
+(2-line Gradle template delta, no Kotlin plugin, stays inside AGP 8.x) and that
+reasoning was sound — the template really is nearly identical. It says nothing
+about runtime behaviour, which is where it failed. Check the QtWebView Android
+integration (§0.2) in any candidate version *before* adopting it: whether
+`QQuickWebView` still derives from `QQuickWindowContainer`, and whether that path
+has since learned to respect QML stacking, visibility and input.

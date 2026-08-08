@@ -114,6 +114,61 @@ comes back. `CMakeLists.txt` links `Qt6::CorePrivate` on Android only, and
 deliberately not via `${qt_modules}` — that list is also handed to
 `cxx_qt_import_crate(QT_MODULES)`, which resolves names through qmake.
 
+#### Re-checked against Qt 6.10.3 (2026-08-08, the Android upgrade)
+
+The header is a genuine non-event, as predicted: `qandroidextras_p.h` is
+**byte-identical** between the 6.9.3 and 6.10.3 Android kits (`diff` clean, whole
+file), and the three `startActivity` declarations sit on the same lines.
+
+**But the private surface still broke the build — in the CMake plumbing, not the
+API.** This is the part worth carrying forward, because it is the failure mode
+the "is the header stable?" check does not cover:
+
+| | `__qt_Core_always_load_private_module` in `Qt6CoreConfig.cmake` |
+|---|---|
+| Qt 6.9.3 | `ON` — `find_package(Qt6 COMPONENTS Core)` *also* loaded `Qt6CorePrivate` and defined the target as a side effect |
+| Qt 6.10.3 | `OFF` — the private package loads only when explicitly requested |
+
+So the 6.10.3 configure failed with:
+
+```
+CMake Error at CMakeLists.txt (target_link_libraries):
+  Target "simsapadhammareader" links to: Qt6::CorePrivate
+  but the target was not found.
+```
+
+The fix is one line — `list(APPEND app_components CorePrivate)` in the `ANDROID`
+branch — chosen over `QT_FIND_PRIVATE_MODULES`, which is far too broad (it pulls
+*every* private module). Note it goes into `app_components` (consumed only by
+`find_package`) and **not** `qt_modules`, preserving the rule above.
+
+**Generalise this at the next upgrade:** a private-API dependency has *two*
+exposure surfaces — the header's API/ABI, and the CMake target that provides it.
+Qt can keep the first perfectly stable while changing the second, and only the
+second is a loud, immediate configure failure. Check both.
+
+##### The new "using Qt internals" warning is expected — do not suppress it
+
+Every 6.10.3 Android configure now prints, **once per ABI**:
+
+> This project is using headers of the CorePrivate module and will therefore be
+> tied to this specific Qt module build version. Running this project against
+> other versions of the Qt modules may crash at any arbitrary point. […] You can
+> disable this warning by setting `QT_NO_PRIVATE_MODULE_WARNING` to ON.
+
+**It is newly visible, not newly true.** 6.9.3's `Qt6CoreConfig.cmake` set
+`QT_NO_PRIVATE_MODULE_WARNING` itself as part of the always-load path; 6.10.3
+does not. The dependency, and the risk it describes, were exactly the same
+before — merely silenced.
+
+Left **unsuppressed on purpose**. The warning is accurate, it costs three lines
+per configure (not per compile), the coupling it names is real, and this file is
+meant to be **deleted** once the report comes back — so a standing reminder is
+worth more than a clean log. Its practical impact on Android is nil, because the
+APK ships the very Qt libraries it was built against. Do not add
+`QT_NO_PRIVATE_MODULE_WARNING`; if this warning is ever gone, that should mean
+the private include went with it.
+
 ## 4. Reading a `FILE-SELECTION-TEST:` block
 
 Every line carries the `FILE-SELECTION-TEST:` prefix so the block survives a

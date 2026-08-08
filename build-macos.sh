@@ -93,21 +93,41 @@ check_dependencies() {
 }
 
 # Find macdeployqt tool
+#
+# The Qt version comes from CMakeLists.txt's QT_MACOS -- declared in one place,
+# never hardcoded here. No behaviour change: macOS is out of scope for this
+# work and QT_MACOS is 6.9.3, the value that used to be written out four times
+# below.
 find_macdeployqt() {
     local macdeployqt_path=""
 
+    # Sourced by the script's own location; this script does not cd to it.
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    QT_ENV_NO_ACTIVATE=1 . "$script_dir/scripts/qt-env.sh"
+    local qt_version
+    qt_version="$(qt_version_for MACOS)" || exit 1
+
     # Check if already in PATH
+    #
+    # NOTE: this first branch takes whatever macdeployqt is on PATH, which may
+    # belong to a different Qt than the one the app was compiled against -- the
+    # same defect class that was removed from build-appimage.sh (see its
+    # resolve_qt) and from CMakeLists.txt's Linux branch. It is left in place
+    # deliberately: macOS is out of scope for behaviour changes here, and this
+    # script has a separate unfinished PRD. Revisit it there, together with the
+    # `local x=$(...)` exit-status masking at the call site.
     if command -v macdeployqt &> /dev/null; then
         macdeployqt_path="$(which macdeployqt)"
     # Try to find in standard Qt installation locations
-    elif [ -f "$HOME/Qt/6.9.3/macos/bin/macdeployqt" ]; then
-        macdeployqt_path="$HOME/Qt/6.9.3/macos/bin/macdeployqt"
-    elif [ -f "/opt/Qt/6.9.3/macos/bin/macdeployqt" ]; then
-        macdeployqt_path="/opt/Qt/6.9.3/macos/bin/macdeployqt"
-    elif [ -f "/usr/local/Qt/6.9.3/macos/bin/macdeployqt" ]; then
-        macdeployqt_path="/usr/local/Qt/6.9.3/macos/bin/macdeployqt"
+    elif [ -f "$HOME/Qt/$qt_version/macos/bin/macdeployqt" ]; then
+        macdeployqt_path="$HOME/Qt/$qt_version/macos/bin/macdeployqt"
+    elif [ -f "/opt/Qt/$qt_version/macos/bin/macdeployqt" ]; then
+        macdeployqt_path="/opt/Qt/$qt_version/macos/bin/macdeployqt"
+    elif [ -f "/usr/local/Qt/$qt_version/macos/bin/macdeployqt" ]; then
+        macdeployqt_path="/usr/local/Qt/$qt_version/macos/bin/macdeployqt"
     else
-        print_error "macdeployqt not found. Please ensure Qt 6.9.3 is installed."
+        print_error "macdeployqt not found. Please ensure Qt $qt_version is installed."
         exit 1
     fi
 
@@ -483,6 +503,10 @@ main() {
 
     check_platform
     check_dependencies
+    # Environment gate: aborts on a critical failure before anything is built.
+    # This is also where the QT_MACOS derivation and the Qt kit are first
+    # exercised for real -- neither can be tested on Linux.
+    "$(dirname "${BASH_SOURCE[0]}")/scripts/qt-env-verify.sh" --platform macos || exit 1
     build_app
     create_app_bundle
 

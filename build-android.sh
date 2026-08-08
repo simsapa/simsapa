@@ -22,7 +22,80 @@ cd "$(dirname "$0")"
 # Configuration (override via environment or `make android-aab VAR=value`)
 # ---------------------------------------------------------------------------
 
-QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-6.9.3}"
+# The Qt version comes from CMakeLists.txt's QT_ANDROID -- it is declared in
+# exactly one place and read here, never hardcoded a second time. Android
+# deliberately targets a DIFFERENT Qt version than the desktop platforms, so a
+# stale copy of the version here would silently build against the wrong kit.
+#
+# QT_ENV_NO_ACTIVATE=1 is required: sourcing qt-env.sh bare would also put the
+# DESKTOP kit on PATH, which is wrong in an Android build. We want the lookup
+# helpers and nothing else. See the header of scripts/qt-env.sh.
+QT_ENV_NO_ACTIVATE=1 . ./scripts/qt-env.sh
+
+# QT_ENV_NO_ACTIVATE stops THIS script from adding the desktop kit, but it does
+# nothing about a desktop kit an OUTER shell already exported -- direnv (.envrc),
+# .claude/settings.json, or a hand-run `source scripts/qt-env.sh` all leave
+# QT_PREFIX set with $QT_PREFIX/bin on PATH and $QT_PREFIX/lib on
+# LD_LIBRARY_PATH. Those must be removed here, and LD_LIBRARY_PATH is the
+# dangerous half:
+#
+# The Android cross-build runs the ANDROID Qt's HOST TOOLS -- moc, rcc,
+# androiddeployqt from $QT_ANDROID_ROOT/gcc_64, resolved automatically via
+# __qt_platform_initial_qt_host_path. Those are dynamically linked against
+# libQt6Core.so.6. With the desktop kit's lib/ first in the loader's search
+# path, a 6.10.3 moc/rcc loads 6.9.3's libQt6Core -- a version mismatch that
+# either aborts mid-build or, worse, appears to work.
+#
+# This is invisible while QT_ANDROID == QT_LINUX, and becomes live the moment
+# they diverge, which is the whole point of the Android-only Qt bump. Same
+# failure class as the QT_ANDROID_VERSION export removed from scripts/qt-env.sh:
+# a convenience layer silently changing build output.
+#
+# The rule, the per-platform analysis (build-appimage.sh is safe by a DIFFERENT
+# mechanism, and PATH is NOT merely advisory on Windows), and the two ways this
+# scrub has already gone wrong: docs/qt-kit-selection.md section 8.1.
+# LD_LIBRARY_PATH is cleared UNCONDITIONALLY -- deliberately NOT inside the
+# QT_PREFIX guard below. QT_PREFIX and LD_LIBRARY_PATH are set together by
+# qt_env_activate(), but nothing guarantees they arrive together: a shell that
+# exports LD_LIBRARY_PATH by any other route (a hand-written export, a wrapper
+# script, an inherited CI environment) would carry a foreign Qt straight into
+# the cross-build's host tools while QT_PREFIX is unset and this whole block is
+# skipped. Gating the dangerous half on the presence of the harmless half is
+# what made that possible.
+#
+# Cleared outright rather than filtered. The Android build needs no
+# LD_LIBRARY_PATH at all (Qt's own scripts set what they need), so an empty
+# value cannot be wrong here, whereas a filtered one can still carry another Qt
+# from somewhere else on the path.
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    echo "==> Clearing LD_LIBRARY_PATH (was: $LD_LIBRARY_PATH)"
+    unset LD_LIBRARY_PATH
+fi
+
+# PATH stays gated on QT_PREFIX: it names which entry to remove, and without it
+# there is nothing to match on. This is the advisory half anyway -- the build
+# addresses its host tools by absolute path, so a stray kit bin/ on PATH is far
+# less likely to be consulted than a stray lib/ on the loader's search path.
+# scripts/qt-env-verify.sh's "Android host tools" section is the backstop for
+# both, and does not depend on this scrub having run.
+if [ -n "${QT_PREFIX:-}" ]; then
+    echo "==> Scrubbing desktop Qt kit from this build's environment: $QT_PREFIX"
+    PATH="$(printf '%s' "$PATH" | sed -e "s#${QT_PREFIX}/bin:##g" -e "s#:${QT_PREFIX}/bin##g")"
+    export PATH
+    # Belongs to the desktop kit; the gate reports it, so leaving it set would
+    # make the report describe an environment this build no longer has.
+    unset QT_PREFIX
+    unset QMAKE
+fi
+
+# Reported in the run header, so "which Qt is this build using, and who decided
+# that" is answerable from the log rather than by re-deriving it afterwards.
+if [ -n "${QT_ANDROID_VERSION:-}" ]; then
+    qt_android_version_source="from environment"
+else
+    qt_android_version_source="from CMakeLists.txt QT_ANDROID"
+fi
+QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-$(qt_version_for ANDROID)}"
 QT_ANDROID_ROOT="${QT_ANDROID_ROOT:-$HOME/Qt/$QT_ANDROID_VERSION}"
 
 # The primary ABI supplies qt-cmake and the toolchain the top-level build uses.
@@ -39,10 +112,51 @@ ANDROID_PRIMARY_ABI="${ANDROID_PRIMARY_ABI:-arm64-v8a}"
 ANDROID_ABIS="${ANDROID_ABIS:-arm64-v8a;x86_64;armeabi-v7a}"
 
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
-# Stay on the Qt 6.9.3-supported NDK (r26b/r27). Do NOT use r28 — at minSdk 27
-# its libc++ references pthread_cond_clockwait (bionic API 30+), which breaks
-# the cxx C++ build. See docs/pure-rust-audio-backend.md.
-ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$(ls -d "$ANDROID_SDK_ROOT"/ndk/* 2>/dev/null | sort -V | tail -1)}"
+
+# THE NDK IS PINNED EXPLICITLY, NOT AUTO-SELECTED.
+#
+# This used to be `ls -d "$ANDROID_SDK_ROOT"/ndk/* | sort -V | tail -1` -- the
+# HIGHEST installed NDK. That makes `sdkmanager` installing a newer NDK, for any
+# unrelated reason, silently swap this project's compiler. Qt's own auto-detect
+# has the same behaviour (QtAutoDetectHelpers.cmake sorts DESCENDING and takes
+# [0]), so nothing downstream would have corrected it either.
+#
+# The pin also makes the NDK a non-variable across the Qt upgrade, which is the
+# point: Qt 6.9.3 and 6.10.3 were BOTH built against NDK 27.2.12479018, so the
+# Qt bump does not ask for an NDK change. We stay on 27.3.13750724 (r27d, clang
+# 18.0.4) because that is the version that shipped 1.0.0 to Play -- the only
+# known-good data point. Do not "align" it down to 27.2 to match Qt exactly: a
+# clean build would not prove the downgrade safe (most NDK problems are loud,
+# but codegen differences and runtime-resolved paths -- cpal/AAudio, JNI,
+# unwinding -- are not), and 27.2 is more useful held in reserve as a
+# single-variable diagnostic lever.
+#
+# Do NOT install r28. Qt does not ask for it; at this project's minSdk its
+# libc++ references pthread_cond_clockwait (declared by bionic only at API 30+),
+# which breaks the cxx C++ build; and its one draw -- default 16 KB alignment --
+# is already covered by the explicit link flag in CMakeLists.txt. The exclusion
+# holds at minSdk 28 as well as 27. The r28 guard further down stays as a
+# backstop for an explicit ANDROID_NDK_ROOT override.
+# See docs/pure-rust-audio-backend.md.
+# Determined BEFORE the defaults are applied -- afterwards both variables are
+# set either way and the origin is unrecoverable. Reported in the run header so
+# an overridden NDK is visible in the build log rather than having to be
+# inferred from the path, the same reason the Qt version reports its source.
+if [ -n "${ANDROID_NDK_ROOT:-}" ]; then
+    ndk_source="ANDROID_NDK_ROOT override"
+elif [ -n "${ANDROID_NDK_VERSION:-}" ]; then
+    ndk_source="ANDROID_NDK_VERSION override"
+else
+    ndk_source="pinned in build-android.sh"
+fi
+ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-27.3.13750724}"
+ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION}"
+
+# Export both, so scripts/qt-env-verify.sh (a subprocess) inspects the values
+# this build will actually use rather than re-deriving its own. Without the
+# export the gate saw ANDROID_NDK_ROOT as unset and stopped every Android build
+# with a CRITICAL failure.
+export ANDROID_SDK_ROOT ANDROID_NDK_ROOT
 
 ANDROID_BUILD_DIR="${ANDROID_BUILD_DIR:-build/android-multiabi}"
 ANDROID_BUILD_TYPE="${ANDROID_BUILD_TYPE:-Release}"
@@ -188,11 +302,15 @@ Install them with the Qt Maintenance Tool under Qt $QT_ANDROID_VERSION."
 
 # Corrosion (FindRust.cmake) maps CMAKE_ANDROID_ARCH_ABI to a Rust target
 # triple. Note armeabi-v7a resolves to armv7-linux-androideabi, NOT
-# thumbv7neon-linux-androideabi: corrosion only picks the thumb/NEON triple
-# when CMAKE_ANDROID_ARM_MODE is false, and Qt's android_armv7 toolchain sets
-# it true. Getting this wrong surfaces late, as a corrosion configure error in
+# thumbv7neon-linux-androideabi: corrosion picks the thumb/NEON triple only
+# when CMAKE_ANDROID_ARM_MODE is false, and it never is. NDK 27 defaults to its
+# legacy toolchain file, which assigns CMAKE_ANDROID_ARM_MODE the literal
+# string "thumb" -- which CMake's if() evaluates as TRUE. (Qt does not set the
+# variable at all; measured on both the 6.9.3 and 6.10.3 android_armv7 kits.)
+# Getting this wrong surfaces late, as a corrosion configure error in
 # the ExternalProject sub-build ("Target ... is not installed for toolchain"),
 # so check it here where the message is actionable.
+# See docs/android-multi-abi-and-chromeos.md.
 missing_targets=""
 installed_targets="$(rustup target list --installed 2>/dev/null || true)"
 for abi in "${_abi_list[@]}"; do
@@ -210,17 +328,27 @@ Install with: rustup target add$missing_targets"
 fi
 
 [ -d "$ANDROID_SDK_ROOT" ] || die "ANDROID_SDK_ROOT not found: $ANDROID_SDK_ROOT"
-[ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ] \
-    || die "ANDROID_NDK_ROOT not found: ${ANDROID_NDK_ROOT:-<unset>}"
+# The pinned NDK is a hard requirement, so say plainly which one is missing and
+# what IS installed -- otherwise the reader has to go and look, and the obvious
+# "fix" (point at whatever is there) is the auto-selection this pin removed.
+if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
+    installed_ndks="$(ls -1 "$ANDROID_SDK_ROOT"/ndk 2>/dev/null | tr '\n' ' ')"
+    die "NDK not found: ${ANDROID_NDK_ROOT:-<unset>}
+This project pins NDK $ANDROID_NDK_VERSION (see the comment at ANDROID_NDK_VERSION).
+Installed under $ANDROID_SDK_ROOT/ndk: ${installed_ndks:-<none>}
+Install it with:  sdkmanager --install \"ndk;$ANDROID_NDK_VERSION\"
+Or override deliberately with ANDROID_NDK_ROOT=/path/to/ndk (r26b/r27 only; NOT r28)."
+fi
 
-# The default above picks the highest installed NDK, which would silently
-# select r28 if it were ever installed. r28 is incompatible with Qt 6.9.3 at
-# minSdk 27: its libc++ references pthread_cond_clockwait, declared by bionic
-# only at API 30+, which breaks the cxx C++ build. Stay on r26b/r27.
+# Backstop for an explicit ANDROID_NDK_ROOT / ANDROID_NDK_VERSION override --
+# the pin above cannot select r28 on its own any more. r28 is incompatible with
+# Qt at this project's minSdk: its libc++ references pthread_cond_clockwait,
+# declared by bionic only at API 30+, which breaks the cxx C++ build. The
+# exclusion holds at minSdk 28 as well as 27. Stay on r26b/r27.
 # See docs/pure-rust-audio-backend.md.
 ndk_major="$(basename "$ANDROID_NDK_ROOT" | cut -d. -f1)"
 if [ "${ndk_major:-0}" -ge 28 ] 2>/dev/null; then
-    die "NDK $(basename "$ANDROID_NDK_ROOT") is not supported with Qt $QT_ANDROID_VERSION at minSdk 27.
+    die "NDK $(basename "$ANDROID_NDK_ROOT") is not supported with Qt $QT_ANDROID_VERSION at this project's minSdk.
 NDK r28+ breaks the cxx C++ build (libc++ pthread_cond_clockwait needs API 30+).
 Install r26b or r27 and point ANDROID_NDK_ROOT at it."
 fi
@@ -411,10 +539,10 @@ if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 0 ]; then
     sign_flag_aab="ON"
 fi
 
-echo "==> Qt          : $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
+echo "==> Qt          : $QT_ANDROID_VERSION ($qt_android_version_source), $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
 echo "==> JDK         : $JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -1))"
 echo "==> ABIs        : $ANDROID_ABIS"
-echo "==> NDK         : $ANDROID_NDK_ROOT"
+echo "==> NDK         : $ANDROID_NDK_ROOT ($ndk_source)"
 echo "==> Build type  : $ANDROID_BUILD_TYPE"
 echo "==> Package     : $PACKAGE_TARGET"
 if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then
@@ -425,6 +553,12 @@ fi
 echo "==> versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
 echo "==> versionName : $ANDROID_VERSION_NAME (from $version_name_source)"
 echo
+
+# Environment gate. Runs HERE, after JAVA_HOME / ANDROID_NDK_ROOT / ANDROID_ABIS
+# are resolved, so it verifies the values this build will actually use rather
+# than re-deriving its own. Aborts on a critical failure -- a wrong toolchain
+# should stop the build now, not after three ABIs have compiled.
+./scripts/qt-env-verify.sh --platform android || exit 1
 
 # Tell android/build.gradle to disable the debug variant. androiddeployqt
 # appends the bare `bundle` task, which otherwise builds, packages and signs the

@@ -21,6 +21,19 @@ When working on features, the PRD (Product Requirements Document) files are in
 the `tasks/` folder. They often contain the reasoning and logic for existing
 features.
 
+**Completed PRDs are moved to `tasks/archive/`** (122 files and growing), so
+`tasks/` shows only current work. **Always search `tasks/archive/` too** before
+concluding a PRD does not exist — a doc that cites a PRD by filename is almost
+always citing an archived one, not a missing one. For example
+`docs/android-qt-upgrade-considerations.md` names
+`tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`
+as its source PRD; that file is in `tasks/archive/`, not `tasks/`. Search both:
+
+``` sh
+ls tasks/ tasks/archive/ | grep -i <feature>
+grep -rl "<term>" tasks/ tasks/archive/
+```
+
 Documentation is in the `docs/` folder. Keep it updated for relevant features.
 
 Notable feature docs:
@@ -571,6 +584,60 @@ Notable feature docs:
   Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
   dialog.
 
+## Qt version per platform — never invoke a bare `qmake6`
+
+**`CMakeLists.txt` is the single source of the Qt version**, declared per
+platform in the `QT_*` variables at the top: `QT_LINUX` / `QT_MACOS` /
+`QT_WINDOWS` / `QT_ANDROID` / `QT_IOS`.
+
+**All five are `6.9.3` today, but never assume that.** The variables are
+per-platform precisely so one platform can move alone, and that has been done for
+real: Android was moved to 6.10.3 in August 2026 and reverted after device
+testing (see
+[docs/android-qt-upgrade-considerations.md §0](./docs/android-qt-upgrade-considerations.md)).
+So **read the version you need from `CMakeLists.txt`** — via
+`qt_version_for <PLATFORM>` from `scripts/qt-env.sh`, the `Makefile`'s
+`$(call qt_version_for,…)`, or `Get-QtVersion` in `build-windows.ps1` — and never
+hardcode it a second time. A repo-wide check (`scripts/qt-env-verify.sh --all`)
+fails the build on a re-acquired hardcode.
+
+**A bare `qmake6`, `rcc`, `moc` or `qmllint` resolves to the *system* Qt**
+(`/usr/bin/qmake6` — Arch's `qt6-base`, currently **6.11.1**), which the project
+does not target on any platform. Do not invoke them unqualified. Instead:
+
+``` sh
+source scripts/qt-env.sh   # puts the desktop kit's bin/ first on PATH
+qmake6 -query QT_VERSION   # now the project's Qt
+
+# or address it directly, without changing PATH:
+"$QMAKE" -query QT_VERSION
+```
+
+For Android tooling use `build-android.sh`, which derives its own Qt version
+from `QT_ANDROID` — do **not** reuse the desktop kit for Android work.
+
+**A binary from a *different* Qt kit run by hand in a direnv/agent shell dies
+with `libQt6Core.so.6: version 'Qt_6.x' not found`** — that is the *desktop* kit
+being loaded via `LD_LIBRARY_PATH`, not a broken install. (Seen constantly while
+6.10.3 kits were installed alongside 6.9.3: every 6.10.3 tool failed with
+`undefined symbol: _ZN9QtPrivate9sizedFreeEPvm`, which reads as "kit not
+installed".) Prefix such commands with `env -u LD_LIBRARY_PATH`. `build-android.sh` scrubs this itself; the rule
+behind it, and why `build-appimage.sh` is safe by a different mechanism while
+`PATH` is **not** merely advisory on Windows, is
+[docs/qt-kit-selection.md §8.1](./docs/qt-kit-selection.md).
+
+Three conveniences exist so this is mostly automatic, and **none of them is
+load-bearing**: `.envrc` (direnv, interactive shells — needs a one-time
+`direnv allow`), `.claude/settings.json`'s `env` block (agent shells; it carries
+literal paths, so `make qt-env-check` fails if they drift from `QT_LINUX`), and
+`scripts/qt-env.sh` itself. **The build must be correct with an empty
+Qt-related environment** — CMake resolves its own `CMAKE_PREFIX_PATH` and
+asserts the found Qt matches the declared version, failing the configure on a
+mismatch. If deleting all three ever breaks `make build`, that is a CMake bug,
+not a reason to make them required.
+
+See [docs/qt-kit-selection.md](./docs/qt-kit-selection.md).
+
 ## Specific coding procedures
 
 ### Android compatibility: File existence checks
@@ -734,6 +801,11 @@ When you create a new QML component such as `SearchBarInput.qml`, the file has t
 qml_files.push("../assets/qml/SearchBarInput.qml");
 ```
 
+Keep the `"../assets/qml/<Name>.qml"` form exactly — paths are relative to
+`bridges/`, and `build.rs` strips the leading `../` to derive each file's
+resource alias. A path in any other shape `panic!`s the build with a message
+naming the expected form, rather than failing when that screen is first shown.
+
 ### Long operations in QML must keep the screen awake
 
 **Any UI that starts a long-running operation — download, search-index rebuild,
@@ -882,22 +954,43 @@ function get_api_key(key_name: string): string {
 
 ### New Rust bridges
 
-When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, it has to be registered as a QmlModule and the Rust file name has to be added to the `rust_files` list in `bridges/build.rs`:
+When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, the
+Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
+`bridges/build.rs`:
 
 ``` rust
-.qml_module(QmlModule {
-        uri: "com.profoundlabs.simsapa",
-        rust_files: &[
-                "src/sutta_bridge.rs",
-                "src/asset_manager.rs",
-                "src/storage_manager.rs",
-                "src/prompt_manager.rs",
-                "src/api.rs",
-        ],
-        qml_files: &qml_files,
-        ..Default::default()
-})
+CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
+    .qrc_resources(qml_resources)
+    .files([
+        "src/sutta_bridge.rs",
+        "src/asset_manager.rs",
+        "src/storage_manager.rs",
+        "src/prompt_manager.rs",
+        "src/api.rs",
+    ])
 ```
+
+**Note what this does NOT do: the QML files are not passed to the module as
+`.qml_files(…)`.** They are registered as plain Qt resources with an alias
+derived in `build.rs`, because a `qml_files` path containing `../` — which every
+entry in our list has, the list being relative to `bridges/` — is folded away by
+`rcc` but *not* by the qmldir writer or by qmlcachegen, so the three disagree and
+QML type resolution fails **at runtime** (`Type Logger unavailable`). A
+`.qml_files(qml_files)` snippet compiles cleanly and re-introduces that bug; the
+long comment at the `qml_resources` block in `bridges/build.rs` is the
+authoritative explanation. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md).
+
+All the bridge sources must live in **one directory** (`bridges/src/`).
+`CxxQtBuilder::files()` panics if they span more than one — a Qt limitation
+(QTBUG-93443), not a cxx-qt choice.
+
+> **This changed with cxx-qt 0.9.** Until then the bridge sources were a
+> `rust_files:` field *inside* the `QmlModule` struct literal, passed to
+> `.qml_module(QmlModule { … ..Default::default() })`. cxx-qt 0.8 removed that
+> field, made `QmlModule`'s fields private, and allowed only one QML module per
+> builder — so a QML module now carries only its QML files, and the Rust
+> sources are declared on the builder. Any older snippet using `rust_files:` or
+> `.qml_module(` is for the pre-0.9 API and will not compile.
 
 `qmllint` requires that the corresponding QML type definition for the Rust bridge has to be created and it should be declared in the `qmldir` file.
 

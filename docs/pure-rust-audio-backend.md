@@ -27,7 +27,7 @@ Android backend is now **AAudio via the `ndk` crate** (deps `ndk` /
 
 16 KB page alignment (required for Play Store submissions targeting API 35+)
 would be the *default* under NDK r28, but **NDK r28 is incompatible with this
-project's Qt 6.9.3 build at `minSdkVersion 27`**:
+project's Qt Android build at its `minSdkVersion`**:
 
 - r28's libc++ `condition_variable.h` references `pthread_cond_clockwait`, which
   bionic declares only at **API 30+**. The `cxx` crate's C++ (`cxx.cc`) in the
@@ -38,13 +38,38 @@ project's Qt 6.9.3 build at `minSdkVersion 27`**:
   this — the backend has no C++. Only the `bridges` (cxx) C++ trips it, i.e. a
   full Qt/Corrosion Android build.
 
-Raising `minSdkVersion` to 30 to satisfy r28 would drop Android 8–10 devices, so
-that is not the fix.
+**The exclusion is not tied to minSdk 27, and does not lapse at 28.** Bionic
+gained `pthread_cond_clockwait` only at API 30, so raising `minSdkVersion` to 28
+(done as part of the Qt 6.10.3 upgrade) changes nothing here. Raising it to 30 to
+satisfy r28 would drop Android 8–10 devices, so that is not the fix either.
+
+### The NDK is pinned explicitly
+
+`build-android.sh` pins **`ANDROID_NDK_VERSION=27.3.13750724`** (r27d, clang
+18.0.4) rather than selecting one. It previously took the **highest installed**
+NDK (`ls … | sort -V | tail -1`), which meant `sdkmanager` installing a newer NDK
+for any unrelated reason silently swapped this project's compiler — and Qt's own
+auto-detect behaves the same way (`QtAutoDetectHelpers.cmake` sorts descending
+and takes `[0]`), so nothing downstream would have corrected it.
+
+**The NDK is a non-variable across the Qt upgrade.** Qt 6.9.3 *and* 6.10.3 were
+both built against NDK **27.2.12479018** (`modules/Core.json` in each kit), so
+the Qt bump does not ask for an NDK change. We stay on 27.3.13750724 because that
+is what shipped 1.0.0 to Play — the only known-good data point. Do **not** align
+it down to 27.2 to match Qt exactly: a clean build would not prove the downgrade
+safe (most NDK problems are loud, but codegen differences and runtime-resolved
+paths — cpal/AAudio, JNI, unwinding — are not), and 27.2 is more useful held in
+reserve as a single-variable diagnostic lever.
+
+`ANDROID_NDK_VERSION` and `ANDROID_NDK_ROOT` both remain overridable; the run
+header reports which one decided. The `ndk_major >= 28` guard stays as a backstop
+for exactly those overrides.
 
 ### How 16 KB alignment is achieved instead
 
-Stay on the Qt-supported NDK (r27.2, kit-driven via `androidNdkVersion` in
-`android/build.gradle`) and set the page size explicitly on the main app `.so`:
+Stay on the pinned NDK (see above; propagated into Gradle by `ndkVersion
+androidNdkVersion` in `android/build.gradle`) and set the page size explicitly on
+the main app `.so`:
 
 ```cmake
 # CMakeLists.txt, ANDROID branch

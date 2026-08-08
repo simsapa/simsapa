@@ -1,0 +1,22 @@
+{
+  "_comment_qt": [
+    "QMAKE / QT_PREFIX point agent Bash calls at this project's DESKTOP Qt kit,",
+    "so Qt tooling does not silently resolve the system Qt (a different version",
+    "that this project does not target).",
+    "",
+    "These literal paths MUST match QT_LINUX in CMakeLists.txt. This file cannot",
+    "run a script to derive them, so it is the one place the version is",
+    "duplicated -- `make qt-env-check` fails the build-adjacent check if they",
+    "drift apart. See docs/qt-kit-selection.md.",
+    "",
+    "PATH is deliberately NOT set here: settings.json variable expansion is not",
+    "relied upon, and a wrong PATH would break every command. Agents doing Qt",
+    "work should `source scripts/qt-env.sh` instead, which prepends the kit's",
+    "bin/ correctly. Android work uses a different Qt version and goes through",
+    "build-android.sh."
+  ],
+  "env": {
+    "QT_PREFIX": "/home/gambhiro/Qt/6.9.3/gcc_64",
+    "QMAKE": "/home/gambhiro/Qt/6.9.3/gcc_64/bin/qmake6"
+  }
+}

@@ -265,9 +265,29 @@ Android, and it should stay that way.
 | `x86` (unused) | `i686-linux-android` |
 
 > **Gotcha.** Reading `FindRust.cmake` suggests `armeabi-v7a` resolves to
-> `thumbv7neon-linux-androideabi` — that branch is taken only when
-> `CMAKE_ANDROID_ARM_MODE` is **false**, and Qt's `android_armv7` toolchain sets
-> it true. The real triple is `armv7-linux-androideabi`. Guessing wrong fails
+> `thumbv7neon-linux-androideabi`. It does not — but **not for the reason the
+> code implies**, and the difference matters if anyone ever tries to "fix" it.
+> The branch is `if (CMAKE_ANDROID_ARM_MODE)`, and that variable is not a
+> boolean. NDK 27 defaults to its **legacy** toolchain file
+> (`android.toolchain.cmake` returns straight into
+> `android-legacy.toolchain.cmake` unless `ANDROID_USE_LEGACY_TOOLCHAIN_FILE`
+> says otherwise), which ends with `set(CMAKE_ANDROID_ARM_MODE
+> ${ANDROID_ARM_MODE})` — the literal string **`thumb`** when nothing requests
+> ARM mode. CMake's `if()` treats a non-empty, non-false-constant string as
+> **true**, so the branch selects `armv7-linux-androideabi` *whatever* the
+> instruction mode is; it can never reach the thumb triple under this toolchain.
+>
+> Measured on 6.10.3 (2026-08-08): a probe configure through the same
+> `qt.toolchain.cmake` prints `CMAKE_ANDROID_ARM_MODE='thumb'`, and the
+> armeabi-v7a sub-build caches
+> `Rust_CARGO_TARGET_CACHED:INTERNAL=armv7-linux-androideabi`. **Neither Qt kit
+> sets it** — `ARM_MODE` has zero matches in 6.9.3's *and* 6.10.3's
+> `android_armv7/lib/cmake/`, so an earlier version of this note ("Qt's
+> `android_armv7` toolchain sets it true") named the wrong source. The C++ is
+> therefore compiled thumb while the Rust half uses the ARM triple; ARM/thumb
+> interworking makes that benign, and it is what shipped 1.0.0.
+>
+> The real triple is `armv7-linux-androideabi`. Guessing wrong fails
 > late and confusingly, inside the ExternalProject sub-build:
 >
 > ```
