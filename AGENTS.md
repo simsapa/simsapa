@@ -930,22 +930,34 @@ function get_api_key(key_name: string): string {
 
 ### New Rust bridges
 
-When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, it has to be registered as a QmlModule and the Rust file name has to be added to the `rust_files` list in `bridges/build.rs`:
+When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, the
+Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
+`bridges/build.rs`:
 
 ``` rust
-.qml_module(QmlModule {
-        uri: "com.profoundlabs.simsapa",
-        rust_files: &[
-                "src/sutta_bridge.rs",
-                "src/asset_manager.rs",
-                "src/storage_manager.rs",
-                "src/prompt_manager.rs",
-                "src/api.rs",
-        ],
-        qml_files: &qml_files,
-        ..Default::default()
-})
+CxxQtBuilder::new_qml_module(
+        QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
+    )
+    .files([
+        "src/sutta_bridge.rs",
+        "src/asset_manager.rs",
+        "src/storage_manager.rs",
+        "src/prompt_manager.rs",
+        "src/api.rs",
+    ])
 ```
+
+All the bridge sources must live in **one directory** (`bridges/src/`).
+`CxxQtBuilder::files()` panics if they span more than one — a Qt limitation
+(QTBUG-93443), not a cxx-qt choice.
+
+> **This changed with cxx-qt 0.9.** Until then the bridge sources were a
+> `rust_files:` field *inside* the `QmlModule` struct literal, passed to
+> `.qml_module(QmlModule { … ..Default::default() })`. cxx-qt 0.8 removed that
+> field, made `QmlModule`'s fields private, and allowed only one QML module per
+> builder — so a QML module now carries only its QML files, and the Rust
+> sources are declared on the builder. Any older snippet using `rust_files:` or
+> `.qml_module(` is for the pre-0.9 API and will not compile.
 
 `qmllint` requires that the corresponding QML type definition for the Rust bridge has to be created and it should be declared in the `qmldir` file.
 

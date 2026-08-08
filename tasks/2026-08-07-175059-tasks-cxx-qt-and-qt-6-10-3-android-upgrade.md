@@ -59,9 +59,22 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
 - `Makefile` — `QT_PATH` for the Darwin branch; the non-Darwin `BUILD_CMD` passes no `-DCMAKE_PREFIX_PATH` (deliberately, once FR-24 lands).
 - `build-appimage.sh` — Qt resolution must be hoisted above `build_app()`; the `elif command -v qmake6` fallback and the "already built" short-circuit are hazards.
 - `build-android.sh` — `QT_ANDROID_VERSION` default, the NDK "newest installed" selection, and where `CXX_QT_AUTORCC_OPTIONS` gets exported.
+  **Note: `CXX_QT_AUTORCC_OPTIONS` is deliberately NOT exported here** (3.10) —
+  corrosion's `cmake -E env` assignment would override it. Task 3.12 added
+  `export ANDROID_SDK_ROOT ANDROID_NDK_ROOT`, without which the task-2.12
+  environment gate stops every Android build.
 - `build-macos.sh` / `build-windows.ps1` — hardcoded `6.9.3` paths to derive from `CMakeLists.txt`.
 - `bridges/Cargo.toml` — the four cxx-qt crate pins (fork → upstream `2180c12`).
+  **Done (3.4).** Also required raising `cxx` from `1.0.148` to `1.0.176`:
+  cxx-qt 0.9.1 needs `^1.0.176` and cargo would not resolve against the
+  lockfile's `1.0.169`.
+- `bridges/Cargo.lock` — **regenerated (3.4).** Not listed originally; it is part
+  of the same commit.
 - `bridges/build.rs` — the `QmlModule` literal, the `rust_files` list and the `cc_builder` closure; all three change under the 0.9 API.
+  **Done (3.6, 3.7):** `CxxQtBuilder::new_qml_module(QmlModule::new(uri)
+  .qml_files(…))`, the nine bridges moved to `.files([…])`, and the closure
+  replaced by the safe `.include_dir()` / `.cpp_files()` — no `unsafe` block.
+  The dead `lipo` import/call comments were deleted.
 - `android/build.gradle` — AGP classpath, `minSdkVersion`, `targetSdkVersion`, `packagingOptions.jniLibs`, `ndkVersion`.
 - `android/gradle/wrapper/gradle-wrapper.properties` — the wrapper is ours (8.10), not Qt's.
 - `android/AndroidManifest.xml` — the predictive-back opt-out, the explicit permissions and `required="false"` features.
@@ -550,7 +563,12 @@ Update the file after completing each sub-task, not just after completing an ent
     `resolve_qt` → **environment gate** → `build_app` → `verify_qt_agreement` →
     package. Reaching completion means the gate returned 0 and the agreement
     check found no stray libraries.
-- [ ] 2.11 Commit Part C's script half separately from 1.14.
+- [x] 2.11 Commit Part C's script half separately from 1.14.
+  - `597e77f` "version verification and build scripts" — separate from 1.14's
+    `2a24322` as required. Committed by the user.
+  - The version-derivation and environment-gate changes **interleave within**
+    `build-android.sh`, `build-windows.ps1` and `Makefile`, so they could not be
+    split by file without hunk surgery; they landed together.
 
 ---
 
@@ -609,21 +627,174 @@ Update the file after completing each sub-task, not just after completing an ent
 a Qt version surprise). FR-3/FR-3b/FR-4 land as **one commit** — the crate bump
 does not compile without the build-script migration.
 
-- [ ] 3.1 Confirm FR-5 still holds: `rustup show` reports ≥ 1.85.0 (currently 1.96.1) with `aarch64-linux-android`, `armv7-linux-androideabi`, `thumbv7neon-linux-androideabi`, `x86_64-linux-android` installed. Note in passing that nothing pins this (no `rust-toolchain.toml`).
-- [ ] 3.2 Read the cumulative fork diff `git -C src-lib/cxx-qt-simsapa diff c6710b71 8a597414` (5 files, +69/−7) — **not** commit by commit, since `8a597414` reverts callers added by `73b13685`. Confirm the five changes A–E against the PRD's FR-1 table and note anything that has drifted since the PRD was written.
-- [ ] 3.3 Verify upstream's `CXX_QT_AUTORCC_OPTIONS` support in the local checkout: `cxx-qt-build/src/lib.rs:1253-1258` (colon split), `qt-build-utils/src/lib.rs:240,461` (`autorcc_options`), `tool/rcc.rs:42` (`custom_args`). This is what makes patch **A** droppable.
-- [ ] 3.4 Point the four crates in `bridges/Cargo.toml:21-23,51` at `https://github.com/KDAB/cxx-qt.git` rev `2180c12`, preserving both feature lists and the "pin a rev, not a branch" comment at line 20 (FR-3).
-- [ ] 3.5 Bump `CMakeLists.txt`'s `cxx-qt-cmake` `GIT_TAG` from the **branch** `0.7` to the **tag** `0.9.1` (commit `06a121e`) — not the branch `0.9`, even though they are equal today (FR-4).
-- [ ] 3.6 Migrate `bridges/build.rs` to the 0.9 builder API per the table above: `new_qml_module` + `QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files)`, and the nine bridge files moved to `CxxQtBuilder::files([...])` (FR-3b). Keep the `mobile_build` branch on `CXX_QT_QT_MODULES` unchanged.
-- [ ] 3.7 Replace the `cc_builder` closure with the **safe** equivalents rather than wrapping it in `unsafe`: `cc.include("../cpp/")` → `.include_dir("../cpp/")` (`lib.rs:517`), and the three `cc.file(...)` calls → `.cpp_files(["../cpp/utils.cpp", "../cpp/system_palette.cpp", "../cpp/gui.cpp"])` (`lib.rs:641`). No `unsafe` block is needed; only fall back to `unsafe { cc_builder(…) }` if something in the build genuinely requires raw `cc::Build` access, with a comment saying what.
-- [ ] 3.8 Build the Rust crate alone first (`cd bridges && cargo build`) to isolate codegen errors from CMake/Qt errors, before any full `make build`.
-- [ ] 3.9 Check the resource-path derivation, the one runtime-only risk the compiler cannot catch: how 0.9 turns `"../assets/qml/Foo.qml"` into a resource path. The `:/qt/qml/com/profoundlabs/simsapa/…` paths are load-bearing across the codebase. Inspect the generated `qmldir` and the qrc contents under `build/simsapadhammareader/cxxqt/qml_modules/com/profoundlabs/simsapa/` rather than inferring. (The competing-`qmldir` worry is already resolved: the generated files go to the build dir, never the source tree.)
-- [ ] 3.10 Add `list(APPEND CMAKE_AUTORCC_OPTIONS --no-zstd)` at `CMakeLists.txt:80-81` — this is the whole of FR-2. cxx-qt-cmake joins the list with `:` and passes it to the bridge crate's cargo run. **Do not export `CXX_QT_AUTORCC_OPTIONS` from `build-android.sh`**; corrosion's `cmake -E env` assignment would override it.
-- [ ] 3.11 Prove it took effect: force a rebuild (`touch bridges/build.rs`), then confirm with `cargo build -vv` (or by comparing resource sizes against a build without the flag) that `rcc` really received `--no-zstd`. Without the forced rebuild, "it propagated" and "cargo reused stale output" are indistinguishable — the one way this gets answered wrongly.
-- [ ] 3.12 Verify the same on an Android per-ABI sub-build, since that is the platform the flag exists for, and confirm the value is picked up per-ABI without any environment plumbing.
-- [ ] 3.13 Comment `CMakeLists.txt:80-81` to record that this single list now feeds **both** `rcc` invocations — CMake's AUTORCC for `assets/icons.qrc` and, via cxx-qt-cmake, the bridge crate's — that `--no-zstd` replaces fork patch A, and that a shell-exported `CXX_QT_AUTORCC_OPTIONS` would be overridden (FR-2).
+- [x] 3.1 Confirm FR-5 still holds: `rustup show` reports ≥ 1.85.0 (currently 1.96.1) with `aarch64-linux-android`, `armv7-linux-androideabi`, `thumbv7neon-linux-androideabi`, `x86_64-linux-android` installed. Note in passing that nothing pins this (no `rust-toolchain.toml`).
+  - Confirmed 2026-08-08. Active toolchain `stable-x86_64-unknown-linux-gnu`;
+    all four Android targets installed (plus `wasm32-unknown-unknown`). No
+    `rust-toolchain.toml` in the repo, so nothing enforces the 1.85.0 floor.
+- [x] 3.2 Read the cumulative fork diff `git -C src-lib/cxx-qt-simsapa diff c6710b71 8a597414` (5 files, +69/−7) — **not** commit by commit, since `8a597414` reverts callers added by `73b13685`. Confirm the five changes A–E against the PRD's FR-1 table and note anything that has drifted since the PRD was written.
+  - Diff read in full; **the FR-1 table is accurate and nothing has drifted.**
+    5 files, +69/−7 exactly as stated. A = the four hardcoded rcc args in
+    `tool/rcc.rs`; B = `flag_if_supported` → `flag` for `-F<framework>`;
+    C = the `is_ios_target()` branch choosing a flat vs `Versions/A/Resources`
+    `.prl` path; D = the two apple `Some(filename)` fallbacks in
+    `parse_cflags.rs`; E = `is_ios_target()` in `utils.rs` plus
+    `thin_generated_fat_library_with_lipo()` in `cxx-qt-build`.
+  - Worth noting for task 5.0: **C is not purely additive.** It also rewrites
+    the *non*-iOS path from upstream's `…framework/Resources/….prl` to
+    `…framework/Versions/A/Resources/….prl`, i.e. it changes macOS behaviour
+    too, not just iOS. Upstream has since replaced the whole mechanism, so this
+    stays "do not port" — but if it is ever re-derived, both halves are in play.
+- [x] 3.3 Verify upstream's `CXX_QT_AUTORCC_OPTIONS` support in the local checkout: `cxx-qt-build/src/lib.rs:1253-1258` (colon split), `qt-build-utils/src/lib.rs:240,461` (`autorcc_options`), `tool/rcc.rs:42` (`custom_args`). This is what makes patch **A** droppable.
+  - All three sites confirmed at `2180c12`, at the exact line numbers the PRD
+    gives. The chain is `env::var_os("CXX_QT_AUTORCC_OPTIONS")` → `split(':')` →
+    `QtBuild::autorcc_options()` → `QtToolRcc::custom_args()` → appended to
+    rcc's argv after `--name` (`tool/rcc.rs:76`). Patch **A** is droppable.
+  - Also confirmed the PRD's rebuild warning: the only `rerun-if-env-changed`
+    declarations in the workspace are `QMAKE`, `QT_VERSION_MAJOR`,
+    `QT_MINIMAL_DOWNLOAD_ROOT` and `TARGET`. This variable is **not** among them.
+- [x] 3.4 Point the four crates in `bridges/Cargo.toml:21-23,51` at `https://github.com/KDAB/cxx-qt.git` rev `2180c12`, preserving both feature lists and the "pin a rev, not a branch" comment at line 20 (FR-3).
+  - Done; `features = ["full"]` and `features = ["link_qt_object_files"]` both
+    preserved, and the rev-not-branch rationale rewritten to also record why the
+    fork was dropped and that the CMake pin is its coupled half.
+  - **One extra change was forced, and it is not optional:** `cxx` had to move
+    from `"1.0.148"` to `"1.0.176"`. cxx-qt 0.9.1 requires `^1.0.176`, and the
+    lockfile held `cxx 1.0.169`; cargo refused to resolve
+    (`all possible versions conflict with previously selected packages`) until
+    the floor was raised. Commented in place.
+- [x] 3.5 Bump `CMakeLists.txt`'s `cxx-qt-cmake` `GIT_TAG` from the **branch** `0.7` to the **tag** `0.9.1` (commit `06a121e`) — not the branch `0.9`, even though they are equal today (FR-4).
+  - Done, and the task-1.9 comment rewritten to say that this pin is now the
+    **tag**, that the previous `0.7` was the branch, and that it must move with
+    the four crate pins.
+- [x] 3.6 Migrate `bridges/build.rs` to the 0.9 builder API per the table above: `new_qml_module` + `QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files)`, and the nine bridge files moved to `CxxQtBuilder::files([...])` (FR-3b). Keep the `mobile_build` branch on `CXX_QT_QT_MODULES` unchanged.
+  - Done exactly as mapped. The `mobile_build` / `CXX_QT_QT_MODULES` branch and
+    the three `qt_module()` calls are untouched.
+  - **No bridge source file needed editing**, confirming the PRD's macro survey.
+- [x] 3.7 Replace the `cc_builder` closure with the **safe** equivalents rather than wrapping it in `unsafe`: `cc.include("../cpp/")` → `.include_dir("../cpp/")` (`lib.rs:517`), and the three `cc.file(...)` calls → `.cpp_files(["../cpp/utils.cpp", "../cpp/system_palette.cpp", "../cpp/gui.cpp"])` (`lib.rs:641`). No `unsafe` block is needed; only fall back to `unsafe { cc_builder(…) }` if something in the build genuinely requires raw `cc::Build` access, with a comment saying what.
+  - Done with the safe equivalents; **no `unsafe` block anywhere in the file**.
+  - Checked the semantics rather than assuming they match: `CppFile`'s
+    `From<impl AsRef<Path>>` sets `enable_moc` only for header extensions, so a
+    `.cpp` gets `compile = true, enable_moc = false` — the same thing
+    `cc.file()` did. No moc pass was silently added.
+  - Also deleted the now-dead commented-out `is_ios_target` /
+    `thin_generated_fat_library_with_lipo` import and call (part of FR-6 /
+    task 5.5, which asks for exactly this).
+- [x] 3.8 Build the Rust crate alone first (`cd bridges && cargo build`) to isolate codegen errors from CMake/Qt errors, before any full `make build`.
+  - **Green.** `QMAKE=~/Qt/6.9.3/gcc_64/bin/qmake6 cargo build` finished in
+    4m24s with no errors. The only warnings are pre-existing GCC 16
+    `-Wsfinae-incomplete` notes from Qt 6.9.3's own headers, unrelated to this
+    change.
+- [x] 3.9 Check the resource-path derivation, the one runtime-only risk the compiler cannot catch: how 0.9 turns `"../assets/qml/Foo.qml"` into a resource path. The `:/qt/qml/com/profoundlabs/simsapa/…` paths are load-bearing across the codebase. Inspect the generated `qmldir` and the qrc contents under `build/simsapadhammareader/cxxqt/qml_modules/com/profoundlabs/simsapa/` rather than inferring. (The competing-`qmldir` worry is already resolved: the generated files go to the build dir, never the source tree.)
+  - **The alias derivation is unchanged — verified by comparing the two
+    generated `.qrc` files, not by reading the source.** Both 0.7 and 0.9 emit
+    `<file alias="../assets/qml/SuttaSearchWindow.qml">` under
+    `<qresource prefix="/qt/qml/com/profoundlabs/simsapa">`, byte-for-byte the
+    same alias strings. rcc folds the leading `../` away, which is why the
+    codebase's `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/*.qml` literals
+    (16 sites in `cpp/`, plus `assets/icons.qrc`'s own prefix) keep working.
+    **The load-bearing paths are not affected by this upgrade.**
+  - **What did change: 0.9's `qmldir` now lists the components.** 0.7 emitted a
+    5-line `qmldir` (module / plugin / classname / typeinfo / prefer) and no
+    component lines at all; 0.9 emits 92 lines, one per QML file
+    (`SuttaSearchWindow 1.0 ../assets/qml/SuttaSearchWindow.qml`). This is the
+    0.8.0 "correct QML module export" change. It is additive and cannot
+    conflict with the hand-maintained stub, which lives in the source tree
+    (`assets/qml/com/profoundlabs/simsapa/qmldir`) while this one is generated
+    into the build dir — the competing-`qmldir` worry stays resolved.
+    Whether the new component lines change how `import
+    com.profoundlabs.simsapa` resolves at **runtime** is not answerable from
+    the file; it is exactly what task 4.3 exists to test.
+- [x] 3.10 Add `list(APPEND CMAKE_AUTORCC_OPTIONS --no-zstd)` at `CMakeLists.txt:80-81` — this is the whole of FR-2. cxx-qt-cmake joins the list with `:` and passes it to the bridge crate's cargo run. **Do not export `CXX_QT_AUTORCC_OPTIONS` from `build-android.sh`**; corrosion's `cmake -E env` assignment would override it.
+  - Done. No export was added to `build-android.sh`.
+- [x] 3.11 Prove it took effect: force a rebuild (`touch bridges/build.rs`), then confirm with `cargo build -vv` (or by comparing resource sizes against a build without the flag) that `rcc` really received `--no-zstd`. Without the forced rebuild, "it propagated" and "cargo reused stale output" are indistinguishable — the one way this gets answered wrongly.
+  - **Proven, from a forced rebuild** (`rm -rf build/simsapadhammareader` +
+    `touch bridges/build.rs` + `make build -B`), so stale output is excluded by
+    construction. Three independent pieces of evidence:
+    1. The generated CMake build files carry the joined value:
+       `CXX_QT_AUTORCC_OPTIONS=--format-version:1:--compress-algo:zlib:--no-zstd`.
+    2. The bridge crate's rcc output under CMake is **2,046,446 bytes**; the
+       same file from the standalone task-3.8 build, which had no options at
+       all, is **1,940,401**. The options changed the output.
+    3. Running 6.9.3's `rcc` by hand on the generated `.qrc` with exactly those
+       options reproduces the CMake build's file to within the `--name`
+       argument (the only difference is in the symbol-name region at the very
+       end).
+  - **Measured caveat, recorded in the CMakeLists comment: `--no-zstd` is a
+    no-op today.** With `--compress-algo zlib` already in the list, rcc's
+    output with and without `--no-zstd` is **byte-identical** (2,046,158 both
+    ways). So it was `--compress-algo zlib` doing the work in fork patch A, not
+    `--no-zstd`. Kept anyway — it is what patch A carried, and it preserves the
+    guarantee if the compress-algo is ever changed — but it must not be
+    described as the load-bearing flag.
+- [x] 3.12 Verify the same on an Android per-ABI sub-build, since that is the platform the flag exists for, and confirm the value is picked up per-ABI without any environment plumbing.
+  - **Confirmed on all three ABIs, from a real `make android-apk-debug` run**
+    (still at `QT_ANDROID` 6.9.3 — the Qt bump is task 6.0). The resolved
+    `CXX_QT_AUTORCC_OPTIONS=--format-version:1:--compress-algo:zlib:--no-zstd`
+    appears in **three separate `build.ninja` files** — the top-level one
+    (arm64-v8a) and `android_abi_builds/{x86_64,armeabi-v7a}/` — and each ABI's
+    cargo tree produced its own rcc output of **2,046,446 bytes**, byte-count
+    identical to the desktop CMake build. The propagation is structural, as the
+    PRD predicted: nothing was exported anywhere.
+  - The build itself is the wider result — **the multi-ABI Android package
+    builds on unpatched upstream cxx-qt 0.9.1**, with all three ABIs present,
+    the cross-ABI contamination check clean, and the permission set unchanged
+    (no new permissions, no required hardware features, ChromeOS check OK).
+  - **⚠ Fixed a blocking bug in task 2.12's environment gate to get here.**
+    `build-android.sh` assigns `ANDROID_SDK_ROOT` and `ANDROID_NDK_ROOT` but
+    never **exported** them, so `scripts/qt-env-verify.sh` — a subprocess — saw
+    `ANDROID_NDK_ROOT` as unset and stopped the build with
+    `CRITICAL ANDROID_NDK_ROOT is not set`. That contradicted the gate's own
+    placement comment ("verifies the values the build will really use"), and it
+    means **no Android build has succeeded since task 2.12 landed**; task 2.10
+    only ever exercised the AppImage path. One-line fix: `export
+    ANDROID_SDK_ROOT ANDROID_NDK_ROOT` right after they are resolved,
+    commented in place.
+- [x] 3.13 Comment `CMakeLists.txt:80-81` to record that this single list now feeds **both** `rcc` invocations — CMake's AUTORCC for `assets/icons.qrc` and, via cxx-qt-cmake, the bridge crate's — that `--no-zstd` replaces fork patch A, and that a shell-exported `CXX_QT_AUTORCC_OPTIONS` would be overridden (FR-2).
+  - Written, naming the cxx-qt-cmake source lines that do the joining, the
+    per-ABI propagation, the missing `rerun-if-env-changed`, and the 3.11
+    measurement that `--no-zstd` is currently a no-op. Points at
+    `docs/cxx-qt-fork.md` (task 10).
 - [ ] 3.14 Consider filing the missing `cargo::rerun-if-env-changed=CXX_QT_AUTORCC_OPTIONS` upstream — a one-line `println!` in `cxx-qt-build`. Optional, but cheap; record the decision either way.
-- [ ] 3.15 Land FR-3 + FR-3b + FR-4 + FR-2 as **one commit**, separate from any Qt change (FR-10). If stage 1 cannot be made to work, stop and reassess rather than stacking the Qt bump on a broken bridge layer.
+  - **Decision: worth filing, but not from inside this task — deferred to the
+    maintainer.** The defect is confirmed (3.3): `cxx-qt-build/src/lib.rs:1253`
+    reads the variable with `env::var_os` and the workspace declares
+    `rerun-if-env-changed` for only `QMAKE`, `QT_VERSION_MAJOR`,
+    `QT_MINIMAL_DOWNLOAD_ROOT` and `TARGET`. The fix is one `println!` next to
+    the read. Filing it needs a KDAB GitHub account and an issue/PR written in
+    the maintainer's name, which is not something to do unattended. The
+    workaround is in place and documented at the one site that sets the
+    variable, so nothing here depends on the upstream fix landing.
+- [x] 3.15 Land FR-3 + FR-3b + FR-4 + FR-2 as **one commit**, separate from any Qt change (FR-10). If stage 1 cannot be made to work, stop and reassess rather than stacking the Qt bump on a broken bridge layer.
+  - **Stage 1 works.** Nothing to reassess: the desktop build, the desktop test
+    suite and the three-ABI Android package are all green on unpatched upstream
+    0.9.1, with no bridge source file edited. No Qt version was touched —
+    `QT_ANDROID` is still 6.9.3.
+  - `make test` green. `test: rust-test qml-test js-test` runs in that order and
+    make stops at the first failure, so the JS suite finishing
+    (**6 suites, 83 tests, all passed**) is what proves the Rust and QML halves
+    passed before it. No timing-assertion drift surfaced on this run.
+  - Note for anyone repeating this: `make test 2>&1 | tail -N` reports **tail's**
+    exit status, not make's. Read the tail for the *last* target in the chain
+    instead of trusting the exit code.
+  - Proposed commit contents (one commit, FR-10): `bridges/Cargo.toml`,
+    `bridges/Cargo.lock`, `bridges/build.rs`, `CMakeLists.txt`.
+  - **`build-android.sh`'s `export ANDROID_SDK_ROOT ANDROID_NDK_ROOT` belongs
+    in a separate commit** — it is a fix to task 2.12's gate, not to the cxx-qt
+    migration, and it is what unblocked 3.12. Keeping it apart preserves the
+    one-change-per-commit intent that tasks 1.14 / 2.11 established.
+  - **`AGENTS.md` updated (at the user's direction), ahead of task 10.0.** Its
+    "New Rust bridges" section taught the removed 0.7 API — a
+    `.qml_module(QmlModule { … rust_files: &[…] … })` literal — which stopped
+    compiling the moment FR-3 landed. Now shows
+    `CxxQtBuilder::new_qml_module(QmlModule::new(uri).qml_files(…)).files([…])`,
+    states the one-directory constraint (QTBUG-93443), and carries a note
+    saying what changed in 0.8/0.9 so an older snippet found elsewhere is
+    recognisable as pre-0.9 rather than as a working alternative.
+    **`CLAUDE.md` is a symlink to `AGENTS.md`**, so the one edit covers both.
+  - The neighbouring "New QML components" section needed no change: the
+    `qml_files` list is still a local `Vec` in `bridges/build.rs`, only its
+    consumer moved.
+  - Still owed to FR-31 / task 10.0: `docs/cxx-qt-fork.md` (referenced from the
+    new `CMakeLists.txt` and `bridges/Cargo.toml` comments, not yet written).
 
 ---
 
