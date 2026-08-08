@@ -302,11 +302,15 @@ Install them with the Qt Maintenance Tool under Qt $QT_ANDROID_VERSION."
 
 # Corrosion (FindRust.cmake) maps CMAKE_ANDROID_ARCH_ABI to a Rust target
 # triple. Note armeabi-v7a resolves to armv7-linux-androideabi, NOT
-# thumbv7neon-linux-androideabi: corrosion only picks the thumb/NEON triple
-# when CMAKE_ANDROID_ARM_MODE is false, and Qt's android_armv7 toolchain sets
-# it true. Getting this wrong surfaces late, as a corrosion configure error in
+# thumbv7neon-linux-androideabi: corrosion picks the thumb/NEON triple only
+# when CMAKE_ANDROID_ARM_MODE is false, and it never is. NDK 27 defaults to its
+# legacy toolchain file, which assigns CMAKE_ANDROID_ARM_MODE the literal
+# string "thumb" -- which CMake's if() evaluates as TRUE. (Qt does not set the
+# variable at all; measured on both the 6.9.3 and 6.10.3 android_armv7 kits.)
+# Getting this wrong surfaces late, as a corrosion configure error in
 # the ExternalProject sub-build ("Target ... is not installed for toolchain"),
 # so check it here where the message is actionable.
+# See docs/android-multi-abi-and-chromeos.md.
 missing_targets=""
 installed_targets="$(rustup target list --installed 2>/dev/null || true)"
 for abi in "${_abi_list[@]}"; do

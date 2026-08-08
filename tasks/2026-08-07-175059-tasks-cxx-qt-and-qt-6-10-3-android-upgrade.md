@@ -1309,11 +1309,155 @@ does not compile without the build-script migration.
     observed for the first time** — JDK 21, and the gate's `All checks passed`
     including `host tools are Qt 6.10.3, matching QT_ANDROID` and both
     foreign-Qt checks clean. **That closes the configure half of task 11.6.**
-- [ ] 6.6 Re-confirm on 6.10.3 that the rcc options still reach every per-ABI sub-build (task 3.12 established this on 6.9.3) — with a forced `build.rs` re-run, so "it propagated" and "cargo reused stale output" stay distinguishable. Note the Android build runs 6.10.3's `rcc` while the desktop runs 6.9.3's; `--no-zstd` is valid in both.
-- [ ] 6.7 Re-verify the multi-ABI mechanism on 6.10.3 (FR-21): the per-ABI ExternalProject setup; that Qt still does **not** forward the parent's `CMAKE_PREFIX_PATH` to sub-builds (the `if(NOT CMAKE_PREFIX_PATH)` guard at line 123 depends on it); the cross-ABI plugin-staging bug and whether `packagingOptions.jniLibs.excludes` is still needed; and the `armeabi-v7a` → `armv7-linux-androideabi` corrosion mapping.
-- [ ] 6.8 Run `make android-aab` for `arm64-v8a;x86_64;armeabi-v7a` and confirm a signed bundle is produced (FR-13). Bump `android/version.txt` only when an actual Play upload is intended — Play requires a strictly increasing `versionCode`.
-- [ ] 6.9 Independently re-check the finished artifact for cross-ABI staging: no aarch64 `.so` files under `base/lib/x86_64/` or `base/lib/armeabi-v7a/`.
-- [ ] 6.10 Install the debug/beta build on a device and confirm it launches and reaches the search window — a smoke test only; the real device pass is task 9.0.
+- [x] 6.6 Re-confirm on 6.10.3 that the rcc options still reach every per-ABI sub-build (task 3.12 established this on 6.9.3) — with a forced `build.rs` re-run, so "it propagated" and "cargo reused stale output" stay distinguishable. Note the Android build runs 6.10.3's `rcc` while the desktop runs 6.9.3's; `--no-zstd` is valid in both.
+  - **Confirmed on 6.10.3, all three ABIs, from a `touch bridges/build.rs` +
+    `make android-apk-debug` run** (exit 0, zero errors, APK produced). Each
+    ABI's `out/rcc/resources_0.cpp` was **regenerated** — new mtimes, cargo
+    recompiled `simsapa_bridges` in every tree — and all three came out
+    byte-identical to each other (md5 `c99d5bb8…`, 2,040,098 bytes). The stale
+    branch is therefore excluded by observation, not by assumption, which is the
+    whole reason the task asks for the forced re-run: `CXX_QT_AUTORCC_OPTIONS`
+    carries **no `rerun-if-env-changed`**, so a reused fingerprint would look
+    exactly like a successful propagation.
+  - All three `build.ninja` files carry the resolved
+    `CXX_QT_AUTORCC_OPTIONS=--format-version:1:--compress-algo:zlib:--no-zstd`
+    (top-level arm64-v8a plus `android_abi_builds/{x86_64,armeabi-v7a}/`), and it
+    appears on the actual `cmake -E env … cargo rustc` command line in the build
+    log. Still nothing exported anywhere — the propagation remains structural.
+  - **Upgraded the evidence from byte-count to byte-identity, because a size
+    match is circumstantial and this flag's whole failure mode is silence.**
+    Re-running 6.10.3's own `rcc` by hand on the build's generated
+    `resources_0.qrc`:
+
+    | Invocation | Output |
+    |---|---|
+    | `--format-version 1 --compress-algo zlib --no-zstd` | 2,040,098 B — **`cmp`-identical to the build's** |
+    | rcc defaults (zstd) | 1,934,173 B — 106 KB smaller |
+
+    So "flags applied" and "flags ignored" are *distinguishable* outputs here,
+    and the build matches the former exactly. (Getting to byte-identity needs
+    `--name resources_0.qrc`; with `--name resources_0` only the
+    `qInitResources_*` symbol suffix differs and the payload is unchanged.)
+  - **The FR-13b host-tool split is directly visible in the artifact**, which is
+    the cheapest way to confirm it: the generated file's header reads *"Created
+    by: The Resource Compiler for Qt version 6.10.3"* while the desktop tree's
+    reads 6.9.3. `--no-zstd` is accepted by both — 6.9.3's rcc on the same input
+    gives 2,040,073 B, one byte less, from the shorter version string.
+  - The 6.9.3 figure recorded at 3.12 was **2,046,446 B**; today's 2,040,098 B is
+    the same content compressed by a different rcc, not a content change. Do not
+    read the two numbers as comparable across a Qt version.
+- [x] 6.7 Re-verify the multi-ABI mechanism on 6.10.3 (FR-21): the per-ABI ExternalProject setup; that Qt still does **not** forward the parent's `CMAKE_PREFIX_PATH` to sub-builds (the `if(NOT CMAKE_PREFIX_PATH)` guard at line 123 depends on it); the cross-ABI plugin-staging bug and whether `packagingOptions.jniLibs.excludes` is still needed; and the `armeabi-v7a` → `armv7-linux-androideabi` corrosion mapping.
+  - **All four hold on 6.10.3.** Checked against the task-6.6 build tree, so
+    these are the real sub-builds, not a re-derivation.
+  - **Per-ABI ExternalProject + the `if(NOT CMAKE_PREFIX_PATH)` guard.** Each
+    sub-build resolved its own kit — `Qt6_DIR` is
+    `6.10.3/android_arm64_v8a`, `…/android_x86_64`, `…/android_armv7`
+    respectively, each with its matching `ANDROID_ABI`. The **non-forwarding is
+    directly observable**, which is better than inferring it from the result:
+    the ExternalProject invocations in `build.ninja` pass
+    `-DCMAKE_TOOLCHAIN_FILE` (per-ABI), `-DQT_HOST_PATH`,
+    `-DQT_INTERNAL_ANDROID_MULTI_ABI_BINARY_DIR` and
+    `-DQT_IS_ANDROID_MULTI_ABI_EXTERNAL_PROJECT=ON` — and **no
+    `-DCMAKE_PREFIX_PATH` at all**. So the guard is still what selects each
+    ABI's kit, exactly as the comment at that line claims.
+  - `-DQT_HOST_PATH=~/Qt/6.10.3/gcc_64` confirms **FR-13b** at the point it
+    matters: the host tools come from the 6.10.3 `gcc_64` kit automatically, with
+    nothing setting `QT_HOST_PATH`.
+  - **Cross-ABI plugin staging did NOT reproduce.** Every one of the 144 `.so`
+    files in each of `android-build/libs/{arm64-v8a,x86_64,armeabi-v7a}/` is the
+    right architecture by `file` (aarch64 / x86-64 / 32-bit ARM), and the only
+    filename without a matching `_<abi>.so` suffix is `libc++_shared.so`, which
+    has none by design and was arch-checked too. This is genuine pre-exclusion
+    evidence: `packagingOptions.jniLibs.excludes` acts at **Gradle packaging**,
+    not at androiddeployqt staging, so it cannot be what made the staging dir
+    clean.
+  - **Keep the excludes anyway.** The original bug was *inconsistent* —
+    androiddeployqt's own arch guard fired in some phases and not others — so one
+    clean debug build is not grounds for removing a guard that costs nothing and
+    whose absence is silent. Task 6.9 re-checks the release AAB, which is the
+    artifact the incident was found in.
+  - **`armeabi-v7a` → `armv7-linux-androideabi` confirmed** by the sub-build's
+    own cache (`Rust_CARGO_TARGET_CACHED:INTERNAL=armv7-linux-androideabi`,
+    `Rust_CARGO_TARGET_ARCH=armv7`) and by the `--target=` on its cargo command.
+  - **…but the recorded *mechanism* was wrong, and the corrected version is a
+    stronger guarantee.** Both `build-android.sh` and
+    `docs/android-multi-abi-and-chromeos.md` said corrosion takes the ARM triple
+    because "Qt's `android_armv7` toolchain sets `CMAKE_ANDROID_ARM_MODE` true".
+    Qt sets it **nowhere** — zero matches under `android_armv7/lib/cmake/` in
+    *both* the 6.9.3 and 6.10.3 kits. What actually happens: NDK 27 defaults to
+    its **legacy** toolchain file, which does
+    `set(CMAKE_ANDROID_ARM_MODE ${ANDROID_ARM_MODE})` — the literal string
+    **`thumb`** — and CMake's `if()` reads that non-empty string as **true**. A
+    probe configure through the same `qt.toolchain.cmake` prints
+    `CMAKE_ANDROID_ARM_MODE='thumb'`. So corrosion's thumb branch is
+    **unreachable** under this toolchain regardless of instruction mode, rather
+    than merely not-taken-today. Consequence, benign and long-standing: the C++
+    compiles thumb while the Rust half uses the ARM triple (interworking makes
+    this fine; it is what shipped 1.0.0). Comment and doc both corrected.
+  - **Incidental finding for task 8.1.** Qt's `qt.toolchain.cmake` defaults
+    `ANDROID_PLATFORM "android-28"`, and it does so **identically in 6.9.3 and
+    6.10.3** — every sub-build's cache reads `ANDROID_PLATFORM:STRING=android-28`
+    and the link lines carry `--target=…android28`. So the **native code has
+    always been compiled against API 28** while the manifest declared minSdk 27.
+    Raising minSdk to 28 (task 8.1) closes a gap that already existed; it is not
+    a new constraint introduced by 6.10.3.
+- [x] 6.8 Run `make android-aab` for `arm64-v8a;x86_64;armeabi-v7a` and confirm a signed bundle is produced (FR-13). Bump `android/version.txt` only when an actual Play upload is intended — Play requires a strictly increasing `versionCode`.
+  - **The signed multi-ABI release bundle builds on Qt 6.10.3.** Exit 0,
+    `BUILD SUCCESSFUL`, 282 MB AAB at
+    `build/android-multiabi/android-build/build/outputs/bundle/release/android-build-release.aab`,
+    `native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'`. `apksigner` verifies with
+    **v2 + v3**, one signer, alias `simsapa-upload`.
+  - `android/version.txt` deliberately **left at 6** — no Play upload is
+    intended from this run, and the bump is the one thing that must not be
+    spent speculatively.
+  - This is the first *release* build on the new kit; 6.5/6.6 were debug. It
+    recompiled the whole Rust tree for all three targets, so nothing was
+    inherited from the debug runs.
+  - Everything FR-23 guards is unchanged, read off the finished artifact with
+    `aapt2 dump badging` (never the generated `gradle.properties`): the same
+    **five** permissions, **every** `uses-feature` still `not-required` (zero
+    required hardware features → the July 2026 Chromebook filter cannot
+    recur), `targetSdkVersion 36`, `minSdkVersion 27` (unchanged by the Qt bump
+    — 27 → 28 is task 8.1's deliberate change).
+- [x] 6.9 Independently re-check the finished artifact for cross-ABI staging: no aarch64 `.so` files under `base/lib/x86_64/` or `base/lib/armeabi-v7a/`.
+  - **Clean.** Unzipped the AAB and ran `file` over every library — not the
+    build script's own check, which is what "independently" asks for, and not
+    the staging dir that task 6.7 looked at:
+
+    | `base/lib/…` | libs | architectures found |
+    |---|---|---|
+    | `arm64-v8a/` | 144 | 144 × ARM aarch64 |
+    | `x86_64/` | 144 | 144 × x86-64 |
+    | `armeabi-v7a/` | 144 | 144 × ARM EABI (32-bit) |
+
+    The only filename in each directory without a matching `_<abi>.so` suffix is
+    `libc++_shared.so`, which carries no ABI suffix by design and is included in
+    the architecture tally above. So the bug is absent at both the staging and
+    the packaged layer, and `packagingOptions.jniLibs.excludes` was not called
+    upon — which is why it stays (see 6.7).
+- [x] 6.10 Install the debug/beta build on a device and confirm it launches and reaches the search window — a smoke test only; the real device pass is task 9.0.
+  - **Passes on a Qt 6.10.3 build.** `make android-beta-debug` →
+    `adb install -r` → launch, on a **Samsung SM-S911B (Galaxy S23, arm64)**.
+    Package `io.github.simsapa.app.beta` / "Simsapa (beta)", versionName
+    `1.0.0-alpha.5-beta-debug`, `application-debuggable`, re-signed with the
+    release key (`fef4991a…`) — installed **alongside** the Play copy of
+    `io.github.simsapa.app`, which is the whole point of the beta id.
+  - Launched clean: all three databases opened, the Rocket route table mounted,
+    `app.exec()` reached, `topResumedActivity` = `QtActivity`, process alive
+    afterwards. **Zero** `E/`/`F/` lines and zero QML errors in the filtered
+    logcat (`simsapa Qt QtCore QtQml AndroidRuntime:E DEBUG:E`) — notably no
+    `Type … unavailable`, which is the failure mode FR-9 exists for and the one
+    a green build cannot rule out.
+  - Screenshot confirms the search window renders: search field, S/D/L area
+    buttons, the Fulltext and Lang dropdowns, the six-tab bar and the Results
+    panel. No scene-graph corruption, and the top inset is **single** (a full
+    safe-area pass is task 9.0/FR-22).
+  - Two log lines that are **expected, not findings**: the device was in
+    airplane mode, so `fetch_releases_info()` failed and the embedded
+    `releases-fallback.json` was used — the documented offline path
+    (`docs/releases-info-and-fallback.md`) behaving correctly.
+  - This is a smoke test on **arm64 only**. The Thai keyboard test (FR-20) and
+    the x86_64 slice (FR-23b) remain task 9.0's.
 - [ ] 6.11 Commit the Qt bump on its own, before touching AGP or Gradle (PRD §7.1 sub-order).
 
 ---
