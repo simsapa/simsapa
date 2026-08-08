@@ -4,11 +4,40 @@ project(simsapadhammareader LANGUAGES CXX)
 
 # Qt version per platform. Set these to match the installed Qt for each target.
 # Used below to build CMAKE_PREFIX_PATH / qmake paths, so the version only needs
-# to be changed in one place per platform.
+# to be changed in one place per platform. Everything else that needs a Qt
+# version READS it from here -- the build scripts (via scripts/qt-env.sh), the
+# Makefile and build-windows.ps1 -- so never hardcode a version a second time.
+#
+# ANDROID DELIBERATELY DIVERGES FROM THE DESKTOP PLATFORMS. This is the case the
+# per-platform variables exist for; it is not an oversight to be tidied up.
+#
+#   * Why Android moves: on Android with Gboard and a Thai layout, pressing
+#     Shift MID-WORD reverts to the base layer, making Thai's shift-layer
+#     characters untypeable in every text field in the app. There is no app-side
+#     fix -- Qt's Android input-connection layer restarted the input connection
+#     on every keystroke. Fixed upstream by qtbase f5c0296fdaad ("Android: Add
+#     support for GET_EXTRACTED_TEXT_MONITOR", Fixes: QTBUG-140694), which
+#     landed EIGHT DAYS after 6.9.3 was released. 6.10.3 carries it: its
+#     QtInputConnection.java has 2 restartImmInput() call sites, against 12 in
+#     6.9.3. See docs/android-soft-keyboard.md section 4.
+#   * Why the desktops do NOT move: they have measured, unresolved problems on
+#     6.10.x -- the AppImage's libtiff SONAME failure and a WebEngine SIGSEGV
+#     under FUSE. See docs/qt-6.10.1-appimage-issues.md. Coupling them would let
+#     a desktop packaging problem block a functional fix for Thai users.
+#
+# Consequence that reads like a bug but is not: BOTH ~/Qt/6.9.3/gcc_64 and
+# ~/Qt/6.10.3/gcc_64 must stay installed. 6.9.3's builds the desktop app;
+# 6.10.3's supplies the HOST TOOLS (moc, rcc, androiddeployqt) for the Android
+# cross-build, resolved automatically via __qt_platform_initial_qt_host_path.
+# So the Android build runs 6.10.3's rcc while the desktop runs 6.9.3's --
+# correct, because host tools must match the target Qt.
+#
+# See docs/qt-kit-selection.md (section 7 for the split, 8.1 for the
+# LD_LIBRARY_PATH hazard the split activates).
 set(QT_LINUX   "6.9.3")
 set(QT_MACOS   "6.9.3")
 set(QT_WINDOWS "6.9.3")
-set(QT_ANDROID "6.9.3")
+set(QT_ANDROID "6.10.3")
 set(QT_IOS     "6.9.3")
 
 # Rust always links against non-debug Windows runtime on *-msvc targets
@@ -187,6 +216,28 @@ if (ANDROID)
     set(qmake_exe_name "qmake")
     list(APPEND app_components WebView)
     list(APPEND qt_modules Qt::WebView)
+
+    # CorePrivate must be requested EXPLICITLY as of Qt 6.10. It is needed by
+    # cpp/android_raw_pick.cpp (QtCore/private/qandroidextras_p.h) and is linked
+    # further down as Qt6::CorePrivate.
+    #
+    # Qt 6.9.3's Qt6CoreConfig.cmake sets `__qt_Core_always_load_private_module
+    # ON`, so `find_package(Qt6 COMPONENTS Core)` ALSO loaded Qt6CorePrivate and
+    # defined the target as a side effect. Qt 6.10.3 sets the same variable OFF,
+    # so the private package is loaded only when explicitly asked for (or with
+    # QT_FIND_PRIVATE_MODULES, which is too broad -- it would pull every private
+    # module). Without this line the 6.10.3 configure fails at the
+    # target_link_libraries below with:
+    #   Target "simsapadhammareader" links to: Qt6::CorePrivate
+    #   but the target was not found.
+    #
+    # Added to app_components, NOT to qt_modules: app_components is consumed
+    # only by find_package, whereas qt_modules is also handed to
+    # cxx_qt_import_crate(QT_MODULES), which resolves names through qmake and
+    # has no business seeing a private module. See the comment at the
+    # target_link_libraries call. Documented in docs/file-selection-test.md.
+    list(APPEND app_components CorePrivate)
+
     add_compile_definitions(Q_OS_ANDROID)
 
     # Android package version. androiddeployqt substitutes these into

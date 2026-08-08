@@ -431,8 +431,31 @@ report_android() {
         local host_qmake="$host_kit/bin/qmake6"
         [ -x "$host_qmake" ] || host_qmake="$host_kit/bin/qmake"
         if [ -x "$host_qmake" ]; then
-            local host_ver; host_ver="$("$host_qmake" -query QT_VERSION 2>/dev/null)"
-            if [ "$host_ver" != "$declared" ]; then
+            # Distinguish "qmake ran and reported the wrong version" from "qmake
+            # could not run at all". They need opposite responses, and the
+            # second is the LIKELY one here: a foreign Qt on LD_LIBRARY_PATH
+            # makes this very qmake die with
+            #   libQt6Core.so.6: version `Qt_6.10' not found
+            # and an unqualified probe then captures an EMPTY version, printing
+            # "reports Qt , but QT_ANDROID declares 6.10.3" -- which reads as a
+            # broken kit and sends the reader to reinstall Qt. The kit is fine;
+            # the environment broke the probe. So on failure, re-probe with a
+            # clean LD_LIBRARY_PATH: if that succeeds, the kit is exonerated and
+            # the environment named. See docs/qt-kit-selection.md section 8.1.
+            local host_ver host_err
+            host_err="$("$host_qmake" -query QT_VERSION 2>&1 >/dev/null)"
+            host_ver="$("$host_qmake" -query QT_VERSION 2>/dev/null)"
+            if [ -z "$host_ver" ]; then
+                local clean_ver
+                clean_ver="$(env -u LD_LIBRARY_PATH "$host_qmake" -query QT_VERSION 2>/dev/null)"
+                if [ -n "$clean_ver" ]; then
+                    critical "host qmake fails in THIS environment, but works with LD_LIBRARY_PATH unset (kit is Qt $clean_ver)"
+                    item "" "The kit is fine -- the environment broke it. See the LD_LIBRARY_PATH check below."
+                else
+                    critical "host qmake at $host_qmake could not report a version"
+                fi
+                [ -n "$host_err" ] && item "" "$host_err"
+            elif [ "$host_ver" != "$declared" ]; then
                 critical "host kit at $host_kit reports Qt $host_ver, but QT_ANDROID declares $declared"
             else
                 ok "host tools are Qt $host_ver, matching QT_ANDROID"

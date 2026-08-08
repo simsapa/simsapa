@@ -112,11 +112,45 @@ ANDROID_PRIMARY_ABI="${ANDROID_PRIMARY_ABI:-arm64-v8a}"
 ANDROID_ABIS="${ANDROID_ABIS:-arm64-v8a;x86_64;armeabi-v7a}"
 
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
-# Stay on the Qt-supported NDK (r26b/r27). Do NOT use r28 — at this project's
-# minSdk its libc++ references pthread_cond_clockwait (bionic API 30+), which
-# breaks the cxx C++ build. The exclusion holds at minSdk 28 as well as 27.
+
+# THE NDK IS PINNED EXPLICITLY, NOT AUTO-SELECTED.
+#
+# This used to be `ls -d "$ANDROID_SDK_ROOT"/ndk/* | sort -V | tail -1` -- the
+# HIGHEST installed NDK. That makes `sdkmanager` installing a newer NDK, for any
+# unrelated reason, silently swap this project's compiler. Qt's own auto-detect
+# has the same behaviour (QtAutoDetectHelpers.cmake sorts DESCENDING and takes
+# [0]), so nothing downstream would have corrected it either.
+#
+# The pin also makes the NDK a non-variable across the Qt upgrade, which is the
+# point: Qt 6.9.3 and 6.10.3 were BOTH built against NDK 27.2.12479018, so the
+# Qt bump does not ask for an NDK change. We stay on 27.3.13750724 (r27d, clang
+# 18.0.4) because that is the version that shipped 1.0.0 to Play -- the only
+# known-good data point. Do not "align" it down to 27.2 to match Qt exactly: a
+# clean build would not prove the downgrade safe (most NDK problems are loud,
+# but codegen differences and runtime-resolved paths -- cpal/AAudio, JNI,
+# unwinding -- are not), and 27.2 is more useful held in reserve as a
+# single-variable diagnostic lever.
+#
+# Do NOT install r28. Qt does not ask for it; at this project's minSdk its
+# libc++ references pthread_cond_clockwait (declared by bionic only at API 30+),
+# which breaks the cxx C++ build; and its one draw -- default 16 KB alignment --
+# is already covered by the explicit link flag in CMakeLists.txt. The exclusion
+# holds at minSdk 28 as well as 27. The r28 guard further down stays as a
+# backstop for an explicit ANDROID_NDK_ROOT override.
 # See docs/pure-rust-audio-backend.md.
-ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$(ls -d "$ANDROID_SDK_ROOT"/ndk/* 2>/dev/null | sort -V | tail -1)}"
+# Determined BEFORE the defaults are applied -- afterwards both variables are
+# set either way and the origin is unrecoverable. Reported in the run header so
+# an overridden NDK is visible in the build log rather than having to be
+# inferred from the path, the same reason the Qt version reports its source.
+if [ -n "${ANDROID_NDK_ROOT:-}" ]; then
+    ndk_source="ANDROID_NDK_ROOT override"
+elif [ -n "${ANDROID_NDK_VERSION:-}" ]; then
+    ndk_source="ANDROID_NDK_VERSION override"
+else
+    ndk_source="pinned in build-android.sh"
+fi
+ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-27.3.13750724}"
+ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION}"
 
 # Export both, so scripts/qt-env-verify.sh (a subprocess) inspects the values
 # this build will actually use rather than re-deriving its own. Without the
@@ -290,14 +324,23 @@ Install with: rustup target add$missing_targets"
 fi
 
 [ -d "$ANDROID_SDK_ROOT" ] || die "ANDROID_SDK_ROOT not found: $ANDROID_SDK_ROOT"
-[ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ] \
-    || die "ANDROID_NDK_ROOT not found: ${ANDROID_NDK_ROOT:-<unset>}"
+# The pinned NDK is a hard requirement, so say plainly which one is missing and
+# what IS installed -- otherwise the reader has to go and look, and the obvious
+# "fix" (point at whatever is there) is the auto-selection this pin removed.
+if [ -z "$ANDROID_NDK_ROOT" ] || [ ! -d "$ANDROID_NDK_ROOT" ]; then
+    installed_ndks="$(ls -1 "$ANDROID_SDK_ROOT"/ndk 2>/dev/null | tr '\n' ' ')"
+    die "NDK not found: ${ANDROID_NDK_ROOT:-<unset>}
+This project pins NDK $ANDROID_NDK_VERSION (see the comment at ANDROID_NDK_VERSION).
+Installed under $ANDROID_SDK_ROOT/ndk: ${installed_ndks:-<none>}
+Install it with:  sdkmanager --install \"ndk;$ANDROID_NDK_VERSION\"
+Or override deliberately with ANDROID_NDK_ROOT=/path/to/ndk (r26b/r27 only; NOT r28)."
+fi
 
-# The default above picks the highest installed NDK, which would silently
-# select r28 if it were ever installed. r28 is incompatible with Qt at this
-# project's minSdk: its libc++ references pthread_cond_clockwait, declared by
-# bionic only at API 30+, which breaks the cxx C++ build. The exclusion holds at
-# minSdk 28 as well as 27. Stay on r26b/r27.
+# Backstop for an explicit ANDROID_NDK_ROOT / ANDROID_NDK_VERSION override --
+# the pin above cannot select r28 on its own any more. r28 is incompatible with
+# Qt at this project's minSdk: its libc++ references pthread_cond_clockwait,
+# declared by bionic only at API 30+, which breaks the cxx C++ build. The
+# exclusion holds at minSdk 28 as well as 27. Stay on r26b/r27.
 # See docs/pure-rust-audio-backend.md.
 ndk_major="$(basename "$ANDROID_NDK_ROOT" | cut -d. -f1)"
 if [ "${ndk_major:-0}" -ge 28 ] 2>/dev/null; then
@@ -495,7 +538,7 @@ fi
 echo "==> Qt          : $QT_ANDROID_VERSION ($qt_android_version_source), $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
 echo "==> JDK         : $JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -1))"
 echo "==> ABIs        : $ANDROID_ABIS"
-echo "==> NDK         : $ANDROID_NDK_ROOT"
+echo "==> NDK         : $ANDROID_NDK_ROOT ($ndk_source)"
 echo "==> Build type  : $ANDROID_BUILD_TYPE"
 echo "==> Package     : $PACKAGE_TARGET"
 if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 1 ]; then

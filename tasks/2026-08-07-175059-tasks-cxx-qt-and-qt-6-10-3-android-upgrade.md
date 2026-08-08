@@ -1169,10 +1169,146 @@ does not compile without the build-script migration.
     the scrub is confirmed to be load-bearing from here on, since the divergence
     lands in 6.2. **Any manual 6.10.3 command in an agent/direnv shell must
     clear `LD_LIBRARY_PATH` first.**
-- [ ] 6.2 Set `CMakeLists.txt:11` `QT_ANDROID "6.10.3"` with a comment recording *why* Android diverges (the Thai mid-word Shift fix, qtbase `f5c0296fdaad`) so the split does not read as an oversight to be tidied (FR-11).
-- [ ] 6.3 Confirm `build-android.sh` now picks up 6.10.3 through the task-2.2 derivation, with no second hardcoded version anywhere in the script (FR-12).
-- [ ] 6.4 Replace `build-android.sh:45`'s "newest installed NDK" (`ls … | sort -V | tail -1`) with an explicit pin to `27.3.13750724`, keeping the `ANDROID_NDK_ROOT` environment override and adding a clear error if the pinned NDK is absent (FR-14). `android/build.gradle:56`'s `ndkVersion androidNdkVersion` already propagates it.
-- [ ] 6.5 `make android-clean`, then `make android-apk-debug` (or `android-beta-debug`) as the cheapest first signal on the new kit. Do **not** hand-delete `android-build/`.
+- [x] 6.2 Set `CMakeLists.txt:11` `QT_ANDROID "6.10.3"` with a comment recording *why* Android diverges (the Thai mid-word Shift fix, qtbase `f5c0296fdaad`) so the split does not read as an oversight to be tidied (FR-11).
+  - Done. The comment records **both halves** of the decision — why Android
+    moves (the Gboard/Thai mid-word Shift bug; qtbase `f5c0296fdaad`, `Fixes:`
+    QTBUG-140694, which landed 8 days after 6.9.3; 6.10.3 has 2
+    `restartImmInput()` call sites against 6.9.3's 12) **and why the desktops do
+    not** (the measured 6.10.x AppImage libtiff SONAME failure and the WebEngine
+    SIGSEGV under FUSE). Without the second half the split still reads as an
+    oversight, just a documented one.
+  - Also records the FR-13b consequence at the point of the change: **both
+    `gcc_64` kits must stay installed**, because 6.10.3's supplies the Android
+    cross-build's host tools — so the Android build runs 6.10.3's `rcc` while
+    the desktop runs 6.9.3's.
+- [x] 6.3 Confirm `build-android.sh` now picks up 6.10.3 through the task-2.2 derivation, with no second hardcoded version anywhere in the script (FR-12).
+  - **All three readers agree and the divergence is now real** — the first time
+    these values have ever differed, which is what the task-2.1 helper exists
+    for: bash `qt_version_for` and the Make `$(call qt_version_for,…)` both give
+    `LINUX=6.9.3 MACOS=6.9.3 ANDROID=6.10.3`; the PowerShell reader's regex
+    still matches (no `pwsh` on this host — task 2.14 remains the real test).
+  - `grep` for any Qt version literal in `build-android.sh`: **none**. The
+    version is only ever derived.
+  - The task-2.12 gate's `--all` section 3 ("no reacquired hardcodes") now
+    checks against **both** declared versions (`6.9.3 6.10.3`) and passes — this
+    is precisely the guard that was missing until the 2026-08-08 review, and the
+    moment it was needed. `--all` reports the Android kit as
+    `~/Qt/6.10.3/android_arm64_v8a`.
+  - **Care needed when hand-testing the Make reader:** `include Makefile` in a
+    scratch makefile makes the *project's* first target the default, which
+    launches the GUI app. Set `.DEFAULT_GOAL` explicitly. (Done here by
+    accident; the app started and exited, no stray process.)
+- [x] 6.4 Replace `build-android.sh:45`'s "newest installed NDK" (`ls … | sort -V | tail -1`) with an explicit pin to `27.3.13750724`, keeping the `ANDROID_NDK_ROOT` environment override and adding a clear error if the pinned NDK is absent (FR-14). `android/build.gradle:56`'s `ndkVersion androidNdkVersion` already propagates it.
+  - Pinned via a new `ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-27.3.13750724}"`,
+    with `ANDROID_NDK_ROOT` derived from it. **Two override levels, both
+    deliberate:** `ANDROID_NDK_VERSION` (a different NDK in the same SDK) and
+    `ANDROID_NDK_ROOT` (an NDK anywhere), the latter winning.
+  - The comment records the reason the pin exists at all: `sdkmanager` installing
+    a newer NDK for any unrelated reason silently swapped the compiler, and
+    **Qt's own auto-detect has the same behaviour** (`QtAutoDetectHelpers.cmake`
+    sorts descending and takes `[0]`), so nothing downstream would have caught
+    it. Also records why we do **not** align down to Qt's own 27.2.12479018.
+  - **Error path rewritten**, because the old `ANDROID_NDK_ROOT not found: …`
+    invited exactly the fix the pin removes (point it at whatever is installed).
+    It now names the pinned version, lists what **is** installed, gives the
+    `sdkmanager --install "ndk;<version>"` line, and marks the override as
+    deliberate-only. Verified with a bogus pin:
+    `pinned: 99.9.9999999 ; installed: 27.3.13750724`.
+  - The `ndk_major >= 28` guard is **kept and re-scoped**: the pin cannot select
+    r28 on its own any more, so the guard now exists for the two override paths.
+    Its comment says so. Verified it still fires (a fabricated `28.0.11111`
+    directory is rejected; a non-existent one hits the not-found check first,
+    which is why the guard needed a real directory to test).
+  - Run header now prints the NDK **and who chose it**
+    (`pinned in build-android.sh` / `ANDROID_NDK_VERSION override` /
+    `ANDROID_NDK_ROOT override`), matching the existing Qt-version reporting.
+    **The source must be computed before the `:-` defaults are applied** —
+    afterwards both variables are set either way and the origin is
+    unrecoverable. (First attempt got this wrong, inventing a variable nothing
+    sets.)
+  - All four resolution paths exercised: default → pin; each override → itself;
+    absent pin → the new error. **The header line itself is not yet observed** —
+    `--help` exits before the header prints, so it is confirmed at 6.5.
+  - `docs/pure-rust-audio-backend.md` updated: a new "The NDK is pinned
+    explicitly" section, and the r28 exclusion **de-staled** — it was written as
+    "Qt 6.9.3 at `minSdkVersion 27`", both of which this upgrade changes, so it
+    now states that the exclusion is not tied to minSdk 27 and does not lapse at
+    28 (bionic gained `pthread_cond_clockwait` only at API 30). Same correction
+    task 2.18 made to the script's messages.
+- [x] 6.5 `make android-clean`, then `make android-apk-debug` (or `android-beta-debug`) as the cheapest first signal on the new kit. Do **not** hand-delete `android-build/`.
+  - **Second attempt (with the `CorePrivate` fix) SUCCEEDED — the app builds on
+    Qt 6.10.3.** `make android-clean` first, so this is a from-scratch build on
+    the new kit, not an incremental one. Exit 0, **zero** errors in 1995 log
+    lines. Artifact:
+    `build/android-multiabi/android-build/build/outputs/apk/debug/android-build-debug.apk`
+    (272 MB debug, versionCode 6, versionName `1.0.0-alpha.5-beta-debug`).
+  - Verified on the finished artifact with `aapt2 dump badging` (never the
+    generated `gradle.properties`):
+    - `native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'` — all three ABIs.
+    - `minSdkVersion:'27'` / `targetSdkVersion:'36'` — **unchanged by the Qt
+      bump**, which is the point; 27 → 28 is task 8.1's deliberate change.
+    - The five expected permissions, no new ones.
+    - **Every `uses-feature` is `not-required`** — zero required features, so the
+      July 2026 Chromebook incident has not repeated (the script's own ChromeOS
+      check agrees).
+    - The script's cross-ABI contamination check: *"every library matches its ABI
+      directory"* — preliminary evidence for 6.9, to be re-checked there on the
+      release AAB.
+  - **One new warning, deliberately left unsuppressed.** Each ABI's configure now
+    prints Qt's "using headers of the CorePrivate module … tied to this specific
+    Qt module build version" warning. It is **newly visible, not newly true**:
+    6.9.3's `Qt6CoreConfig.cmake` set `QT_NO_PRIVATE_MODULE_WARNING` itself
+    (2 occurrences) as part of the always-load path, 6.10.3 does not (0). The
+    dependency and its risk were identical before, merely silenced. Kept visible
+    because it is accurate, costs 3 lines per *configure*, and the include is
+    meant to be deleted — if the warning ever disappears, that should be because
+    the private include went with it. Reasoning in
+    `docs/file-selection-test.md` §3.1.
+  - The other QML-import warnings (`QtWebEngine`, `QtQuick.Controls.macOS`,
+    `QtWayland.Compositor`, `com.profoundlabs.simsapa`, …) are pre-existing
+    androiddeployqt import-scan noise, not 6.10.3 regressions.
+  - **First attempt failed at CMake configure — the first genuine 6.10.3
+    incompatibility found, and it is in the private-Qt surface FR-23c flagged:**
+    ```
+    CMake Error at CMakeLists.txt (target_link_libraries):
+      Target "simsapadhammareader" links to: Qt6::CorePrivate
+      but the target was not found.
+    ```
+  - **Root cause, measured in Qt's own `Qt6CoreConfig.cmake`** (not guessed —
+    both kits have the `Qt6CorePrivate` package dir and both mention it ten
+    times, so "the private module was removed" would have been the wrong
+    conclusion):
+
+    | | `__qt_Core_always_load_private_module` |
+    |---|---|
+    | 6.9.3 | `ON` — `find_package(Qt6 COMPONENTS Core)` *also* loaded `Qt6CorePrivate`, defining the target as a **side effect** |
+    | 6.10.3 | `OFF` — the private package loads only when explicitly requested |
+
+    The project had been relying on that side effect since the private include
+    was introduced.
+  - **Fix:** `list(APPEND app_components CorePrivate)` in the `ANDROID` branch.
+    Chosen over `QT_FIND_PRIVATE_MODULES`, which is far too broad — it pulls
+    *every* private module. Verified the scoping is safe before applying it:
+    `app_components` is consumed **only** by `find_package`, while `qt_modules`
+    (the list handed to `cxx_qt_import_crate(QT_MODULES)`, which resolves names
+    through qmake) is a separate variable — so the existing "no private module
+    in `qt_modules`" invariant is preserved.
+  - **FR-23c's own check passes cleanly, and the contrast is the lesson.**
+    `qandroidextras_p.h` is **byte-identical** between the 6.9.3 and 6.10.3
+    Android kits (whole-file `diff`, three `startActivity` declarations on the
+    same lines). So the API/ABI risk the FR was written for did **not**
+    materialise — the breakage came through the **CMake target that provides**
+    the header instead. A private-API dependency has two exposure surfaces and
+    only one of them is what "is the header stable?" measures. Recorded in
+    `docs/file-selection-test.md` §3.1 with a "check both at the next upgrade"
+    note.
+  - Everything the earlier sub-tasks set up reported correctly in the run header
+    and gate: scrub fired (`Clearing LD_LIBRARY_PATH` + `Scrubbing desktop Qt
+    kit`), `Qt : 6.10.3 (from CMakeLists.txt QT_ANDROID)`, `NDK :
+    …/27.3.13750724 (pinned in build-android.sh)` — **which is 6.4's header line
+    observed for the first time** — JDK 21, and the gate's `All checks passed`
+    including `host tools are Qt 6.10.3, matching QT_ANDROID` and both
+    foreign-Qt checks clean. **That closes the configure half of task 11.6.**
 - [ ] 6.6 Re-confirm on 6.10.3 that the rcc options still reach every per-ABI sub-build (task 3.12 established this on 6.9.3) — with a forced `build.rs` re-run, so "it propagated" and "cargo reused stale output" stay distinguishable. Note the Android build runs 6.10.3's `rcc` while the desktop runs 6.9.3's; `--no-zstd` is valid in both.
 - [ ] 6.7 Re-verify the multi-ABI mechanism on 6.10.3 (FR-21): the per-ABI ExternalProject setup; that Qt still does **not** forward the parent's `CMAKE_PREFIX_PATH` to sub-builds (the `if(NOT CMAKE_PREFIX_PATH)` guard at line 123 depends on it); the cross-ABI plugin-staging bug and whether `packagingOptions.jniLibs.excludes` is still needed; and the `armeabi-v7a` → `armv7-linux-androideabi` corrosion mapping.
 - [ ] 6.8 Run `make android-aab` for `arm64-v8a;x86_64;armeabi-v7a` and confirm a signed bundle is produced (FR-13). Bump `android/version.txt` only when an actual Play upload is intended — Play requires a strictly increasing `versionCode`.
@@ -1459,7 +1595,32 @@ derives from). Can land any time after that; independent of stages 1 and 2.
     bare `qmake6`"**. Note `CLAUDE.md` is a **symlink to `AGENTS.md`**, so one
     edit covers both; do not try to edit them separately.
   - Task 10.4 should extend this section (AGP/NDK outcomes), not write a new one. under a new "Qt version per platform" section: never invoke a bare `qmake6` / `rcc` / `moc` (they resolve to system Qt 6.11.1, which the project does not target); desktop tooling is `QT_LINUX`, Android is `QT_ANDROID`, and both are declared in `CMakeLists.txt`. Fold this into the task-10.4 edit rather than writing the section twice.
-- [ ] 11.6 Confirm the Android side is genuinely unaffected: with the shell layer active, run an Android configure and check it still resolves `~/Qt/6.10.3/android_<abi>` and host tools from `~/Qt/6.10.3/gcc_64` — i.e. the desktop `PATH` prefix does **not** leak into the cross-build. Do this after task 6.0, when `QT_ANDROID` is actually 6.10.3, so the two versions are distinguishable.
+- [~] 11.6 Confirm the Android side is genuinely unaffected: with the shell layer active, run an Android configure and check it still resolves `~/Qt/6.10.3/android_<abi>` and host tools from `~/Qt/6.10.3/gcc_64` — i.e. the desktop `PATH` prefix does **not** leak into the cross-build. Do this after task 6.0, when `QT_ANDROID` is actually 6.10.3, so the two versions are distinguishable.
+  - **Detector half done (2026-08-08, right after 6.2); the configure half waits
+    for 6.5.** Now that the versions differ, the gate's checks finally have
+    discriminating power, and both directions were measured:
+    - *simulated direnv shell* (`QT_PREFIX` / `LD_LIBRARY_PATH` / `PATH` all
+      desktop 6.9.3) → `CRITICAL LD_LIBRARY_PATH carries a Qt other than
+      6.10.3`, plus advisories for `PATH` and the surviving `QT_PREFIX`.
+    - *clean environment* → all three OK, host tools reported as 6.10.3.
+  - **A misleading message found and fixed in the gate itself.** With the
+    polluted environment the host-kit probe printed `reports Qt , but
+    QT_ANDROID declares 6.10.3` — an **empty** version, because the probe ran
+    `qmake` under the very `LD_LIBRARY_PATH` it was about to condemn, so qmake
+    died instead of answering. That reads as "the 6.10.3 kit is broken" and
+    sends the reader off to reinstall Qt: **the same misdiagnosis
+    `docs/qt-kit-selection.md` §8.1 was just written to prevent, reproduced
+    inside the checker.** The probe now separates "ran and reported the wrong
+    version" from "could not run", and on failure re-probes with
+    `env -u LD_LIBRARY_PATH`; if that succeeds it exonerates the kit explicitly
+    (`host qmake fails in THIS environment, but works with LD_LIBRARY_PATH
+    unset (kit is Qt 6.10.3)`) and prints qmake's real error.
+  - **Not claimed as tested:** the pre-existing "wrong version" branch. The
+    obvious mutation (declare `QT_ANDROID` 6.9.3) also moves `host_kit` to the
+    6.9.3 tree, so the two match by construction and the branch is not reached.
+    It is unchanged by this edit and was verified in 2.12 with a fabricated kit.
+  - Remaining for 11.6: the **actual Android configure** with the shell layer
+    active, confirming `~/Qt/6.10.3/android_<abi>` — that lands with task 6.5.
 - [x] 11.7 Prove the convenience layer is not load-bearing (the PRD non-goal 6 test): configure and build from a clean environment with `direnv` disabled and the `.claude/settings.json` env unset, and confirm CMake still selects `~/Qt/6.9.3/gcc_64` on its own. If this fails, task 1.2 is incomplete and the shell layer is masking it.
   - Passes at **configure** time: `env -i HOME=… PATH=/usr/bin:/bin cmake -S . -B …`
     reports `Using CMAKE_PREFIX_PATH: ~/Qt/6.9.3/gcc_64` and the assertion
