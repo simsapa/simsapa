@@ -1459,6 +1459,71 @@ does not compile without the build-script migration.
   - This is a smoke test on **arm64 only**. The Thai keyboard test (FR-20) and
     the x86_64 slice (FR-23b) remain task 9.0's.
 - [ ] 6.11 Commit the Qt bump on its own, before touching AGP or Gradle (PRD §7.1 sub-order).
+  - **Mostly already landed.** The user committed the substance mid-task as
+    `f03ebf4` ("starting android build stage 2 with Qt 6.10.3"):
+    `CMakeLists.txt` (`QT_ANDROID` 6.10.3 + the `CorePrivate` fix),
+    `build-android.sh` (NDK pin), `scripts/qt-env-verify.sh`,
+    `docs/file-selection-test.md`, `docs/pure-rust-audio-backend.md`.
+  - Remaining for a second, small commit — the 6.7 correction:
+    `build-android.sh` (ARM-mode comment) and
+    `docs/android-multi-abi-and-chromeos.md`, plus these task notes. **No
+    behaviour change**: comment and prose only.
+  - The PRD §7.1 ordering is intact either way — **nothing AGP-, Gradle-wrapper-
+    or minSdk-related has been touched yet**; those are tasks 7.0 and 8.0.
+
+- [ ] 6.12 **(new, BLOCKER — found on device 2026-08-08)** Text entry is broken on
+  6.10.3: tapping a field raises the keyboard but no characters reach it. Fix or
+  re-scope the upgrade.
+  - **Reproduced without a keyboard in the loop:** `adb shell input tap` on the
+    search field then `adb shell input text "dhamma"` leaves the placeholder
+    showing. So this is **not** Gboard-specific, not a layout issue, and not
+    touch routing — injected key events are dropped too.
+  - **Not the webview overlay (6.13).** Reproduced on the plain search window
+    with no sutta open, where the results panel renders normally.
+  - Android thinks there *is* a focused editor:
+    `startInputFlags=VIEW_HAS_FOCUS|IS_TEXT_EDITOR`, `hasFocusedEditor true`.
+    The log also shows `APP_CALLED_RESTART_INPUT_API` and
+    `QtInputDelegate.hideSoftwareKeyboard` firing around the same tap.
+  - **First hypothesis to test, cheapest first:** our own
+    `MobileKeyboardHelper.qml` (focus-in + tap + retry `Timer` until
+    `Qt.inputMethod.visible`) fighting Qt 6.10's **rewritten** input connection.
+    That helper exists to work around the *old* connection's behaviour, and the
+    rewrite (`f5c0296fdaad`) is the entire reason for this upgrade — so the
+    workaround may now be the problem. Test by removing it from
+    `SearchBarInput.qml` only, rebuilding, and retrying. If that is the cause,
+    `docs/android-soft-keyboard.md` needs rewriting, not patching.
+  - **This blocks FR-20**, the acceptance test the whole upgrade exists for: the
+    Thai mid-word Shift behaviour cannot be judged in a field that accepts no
+    text at all.
+- [ ] 6.13 **(new, BLOCKER — found on device 2026-08-08)** The Android WebView now
+  paints over the QML scene: a blank surface covers the tab-list dialog, is not
+  hidden by the sidebar toggle, and (very likely) hides the search-info dialog,
+  which reads as "the button does not respond".
+  - **Root cause identified in Qt's shipped sources — QtWebView was
+    rearchitected in 6.10**, not a subtle behaviour change:
+
+    | | 6.9.3 | 6.10.3 |
+    |---|---|---|
+    | `QQuickWebView` base class | `QQuickViewController` | **`QQuickWindowContainer`** |
+    | `quick/qquickviewcontroller.{cpp,_p.h}` | present | **deleted** |
+    | `webview/qnativeviewcontroller_p.h` | present | **deleted** |
+    | geometry/clip code in `qquickwebview.cpp` | active | **`#if defined(Q_OS_WASM)` only** |
+
+    On Android the native view is now handed to the container wholesale
+    (`onNativeWindowChanged` → `nativeWindow->setParent(window())` +
+    `setContainedWindow(...)`), so it is a real native child window composited
+    **above** the Qt surface and no longer follows QML stacking.
+  - The screenshot is unambiguous: the tab-list dialog's "Tabs" title is clipped
+    mid-glyph exactly at the blank surface's top edge.
+  - **A workaround may exist app-side**, but it is a workaround:
+    `QQuickWindowContainer` *does* propagate item visibility
+    (`ItemVisibleHasChanged` → `window->setVisible(isVisible())`), so setting the
+    webview item `visible: false` while a dialog or drawer is open should hide
+    it. That does not restore general stacking, and every such site would have to
+    be found and maintained.
+  - Check whether 6.11.x matured this before investing in workarounds — and note
+    this reopens the **target-version question** (§2), since 6.10.3 was chosen as
+    the conservative step.
 
 ---
 
