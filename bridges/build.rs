@@ -1,6 +1,5 @@
 use std::env;
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
-// use cxx_qt_build::{is_ios_target, thin_generated_fat_library_with_lipo};
 
 fn main() {
     let s = match env::var("CXX_QT_QT_MODULES") {
@@ -99,7 +98,13 @@ fn main() {
         "../assets/qml/GlobalHotkeysWaylandNote.qml",
     ];
 
-    let builder = CxxQtBuilder::new()
+    // Since cxx-qt 0.8 a QML module carries only its QML files; the Rust bridge
+    // sources move to CxxQtBuilder::files(), and there may be only one QML module
+    // per builder. CxxQtBuilder::files() panics if the sources span more than one
+    // directory (Qt bug QTBUG-93443) -- all nine bridges are under src/.
+    let builder = CxxQtBuilder::new_qml_module(
+            QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
+        )
         // Link Qt's Network library
         // - Qt Core is always linked
         // - Qt Gui is linked by enabling the qt_gui Cargo feature of cxx-qt-lib.
@@ -108,37 +113,31 @@ fn main() {
         .qt_module("Network")
         .qt_module("Widgets")
         .qt_module("Quick")
-        .qml_module(QmlModule {
-                uri: "com.profoundlabs.simsapa",
-                rust_files: &[
-                        "src/api.rs",
-                        "src/sutta_bridge.rs",
-                        "src/asset_manager.rs",
-                        "src/audio_manager.rs",
-                        "src/storage_manager.rs",
-                        "src/prompt_manager.rs",
-                        "src/clipboard_manager.rs",
-                        "src/dictionary_manager.rs",
-                        "src/global_hotkey_manager.rs",
-                ],
-                qml_files: &qml_files,
-                ..Default::default()
-        })
-        .cc_builder(|cc| {
-            // Add include directory for custom headers
-            cc.include("../cpp/");
-            cc.file("../cpp/utils.cpp");
-            cc.file("../cpp/system_palette.cpp");
-            cc.file("../cpp/gui.cpp");
-        });
+        .files([
+            "src/api.rs",
+            "src/sutta_bridge.rs",
+            "src/asset_manager.rs",
+            "src/audio_manager.rs",
+            "src/storage_manager.rs",
+            "src/prompt_manager.rs",
+            "src/clipboard_manager.rs",
+            "src/dictionary_manager.rs",
+            "src/global_hotkey_manager.rs",
+        ])
+        // The cc_builder() closure is `unsafe fn` since 0.9. It is not needed
+        // here: include_dir() and cpp_files() are the safe equivalents of the
+        // cc.include() / cc.file() calls this used to make. cpp_files() compiles
+        // non-header files and does not run moc over them, matching cc.file().
+        .include_dir("../cpp/")
+        .cpp_files([
+            "../cpp/utils.cpp",
+            "../cpp/system_palette.cpp",
+            "../cpp/gui.cpp",
+        ]);
 
     if mobile_build {
         builder.qt_module("WebView").build();
     } else {
         builder.qt_module("WebEngineQuick").build();
     }
-
-    // if is_ios_target() {
-    //     thin_generated_fat_library_with_lipo("libsimsapa_bridges-cxxqt-generated.a", "arm64");
-    // }
 }

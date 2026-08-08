@@ -105,8 +105,33 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# This one list feeds BOTH rcc invocations in the project:
+#   1. CMake's own AUTORCC, for assets/icons.qrc;
+#   2. the bridge crate's, because cxx-qt-cmake 0.9.1 joins this list with ':'
+#      and passes it to cargo as CXX_QT_AUTORCC_OPTIONS (cmake/CxxQt.cmake:99,111
+#      -> corrosion_set_env_vars -> `cmake -E env VAR=VALUE cargo ...`).
+#
+# `--no-zstd` is the former cxx-qt fork patch A (Android: the shipped rcc must
+# not emit zstd-compressed resources). Measured with Qt 6.9.3's rcc: given the
+# `--compress-algo zlib` above, `--no-zstd` produces byte-identical output, so
+# today it is belt-and-braces rather than the flag doing the work. It is kept
+# because patch A carried it and because it keeps the guarantee if the
+# compress-algo is ever changed. It is set here rather than exported from
+# build-android.sh because corrosion's explicit `cmake -E env` assignment
+# OVERRIDES the inherited environment -- a shell-exported CXX_QT_AUTORCC_OPTIONS
+# is silently discarded on every CMake-driven build, which is all of them.
+# Setting it here also propagates structurally to each per-ABI ExternalProject
+# sub-build, which re-runs CMake over this same tree.
+#
+# ⚠ Changing this list does NOT trigger a Rust rebuild: cxx-qt-build reads the
+# variable with env::var_os and emits no `cargo::rerun-if-env-changed`. Any
+# experiment must `touch bridges/build.rs` or `cargo clean -p simsapa_bridges`
+# first, or a stale rcc output is indistinguishable from a working change.
+#
+# See docs/cxx-qt-fork.md.
 set(CMAKE_AUTORCC_OPTIONS --format-version 1)
 list(APPEND CMAKE_AUTORCC_OPTIONS --compress-algo zlib)
+list(APPEND CMAKE_AUTORCC_OPTIONS --no-zstd)
 
 set(CXXQT_QTCOMPONENTS Core Gui Qml QuickControls2 QuickTest Test)
 
@@ -285,19 +310,19 @@ if(NOT CxxQt_FOUND)
     FetchContent_Declare(
         CxxQt
         GIT_REPOSITORY https://github.com/kdab/cxx-qt-cmake.git
-        # NOTE: `0.7` here is the BRANCH, not the tag. kdab/cxx-qt-cmake
-        # publishes both -- refs/heads/0.7 alongside tags 0.7.0 ... 0.7.3 -- and
-        # FetchContent resolves the branch, which re-resolves to whatever its
-        # latest commit is on every fresh build. That is the same
-        # non-reproducibility bridges/Cargo.toml deliberately avoids by pinning a
-        # rev rather than `branch = "simsapa"`; it is simply less visible here.
-        # It happens to equal tag 0.7.3 today, which is why nothing has broken.
+        # This is the TAG `0.9.1`, deliberately, not the branch `0.9`. They point
+        # at the same commit today, but kdab/cxx-qt-cmake publishes both --
+        # refs/heads/0.9 alongside tags 0.9.0, 0.9.1 -- and FetchContent resolving
+        # a branch re-resolves to whatever its latest commit is on every fresh
+        # build. That is the same non-reproducibility bridges/Cargo.toml avoids by
+        # pinning a rev; it was simply less visible here. The previous pin, `0.7`,
+        # was the branch.
         #
-        # Pin the TAG when this moves. cxx-qt-cmake and the Rust cxx-qt crates
-        # are a coupled pair -- a mismatch fails inside generated code, the
-        # hardest place to read an error -- so this must be bumped together with
-        # the four crate pins in bridges/Cargo.toml, never on its own.
-        GIT_TAG 0.7
+        # cxx-qt-cmake and the Rust cxx-qt crates are a coupled pair -- a mismatch
+        # fails inside generated code, the hardest place to read an error -- so
+        # this must be bumped together with the four crate pins in
+        # bridges/Cargo.toml, never on its own.
+        GIT_TAG 0.9.1
     )
 
     FetchContent_MakeAvailable(CxxQt)
