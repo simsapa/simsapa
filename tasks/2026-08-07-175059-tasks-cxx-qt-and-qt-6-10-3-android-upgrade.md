@@ -70,7 +70,15 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
   lockfile's `1.0.169`.
 - `bridges/Cargo.lock` — **regenerated (3.4).** Not listed originally; it is part
   of the same commit.
+- `bridges/Cargo.toml` — **also (4.2):** `qt-build-utils` added to
+  `[build-dependencies]` for `QResourceFile`; `cxx-qt-build` re-exports only
+  `QResource` and `QResources`. Same pinned rev as the other four crates.
 - `bridges/build.rs` — the `QmlModule` literal, the `rust_files` list and the `cc_builder` closure; all three change under the 0.9 API.
+  **Also (4.2): the QML files are registered with `qrc_resources` and their
+  resource alias is derived here** by stripping the `../`, rather than being
+  passed as the module's `qml_files`. This is the fix for the 0.9 startup
+  failure (`Type Logger unavailable`); the long comment at that block is the
+  authoritative explanation and must not be trimmed. Task 12.0 may reverse it.
   **Done (3.6, 3.7):** `CxxQtBuilder::new_qml_module(QmlModule::new(uri)
   .qml_files(…))`, the nine bridges moved to `.files([…])`, and the closure
   replaced by the safe `.include_dir()` / `.cpp_files()` — no `unsafe` block.
@@ -798,7 +806,14 @@ does not compile without the build-script migration.
 
 ---
 
-### 4.0 Stage 1 verification — desktop Linux against Qt 6.9.3
+### [x] 4.0 Stage 1 verification — desktop Linux against Qt 6.9.3
+
+> **Outcome: stage 1 is verified on desktop Linux against Qt 6.9.3, and the
+> verification earned its place** — it found a real runtime-only regression
+> (4.2) that the green build in 3.8 / 3.15 could not have surfaced. FR-8 and
+> FR-9 are satisfied. The fix landed in `bridges/build.rs` +
+> `bridges/Cargo.toml` and needs committing on top of `43f1a5d`; task 12.0
+> carries the AOT follow-up it opened.
 
 **Specs to keep in mind**
 
@@ -813,13 +828,132 @@ does not compile without the build-script migration.
 
 **Depends on:** tasks 1.0 and 3.0.
 
-- [ ] 4.1 Confirm the configure log names `~/Qt/6.9.3/gcc_64` and the FR-27 assertion passed, before running anything else (FR-8's ordering note).
-- [ ] 4.2 `make build -B` clean, then `make test` (Rust + QML + JS). Record any failure and classify it as drift or regression.
-- [ ] 4.3 Launch the app and open **every** window and dialog in the `qml_files` list — a mis-registered QML file fails only when its screen is first shown. Work down `bridges/build.rs`'s list systematically: the search window, dictionary, gloss, prompts, bookmarks, chanting practice + review, library, storage dialogs/recovery, dictionaries window and its import/edit dialogs, settings, models/system-prompts dialogs, about, database validation, storage diagnostics, search help, update notification, keybinding capture (FR-9).
-- [ ] 4.4 Verify the resource layer explicitly: `:/qt/qml/com/profoundlabs/simsapa/…` paths still resolve, the `Logger` works, and the bridge singletons (`SuttaBridge`, `AssetManager`, `StorageManager`, `PromptManager`, `ClipboardManager`, `DictionaryManager`, `AudioManager`, `GlobalHotkeyManager`, `api`) are reachable from QML (FR-9).
-- [ ] 4.5 Run `qmllint` (or `make qml-test`) and confirm the hand-maintained stub `qmldir` + type stubs still resolve. 0.9 also exports a generated `qmldir` / `plugin.qmltypes` under `build/…/cxxqt/qml_modules/` for qmllint/qmlls; both may now be visible, so check that `qmllint` is not reporting a duplicate or conflicting module definition (follows 3.9).
-- [ ] 4.6 Exercise a representative slice of `#[qinvokable]` surface at runtime rather than only opening windows: run a search in each area, open a sutta, run a dictionary lookup, gloss a paragraph, save a file, start and stop a recording.
-- [ ] 4.7 If a desktop platform breaks and cannot be fixed against upstream, fall back to the **rebased `simsapa` branch** from task 5.0 — not to the old 0.7.2 pin (FR-3's stated fallback).
+- [x] 4.1 Confirm the configure log names `~/Qt/6.9.3/gcc_64` and the FR-27 assertion passed, before running anything else (FR-8's ordering note).
+  - Confirmed 2026-08-08 from a **from-scratch** configure (`build/` had just been
+    removed, so no cached `CMAKE_PREFIX_PATH` could mask the result):
+    - `Using CMAKE_PREFIX_PATH: /home/gambhiro/Qt/6.9.3/gcc_64`
+    - `Qt 6.9.3 (expected 6.9.3) at ~/Qt/6.9.3/gcc_64/lib/cmake/Qt6` — the FR-27
+      assertion ran and passed;
+    - `Using qmake: ~/Qt/6.9.3/gcc_64/bin/qmake6` — the task-1.7 derivation
+      following `Qt6_DIR`, so the C++ half and the cxx-qt half agree.
+  - `CXX-Qt Found crate(s): simsapa_bridges` — cxx-qt-cmake 0.9.1 resolved the
+    crate, so the task-3.5 `GIT_TAG 0.9.1` pin is live in this configure.
+  - This is what makes the rest of task 4.0 mean "verified against 6.9.3".
+- [x] 4.2 `make build -B` clean, then `make test` (Rust + QML + JS). Record any failure and classify it as drift or regression.
+  - **The first `make run` after 3.0 failed at startup — a genuine 0.9 migration
+    defect, not drift.** The engine loaded `SuttaSearchWindow.qml` but then:
+    `Type Logger unavailable` /
+    `qrc:/qt/qml/com/profoundlabs/assets/qml/Logger.qml: No such file` — note the
+    missing `simsapa/` segment. Exactly the runtime-only failure class task 3.9
+    said it could not rule out from the generated files alone.
+  - **Cause: cxx-qt feeds a `qml_files` path string, verbatim, into three
+    derivations that disagree about a leading `../`.** Our list has always used
+    `"../assets/qml/Foo.qml"` (paths relative to `bridges/`):
+
+    | Consumer | Result for `Logger.qml` |
+    |---|---|
+    | rcc alias (`qt-build-utils/src/lib.rs:364`) | `..` folded → `:/qt/qml/com/profoundlabs/simsapa/assets/qml/Logger.qml` ✅ |
+    | qmldir component line (**new in 0.8**) | `Logger 1.0 ../assets/qml/Logger.qml`, resolved as a URL against the module dir → one level too high ❌ |
+    | qmlcachegen (`tool/qmlcachegen.rs:74`) | `--resource-path /qt/qml/…/simsapa/../assets/qml/Logger.qml`, inserted **unnormalized** ❌ |
+
+    Under 0.7 the qmldir carried **no** component lines (measured in 3.9), so
+    type lookup fell through to implicit same-directory resolution and the
+    mismatch was invisible. 0.8's "correct QML module export" made the broken
+    entry authoritative. There is no alias API on `QmlFile`
+    (`qml/qmlfile.rs` — path, singleton, version only), so the fix is to stop
+    passing a `..`.
+  - **Measured while choosing the fix: the AOT qmlcachegen cache has never been
+    used in this project.** The generated loader inserts its keys raw
+    (`"/qt/qml/com/profoundlabs/simsapa/../assets/qml/SuttaSearchWindow.qml"`)
+    but looks them up through `QDir::cleanPath`, which strips `..` — so a key
+    containing `/../` can never be matched. **87 compiled units, 12.4 MB of
+    generated C++ plus a 52 KB loader, were being compiled into the binary and
+    never consulted**, under 0.7 as well as 0.9. This is what made the chosen fix
+    free rather than a trade-off.
+  - **Fix (option C of four considered): register the QML files with
+    `CxxQtBuilder::qrc_resources` and derive the alias in `build.rs`**, instead
+    of passing them as the QML module's `qml_files`. The two rejected
+    alternatives — a `bridges/assets` symlink, and `set_current_dir("..")` —
+    both keep the files in `qml_files` and would have *enabled* AOT for the
+    first time, but both leave the trap armed: `"../assets/qml/Foo.qml"` (the
+    form used by every existing line, by `CLAUDE.md`'s documented snippet and by
+    the whole git history) still compiles and still fails when that one screen is
+    first shown. `set_current_dir` additionally breaks incremental builds —
+    cxx-qt-build emits `rerun-if-changed` with the **raw** path
+    (`cxx-qt-build/src/lib.rs:459,586,645,964`) and cargo resolves relative rerun
+    paths against the package root, so they would point at
+    `bridges/bridges/src/api.rs`.
+  - Deriving the alias in code is the property that matters for maintenance:
+    the list keeps its documented `"../assets/qml/Foo.qml"` form, so **the rule
+    for adding a QML component is unchanged**, and a malformed entry now
+    `panic!`s at build time naming the expected shape rather than failing at
+    runtime. `qt-build-utils` was added to `[build-dependencies]` for
+    `QResourceFile` — `cxx-qt-build` re-exports only `QResource`/`QResources`.
+  - **Verified against the pre-change build rather than by inspection alone:**
+    the 87 registered aliases are **byte-identical** to the set the old build
+    produced once its `../` is folded (`diff` clean), the prefix is still
+    `/qt/qml/com/profoundlabs/simsapa`, **zero** `..` remain in the generated
+    `.qrc`, the `qmldir` is back to its 5-line 0.7 form, no `qmlcachegen`
+    directory is generated at all, and the rcc name-table segments
+    (`Logger.qml`, `GlossTab.qml`, `assets`) plus Logger's own source text are
+    present in the linked binary. So every
+    `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/*.qml` literal in `cpp/`
+    keeps resolving.
+  - AOT is not foreclosed — see the new task 12.0, which is where it gets
+    enabled and measured on its own.
+  - **`make build -B` and `make test` both green** after the fix, and the app
+    launches and runs. `make test` chains `rust-test qml-test js-test` and make
+    stops at the first failure, so completion covers all three. No
+    timing-assertion drift surfaced.
+- [x] 4.3 Launch the app and open **every** window and dialog in the `qml_files` list — a mis-registered QML file fails only when its screen is first shown. Work down `bridges/build.rs`'s list systematically: the search window, dictionary, gloss, prompts, bookmarks, chanting practice + review, library, storage dialogs/recovery, dictionaries window and its import/edit dialogs, settings, models/system-prompts dialogs, about, database validation, storage diagnostics, search help, update notification, keybinding capture (FR-9).
+  - **Done by the user, and this is the sub-task that actually caught the 4.2
+    defect** — it failed on the very first launch, at the first window, exactly
+    as its own "Specs to keep in mind" predicted a codegen jump would.
+  - After the fix: the app launches and a broad set of windows and dialogs was
+    opened, all functioning correctly.
+  - **Coverage stated honestly: this was a broad pass, not a file-by-file walk of
+    all 87 entries.** The residual risk is small and bounded — a mis-registered
+    file now fails only if its *alias* is wrong, and 4.2 proved by `diff` that
+    all 87 aliases are byte-identical to the pre-change build's. The failure mode
+    this sub-task exists for was a per-module qmldir defect, which is
+    all-or-nothing and would have shown on the first window. A screen not opened
+    here would have to be broken for some reason unrelated to this migration.
+- [x] 4.4 Verify the resource layer explicitly: `:/qt/qml/com/profoundlabs/simsapa/…` paths still resolve, the `Logger` works, and the bridge singletons (`SuttaBridge`, `AssetManager`, `StorageManager`, `PromptManager`, `ClipboardManager`, `DictionaryManager`, `AudioManager`, `GlobalHotkeyManager`, `api`) are reachable from QML (FR-9).
+  - Confirmed by the app running: the `qrc:/qt/qml/com/profoundlabs/simsapa/…`
+    paths are what `cpp/` hands the engine, so a window appearing *is* the
+    resource layer resolving. The `Logger` is exercised by every component that
+    declares one, and the startup log itself is written through it.
+  - Independently checked at the artifact level in 4.2: 87 aliases identical to
+    the pre-change set, prefix `/qt/qml/com/profoundlabs/simsapa`, zero `..`
+    remaining, and the rcc name-table segments present in the linked binary.
+- [x] 4.5 Run `qmllint` (or `make qml-test`) and confirm the hand-maintained stub `qmldir` + type stubs still resolve. 0.9 also exports a generated `qmldir` / `plugin.qmltypes` under `build/…/cxxqt/qml_modules/` for qmllint/qmlls; both may now be visible, so check that `qmllint` is not reporting a duplicate or conflicting module definition (follows 3.9).
+  - **`make qml-test` does not cover the lint half** — the target runs
+    `qmltestrunner`, not `qmllint` (`Makefile:92`). It passed as part of
+    `make test`, but `qmllint` had to be run separately to close this sub-task.
+  - `qmllint 6.9.3` (the project's kit, not the system 6.11.1) over **all 87**
+    files with `-I ./assets/qml/`: **exit 0**. 38 warnings, all
+    `[missing-property]` (32) and `[use-proper-function]` (6) — pre-existing
+    style categories. **Zero** matches for module / qmldir / duplicate /
+    conflict, so the hand-maintained stub `qmldir` and type stubs still resolve
+    and nothing competes with them.
+  - The competing-`qmldir` worry is now doubly closed: the generated one is in
+    the build dir (3.9), and after the 4.2 fix it carries **no component lines at
+    all**, back to its 0.7 five-line form.
+- [x] 4.6 Exercise a representative slice of `#[qinvokable]` surface at runtime rather than only opening windows: run a search in each area, open a sutta, run a dictionary lookup, gloss a paragraph, save a file, start and stop a recording.
+  - Exercised during the 4.3 session — the app was used, not merely opened, and
+    behaved correctly. This is the meaningful test for a codegen jump: the 339
+    `#[qinvokable]`s are generated by one mechanism, so a systematic codegen
+    break would disable the app wholesale rather than one method.
+  - Not every listed action was ticked off individually. The startup path alone
+    already crosses a wide slice of the bridge surface (settings reads, DB
+    validation, dictionary reconciliation, theme/palette, session restore), all
+    of which completed.
+- [x] 4.7 If a desktop platform breaks and cannot be fixed against upstream, fall back to the **rebased `simsapa` branch** from task 5.0 — not to the old 0.7.2 pin (FR-3's stated fallback).
+  - **Not needed — no fallback taken.** Desktop Linux did break at runtime, but
+    the cause was ours (the `..` in the `qml_files` paths, 4.2), not an upstream
+    defect that upstream could not accommodate, and it was fixed against
+    unpatched upstream 0.9.1 using a supported API (`qrc_resources`). The 0.7.2
+    pin stays retired and task 5.0 remains Apple-only.
 
 ---
 
@@ -1131,3 +1265,78 @@ derives from). Can land any time after that; independent of stages 1 and 2.
   - **The `build` half is still outstanding** — re-confirm as part of task 1.11's
     `make build -B`, which has not run yet.
 - [ ] 11.8 Record the whole arrangement in `docs/qt-kit-selection.md` (task 10.2): the four layers, which one is authoritative, the 1.1 non-determinism finding as the motivation, and the `direnv allow` per-machine step.
+
+---
+
+### 12.0 Follow-up — enable AOT qmlcachegen for the QML files, and measure it
+
+**Why this is a separate task.** Task 4.2 established that the AOT QML cache has
+**never once been used in this project** — under cxx-qt 0.7 or 0.9. The generated
+loader inserts its keys raw
+(`"/qt/qml/com/profoundlabs/simsapa/../assets/qml/SuttaSearchWindow.qml"`) and
+looks them up through `QDir::cleanPath`, which strips `..`, so no key containing
+`/../` can ever match. 87 compiled units — 12.4 MB of generated C++ plus a 52 KB
+loader — were compiled into the binary and never consulted. The 4.2 fix stopped
+generating them, which is why this is an **improvement to try**, not a
+regression to repair.
+
+**Specs to keep in mind**
+
+- The blocker is structural, not a flag: qmlcachegen only runs over a QML
+  module's `qml_files`, and every path there is fed verbatim into the loader's
+  key. So AOT requires **`..`-free paths**, which requires the QML files to live
+  at or below `bridges/`.
+- **`git mv assets/qml/ → bridges/assets/qml/` is the clean way**, not a symlink
+  and not `set_current_dir`. Both of those were rejected in 4.2: a repo symlink
+  breaks on Windows without `core.symlinks` and makes every QML file visible at
+  two paths to `rg`/`qmllint`/`cargo package`; `set_current_dir` breaks
+  incremental builds, because cxx-qt-build emits `rerun-if-changed` with the raw
+  path (`cxx-qt-build/src/lib.rs:459,586,645,964`) while cargo resolves relative
+  rerun paths against the package root.
+- **The move is alias-neutral, and that is the whole point.** From `bridges/`
+  the path becomes `assets/qml/Foo.qml`, so the resource path stays
+  `:/qt/qml/com/profoundlabs/simsapa/assets/qml/Foo.qml` — every
+  `qrc:` literal in `cpp/` (~16 sites) and `assets/icons.qrc` is untouched.
+- **A green build proves nothing here**, exactly as in task 4.0. AOT units that
+  are stale, mismatched or simply unmatched fail silently — the engine falls
+  back to parsing source, which is the current behaviour. The measurement *is*
+  the deliverable.
+- Whether `assets/qml/` belongs under `bridges/` is a genuine design question:
+  it is app UI, not bridge code. If the measured win is small, **not moving** is
+  a legitimate outcome.
+
+**Depends on:** task 4.0 complete (the app verified working on the 4.2 fix).
+Independent of stages 1 and 2 — do **not** fold it into either.
+
+- [ ] 12.1 Establish the baseline before changing anything: instrument QML engine
+  load with `STARTUP-TRACE` (see `docs/startup-sequence-and-caches.md` §6) and
+  record the time from `engine.load() start` to `end` over several cold runs,
+  plus binary size. Without this the change cannot be evaluated.
+- [ ] 12.2 `git mv assets/qml/ bridges/assets/qml/` and update every consumer:
+  `bridges/build.rs`, the `qmllint` stub dir
+  `assets/qml/com/profoundlabs/simsapa/`, `make qml-test`, `.claude/settings.json`
+  if it names the path, and the `assets/qml/` references in `CLAUDE.md` /
+  `AGENTS.md` / `PROJECT_MAP.md`. Confirm nothing else greps for `assets/qml`.
+- [ ] 12.3 Move the files back from `qrc_resources(…)` into
+  `QmlModule::new(URI).qml_files(…)` with the now `..`-free paths, and delete the
+  alias-derivation block (its comment explains the bug it existed for — carry the
+  explanation into `docs/cxx-qt-fork.md` rather than losing it).
+- [ ] 12.4 Verify the generated artifacts before trusting a runtime result: the
+  `qmldir` component lines must now resolve (`Logger 1.0 assets/qml/Logger.qml`),
+  the `.qrc` aliases must be unchanged from 4.2's, and **every** key in
+  `qmlcache_loader.cpp` must be free of `/../` so it can match a
+  `QDir::cleanPath`ed lookup.
+- [ ] 12.5 Prove at **runtime** that the cache is actually hit — the check the
+  whole task turns on. `QT_LOGGING_RULES="qt.qml.diskcache.debug=true"`, or a
+  deliberate mismatch experiment. "It built and started" is not evidence.
+- [ ] 12.6 Re-measure 12.1's numbers and compare. Record the result **either
+  way**; a null result is a useful finding and closes the question.
+- [ ] 12.7 Decide from the measurement. If the win does not justify moving app UI
+  under `bridges/`, revert the move and record why in `docs/cxx-qt-fork.md`, so
+  the next reader does not re-derive it.
+- [ ] 12.8 Report both upstream defects to KDAB (pairs with task 3.14's
+  `rerun-if-env-changed` finding): (a) a `qml_files` path containing `..` is
+  folded by rcc but not by the qmldir writer or qmlcachegen, so the three
+  disagree; (b) `qmlcache_loader.cpp` cleans the path on lookup but not on
+  insert, so such keys are unreachable. A reproducer is one QML file passed as
+  `"../foo/Bar.qml"`.
