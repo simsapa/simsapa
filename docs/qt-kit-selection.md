@@ -272,6 +272,94 @@ from `QT_LINUX`.
 > The export was removed. Set `QT_ANDROID_VERSION` by hand when you genuinely
 > want to override; the build header reports which source it used.
 
+### 8.1 The leak the convenience layer creates, and how each script closes it
+
+The box above is one instance of a general trap, which has now produced **three
+separate defects**. State it as a rule:
+
+> **Anything `qt_env_activate()` exports is present in every direnv, agent and
+> hand-sourced shell. A build script that reads such a variable — or lets the
+> dynamic loader read it — has made the convenience layer load-bearing, which
+> §8 says it must not be.**
+
+The dangerous export is **`LD_LIBRARY_PATH`**. The Android cross-build runs the
+*Android* Qt's **host tools** (moc, rcc, androiddeployqt from
+`$QT_ANDROID_ROOT/gcc_64`, resolved via `__qt_platform_initial_qt_host_path`),
+and those are dynamically linked against `libQt6Core.so.6`. With the desktop
+kit's `lib/` first on the loader's search path, a 6.10.3 `rcc` loads 6.9.3's
+`libQt6Core`. Measured, in the agent shell, before the fix:
+
+```
+$ ~/Qt/6.10.3/gcc_64/libexec/rcc --version
+rcc: /home/…/Qt/6.9.3/gcc_64/lib/libQt6Core.so.6: version `Qt_6.10' not found
+```
+
+**This is invisible while `QT_ANDROID == QT_LINUX` and becomes live the moment
+they diverge** — i.e. exactly when the Android-only Qt bump lands. That timing
+is the whole hazard: the failure appears at the point the versions split, in a
+build that otherwise looks fine.
+
+**Per-platform exposure.** Checked, not assumed:
+
+| Script | Exposed? | Why |
+|---|---|---|
+| `build-android.sh` | **Yes — the real case** | Runs host tools of a *different* Qt than the shell's. Closes it by **scrubbing**: `LD_LIBRARY_PATH` cleared unconditionally, `PATH` entry and `QT_PREFIX`/`QMAKE` removed |
+| `build-appimage.sh` | No, by a different mechanism | `resolve_qt()` **prepends** its own kit to both `PATH` and `LD_LIBRARY_PATH`, so its kit wins for the loader regardless of what was inherited |
+| `build-macos.sh` | No | `qt_env_activate()` never runs on macOS — `qt_prefix_for LINUX` looks for `$HOME/Qt/<v>/gcc_64`, which does not exist there, so it fails cleanly and exports nothing. macOS's equivalents are `DYLD_LIBRARY_PATH` / `DYLD_FRAMEWORK_PATH`, which nothing sets |
+| `build-windows.ps1` | No today — **but the reasoning differs** | Same reason as macOS (the bash convenience layer does not run). See the warning below |
+
+> **⚠ On Windows, `PATH` *is* the library search path.** The
+> "`PATH` is only advisory, the build addresses its tools by absolute path"
+> argument used in `build-android.sh` is a **Linux-specific** claim — there the
+> loader reads `LD_LIBRARY_PATH`, not `PATH`. Windows resolves DLLs through
+> `PATH`, so a foreign Qt `bin/` on it is as dangerous as a foreign `lib/` is on
+> Linux. Nothing exercises this today (no Windows/Android split, no second Qt on
+> Windows hosts), but do not port the "advisory" wording to a Windows script.
+
+**Two ways a scrub goes wrong, both found and fixed here.** Both are easy to
+re-introduce, which is why they are written down rather than only fixed:
+
+1. **Do not gate the dangerous half on the harmless half.** The
+   `build-android.sh` scrub was entirely inside `if [ -n "${QT_PREFIX:-}" ]`.
+   `QT_PREFIX` and `LD_LIBRARY_PATH` are set *together* by `qt_env_activate()`,
+   but nothing guarantees they *arrive* together — a hand-written export, a
+   wrapper script or an inherited CI environment sets one without the other, and
+   the whole block is then skipped. The `LD_LIBRARY_PATH` clear is now
+   unconditional and in its own block. `PATH` stays gated, because `QT_PREFIX`
+   is what names the entry to remove.
+2. **Do not edit `PATH`-like lists with `sed`.** `qt_env_activate()`'s
+   "idempotent" strip matched only the `"<entry>:"` form, so it missed the entry
+   when it was **last** and — because a sole entry has neither a leading nor a
+   trailing colon — could never converge: repeated activation settled at two
+   copies. Worse, substring matching **corrupts a lookalike entry**:
+
+   ```
+   in : /opt/home/…/Qt/6.9.3/gcc_64/bin:/usr/bin
+   out: /opt/usr/bin              # an entry that never existed
+   ```
+
+   Replaced by `_qt_env_list_remove()`, which splits on `:` and compares whole
+   entries, so first / middle / last / only / duplicated are handled uniformly.
+
+**Clearing rather than filtering is deliberate** where it is done: the Android
+build needs no `LD_LIBRARY_PATH` at all (Qt's own scripts set what they need),
+so an empty value cannot be wrong, whereas a filtered one can still carry a
+third Qt from somewhere else on the list.
+
+**Two independent layers, and the second must not depend on the first.**
+`scripts/qt-env-verify.sh`'s *Android host tools* section re-checks the host kit
+and flags a foreign Qt on `LD_LIBRARY_PATH` (CRITICAL) or `PATH` (advisory). It
+deliberately does not assume the scrub ran — the scrub is the thing that can be
+missing.
+
+**Working by hand?** Any 6.10.3 command run outside `build-android.sh` in a
+direnv or agent shell needs the desktop kit out of the way, or it dies with the
+`Qt_6.10 not found` error above and reads as a broken install:
+
+```sh
+env -u LD_LIBRARY_PATH ~/Qt/6.10.3/gcc_64/bin/qmake -query QT_VERSION
+```
+
 ## 9. Never invoke a bare `qmake6` / `rcc` / `moc` / `qmllint`
 
 They resolve to the **system** Qt (`/usr/bin/qmake6`), which this project does

@@ -630,6 +630,58 @@ Update the file after completing each sub-task, not just after completing an ent
   - **This pre-empts task 11.6 rather than replacing it.** 11.6 remains open: it
     is the confirmation *after* 6.2, when the two versions actually differ and the
     check has discriminating power.
+  - **⚠ Gap found and closed 2026-08-08, while checking whether task 6 could be
+    run from an agent shell at all.** The entire scrub — including the
+    `LD_LIBRARY_PATH` clear, which is the dangerous half — sat inside
+    `if [ -n "${QT_PREFIX:-}" ]`. So it **gated the dangerous half on the
+    presence of the harmless one**: a shell exporting `LD_LIBRARY_PATH` by any
+    route other than `qt_env_activate()` (a hand-written export, a wrapper
+    script, an inherited CI environment) has no `QT_PREFIX`, skips the whole
+    block, and carries a foreign Qt straight into the cross-build's host tools.
+    The `LD_LIBRARY_PATH` clear is now **unconditional**, in its own block above
+    the `QT_PREFIX` one; the `PATH` scrub stays gated, because `QT_PREFIX` is
+    what names the entry to remove and there is nothing to match on without it.
+  - **Verified in all three states, with a negative control** (the same
+    environment *without* the fix, to prove the test can fail):
+    - *negative control* — `LD_LIBRARY_PATH` set, `QT_PREFIX` unset, no scrub:
+      6.10.3's `rcc` dies `libQt6Core.so.6: version 'Qt_6.10' not found`,
+      exit 1. This is the failure the gap allowed.
+    - *the gap, fixed* — same environment, scrub applied: the clear fires and
+      `rcc 6.10.3` runs.
+    - *both set* (the real agent shell) — both messages print, `PATH` kit `bin/`
+      removed, `QT_PREFIX`/`QMAKE`/`LD_LIBRARY_PATH` unset, `rcc 6.10.3` runs.
+    - *clean env* — silent no-op, `rcc 6.10.3` runs.
+  - **Note for anyone re-running these by hand:** a `sed`-range replay of the
+    block now stops at the **first** `^fi$` (the new `LD_LIBRARY_PATH` block) and
+    silently omits the `PATH`/`QT_PREFIX` half — which reads as "the scrub
+    stopped working". Replay to the second `fi`.
+  - **Second defect, same trap class, found while checking the other platforms:
+    `qt_env_activate()`'s "idempotent" strip was neither idempotent nor safe.**
+    It edited `PATH` / `LD_LIBRARY_PATH` with `sed` substitutions matching only
+    the `"<entry>:"` form, which fails three ways: it **misses the entry when it
+    is last**; it can **never converge when the entry is the whole value**
+    (no leading or trailing colon to match — repeated activation settled at a
+    steady state of *two* copies, measured); and substring matching **corrupts a
+    lookalike entry** — `/opt<kit>/bin:/usr/bin` became `/opt/usr/bin`, a path
+    that never existed. Replaced with `_qt_env_list_remove()`, which splits on
+    `:` and compares whole entries. Verified across ten cases (only / first /
+    middle / last / duplicated / absent / empty list / empty entries /
+    prefix-lookalike / substring-safe) plus five repeated activations, with
+    other `PATH` entries preserved and the kit still first.
+  - **Other platforms examined; only Android was exposed.** Checked rather than
+    assumed: `build-appimage.sh` is safe by a **different mechanism** — it
+    *prepends* its kit to both lists, so it wins for the loader regardless of
+    what was inherited; `build-macos.sh` is safe because `qt_env_activate()`
+    never runs on macOS (`qt_prefix_for LINUX` looks for `gcc_64`, absent there,
+    so it fails cleanly and exports nothing — confirmed by simulating an
+    empty `$HOME/Qt`); `build-windows.ps1` likewise. **But the Windows reasoning
+    differs and is recorded as a warning:** Windows resolves DLLs through
+    `PATH`, so the "`PATH` is only advisory" argument used in `build-android.sh`
+    is Linux-specific and must not be ported there.
+  - Documented in **`docs/qt-kit-selection.md` §8.1** (the rule, the measured
+    `Qt_6.10 not found` symptom, the per-platform table, the two ways a scrub
+    goes wrong, and the two-layer design), with pointers from `build-android.sh`
+    and `AGENTS.md`. `make qt-checks` and `make qt-env-check` both still pass.
 - [x] 2.18 **(new, from the 2026-08-08 review)** De-stale the NDK r28 messages in
   `build-android.sh`, which said "not supported with Qt … at **minSdk 27**" in
   both the comment and the `die`. Task 8.1 raises minSdk to 28, at which point
@@ -1097,7 +1149,26 @@ does not compile without the build-script migration.
 
 **Depends on:** tasks 1.0, 2.0, 3.0, 4.0.
 
-- [ ] 6.1 Confirm the FR-13b preconditions: `~/Qt/6.9.3` and `~/Qt/6.10.3` both present with their `gcc_64` kits, and 6.10.3's `android_arm64_v8a`, `android_x86_64`, `android_armv7` kits installed. Confirm FR-13c is still true (no `~/Qt/6.10.1`, no `~/Qt/6.8.3`).
+- [x] 6.1 Confirm the FR-13b preconditions: `~/Qt/6.9.3` and `~/Qt/6.10.3` both present with their `gcc_64` kits, and 6.10.3's `android_arm64_v8a`, `android_x86_64`, `android_armv7` kits installed. Confirm FR-13c is still true (no `~/Qt/6.10.1`, no `~/Qt/6.8.3`).
+  - **Verified 2026-08-08.** `~/Qt` holds exactly `6.9.3` and `6.10.3`; FR-13c
+    still true (`6.10.1` and `6.8.3` both absent). Every kit's own
+    `qmake -query QT_VERSION` reports its directory name, so this is a real
+    version check and not a directory-name reading: 6.9.3 → `gcc_64`,
+    `android_arm64_v8a`, `android_x86_64`, `android_armv7`; 6.10.3 → the same
+    four **plus `android_x86`** (the kit FR-13 says we deliberately do not ship,
+    which is why the explicit `ANDROID_ABIS` list must stay).
+  - **The task-2.17 defect is live in this very shell, and it is worth recording
+    because it made 6.1 initially look like a broken install.** The agent
+    environment (`.claude/settings.json`) exports
+    `LD_LIBRARY_PATH=$HOME/Qt/6.9.3/gcc_64/lib`, so **every** 6.10.3 binary
+    invoked here loads 6.9.3's `libQt6Core` and dies with
+    `undefined symbol: _ZN9QtPrivate9sizedFreeEPvm, version Qt_6` (exit 127) —
+    which reads as "the 6.10.3 kit is not installed" rather than "the wrong Qt
+    was loaded". With `env -u LD_LIBRARY_PATH` all five kits answer correctly.
+    This is exactly the host-tool leak `build-android.sh` now scrubs (2.17);
+    the scrub is confirmed to be load-bearing from here on, since the divergence
+    lands in 6.2. **Any manual 6.10.3 command in an agent/direnv shell must
+    clear `LD_LIBRARY_PATH` first.**
 - [ ] 6.2 Set `CMakeLists.txt:11` `QT_ANDROID "6.10.3"` with a comment recording *why* Android diverges (the Thai mid-word Shift fix, qtbase `f5c0296fdaad`) so the split does not read as an oversight to be tidied (FR-11).
 - [ ] 6.3 Confirm `build-android.sh` now picks up 6.10.3 through the task-2.2 derivation, with no second hardcoded version anywhere in the script (FR-12).
 - [ ] 6.4 Replace `build-android.sh:45`'s "newest installed NDK" (`ls … | sort -V | tail -1`) with an explicit pin to `27.3.13750724`, keeping the `ANDROID_NDK_ROOT` environment override and adding a clear error if the pinned NDK is absent (FR-14). `android/build.gradle:56`'s `ndkVersion androidNdkVersion` already propagates it.

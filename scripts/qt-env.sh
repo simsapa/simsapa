@@ -93,6 +93,30 @@ qt_prefix_for() {
     esac
 }
 
+# Remove every exact occurrence of $2 from the colon-separated list in $1, and
+# print what is left.
+#
+# This replaces a pair of sed substitutions that tried to match "<entry>:" and
+# ":<entry>". Textual matching cannot get this right: it needs a separate form
+# per position, and the case where the entry is the WHOLE value has neither a
+# leading nor a trailing colon, so it matches nothing and survives forever.
+# Splitting on ":" and comparing whole entries handles first/middle/last/only
+# uniformly. See docs/qt-kit-selection.md §8.1.
+#
+# Empty entries are dropped rather than preserved. An empty entry in PATH means
+# "the current directory", which nothing here wants and which is a hazard in its
+# own right.
+_qt_env_list_remove() {
+    local list="$1" entry="$2" out="" item
+    local IFS=:
+    for item in $list; do
+        [ -z "$item" ] && continue
+        [ "$item" = "$entry" ] && continue
+        out="${out:+$out:}$item"
+    done
+    printf '%s' "$out"
+}
+
 # Export the desktop Qt into the current shell. Idempotent: re-sourcing must not
 # stack PATH entries, which it otherwise would on every direnv reload.
 qt_env_activate() {
@@ -100,17 +124,19 @@ qt_env_activate() {
     prefix="$(qt_prefix_for LINUX)" || return 1
 
     # Strip any previously-added prefix before re-adding, so this is safe to run
-    # repeatedly.
+    # repeatedly. Both the OLD prefix (a QT_LINUX bump moves it) and the NEW one
+    # (an entry a hand-written export already added) are removed, or activating
+    # twice would leave two copies of the kit we are about to prepend.
     if [ -n "${QT_PREFIX:-}" ]; then
-        PATH="$(printf '%s' "$PATH" | sed -e "s#${QT_PREFIX}/bin:##g")"
-        if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-            LD_LIBRARY_PATH="$(printf '%s' "$LD_LIBRARY_PATH" | sed -e "s#${QT_PREFIX}/lib:##g")"
-        fi
+        PATH="$(_qt_env_list_remove "$PATH" "$QT_PREFIX/bin")"
+        LD_LIBRARY_PATH="$(_qt_env_list_remove "${LD_LIBRARY_PATH:-}" "$QT_PREFIX/lib")"
     fi
+    PATH="$(_qt_env_list_remove "$PATH" "$prefix/bin")"
+    LD_LIBRARY_PATH="$(_qt_env_list_remove "${LD_LIBRARY_PATH:-}" "$prefix/lib")"
 
     QT_PREFIX="$prefix"
     QMAKE="$prefix/bin/qmake6"
-    PATH="$prefix/bin:$PATH"
+    PATH="$prefix/bin${PATH:+:$PATH}"
     LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
     # DELIBERATELY NOT EXPORTING QT_ANDROID_VERSION.

@@ -50,18 +50,38 @@ QT_ENV_NO_ACTIVATE=1 . ./scripts/qt-env.sh
 # they diverge, which is the whole point of the Android-only Qt bump. Same
 # failure class as the QT_ANDROID_VERSION export removed from scripts/qt-env.sh:
 # a convenience layer silently changing build output.
+#
+# The rule, the per-platform analysis (build-appimage.sh is safe by a DIFFERENT
+# mechanism, and PATH is NOT merely advisory on Windows), and the two ways this
+# scrub has already gone wrong: docs/qt-kit-selection.md section 8.1.
+# LD_LIBRARY_PATH is cleared UNCONDITIONALLY -- deliberately NOT inside the
+# QT_PREFIX guard below. QT_PREFIX and LD_LIBRARY_PATH are set together by
+# qt_env_activate(), but nothing guarantees they arrive together: a shell that
+# exports LD_LIBRARY_PATH by any other route (a hand-written export, a wrapper
+# script, an inherited CI environment) would carry a foreign Qt straight into
+# the cross-build's host tools while QT_PREFIX is unset and this whole block is
+# skipped. Gating the dangerous half on the presence of the harmless half is
+# what made that possible.
+#
+# Cleared outright rather than filtered. The Android build needs no
+# LD_LIBRARY_PATH at all (Qt's own scripts set what they need), so an empty
+# value cannot be wrong here, whereas a filtered one can still carry another Qt
+# from somewhere else on the path.
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    echo "==> Clearing LD_LIBRARY_PATH (was: $LD_LIBRARY_PATH)"
+    unset LD_LIBRARY_PATH
+fi
+
+# PATH stays gated on QT_PREFIX: it names which entry to remove, and without it
+# there is nothing to match on. This is the advisory half anyway -- the build
+# addresses its host tools by absolute path, so a stray kit bin/ on PATH is far
+# less likely to be consulted than a stray lib/ on the loader's search path.
+# scripts/qt-env-verify.sh's "Android host tools" section is the backstop for
+# both, and does not depend on this scrub having run.
 if [ -n "${QT_PREFIX:-}" ]; then
     echo "==> Scrubbing desktop Qt kit from this build's environment: $QT_PREFIX"
     PATH="$(printf '%s' "$PATH" | sed -e "s#${QT_PREFIX}/bin:##g" -e "s#:${QT_PREFIX}/bin##g")"
     export PATH
-    # Cleared outright rather than filtered. The Android build needs no
-    # LD_LIBRARY_PATH at all (Qt's own scripts set what they need), so an empty
-    # value cannot be wrong here, whereas a filtered one can still carry another
-    # Qt from somewhere else on the path.
-    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-        echo "==> Clearing LD_LIBRARY_PATH (was: $LD_LIBRARY_PATH)"
-        unset LD_LIBRARY_PATH
-    fi
     # Belongs to the desktop kit; the gate reports it, so leaving it set would
     # make the report describe an environment this build no longer has.
     unset QT_PREFIX

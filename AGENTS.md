@@ -607,6 +607,14 @@ qmake6 -query QT_VERSION   # now the project's Qt
 For Android tooling use `build-android.sh`, which derives its own Qt version
 from `QT_ANDROID` — do **not** reuse the desktop kit for Android work.
 
+**A 6.10.3 binary run by hand in a direnv/agent shell dies with
+`libQt6Core.so.6: version 'Qt_6.10' not found`** — that is the *desktop* kit
+being loaded via `LD_LIBRARY_PATH`, not a broken install. Prefix such commands
+with `env -u LD_LIBRARY_PATH`. `build-android.sh` scrubs this itself; the rule
+behind it, and why `build-appimage.sh` is safe by a different mechanism while
+`PATH` is **not** merely advisory on Windows, is
+[docs/qt-kit-selection.md §8.1](./docs/qt-kit-selection.md).
+
 Three conveniences exist so this is mostly automatic, and **none of them is
 load-bearing**: `.envrc` (direnv, interactive shells — needs a one-time
 `direnv allow`), `.claude/settings.json`'s `env` block (agent shells; it carries
