@@ -61,6 +61,12 @@ ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
 # the cxx C++ build. See docs/pure-rust-audio-backend.md.
 ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$(ls -d "$ANDROID_SDK_ROOT"/ndk/* 2>/dev/null | sort -V | tail -1)}"
 
+# Export both, so scripts/qt-env-verify.sh (a subprocess) inspects the values
+# this build will actually use rather than re-deriving its own. Without the
+# export the gate saw ANDROID_NDK_ROOT as unset and stopped every Android build
+# with a CRITICAL failure.
+export ANDROID_SDK_ROOT ANDROID_NDK_ROOT
+
 ANDROID_BUILD_DIR="${ANDROID_BUILD_DIR:-build/android-multiabi}"
 ANDROID_BUILD_TYPE="${ANDROID_BUILD_TYPE:-Release}"
 
