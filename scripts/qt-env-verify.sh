@@ -154,6 +154,133 @@ EOF
     [ "$disagreed" -eq 0 ] && ok "bash and make readers agree with CMakeLists.txt for all platforms"
 }
 
+# The PowerShell reader, checked separately from the bash/make pair above
+# because it needs an interpreter this project's dev machine may not have.
+#
+# build-windows.ps1 -Help exits right after Get-QtVersion and prints the derived
+# default kit path, so this exercises the REAL derivation without building.
+check_powershell_reader() {
+    section "PowerShell reader (build-windows.ps1)"
+    local declared; declared="$(qt_declared_version WINDOWS)"
+    local ps; ps="$(command -v pwsh || command -v powershell || true)"
+    local script="$root/build-windows.ps1"
+
+    if [ ! -f "$script" ]; then
+        critical "build-windows.ps1 not found at $script"
+        return
+    fi
+
+    if [ -z "$ps" ]; then
+        # SKIP loudly. A silently-skipped check is indistinguishable from a
+        # passing one, which is the failure mode this whole script is against.
+        advise "no PowerShell on this host -- Get-QtVersion NOT executed"
+        if grep -qE '^[[:space:]]*set\(QT_WINDOWS[[:space:]]+"'"$declared"'"\)' "$root/CMakeLists.txt"; then
+            item "" "Fallback only: the regex Get-QtVersion uses still matches CMakeLists.txt."
+            item "" "That proves the PATTERN, not the script. Task 2.14 is the real test."
+        else
+            critical "the pattern Get-QtVersion greps for no longer matches CMakeLists.txt"
+        fi
+        return
+    fi
+
+    item "powershell" "$ps"
+    local out
+    out="$("$ps" -NoProfile -File "$script" -Help 2>&1)" || true
+    if printf '%s' "$out" | grep -qF "C:\\Qt\\$declared\\msvc2022_64"; then
+        ok "PowerShell reader derives Qt $declared from CMakeLists.txt"
+    else
+        critical "PowerShell reader did not report the declared Qt $declared"
+        item "" "build-windows.ps1 -Help output did not contain C:\\Qt\\$declared\\msvc2022_64"
+    fi
+}
+
+# The files that DERIVE the Qt version must not contain one as a literal. A
+# reacquired hardcode is how the single-source property is lost -- silently, and
+# only visibly wrong once two platforms target different versions.
+#
+# Deliberately narrow: only literals EQUAL to a currently-declared Qt version,
+# only on non-comment lines, only in these files. Anything looser drowns in NDK,
+# Gradle, AGP and crate versions, which are unrelated and correct.
+# CMakeLists.txt is excluded because it is the source of the declarations.
+check_no_hardcoded_versions() {
+    section "No reacquired hardcodes in the deriving files"
+    local files="Makefile build-android.sh build-appimage.sh build-macos.sh build-windows.ps1 scripts/qt-env.sh"
+    local versions="" p v f line found=0
+    for p in LINUX MACOS WINDOWS ANDROID IOS; do
+        v="$(qt_declared_version "$p")"
+        case " $versions " in *" $v "*) ;; *) versions="$versions $v" ;; esac
+    done
+    item "declared versions" "${versions# }"
+
+    for f in $files; do
+        [ -f "$root/$f" ] || { advise "$f not found -- cannot check for hardcodes"; continue; }
+        for v in $versions; do
+            # Strip comments before matching, so the explanatory comments that
+            # name a version (there are several, and they are useful) do not
+            # register as hardcodes.
+            line="$(sed -e 's/#.*//' "$root/$f" | grep -nF "$v" | head -n3)"
+            if [ -n "$line" ]; then
+                critical "$f contains the literal Qt version $v on a non-comment line"
+                printf '%s\n' "$line" | while IFS= read -r l; do item "" "$l"; done
+                found=1
+            fi
+        done
+    done
+    [ "$found" -eq 0 ] && ok "no deriving file hardcodes a declared Qt version"
+}
+
+# Cheap syntax check. These scripts gate every build, so a syntax error in one
+# of them stops all packaging -- and `bash -n` costs milliseconds.
+check_script_syntax() {
+    section "Script syntax"
+    local bad=0 f
+    for f in build-android.sh build-appimage.sh build-macos.sh \
+             scripts/qt-env.sh scripts/qt-env-check.sh scripts/qt-env-verify.sh; do
+        [ -f "$root/$f" ] || { advise "$f not found"; continue; }
+        if ! bash -n "$root/$f" 2>/dev/null; then
+            critical "bash -n failed for $f"
+            bash -n "$root/$f" 2>&1 | head -n3 | while IFS= read -r l; do item "" "$l"; done
+            bad=1
+        fi
+    done
+    [ "$bad" -eq 0 ] && ok "all bash scripts parse"
+
+    local ps; ps="$(command -v pwsh || command -v powershell || true)"
+    if [ -z "$ps" ]; then
+        advise "no PowerShell on this host -- build-windows.ps1 NOT parse-checked"
+    elif "$ps" -NoProfile -Command \
+            '$ErrorActionPreference="Stop"; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $args[0]), [ref]$null, [ref]$e); if ($e) { exit 1 }' \
+            "$root/build-windows.ps1" >/dev/null 2>&1; then
+        ok "build-windows.ps1 parses"
+    else
+        critical "build-windows.ps1 failed to parse"
+    fi
+}
+
+# List the entries of a colon-separated path list that live under a Qt install
+# of some version OTHER than the one given. Used to catch a desktop Qt leaking
+# into the Android cross-build via PATH / LD_LIBRARY_PATH.
+#
+# Matches any .../Qt/<version>/... layout, which is what both the Qt installer
+# ($HOME/Qt) and /opt/Qt produce; anything else is not recognisably a Qt kit and
+# is left alone rather than guessed at.
+foreign_qt_entries() {
+    local want="$1" list="$2" entry ver out=""
+    [ -n "$list" ] || return 0
+    local IFS=':'
+    for entry in $list; do
+        case "$entry" in
+            */Qt/*)
+                ver="${entry#*/Qt/}"
+                ver="${ver%%/*}"
+                [ "$ver" = "$want" ] || out="$out $entry"
+                ;;
+        esac
+    done
+    unset IFS
+    printf '%s' "$out"
+}
+
 check_rust_target() {
     local target="$1" why="$2" severity="$3"
     if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
@@ -278,6 +405,64 @@ report_android() {
         IFS=';'
     done
     unset IFS
+
+    # -----------------------------------------------------------------------
+    # Host tools, and the desktop-Qt leak this section exists to catch.
+    #
+    # The cross-build runs the ANDROID Qt's host tools -- moc, rcc,
+    # androiddeployqt from $HOME/Qt/<QT_ANDROID>/gcc_64, resolved automatically
+    # via __qt_platform_initial_qt_host_path, which is why nothing sets
+    # QT_HOST_PATH. They are dynamically linked against libQt6Core.so.6.
+    #
+    # So a DESKTOP kit on LD_LIBRARY_PATH (exported by scripts/qt-env.sh via
+    # .envrc or .claude/settings.json) makes a QT_ANDROID moc/rcc load a
+    # QT_LINUX libQt6Core. build-android.sh scrubs both variables before
+    # calling this gate; this check is the independent backstop, because the
+    # failure is invisible while QT_ANDROID == QT_LINUX and appears only once
+    # they diverge -- i.e. exactly when it is least expected.
+    # -----------------------------------------------------------------------
+    section "Android host tools"
+    local host_kit="$HOME/Qt/$declared/gcc_64"
+    item "host kit" "$host_kit"
+    if [ ! -d "$host_kit" ]; then
+        critical "Qt $declared host kit NOT installed: $host_kit"
+        item "" "The Android build needs its OWN gcc_64 kit for moc/rcc/androiddeployqt."
+    else
+        local host_qmake="$host_kit/bin/qmake6"
+        [ -x "$host_qmake" ] || host_qmake="$host_kit/bin/qmake"
+        if [ -x "$host_qmake" ]; then
+            local host_ver; host_ver="$("$host_qmake" -query QT_VERSION 2>/dev/null)"
+            if [ "$host_ver" != "$declared" ]; then
+                critical "host kit at $host_kit reports Qt $host_ver, but QT_ANDROID declares $declared"
+            else
+                ok "host tools are Qt $host_ver, matching QT_ANDROID"
+            fi
+        else
+            advise "no qmake in $host_kit/bin -- cannot verify the host tools' version"
+        fi
+    fi
+
+    local foreign
+    foreign="$(foreign_qt_entries "$declared" "${LD_LIBRARY_PATH:-}")"
+    if [ -n "$foreign" ]; then
+        critical "LD_LIBRARY_PATH carries a Qt other than $declared:$foreign"
+        item "" "A host tool would load that Qt's libQt6Core. Unset LD_LIBRARY_PATH for Android builds."
+    else
+        ok "LD_LIBRARY_PATH carries no foreign Qt"
+    fi
+    foreign="$(foreign_qt_entries "$declared" "$PATH")"
+    if [ -n "$foreign" ]; then
+        # Advisory, not critical: the build addresses qt-cmake, rcc and moc by
+        # absolute path, so a stray bin/ on PATH is far less likely to be
+        # consulted than a stray lib/ is. Still worth reporting -- it means the
+        # scrub in build-android.sh did not run.
+        advise "PATH carries a Qt other than $declared:$foreign"
+    else
+        ok "PATH carries no foreign Qt"
+    fi
+    if [ -n "${QT_PREFIX:-}" ]; then
+        advise "QT_PREFIX is still set ($QT_PREFIX) -- build-android.sh should have unset it"
+    fi
 }
 
 report_macos() {
@@ -304,10 +489,44 @@ report_macos() {
 printf '%s=== Build environment verification ===%s\n' "$_c_bold" "$_c_off"
 
 if [ "$mode" = "all" ]; then
+    # Repo-wide consistency: five sections, in the order a reader wants them.
+    #   1. the declarations parse at all
+    #   2. every reader agrees with them (bash, make, PowerShell)
+    #   3. no deriving file has reacquired a hardcode
+    #   4. the scripts that enforce all of the above still parse
+    #   5. which kits are actually installed
     report_common
-    check_reader_agreement
+
+    section "Qt version declarations"
     for p in LINUX MACOS WINDOWS ANDROID IOS; do
-        item "QT_$p" "$(qt_declared_version "$p")"
+        v="$(qt_declared_version "$p")"
+        if [ -z "$v" ]; then
+            critical "QT_$p could not be read from CMakeLists.txt"
+        else
+            item "QT_$p" "$v"
+        fi
+    done
+
+    check_reader_agreement
+    check_powershell_reader
+    check_no_hardcoded_versions
+    check_script_syntax
+
+    # Kit availability. Only the host platform's kit is required -- the others
+    # cannot be installed here and their absence is not a fault.
+    # check_qt_kit prints its own section header.
+    case "$(uname -s)" in
+        Linux)  check_qt_kit LINUX "$HOME/Qt/$(qt_declared_version LINUX)/gcc_64" qmake6 ;;
+        Darwin) check_qt_kit MACOS "$HOME/Qt/$(qt_declared_version MACOS)/macos" qmake6 ;;
+    esac
+    section "Qt kits installed"
+    for p in LINUX MACOS ANDROID; do
+        case "$p" in
+            LINUX)   kit="$HOME/Qt/$(qt_declared_version LINUX)/gcc_64" ;;
+            MACOS)   kit="$HOME/Qt/$(qt_declared_version MACOS)/macos" ;;
+            ANDROID) kit="$HOME/Qt/$(qt_declared_version ANDROID)/android_arm64_v8a" ;;
+        esac
+        if [ -d "$kit" ]; then item "QT_$p kit" "$kit"; else item "QT_$p kit" "(not installed: $kit)"; fi
     done
 else
     case "$platform" in

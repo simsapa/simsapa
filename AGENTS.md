@@ -782,6 +782,11 @@ When you create a new QML component such as `SearchBarInput.qml`, the file has t
 qml_files.push("../assets/qml/SearchBarInput.qml");
 ```
 
+Keep the `"../assets/qml/<Name>.qml"` form exactly — paths are relative to
+`bridges/`, and `build.rs` strips the leading `../` to derive each file's
+resource alias. A path in any other shape `panic!`s the build with a message
+naming the expected form, rather than failing when that screen is first shown.
+
 ### Long operations in QML must keep the screen awake
 
 **Any UI that starts a long-running operation — download, search-index rebuild,
@@ -935,9 +940,8 @@ Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
 `bridges/build.rs`:
 
 ``` rust
-CxxQtBuilder::new_qml_module(
-        QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
-    )
+CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
+    .qrc_resources(qml_resources)
     .files([
         "src/sutta_bridge.rs",
         "src/asset_manager.rs",
@@ -946,6 +950,16 @@ CxxQtBuilder::new_qml_module(
         "src/api.rs",
     ])
 ```
+
+**Note what this does NOT do: the QML files are not passed to the module as
+`.qml_files(…)`.** They are registered as plain Qt resources with an alias
+derived in `build.rs`, because a `qml_files` path containing `../` — which every
+entry in our list has, the list being relative to `bridges/` — is folded away by
+`rcc` but *not* by the qmldir writer or by qmlcachegen, so the three disagree and
+QML type resolution fails **at runtime** (`Type Logger unavailable`). A
+`.qml_files(qml_files)` snippet compiles cleanly and re-introduces that bug; the
+long comment at the `qml_resources` block in `bridges/build.rs` is the
+authoritative explanation. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md).
 
 All the bridge sources must live in **one directory** (`bridges/src/`).
 `CxxQtBuilder::files()` panics if they span more than one — a Qt limitation

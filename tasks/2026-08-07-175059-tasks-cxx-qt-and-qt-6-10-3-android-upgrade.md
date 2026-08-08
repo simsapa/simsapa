@@ -62,7 +62,10 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
   **Note: `CXX_QT_AUTORCC_OPTIONS` is deliberately NOT exported here** (3.10) —
   corrosion's `cmake -E env` assignment would override it. Task 3.12 added
   `export ANDROID_SDK_ROOT ANDROID_NDK_ROOT`, without which the task-2.12
-  environment gate stops every Android build.
+  environment gate stops every Android build. **Task 2.17 added the desktop-Qt
+  scrub** (`PATH` / `LD_LIBRARY_PATH` / `QT_PREFIX` / `QMAKE`), without which an
+  outer shell's `QT_LINUX` kit is loaded by the `QT_ANDROID` host tools once the
+  two versions diverge.
 - `build-macos.sh` / `build-windows.ps1` — hardcoded `6.9.3` paths to derive from `CMakeLists.txt`.
 - `bridges/Cargo.toml` — the four cxx-qt crate pins (fork → upstream `2180c12`).
   **Done (3.4).** Also required raising `cxx` from `1.0.148` to `1.0.176`:
@@ -98,8 +101,13 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
   build actually used (compiler, cmake, ninja, Rust + targets, Qt declared vs
   **actual**, and on Android the SDK/NDK/clang/JDK/Gradle/AGP/SDK-levels/per-ABI
   kits). `CRITICAL` findings **exit 1 and stop the build**; `ADVISORY` findings
-  warn. `--all` does the repo-wide reader-agreement check; `--report-only`
+  warn. `--all` does the repo-wide consistency checks; `--report-only`
   inspects without stopping.
+  **Task 2.12's three missing checks were added by the 2026-08-08 review**
+  (`check_powershell_reader`, `check_no_hardcoded_versions`,
+  `check_script_syntax`, plus kit reporting in `--all`), and **task 2.17 added
+  the "Android host tools" section** with the `foreign_qt_entries()` helper that
+  detects a foreign Qt on `PATH` / `LD_LIBRARY_PATH`.
 - `build-windows.ps1` — also gains `Invoke-EnvVerify`, the PowerShell twin of
   the above (PowerShell cannot source bash). **Must be kept in step by hand** —
   see task 2.16.
@@ -116,7 +124,8 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
   `Bash` calls the project's Qt; the one place a literal path is unavoidable,
   hence the drift check.
 - `docs/qt-kit-selection.md` — **new** (FR-31).
-- `docs/cxx-qt-fork.md` — **new** (FR-7 / FR-31).
+- `docs/cxx-qt-fork.md` — **new, landed** (10.1). Written early because
+  `CMakeLists.txt:131` and `bridges/build.rs:141` already referenced it.
 - `docs/android-qt-upgrade-considerations.md`, `docs/android-soft-keyboard.md`, `docs/android-multi-abi-and-chromeos.md`, `docs/pure-rust-audio-backend.md`, `docs/file-selection-test.md`, `docs/qt-6.10.1-appimage-issues.md` — updated.
 - `CLAUDE.md`, `AGENTS.md` — the "New Rust bridges" / "New QML components" sections teach the **removed** 0.7 API.
 - `PROJECT_MAP.md` — only if the Qt-selection changes alter what it describes.
@@ -523,13 +532,37 @@ Update the file after completing each sub-task, not just after completing an ent
     rather than silence.
   - Also verified: a declared version with no installed kit stops the build; and
     `make qt-checks` / `make qt-verify{,-linux,-android,-macos}` run it by hand.
-  - Five sections: (1) the five `QT_*` declarations parse; (2) **reader
-    agreement** — bash `qt_version_for`, Make `$(call qt_version_for,…)` and
-    PowerShell `Get-QtVersion` all return the declared value for all five
+  - `--all` has five sections: (1) the five `QT_*` declarations parse; (2)
+    **reader agreement** — bash `qt_version_for`, Make `$(call qt_version_for,…)`
+    and PowerShell `Get-QtVersion` all return the declared value for all five
     platforms; (3) **no reacquired hardcodes** — a declared Qt version appearing
     on a non-comment line of any deriving file; (4) script syntax (`bash -n`,
     plus a PowerShell parse); (5) kit availability, `required` for the host
     platform and informational for the others.
+  - **⚠ Correction (review, 2026-08-08): sections 2's PowerShell half, 3 and 4
+    were described here but were NOT in the committed script, and have now been
+    implemented.** The note above was written against
+    `scripts/qt-version-check.sh`, which was said to have been "folded in and
+    deleted" — it was deleted, but those three checks did not survive the fold,
+    and the file has no git history to recover them from.
+    `check_reader_agreement()` covered **bash and make only**; there was no
+    hardcode scan and no syntax check anywhere in the 361-line file; `--all` also
+    skipped `check_qt_kit` entirely. So the quoted "Verified it actually fails"
+    result below described a check that was not in the tree — the shape of
+    failure that this whole task exists to prevent, arriving in the checker
+    itself.
+    Now added: `check_powershell_reader()`, `check_no_hardcoded_versions()`,
+    `check_script_syntax()`, and kit reporting in `--all`. **Each was verified to
+    fail, not only to pass:** a `STALE_KIT="$HOME/Qt/6.9.3/macos"` line appended
+    to `build-macos.sh` produced `CRITICAL build-macos.sh contains the literal Qt
+    version 6.9.3 on a non-comment line` (with the comment correctly stripped
+    before matching), and an unterminated `if` produced `CRITICAL bash -n failed
+    for build-macos.sh` — both with **exit 1**. Both mutations reverted and
+    `git diff` confirmed clean.
+    **Why this mattered for the stage still ahead:** section 3 is the guard that
+    catches a `6.9.3` literal left behind in a deriving file once `QT_ANDROID`
+    diverges to 6.10.3, i.e. exactly task 6.2's risk. It was absent at the point
+    it was about to be needed.
   - Section 3 matches **only** literals equal to a declared Qt version, on
     non-comment lines, in the five deriving files. Anything looser drowns in
     NDK / Gradle / AGP / crate versions, which are unrelated and correct.
@@ -546,6 +579,64 @@ Update the file after completing each sub-task, not just after completing an ent
 - [ ] 2.13 **(new)** On **macOS**, run `make macos` and record the gate's report. The gate now runs automatically, so this is really "read what it printed": it is the first real execution of the 2.7 `QT_MACOS` derivation, the `Makefile` Darwin `QT_PATH` branch, and the macOS kit / `macdeployqt` / Xcode SDK checks. If it stops the build, that is the feature working — record what it caught.
 - [ ] 2.14 **(new)** On **Windows**, run `build-windows.ps1` and record `Invoke-EnvVerify`'s report. First real execution of `Get-QtVersion` **and** of the PowerShell gate — neither has ever run (no PowerShell on the Linux dev machine). Confirm the two implementations stayed in step: same tiers, same Qt declared-vs-actual check.
 - [ ] 2.16 **(new)** Keep `scripts/qt-env-verify.sh` and `build-windows.ps1`'s `Invoke-EnvVerify` in step whenever either gains a check. They are deliberate duplicates (PowerShell cannot source bash), which is a drift risk with no automated guard — the cross-reference comments in both files are the only thing holding them together.
+- [x] 2.17 **(new, from the 2026-08-08 review)** Stop the desktop Qt kit leaking
+  into the Android cross-build through `PATH` / `LD_LIBRARY_PATH`.
+  - **The defect, which was live and unhandled.** `qt_env_activate()` exports
+    `LD_LIBRARY_PATH=$QT_PREFIX/lib` and prefixes `PATH` with `$QT_PREFIX/bin`
+    from **`QT_LINUX`**. `build-android.sh` correctly sources with
+    `QT_ENV_NO_ACTIVATE=1`, so it never *adds* them — but it never **scrubbed**
+    what direnv (`.envrc`), `.claude/settings.json` or a hand-run
+    `source scripts/qt-env.sh` had already exported. Confirmed by grep: neither
+    variable was mentioned anywhere in `build-android.sh` or the gate.
+  - **Why it matters after task 6.2 and not before.** The cross-build runs the
+    **Android** Qt's host tools — moc, rcc, androiddeployqt from
+    `$HOME/Qt/$QT_ANDROID/gcc_64`, resolved via
+    `__qt_platform_initial_qt_host_path` — and those are dynamically linked
+    against `libQt6Core.so.6`. With the desktop kit's `lib/` first in the loader's
+    search path, a **6.10.3** moc/rcc loads **6.9.3**'s libQt6Core. Invisible
+    while the two versions are equal; live the moment they diverge, which is the
+    entire point of the Android-only bump. Same failure class as the
+    `QT_ANDROID_VERSION` export removed in 2.2 — a convenience layer silently
+    changing build output — reached by a different route.
+  - **Fix, in two independent layers** (the gate must not rely on the scrub
+    having run, since that is the thing that can be missing):
+    1. `build-android.sh` scrubs `$QT_PREFIX/bin` from `PATH`, **unsets
+       `LD_LIBRARY_PATH` outright** (the Android build needs none, so empty
+       cannot be wrong, whereas a filtered value can still carry another Qt), and
+       unsets `QT_PREFIX` / `QMAKE`. It announces both removals, so the build log
+       records that it happened.
+    2. `scripts/qt-env-verify.sh` gained an **"Android host tools"** section: it
+       checks the host `gcc_64` kit exists and that its `qmake -query QT_VERSION`
+       matches `QT_ANDROID`, then uses a new `foreign_qt_entries()` helper to
+       flag any `.../Qt/<other-version>/...` entry on `LD_LIBRARY_PATH`
+       (**CRITICAL**) or `PATH` (advisory — the build addresses its tools by
+       absolute path, so a stray `bin/` is far less likely to be consulted than a
+       stray `lib/`), plus an advisory if `QT_PREFIX` survived.
+  - **Verified in both directions**, since a detector that cannot fire is worth
+    nothing: with a clean environment all three checks report OK; with
+    `LD_LIBRARY_PATH`/`PATH`/`QT_PREFIX` pointed at a *different* installed kit
+    (6.10.3, standing in for the post-6.2 state) the gate reports `CRITICAL
+    LD_LIBRARY_PATH carries a Qt other than 6.9.3` plus both advisories.
+    `./build-android.sh --help` under a simulated direnv environment prints the
+    two scrub lines.
+  - **Unsetting `QMAKE` is safe, and checked rather than assumed:** nothing in
+    `build-android.sh` or the gate reads it, and `CMakeLists.txt:336` passes
+    `QMAKE ${qmake_path}` explicitly to `cxx_qt_import_crate` (corrosion's
+    `cmake -E env` assignment overrides the inherited environment anyway). An
+    Android configure with `LD_LIBRARY_PATH`, `QT_PREFIX` and `QMAKE` all unset
+    completes normally: `Qt 6.9.3 (expected 6.9.3) at
+    ~/Qt/6.9.3/android_arm64_v8a/…` / `Using qmake:
+    ~/Qt/6.9.3/android_arm64_v8a/bin/qmake` / `CXX-Qt Found crate(s)`.
+  - **This pre-empts task 11.6 rather than replacing it.** 11.6 remains open: it
+    is the confirmation *after* 6.2, when the two versions actually differ and the
+    check has discriminating power.
+- [x] 2.18 **(new, from the 2026-08-08 review)** De-stale the NDK r28 messages in
+  `build-android.sh`, which said "not supported with Qt … at **minSdk 27**" in
+  both the comment and the `die`. Task 8.1 raises minSdk to 28, at which point
+  the text would read as though the rule had lapsed. Per FR-14 the exclusion
+  **holds at 28 too** (bionic gained `pthread_cond_clockwait` only at API 30), so
+  the messages now say "at this project's minSdk" and state that explicitly.
+  Nothing behavioural changed — the `ndk_major >= 28` test is untouched.
 - [ ] 2.15 **(new)** Decide the disposition of the two pre-existing `build-macos.sh` defects found in 2.7 — the ambient-`PATH` `macdeployqt` branch, and `local macdeployqt=$(find_macdeployqt)` masking the function's exit status (compounded by `print_error` writing to stdout). Both are commented in place and deliberately unfixed here. They belong to the macOS PRD; either fix them there or record why not.
 - [x] 2.10 Run `make appimage -B` end to end. Verify with `ldd` inside the AppDir that every `libQt6*.so.6` resolves under the bundled Qt (the `strings` half of this check is dropped — see 1.1) (Success Metric 3b).
   - **Ran clean, exit 0.** Artifact:
@@ -1147,7 +1238,25 @@ does not compile without the build-script migration.
 **Depends on:** all preceding tasks (the docs record measured outcomes, not
 plans).
 
-- [ ] 10.1 Write `docs/cxx-qt-fork.md` (FR-7): what each of patches A–E was for, which upstream release absorbed or obsoleted it, the `CXX_QT_AUTORCC_OPTIONS` mechanism that replaced the Android patch (including the missing `rerun-if-env-changed` trap), what remains on the rebased `simsapa` branch and its head revision, and the answer to "can we go back to upstream?".
+- [x] 10.1 Write `docs/cxx-qt-fork.md` (FR-7): what each of patches A–E was for, which upstream release absorbed or obsoleted it, the `CXX_QT_AUTORCC_OPTIONS` mechanism that replaced the Android patch (including the missing `rerun-if-env-changed` trap), what remains on the rebased `simsapa` branch and its head revision, and the answer to "can we go back to upstream?".
+  - **Written 2026-08-08, ahead of the rest of task 10.0, for the same reason
+    10.2 was: the link was already dangling.** Two *shipped source files* point
+    at it — `CMakeLists.txt:131` and `bridges/build.rs:141` — so the reference
+    was live in the tree while the file did not exist. The Stage 1 measurements
+    (tasks 3.2, 3.3, 3.11, 3.12, 4.2) are also freshest now and would be harder
+    to write accurately after Stage 2.
+  - Six sections: what the fork was (the four commits, the A–E table, per-patch
+    disposition); why patch A is obsolete and the CMake-not-shell rule, with the
+    `--no-zstd`-is-a-no-op measurement and the missing-`rerun-if-env-changed`
+    trap; what stays on the `simsapa` branch and why C is not ported (including
+    that C also changed **macOS** behaviour, not only iOS); the 0.7 → 0.9 API
+    migration table, the untouched macro survey, the forced `cxx` 1.0.176 bump
+    and the rev-not-branch coupled-pair rule; **§5, the `..` trap** — the
+    three-way disagreement between rcc / qmldir / qmlcachegen, the `qrc_resources`
+    fix, the two rejected alternatives and the byte-level verification; and the
+    AOT side finding with the two upstream defects worth reporting.
+  - **Left for task 5.6:** §3 names the `simsapa` branch but not its rebased head
+    revision, which does not exist yet. Fill it in when 5.6 lands.
 - [ ] 10.2 Write `docs/qt-kit-selection.md` (FR-31):
   - **Written early (2026-08-08), covering everything Part C establishes.** Not
     written out of order for its own sake: **six files already referenced it**
@@ -1167,8 +1276,30 @@ plans).
     split, both `gcc_64` kits being live, Android running 6.10.3's `rcc`) is
     written as **planned, not landed**, with a status banner at the top —
     every `QT_*` is still `6.9.3`. Revisit when task 6.2 lands and flip the
-    banner. `CMakeLists.txt` as the single source; scripts deriving from it; the FR-27 assertion; system `qt6-base` vs `~/Qt/<version>`; the **Android-on-6.10.3 / desktop-on-6.9.3 split and its reason**; the pre-fix state from PRD §2.1 (Linux silently on system 6.11.1 while `QT_LINUX` said 6.9.3, and the AppImage compiled against one Qt and bundled with another); that `~/Qt/6.9.3/gcc_64` is now **required** on a Linux dev machine; the `Qt::qmake` fallback trap; and that both `gcc_64` kits are live and neither is redundant.
-- [ ] 10.3 Rewrite the **"New Rust bridges"** and **"New QML components"** sections in `CLAUDE.md` and `AGENTS.md` for the 0.9 builder API — `CxxQtBuilder::new_qml_module`, `QmlModule::new(...).qml_files([...])`, `CxxQtBuilder::files([...])` for bridge sources, and whichever of `cpp_files()` / `unsafe { cc_builder }` task 3.7 settled on (FR-3b, FR-31).
+    banner.
+  - **Remaining work on this sub-task, now that the body is written:**
+    1. flip the §7 status banner when 6.2 lands;
+    2. add the task-2.17 environment scrub — that the Android build removes the
+       desktop kit from `PATH` / `LD_LIBRARY_PATH`, why (host tools are the
+       *Android* Qt's), and that the gate independently re-checks it;
+    3. fold in task 11.8's four-layer description.
+  - Original scope, for reference: `CMakeLists.txt` as the single source; scripts deriving from it; the FR-27 assertion; system `qt6-base` vs `~/Qt/<version>`; the **Android-on-6.10.3 / desktop-on-6.9.3 split and its reason**; the pre-fix state from PRD §2.1 (Linux silently on system 6.11.1 while `QT_LINUX` said 6.9.3, and the AppImage compiled against one Qt and bundled with another); that `~/Qt/6.9.3/gcc_64` is now **required** on a Linux dev machine; the `Qt::qmake` fallback trap; and that both `gcc_64` kits are live and neither is redundant.
+- [ ] 10.3 **Partly done 2026-08-08 (review) — the urgent half.** Task 3.15's
+  `AGENTS.md` rewrite had been overtaken by task 4.2: its snippet still showed
+  `QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files)`, which
+  `bridges/build.rs` stopped doing at commit `cfc9549`. That is worse than merely
+  stale — a `.qml_files(…)` call **compiles cleanly** and silently re-arms the
+  `..` defect that broke QML type resolution at runtime, in the very file every
+  future bridge is added from. The snippet now shows
+  `new_qml_module(QmlModule::new(uri)).qrc_resources(qml_resources).files([…])`
+  with a note saying what it deliberately does *not* do and why, pointing at
+  `docs/cxx-qt-fork.md` §5. "New QML components" gained one paragraph: the
+  `"../assets/qml/<Name>.qml"` form is required, because `build.rs` strips the
+  `../` to derive the alias and a different shape `panic!`s the build.
+  (`CLAUDE.md` is a symlink to `AGENTS.md`, so one edit covers both.)
+  **Still owed here:** whatever 10.4's AGP/NDK outcomes add, and a re-read of
+  both sections once Stage 2 is done. Original scope: rewrite the **"New Rust
+  bridges"** and **"New QML components"** sections in `CLAUDE.md` and `AGENTS.md` for the 0.9 builder API — `CxxQtBuilder::new_qml_module`, `QmlModule::new(...).qml_files([...])`, `CxxQtBuilder::files([...])` for bridge sources, and whichever of `cpp_files()` / `unsafe { cc_builder }` task 3.7 settled on (FR-3b, FR-31).
 - [ ] 10.4 Update the AGP-pin section, the NDK r28 rule and add a Qt-version-per-platform note to `CLAUDE.md` and `AGENTS.md`, reflecting the AGP 8.10.1 / Gradle 8.14.3 / NDK-pin outcomes (FR-31).
 - [ ] 10.5 Update `docs/android-soft-keyboard.md` §4 with the measured FR-20 result and the Qt version tested (FR-31).
 - [ ] 10.6 Update `docs/android-qt-upgrade-considerations.md`: §1 version table, §2.1–2.7 (each item applied or re-deferred **with a measured reason**), §3 reasons (drop the deprecated-API one), §4 pitfalls, §5 verification checklist. Fix its "Source PRD" citation to point at `tasks/archive/` (FR-31, Goal 4).

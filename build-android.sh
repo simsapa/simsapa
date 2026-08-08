@@ -32,6 +32,42 @@ cd "$(dirname "$0")"
 # helpers and nothing else. See the header of scripts/qt-env.sh.
 QT_ENV_NO_ACTIVATE=1 . ./scripts/qt-env.sh
 
+# QT_ENV_NO_ACTIVATE stops THIS script from adding the desktop kit, but it does
+# nothing about a desktop kit an OUTER shell already exported -- direnv (.envrc),
+# .claude/settings.json, or a hand-run `source scripts/qt-env.sh` all leave
+# QT_PREFIX set with $QT_PREFIX/bin on PATH and $QT_PREFIX/lib on
+# LD_LIBRARY_PATH. Those must be removed here, and LD_LIBRARY_PATH is the
+# dangerous half:
+#
+# The Android cross-build runs the ANDROID Qt's HOST TOOLS -- moc, rcc,
+# androiddeployqt from $QT_ANDROID_ROOT/gcc_64, resolved automatically via
+# __qt_platform_initial_qt_host_path. Those are dynamically linked against
+# libQt6Core.so.6. With the desktop kit's lib/ first in the loader's search
+# path, a 6.10.3 moc/rcc loads 6.9.3's libQt6Core -- a version mismatch that
+# either aborts mid-build or, worse, appears to work.
+#
+# This is invisible while QT_ANDROID == QT_LINUX, and becomes live the moment
+# they diverge, which is the whole point of the Android-only Qt bump. Same
+# failure class as the QT_ANDROID_VERSION export removed from scripts/qt-env.sh:
+# a convenience layer silently changing build output.
+if [ -n "${QT_PREFIX:-}" ]; then
+    echo "==> Scrubbing desktop Qt kit from this build's environment: $QT_PREFIX"
+    PATH="$(printf '%s' "$PATH" | sed -e "s#${QT_PREFIX}/bin:##g" -e "s#:${QT_PREFIX}/bin##g")"
+    export PATH
+    # Cleared outright rather than filtered. The Android build needs no
+    # LD_LIBRARY_PATH at all (Qt's own scripts set what they need), so an empty
+    # value cannot be wrong here, whereas a filtered one can still carry another
+    # Qt from somewhere else on the path.
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        echo "==> Clearing LD_LIBRARY_PATH (was: $LD_LIBRARY_PATH)"
+        unset LD_LIBRARY_PATH
+    fi
+    # Belongs to the desktop kit; the gate reports it, so leaving it set would
+    # make the report describe an environment this build no longer has.
+    unset QT_PREFIX
+    unset QMAKE
+fi
+
 # Reported in the run header, so "which Qt is this build using, and who decided
 # that" is answerable from the log rather than by re-deriving it afterwards.
 if [ -n "${QT_ANDROID_VERSION:-}" ]; then
@@ -56,9 +92,10 @@ ANDROID_PRIMARY_ABI="${ANDROID_PRIMARY_ABI:-arm64-v8a}"
 ANDROID_ABIS="${ANDROID_ABIS:-arm64-v8a;x86_64;armeabi-v7a}"
 
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
-# Stay on the Qt 6.9.3-supported NDK (r26b/r27). Do NOT use r28 — at minSdk 27
-# its libc++ references pthread_cond_clockwait (bionic API 30+), which breaks
-# the cxx C++ build. See docs/pure-rust-audio-backend.md.
+# Stay on the Qt-supported NDK (r26b/r27). Do NOT use r28 — at this project's
+# minSdk its libc++ references pthread_cond_clockwait (bionic API 30+), which
+# breaks the cxx C++ build. The exclusion holds at minSdk 28 as well as 27.
+# See docs/pure-rust-audio-backend.md.
 ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$(ls -d "$ANDROID_SDK_ROOT"/ndk/* 2>/dev/null | sort -V | tail -1)}"
 
 # Export both, so scripts/qt-env-verify.sh (a subprocess) inspects the values
@@ -237,13 +274,14 @@ fi
     || die "ANDROID_NDK_ROOT not found: ${ANDROID_NDK_ROOT:-<unset>}"
 
 # The default above picks the highest installed NDK, which would silently
-# select r28 if it were ever installed. r28 is incompatible with Qt 6.9.3 at
-# minSdk 27: its libc++ references pthread_cond_clockwait, declared by bionic
-# only at API 30+, which breaks the cxx C++ build. Stay on r26b/r27.
+# select r28 if it were ever installed. r28 is incompatible with Qt at this
+# project's minSdk: its libc++ references pthread_cond_clockwait, declared by
+# bionic only at API 30+, which breaks the cxx C++ build. The exclusion holds at
+# minSdk 28 as well as 27. Stay on r26b/r27.
 # See docs/pure-rust-audio-backend.md.
 ndk_major="$(basename "$ANDROID_NDK_ROOT" | cut -d. -f1)"
 if [ "${ndk_major:-0}" -ge 28 ] 2>/dev/null; then
-    die "NDK $(basename "$ANDROID_NDK_ROOT") is not supported with Qt $QT_ANDROID_VERSION at minSdk 27.
+    die "NDK $(basename "$ANDROID_NDK_ROOT") is not supported with Qt $QT_ANDROID_VERSION at this project's minSdk.
 NDK r28+ breaks the cxx C++ build (libc++ pthread_cond_clockwait needs API 30+).
 Install r26b or r27 and point ANDROID_NDK_ROOT at it."
 fi
