@@ -584,6 +584,41 @@ Notable feature docs:
   Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
   dialog.
 
+## Qt version per platform — never invoke a bare `qmake6`
+
+**`CMakeLists.txt` is the single source of the Qt version**, declared per
+platform in the `QT_*` variables at the top. Platforms deliberately diverge:
+desktop targets `QT_LINUX` / `QT_MACOS` / `QT_WINDOWS`, Android targets
+`QT_ANDROID`. **There is no single "the Qt for this project"**, so any tooling
+that assumes one is wrong for the other half.
+
+**A bare `qmake6`, `rcc`, `moc` or `qmllint` resolves to the *system* Qt**
+(`/usr/bin/qmake6` — Arch's `qt6-base`, currently **6.11.1**), which the project
+does not target on any platform. Do not invoke them unqualified. Instead:
+
+``` sh
+source scripts/qt-env.sh   # puts the desktop kit's bin/ first on PATH
+qmake6 -query QT_VERSION   # now the project's Qt
+
+# or address it directly, without changing PATH:
+"$QMAKE" -query QT_VERSION
+```
+
+For Android tooling use `build-android.sh`, which derives its own Qt version
+from `QT_ANDROID` — do **not** reuse the desktop kit for Android work.
+
+Three conveniences exist so this is mostly automatic, and **none of them is
+load-bearing**: `.envrc` (direnv, interactive shells — needs a one-time
+`direnv allow`), `.claude/settings.json`'s `env` block (agent shells; it carries
+literal paths, so `make qt-env-check` fails if they drift from `QT_LINUX`), and
+`scripts/qt-env.sh` itself. **The build must be correct with an empty
+Qt-related environment** — CMake resolves its own `CMAKE_PREFIX_PATH` and
+asserts the found Qt matches the declared version, failing the configure on a
+mismatch. If deleting all three ever breaks `make build`, that is a CMake bug,
+not a reason to make them required.
+
+See [docs/qt-kit-selection.md](./docs/qt-kit-selection.md).
+
 ## Specific coding procedures
 
 ### Android compatibility: File existence checks

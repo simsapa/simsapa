@@ -12,6 +12,11 @@ else
     RUN_CMD = ./build/simsapadhammareader/simsapadhammareader
 endif
 
+# Fails if .claude/settings.json's literal Qt paths have drifted from
+# CMakeLists.txt's QT_LINUX. See docs/qt-kit-selection.md.
+qt-env-check:
+	./scripts/qt-env-check.sh
+
 build:
 	$(BUILD_CMD)
 

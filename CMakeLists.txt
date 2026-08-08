@@ -29,7 +29,7 @@ if (WIN32 AND NOT CMAKE_PREFIX_PATH)
     elseif(EXISTS "$ENV{USERPROFILE}/Qt/${QT_WINDOWS}/msvc2022_64")
         set(CMAKE_PREFIX_PATH "$ENV{USERPROFILE}/Qt/${QT_WINDOWS}/msvc2022_64")
     else()
-        message(WARNING "Qt6 installation not found in standard Windows locations. Please set CMAKE_PREFIX_PATH manually.")
+        message(FATAL_ERROR "Qt6 ${QT_WINDOWS} not found in standard Windows locations. Please set CMAKE_PREFIX_PATH manually.")
     endif()
     if(CMAKE_PREFIX_PATH)
         message(STATUS "Using CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
@@ -48,6 +48,9 @@ elseif (APPLE AND NOT IOS)
         set(CMAKE_OSX_SYSROOT "${MACOS_SDK_PATH}" CACHE PATH "macOS SDK path" FORCE)
         message(STATUS "Using macOS SDK: ${CMAKE_OSX_SYSROOT}")
     else()
+        # Deliberately a WARNING, not FATAL_ERROR: this is a working fallback,
+        # not a "Qt not found" condition. The build proceeds against the system
+        # default SDK. Do not "harmonise" it with the two Qt-not-found sites.
         message(WARNING "macOS SDK not found via xcrun, using system default")
         # Unset to use system default
         unset(CMAKE_OSX_SYSROOT CACHE)
@@ -67,7 +70,32 @@ elseif (APPLE AND NOT IOS)
         elseif(EXISTS "/usr/local/Qt/${QT_MACOS}/macos")
             set(CMAKE_PREFIX_PATH "/usr/local/Qt/${QT_MACOS}/macos")
         else()
-            message(WARNING "Qt6 installation not found in standard locations. Please set CMAKE_PREFIX_PATH manually.")
+            message(FATAL_ERROR "Qt6 ${QT_MACOS} not found in standard locations. Please set CMAKE_PREFIX_PATH manually.")
+        endif()
+    endif()
+    message(STATUS "Using CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+
+# Linux desktop. This branch MUST be guarded explicitly rather than written as a
+# bare `else()`. In CMake, ANDROID is also UNIX-true, and the `if (ANDROID)`
+# block further down is a SEPARATE top-level block, not a continuation of this
+# chain -- so a bare `else()` here would catch Android, set CMAKE_PREFIX_PATH to
+# the desktop Linux kit, and cause Android's own `if(NOT CMAKE_PREFIX_PATH)`
+# guard to skip. The Android build would then link against desktop Qt: wrong
+# version and wrong platform, while appearing to succeed.
+# A bare `else()` would also catch Windows whenever CMAKE_PREFIX_PATH is preset.
+elseif (UNIX AND NOT APPLE AND NOT ANDROID)
+    # The inner guard is load-bearing: an explicitly-passed -DCMAKE_PREFIX_PATH
+    # must win, and the multi-ABI Android sub-builds rely on the same pattern.
+    if(NOT CMAKE_PREFIX_PATH)
+        if(EXISTS "$ENV{HOME}/Qt/${QT_LINUX}/gcc_64")
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_LINUX}/gcc_64")
+        elseif(EXISTS "/opt/Qt/${QT_LINUX}/gcc_64")
+            set(CMAKE_PREFIX_PATH "/opt/Qt/${QT_LINUX}/gcc_64")
+        else()
+            message(FATAL_ERROR
+                "Qt ${QT_LINUX} not found under $ENV{HOME}/Qt/${QT_LINUX}/gcc_64 "
+                "or /opt/Qt/${QT_LINUX}/gcc_64. Install it, or configure with "
+                "-DCMAKE_PREFIX_PATH=<qt-dir>.")
         endif()
     endif()
     message(STATUS "Using CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
@@ -94,6 +122,7 @@ list(APPEND qt_modules
         Qt::QuickControls2)
 
 if (ANDROID)
+    set(qt_expected_version "${QT_ANDROID}")
     # Detect Android ABI and set appropriate Qt paths
     # ANDROID_ABI is set by the Android toolchain (e.g., armeabi-v7a, arm64-v8a, x86_64)
     #
@@ -115,7 +144,9 @@ if (ANDROID)
     elseif(ANDROID_ABI STREQUAL "x86")
         set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_x86")
     else()
-        # Default to arm64-v8a if ABI not detected
+        # Default to arm64-v8a if ABI not detected.
+        # Deliberately a WARNING, not FATAL_ERROR: this is a working fallback
+        # with a sensible default, not a "Qt not found" condition.
         set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_arm64_v8a")
         message(WARNING "ANDROID_ABI not detected, defaulting to android_arm64_v8a")
     endif()
@@ -126,7 +157,9 @@ if (ANDROID)
     message(STATUS "Android ABI: ${ANDROID_ABI}")
     message(STATUS "Using Android Qt: ${ANDROID_QT_DIR}")
 
-    set(qmake_path "${ANDROID_QT_DIR}/bin/qmake")
+    # Android's qmake is a POSIX shell wrapper applying the Android qt.conf --
+    # it is NOT the host qmake6, and the name has no `6` suffix.
+    set(qmake_exe_name "qmake")
     list(APPEND app_components WebView)
     list(APPEND qt_modules Qt::WebView)
     add_compile_definitions(Q_OS_ANDROID)
@@ -150,11 +183,13 @@ if (ANDROID)
     set(ANDROID_VERSION_CODE "$ENV{ANDROID_VERSION_CODE}")
     set(ANDROID_VERSION_NAME "$ENV{ANDROID_VERSION_NAME}")
 elseif (IOS)
+    set(qt_expected_version "${QT_IOS}")
     set(Rust_CARGO_TARGET aarch64-apple-ios)
-    set(qmake_path "$ENV{HOME}/Qt/${QT_IOS}/ios/bin/qmake6")
+    set(qmake_exe_name "qmake6")
     list(APPEND app_components WebView)
     list(APPEND qt_modules Qt::WebView)
 elseif (APPLE)
+    set(qt_expected_version "${QT_MACOS}")
     # Explicitly set Rust target for macOS to prevent iOS cross-compilation
     if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
         set(Rust_CARGO_TARGET aarch64-apple-darwin)
@@ -162,34 +197,87 @@ elseif (APPLE)
         set(Rust_CARGO_TARGET x86_64-apple-darwin)
     endif()
 
-    set(qmake_path "$ENV{HOME}/Qt/${QT_MACOS}/macos/bin/qmake6")
+    set(qmake_exe_name "qmake6")
     list(APPEND app_components WebEngineQuick)
     list(APPEND qt_modules Qt::WebEngineQuick)
 elseif (WIN32)
+    set(qt_expected_version "${QT_WINDOWS}")
     # Explicitly set Rust target for Windows MSVC
     set(Rust_CARGO_TARGET x86_64-pc-windows-msvc)
 
-    # Try to find qmake in Qt installation
-    if(EXISTS "C:/Qt/${QT_WINDOWS}/msvc2022_64/bin/qmake6.exe")
-        set(qmake_path "C:/Qt/${QT_WINDOWS}/msvc2022_64/bin/qmake6.exe")
-    elseif(EXISTS "C:/Qt/${QT_WINDOWS}/msvc2019_64/bin/qmake6.exe")
-        set(qmake_path "C:/Qt/${QT_WINDOWS}/msvc2019_64/bin/qmake6.exe")
-    elseif(EXISTS "$ENV{USERPROFILE}/Qt/${QT_WINDOWS}/msvc2022_64/bin/qmake6.exe")
-        set(qmake_path "$ENV{USERPROFILE}/Qt/${QT_WINDOWS}/msvc2022_64/bin/qmake6.exe")
-    else()
-        # Fallback to using qmake from PATH
-        set(qmake_path "qmake6")
-    endif()
+    # The three-way msvc2022_64 / msvc2019_64 / USERPROFILE search that used to
+    # live here is gone: qmake_path is now derived from the Qt that
+    # find_package() actually resolved (see below), so whichever of those
+    # locations was found is followed automatically instead of being guessed at
+    # a second time.
+    #
+    # Its bare `set(qmake_path "qmake6")` fallback is deliberately NOT replaced
+    # by an equivalent. Falling back to whatever `qmake6` the ambient PATH holds
+    # is the same class of defect as the missing Linux CMAKE_PREFIX_PATH branch:
+    # it silently hands cxx-qt a different Qt than the C++ half is compiled
+    # against. A missing qmake is now a FATAL_ERROR from the shared existence
+    # check below.
+    #
+    # Do NOT derive this suffix from CMAKE_EXECUTABLE_SUFFIX -- when
+    # cross-compiling that describes the target, not the host tool being run.
+    set(qmake_exe_name "qmake6.exe")
 
     list(APPEND app_components WebEngineQuick)
     list(APPEND qt_modules Qt::WebEngineQuick)
+# Bare `else()` meaning "Linux desktop" is correct HERE, unlike in the
+# CMAKE_PREFIX_PATH block above. This chain's FIRST branch is `if (ANDROID)`, so
+# Android is already consumed and cannot fall through. The two blocks are
+# therefore deliberately asymmetric -- do not "harmonise" them in either
+# direction.
 else()
-    set(qmake_path "$ENV{HOME}/Qt/${QT_LINUX}/gcc_64/bin/qmake6")
+    set(qt_expected_version "${QT_LINUX}")
+    set(qmake_exe_name "qmake6")
     list(APPEND app_components WebEngineQuick)
     list(APPEND qt_modules Qt::WebEngineQuick)
 endif()
 
-find_package(Qt6 COMPONENTS ${CXXQT_QTCOMPONENTS} ${app_components})
+find_package(Qt6 REQUIRED COMPONENTS ${CXXQT_QTCOMPONENTS} ${app_components})
+
+# Assert the Qt that find_package() resolved is the one this project declares.
+# Without this, an ambient PATH or CMAKE_PREFIX_PATH silently selects a
+# different Qt than the QT_* variables above name -- which is exactly what was
+# happening on Linux (system Qt was picked up while QT_LINUX said 6.9.3).
+# This matters more now that Android and desktop deliberately target different
+# Qt versions on the same machine.
+if(NOT Qt6_VERSION VERSION_EQUAL "${qt_expected_version}")
+    message(FATAL_ERROR
+        "Qt version mismatch: expected ${qt_expected_version}, "
+        "found ${Qt6_VERSION} at ${Qt6_DIR}")
+endif()
+message(STATUS "Qt ${Qt6_VERSION} (expected ${qt_expected_version}) at ${Qt6_DIR}")
+
+# Derive qmake from the Qt that find_package() actually resolved, rather than
+# rebuilding a path from the QT_* variables a second time.
+#
+# Why this is not just tidying: the per-platform branches above used to compute
+# qmake_path independently of find_package(), so the two could disagree without
+# anything noticing -- the C++/QML half compiled against one Qt while cxx-qt was
+# handed another. That is precisely the mixed-version state measured on Linux
+# (system Qt 6.11.1 for find_package, ~/Qt/6.9.3 for qmake). With the derivation
+# below there is one Qt, and the assertion above has already vouched for it.
+#
+# Qt6_DIR is <prefix>/lib/cmake/Qt6, so three levels up is the kit prefix.
+# Each branch above contributes only the executable's NAME, which genuinely does
+# vary: Android's is a POSIX shell wrapper named `qmake`, Windows needs `.exe`,
+# everything else is `qmake6`.
+#
+# Do NOT drop the QMAKE argument to cxx_qt_import_crate() below on the strength
+# of this: cxx-qt-cmake's own fallback resolves Qt::qmake, which is the HOST
+# qmake -- wrong for Android, whose kit qmake applies the Android qt.conf.
+get_filename_component(_qt_prefix "${Qt6_DIR}/../../.." ABSOLUTE)
+set(qmake_path "${_qt_prefix}/bin/${qmake_exe_name}")
+if(NOT EXISTS "${qmake_path}")
+    message(FATAL_ERROR
+        "qmake not found at ${qmake_path} (derived from Qt6_DIR=${Qt6_DIR}). "
+        "The Qt installation appears incomplete -- cxx-qt needs qmake to "
+        "resolve Qt's include and library paths.")
+endif()
+message(STATUS "Using qmake: ${qmake_path}")
 
 find_package(CxxQt QUIET)
 if(NOT CxxQt_FOUND)
@@ -197,6 +285,18 @@ if(NOT CxxQt_FOUND)
     FetchContent_Declare(
         CxxQt
         GIT_REPOSITORY https://github.com/kdab/cxx-qt-cmake.git
+        # NOTE: `0.7` here is the BRANCH, not the tag. kdab/cxx-qt-cmake
+        # publishes both -- refs/heads/0.7 alongside tags 0.7.0 ... 0.7.3 -- and
+        # FetchContent resolves the branch, which re-resolves to whatever its
+        # latest commit is on every fresh build. That is the same
+        # non-reproducibility bridges/Cargo.toml deliberately avoids by pinning a
+        # rev rather than `branch = "simsapa"`; it is simply less visible here.
+        # It happens to equal tag 0.7.3 today, which is why nothing has broken.
+        #
+        # Pin the TAG when this moves. cxx-qt-cmake and the Rust cxx-qt crates
+        # are a coupled pair -- a mismatch fails inside generated code, the
+        # hardest place to read an error -- so this must be bumped together with
+        # the four crate pins in bridges/Cargo.toml, never on its own.
         GIT_TAG 0.7
     )
 
