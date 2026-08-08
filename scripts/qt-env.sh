@@ -25,6 +25,29 @@
 # Desktop is the default here because Android work goes through
 # build-android.sh, which derives its own (different) Qt version. There is
 # deliberately no single "the Qt for this project".
+#
+# WHY ONE SHARED FILE RATHER THAN A DUPLICATED sed ONE-LINER
+#
+# The alternative considered was copying `qt_version_for` into build-android.sh
+# and build-appimage.sh with a cross-reference comment. Rejected: the whole
+# point of this work is that the Qt version is declared in exactly ONE place,
+# and duplicating the READER re-creates the same class of drift one level down
+# -- three copies of a sed expression that must all keep matching the same
+# CMakeLists.txt syntax. If the `set(QT_LINUX "6.9.3")` line is ever reformatted
+# (a comment moved onto it, single quotes, a cache entry), a duplicated reader
+# fails in one script and not another, and the two disagree silently. That is
+# precisely the failure this file exists to remove.
+#
+# The cost of sharing is that build scripts must not be ambushed by role 2:
+# sourcing this file would otherwise put the DESKTOP kit on PATH, which is
+# actively wrong inside build-android.sh. Hence QT_ENV_NO_ACTIVATE=1, which
+# build scripts set before sourcing to get the lookup helpers and nothing else:
+#
+#     QT_ENV_NO_ACTIVATE=1 . "$(dirname "$0")/scripts/qt-env.sh"
+#     qt_version="$(qt_version_for ANDROID)"
+#
+# Sourcing is safe from any working directory -- the repo root is resolved from
+# BASH_SOURCE, not from $PWD.
 
 # Resolve the repo root from this script's own location, so sourcing works from
 # any working directory.
@@ -90,11 +113,31 @@ qt_env_activate() {
     PATH="$prefix/bin:$PATH"
     LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-    # Exported so nothing downstream has to hardcode the Android version either.
-    # This is the version only -- not a kit path, which is per-ABI.
-    QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-$(qt_version_for ANDROID)}"
-
-    export QT_PREFIX QMAKE PATH LD_LIBRARY_PATH QT_ANDROID_VERSION
+    # DELIBERATELY NOT EXPORTING QT_ANDROID_VERSION.
+    #
+    # It used to be exported here "so nothing downstream has to hardcode the
+    # Android version". That is now build-android.sh's own job -- it reads
+    # QT_ANDROID from CMakeLists.txt directly -- and the export had become
+    # actively dangerous, because build-android.sh treats a set
+    # QT_ANDROID_VERSION as a DELIBERATE OVERRIDE:
+    #
+    #   * Every interactive/agent shell that sourced this file carried the
+    #     variable, so the "override" branch was taken on every ordinary build
+    #     and CMakeLists.txt was never consulted.
+    #   * The assignment was `:-` guarded, so re-sourcing (a direnv reload)
+    #     did NOT refresh it. A shell opened before a QT_ANDROID bump kept the
+    #     old version indefinitely.
+    #
+    # Combined, once Android and desktop target different Qt versions, that
+    # silently builds Android against the DESKTOP version -- a package that
+    # looks fine and ships without the Android-only fix the bump exists for.
+    # Invisible today only because both versions are still equal.
+    #
+    # This file is a convenience layer (see the header). A variable exported
+    # from it that changes build OUTPUT would make it load-bearing, which is
+    # exactly what it must not be. Set QT_ANDROID_VERSION by hand when you
+    # genuinely want to override; build-android.sh reports which source it used.
+    export QT_PREFIX QMAKE PATH LD_LIBRARY_PATH
 }
 
 # Sourcing with no arguments activates the desktop environment. Build scripts

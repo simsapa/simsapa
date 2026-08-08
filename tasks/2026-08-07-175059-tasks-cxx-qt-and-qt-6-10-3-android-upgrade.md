@@ -72,7 +72,20 @@ FR-5 and FR-13c are already satisfied and appear only as confirmation steps.
   shell-side source of the per-platform Qt version, derived from `CMakeLists.txt`.
 - `scripts/qt-env-check.sh` — **new, landed** (11.4). Drift check between
   `.claude/settings.json`'s literal paths and `QT_LINUX`; run by `make qt-env-check`.
-- `Makefile` — also gains the `qt-env-check` target (11.4).
+- `scripts/qt-env-verify.sh` — **new, landed** (2.12). The build-time environment
+  report and gate, called by every bash build script. Prints the toolchain a
+  build actually used (compiler, cmake, ninja, Rust + targets, Qt declared vs
+  **actual**, and on Android the SDK/NDK/clang/JDK/Gradle/AGP/SDK-levels/per-ABI
+  kits). `CRITICAL` findings **exit 1 and stop the build**; `ADVISORY` findings
+  warn. `--all` does the repo-wide reader-agreement check; `--report-only`
+  inspects without stopping.
+- `build-windows.ps1` — also gains `Invoke-EnvVerify`, the PowerShell twin of
+  the above (PowerShell cannot source bash). **Must be kept in step by hand** —
+  see task 2.16.
+- `Makefile` — also gains the `qt-env-check`, `qt-verify`, `qt-verify-linux`,
+  `qt-verify-android`, `qt-verify-macos` and `qt-checks` targets (11.4, 2.12),
+  plus the `qt_version_for` make function (2.9). These are for running the gate
+  **by hand**; the build scripts call it themselves.
 - `~/.config/fish/conf.d/direnv.fish` — **new, landed** (11.2), outside the repo.
   The direnv shell hook. Note PRD non-goal 6 bars the *build* from depending on
   shell config; this is a convenience layer only, added at the user's request.
@@ -117,7 +130,7 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ---
 
-### 1.0 Part C, first half — `CMakeLists.txt` as the single source of the Qt kit
+### [x] 1.0 Part C, first half — `CMakeLists.txt` as the single source of the Qt kit
 
 **Specs to keep in mind**
 
@@ -266,7 +279,17 @@ Update the file after completing each sub-task, not just after completing an ent
     `ANDROID` is never defined, and the **Linux** branch is taken — the run looks
     like an Android configure but is not one. Pass both, as `build-android.sh`
     does.
-- [ ] 1.14 Commit Part C's CMake half on its own, with a commit message stating the developer-visible change: a Linux machine without `~/Qt/6.9.3/gcc_64` now gets a `FATAL_ERROR` instead of silently using system Qt.
+- [x] 1.14 Commit Part C's CMake half on its own, with a commit message stating the developer-visible change: a Linux machine without `~/Qt/6.9.3/gcc_64` now gets a `FATAL_ERROR` instead of silently using system Qt.
+  - **Deviation: landed as one commit, not on its own.** `2a24322` ("Qt config,
+    shell env, CMakeLists.txt updates") carries the CMake half **together with**
+    the task-11.0 shell/agent-env layer (`scripts/qt-env.sh`,
+    `scripts/qt-env-check.sh`, `.envrc`, `.claude/settings.json`, the `Makefile`
+    `qt-env-check` target, `AGENTS.md`). Committed by the user.
+  - Consequence for task 2.11: the "separately from 1.14" instruction still
+    holds for the **build scripts** (`build-android.sh`, `build-appimage.sh`,
+    `build-macos.sh`, `build-windows.ps1`, the Darwin `QT_PATH`), none of which
+    are touched yet — so the one-change-per-commit intent survives where it
+    matters. Nothing to undo.
 
 ---
 
@@ -287,16 +310,246 @@ Update the file after completing each sub-task, not just after completing an ent
 
 **Depends on:** task 1.0 (the assertion is the backstop these scripts rely on).
 
-- [ ] 2.1 Write the bash version-reading helper (e.g. `qt_version_for()` reading `set(QT_ANDROID "…")` / `set(QT_LINUX "…")` from `CMakeLists.txt` with `sed -n`), and place it where both `build-android.sh` and `build-appimage.sh` can use it — either a small shared `scripts/qt-version.sh` sourced by both, or duplicated with a cross-reference comment. Choose one and state the reason in the file (FR-30).
-- [ ] 2.2 `build-android.sh:25` — `QT_ANDROID_VERSION` default derived from `QT_ANDROID` instead of the hardcoded `6.9.3`, keeping the `${QT_ANDROID_VERSION:-…}` override (FR-12, FR-30). Verify by printing the resolved value at the top of a run.
-- [ ] 2.3 `build-appimage.sh` — extract the Qt resolution (lines 187-221) into a `resolve_qt()` helper that sets `qt6_path` and exports `QT_BASE_DIR` / `PATH` / `QMAKE` / `LD_LIBRARY_PATH` / the WebEngine paths, and call it from `main()` **before** `build_app()` (FR-30b). `create_appimage()` then consumes the already-resolved `qt6_path`.
-- [ ] 2.4 In the same script, base the search on `QT_LINUX` read from `CMakeLists.txt` rather than the hardcoded `6.9.3`, and remove the `elif command -v qmake6` ambient-`PATH` fallback — replace it with an error naming `QT_BASE_DIR` (FR-30).
-- [ ] 2.5 Add the compile-Qt vs bundle-Qt agreement check: after configuring, compare the Qt prefix CMake reports against `qt6_path` and fail loudly on mismatch (FR-30b). FR-27 covers the CMake half; this covers the bundling half, which is a different script's decision.
-- [ ] 2.6 Fix `build_app()`'s "already built" short-circuit — for a release build, either drop it entirely or emit a prominent warning that the existing binary's Qt was not verified (FR-30b). Prefer dropping it; `make build -B` is already incremental at the compiler level.
-- [ ] 2.7 `build-macos.sh:103-110` — derive the `6.9.3` in the `macdeployqt` search from `QT_MACOS` (FR-30). No version change; this platform is out of scope for behaviour.
-- [ ] 2.8 `build-windows.ps1:8,27,107,116,178` — derive the default `-QtPath` and the message strings from `QT_WINDOWS` via a PowerShell one-liner (FR-30). Untestable here; keep the change minimal and mechanical.
-- [ ] 2.9 `Makefile:5` — derive the Darwin `QT_PATH` default from `QT_MACOS` (FR-30). Leave the non-Darwin `BUILD_CMD` **without** `-DCMAKE_PREFIX_PATH`: after task 1.2 CMake resolves Linux itself, and passing it here would bypass the new branch.
-- [ ] 2.10 Run `make appimage -B` end to end. Verify with `ldd` inside the AppDir that every `libQt6*.so.6` resolves under the bundled Qt (the `strings` half of this check is dropped — see 1.1) (Success Metric 3b).
+- [x] 2.1 Write the bash version-reading helper (e.g. `qt_version_for()` reading `set(QT_ANDROID "…")` / `set(QT_LINUX "…")` from `CMakeLists.txt` with `sed -n`), and place it where both `build-android.sh` and `build-appimage.sh` can use it — either a small shared `scripts/qt-version.sh` sourced by both, or duplicated with a cross-reference comment. Choose one and state the reason in the file (FR-30).
+  - **Chose the shared file**, `scripts/qt-env.sh` (which already landed at 11.1
+    and already carries `qt_version_for`), not a duplicated one-liner. Reason
+    recorded in the file's header: duplicating the *reader* re-creates the same
+    drift one level down — three copies of a `sed` expression that must all keep
+    matching `CMakeLists.txt`'s syntax, failing in one script and not another if
+    that line is ever reformatted. So 2.1 reduced to stating the decision and
+    documenting the calling convention; no new code was needed.
+  - **The sharing cost, and the mechanism that pays it:** sourcing this file
+    bare also *activates* the desktop kit onto `PATH`, which is actively wrong
+    inside `build-android.sh`. Build scripts must therefore use
+    `QT_ENV_NO_ACTIVATE=1 . scripts/qt-env.sh`. Verified under `env -i` that this
+    leaves `PATH` untouched and `QT_PREFIX` unset while `qt_version_for` still
+    works — that is the contract 2.2–2.4 depend on.
+  - All five platforms read correctly today (`LINUX/MACOS/WINDOWS/ANDROID/IOS`
+    → `6.9.3`). Worth re-running after task 6.2, since `ANDROID` → `6.10.3` is
+    the first time these values diverge and is what the helper exists for.
+- [x] 2.2 `build-android.sh:25` — `QT_ANDROID_VERSION` default derived from `QT_ANDROID` instead of the hardcoded `6.9.3`, keeping the `${QT_ANDROID_VERSION:-…}` override (FR-12, FR-30). Verify by printing the resolved value at the top of a run.
+  - Done: `QT_ENV_NO_ACTIVATE=1 . ./scripts/qt-env.sh` then
+    `QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-$(qt_version_for ANDROID)}"`. The
+    run header now prints the version **and which source decided it**
+    (`==> Qt : 6.9.3 (from CMakeLists.txt QT_ANDROID), …`), so the log answers
+    "which Qt did this build use, and who chose it" without re-deriving it.
+  - **⚠ Found and fixed a latent defect while verifying this — it would have
+    silently defeated the entire upgrade.** `qt_env_activate()` was
+    **exporting `QT_ANDROID_VERSION`**, so:
+    - every interactive/direnv/agent shell carried it, and `build-android.sh`
+      treats a set value as a **deliberate override** — so the new derivation
+      would have been bypassed on every ordinary build, taking the "from
+      environment" branch instead (this is exactly what the first verification
+      run printed, which is how it was caught);
+    - the assignment was `:-` guarded, so a direnv **reload did not refresh it**
+      — a shell opened before a `QT_ANDROID` bump keeps the old version
+      indefinitely.
+    Together, after task 6.2 makes the versions differ, that builds Android
+    against the **desktop** 6.9.3 — a package that looks fine and **ships
+    without the Thai fix**, i.e. the same class of silent failure the PRD's
+    bare-`else()` warning is about, arriving by a different route. Invisible
+    today only because both versions are still equal.
+  - Fix: `qt_env_activate()` no longer exports `QT_ANDROID_VERSION` at all;
+    `build-android.sh` reads `CMakeLists.txt` itself. Rationale left in
+    `scripts/qt-env.sh` — a convenience-layer variable that changes build
+    *output* would make that layer load-bearing, which PRD non-goal 6 forbids.
+  - Verified from a clean `env -i` shell: activation leaves
+    `QT_ANDROID_VERSION` **unset**; the default now reports
+    `6.9.3 (from CMakeLists.txt QT_ANDROID)`; a genuine
+    `QT_ANDROID_VERSION=9.9.9` still wins and reports `(from environment)`.
+  - **Action for existing shells:** any terminal that sourced the old
+    `qt-env.sh` still holds the stale export. Re-source or open a new shell
+    before the first Android build after task 6.2.
+- [x] 2.3 `build-appimage.sh` — extract the Qt resolution (lines 187-221) into a `resolve_qt()` helper that sets `qt6_path` and exports `QT_BASE_DIR` / `PATH` / `QMAKE` / `LD_LIBRARY_PATH` / the WebEngine paths, and call it from `main()` **before** `build_app()` (FR-30b). `create_appimage()` then consumes the already-resolved `qt6_path`.
+  - `resolve_qt()` added above `build_app()`, setting the global `QT6_PATH`;
+    `main()` now runs `resolve_qt` → `build_app` → `create_appdir` →
+    `create_appimage`, with a comment at the call site saying the order is
+    load-bearing. `create_appimage()` keeps its `local qt6_path="$QT6_PATH"` so
+    the rest of the function is untouched.
+  - **Added a guard the task did not ask for, because the failure would be
+    silent.** The script runs under `set -e` but **not** `set -u`, and the
+    WebEngine resource/locale copies end in `2>/dev/null || true` — so an unset
+    `QT6_PATH` (someone reorders `main()`) would produce an AppImage **missing
+    its QtWebEngine resources** rather than an error. `create_appimage()` now
+    fails explicitly if `QT6_PATH` is empty, naming the call-order fix.
+- [x] 2.4 In the same script, base the search on `QT_LINUX` read from `CMakeLists.txt` rather than the hardcoded `6.9.3`, and remove the `elif command -v qmake6` ambient-`PATH` fallback — replace it with an error naming `QT_BASE_DIR` (FR-30).
+  - Version now from `qt_version_for LINUX` via the 2.1 helper; `QT_BASE_DIR`
+    remains the deliberate override and is still checked first.
+  - The `command -v qmake6` fallback is gone, with a comment recording why: for
+    a **release artifact** silently bundling an unrelated Qt is worse than
+    failing, and unlike the CMake case the mistake gets baked into a file handed
+    to users.
+  - Verified by extracting `resolve_qt()` and running it standalone:
+    - resolves `~/Qt/6.9.3/gcc_64`, reporting `(Qt 6.9.3, from CMakeLists.txt
+      QT_LINUX)`, and puts that kit's `bin/` at the head of `PATH`;
+    - `QMAKE` defaults to the kit's `bin/qmake` when unset, and an
+      already-set `QMAKE` still wins;
+    - with no kit installed (`HOME` redirected) it exits **1** with
+      `Qt 6.9.3 not found under $HOME/Qt or /opt/Qt` — where the old code would
+      have silently taken system Qt off `PATH`.
+- [x] 2.5 Add the compile-Qt vs bundle-Qt agreement check: after configuring, compare the Qt prefix CMake reports against `qt6_path` and fail loudly on mismatch (FR-30b). FR-27 covers the CMake half; this covers the bundling half, which is a different script's decision.
+  - `verify_qt_agreement()` added, called from `main()` between `build_app` and
+    `create_appdir`. It is a **backstop, not the mechanism** — 2.3 already makes
+    the two agree by construction — and it earns its place because the two
+    decisions are made by different tools that can still diverge: CMake resolves
+    its own prefix (and a stale `build/` **caches** the previous answer), while
+    this script decides what linuxdeploy bundles.
+  - **Two checks, deliberately, because they answer different questions:**
+    1. *What CMake decided* — `Qt6_DIR` from `CMakeCache.txt`, walked up three
+       levels, compared to `QT6_PATH`. Error names both paths and tells the
+       reader to remove the build dir.
+    2. *What the linker actually bound* — `ldd` on the built binary, flagging any
+       `libQt6*` resolving outside `QT6_PATH`. Catches what the cache comparison
+       cannot (hand-edited cache, different generator, `LD_LIBRARY_PATH` games).
+  - Verified: passes on the real tree (`compiled against
+    ~/Qt/6.9.3/gcc_64`, all linked Qt6 under it); a forced
+    `QT6_PATH=/usr` produces the mismatch error and **exit 1**; the `ldd` filter
+    correctly isolates a stray `/usr/lib/libQt6Gui.so.6` from a synthetic `ldd`
+    listing while ignoring non-Qt libraries.
+  - Caveat: the `ldd` branch was **not** exercised end-to-end against a real
+    mis-linked binary — no binary on this machine links `/usr/lib/libQt6*` to
+    borrow for the test. Its filter logic was tested directly instead.
+- [x] 2.6 Fix `build_app()`'s "already built" short-circuit — for a release build, either drop it entirely or emit a prominent warning that the existing binary's Qt was not verified (FR-30b). Prefer dropping it; `make build -B` is already incremental at the compiler level.
+  - **Dropped outright**, as preferred. `build_app()` now always runs
+    `make build -B`.
+  - The reason it mattered more than "stale artifact" suggests: the leftover
+    binary would typically come from a plain `make build` in a shell **without**
+    the kit exported — i.e. precisely the mixed-Qt binary this whole task
+    removes. The short-circuit was a route back to the §2.1 defect that survived
+    the 2.3 fix.
+  - 2.5's `verify_qt_agreement()` would now catch that mismatch anyway, but
+    failing late on a stale artifact is worse than just building it.
+- [x] 2.7 `build-macos.sh:103-110` — derive the `6.9.3` in the `macdeployqt` search from `QT_MACOS` (FR-30). No version change; this platform is out of scope for behaviour.
+  - All four hardcoded `6.9.3` occurrences in `find_macdeployqt()` (three search
+    paths + the error message) now come from `qt_version_for MACOS`. Verified on
+    Linux that the derivation runs and the error message reports the derived
+    version.
+  - **Two pre-existing defects found here and deliberately NOT fixed** — macOS
+    is out of scope for behaviour and has its own unfinished PRD. Both are
+    commented in place so the next person meets them:
+    1. The first branch takes whatever `macdeployqt` is on `PATH`, which may
+       belong to a different Qt than the app was compiled against — the same
+       defect class removed from `build-appimage.sh` (2.4) and `CMakeLists.txt`.
+    2. `local macdeployqt=$(find_macdeployqt)` at the call site **masks the exit
+       status**, so the function's `exit 1` does not stop the script under
+       `set -e`; the error text is captured into the variable instead. Note also
+       that `print_error` writes to **stdout** here, not stderr, which is what
+       makes that capture silent.
+- [x] 2.8 `build-windows.ps1:8,27,107,116,178` — derive the default `-QtPath` and the message strings from `QT_WINDOWS` via a PowerShell one-liner (FR-30). Untestable here; keep the change minimal and mechanical.
+  - `Get-QtVersion` reads `QT_WINDOWS` from `CMakeLists.txt` via `Select-String`,
+    resolved to `$QtVersion` / `$DefaultQtPath` immediately after the `param`
+    block. All five hardcoded `6.9.3` sites now derive.
+  - **A PowerShell `param` default cannot call a function**, so `-QtPath`
+    defaults to `""` and is filled in below the block; an explicitly passed
+    `-QtPath` still wins. The help text interpolates `$DefaultQtPath`.
+  - **Ordering trap avoided:** `Get-QtVersion` runs at the top of the script,
+    *before* the file's own `Write-Error` / `Write-Status` helper functions are
+    defined. PowerShell defines functions as execution reaches them, so calling
+    `Write-Error` there would silently resolve to the **built-in cmdlet**, not
+    this script's helper. `Get-QtVersion` therefore uses `Write-Host
+    -ForegroundColor Red` directly.
+  - **Not executed — no PowerShell on this machine** (`pwsh` and `powershell`
+    both absent), and Windows is out of scope for behaviour. Verified as far as
+    is possible here: the regex
+    `^\s*set\(QT_WINDOWS\s+"([^"]+)"\)` matches the real
+    `CMakeLists.txt:10` line and captures `6.9.3`. **The script itself has not
+    been run; treat the first Windows build as the real test.**
+- [x] 2.9 `Makefile:5` — derive the Darwin `QT_PATH` default from `QT_MACOS` (FR-30). Leave the non-Darwin `BUILD_CMD` **without** `-DCMAKE_PREFIX_PATH`: after task 1.2 CMake resolves Linux itself, and passing it here would bypass the new branch.
+  - Added a `qt_version_for` **make function** (`$(call qt_version_for,MACOS)`),
+    the Make counterpart of the bash and PowerShell readers — so all three
+    languages now read the same `CMakeLists.txt` declaration. `QT_PATH ?=` keeps
+    the environment override.
+  - Verified on Linux (where the Darwin branch is not taken) that the function
+    resolves: `MACOS`/`LINUX`/`ANDROID` → `6.9.3`, and `QT_PATH` would expand to
+    `$HOME/Qt/6.9.3/macos`.
+  - Confirmed the non-Darwin `BUILD_CMD` still passes **no**
+    `-DCMAKE_PREFIX_PATH` (`make -n build -B` → zero matches), so the task-1.2
+    CMake branch stays in charge on Linux.
+- [x] 2.12 **(new)** Add an environment report + pre-flight gate that **every build script runs on every platform**, so a wrong toolchain stops the build instead of producing a wrong artifact. `scripts/qt-env-verify.sh` (bash) + `Invoke-EnvVerify` in `build-windows.ps1`.
+  - **Design revised mid-task at the user's direction.** The first version was a
+    manual `make qt-version-check` target. That is the wrong shape: *a forgotten
+    check looks exactly like a passing one.* It is now called by the build
+    scripts themselves — `build-android.sh`, `build-appimage.sh`,
+    `build-macos.sh` and (via the PowerShell twin) `build-windows.ps1` — so the
+    build simply does not start on a bad environment, and we are told to
+    investigate. `scripts/qt-version-check.sh` was folded in and deleted.
+  - **Two tiers, and the distinction is the design.** `CRITICAL` = wrong output
+    or no output → **exit 1, build stops**. `ADVISORY` = worth knowing, prints
+    and continues. `--report-only` inspects without stopping.
+  - **The report** (printed into every build log, so the toolchain a build used
+    is recoverable afterwards): date, host, git rev + dirty flag, C++ compiler,
+    cmake, ninja, rustc/cargo, installed Rust targets, declared vs **actual** Qt
+    version. Android adds SDK/NDK roots, NDK revision + **clang version**,
+    JDK, Gradle wrapper, AGP, min/target SDK, and per-ABI kit + Rust target.
+    macOS adds xcodebuild, SDK path/version, macdeployqt.
+  - **The critical check that did not exist before:** the kit's *real*
+    `qmake -query QT_VERSION` is compared against the declared `QT_*`. Every
+    earlier check trusted the **directory name**. Verified by fabricating a kit
+    named `6.9.3` whose qmake reports `6.11.1` — correctly rejected.
+  - Ported the two known-late-failure Android traps into fast, legible stops:
+    **NDK r28+** (breaks the cxx build at this minSdk) and a **JDK outside
+    17–21** (AGP's lint dies with the JDK version as its entire message, after
+    all three ABIs have compiled and signed).
+  - **Placement is deliberate in `build-android.sh`:** the gate runs *after*
+    `JAVA_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_ABIS` are resolved, so it
+    verifies the values the build will really use rather than re-deriving its
+    own and possibly disagreeing.
+  - **Found and fixed a bug in the checker itself while testing it** — the kind
+    that matters most here. A greedy `sed` matched the *closing* quote of
+    `openjdk version "26.0.2"`, captured an empty string, and **silently skipped
+    the JDK range test**: the check passed on the exact JDK it exists to reject.
+    Now `[^"]*"`, with an unparseable version downgraded to a loud advisory
+    rather than silence.
+  - Also verified: a declared version with no installed kit stops the build; and
+    `make qt-checks` / `make qt-verify{,-linux,-android,-macos}` run it by hand.
+  - Five sections: (1) the five `QT_*` declarations parse; (2) **reader
+    agreement** — bash `qt_version_for`, Make `$(call qt_version_for,…)` and
+    PowerShell `Get-QtVersion` all return the declared value for all five
+    platforms; (3) **no reacquired hardcodes** — a declared Qt version appearing
+    on a non-comment line of any deriving file; (4) script syntax (`bash -n`,
+    plus a PowerShell parse); (5) kit availability, `required` for the host
+    platform and informational for the others.
+  - Section 3 matches **only** literals equal to a declared Qt version, on
+    non-comment lines, in the five deriving files. Anything looser drowns in
+    NDK / Gradle / AGP / crate versions, which are unrelated and correct.
+  - The PowerShell check runs `build-windows.ps1 -Help`, which exits right after
+    `Get-QtVersion` — so it exercises the real derivation without building. When
+    no PowerShell is present it **SKIPs loudly** and falls back to asserting the
+    regex still matches, with a note that this proves the pattern and not the
+    script.
+  - **Verified it actually fails**, not just passes: bumping `QT_MACOS` to
+    6.10.3 while leaving `Makefile`'s `QT_PATH` hardcoded at 6.9.3 produced
+    `FAIL  Makefile contains the literal Qt version 6.9.3 on a non-comment line`
+    and **exit 1**. Both mutations reverted; `CMakeLists.txt` confirmed
+    byte-identical to the committed version afterwards.
+- [ ] 2.13 **(new)** On **macOS**, run `make macos` and record the gate's report. The gate now runs automatically, so this is really "read what it printed": it is the first real execution of the 2.7 `QT_MACOS` derivation, the `Makefile` Darwin `QT_PATH` branch, and the macOS kit / `macdeployqt` / Xcode SDK checks. If it stops the build, that is the feature working — record what it caught.
+- [ ] 2.14 **(new)** On **Windows**, run `build-windows.ps1` and record `Invoke-EnvVerify`'s report. First real execution of `Get-QtVersion` **and** of the PowerShell gate — neither has ever run (no PowerShell on the Linux dev machine). Confirm the two implementations stayed in step: same tiers, same Qt declared-vs-actual check.
+- [ ] 2.16 **(new)** Keep `scripts/qt-env-verify.sh` and `build-windows.ps1`'s `Invoke-EnvVerify` in step whenever either gains a check. They are deliberate duplicates (PowerShell cannot source bash), which is a drift risk with no automated guard — the cross-reference comments in both files are the only thing holding them together.
+- [ ] 2.15 **(new)** Decide the disposition of the two pre-existing `build-macos.sh` defects found in 2.7 — the ambient-`PATH` `macdeployqt` branch, and `local macdeployqt=$(find_macdeployqt)` masking the function's exit status (compounded by `print_error` writing to stdout). Both are commented in place and deliberately unfixed here. They belong to the macOS PRD; either fix them there or record why not.
+- [x] 2.10 Run `make appimage -B` end to end. Verify with `ldd` inside the AppDir that every `libQt6*.so.6` resolves under the bundled Qt (the `strings` half of this check is dropped — see 1.1) (Success Metric 3b).
+  - **Ran clean, exit 0.** Artifact:
+    `Simsapa-v1.0.0-alpha.5-Linux-x86_64.AppImage` (307 MB); linuxdeploy's own
+    self-extraction test passed.
+  - **Success Metric 3b met — the AppImage is now compiled against the Qt it
+    bundles.** Evidence:
+    - the AppDir binary links **18/18** `libQt6*` under `~/Qt/6.9.3/gcc_64/lib`,
+      **0** from `/usr/lib`;
+    - **all 96** bundled `libQt6*.so.6` in `Simsapa.AppDir/usr/lib` are
+      **byte-identical** (`cmp`) to the 6.9.3 kit's copies — 0 differing, 0 not
+      in the kit;
+    - the bundled `libQt6Core` reports `Qt 6.9.3`.
+    Before this work it was a binary built against system **6.11.1** wrapped
+    around **6.9.3** libraries.
+  - **The `strings` check turns out to work here, unlike in 1.1** — the *Qt
+    libraries* carry a `Qt 6.9.3 (…)` build string even though the *app binary*
+    does not. Only the 1.1 form (on the app binary) is useless.
+  - Note `cmp`-identity is expected rather than impressive: the script exports
+    `NO_STRIP=1`. It is still the right check — it proves provenance, not just
+    version agreement.
+  - The whole new ordering was exercised for real, not just unit-tested:
+    `resolve_qt` → **environment gate** → `build_app` → `verify_qt_agreement` →
+    package. Reaching completion means the gate returned 0 and the agreement
+    check found no stray libraries.
 - [ ] 2.11 Commit Part C's script half separately from 1.14.
 
 ---
@@ -590,7 +843,26 @@ does not compile without the build-script migration.
 plans).
 
 - [ ] 10.1 Write `docs/cxx-qt-fork.md` (FR-7): what each of patches A–E was for, which upstream release absorbed or obsoleted it, the `CXX_QT_AUTORCC_OPTIONS` mechanism that replaced the Android patch (including the missing `rerun-if-env-changed` trap), what remains on the rebased `simsapa` branch and its head revision, and the answer to "can we go back to upstream?".
-- [ ] 10.2 Write `docs/qt-kit-selection.md` (FR-31): `CMakeLists.txt` as the single source; scripts deriving from it; the FR-27 assertion; system `qt6-base` vs `~/Qt/<version>`; the **Android-on-6.10.3 / desktop-on-6.9.3 split and its reason**; the pre-fix state from PRD §2.1 (Linux silently on system 6.11.1 while `QT_LINUX` said 6.9.3, and the AppImage compiled against one Qt and bundled with another); that `~/Qt/6.9.3/gcc_64` is now **required** on a Linux dev machine; the `Qt::qmake` fallback trap; and that both `gcc_64` kits are live and neither is redundant.
+- [ ] 10.2 Write `docs/qt-kit-selection.md` (FR-31):
+  - **Written early (2026-08-08), covering everything Part C establishes.** Not
+    written out of order for its own sake: **six files already referenced it**
+    (`AGENTS.md`, `Makefile`, `scripts/qt-env.sh`, `scripts/qt-env-check.sh`,
+    `scripts/qt-env-verify.sh`, `build-windows.ps1`) and the link was dangling.
+    The Part C measurements were also fresh.
+  - Covers: the measured pre-fix state incl. the **non-determinism** refinement
+    and the AppImage consequence; the single source and its four readers (and
+    why the reader is shared, not copied); the two-block CMake structure and the
+    bare-`else()` trap; the version assertion (and why `REQUIRED` is *not* the
+    effective backstop on a host with system Qt); the `Qt6_DIR`-derived
+    `qmake_path` and the `Qt::qmake` fallback trap; the build-time gate and its
+    two tiers; the non-load-bearing convenience layer plus the
+    `QT_ANDROID_VERSION` export defect; the bare-`qmake6` rule; and a
+    version-bump checklist.
+  - **Left open deliberately.** §7 (the Android-on-6.10.3 / desktop-on-6.9.3
+    split, both `gcc_64` kits being live, Android running 6.10.3's `rcc`) is
+    written as **planned, not landed**, with a status banner at the top —
+    every `QT_*` is still `6.9.3`. Revisit when task 6.2 lands and flip the
+    banner. `CMakeLists.txt` as the single source; scripts deriving from it; the FR-27 assertion; system `qt6-base` vs `~/Qt/<version>`; the **Android-on-6.10.3 / desktop-on-6.9.3 split and its reason**; the pre-fix state from PRD §2.1 (Linux silently on system 6.11.1 while `QT_LINUX` said 6.9.3, and the AppImage compiled against one Qt and bundled with another); that `~/Qt/6.9.3/gcc_64` is now **required** on a Linux dev machine; the `Qt::qmake` fallback trap; and that both `gcc_64` kits are live and neither is redundant.
 - [ ] 10.3 Rewrite the **"New Rust bridges"** and **"New QML components"** sections in `CLAUDE.md` and `AGENTS.md` for the 0.9 builder API — `CxxQtBuilder::new_qml_module`, `QmlModule::new(...).qml_files([...])`, `CxxQtBuilder::files([...])` for bridge sources, and whichever of `cpp_files()` / `unsafe { cc_builder }` task 3.7 settled on (FR-3b, FR-31).
 - [ ] 10.4 Update the AGP-pin section, the NDK r28 rule and add a Qt-version-per-platform note to `CLAUDE.md` and `AGENTS.md`, reflecting the AGP 8.10.1 / Gradle 8.14.3 / NDK-pin outcomes (FR-31).
 - [ ] 10.5 Update `docs/android-soft-keyboard.md` §4 with the measured FR-20 result and the Qt version tested (FR-31).

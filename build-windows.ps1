@@ -5,7 +5,10 @@
 param(
     [string]$AppName = "",
     [string]$AppVersion = "",
-    [string]$QtPath = "C:\Qt\6.9.3\msvc2022_64",
+    # Empty means "derive it" -- see the QtPath resolution below the param
+    # block. A PowerShell param default cannot call a function, so it cannot
+    # read CMakeLists.txt here.
+    [string]$QtPath = "",
     [string]$BuildDir = ".\build\simsapadhammareader",
     [string]$DistDir = ".\dist",
     [switch]$Clean,
@@ -16,6 +19,34 @@ param(
     [switch]$Help
 )
 
+# The Qt version comes from CMakeLists.txt's QT_WINDOWS -- declared in exactly
+# one place and read here, never hardcoded a second time. This is the PowerShell
+# counterpart of scripts/qt-env.sh's qt_version_for (bash) and CMake's own QT_*
+# variables. See docs/qt-kit-selection.md.
+function Get-QtVersion {
+    $cmakeLists = Join-Path $PSScriptRoot "CMakeLists.txt"
+    if (-not (Test-Path $cmakeLists)) {
+        Write-Host "[ERROR] CMakeLists.txt not found at: $cmakeLists" -ForegroundColor Red
+        exit 1
+    }
+    $match = Select-String -Path $cmakeLists -Pattern '^\s*set\(QT_WINDOWS\s+"([^"]+)"\)' `
+        | Select-Object -First 1
+    if (-not $match) {
+        Write-Host "[ERROR] Could not read QT_WINDOWS from $cmakeLists" -ForegroundColor Red
+        exit 1
+    }
+    return $match.Matches[0].Groups[1].Value
+}
+
+$QtVersion = Get-QtVersion
+
+# Default kit location, used for the -QtPath default and in the help text. An
+# explicitly passed -QtPath still wins.
+$DefaultQtPath = "C:\Qt\$QtVersion\msvc2022_64"
+if ([string]::IsNullOrEmpty($QtPath)) {
+    $QtPath = $DefaultQtPath
+}
+
 # Function to show usage
 function Show-Usage {
     Write-Host @"
@@ -24,7 +55,7 @@ Usage: .\build-windows.ps1 [OPTIONS]
 Options:
   -AppName NAME         Set application name (default: read from .desktop file)
   -AppVersion VER       Set application version (default: read from Cargo.toml)
-  -QtPath PATH          Set Qt installation path (default: C:\Qt\6.9.3\msvc2022_64)
+  -QtPath PATH          Set Qt installation path (default: $DefaultQtPath)
   -BuildDir PATH        Set build directory (default: .\build\simsapadhammareader)
   -DistDir PATH         Set distribution directory (default: .\dist)
   -Clean                Clean build artifacts before building
@@ -104,7 +135,7 @@ Write-Status ""
 # Check if Qt installation exists
 if (-not (Test-Path $QtPath)) {
     Write-Error "Qt installation not found at: $QtPath"
-    Write-Error "Please install Qt 6.9.3 or specify the correct path with -QtPath"
+    Write-Error "Please install Qt $QtVersion or specify the correct path with -QtPath"
     exit 1
 }
 
@@ -113,7 +144,7 @@ $qtBinPath = Join-Path $QtPath "bin"
 $windeployqt = Join-Path $qtBinPath "windeployqt.exe"
 
 # Find Qt Tools directory (where CMake and Ninja are installed)
-# Qt Path: C:\Qt\6.9.3\msvc2022_64
+# Qt Path: C:\Qt\<version>\msvc2022_64   (version from CMakeLists.txt QT_WINDOWS)
 # Tools Dir: C:\Qt\Tools
 $qtRootDir = Split-Path (Split-Path $QtPath -Parent) -Parent
 $qtToolsDir = Join-Path $qtRootDir "Tools"
@@ -175,13 +206,122 @@ if (-not (Test-Path $ninja)) {
 # Check for windeployqt
 if (-not (Test-Path $windeployqt)) {
     Write-Error "windeployqt.exe not found at: $windeployqt"
-    Write-Error "Please ensure Qt 6.9.3 is properly installed"
+    Write-Error "Please ensure Qt $QtVersion is properly installed"
     exit 1
 } else {
     Write-Status "[OK] Found windeployqt: $windeployqt"
 }
 
 Write-Status ""
+
+# ---------------------------------------------------------------------------
+# Environment gate.
+#
+# The PowerShell counterpart of scripts/qt-env-verify.sh, which this script
+# cannot source. Keep the two in step -- same two tiers, same reasons:
+#
+#   CRITICAL  wrong output or no output; stops the build.
+#   ADVISORY  worth knowing; prints and continues.
+#
+# The point is that a forgotten environment check looks exactly like a passing
+# one. Running it from the build script means the build simply does not start.
+# See docs/qt-kit-selection.md.
+# ---------------------------------------------------------------------------
+function Invoke-EnvVerify {
+    $script:CriticalFailures = 0
+    $advisories = 0
+    function Report-Item($label, $value) { Write-Host ("  {0,-22} {1}" -f $label, $value) }
+    function Report-Ok($msg)       { Write-Host "  OK       $msg" -ForegroundColor Green }
+    function Report-Critical($msg) { Write-Host "  CRITICAL $msg" -ForegroundColor Red; $script:CriticalFailures++ }
+
+    Write-Host ""
+    Write-Host "=== Build environment verification ===" -ForegroundColor White
+
+    Write-Host ""
+    Write-Host "Build environment"
+    Report-Item "date" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    Report-Item "host" "$([System.Environment]::OSVersion.VersionString) $env:PROCESSOR_ARCHITECTURE"
+    Report-Item "working dir" (Get-Location).Path
+    $gitHead = (& git rev-parse --short HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        $branch = (& git rev-parse --abbrev-ref HEAD 2>$null)
+        Report-Item "git" "$gitHead on $branch"
+    }
+
+    Write-Host ""
+    Write-Host "Toolchain"
+    foreach ($t in @(
+        @{ label = "cmake";  cmd = $cmake;  args = @("--version") },
+        @{ label = "ninja";  cmd = $ninja;  args = @("--version") },
+        @{ label = "rustc";  cmd = "rustc"; args = @("--version") },
+        @{ label = "cargo";  cmd = "cargo"; args = @("--version") }
+    )) {
+        if ($t.cmd) {
+            $v = (& $t.cmd $t.args 2>&1 | Select-Object -First 1)
+            Report-Item $t.label $v
+        } else {
+            Report-Item $t.label "(not found)"
+        }
+    }
+    $msvc = Get-Command cl.exe -ErrorAction SilentlyContinue
+    if ($msvc) {
+        Report-Item "MSVC cl.exe" (& cl.exe 2>&1 | Select-Object -First 1)
+    } else {
+        Report-Item "MSVC cl.exe" "(not on PATH; CMake may still locate it)"
+    }
+    $targets = (& rustup target list --installed 2>$null) -join " "
+    if ($targets) { Report-Item "rust targets" $targets }
+
+    # --- CRITICAL: the kit's REAL version must match what CMakeLists declares.
+    # Catches a kit directory whose name lies: a partial install, a hand-moved
+    # folder, or a MaintenanceTool leftover.
+    Write-Host ""
+    Write-Host "Qt"
+    Report-Item "declared (QT_WINDOWS)" $QtVersion
+    Report-Item "kit path" $QtPath
+    $qmake = Join-Path $QtPath "bin\qmake6.exe"
+    if (-not (Test-Path $QtPath)) {
+        Report-Critical "Qt kit not found: $QtPath"
+    } elseif (-not (Test-Path $qmake)) {
+        Report-Critical "qmake6.exe not found: $qmake (incomplete Qt install?)"
+    } else {
+        $actual = (& $qmake -query QT_VERSION 2>$null)
+        Report-Item "kit reports" $actual
+        if (-not $actual) {
+            Report-Critical "$qmake did not answer -query QT_VERSION"
+        } elseif ($actual -ne $QtVersion) {
+            Report-Critical "Qt version mismatch: CMakeLists.txt declares $QtVersion, kit at $QtPath is $actual"
+        } else {
+            Report-Ok "Qt $actual matches the declared version"
+        }
+    }
+
+    if (-not (Test-Path $windeployqt)) {
+        Report-Critical "windeployqt.exe not found: $windeployqt (needed to bundle Qt)"
+    } else {
+        Report-Ok "windeployqt present"
+    }
+
+    if ((& rustup target list --installed 2>$null) -notcontains "x86_64-pc-windows-msvc") {
+        Report-Critical "Rust target NOT installed: x86_64-pc-windows-msvc -- rustup target add x86_64-pc-windows-msvc"
+    } else {
+        Report-Ok "Rust target installed: x86_64-pc-windows-msvc"
+    }
+
+    Write-Host ""
+    Write-Host "Result"
+    if ($script:CriticalFailures -eq 0) {
+        Write-Host "  All checks passed." -ForegroundColor Green
+    } else {
+        Write-Host "  $($script:CriticalFailures) CRITICAL failure(s)." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Build stopped: the environment cannot produce a correct build." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host ""
+}
+
+Invoke-EnvVerify
 
 # Check for Rust toolchain
 try {

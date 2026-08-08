@@ -126,21 +126,150 @@ download_tools() {
     fi
 }
 
+# Resolve the Qt kit and export everything that depends on it.
+#
+# MUST run before build_app(). This used to live inside create_appimage(), which
+# main() calls AFTER build_app() -- so `make build -B` ran with none of it set,
+# and the published AppImage was a binary COMPILED against whatever Qt the build
+# host had (Arch's system Qt 6.11.1 on the maintainer's machine) that linuxdeploy
+# then bundled with Qt 6.9.3 libraries and plugins. Two different Qt versions in
+# one shipped artifact. Keep this call ordered before build_app().
+#
+# Sets the global QT6_PATH, consumed later by create_appimage().
+resolve_qt() {
+    # The version comes from CMakeLists.txt's QT_LINUX -- declared in one place,
+    # never hardcoded here. See scripts/qt-env.sh.
+    #
+    # Sourced by the script's OWN location, not $PWD: this script has no
+    # `cd "$(dirname "$0")"` and the rest of it uses relative paths, so it is
+    # normally run from the repo root -- but the Qt lookup should not be the
+    # thing that breaks first if it ever isn't.
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    QT_ENV_NO_ACTIVATE=1 . "$script_dir/scripts/qt-env.sh"
+    local qt_version
+    qt_version="$(qt_version_for LINUX)" || exit 1
+
+    QT6_PATH=""
+
+    # QT_BASE_DIR is the deliberate override (e.g. GitHub Actions).
+    if [ -n "${QT_BASE_DIR:-}" ] && [ -d "$QT_BASE_DIR" ]; then
+        QT6_PATH="$QT_BASE_DIR"
+        print_status "Using Qt6 from QT_BASE_DIR environment variable: $QT6_PATH"
+    elif [ -d "$HOME/Qt/$qt_version/gcc_64" ]; then
+        QT6_PATH="$HOME/Qt/$qt_version/gcc_64"
+    elif [ -d "/opt/Qt/$qt_version/gcc_64" ]; then
+        QT6_PATH="/opt/Qt/$qt_version/gcc_64"
+    else
+        # NOTE: there used to be a `command -v qmake6` fallback here, taking
+        # whatever Qt happened to be on PATH. Removed deliberately: for a
+        # RELEASE artifact, silently bundling an unrelated Qt is worse than
+        # failing. It is the same defect class as the missing Linux
+        # CMAKE_PREFIX_PATH branch in CMakeLists.txt -- and here it would be
+        # baked into a file handed to users.
+        print_error "Qt $qt_version not found under \$HOME/Qt or /opt/Qt."
+        print_error "Install it, or set QT_BASE_DIR to the kit to build against and bundle."
+        exit 1
+    fi
+
+    print_status "Using Qt6 from: $QT6_PATH (Qt $qt_version, from CMakeLists.txt QT_LINUX)"
+
+    export QT_BASE_DIR="$QT6_PATH"
+    export LD_LIBRARY_PATH="$QT6_PATH/lib:${LD_LIBRARY_PATH:-}"
+    export QML_SOURCES_PATHS="$QT6_PATH/qml:./assets/qml"
+    export PATH="$QT6_PATH/bin:$PATH"
+
+    # Only if not already set, so an explicit QMAKE still wins.
+    if [ -z "${QMAKE:-}" ]; then
+        export QMAKE="$QT6_PATH/bin/qmake"
+    fi
+    print_status "Using QMAKE: $QMAKE"
+
+    # QtWebEngine specific settings
+    export QT_QPA_PLATFORM_PLUGIN_PATH="$QT6_PATH/plugins"
+    export QTWEBENGINE_RESOURCES_PATH="$QT6_PATH/resources"
+    export QTWEBENGINE_LOCALES_PATH="$QT6_PATH/translations/qtwebengine_locales"
+}
+
 # Build the application first
 build_app() {
     print_status "Building application..."
 
-    if [ ! -f "$BUILD_DIR/simsapadhammareader" ]; then
-        print_status "Building simsapa..."
-        make build -B
-    else
-        print_warning "Application already built. Use 'make build -B' to rebuild."
-    fi
+    # ALWAYS build. There used to be an "already built, skipping" short-circuit
+    # here, keyed on the executable merely existing. Dropped deliberately:
+    #
+    #   * This script produces a RELEASE artifact. Packaging a binary nobody
+    #     just built means shipping something whose provenance is unknown --
+    #     in particular whose Qt is unverified, which is the whole point of
+    #     resolve_qt() and verify_qt_agreement().
+    #   * It interacted badly with resolve_qt(): the leftover binary would
+    #     typically be from a plain `make build` in a shell WITHOUT the kit
+    #     exported -- i.e. exactly the mixed-Qt binary this work removes.
+    #   * It saved little. `make build -B` re-runs cmake and ninja/make, which
+    #     are already incremental at the compiler level, so an up-to-date tree
+    #     relinks rather than recompiling.
+    #
+    # verify_qt_agreement() would now catch the mismatch anyway, but failing
+    # late on a stale artifact is worse than just building it.
+    print_status "Building simsapa..."
+    make build -B
 
     if [ ! -f "$BUILD_DIR/simsapadhammareader" ]; then
         print_error "Build failed - executable not found"
         exit 1
     fi
+}
+
+# Confirm the Qt the app was COMPILED against is the Qt that will be BUNDLED.
+#
+# resolve_qt() already makes this true by construction, so this is a backstop,
+# not the mechanism -- and it is worth having because the two decisions are made
+# by different tools that can still disagree: CMakeLists.txt resolves its own
+# CMAKE_PREFIX_PATH (and a stale build/ directory caches the previous answer),
+# while this script decides what linuxdeploy bundles. FR-27's assertion inside
+# CMake covers "is this the declared version"; this covers "is it the same
+# install this script is about to package", which CMake cannot know.
+#
+# Publishing a mismatch is the §2.1 defect in its shipped form, so fail hard.
+verify_qt_agreement() {
+    print_status "Verifying compiled-against Qt matches bundled Qt..."
+
+    local cache="$BUILD_DIR/CMakeCache.txt"
+    if [ -f "$cache" ]; then
+        local qt6_dir cmake_prefix
+        qt6_dir="$(sed -n 's/^Qt6_DIR:PATH=//p' "$cache" | head -n1)"
+        if [ -n "$qt6_dir" ]; then
+            # Qt6_DIR is <prefix>/lib/cmake/Qt6
+            cmake_prefix="$(cd "$qt6_dir/../../.." && pwd)"
+            if [ "$cmake_prefix" != "$QT6_PATH" ]; then
+                print_error "Qt mismatch between build and bundle:"
+                print_error "  compiled against : $cmake_prefix (CMake Qt6_DIR)"
+                print_error "  would bundle     : $QT6_PATH"
+                print_error "This is how an AppImage ends up built against one Qt and shipped with another."
+                print_error "Remove $BUILD_DIR (it caches CMAKE_PREFIX_PATH) and rebuild."
+                exit 1
+            fi
+            print_status "  CMake compiled against: $cmake_prefix"
+        else
+            print_warning "  Qt6_DIR not found in $cache; skipping the CMake-side check"
+        fi
+    else
+        print_warning "  $cache not found; skipping the CMake-side check"
+    fi
+
+    # Stronger check: what the linker actually bound, which catches anything the
+    # cache comparison above cannot (including a cache that was hand-edited or
+    # written by a different generator).
+    local stray
+    stray="$(ldd "$BUILD_DIR/simsapadhammareader" 2>/dev/null \
+        | grep -o '/[^ ]*/libQt6[^ ]*' \
+        | grep -v "^$QT6_PATH/" || true)"
+    if [ -n "$stray" ]; then
+        print_error "The built binary links Qt libraries from outside $QT6_PATH:"
+        printf '%s\n' "$stray" | sort -u | sed 's/^/    /' >&2
+        exit 1
+    fi
+    print_status "  All linked Qt6 libraries resolve under $QT6_PATH"
 }
 
 # Create the AppDir structure
@@ -183,43 +312,19 @@ create_appimage() {
     # Remove existing AppImage
     rm -f "$APPIMAGE_NAME"
 
-    # Set Qt6 path - adjust this to your Qt6 installation
-    local qt6_path=""
-
-    # Check if QT_BASE_DIR is set from environment (e.g., GitHub Actions)
-    if [ -n "$QT_BASE_DIR" ] && [ -d "$QT_BASE_DIR" ]; then
-        qt6_path="$QT_BASE_DIR"
-        print_status "Using Qt6 from QT_BASE_DIR environment variable: $qt6_path"
-    # Try to find Qt6 installation in standard locations
-    elif [ -d "$HOME/Qt/6.9.3/gcc_64" ]; then
-        qt6_path="$HOME/Qt/6.9.3/gcc_64"
-    elif [ -d "/opt/Qt/6.9.3/gcc_64" ]; then
-        qt6_path="/opt/Qt/6.9.3/gcc_64"
-    elif command -v qmake6 &> /dev/null; then
-        qt6_path="$(dirname $(dirname $(which qmake6)))"
-    else
-        print_error "Qt6 installation not found. Please set QT_BASE_DIR environment variable."
+    # Qt was resolved by resolve_qt() before build_app(), so the Qt compiled
+    # against and the Qt bundled here are the same one by construction.
+    #
+    # Guard the invariant rather than trusting it: this script runs under
+    # `set -e` but NOT `set -u`, and the resource/locale copies below end in
+    # `2>/dev/null || true` -- so an empty qt6_path would quietly produce an
+    # AppImage missing its QtWebEngine resources instead of failing.
+    if [ -z "${QT6_PATH:-}" ]; then
+        print_error "create_appimage(): QT6_PATH is unset -- resolve_qt() must run first."
+        print_error "Check the call order in main(); it must precede build_app()."
         exit 1
     fi
-
-    print_status "Using Qt6 from: $qt6_path"
-
-    # Set environment variables for linuxdeploy
-    export QT_BASE_DIR="$qt6_path"
-    export LD_LIBRARY_PATH="$qt6_path/lib:$LD_LIBRARY_PATH"
-    export QML_SOURCES_PATHS="$qt6_path/qml:./assets/qml"
-    export PATH="$qt6_path/bin:$PATH"
-
-    # Set qmake path for the Qt plugin (only if not already set)
-    if [ -z "$QMAKE" ]; then
-        export QMAKE="$qt6_path/bin/qmake"
-    fi
-    print_status "Using QMAKE: $QMAKE"
-
-    # QtWebEngine specific settings
-    export QT_QPA_PLATFORM_PLUGIN_PATH="$qt6_path/plugins"
-    export QTWEBENGINE_RESOURCES_PATH="$qt6_path/resources"
-    export QTWEBENGINE_LOCALES_PATH="$qt6_path/translations/qtwebengine_locales"
+    local qt6_path="$QT6_PATH"
 
     # Workarounds for newer system libraries compatibility
     export NO_STRIP=1
@@ -404,7 +509,13 @@ main() {
 
     check_dependencies
     download_tools
+    # Ordering is load-bearing: resolve_qt() must precede build_app(), or the
+    # app is compiled against a different Qt than the one bundled below.
+    resolve_qt
+    # Environment gate: aborts on a critical failure before anything is built.
+    "$(dirname "${BASH_SOURCE[0]}")/scripts/qt-env-verify.sh" --platform linux || exit 1
     build_app
+    verify_qt_agreement
     create_appdir
     create_appimage
 

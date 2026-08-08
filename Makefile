@@ -1,8 +1,14 @@
 all: run
 
+# The Qt version comes from CMakeLists.txt's QT_* variables -- declared in
+# exactly one place and read here, never hardcoded a second time. This is the
+# Make counterpart of scripts/qt-env.sh's qt_version_for (bash) and
+# build-windows.ps1's Get-QtVersion. See docs/qt-kit-selection.md.
+qt_version_for = $(shell sed -n 's/^[[:space:]]*set(QT_$(1)[[:space:]]*"\([^"]*\)").*/\1/p' CMakeLists.txt | head -n1)
+
 # Detect platform and set Qt path for macOS
 ifeq ($(shell uname),Darwin)
-    QT_PATH ?= $(HOME)/Qt/6.9.3/macos
+    QT_PATH ?= $(HOME)/Qt/$(call qt_version_for,MACOS)/macos
     BUILD_CMD = cmake -S . -B ./build/simsapadhammareader/ -DCMAKE_PREFIX_PATH=$(QT_PATH) && cmake --build ./build/simsapadhammareader/
     BUILD_OFFLINE_CMD = CARGO_NET_OFFLINE=true cmake -S . -B ./build/simsapadhammareader/ -DCMAKE_PREFIX_PATH=$(QT_PATH) -DFETCHCONTENT_UPDATES_DISCONNECTED=ON && cmake --build ./build/simsapadhammareader/
     RUN_CMD = ./build/simsapadhammareader/simsapadhammareader.app/Contents/MacOS/simsapadhammareader
@@ -12,10 +18,35 @@ else
     RUN_CMD = ./build/simsapadhammareader/simsapadhammareader
 endif
 
+# --- Qt wiring checks ------------------------------------------------------
+#
+# Neither is load-bearing; both are pre-flight checks that make no changes.
+# Run `make qt-checks` before a macOS or Windows build, where a wrong Qt fails
+# late and on a machine you may not be sitting at.
+
 # Fails if .claude/settings.json's literal Qt paths have drifted from
 # CMakeLists.txt's QT_LINUX. See docs/qt-kit-selection.md.
 qt-env-check:
 	./scripts/qt-env-check.sh
+
+# Environment report + pre-flight gate. The build scripts run this themselves
+# (build-android.sh, build-appimage.sh, build-macos.sh call it; build-windows.ps1
+# has an equivalent Invoke-EnvVerify), so a wrong toolchain stops the build
+# rather than producing a wrong artifact. These targets are for running it by
+# hand -- e.g. before attempting a build on a platform you rarely use.
+qt-verify:
+	./scripts/qt-env-verify.sh --all
+
+qt-verify-linux:
+	./scripts/qt-env-verify.sh --platform linux
+
+qt-verify-android:
+	./scripts/qt-env-verify.sh --platform android
+
+qt-verify-macos:
+	./scripts/qt-env-verify.sh --platform macos
+
+qt-checks: qt-env-check qt-verify
 
 build:
 	$(BUILD_CMD)

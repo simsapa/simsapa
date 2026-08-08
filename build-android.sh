@@ -22,7 +22,24 @@ cd "$(dirname "$0")"
 # Configuration (override via environment or `make android-aab VAR=value`)
 # ---------------------------------------------------------------------------
 
-QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-6.9.3}"
+# The Qt version comes from CMakeLists.txt's QT_ANDROID -- it is declared in
+# exactly one place and read here, never hardcoded a second time. Android
+# deliberately targets a DIFFERENT Qt version than the desktop platforms, so a
+# stale copy of the version here would silently build against the wrong kit.
+#
+# QT_ENV_NO_ACTIVATE=1 is required: sourcing qt-env.sh bare would also put the
+# DESKTOP kit on PATH, which is wrong in an Android build. We want the lookup
+# helpers and nothing else. See the header of scripts/qt-env.sh.
+QT_ENV_NO_ACTIVATE=1 . ./scripts/qt-env.sh
+
+# Reported in the run header, so "which Qt is this build using, and who decided
+# that" is answerable from the log rather than by re-deriving it afterwards.
+if [ -n "${QT_ANDROID_VERSION:-}" ]; then
+    qt_android_version_source="from environment"
+else
+    qt_android_version_source="from CMakeLists.txt QT_ANDROID"
+fi
+QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-$(qt_version_for ANDROID)}"
 QT_ANDROID_ROOT="${QT_ANDROID_ROOT:-$HOME/Qt/$QT_ANDROID_VERSION}"
 
 # The primary ABI supplies qt-cmake and the toolchain the top-level build uses.
@@ -411,7 +428,7 @@ if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 0 ]; then
     sign_flag_aab="ON"
 fi
 
-echo "==> Qt          : $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
+echo "==> Qt          : $QT_ANDROID_VERSION ($qt_android_version_source), $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
 echo "==> JDK         : $JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -1))"
 echo "==> ABIs        : $ANDROID_ABIS"
 echo "==> NDK         : $ANDROID_NDK_ROOT"
@@ -425,6 +442,12 @@ fi
 echo "==> versionCode : $ANDROID_VERSION_CODE (from $version_code_source)"
 echo "==> versionName : $ANDROID_VERSION_NAME (from $version_name_source)"
 echo
+
+# Environment gate. Runs HERE, after JAVA_HOME / ANDROID_NDK_ROOT / ANDROID_ABIS
+# are resolved, so it verifies the values this build will actually use rather
+# than re-deriving its own. Aborts on a critical failure -- a wrong toolchain
+# should stop the build now, not after three ABIs have compiled.
+./scripts/qt-env-verify.sh --platform android || exit 1
 
 # Tell android/build.gradle to disable the debug variant. androiddeployqt
 # appends the bare `bundle` task, which otherwise builds, packages and signs the
