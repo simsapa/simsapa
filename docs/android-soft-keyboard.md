@@ -93,9 +93,81 @@ was tried a second time, as plain `adjustResize`, against the Shift-key bug in
 
 ### 4. Mid-word Shift is forced off (Thai and other non-Latin layouts)
 
-**Status: an upstream Qt bug, not app code. Fixed in Qt ≥ 6.10.1, absent from
-the 6.9.3 we build against.** No app-side fix exists; the user workaround is
-**shift-lock** (double-tap / long-press Shift), which works.
+> ### ⚠ Measured on device 2026-08-08: **Qt 6.10.3 does NOT fix this, and the
+> mechanism below is not the whole story.**
+>
+> Tested with Gboard's Thai layout on a Galaxy S23 (Android 16) against a 6.10.3
+> build. Typing **รู้**, the long vowel after the consonant is still reachable
+> only with shift-lock — a single Shift tap shows the shifted layer for a moment
+> and reverts immediately. **Identical to 6.9.3.**
+>
+> Three things were established, in order, each disproving the previous
+> hypothesis:
+>
+> 1. **The call-site count was the wrong measurement.** It counts
+>    `QtInputConnection.java` only. A `restartImmInput()` call survived in a
+>    *different* file, `QtEditText.onKeyDown()`, on the per-keystroke path — and
+>    it is **byte-identical in 6.9.3 and 6.10.3**. That looked like a complete
+>    explanation, since pressing Shift is itself a key down.
+> 2. **Removing that call does not fix the bug.** A patched `QtEditText` was
+>    built and verified *live in the dex* (see the trap below), and Thai behaved
+>    exactly as before. So `restartImmInput()` is not the cause.
+> 3. **No input-connection restart is involved at all.** A logcat capture across
+>    a Shift press and a key press shows **zero** `restartInput` /
+>    `APP_CALLED_RESTART_INPUT_API`. What it does show is Gboard resetting
+>    itself, twice per key press:
+>
+>    ```
+>    LatinIme.resetInputContext(): reason=5,
+>        ExternalEditsInfo{action=0, offset=-1, textLength=0,
+>                          originalTextLength=0, hasEdits=false}
+>    ```
+>
+>    Note **`textLength=0`** — the editor looks *empty* to the IME even after
+>    text has been typed into the QML field.
+>
+> **Current best hypothesis (unproven):** Qt's Android input connection presents
+> a synthetic, essentially empty editor to the IME, keeping the real text in the
+> QML item. Gboard cannot reconcile that, resets its input context on each key,
+> and a one-shot Shift dies with it. Supporting contrast, from the same device
+> and layout: **Firefox behaves correctly** — one Shift tap holds for exactly one
+> character, then reverts. So the IME's one-shot mechanism is fine; something in
+> Qt cancels it.
+>
+> **Consequence: upgrading Qt is not a fix for this bug**, and the Thai symptom
+> is no longer a reason to upgrade — see
+> [android-qt-upgrade-considerations.md §0](./android-qt-upgrade-considerations.md).
+> `QT_ANDROID` is back at 6.9.3.
+>
+> #### Trap for anyone retrying a Qt Java patch
+>
+> Dropping a patched copy of a Qt class into `android/src/org/qtproject/qt/android/`
+> **compiles, packages, and does nothing.** `Qt6Android.jar` still ships Qt's
+> version, so the APK defines the class in **two** dex files and ART resolves the
+> one in `classes.dex` — Qt's — while the patched copy sits inert in a later dex.
+> Measured with `dexdump`: two definitions, only the unpatched one reachable.
+>
+> To make an override real, the class must be removed from the jar first (a
+> Gradle task over `libs/Qt6Android.jar`, hooked to `preBuild`, keeps that inside
+> the repo instead of modifying the installed Qt kit). **Verify with `dexdump`,
+> never with a green build** — the whole idea was nearly discarded on a false
+> negative produced this way. The scaffolding was removed after the experiment;
+> the method is recorded here because it is the only way to patch Qt's Android
+> Java from this project.
+>
+> #### Where to pick this up
+>
+> The next step is **not** another Qt version. It is to confirm the hypothesis
+> above — ideally by reproducing the symptom in a minimal Qt Quick app with a
+> bare `TextField`, which establishes whether it is Qt-generic or something about
+> our fields — and then to file it upstream with the `resetInputContext` /
+> `textLength=0` evidence. Ruled out already: `MobileKeyboardHelper`,
+> `inputMethodHints`, popup type resolution, `restartImmInput` in both files.
+
+**Status: an upstream Qt bug, not app code. NOT fixed by Qt 6.10.3 (see the box
+above); the earlier claim that Qt ≥ 6.10.1 fixes it was inferred from a call-site
+count and is now disproven on device.** No app-side fix is currently shipped; the
+user workaround is **shift-lock** (double-tap / long-press Shift), which works.
 
 Symptom (Gboard, Thai layout, reported 2026-08-06): Shift gives **one** shifted
 character at the start of a word, and **mid-word it is forced straight back to
@@ -154,6 +226,11 @@ resets an IME's shift state. The call-site count tells the story:
 |---|---|
 | 6.9.3 (ours) | **12** |
 | 6.10.1 | **2** (definition + `sendKeyEvent`) |
+| 6.10.3 | **2** — *plus the untouched per-key-down call in `QtEditText.java`* |
+
+**Read that last row before trusting this table.** Counting one file made the
+fix look complete; the surviving call in `QtEditText.onKeyDown()` is the one on
+the keystroke path, and the device test above shows the symptom is unchanged.
 
 Verified directly: the local 6.9.3 sources contain no
 `GET_EXTRACTED_TEXT_MONITOR`, `m_isComposing` or `updateFullScreenExtractedText`;

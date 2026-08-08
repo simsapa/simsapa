@@ -1,7 +1,16 @@
 # PRD: CXX-Qt catch-up, then Qt 6.10.3 on Android
 
 - **Date:** 2026-08-07
-- **Status:** Draft (not yet implemented)
+- **Status:** **CLOSED 2026-08-08 — stage 2 (Qt 6.10.3 on Android) REVERTED.**
+  Part C (Qt kit selection + build-version correctness) and stage 1 (cxx-qt
+  fork → upstream 0.9.1) landed and are kept. `QT_ANDROID` is back at `6.9.3`.
+  **The premise of this document is disproven:** 6.10.3 does not fix the
+  Gboard/Thai mid-word Shift bug (FR-20 measured on device), and it breaks the
+  Android UI via the 6.10 QtWebView rearchitecture. Read
+  `docs/android-qt-upgrade-considerations.md` §0 and the OUTCOME section of the
+  task list before reusing any reasoning below — in particular §1's inference
+  that "Qt 6.10.3 ships the fix", which was drawn from a `restartImmInput()`
+  call-site count and is **wrong**.
 - **Scope:** **Android only.** Linux, Windows and macOS stay on Qt 6.9.3.
 - **Two stages, in order:** (1) catch our CXX-Qt fork up to upstream,
   (2) move the Android build to Qt 6.10.3.

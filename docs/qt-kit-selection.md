@@ -5,10 +5,17 @@ the Qt version. Everything else reads them. A build that resolves a different Qt
 **fails at configure time**, and a build whose toolchain is wrong **fails before
 it starts**.
 
-> **Status:** the mechanisms below are in place. The
-> Android-on-6.10.3 / desktop-on-6.9.3 split described in §7 is **planned, not
-> yet landed** — every `QT_*` is `6.9.3` today. See
-> `tasks/2026-08-07-175059-prd---cxx-qt-and-qt-6-10-3-android-upgrade.md`.
+> **Status:** the mechanisms below are in place and all five `QT_*` variables
+> are `6.9.3`.
+>
+> They were built during the August 2026 attempt to move **Android** to 6.10.3.
+> That upgrade was **tested on device and reverted** — it did not fix the bug it
+> was for, and it broke the Android UI
+> ([android-qt-upgrade-considerations.md §0](./android-qt-upgrade-considerations.md)).
+> **This machinery is deliberately kept.** It is version-independent, it fixed a
+> real shipping defect of its own (§1), and §7's split is exactly what a future
+> upgrade will need again. Keep the gate green while the versions agree: it is
+> dormant, not useless.
 
 ## 1. Why this exists — the measured defect
 
@@ -220,20 +227,33 @@ Run it by hand with `make qt-checks`, or
 
 ## 7. Platforms may deliberately diverge
 
-The per-platform variables exist so a single platform can move alone. The
-planned case: **Android to 6.10.3 while desktop stays on 6.9.3**, because the
-upgrade is motivated entirely by an Android text-entry bug (the Gboard/Thai
-mid-word Shift bug, fixed upstream by qtbase `f5c0296fdaad`), while desktop
-targets have measured, unresolved problems on 6.10.x.
+The per-platform variables exist so a single platform can move alone. **No split
+is active today** — every `QT_*` is `6.9.3` — but the machinery below is what
+makes one safe, and it has been exercised for real.
+
+The worked case: **Android on 6.10.3 while desktop stayed on 6.9.3**, run in
+August 2026 and since reverted (§0 of
+[android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)).
+It is described here in the present tense because it is the template for the next
+one.
 
 Two consequences of a split that read like bugs but are not:
 
-- **Two `gcc_64` kits are live and neither is redundant.** 6.9.3's builds the
-  desktop app; 6.10.3's supplies **host tools** (moc, rcc, androiddeployqt) for
-  the Android cross-build, resolved automatically via
+- **Two `gcc_64` kits are live and neither is redundant.** The desktop version's
+  builds the desktop app; the *Android* version's supplies **host tools** (moc,
+  rcc, androiddeployqt) for the cross-build, resolved automatically via
   `__qt_platform_initial_qt_host_path`.
-- Therefore **the Android build runs 6.10.3's `rcc` while the desktop build runs
-  6.9.3's.** Host tools must match the target Qt.
+- Therefore **the Android build runs the Android Qt's `rcc` while the desktop
+  build runs the desktop Qt's.** Host tools must match the target Qt. (Measured
+  during the attempt: the two produced byte-different `rcc` output from identical
+  input — 2,040,098 vs 2,046,446 bytes — which is correct, not a fault.)
+
+**What the split actually caught**, and why the gate earns its keep: while the
+versions differed, the pre-flight gate found (a) a stale `QT_ANDROID_VERSION`
+exported by the convenience shell layer, which would have silently built Android
+against the **desktop** kit, and (b) a desktop Qt on `LD_LIBRARY_PATH` being
+loaded by the Android host tools. Both are invisible while all five versions
+agree, and both return the instant one moves.
 
 If a split ever looks like an oversight to tidy up, read the comment at the
 `QT_*` block before changing it.

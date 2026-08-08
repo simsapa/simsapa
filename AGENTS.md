@@ -587,10 +587,19 @@ Notable feature docs:
 ## Qt version per platform — never invoke a bare `qmake6`
 
 **`CMakeLists.txt` is the single source of the Qt version**, declared per
-platform in the `QT_*` variables at the top. Platforms deliberately diverge:
-desktop targets `QT_LINUX` / `QT_MACOS` / `QT_WINDOWS`, Android targets
-`QT_ANDROID`. **There is no single "the Qt for this project"**, so any tooling
-that assumes one is wrong for the other half.
+platform in the `QT_*` variables at the top: `QT_LINUX` / `QT_MACOS` /
+`QT_WINDOWS` / `QT_ANDROID` / `QT_IOS`.
+
+**All five are `6.9.3` today, but never assume that.** The variables are
+per-platform precisely so one platform can move alone, and that has been done for
+real: Android was moved to 6.10.3 in August 2026 and reverted after device
+testing (see
+[docs/android-qt-upgrade-considerations.md §0](./docs/android-qt-upgrade-considerations.md)).
+So **read the version you need from `CMakeLists.txt`** — via
+`qt_version_for <PLATFORM>` from `scripts/qt-env.sh`, the `Makefile`'s
+`$(call qt_version_for,…)`, or `Get-QtVersion` in `build-windows.ps1` — and never
+hardcode it a second time. A repo-wide check (`scripts/qt-env-verify.sh --all`)
+fails the build on a re-acquired hardcode.
 
 **A bare `qmake6`, `rcc`, `moc` or `qmllint` resolves to the *system* Qt**
 (`/usr/bin/qmake6` — Arch's `qt6-base`, currently **6.11.1**), which the project
@@ -607,10 +616,12 @@ qmake6 -query QT_VERSION   # now the project's Qt
 For Android tooling use `build-android.sh`, which derives its own Qt version
 from `QT_ANDROID` — do **not** reuse the desktop kit for Android work.
 
-**A 6.10.3 binary run by hand in a direnv/agent shell dies with
-`libQt6Core.so.6: version 'Qt_6.10' not found`** — that is the *desktop* kit
-being loaded via `LD_LIBRARY_PATH`, not a broken install. Prefix such commands
-with `env -u LD_LIBRARY_PATH`. `build-android.sh` scrubs this itself; the rule
+**A binary from a *different* Qt kit run by hand in a direnv/agent shell dies
+with `libQt6Core.so.6: version 'Qt_6.x' not found`** — that is the *desktop* kit
+being loaded via `LD_LIBRARY_PATH`, not a broken install. (Seen constantly while
+6.10.3 kits were installed alongside 6.9.3: every 6.10.3 tool failed with
+`undefined symbol: _ZN9QtPrivate9sizedFreeEPvm`, which reads as "kit not
+installed".) Prefix such commands with `env -u LD_LIBRARY_PATH`. `build-android.sh` scrubs this itself; the rule
 behind it, and why `build-appimage.sh` is safe by a different mechanism while
 `PATH` is **not** merely advisory on Windows, is
 [docs/qt-kit-selection.md §8.1](./docs/qt-kit-selection.md).

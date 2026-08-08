@@ -158,6 +158,51 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ## Tasks
 
+## OUTCOME (2026-08-08): stage 2 reverted, stage 1 and Part C kept
+
+**`QT_ANDROID` is back at `6.9.3`. Tasks 7.0, 8.0 and 9.0 are cancelled**, not
+deferred — they are the *cost* side of an upgrade whose *benefit* was measured to
+be zero.
+
+| Part | Verdict |
+|---|---|
+| **Part C** — Qt kit selection, version derivation, the pre-flight gate (1.0, 2.0, 11.0) | **KEPT.** Fixed a live shipping defect (Linux built against system Qt 6.11.1 while claiming 6.9.3) and is version-independent. The most durable result of this PRD. |
+| **Stage 1** — cxx-qt fork → upstream 0.9.1 (3.0, 4.0) | **KEPT.** Verified on desktop and Android; independent of the Qt version. |
+| **Stage 2** — `QT_ANDROID` → 6.10.3 (6.0) | **REVERTED.** Did not fix the Thai bug; broke the Android UI. |
+| 7.0 AGP/Gradle/JDK, 8.0 minSdk 28 / 16 KB, 9.0 device acceptance | **CANCELLED** with stage 2. |
+| 5.0 (Apple rebase), 2.13/2.14/2.16 (macOS/Windows gate runs) | Still open; unrelated to the Qt version. |
+
+**The two findings that decided it** — full detail in tasks 6.13–6.16 below and in
+`docs/android-qt-upgrade-considerations.md` §0:
+
+1. **6.10.3 does not fix the Gboard/Thai mid-word Shift bug** (FR-20, the sole
+   functional reason for the work). The PRD inferred the fix from a
+   `restartImmInput()` call-site count in one file; the call on the keystroke
+   path is in another file and is byte-identical in both versions — and removing
+   it does not fix the bug either. Gboard resets its own input context against
+   Qt's synthetic empty editor, with no input-connection restart involved.
+2. **6.10.3 breaks the Android UI.** QtWebView was rearchitected
+   (`QQuickWebView`: `QQuickViewController` → `QQuickWindowContainer`), so the
+   native WebView composites above the Qt surface: it covers dialogs and
+   dropdowns and takes the `InputConnection`, breaking text entry app-wide.
+
+**Process lessons worth carrying** (each cost real time here):
+
+- **Judge a Qt version on device, not by reading its sources.** A call-site count
+  produced a confident, wrong prediction that drove the whole PRD.
+- **Do the device smoke test before the packaging work.** The plan ran
+  bump → NDK → AGP → minSdk → packaging → device; the device pass would have
+  ended it on the first screen.
+- **A green build proves nothing about a patch.** The `QtEditText` override
+  compiled and packaged while remaining *inert* (duplicate class across dex
+  files); only `dexdump` showed it. It was nearly discarded on that false
+  negative.
+- **Prove attribution by removal.** Stubbing out the webviews collapsed four
+  unrelated-looking symptoms into one cause in a single build.
+
+---
+
+
 ---
 
 ### [x] 1.0 Part C, first half — `CMakeLists.txt` as the single source of the Qt kit
@@ -1471,7 +1516,142 @@ does not compile without the build-script migration.
   - The PRD §7.1 ordering is intact either way — **nothing AGP-, Gradle-wrapper-
     or minSdk-related has been touched yet**; those are tasks 7.0 and 8.0.
 
-- [ ] 6.12 **(new, BLOCKER — found on device 2026-08-08)** Text entry is broken on
+- [ ] 6.16 **(new)** Test the patched-`QtEditText` route — override Qt's Java class
+  so `onKeyDown` no longer restarts the input connection. **Mechanism works;
+  the Thai result is the open question.**
+  - Done on the 6.10.3 + webview-stub build, because that is the only build in
+    which a text field accepts input at all.
+  - **The obvious approach silently does nothing, and the build stays green.**
+    Dropping a patched copy into `android/src/org/qtproject/qt/android/` compiles
+    and packages fine — but `Qt6Android.jar` still ships Qt's version, so the APK
+    defines the class in **two** dex files and ART resolves the one in
+    `classes.dex`:
+
+    | dex | `onKeyDown` |
+    |---|---|
+    | `classes.dex` (wins) | 14 units — **still calls `restartImmInput`** |
+    | `classes4.dex` (inert) | 5 units — `invoke-super` only (ours) |
+
+    Installing that would have produced a **false negative** for the whole idea.
+    Always verify with `dexdump`, never with a green build.
+  - **Fix:** `stripOverriddenQtClasses` in `android/build.gradle` removes the
+    overridden entry from `libs/Qt6Android.jar` before compilation
+    (`preBuild.dependsOn`), leaving exactly one definition. Chosen over editing
+    the installed Qt kit so the change is in the repo, reviewable, and survives a
+    Qt reinstall. It **warns loudly** if the class is not found — that is how the
+    override goes inert again after a Qt upgrade moves or renames it.
+  - Verified after the fix: exactly one `QtEditText` definition in the APK, 5
+    code units, no `restartImmInput`; app launches; text entry still works.
+  - **RESULT: the patch does NOT fix Thai.** Tested on device 2026-08-08 with the
+    override verified live in the dex: mid-word Shift still reverts immediately
+    and shift-lock is still required. So `QtEditText.onKeyDown`'s
+    `restartImmInput()` is **not** the cause — which also means the
+    restart-on-every-keystroke story in `docs/android-soft-keyboard.md` §4 is
+    **not a sufficient explanation of the bug**, and the whole premise the PRD
+    inherited from qtbase `f5c0296fdaad` is now doubly disproven: the upstream
+    fix does not help, and neither does removing the call it left behind.
+  - **Corroborating measurement:** a logcat capture across a Shift press shows
+    **zero** `restartInput` / `APP_CALLED_RESTART_INPUT_API` after the keyboard
+    is shown. The shift layer therefore reverts *without* any input-connection
+    restart — so the search must move to what else resets Gboard's state
+    (`updateSelection`, repeated `showSoftInput` → `onStartInputView`, or the
+    `EditorInfo`/`inputType` Qt reports). *(Needs one confirmation: that the
+    Shift press really fell inside the capture window.)*
+  - **The user's Firefox contrast is the sharpest clue available:** in Firefox a
+    single Shift tap **holds for exactly one character** and then reverts — a
+    correct one-shot shift. In our app it reverts before consuming any character.
+    So Gboard's one-shot mechanism works on this device; something in Qt's input
+    handling cancels it.
+  - Retained anyway as reusable machinery: `stripOverriddenQtClasses` is the
+    mechanism for overriding **any** Qt Java class from the repo, verified
+    end-to-end. Whether to keep it with no patch to carry is a separate call.
+  - **Still to confirm:** side effects — composition/predictive text, selection handles,
+    a hardware keyboard, and the Enter/search action. That `restartImmInput()`
+    has no comment upstream and no matching bug report, so what it was guarding
+    against is genuinely unknown.
+  - **If Thai is fixed, the prize is on 6.9.3, not here:** `QtEditText.java` is
+    byte-identical in the two versions, so the same override applies to the Qt we
+    already ship — fixing Thai with **no Qt upgrade** and none of the 6.10
+    QtWebView regressions.
+- [x] 6.15 **(new)** **FR-20 ANSWERED, AND THE ANSWER IS NO: Qt 6.10.3 does not
+  fix the Thai mid-word Shift bug.** This removes the only functional reason for
+  the entire upgrade, so it is the finding that should drive the decision.
+  - **Measured on device 2026-08-08** (Galaxy S23, Android 16, Gboard Thai),
+    against the 6.10.3 build. Typing **รู้**: the long vowel after the consonant
+    is still reachable only with **shift-lock**; a single Shift tap shows the
+    shifted layer for a moment and reverts immediately. Indistinguishable from
+    6.9.3. PRD FR-20 required this be recorded rather than dropped —
+    `docs/android-soft-keyboard.md` §4 and
+    `docs/android-qt-upgrade-considerations.md` §3 are updated.
+  - **Only testable because of the 6.14 stub build** — in the normal 6.10.3 build
+    the field accepts no text at all, so FR-20 was unreachable until the webview
+    was removed. The two investigations turned out to depend on each other.
+  - **Mechanism found, and it explains why the PRD's premise was wrong.** The
+    PRD inferred the fix from a **call-site count in one file**
+    (`QtInputConnection.java`: 12 → 2). The call that matters is in **another
+    file** and was never touched:
+
+    ```java
+    // QtEditText.java — byte-identical in 6.9.3 and 6.10.3
+    public boolean onKeyDown (int keyCode, KeyEvent event) {
+        if (null != m_inputConnection)
+            m_inputConnection.restartImmInput();   // every key down, incl. Shift
+        return super.onKeyDown(keyCode, event);
+    }
+    ```
+
+    Pressing Shift is itself a key down, so the layer flips, `restartInput()`
+    fires, and Gboard rebuilds at the base layer — exactly the reported symptom.
+    `f5c0296fdaad` removed ten restarts from the composing path and left the
+    per-keystroke one: **necessary but not sufficient**.
+  - **Opens a fix that needs no Qt upgrade.** The offending line is Qt *Java*, so
+    a patched `QtEditText` may be shippable on **6.9.3** — which has none of the
+    6.10 QtWebView regressions. Unknowns to settle by experiment: whether AGP
+    tolerates overriding the class from `android/` (duplicate class vs.
+    `Qt6Android.jar`) or whether the jar must be patched, and what that
+    `restartImmInput()` was guarding against (no comment, no upstream issue
+    found).
+- [ ] 6.14 **(new)** **ROOT CAUSE PROVEN 2026-08-08: 6.12 and 6.13 are one bug —
+  QtWebView's native surface. Neither is an app defect and neither is fixed by
+  task 7.0.**
+  - **The experiment.** `SuttaHtmlView.qml` and `DictionaryHtmlView.qml` are both
+    `Loader`s with a single `source:` platform switch, so one `use_stub` flag
+    swaps the mobile webviews for `SuttaHtmlView_Stub.qml` /
+    `DictionaryHtmlView_Stub.qml` — same API surface, **no `WebView`
+    instantiated**. Built arm64-only (`ANDROID_ABIS="arm64-v8a"`) and installed
+    on the S23.
+  - **Every symptom disappeared**, on the same Qt 6.10.3 binary:
+
+    | Symptom with WebView | With the stub |
+    |---|---|
+    | Keyboard opens, no text arrives (even `adb input text`) | **"dhamma" types into the field** |
+    | Search-info dialog does not show | **Search Help renders fully** |
+    | Search-mode / Lang dropdowns dead | **dropdown opens and renders** |
+    | Blank surface over the tab dialog | gone (no webview exists) |
+
+  - So it is **not** `MobileKeyboardHelper`, **not** Qt's input-connection
+    rewrite, and **not** popup-type resolution — all three were live hypotheses
+    and all three are now excluded. Notably the popup theory was **ruled out by
+    measurement, not by the experiment**: `resolvedPopupType()` is
+    byte-identical in 6.9.3 and 6.10.3 and gated on the `MultipleWindows`
+    capability, which Android's platform integration does not report in either
+    version, so popups are ordinary overlay items in both.
+  - **Why the native WebView breaks text input too** (the non-obvious half): it
+    is a real Android `View` in the activity's hierarchy, so it takes the
+    **`InputConnection`**. The IME then serves the WebView, not Qt's
+    `QtEditText` — which is why the keyboard appears (Qt asked for it) but
+    characters never reach the QML field, and why injected key events are lost
+    the same way.
+  - **The flag is left in the tree, set `false`**, so re-testing any candidate
+    fix is a one-line change. Delete `SuttaHtmlView_Stub.qml`,
+    `DictionaryHtmlView_Stub.qml`, their two `bridges/build.rs` entries and both
+    `use_stub` properties once this is settled.
+  - **Backporting the Thai fix to 6.9.3 instead is not cheap:** it is not
+    Java-only. `QtInputConnection.java` (83), `QtInputDelegate.java` (64) **and**
+    `qandroidinputcontext.cpp` (33) all differ between the two versions, so
+    patching the shipped `Qt6Android.jar` would not be enough — it would mean
+    building qtbase for Android from source.
+- [ ] 6.12 **(new, BLOCKER — found on device 2026-08-08; root cause identified in 6.14)** Text entry is broken on
   6.10.3: tapping a field raises the keyboard but no characters reach it. Fix or
   re-scope the upgrade.
   - **Reproduced without a keyboard in the loop:** `adb shell input tap` on the
