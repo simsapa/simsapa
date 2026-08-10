@@ -6,6 +6,10 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
 
 - `assets/qml/MobileOverlayTracker.qml` — **new.** Exposes `any_open`: true while
   any popup (or in-tree child window) is open over the tracked window.
+  `max_scan_depth` is 100 — a runaway guard, not a cost control; the earlier 8
+  silently truncated the 26-deep tree (task 2.11). Its startup log line reports
+  objects visited, deepest depth, cap hits and the depth each window was found
+  at, because a bare duration cannot show truncation.
 - `assets/qml/MobileComboBox.qml` — **not written; superseded.** Was to be a
   `ComboBox` subclass opening a radio choice dialog on mobile. Once the tracker
   landed, the native drop-down turned out to hide the webview by itself (its popup
@@ -17,6 +21,11 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
   identity exclusion sampled across the whole close transition). Forces the
   mobile branch via `tracker.is_mobile = true`, which is why
   `MobileOverlayTracker`'s `is_mobile` is deliberately not `readonly`.
+- `assets/qml/tst_MobileOverlayTrackerWindows.qml` — **new (2.10).** Offscreen
+  regression guard for the *in-tree child window* walk (`collect_windows()` /
+  `looks_like_window()` / the `Instantiator`). Has its own `ApplicationWindow`
+  fixture, because a `TestCase` is not a window and the walk needs one to start
+  from — which is why this coverage was missing from `tst_MobileOverlayTracker.qml`.
 - `assets/qml/tst_MobileComboBox.qml` — **not written**, along with the component
   it would have tested.
 - `assets/qml/SuttaSearchWindow.qml` — `webview_visible` (`:96`) is rewritten;
@@ -134,7 +143,7 @@ defect**, not a polish item, and it is why spike 3b is a gate.
 - [x] 1.8 **Not applicable — spike 1 was confirmed**, so `MobileComboBox` is a true drop-in and PRD open questions 4 and 5 are moot. (Original: If spike 1 was refuted, **do not stop** — note in the PRD that `MobileComboBox` is not yet drop-in for `onActivated` call sites, implement the `currentIndex` half of req 19, and defer PRD open questions 4 and 5 to the first `onActivated` adopter (`PromptsTab.qml:884`). The two conversions in 5.0 both act on `onCurrentIndexChanged` (`SearchBarInput.qml:428`, `:513`), so they are unaffected either way.)
 - [x] 1.9 Delete the spike files (or, if any is worth keeping, move it to a proper `assets/qml/tst_*.qml` and note that it is *not* added to `bridges/build.rs`).
 
-### 2.0 `MobileOverlayTracker.qml` ✅ (component shipped; 2.10–2.11 are open follow-ups)
+### 2.0 `MobileOverlayTracker.qml` ✅
 
 **Depends on:** 1.0 (spikes 2 and 3). **Blocks:** 3.0.
 
@@ -170,8 +179,19 @@ MobileOverlayTracker {
 - [x] 2.7 Write `assets/qml/tst_MobileOverlayTracker.qml`: `any_open` false at rest; true while a `Dialog` is open; false again after close; true while a `Menu` is open; unaffected by a hidden-but-existing dialog.
 - [x] 2.8 Add a test that a dynamically created dialog (`createObject`) also flips `any_open`, covering req 5. Add a test that a visible `ToolTip` alone leaves `any_open` false (req 13) — and that it **stays** false across the tooltip's whole close transition, which is where the arithmetic version fails. This test is what turns the identity assumption into something a Qt upgrade breaks in CI instead of on a user's Chromebook, so do not weaken it to a single sampled frame.
 - [x] 2.9 Run `make build -B` to confirm the resource registration compiles, and ask the user to run `make qml-test`.
-- [ ] 2.10 **Test the in-tree child-window walk — it currently has no coverage at all.** `tst_MobileOverlayTracker.qml` exercises popups, dynamic popups, the desktop short-circuit and the ToolTip close transition, but nothing touches `collect_windows()` / `looks_like_window()` / the `Instantiator`-over-a-JS-array that drives `visible_child_window_count`. That is the **fragile** half of the tracker: duck-typed matching rather than a type check, a walk over `resources`/`data` which have no change notification, and an `Instantiator` whose model is a plain JS array of QObjects. It works today (device tasks 7.2/7.3 passed), so this is a **regression guard**, not a bug hunt — the thing it must catch is a Qt upgrade changing where a declared child `Window` lands. Mirror spike 2's shape: an `ApplicationWindow` containing a child `ApplicationWindow` with `flags: Qt.Dialog`, plus one declared inside a nested component (the `gloss_tab.commonWordsDialog` shape). Assert `any_open` goes false → true → false as each child window is shown and hidden, that two simultaneously-visible windows still resolve to a single `any_open`, and that a **desktop** run reports false throughout. Note that `TestCase` is not an `ApplicationWindow`, so this needs its own window fixture rather than reusing the existing file's root — that is the reason the coverage is missing, not an oversight to repeat.
-- [ ] 2.11 **Measure `rescan_child_windows()` on device and pick a justified `max_scan_depth`.** The walk recurses `resources` + `children` + `data` to `max_scan_depth: 8` over `SuttaSearchWindow`'s **entire** item tree, with an O(n²) `seen.indexOf()` de-duplication. It is `Qt.callLater`-deferred so it runs after `app.exec()` (correct per `docs/startup-sequence-and-caches.md` §6 — it must never move into the engine load), but it is still one blocking GUI-thread pass during startup on a phone.
+- [x] 2.10 **Test the in-tree child-window walk — it currently has no coverage at all.** `tst_MobileOverlayTracker.qml` exercises popups, dynamic popups, the desktop short-circuit and the ToolTip close transition, but nothing touches `collect_windows()` / `looks_like_window()` / the `Instantiator`-over-a-JS-array that drives `visible_child_window_count`. That is the **fragile** half of the tracker: duck-typed matching rather than a type check, a walk over `resources`/`data` which have no change notification, and an `Instantiator` whose model is a plain JS array of QObjects. It works today (device tasks 7.2/7.3 passed), so this is a **regression guard**, not a bug hunt — the thing it must catch is a Qt upgrade changing where a declared child `Window` lands. Mirror spike 2's shape: an `ApplicationWindow` containing a child `ApplicationWindow` with `flags: Qt.Dialog`, plus one declared inside a nested component (the `gloss_tab.commonWordsDialog` shape). Assert `any_open` goes false → true → false as each child window is shown and hidden, that two simultaneously-visible windows still resolve to a single `any_open`, and that a **desktop** run reports false throughout. Note that `TestCase` is not an `ApplicationWindow`, so this needs its own window fixture rather than reusing the existing file's root — that is the reason the coverage is missing, not an oversight to repeat.
+- [x] 2.11 **Measured on device; `max_scan_depth` RAISED 8 → 100, and the log line now reports what the walk did.** Galaxy S23, three cold starts per configuration, `am force-stop` + `adb logcat`.
+  **The first measurement measured the wrong thing.** The shipped log line gave only a duration (10 ms), which answers "is it affordable" but not either question this task asks — how deep the windows are, and whether the cap is truncating. The line was extended to report objects visited, deepest depth reached, cap-hit count and the depth each window was found at. That reversed the conclusion:
+
+  | `max_scan_depth` | time | objects visited | deepest depth | cap hits |
+  |---|---|---|---|---|
+  | 8 (as shipped) | 10–11 ms | 319 | 8 (= the cap) | **274** |
+  | 100 | 23–24 ms | 1087 | **26** (actual tree depth) | 0 |
+
+  **8 was not headroom — it was silent truncation.** `SuttaSearchWindow`'s item tree is 26 levels deep, so the walk was cutting off 274 subtrees. Nothing is missed *today* (all ten windows are at depth 0, confirmed by `windows found at depths [0,0,0,0,0,0,0,0,0,0]`), but a window declared inside a sub-component sits far below 8 and would have been missed with no diagnostic — the exact failure this component exists to prevent. 13 ms once, deferred past `app.exec()`, buys that failure mode not existing, so the cap is now a runaway guard at 100, and `cap hit 0 time(s)` is the invariant to watch.
+  **The "cheaper structural fix" this task proposed was tried and measured worse.** Walking `data` only (it is the union of `children` + `resources`) with a `Set` instead of the O(n²) `indexOf` visited the identical 1087 objects and ran **25–26 ms vs 23–24 ms**. The cost is touching 1087 objects' properties at all, not the redundant enumeration. Reverted; the reason is now a comment so it is not re-attempted without a device.
+  Original task text follows.
+  **Measure `rescan_child_windows()` on device and pick a justified `max_scan_depth`.** The walk recurses `resources` + `children` + `data` to `max_scan_depth: 8` over `SuttaSearchWindow`'s **entire** item tree, with an O(n²) `seen.indexOf()` de-duplication. It is `Qt.callLater`-deferred so it runs after `app.exec()` (correct per `docs/startup-sequence-and-caches.md` §6 — it must never move into the engine load), but it is still one blocking GUI-thread pass during startup on a phone.
   - The function already logs `"MobileOverlayTracker: found N in-tree child window(s) in M ms"`. Read `M` and `N` off a real device with `make android-beta-debug-run`; desktop timings are not representative and the whole path is `is_mobile`-gated anyway.
   - Establish the depth actually required. **All ten in-tree windows are declared directly in `SuttaSearchWindow.qml` (`:2268`–`:2415`), i.e. at depth 0 of `contentItem`**, and a repo-wide check found **no** `ApplicationWindow`-rooted component instantiated anywhere else in `SuttaSearchWindow`'s subtree (`GlossTab`, `PromptsTab`, `DictionaryTab`, `FulltextResults`, `WordSummary`, `SuttaStackLayout`, `DrawerMenu`, `SearchBarInput`, `DictionarySearchDictionariesPanel` all checked against all 25 window components). So depth 8 is buying nothing measurable today.
   - Decide between: keep 8 and record the measured cost as acceptable; or lower it (1–2 covers everything that exists, with headroom for one nesting level) and **comment why**, so a future window declared deeper is diagnosed as "raise the depth" rather than debugged. Do **not** silently lower it without the comment — the failure mode is an undetected window drawn under the webview, which is the original bug.

@@ -119,10 +119,27 @@ Item {
     property int visible_child_window_count: 0
     readonly property bool child_window_open: root.visible_child_window_count > 0
 
-    // How deep to recurse when looking for child windows. The ten in
-    // SuttaSearchWindow are direct children of its contentItem; the extra depth
-    // covers a window declared inside a sub-component.
-    property int max_scan_depth: 8
+    // How deep to recurse when looking for child windows. This is a guard
+    // against runaway recursion, NOT a cost control, and it is deliberately set
+    // far above the depth the tree actually has.
+    //
+    // Measured on device (Galaxy S23, three cold starts each, via the scan
+    // summary logged below):
+    //
+    //   depth 8  ->  10 ms, 1087-object tree truncated to 319, cap hit 274x
+    //   depth 100 -> 23 ms, whole tree walked, deepest actual depth 26, cap hit 0
+    //
+    // The original value of 8 was not headroom: SuttaSearchWindow's item tree is
+    // 26 levels deep, so a cap of 8 silently cut off 274 subtrees. Every window
+    // that exists today is at depth 0, so nothing was missed — but a window
+    // declared inside a sub-component (a tab, a panel) sits well below 8 and
+    // would have been missed with no diagnostic, which is the original bug this
+    // whole component exists to prevent. 13 ms once, deferred past app.exec(),
+    // is the price of that failure mode not existing.
+    //
+    // `cap hit N time(s)` in the log is the alarm: it must stay 0. If it is ever
+    // non-zero the walk is truncating again and windows may be undetectable.
+    property int max_scan_depth: 100
 
     Component.onCompleted: {
         if (root.is_mobile) {
@@ -157,11 +174,27 @@ Item {
             return;
         }
 
+        // The summary below is deliberately more than a duration. A duration
+        // alone cannot answer the two questions that actually decide
+        // max_scan_depth: how deep the windows really are, and whether the cap
+        // is truncating the walk. `cap_hits > 0` means the walk is being cut
+        // short, so a window declared below that point would be missed
+        // silently — the original bug. `found_depths` says how much of the
+        // budget is actually in use.
+        let stats = { visited: 0, deepest: 0, cap_hits: 0, found_depths: [] };
+
         let started = Date.now();
-        root.tracked_windows = root.collect_windows(win.contentItem, [], [], 0);
+        root.tracked_windows = root.collect_windows(win.contentItem, [], [], 0, stats);
         root.recount_visible_windows();
+        let elapsed = Date.now() - started;
+
         logger.info("MobileOverlayTracker: found " + root.tracked_windows.length
-                    + " in-tree child window(s) in " + (Date.now() - started) + " ms");
+                    + " in-tree child window(s) in " + elapsed + " ms"
+                    + " (visited " + stats.visited + " objects"
+                    + ", deepest depth " + stats.deepest
+                    + " of max " + root.max_scan_depth
+                    + ", cap hit " + stats.cap_hits + " time(s)"
+                    + ", windows found at depths [" + stats.found_depths.join(",") + "])");
     }
 
     // Duck-typed: a Window is not a QQuickItem, so it cannot be matched by type
@@ -175,18 +208,41 @@ Item {
             && obj.transientParent !== undefined;
     }
 
-    function collect_windows(obj, found, seen, depth) {
-        if (obj === null || obj === undefined || depth > root.max_scan_depth)
+    // `stats` is optional; when passed it records what the walk actually did
+    // (see rescan_child_windows()).
+    function collect_windows(obj, found, seen, depth, stats) {
+        if (obj === null || obj === undefined)
             return found;
+
+        if (depth > root.max_scan_depth) {
+            if (stats)
+                stats.cap_hits += 1;
+            return found;
+        }
 
         if (seen.indexOf(obj) >= 0)
             return found;
         seen.push(obj);
 
+        if (stats) {
+            stats.visited += 1;
+            if (depth > stats.deepest)
+                stats.deepest = depth;
+        }
+
         // A non-Item child (a Window is neither a QQuickItem nor a pointer
         // handler) lands in `resources` via QQuickItemPrivate::data_append;
         // `children` and `data` are walked so windows declared inside a
         // sub-component are reached too.
+        //
+        // `data` is in fact the union of the other two, so this enumerates each
+        // object about three times and lets `seen` absorb it. That looks
+        // wasteful and was measured on device: walking `data` alone, with a Set
+        // instead of the array below, visited the identical 1087 objects and ran
+        // 25-26 ms against this version's 23-24 ms — i.e. slightly *worse*. The
+        // cost is in touching 1087 objects' properties at all, not in the
+        // redundancy, so this form stays. Do not "optimise" it again without a
+        // device measurement.
         let lists = [obj.resources, obj.children, obj.data];
         for (let l = 0; l < lists.length; l++) {
             let list = lists[l];
@@ -197,10 +253,13 @@ Item {
                 if (child === null || child === undefined)
                     continue;
                 if (root.looks_like_window(child)) {
-                    if (found.indexOf(child) < 0)
+                    if (found.indexOf(child) < 0) {
                         found.push(child);
+                        if (stats)
+                            stats.found_depths.push(depth);
+                    }
                 } else {
-                    root.collect_windows(child, found, seen, depth + 1);
+                    root.collect_windows(child, found, seen, depth + 1, stats);
                 }
             }
         }
